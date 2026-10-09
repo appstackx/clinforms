@@ -126,9 +126,12 @@ export function useReviewActions(opts: {
       }
       if (isForm) {
         if (!form) throw new Error("The form map is not in this browser.");
-        if (file.status !== "ready") throw new Error("The referrer's original file is not in this browser.");
         body.form = form;
-        body.fileBase64 = file.base64;
+        // A portal question set has no file: the server renders its summary PDF from the answers.
+        if (form.kind !== "questions") {
+          if (file.status !== "ready") throw new Error("The referrer's original file is not in this browser.");
+          body.fileBase64 = file.base64;
+        }
       }
       const format: RenderFormat = kind;
       return api.render(format, body);

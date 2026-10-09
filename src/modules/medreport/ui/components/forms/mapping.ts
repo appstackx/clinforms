@@ -4,7 +4,9 @@
  *
  * Owner: studio-a agent.
  */
-import { parseBlockId } from "../../../core/forms";
+import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
+import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
+import { nextQuestionAnchor, questionAnchor } from "../../../core/question-set";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
   ComputedFactFormat,
@@ -15,6 +17,8 @@ import type {
   FormDefinition,
   FormField,
   FormKind,
+  PdfCharFormat,
+  PdfOptionField,
   RegistrationPath,
   SignoffPart,
 } from "../../../core/types";
@@ -72,12 +76,34 @@ export function describeAnchor(anchor: FormAnchor): string {
       }
       return where;
     }
-    case "pdf_field":
-      return `PDF field “${anchor.fieldName}” (${anchor.fieldType})`;
+    case "pdf_field": {
+      if (anchor.optionFields?.length) {
+        return `PDF tick boxes ${anchor.optionFields.map((o) => `“${o.fieldName}”${o.onValue ? ` [${o.onValue}]` : ""} (${o.option})`).join(" / ")}`;
+      }
+      const labels = anchor.optionLabels?.length && anchor.options?.length === anchor.optionLabels.length
+        ? `: ${anchor.options.map((v, i) => `${v} = ${anchor.optionLabels?.[i] || "?"}`).join(", ")}`
+        : "";
+      return `PDF field “${anchor.fieldName}” (${anchor.fieldType})${labels}`;
+    }
     case "pdf_overlay":
-      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)`;
+      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)${anchor.dateSlots?.length ? `, date in ${anchor.dateSlots.length} parts` : ""}${anchor.ruledRows?.length ? `, on ${anchor.ruledRows.length} printed lines` : ""}`;
+    case "pdf_char_fields":
+      return `${anchor.fieldNames.length} character boxes “${anchor.fieldNames[0]}” to “${anchor.fieldNames[anchor.fieldNames.length - 1]}” (${CHAR_FORMAT_LABELS[anchor.format]})`;
+    case "pdf_table":
+      return `PDF table: ${anchor.rows.length} rows × ${anchor.columns.length} columns (${anchor.columns.map((c) => c.header || c.key).join(" / ")})`;
+    case "pdf_overlay_table":
+      return `Page ${anchor.page}, table of ${anchor.rowTops.length} rows × ${anchor.columns.length} columns, first row top at ${Math.round(anchor.rowTops[0] ?? 0)} pt`;
+    case "pdf_overlay_ticks":
+      return `Page ${anchor.page}, tick boxes ${anchor.options.map((o) => `“${o.option}” at ${Math.round(o.x)}, ${Math.round(o.y)}`).join(", ")}`;
   }
 }
+
+/** How one-character boxes are written, for people. */
+export const CHAR_FORMAT_LABELS: Record<PdfCharFormat, string> = {
+  DDMMYYYY: "date as DDMMYYYY",
+  DDMMYY: "date as DDMMYY",
+  chars: "one character per box",
+};
 
 function quoteLabel(label: string): string {
   const t = label.replace(/\s+/g, " ").trim().replace(/[:?]$/, "");
@@ -113,8 +139,12 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
       }
       return `For ${q}`;
     case "pdf_field":
+      if (a.optionFields?.length) {
+        return `Ticks one of the boxes ${a.optionFields.map((o) => `“${o.option}”`).join(" / ")} (the others are left clear)`;
+      }
       switch (a.fieldType) {
         case "checkbox":
+          if (a.optionLabels && a.optionLabels.length > 1) return `Ticks one of the boxes ${a.optionLabels.map((o) => `“${o}”`).join(" / ")}`;
           return `Ticks the box for ${q}`;
         case "radio":
           return `Selects one of the printed options for ${q}`;
@@ -125,6 +155,15 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
       }
     case "pdf_overlay":
       return `Written on page ${a.page}, in the space for ${q}`;
+    case "pdf_char_fields":
+      return a.format === "chars"
+        ? `One character in each of the ${a.fieldNames.length} boxes for ${q}`
+        : `The date written ${a.format === "DDMMYYYY" ? "DD MM YYYY" : "DD MM YY"}, one digit in each of the ${a.fieldNames.length} boxes for ${q}`;
+    case "pdf_table":
+    case "pdf_overlay_table":
+      return `One row per line of the table for ${q} (${tableColumnsOf(a).map((c) => c.header || c.key).join(" / ")})`;
+    case "pdf_overlay_ticks":
+      return `Marks an X in one of the printed boxes ${a.options.map((o) => `“${o.option}”`).join(" / ")}`;
   }
 }
 
@@ -147,6 +186,9 @@ export function defaultAnchor(kind: FormKind): FormAnchor {
       return { kind: "pdf_field", fieldName: "choose-a-field", fieldType: "text" };
     case "pdf_flat":
       return { kind: "pdf_overlay", page: 1, x: 72, y: 72, width: 220, height: 14 };
+    case "questions":
+      // Portal questions have no file: a virtual place in the summary (core/question-set.ts).
+      return questionAnchor(0);
   }
 }
 
@@ -157,7 +199,7 @@ export function newField(form: Pick<FormDefinition, "fields" | "kind">, section?
     ...(section ? { section } : {}),
     guidance: "",
     answerType: "short_text",
-    anchor: defaultAnchor(form.kind),
+    anchor: form.kind === "questions" ? nextQuestionAnchor(form.fields) : defaultAnchor(form.kind),
     fillSource: { kind: "notes_narrative" },
     required: false,
     confidence: "high",
@@ -175,6 +217,14 @@ export function anchorFromPick(current: FormAnchor, pick: PreviewPick): FormAnch
     return { kind: "docx", target: pick.isCell ? "table_cell" : "after_paragraph", blockId: pick.blockId };
   }
   if (pick.kind === "pdf_field") {
+    // A box that already belongs to this answer (one of its tick boxes, character boxes or table cells)
+    // keeps the anchor.
+    if (
+      formAnchorPdfFieldNames(current).indexOf(pick.fieldName) >= 0 &&
+      (current.kind === "pdf_char_fields" || current.kind === "pdf_table" || (current.kind === "pdf_field" && current.optionFields?.length))
+    ) {
+      return current;
+    }
     return { kind: "pdf_field", fieldName: pick.fieldName, fieldType: pick.fieldType, ...(pick.options && { options: pick.options }) };
   }
   const prev = current.kind === "pdf_overlay" ? current : null;
@@ -190,16 +240,23 @@ export function anchorFromPick(current: FormAnchor, pick: PreviewPick): FormAnch
   };
 }
 
-/** A fill source of the given kind, keeping compatible details from the current one. */
-export function fillSourceOfKind(kind: FillSource["kind"], current: FillSource): FillSource {
+/**
+ * A fill source of the given kind, keeping compatible details from the current one. `anchor` lets a
+ * table question start its appointments columns from the printed headers.
+ */
+export function fillSourceOfKind(kind: FillSource["kind"], current: FillSource, anchor?: FormAnchor): FillSource {
   if (kind === current.kind) return current;
   switch (kind) {
+    case "appointments_table":
+      return { kind, columns: (anchor && appointmentColumnsFor(tableColumnsOf(anchor))) || {} };
     case "registration":
       return { kind, path: "patient.fullName" satisfies RegistrationPath };
     case "computed_fact":
       return { kind, factId: "FACT-attendance", format: "summary" satisfies ComputedFactFormat };
     case "signoff":
       return { kind, part: "signature" satisfies SignoffPart };
+    case "fixed":
+      return { kind, value: "" };
     default:
       return { kind };
   }
@@ -218,4 +275,55 @@ export function parseOptions(text: string): string[] | undefined {
 export function sameMapping(a: FormDefinition, b: FormDefinition): boolean {
   const strip = (f: FormDefinition) => JSON.stringify({ ...f, updatedAt: "", status: "", confirmed: undefined });
   return strip(a) === strip(b);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Fillable-PDF options: printed labels, one question across several tick boxes, character boxes
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Tick boxes as edited in a textarea, one per line: "Option = field name" or "Option = field name [on
+ * value]". Lines without "=" are ignored. Empty → undefined.
+ */
+export function parseOptionFields(text: string): PdfOptionField[] | undefined {
+  const out: PdfOptionField[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^(.*?)\s*=\s*(.+?)(?:\s*\[([^\]]+)\])?\s*$/.exec(line.trim());
+    if (!m || !m[1].trim() || !m[2].trim()) continue;
+    out.push({ option: m[1].trim(), fieldName: m[2].trim(), ...(m[3]?.trim() ? { onValue: m[3].trim() } : {}) });
+  }
+  return out.length ? out : undefined;
+}
+
+export function formatOptionFields(options: readonly PdfOptionField[] | undefined): string {
+  return (options ?? []).map((o) => `${o.option} = ${o.fieldName}${o.onValue ? ` [${o.onValue}]` : ""}`).join("\n");
+}
+
+/** Field names as edited in a textarea (one per line, or separated by commas), in order. */
+export function parseFieldNames(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+
+/**
+ * The anchor with its tick-box options replaced: the first box becomes the field name; none left →
+ * a plain field anchor again.
+ */
+export function withOptionFields(anchor: Extract<FormAnchor, { kind: "pdf_field" }>, options: PdfOptionField[] | undefined): FormAnchor {
+  const { optionFields: _old, ...rest } = anchor;
+  void _old;
+  if (!options?.length) return rest;
+  return { ...rest, fieldName: options[0].fieldName, fieldType: "checkbox", optionFields: options };
+}
+
+/** The anchor with the printed label of export value `i` set (labels kept aligned with the options). */
+export function withOptionLabel(anchor: Extract<FormAnchor, { kind: "pdf_field" }>, i: number, label: string): FormAnchor {
+  const n = anchor.options?.length ?? 0;
+  const labels = Array.from({ length: n }, (_, k) => anchor.optionLabels?.[k] ?? "");
+  labels[i] = label;
+  const { optionLabels: _old, ...rest } = anchor;
+  void _old;
+  return labels.some((l) => l.trim()) ? { ...rest, optionLabels: labels } : rest;
 }

@@ -263,8 +263,19 @@ test("PDF anchors: fields must exist; radio options come from the PDF; flat over
   assert.deepEqual(res.fields.map((x) => x.label), ["Claimant", "Is the claimant fit for work?", "Further treatment?"]);
   assert.deepEqual(res.fields[1].options, ["Yes", "No", "Modified duties"]);
   assert.deepEqual(res.fields[1].anchor, { kind: "pdf_field", fieldName: "rdoFit", fieldType: "radio", options: ["Yes", "No", "Modified duties"] });
-  assert.equal(res.fields[2].answerType, "checkbox");
-  assert.equal(res.fields[2].confidence, "medium");
+  // Separate "Yes" and "No" tick-box fields: ONE yes/no question across both boxes (was: the first box only).
+  assert.equal(res.fields[2].answerType, "yes_no");
+  assert.deepEqual(res.fields[2].options, ["Yes", "No"]);
+  assert.deepEqual(res.fields[2].anchor, {
+    kind: "pdf_field",
+    fieldName: "chkYes",
+    fieldType: "checkbox",
+    optionFields: [
+      { option: "Yes", fieldName: "chkYes" },
+      { option: "No", fieldName: "chkNo" },
+    ],
+  });
+  assert.equal(res.fields[2].confidence, "high");
   assert.equal(res.dropped, 1);
 
   const flat: ParsedForm = { kind: "pdf_flat", pdf: { ...PDF, fields: [] }, warnings: [] };

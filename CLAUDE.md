@@ -101,6 +101,8 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
   `7f6fcf8` (Dell video assets, 15:48) → `32499de` (Playwright e2e scripts + dev tools, 16:16) →
   `cba79dc` (WIP memory, 16:16) → final memory commit. Verified: tsc, lint, **243/243** `test:medreport`,
   sandbox tests 26/26, build, 42-step browser E2E (at extraction), ClinForms rebrand.
+  Branch `demo/red-physio` (RED wave 1 + wave 2 + fixes): `test:medreport` (sandbox included) **437 tests, 434
+  pass, 3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
 - **Built:** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
   cited drafting (Claude **Sonnet 5.5**, `claude-sonnet-5-5`), validators, review + approval, Word/PDF in
   original layout, file-back to simulated TM3, batch, Security & GDPR page. Reports stored in browser.
@@ -128,16 +130,21 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 ## Key commands
 ```bash
 npm ci && npm run dev                      # http://localhost:3000 → /reports (demo mode with empty env)
-npm run typecheck && npm run lint && npm run test:medreport && npm run build   # full check chain
-node --import ./scripts/medreport/test-setup.mjs --import tsx --test "src/sandbox/**/*.test.ts"  # sandbox tests
+npm run typecheck && npm run lint && npm run test:medreport && npm run test:db && npm run test:auth \
+  && npm run test:site && npm run test:gateway && npm run build   # full check chain (production branches)
+# test:medreport includes the sandbox tests (src/sandbox/**/*.test.ts) since demo/red-physio – no separate run
 PORT=3000 MEDREPORT_AI_MODE=demo npm run start   # prod build; PORT matters (self-calls sim API)
+npm run demo:check                         # check the local demo assets (maps, answers, insurer PDFs)
+npm run demo:red                           # RED demo on this machine: build + start with demo assets (refuses without maps)
 npm run medreport:eslint-boundary          # regenerate .eslintrc.json (never hand-edit)
 ```
 
 ## Env vars (names only – values live in `.env.local`, never in git)
 `ANTHROPIC_API_KEY`, `MEDREPORT_MODEL`, `MEDREPORT_AI_MODE`, `MEDREPORT_LIVE_PASSCODE` (16+ chars),
 `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_ALLOW_DEMO_SECRETS` (never in prod),
-`MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`, `TM3_SIM_BASE_URL`, `MEDREPORT_SOFFICE_PATH`.
+`MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`, `TM3_SIM_BASE_URL`, `MEDREPORT_SOFFICE_PATH`,
+`MEDREPORT_DEMO_ASSETS_DIR` (local insurer forms + prepared maps/answers; use an ABSOLUTE path in a git worktree),
+`MEDREPORT_DEMO_ASSETS_ALLOW_PROD` (local `next start` only – never on a deployment).
 Empty `.env.local` = demo mode (fine for most work). No `.env.local` exists in this checkout yet.
 
 ## Key paths

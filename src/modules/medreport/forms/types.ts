@@ -23,6 +23,12 @@ export interface FillOptions {
   reviewMarkers?: boolean;
   /** Plain-English problems met while filling (anchor not found, text overflowed its box, …). */
   onWarning?: (message: string) => void;
+  /**
+   * Plain-English problems that make the written form WRONG, not just untidy – e.g. a value cut to fit
+   * a box that takes fewer characters (a date written "14/02/19"). Without onError they go to onWarning.
+   * forms/render-form.ts lists them with the warnings on a draft and refuses to issue a final copy.
+   */
+  onError?: (message: string) => void;
 }
 
 export interface PdfFillOptions extends FillOptions {

@@ -13,6 +13,7 @@
  *   clinician_opinion   → clinician_opinion     only an opinion a clinician recorded (attributed); else blank + gap
  *   signoff             → declaration           the server-signed receipt at approval (blank on a DRAFT)
  *   leave_blank         → (no section)          nobody
+ *   fixed               → from_records          CODE now (the map's fixed answer; core/form-record-rules.ts)
  *
  * Answers: for text answer types the section's paragraphs ARE the answer; for yes/no, tick box, choice,
  * date and number the structured value is `section.answer` (paragraphs then hold the cited support).
@@ -24,8 +25,12 @@
  * Owner: ai agent (contract-stage baseline; exported signatures are contract).
  */
 import { DEMO_CLINIC } from "../config.public";
+import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
+import { isNonClinicParty, partyLabel } from "./parties";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
+import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
+import { isQuestionAnchor, isQuestionSet } from "./question-set";
 import type {
   AnswerType,
   Clinician,
@@ -36,6 +41,7 @@ import type {
   FillSource,
   FormAnswer,
   FormAnswerKind,
+  FormAnswerRow,
   FormDefinition,
   FormField,
   InstructingParty,
@@ -105,6 +111,17 @@ export const FORM_ATTESTATIONS = [
   "Opinions on this form are my own, or are clearly attributed to the clinician who recorded them.",
   "I understand that the automated checks cannot detect a paraphrase error that cites a valid note, and I have reviewed the drafted answers for that.",
   "I have reviewed the completed form in the referrer's original layout and it is ready to issue.",
+] as const;
+
+/**
+ * A portal question set (FormKind "questions") has no layout to review: its last statement is about the
+ * answers that staff will copy into the referrer's portal. The first three are FORM_ATTESTATIONS'.
+ */
+export const QUESTION_SET_ATTESTATIONS = [
+  FORM_ATTESTATIONS[0],
+  FORM_ATTESTATIONS[1],
+  FORM_ATTESTATIONS[2],
+  "I have reviewed every answer and they are ready to be entered in the referrer's portal.",
 ] as const;
 
 const NO_SCOPE: TemplateScope = { excludeFields: [], excludeTerms: [] };
@@ -218,6 +235,8 @@ export function sectionKindForFillSource(source: FillSource): SectionKind | null
   switch (source.kind) {
     case "registration":
     case "computed_fact":
+    case "fixed":
+    case "appointments_table":
       return "from_records";
     case "notes_narrative":
       return "ai_narrative";
@@ -254,6 +273,8 @@ export function answerKindFor(answerType: AnswerType): FormAnswerKind {
       return "date";
     case "number":
       return "number";
+    case "table":
+      return "rows";
     default:
       return "text";
   }
@@ -284,13 +305,17 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
     name: form.title,
     documentTitle: form.title,
     audience: form.referrer.type,
-    description: `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
+    description: isQuestionSet(form)
+      ? `${form.referrer.name}'s portal questions, answered for entry in the portal.`
+      : `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
     scope: formScope(form.referrer.type),
     sections,
     declarationText: "",
-    declarationNote: "The referrer's own declaration wording is part of the form and is completed in place on approval.",
-    attestations: [...FORM_ATTESTATIONS],
+    declarationNote: isQuestionSet(form)
+      ? "The referrer's portal holds its own declaration; approval is recorded in the server-signed receipt."
+      : "The referrer's own declaration wording is part of the form and is completed in place on approval.",
+    attestations: isQuestionSet(form) ? [...QUESTION_SET_ATTESTATIONS] : [...FORM_ATTESTATIONS],
     docxTemplateId: formTemplateId(form.id),
   };
 }
@@ -354,6 +379,16 @@ function textValue(text: string | undefined | null, sourceIds: string[]): Resolv
   return t ? { text: t, value: t, sourceIds } : null;
 }
 
+/**
+ * The patient's insurer as the record holds it: the referral's insurer name, or – for an insurer referral
+ * that does not name one separately – the referring insurer itself. Null when the record names no insurer.
+ */
+export function insurerNameOnRecord(bundle: Pick<EpisodeBundle, "referral">): string | null {
+  const named = bundle.referral.insurerName?.trim();
+  if (named) return named;
+  return bundle.referral.type === "insurer" && bundle.referral.name.trim() ? bundle.referral.name.trim() : null;
+}
+
 const SEX_TEXT: Record<EpisodeBundle["registration"]["sex"], string> = {
   female: "Female",
   male: "Male",
@@ -404,6 +439,20 @@ export function resolveRegistrationValue(
       return textValue(reg.occupation, REG);
     case "patient.employer":
       return textValue(reg.employer, REG);
+    case "patient.title":
+      return textValue(reg.title, REG);
+    case "patient.phone":
+      return textValue(reg.contact?.phone, REG);
+    case "patient.email":
+      return textValue(reg.contact?.email, REG);
+    case "referral.insurerName":
+      return textValue(insurerNameOnRecord(bundle), REG);
+    // Insurer identifiers: createFormReport copies them only onto the insurer's own form
+    // (core/form-record-rules.ts withheldInsurerIdentifier).
+    case "referral.membershipNumber":
+      return textValue(bundle.referral.membershipNumber, REG);
+    case "referral.authorisationNumber":
+      return textValue(bundle.referral.authorisationNumber, REG);
     case "referral.referrerName":
       return textValue(party.name, REG);
     case "referral.reference":
@@ -429,6 +478,10 @@ export function resolveRegistrationValue(
       return textValue(DEMO_CLINIC.name, []);
     case "clinic.address":
       return textValue(DEMO_CLINIC.addressLines.join(", "), []);
+    case "clinic.phone":
+      return textValue(DEMO_CLINIC.phone, []);
+    case "clinic.email":
+      return textValue(DEMO_CLINIC.email, []);
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
@@ -460,9 +513,35 @@ export function resolveComputedFactValue(
     const n = ctx.bundle.appointments.filter((a) => a.status === status).length;
     return { text: String(n), value: String(n), sourceIds: hasFact(ctx.computedFacts, "FACT-attendance") ? ["FACT-attendance"] : ids };
   }
+  if (format === "first_score" || format === "latest_score") {
+    const instrument = /^FACT-outcomes-(.+)$/.exec(factId)?.[1];
+    const points = ctx.bundle.outcomeMeasures
+      .filter((m) => m.instrument === instrument)
+      .flatMap((m) => m.points.map((p) => ({ ...p, unit: m.unit })))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const point = format === "first_score" ? points[0] : points[points.length - 1];
+    if (!point || !instrument) return null;
+    return textValue(`${instrument} ${formatScore(point.value, point.unit)} (${formatUkDate(point.date)})`, ids);
+  }
   if (!fact) return null;
-  const text = answerType === "long_text" && fact.detail ? `${fact.value}. ${fact.detail}` : fact.value;
+  const text = answerType === "long_text" && fact.detail ? `${formFactText(fact.value)}. ${formFactText(fact.detail)}` : formFactText(fact.value);
   return textValue(text, ids);
+}
+
+/**
+ * A computed fact's value or detail as text for a referrer's form. The facts are written for citing
+ * (FACT-*, N-###, A-### IDs, status codes, arrows); a form gets plain words: no internal note or
+ * appointment IDs, no ATT/DNA/LCN/CNC codes after their words, and "→" read as "then".
+ */
+export function formFactText(text: string): string {
+  return text
+    .replace(/\s*\((?:[A-Z]{1,4}-\d{2,}(?:,\s*)?)+\)/g, "") // " (N-001)", " (N-001, N-003)"
+    .replace(/\((?:[A-Z]{1,4}-\d{2,}),\s*/g, "(") // "(A-004, reason recorded: …)" → "(reason recorded: …)"
+    .replace(/\s*\((?:ATT|DNA|LCN|CNC)\)/g, "") // "Attended (ATT): 5" → "Attended: 5"
+    .replace(/\((?:CNC),\s*/g, "(") // "(CNC, not counted above)" → "(not counted above)"
+    .replace(/\s*→\s*/g, ", then ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /**
@@ -545,6 +624,9 @@ export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | nul
     case "yes_no":
     case "checkbox":
       return { kind, value: typeof resolved.value === "boolean" ? resolved.value : null };
+    case "rows":
+      // Table answers are built from the record by core/form-tables.ts, never from a single value.
+      return { kind, value: null };
   }
 }
 
@@ -559,6 +641,8 @@ export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | nul
  */
 export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer">): string {
   const answer = section.answer;
+  // Table answers: one line per row (core/form-tables.ts rowsToText).
+  if (answer?.kind === "rows") return Array.isArray(answer.value) ? rowsToText(answer.value) : "";
   if (answer && answer.kind !== "text") {
     const v = answer.value;
     if (v === null || v === "") return "";
@@ -584,6 +668,7 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
  * answers are answered when a paragraph has text.
  */
 export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer">): boolean {
+  if (section.answer?.kind === "rows") return hasRowContent(section.answer.value);
   if (section.answer && section.answer.kind !== "text") {
     return section.answer.value !== null && section.answer.value !== "";
   }
@@ -627,6 +712,9 @@ export function parseFormAnswerValue(field: Pick<FormField, "answerType" | "opti
       const m = /^-?\d+(?:\.\d+)?$/.exec(text.replace(/[,\s]/g, ""));
       return { kind, value: m ? m[0] : null };
     }
+    case "rows":
+      // A table is never answered by one piece of text: rows come from the record or are entered by staff.
+      return { kind, value: null };
   }
 }
 
@@ -634,6 +722,8 @@ export function parseFormAnswerValue(field: Pick<FormField, "answerType" | "opti
 export interface FormFillAnswer {
   text?: string;
   value?: string | boolean | null;
+  /** Table questions: the rows, column key → cell text (S2, additive). */
+  rows?: FormAnswerRow[];
 }
 
 /** Answers keyed by form field ID ("F-01"…). */
@@ -691,6 +781,10 @@ export function buildFormAnswers(
     }
     const text = answerToText(section);
     const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
+    if (Array.isArray(structured)) {
+      answers[field.id] = { text, rows: structured };
+      continue;
+    }
     answers[field.id] = structured === undefined ? { text } : { text, value: structured };
   }
   return answers;
@@ -754,10 +848,45 @@ export function formAnchorKey(anchor: FormField["anchor"]): string {
         return `glyph:${(anchor.optionGlyphs ?? []).map((g) => `${g.blockId}#${g.glyphIndex}`).join(",")}`;
       }
       return `docx:${anchor.target === "replace_placeholder" ? `${anchor.blockId}|${anchor.placeholderText ?? ""}` : anchor.blockId}`;
-    case "pdf_field":
-      return `pdf:${anchor.fieldName}`;
+    case "pdf_field": {
+      // One question across several tick-box fields: every box it uses (a plain field keeps "pdf:<name>").
+      const names = formAnchorPdfFieldNames(anchor);
+      return names.length > 1 ? `pdfopts:${names.join("+")}` : `pdf:${names[0] ?? anchor.fieldName}`;
+    }
     case "pdf_overlay":
       return `overlay:${anchor.page}:${Math.round(anchor.x / 10)}:${Math.round(anchor.y / 10)}`;
+    case "pdf_char_fields":
+      return `pdfchars:${anchor.fieldNames.join("+")}`;
+    case "pdf_table":
+      return `pdftable:${anchor.rows.map((r) => anchor.columns.map((c) => r[c.key] ?? "").join("|")).join(",")}`;
+    case "pdf_overlay_table":
+      return `overlaytable:${anchor.page}:${Math.round((anchor.columns[0]?.x ?? 0) / 10)}:${Math.round((anchor.rowTops[0] ?? 0) / 10)}`;
+    case "pdf_overlay_ticks":
+      return `ticks:${anchor.page}:${anchor.options.map((o) => `${Math.round(o.x / 10)}:${Math.round(o.y / 10)}`).join(",")}`;
+  }
+}
+
+/**
+ * The AcroForm fields an anchor writes into (empty for Word and flat-PDF anchors): the field itself,
+ * every box of a one-of-several tick-box question, every one-character box, or every cell of a
+ * fillable table. For the preview's highlight and the answer-space checks.
+ */
+export function formAnchorPdfFieldNames(anchor: FormField["anchor"]): string[] {
+  switch (anchor.kind) {
+    case "pdf_field": {
+      // With optionFields the boxes listed there are the answer space (fieldName is the first of them).
+      const names = anchor.optionFields?.length ? anchor.optionFields.map((o) => o.fieldName) : [anchor.fieldName];
+      return Array.from(new Set(names.filter(Boolean)));
+    }
+    case "pdf_char_fields":
+      return anchor.fieldNames.slice();
+    case "pdf_table": {
+      const names: string[] = [];
+      for (const row of anchor.rows) for (const col of anchor.columns) if (row[col.key]) names.push(row[col.key]);
+      return Array.from(new Set(names));
+    }
+    default:
+      return [];
   }
 }
 
@@ -782,10 +911,15 @@ export function formAnchorKeys(form: Pick<FormDefinition, "fields">): Map<string
  * Sanity checks before a mapping is confirmed
  * ----------------------------------------------------------------------------------------------*/
 
-/** Plain-English problems that should stop a form map being confirmed (empty = OK). */
+/**
+ * Plain-English problems that should stop a form map being confirmed (empty = OK). Includes a sign-off
+ * (signature, name, HCPC number or date of the clinician's approval) in an answer space the form gives to
+ * someone other than the clinic (`completedBy`: the patient, policyholder, their doctor or the insurer).
+ */
 export function checkFormDefinition(form: FormDefinition): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
+  const questionPlaces = new Map<string, string>();
   for (const field of form.fields) {
     const where = `${field.id} (“${field.label}”)`;
     if (seen.has(field.id)) problems.push(`${field.id} is used by more than one question.`);
@@ -793,12 +927,21 @@ export function checkFormDefinition(form: FormDefinition): string[] {
 
     const anchorKind = field.anchor.kind;
     if (form.kind === "docx" && anchorKind !== "docx") problems.push(`${where}: a Word form needs a Word anchor.`);
-    if (form.kind === "pdf_flat" && anchorKind !== "pdf_overlay") {
+    if (form.kind === "pdf_flat" && anchorKind !== "pdf_overlay" && anchorKind !== "pdf_overlay_table" && anchorKind !== "pdf_overlay_ticks") {
       problems.push(`${where}: a flat PDF has no fillable fields, so the answer needs a position on the page.`);
     }
     if (form.kind === "pdf_acroform" && anchorKind === "docx") problems.push(`${where}: a PDF form cannot use a Word anchor.`);
+    if (form.kind === "questions") {
+      // Portal questions have no file: each keeps its virtual place in the summary (core/question-set.ts).
+      if (!isQuestionAnchor(field.anchor)) problems.push(`${where}: a portal question cannot point into a file. Remove it and add it again.`);
+      else {
+        const key = formAnchorKey(field.anchor);
+        if (questionPlaces.has(key)) problems.push(`${where}: shares its place in the summary with ${questionPlaces.get(key)}. Remove it and add it again.`);
+        else questionPlaces.set(key, field.id);
+      }
+    }
 
-    if (field.anchor.kind === "docx") {
+    if (field.anchor.kind === "docx" && form.kind !== "questions") {
       if (field.anchor.target === "replace_placeholder" && !field.anchor.placeholderText) {
         problems.push(`${where}: say which placeholder text to replace.`);
       }
@@ -807,8 +950,47 @@ export function checkFormDefinition(form: FormDefinition): string[] {
       }
       if (!parseBlockId(field.anchor.blockId)) problems.push(`${where}: the location “${field.anchor.blockId}” is not valid.`);
     }
+    if (field.anchor.kind === "pdf_field" && field.anchor.optionFields?.length) {
+      const opts = field.anchor.optionFields;
+      if (opts.some((o) => !o.option.trim() || !o.fieldName.trim())) problems.push(`${where}: every tick box needs its option and its field.`);
+      const seenOpt = new Set<string>();
+      for (const o of opts) {
+        const k = `${o.fieldName}\u0000${o.onValue ?? ""}`;
+        if (seenOpt.has(k)) problems.push(`${where}: the tick box “${o.fieldName}” is linked to more than one option.`);
+        seenOpt.add(k);
+      }
+    }
+    if (field.anchor.kind === "pdf_char_fields") {
+      if (new Set(field.anchor.fieldNames).size !== field.anchor.fieldNames.length) problems.push(`${where}: a character box is listed twice.`);
+      if (field.anchor.format !== "chars" && field.answerType !== "date" && field.answerType !== "date_signed") {
+        problems.push(`${where}: the boxes are written as a date, so the answer type must be a date.`);
+      }
+    }
     if (field.answerType === "single_choice" && !field.options?.length) {
       problems.push(`${where}: a single-choice question needs its options.`);
+    }
+    if (field.fillSource.kind === "fixed") {
+      const fixed = field.fillSource.value.trim();
+      if (!fixed) problems.push(`${where}: enter the fixed answer, or choose another source.`);
+      else if (field.answerType !== "table" && answerKindFor(field.answerType) !== "text" && parseFormAnswerValue(field, fixed).value === null) {
+        problems.push(
+          `${where}: the fixed answer “${fixed}” does not fit a ${ANSWER_TYPE_LABELS[field.answerType].toLowerCase()} question${field.options?.length ? ` (options: ${field.options.join(", ")})` : ""}.`,
+        );
+      }
+    }
+    // Tables (S2): a table question needs a table position, and is filled from the appointments or left blank.
+    if ((field.answerType === "table") !== isTableAnchor(field.anchor)) {
+      problems.push(field.answerType === "table" ? `${where}: a table question needs the table's rows and columns on the form.` : `${where}: only a table question can be written into a table.`);
+    }
+    if (field.answerType === "table" && field.fillSource.kind !== "appointments_table" && field.fillSource.kind !== "leave_blank") {
+      problems.push(`${where}: a table is filled from the appointment record, or left blank.`);
+    }
+    if (field.fillSource.kind === "appointments_table" && field.answerType !== "table") {
+      problems.push(`${where}: only a table question can list the appointments.`);
+    }
+    // Multi-party forms: the clinician's approval never goes into another party's signature or declaration.
+    if (field.fillSource.kind === "signoff" && field.completedBy && isNonClinicParty(field.completedBy)) {
+      problems.push(`${where}: this is for ${partyLabel(field.completedBy)} to complete, so the clinician's approval cannot be written here. Set it to “Leave blank”.`);
     }
   }
   if (!form.fields.some(isAnswerableField)) problems.push("No question on this form is set to be completed.");

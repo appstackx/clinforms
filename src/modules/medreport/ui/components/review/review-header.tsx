@@ -30,6 +30,7 @@ import { referrerNamesMatch } from "../../../core/forms";
 import { FORM_KIND_LABELS, INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ActivityEntry, Report, ReportTemplate } from "../../../core/types";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from "../../primitives";
+import { WORDING } from "../../wording";
 import type { GenerationSummary } from "./review-model";
 import { Pill } from "./review-ui";
 import type { SaveState } from "./use-review-state";
@@ -259,9 +260,11 @@ export const ApprovedBanner = forwardRef<
     onSave(): void;
     /** Start an amended version (a referrer's query or a factual correction). */
     onAmend?: () => void;
+    /** A portal question set: its PDF is the summary of the questions and answers. */
+    questionSet?: boolean;
   }
 >(function ApprovedBanner(props, ref) {
-  const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend } = props;
+  const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet } = props;
   const receipt = report.receipt;
   if (!receipt) return null;
   const isForm = Boolean(report.form);
@@ -276,7 +279,7 @@ export const ApprovedBanner = forwardRef<
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="text-base font-semibold text-teal-950">
-            {isForm ? "Approved – the completed form is final" : "Signed – the report is final"}
+            {questionSet ? WORDING.questionSet.approvedTitle : isForm ? "Approved – the completed form is final" : "Signed – the report is final"}
           </h2>
           <p className="text-[13px] text-teal-900">
             {isForm ? "Approved" : "Signed"} by <span className="font-medium">{receipt.signer.name}</span> (HCPC {receipt.signer.hcpc}) on{" "}
@@ -310,7 +313,7 @@ export const ApprovedBanner = forwardRef<
               disabled={downloading !== null || fileMissing || (!isPdfForm && pdfUnavailable !== null)}
               aria-describedby={!isPdfForm && pdfUnavailable ? "pdf-unavailable" : undefined}
             >
-              {spin(isPdfForm ? "original" : "pdf")} Completed form (PDF)
+              {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
             </Button>
           </>
         ) : (

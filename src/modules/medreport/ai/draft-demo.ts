@@ -14,25 +14,45 @@ import "server-only";
  * file's bundleFingerprint (ai/bundle-fingerprint.ts). An upload that reuses a demo patient ID, or a
  * record whose notes differ, never receives another record's answers.
  *
+ * Sources: the bundled files (ai/demo-drafts, parsed once per instance) and, in a local demo, the
+ * pre-written answers in MEDREPORT_DEMO_ASSETS_DIR/drafts (ai/demo-assets.ts – read again on every call,
+ * never cached, off in production). A bundled file wins over a local file with the same key.
+ *
  * Owner: ai agent.
  */
 import { answerKindFor, formAnchorKeys } from "../core/forms";
 import type { EpisodeBundle, FormDefinition, GenerationMeta } from "../core/types";
 import { WORDING } from "../core/wording";
 import { RECORDED_DRAFT_CONNECTOR, bundleNotesFingerprint } from "./bundle-fingerprint";
+import { readDemoAssetDrafts } from "./demo-assets";
 import { DEMO_DRAFT_SOURCES } from "./demo-drafts";
 import { DemoDraftFileSchema, demoDraftKey, demoFormDraftKey, type DemoDraftFile } from "./demo-format";
 import { DraftGenerationError, type DraftOutput, type GenerateDraftInput, type GenerateDraftResult } from "./types";
 
 const parsed = new Map<string, DemoDraftFile | null>();
 
-function loadDemoFile(key: string): DemoDraftFile | null {
-  if (parsed.has(key)) return parsed.get(key) ?? null;
-  const raw = DEMO_DRAFT_SOURCES[key];
+function parseDemoFile(raw: unknown): DemoDraftFile | null {
   const result = raw === undefined ? null : DemoDraftFileSchema.safeParse(raw);
-  const file = result && result.success ? result.data : null;
-  parsed.set(key, file);
-  return file;
+  return result && result.success ? result.data : null;
+}
+
+/** Local demo-asset drafts for this call (ai/demo-assets.ts; {} when off). Read once per lookup, never cached. */
+type AssetDrafts = Record<string, unknown>;
+
+/** A bundled file (parsed once per instance), else a local demo-asset file (parsed fresh), else null. */
+function loadDemoFile(key: string, assets: AssetDrafts): DemoDraftFile | null {
+  if (Object.prototype.hasOwnProperty.call(DEMO_DRAFT_SOURCES, key)) {
+    if (parsed.has(key)) return parsed.get(key) ?? null;
+    const file = parseDemoFile(DEMO_DRAFT_SOURCES[key]);
+    parsed.set(key, file);
+    return file;
+  }
+  return Object.prototype.hasOwnProperty.call(assets, key) ? parseDemoFile(assets[key]) : null;
+}
+
+/** Every draft key, bundled and local, sorted. */
+function allDemoKeys(assets: AssetDrafts): string[] {
+  return Array.from(new Set(Object.keys(DEMO_DRAFT_SOURCES).concat(Object.keys(assets)))).sort();
 }
 
 type DraftBundle = Pick<EpisodeBundle, "source" | "notes">;
@@ -49,7 +69,7 @@ function madeFrom(file: DemoDraftFile, bundle: DraftBundle): boolean {
 
 /** The demo draft file for this record + built-in template, or null. Parsed (and validated) once per instance. */
 export function getDemoDraftFile(bundle: DraftBundle, templateId: string): DemoDraftFile | null {
-  const file = loadDemoFile(demoDraftKey(bundle.source.externalPatientId, templateId));
+  const file = loadDemoFile(demoDraftKey(bundle.source.externalPatientId, templateId), readDemoAssetDrafts());
   return file && madeFrom(file, bundle) ? file : null;
 }
 
@@ -61,11 +81,12 @@ export function getDemoFormDraftFile(bundle: DraftBundle, form: Pick<FormDefinit
   const patientId = bundle.source.externalPatientId;
   const matches = (f: DemoDraftFile | null): f is DemoDraftFile =>
     f !== null && f.formSha256 === form.file.sha256 && madeFrom(f, bundle);
-  const direct = loadDemoFile(demoFormDraftKey(patientId, form));
+  const assets = readDemoAssetDrafts();
+  const direct = loadDemoFile(demoFormDraftKey(patientId, form), assets);
   if (matches(direct)) return direct;
-  for (const key of Object.keys(DEMO_DRAFT_SOURCES).sort()) {
+  for (const key of allDemoKeys(assets)) {
     if (!key.startsWith(`${patientId}__form-`)) continue;
-    const file = loadDemoFile(key);
+    const file = loadDemoFile(key, assets);
     if (matches(file)) return file;
   }
   return null;
@@ -81,9 +102,10 @@ export function demoDraftAvailability(bundle: DraftBundle): { templateIds: strin
   const patientId = bundle.source.externalPatientId;
   const templateIds = new Set<string>();
   const formSha256s = new Set<string>();
-  for (const key of Object.keys(DEMO_DRAFT_SOURCES).sort()) {
+  const assets = readDemoAssetDrafts();
+  for (const key of allDemoKeys(assets)) {
     if (!key.startsWith(`${patientId}__`)) continue;
-    const file = loadDemoFile(key);
+    const file = loadDemoFile(key, assets);
     if (!file || !madeFrom(file, bundle)) continue;
     if (file.formSha256) formSha256s.add(file.formSha256);
     else templateIds.add(file.templateId);

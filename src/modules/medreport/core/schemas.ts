@@ -132,8 +132,11 @@ export const FormMimeTypeSchema = z.enum([
  * docx: Word form, completed in place (Word in → Word out).
  * pdf_acroform: fillable PDF, fields filled and flattened (PDF in → PDF out).
  * pdf_flat: PDF without fields; best-effort text overlay at analysed positions.
+ * questions: a question set with NO file (an insurer's online portal): staff paste the portal's
+ *   questions; the output is the copied answers plus a PDF summary (core/question-set.ts documents the
+ *   placeholder `file` and anchors it uses). Added for portals – additive.
  */
-export const FormKindSchema = z.enum(["docx", "pdf_acroform", "pdf_flat"]);
+export const FormKindSchema = z.enum(["docx", "pdf_acroform", "pdf_flat", "questions"]);
 /** What kind of answer a form question expects. */
 export const AnswerTypeSchema = z.enum([
   "short_text",
@@ -147,9 +150,11 @@ export const AnswerTypeSchema = z.enum([
   "clinician_name",
   "hcpc_number",
   "date_signed",
+  /** A printed table with repeated rows (e.g. an expenses list); answered as rows (S2, additive). */
+  "table",
 ]);
 /** How a structured answer is stored on a form report section (see core/forms.ts answerKindFor). */
-export const FormAnswerKindSchema = z.enum(["text", "yes_no", "checkbox", "choice", "date", "number"]);
+export const FormAnswerKindSchema = z.enum(["text", "yes_no", "checkbox", "choice", "date", "number", "rows"]);
 export const FormFieldConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const FormStatusSchema = z.enum(["proposed", "confirmed"]);
 /**
@@ -202,11 +207,33 @@ export const RegistrationPathSchema = z.enum([
   "clinician.name",
   "clinician.hcpc",
   "clinician.profession",
+  // Added for insurer (PMI) forms – additive. Patient title and contact details come from registration,
+  // clinic contact details from the clinic's settings, and the insurer's identifiers from the referral
+  // (membership / authorisation numbers are copied only onto that insurer's own form: core/form-record-rules.ts).
+  "patient.title",
+  "patient.phone",
+  "patient.email",
+  "clinic.phone",
+  "clinic.email",
+  "referral.insurerName",
+  "referral.membershipNumber",
+  "referral.authorisationNumber",
 ]);
-/** How a computed fact is written into a form answer (default "summary" = the fact's value). */
-export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary"]);
+/**
+ * How a computed fact is written into a form answer (default "summary" = the fact's value).
+ * first_score / latest_score: an outcome measure's first or latest recorded score with its date
+ * ("PSFS 2.7/10 (01/09/2026)") – the "Initial score" and "Current score" columns of insurer forms.
+ */
+export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary", "first_score", "latest_score"]);
 /** Sign-off parts filled from the server-signed receipt at approval (blank on a DRAFT). */
 export const SignoffPartSchema = z.enum(["signature", "name", "hcpc", "date"]);
+/**
+ * Who fills in a part of a referrer's form (multi-party insurer forms carry the policyholder's, the
+ * patient's, the GP's and the clinic's sections on one form): "clinic" = the treating clinician / therapist
+ * / practitioner; "doctor" = a GP, specialist or other medical practitioner; "insurer" = office use.
+ * Detected from the form's own wording (core/parties.ts, forms/pdf-sections.ts); absent = not stated.
+ */
+export const PartySchema = z.enum(["clinic", "patient", "policyholder", "doctor", "insurer", "unknown"]);
 
 /* ------------------------------------------------------------------------------------------------
  * Citable source IDs
@@ -277,6 +304,13 @@ export const InstructingPartySchema = z.object({
 export const ReferralSchema = InstructingPartySchema.extend({
   referralDate: IsoDateSchema.optional(),
   reason: z.string().optional(),
+  /**
+   * Private medical insurance (additive): the patient's insurer as the clinic system records it, and the
+   * insurer's membership / policy and pre-authorisation numbers. Identifiers – never sent to the AI.
+   */
+  insurerName: z.string().optional(),
+  membershipNumber: z.string().optional(),
+  authorisationNumber: z.string().optional(),
 });
 
 /** The referrer (MLC, insurer, solicitor, case manager, employer…) whose own form is being completed. */
@@ -326,6 +360,17 @@ export const AppointmentSchema = z.object({
   reason: z.string().optional(),
   noteId: NoteIdSchema.optional(),
   clinician: ClinicianSchema.optional(),
+  /**
+   * The clinic's charge for this appointment, when the clinic system holds one (additive; insurer claim
+   * forms' expenses tables). `amount` is in pounds (GBP major units, e.g. 55 = £55.00).
+   */
+  charge: z
+    .object({
+      amount: z.number().nonnegative(),
+      currency: z.literal("GBP"),
+      paid: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const OutcomePointSchema = z.object({
@@ -453,11 +498,13 @@ export const ReportTemplateSchema = z.object({
  * Structured answer of a form report section (Revision 2). Set for non-text answers only:
  * yes_no/checkbox → boolean, choice → the exact option text, date → ISO `YYYY-MM-DD`, number → digits as
  * a string; null = not answered. For kind "text" the section's paragraphs ARE the answer (value null).
+ * Kind "rows" (answer type "table"): one object per table row, column key → cell text (S2, additive).
  * See core/forms.ts answerKindFor() / answerToText().
  */
+export const FormAnswerRowSchema = z.record(z.string(), z.string());
 export const FormAnswerSchema = z.object({
   kind: FormAnswerKindSchema,
-  value: z.union([z.string(), z.boolean(), z.null()]),
+  value: z.union([z.string(), z.boolean(), z.null(), z.array(FormAnswerRowSchema)]),
 });
 
 /** On a report that completes a referrer's own form: which form (and which exact file) it fills. */
@@ -682,13 +729,47 @@ export const DocxAnchorSchema = z.object({
   optionGlyphs: z.array(OptionGlyphSchema).optional(),
 });
 
+/**
+ * One option of a question answered by ticking ONE of several separate AcroForm fields (e.g. a "Yes"
+ * box and a "No" box, or one box per therapist type). `onValue`: the box's on-value when the field has
+ * several widgets with different on-values; otherwise the field's own on-value is used.
+ */
+export const PdfOptionFieldSchema = z.object({
+  /** The option as printed next to its box, e.g. "Yes", "Physiotherapist". */
+  option: z.string(),
+  fieldName: z.string().min(1),
+  onValue: z.string().optional(),
+});
+
 export const PdfFieldAnchorSchema = z.object({
   kind: z.literal("pdf_field"),
   /** Fully qualified AcroForm field name. */
   fieldName: z.string().min(1),
   fieldType: PdfFieldTypeSchema,
-  /** radio / dropdown: the export values, in order. */
+  /** radio / dropdown: the export values, in order (tick box with several widgets: their on-values). */
   options: z.array(z.string()).optional(),
+  /**
+   * The label printed next to each export value / on-value, aligned with `options` (e.g. a radio group
+   * whose export values are "Choice1"…"Choice6" printed right to left as "Other", "Dr", "Mr"…). The
+   * printed answer is matched to its export value through these.
+   */
+  optionLabels: z.array(z.string()).optional(),
+  /** One question across several separate tick-box fields: the matching box is ticked, the others cleared. */
+  optionFields: z.array(PdfOptionFieldSchema).optional(),
+});
+
+/**
+ * How a pdf_char_fields answer is written: a date as DDMMYYYY or DDMMYY digits, or the text one
+ * character per box.
+ */
+export const PdfCharFormatSchema = z.enum(["DDMMYYYY", "DDMMYY", "chars"]);
+
+/** A run of one-character AcroForm boxes on one line (e.g. a date written D D M M Y Y Y Y): one character per field. */
+export const PdfCharFieldsAnchorSchema = z.object({
+  kind: z.literal("pdf_char_fields"),
+  /** The boxes, left to right. */
+  fieldNames: z.array(z.string().min(1)).min(1),
+  format: PdfCharFormatSchema,
 });
 
 /** Flat PDF (best effort): draw the answer in this box. Page is 1-based; PDF points, origin bottom-left. */
@@ -700,6 +781,55 @@ export const PdfOverlayAnchorSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
   fontSize: z.number().positive().optional(),
+  /**
+   * A date box with printed separators ("__ / __ / ____"): the writable slots between them, left to
+   * right (2 = MM/YYYY, 3 = DD/MM/YYYY). A date is then written part by part, centred in each slot
+   * (S2, additive).
+   */
+  dateSlots: z.array(z.object({ x: z.number(), width: z.number().positive() })).optional(),
+  /**
+   * A box printed with horizontal rules (lines to write on): its rows, top to bottom – bottom edge `y`
+   * (the rule, or the box's lower edge) and `height`. The answer is written one line per row, sitting
+   * just above the row's rule, so no printed line strikes through it (additive).
+   */
+  ruledRows: z.array(z.object({ y: z.number(), height: z.number().positive() })).optional(),
+});
+
+/* Tables and tick boxes (S2, additive) ------------------------------------------------------------ */
+
+/** One column of a printed table: `key` names it in the answer rows, `header` is the printed heading. */
+export const FormTableColumnSchema = z.object({ key: z.string().min(1), header: z.string() });
+
+/**
+ * Fillable PDF table (repeated rows of fields): `rows[i]` maps each column key to the AcroForm field of
+ * printed row i, top to bottom. Rows beyond the table go to the continuation sheet as a table.
+ */
+export const PdfTableAnchorSchema = z.object({
+  kind: z.literal("pdf_table"),
+  columns: z.array(FormTableColumnSchema).min(1),
+  rows: z.array(z.record(z.string(), z.string())).min(1),
+});
+
+/**
+ * Flat PDF table: one cell per column (x, width) and row. `rowTops` are the top edges of the printed
+ * rows, top to bottom, in PDF points from the bottom of the page; every row is `rowHeight` tall.
+ */
+export const PdfOverlayTableAnchorSchema = z.object({
+  kind: z.literal("pdf_overlay_table"),
+  page: z.number().int().min(1),
+  columns: z.array(FormTableColumnSchema.extend({ x: z.number(), width: z.number().positive() })).min(1),
+  rowTops: z.array(z.number()).min(1),
+  rowHeight: z.number().positive(),
+});
+
+/**
+ * Flat PDF tick boxes: an X is drawn in the chosen option's printed box. (x, y) is the box's
+ * bottom-left corner and `size` its side, in PDF points.
+ */
+export const PdfOverlayTicksAnchorSchema = z.object({
+  kind: z.literal("pdf_overlay_ticks"),
+  page: z.number().int().min(1),
+  options: z.array(z.object({ option: z.string(), x: z.number(), y: z.number(), size: z.number().positive() })).min(1),
 });
 
 /** Where the answer goes in the ORIGINAL document. */
@@ -707,7 +837,14 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
   DocxAnchorSchema,
   PdfFieldAnchorSchema,
   PdfOverlayAnchorSchema,
+  PdfCharFieldsAnchorSchema,
+  PdfTableAnchorSchema,
+  PdfOverlayTableAnchorSchema,
+  PdfOverlayTicksAnchorSchema,
 ]);
+
+/** What an "appointments_table" column holds, per attended appointment (S2, additive). */
+export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "amount", "paid", "clinic"]);
 
 /**
  * Where the answer comes from.
@@ -717,7 +854,11 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
  * - clinician_opinion: only an opinion a clinician actually recorded, attributed and cited; otherwise
  *   left blank and flagged for the clinician;
  * - signoff: filled from the server-signed approval receipt (blank on a DRAFT);
- * - leave_blank: the referrer's own use / not for the clinic (no report section).
+ * - leave_blank: the referrer's own use / not for the clinic (no report section);
+ * - fixed (additive): the same answer for every patient, set once in the form map by staff (e.g. tick
+ *   "Physiotherapist", "United Kingdom"); filled by CODE, never the AI;
+ * - appointments_table: a table answer filled by CODE, one row per attended appointment; `columns`
+ *   maps each table column key to what it holds (S2, additive).
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("registration"), path: RegistrationPathSchema }),
@@ -726,6 +867,8 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("clinician_opinion") }),
   z.object({ kind: z.literal("signoff"), part: SignoffPartSchema }),
   z.object({ kind: z.literal("leave_blank") }),
+  z.object({ kind: z.literal("fixed"), value: z.string() }),
+  z.object({ kind: z.literal("appointments_table"), columns: z.record(z.string(), AppointmentColumnSchema) }),
 ]);
 
 /** One question / answer space on the referrer's form. */
@@ -747,6 +890,11 @@ export const FormFieldSchema = z.object({
   confidence: FormFieldConfidenceSchema,
   /** Analysis or staff note, e.g. "Two answer boxes found; using the larger one." */
   note: z.string().optional(),
+  /**
+   * Who the form says fills in this answer space (absent = not stated). A field for anyone but the
+   * clinic is proposed as leave_blank, and never takes the clinician's sign-off (checkFormDefinition).
+   */
+  completedBy: PartySchema.optional(),
 });
 
 export const FormAnalysisSchema = z.object({
@@ -795,6 +943,14 @@ export const FormDefinitionSchema = z.object({
   builtIn: z.boolean().optional(),
   /** ID of the bundled sample this definition came from (GET /forms/samples/{id}/file serves its bytes). */
   sampleId: z.string().optional(),
+  /** The form asks for BLOCK CAPITALS: answers written onto a flat PDF are printed in capitals (S2, additive). */
+  uppercase: z.boolean().optional(),
+  /**
+   * Demonstration forms only (e.g. a public insurer form used in a private demo, ai/demo-assets.ts):
+   * a footer line printed on every page of the draft previews and final renders of this form
+   * (forms/demo-notice.ts) and shown in the Studio's preview header. Absent on real clinic forms.
+   */
+  demoNotice: z.string().max(300).optional(),
 });
 
 /* Analysis inputs (deterministic parsing → Claude) --------------------------------------------- */
@@ -828,6 +984,38 @@ export const PdfOutlineFieldSchema = z.object({
   options: z.array(z.string()).optional(),
   /** Text printed near the field (label candidates), nearest first. */
   nearbyText: z.string(),
+  /**
+   * Tick boxes and radio buttons: the text printed beside each widget ("" where none), aligned with
+   * `options` (radio: export values; tick box with several widgets: on-values; single tick box: one entry).
+   */
+  optionLabels: z.array(z.string()).optional(),
+  /**
+   * One-character boxes: a run of 6–8 single-line text fields on one line, equal width ≤ 20 pt, touching
+   * – e.g. a date written D D M M Y Y Y Y. Every member carries the same group ID (its leftmost field's
+   * name) and is mapped as ONE question (pdf_char_fields anchor).
+   */
+  charGroup: z.string().optional(),
+  /** The form's own section heading above the field (forms/pdf-sections.ts), carried across pages. */
+  section: z.string().optional(),
+  /** Who that section (or its declaration) says completes it. */
+  completedBy: PartySchema.optional(),
+});
+
+/**
+ * A printed rectangle on a flat PDF (forms/pdf-boxes.ts): an empty answer box, or a small square tick
+ * box. `slots`: the writable parts of a box split by printed separators (the slashes of a
+ * "__ / __ / ____" date box), left to right (S2, additive).
+ */
+export const PdfBoxSchema = z.object({
+  page: z.number().int().min(1),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+  kind: z.enum(["box", "tick"]),
+  slots: z.array(z.object({ x: z.number(), width: z.number() })).optional(),
+  /** Horizontal lines ruled across the box (lines to write on), their y top to bottom (additive). */
+  rules: z.array(z.number()).optional(),
 });
 
 /** A PDF form's outline (forms/pdf-outline.ts): AcroForm fields plus positioned page text. */
@@ -837,9 +1025,23 @@ export const PdfFormOutlineSchema = z.object({
   pageText: z.array(
     z.object({
       page: z.number().int().min(1),
-      items: z.array(z.object({ str: z.string(), x: z.number(), y: z.number() })),
+      items: z.array(
+        z.object({
+          str: z.string(),
+          x: z.number(),
+          y: z.number(),
+          /** Section heading in effect at this text (forms/pdf-sections.ts). */
+          section: z.string().optional(),
+          completedBy: PartySchema.optional(),
+        }),
+      ),
     }),
   ),
+  /**
+   * Printed boxes (S2, additive). Flat PDFs: the empty answer boxes and tick boxes printed on the pages.
+   * Fillable PDFs: only the empty printed boxes no field covers (e.g. a "Signature" box), when any.
+   */
+  boxes: z.array(PdfBoxSchema).optional(),
 });
 
 /* ------------------------------------------------------------------------------------------------

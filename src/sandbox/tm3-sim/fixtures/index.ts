@@ -7,6 +7,9 @@
  *   sim-pat-003  Aisha Rahman    registration only
  *   sim-pat-004  George Whitfield registration only
  *   sim-pat-005  Chloe Bennett   registration only
+ *   sim-pat-006  Rebecca Lane    episode sim-ep-1006  shoulder pain, private medical insurance (insurer on
+ *                                record: Bupa; fake membership/authorisation numbers DEMO-POL-0001 /
+ *                                DEMO-AUTH-0001), GP referral from Kents Hill Medical Practice (fictional)
  *
  * Arrays are in chronological order; the handlers page and filter them, and the module's mapper sorts
  * notes itself, so order here is not load-bearing.
@@ -29,24 +32,44 @@ import {
   MEGAN_HART_OUTCOME_MEASURES,
   MEGAN_HART_PATIENT,
 } from "./megan-hart";
+import {
+  REBECCA_LANE_APPOINTMENTS,
+  REBECCA_LANE_EPISODE,
+  REBECCA_LANE_NOTES,
+  REBECCA_LANE_OUTCOME_MEASURES,
+  REBECCA_LANE_PATIENT,
+} from "./rebecca-lane";
 
 export { SIM_CLINIC, SIM_CLINICIANS, SARAH_REID, TOM_ELLIS } from "./clinic";
 export { MEGAN_HART_PATIENT_ID, MEGAN_HART_EPISODE_ID } from "./megan-hart";
 export { DANIEL_BROOKS_PATIENT_ID, DANIEL_BROOKS_EPISODE_ID } from "./daniel-brooks";
+export {
+  REBECCA_LANE_PATIENT_ID,
+  REBECCA_LANE_EPISODE_ID,
+  REBECCA_LANE_MEMBERSHIP_NUMBER,
+  REBECCA_LANE_AUTHORISATION_NUMBER,
+} from "./rebecca-lane";
 
-export const SIM_PATIENTS: SimPatient[] = [MEGAN_HART_PATIENT, DANIEL_BROOKS_PATIENT, ...FILLER_PATIENTS];
-export const SIM_EPISODES: SimEpisode[] = [MEGAN_HART_EPISODE, DANIEL_BROOKS_EPISODE];
-export const SIM_NOTES: SimNote[] = [...MEGAN_HART_NOTES, ...DANIEL_BROOKS_NOTES];
-export const SIM_APPOINTMENTS: SimAppointment[] = [...MEGAN_HART_APPOINTMENTS, ...DANIEL_BROOKS_APPOINTMENTS];
+// New patients go AFTER the fillers so existing IDs keep their list positions (paging tests rely on them).
+export const SIM_PATIENTS: SimPatient[] = [MEGAN_HART_PATIENT, DANIEL_BROOKS_PATIENT, ...FILLER_PATIENTS, REBECCA_LANE_PATIENT];
+export const SIM_EPISODES: SimEpisode[] = [MEGAN_HART_EPISODE, DANIEL_BROOKS_EPISODE, REBECCA_LANE_EPISODE];
+export const SIM_NOTES: SimNote[] = [...MEGAN_HART_NOTES, ...DANIEL_BROOKS_NOTES, ...REBECCA_LANE_NOTES];
+export const SIM_APPOINTMENTS: SimAppointment[] = [
+  ...MEGAN_HART_APPOINTMENTS,
+  ...DANIEL_BROOKS_APPOINTMENTS,
+  ...REBECCA_LANE_APPOINTMENTS,
+];
 export const SIM_OUTCOME_MEASURES: SimOutcomeMeasure[] = [
   ...MEGAN_HART_OUTCOME_MEASURES,
   ...DANIEL_BROOKS_OUTCOME_MEASURES,
+  ...REBECCA_LANE_OUTCOME_MEASURES,
 ];
 
 /** Demo case slugs → wire IDs (used by scripts/medreport/dev-bundles.ts and the sandbox UI). */
 export const SIM_DEMO_CASES = {
   "megan-hart": { patientId: "sim-pat-001", episodeId: "sim-ep-1001" },
   "daniel-brooks": { patientId: "sim-pat-002", episodeId: "sim-ep-1002" },
+  "rebecca-lane": { patientId: "sim-pat-006", episodeId: "sim-ep-1006" },
 } as const;
 export type SimDemoCaseSlug = keyof typeof SIM_DEMO_CASES;
 

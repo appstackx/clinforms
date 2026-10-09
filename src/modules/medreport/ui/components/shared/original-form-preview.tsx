@@ -19,6 +19,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileWarning, MousePointerClick } from "lucide-react";
+import { formAnchorPdfFieldNames } from "../../../core/forms";
 import type { FormAnchor, FormMimeType, PdfFieldType } from "../../../core/types";
 import { cn } from "../../primitives";
 import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
@@ -427,12 +428,24 @@ function PdfPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewPr
     const out: Array<{ page: number; left: number; top: number; width: number; height: number }> = [];
     if (!anchor) return out;
     for (const view of pages) {
-      if (anchor.kind === "pdf_field") {
-        for (const w of view.widgets) if (pdfFieldMatches(w.name, anchor.fieldName)) out.push({ page: view.number, ...w });
+      if (anchor.kind === "pdf_field" || anchor.kind === "pdf_char_fields" || anchor.kind === "pdf_table") {
+        // Every box the answer uses (each tick box of an option group, each character box, each table cell).
+        const names = formAnchorPdfFieldNames(anchor);
+        for (const w of view.widgets) if (names.some((n) => pdfFieldMatches(w.name, n))) out.push({ page: view.number, ...w });
       } else if (anchor.kind === "pdf_overlay" && anchor.page === view.number) {
         const [x1, y1] = view.toView(anchor.x, anchor.y);
         const [x2, y2] = view.toView(anchor.x + anchor.width, anchor.y + anchor.height);
         out.push({ page: view.number, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+      } else if ((anchor.kind === "pdf_overlay_table" || anchor.kind === "pdf_overlay_ticks") && anchor.page === view.number) {
+        const rects =
+          anchor.kind === "pdf_overlay_ticks"
+            ? anchor.options.map((o) => ({ x: o.x, y: o.y, width: o.size, height: o.size }))
+            : anchor.rowTops.flatMap((t) => anchor.columns.map((c) => ({ x: c.x, y: t - anchor.rowHeight, width: c.width, height: anchor.rowHeight })));
+        for (const r of rects) {
+          const [x1, y1] = view.toView(r.x, r.y);
+          const [x2, y2] = view.toView(r.x + r.width, r.y + r.height);
+          out.push({ page: view.number, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+        }
       }
     }
     return out;

@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:medreport": "node --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/modules/medreport/**/*.test.ts\" \"scripts/medreport/**/*.test.ts\"",
+    "test:medreport": "node --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/modules/medreport/**/*.test.ts\" \"scripts/medreport/**/*.test.ts\" \"src/sandbox/**/*.test.ts\"",
     "test:db": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"db/**/*.test.ts\" \"src/server/**/*.test.ts\" \"scripts/db/**/*.test.ts\"",
     "test:gateway": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"workers/data-gateway/test/**/*.test.ts\"",
     "test:site": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/components/**/*.test.ts\" \"src/server/site/**/*.test.ts\" \"scripts/medreport/neutral-wording-files.test.ts\"",
@@ -28,7 +28,9 @@
     "admin:reset-two-factor": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/reset-two-factor.ts",
     "test:auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/server/auth/**/*.test.ts\" \"src/server/email/**/*.test.ts\" \"scripts/admin/**/*.test.ts\"",
     "admin:provision-auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/provision-auth-secrets.ts",
-    "admin:with-env": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/with-env.ts"
+    "admin:with-env": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/with-env.ts",
+    "demo:check": "node --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/check-demo-assets.ts",
+    "demo:red": "node scripts/medreport/demo-red.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

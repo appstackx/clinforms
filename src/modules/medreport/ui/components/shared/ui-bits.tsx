@@ -28,6 +28,8 @@ export const FILL_SOURCE_SHORT: Record<FillSourceKind, string> = {
   clinician_opinion: "Clinician opinion",
   signoff: "Sign-off",
   leave_blank: "Leave blank",
+  fixed: "Fixed answer",
+  appointments_table: "From appointments",
 };
 
 const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
@@ -37,6 +39,8 @@ const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
   clinician_opinion: "border-violet-200 bg-violet-50 text-violet-800",
   signoff: "border-slate-300 bg-slate-100 text-slate-700",
   leave_blank: "border-dashed border-slate-300 bg-white text-slate-500",
+  fixed: "border-cyan-200 bg-cyan-50 text-cyan-800",
+  appointments_table: "border-sky-200 bg-sky-50 text-sky-800",
 };
 
 export function FillSourceChip({ kind, className }: { kind: FillSourceKind; className?: string }) {
@@ -62,6 +66,8 @@ export function fillSourceCounts(form: Pick<FormDefinition, "fields">): Record<F
     clinician_opinion: 0,
     signoff: 0,
     leave_blank: 0,
+    fixed: 0,
+    appointments_table: 0,
   };
   for (const f of form.fields) counts[f.fillSource.kind] += 1;
   return counts;
@@ -82,7 +88,7 @@ export interface QuestionBreakdown {
 
 export function questionBreakdown(form: Pick<FormDefinition, "fields">): QuestionBreakdown {
   const c = fillSourceCounts(form);
-  const fromRecords = c.registration + c.computed_fact;
+  const fromRecords = c.registration + c.computed_fact + c.fixed + c.appointments_table;
   const fromNotes = c.notes_narrative + c.clinician_opinion;
   return { toAnswer: fromRecords + fromNotes, fromRecords, fromNotes, onApproval: c.signoff, referrerUse: c.leave_blank };
 }
@@ -102,11 +108,12 @@ export function breakdownText(b: QuestionBreakdown): string {
 const PILL = "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium";
 
 export function FormKindBadge({ kind, className }: { kind: FormKind; className?: string }) {
-  const short: Record<FormKind, string> = { docx: "Word", pdf_acroform: "Fillable PDF", pdf_flat: "Flat PDF" };
+  const short: Record<FormKind, string> = { docx: "Word", pdf_acroform: "Fillable PDF", pdf_flat: "Flat PDF", questions: "Portal questions" };
   const tone: Record<FormKind, string> = {
     docx: "border-blue-200 bg-blue-50 text-blue-800",
     pdf_acroform: "border-rose-200 bg-rose-50 text-rose-800",
     pdf_flat: "border-orange-200 bg-orange-50 text-orange-800",
+    questions: "border-violet-200 bg-violet-50 text-violet-800",
   };
   return (
     <span className={cn(PILL, tone[kind], className)} title={FORM_KIND_LABELS[kind]}>

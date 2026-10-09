@@ -6,7 +6,7 @@
  *
  * Owner: sandbox/fixtures agent.
  */
-import type { SimAppointment, SimAppointmentStatus, SimClinician, SimNote, SimNoteType } from "../wire-types";
+import type { SimAppointment, SimAppointmentStatus, SimCharge, SimClinician, SimNote, SimNoteType } from "../wire-types";
 
 export interface NoteSpec {
   type: SimNoteType;
@@ -31,6 +31,8 @@ export interface VisitSpec {
   reason?: string;
   /** Only attended visits have a note. */
   note?: NoteSpec;
+  /** The clinic's charge, in pounds (omit when none was raised – e.g. cancelled or booked visits). */
+  charge?: { amount: number; paid: boolean };
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -46,6 +48,7 @@ export function buildVisits(
     const nn = pad2(i + 1);
     const appointmentId = `sim-appt-${episodeKey}-${nn}`;
     const noteId = v.note ? `sim-note-${episodeKey}-${nn}` : null;
+    const charge: SimCharge | undefined = v.charge ? { amount: v.charge.amount, currency: "GBP", paid: v.charge.paid } : undefined;
     appointments.push({
       id: appointmentId,
       episode_id: episodeId,
@@ -56,6 +59,8 @@ export function buildVisits(
       status_reason: v.reason ?? null,
       clinician: v.clinician,
       note_id: noteId,
+      // Only visits with a charge carry the key, so earlier cases' wire data is unchanged.
+      ...(charge ? { charge } : {}),
       _simulated: true,
     });
     if (v.note && noteId) {

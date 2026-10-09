@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeSourceIds, expandNoteShorthand, isOwnVoiceCandidate, normaliseJobTitles, rewriteInFirstPerson } from "./voice";
+import { collapseRepeatedBrackets, describeSourceIds, expandNoteShorthand, fictionalNames, isOwnVoiceCandidate, keepFictionalLabels, normaliseJobTitles, rewriteInFirstPerson } from "./voice";
 
 test("the signer's recorded opinion becomes their own voice", () => {
   assert.equal(
@@ -102,4 +102,34 @@ test("record IDs in drafted text are replaced by the note's date or the fact's n
   assert.equal(describeSourceIds("See the N-010 note, the FACT-attendance figures and REG.", names), "See the note of 22/09/2026, the attendance figures and the registration record.");
   // References, unknown IDs and text without IDs are left as written.
   for (const keep of ["Ref HP/RTA/2291, AF-OH-0457, KCM-RTW-01.", "N-099 is not in this record.", "No IDs here."]) assert.equal(describeSourceIds(keep, names), keep);
+});
+
+test("a bracket that only repeats the words before it is dropped (\"8 wks (8 weeks)\" once written out)", () => {
+  assert.equal(expandNoteShorthand("4 further sessions, fortnightly over 8 wks (8 weeks)."), "4 further sessions, fortnightly over 8 weeks.");
+  assert.equal(expandNoteShorthand("over 8 weeks (8 wks)"), "over 8 weeks");
+  assert.equal(collapseRepeatedBrackets("consent to share with the insurer (the insurer)"), "consent to share with the insurer");
+  assert.equal(collapseRepeatedBrackets("Numeric Pain Rating Scale (numeric  pain rating scale) 4/10"), "Numeric Pain Rating Scale 4/10");
+  // Only a whole-word repeat.
+  assert.equal(collapseRepeatedBrackets("over 18 weeks (8 weeks)"), "over 18 weeks (8 weeks)");
+  assert.equal(collapseRepeatedBrackets("Kents Hill Medical Practice (fictional)"), "Kents Hill Medical Practice (fictional)");
+  assert.equal(collapseRepeatedBrackets("pain (7/10), then 4/10 (01/10/2026)"), "pain (7/10), then 4/10 (01/10/2026)");
+});
+
+test("names the record labels \"(fictional)\" keep the label in drafted wording", () => {
+  const names = fictionalNames([
+    "GP referral (Dr A Forsyth, Kents Hill Medical Practice (fictional), letter dated 26/08/2026).",
+    "Harrow & Pike Solicitors (fictional)",
+    "Ashby Freight Ltd (fictional)",
+    "Other (fictional)",
+  ]);
+  assert.deepEqual(names, ["Kents Hill Medical Practice", "Harrow & Pike Solicitors", "Ashby Freight Ltd"], "two or more capitalised words, longest first");
+  assert.equal(
+    keepFictionalLabels("Dr A Forsyth, GP, Kents Hill Medical Practice, referred Mrs Lane; his employer, Ashby Freight Ltd. Harrow & Pike Solicitors instructed.", names),
+    "Dr A Forsyth, GP, Kents Hill Medical Practice (fictional), referred Mrs Lane; his employer, Ashby Freight Ltd (fictional). Harrow & Pike Solicitors (fictional) instructed.",
+  );
+  // Already labelled, a possessive, or part of a longer word: unchanged.
+  for (const text of ["Kents Hill Medical Practice (fictional) wrote.", "Kents Hill Medical Practice's letter.", "Ashby Freight Ltds"]) {
+    assert.equal(keepFictionalLabels(text, names), text);
+  }
+  assert.deepEqual(fictionalNames(["Kents Hill Medical Practice"]), [], "a real record holds none: nothing changes");
 });

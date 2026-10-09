@@ -10,15 +10,19 @@ import "server-only";
  * report.form.fileSha256; 422 when report.form.formId ≠ form.id.
  * Body cap MAX_FORM_REQUEST_BYTES. Sign-off fields are always blank here (no receipt).
  * A proposed (unconfirmed) map may be previewed – that is how staff test a mapping.
+ * Portal question sets (form.kind "questions") have no file to fill: the response is their DRAFT
+ * summary PDF (docgen/question-summary.ts), and `fileBase64` is ignored.
  *
  * Owner: forms-engine agent.
  */
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
 import { buildFormAnswers } from "../../core/forms";
+import { isQuestionSet } from "../../core/question-set";
+import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { assertFormFileMatches, decodeFormFile } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
-import { FormFillPreviewRequestSchema, HEADERS } from "../contract";
+import { CONTENT_TYPES, FormFillPreviewRequestSchema, HEADERS } from "../contract";
 import { fileResponse, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
 
@@ -36,6 +40,16 @@ export const handleFormsFillPreview: MedreportHandler = async (req) => {
   if (!resolved.ok) return resolved.response;
 
   const started = Date.now();
+  if (isQuestionSet(form)) {
+    const out = await renderQuestionSummaryPdf(report, form, resolved.template);
+    logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: out.bytes.byteLength, warnings: 0, ms: Date.now() - started });
+    return fileResponse(out.bytes, {
+      contentType: CONTENT_TYPES.pdf,
+      fileName: `${out.baseName}.pdf`,
+      inline: true,
+      headers: { [HEADERS.renderKind]: "draft", [HEADERS.formKind]: form.kind, ...fillWarningsHeader([]) },
+    });
+  }
   const file = decodeFormFile(fileBase64);
   assertFormFileMatches(file, form.file.sha256);
 

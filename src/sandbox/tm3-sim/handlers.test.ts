@@ -139,20 +139,20 @@ describe("auth", () => {
 });
 
 describe("patients", () => {
-  it("lists all five patients with the page shape", async () => {
+  it("lists all six patients with the page shape", async () => {
     const res = await simListPatients(get("/patients"), ctx());
     assert.equal(res.status, 200);
     const json = await body(res);
     assertSimulated(res, json);
-    assert.equal(json.total, 5);
+    assert.equal(json.total, 6);
     assert.equal(json.page, 1);
     assert.equal(json.page_size, 50);
     assert.equal(json.next_page, null);
     const data = json.data as Array<Record<string, unknown>>;
-    assert.equal(data.length, 5);
+    assert.equal(data.length, 6);
     assert.deepEqual(
       data.map((p) => p.id),
-      ["sim-pat-001", "sim-pat-002", "sim-pat-003", "sim-pat-004", "sim-pat-005"],
+      ["sim-pat-001", "sim-pat-002", "sim-pat-003", "sim-pat-004", "sim-pat-005", "sim-pat-006"],
     );
     data.forEach((p) => {
       assert.equal(p._simulated, true);
@@ -172,6 +172,8 @@ describe("patients", () => {
     assert.deepEqual(await ids("sim-pat-004"), ["sim-pat-004"]);
     assert.deepEqual(await ids("22/11/1991"), ["sim-pat-001"]);
     assert.deepEqual(await ids("mk3 9zz"), ["sim-pat-001"]);
+    assert.deepEqual(await ids("rebecca lane"), ["sim-pat-006"]);
+    assert.deepEqual(await ids("23/07/1981"), ["sim-pat-006"]);
     assert.deepEqual(await ids("nobody-here"), []);
   });
 
@@ -180,10 +182,10 @@ describe("patients", () => {
     const j1 = await body(first);
     assert.equal(j1.page, 1);
     assert.equal(j1.page_size, 2);
-    assert.equal(j1.total, 5);
+    assert.equal(j1.total, 6);
     assert.equal(j1.next_page, 2);
     assert.equal((j1.data as unknown[]).length, 2);
-    assert.equal(first.headers.get("x-total-count"), "5");
+    assert.equal(first.headers.get("x-total-count"), "6");
     const link = first.headers.get("link") ?? "";
     assert.match(link, /rel="next"/);
     assert.match(link, /page=2/);
@@ -191,7 +193,7 @@ describe("patients", () => {
 
     const last = await simListPatients(get("/patients?page=3&page_size=2"), ctx());
     const j3 = await body(last);
-    assert.equal((j3.data as Array<{ id: string }>)[0].id, "sim-pat-005");
+    assert.deepEqual((j3.data as Array<{ id: string }>).map((p) => p.id), ["sim-pat-005", "sim-pat-006"]);
     assert.equal(j3.next_page, null);
     assert.equal(last.headers.get("link"), null);
 
@@ -303,6 +305,38 @@ describe("episodes and clinical data", () => {
     assert.deepEqual(
       (daniel.data as Array<{ instrument: string; scores: Array<{ value: number }> }>)[0].scores.map((s) => s.value),
       [48, 30, 18],
+    );
+  });
+
+  it("serves the private medical insurance case: insurer identifiers, charges, CNC and BOOKED", async () => {
+    const eps = await body(await simListEpisodes(get("/patients/sim-pat-006/episodes"), ctx("sim-pat-006")));
+    const ep = (eps.data as Array<{ id: string; status: string; referral: Record<string, unknown> }>)[0];
+    assert.equal(ep.id, "sim-ep-1006");
+    assert.equal(ep.status, "open");
+    assert.equal(ep.referral.source_type, "insurer");
+    assert.equal(ep.referral.insurer_name, "Bupa");
+    assert.equal(ep.referral.membership_number, "DEMO-POL-0001");
+    assert.equal(ep.referral.authorisation_number, "DEMO-AUTH-0001");
+
+    const appts = await body(await simListAppointments(get("/episodes/sim-ep-1006/appointments"), ctx("sim-ep-1006")));
+    const rows = appts.data as Array<{ status: string; charge?: { amount: number; currency: string; paid: boolean } | null }>;
+    assert.deepEqual(rows.map((a) => a.status), ["ATT", "ATT", "ATT", "CNC", "ATT", "ATT", "BOOKED"]);
+    assert.deepEqual(
+      rows.map((a) => (a.charge ? [a.charge.amount, a.charge.currency, a.charge.paid] : null)),
+      [[70, "GBP", true], [55, "GBP", true], [55, "GBP", true], null, [55, "GBP", true], [55, "GBP", false], null],
+    );
+    // Earlier cases carry no charge key at all (their wire data is unchanged).
+    const megan = await body(await simListAppointments(get("/episodes/sim-ep-1001/appointments"), ctx("sim-ep-1001")));
+    assert.ok((megan.data as Array<Record<string, unknown>>).every((a) => !("charge" in a)));
+
+    const oms = await body(await simListOutcomeMeasures(get("/episodes/sim-ep-1006/outcome-measures"), ctx("sim-ep-1006")));
+    assert.deepEqual(
+      (oms.data as Array<{ instrument: string; scores: Array<{ value: number }> }>).map((s) => [s.instrument, s.scores.map((p) => p.value)]),
+      [
+        ["NPRS", [7, 5, 4]],
+        ["QuickDASH", [52.3, 38.6, 29.5]],
+        ["PSFS", [2.7, 4.3, 5.3]],
+      ],
     );
   });
 

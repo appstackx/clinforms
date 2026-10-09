@@ -44,6 +44,7 @@ export default function SandboxPatientsPage() {
 
   const megan = SIM_DEMO_CASES["megan-hart"].patientId;
   const daniel = SIM_DEMO_CASES["daniel-brooks"].patientId;
+  const rebecca = SIM_DEMO_CASES["rebecca-lane"].patientId;
 
   return (
     <div className="space-y-5">
@@ -58,15 +59,24 @@ export default function SandboxPatientsPage() {
           >
             Megan Hart
           </Link>{" "}
-          (road traffic accident, solicitor referral) and{" "}
+          (road traffic accident, solicitor referral),{" "}
           <Link
             href={`/pms-sandbox/patients/${daniel}`}
             className="font-medium text-blue-800 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
           >
             Daniel Brooks
           </Link>{" "}
-          (lifting injury at work, employer referral). The other patients are registered only. Every name,
-          organisation and record here is fictional.
+          (lifting injury at work, employer referral) and{" "}
+          <Link
+            href={`/pms-sandbox/patients/${rebecca}`}
+            className="font-medium text-blue-800 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          >
+            Rebecca Lane
+          </Link>{" "}
+          (shoulder pain, private medical insurance). The other patients are registered only. Every person and
+          record here is fictional, as is every organisation except the insurer on Rebecca Lane&apos;s record (Bupa),
+          named only so its public form can be shown – not affiliated with or endorsed by Bupa; her membership and
+          authorisation numbers are fake.
         </p>
       </aside>
     </div>

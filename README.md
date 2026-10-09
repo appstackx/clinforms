@@ -163,6 +163,8 @@ copy it to `.env.local` (gitignored – never commit real values).
 | `TM3_SIM_TOKEN` | Bearer token for the simulated TM3 API |
 | `TM3_SIM_BASE_URL` | Optional base URL of the simulated TM3 API (default: this server's own origin) |
 | `MEDREPORT_SOFFICE_PATH` | Optional path to LibreOffice for Word → PDF |
+| `MEDREPORT_DEMO_ASSETS_DIR` | Dev/demo only: folder of local demonstration forms (e.g. `demo-assets/insurers`, gitignored) with prepared maps and answers. Off in production |
+| `MEDREPORT_DEMO_ASSETS_ALLOW_PROD` | `1` lets a LOCAL production build (`next start`, as `npm run demo:red` runs) use that folder. Never on a deployment |
 | `CLINFORMS_DB`, `CLINFORMS_*`, `DATABASE_*` | Database and encryption at rest – see [`docs/database.md`](docs/database.md). Locally the default is a SQLite file (`.data/clinforms.db`); the "Request access" form stores requests there |
 | `NEXT_PUBLIC_POSTHOG_KEY` | Product analytics project key (EU cloud). Unset = no analytics and no cookie banner. Analytics only ever starts after a visitor accepts it in the banner |
 | `NEXT_PUBLIC_POSTHOG_HOST` | Optional analytics API host. Default `/ingest` (proxied to the EU cloud by `next.config.mjs`, so the browser only talks to our domain) |
@@ -180,13 +182,16 @@ variables".
 ```bash
 npx tsc --noEmit          # or: npm run typecheck
 npm run lint              # includes the import-boundary rules
-npm run test:medreport    # node:test over src/modules/medreport/**/*.test.ts and scripts/medreport/**/*.test.ts
+npm run test:medreport    # node:test over src/modules/medreport, scripts/medreport and src/sandbox *.test.ts
 npm run test:site         # public site: consent cookie, analytics allow-lists, request access (SQLite), wording file scan
+npm run test:db           # data layer: migration parity, crypto, repositories on SQLite and PGlite (docs/database.md)
+npm run test:auth         # sign-in, invitations, two-step, roles, admin scripts (docs/auth.md)
+npm run test:gateway      # the D1 gateway Worker and the repositories through it (docs/database.md)
 npm run build
 ```
 
 `test:medreport` loads `scripts/medreport/test-setup.mjs` (maps `server-only` to an empty module) and
-runs the TypeScript tests with `tsx` – 243 tests, no network, no API key needed.
+runs the TypeScript tests with `tsx` – 437 tests (RED wave 1 and 2 and their fixes, 09/10/2026; 3 skipped without LibreOffice), no network, no API key needed.
 
 Other scripts (run with `node --env-file=.env.local --import ./scripts/medreport/test-setup.mjs --import tsx <script>`
 unless noted):
@@ -198,7 +203,9 @@ unless noted):
 | `npm run medreport:eslint-boundary` | Regenerate the ESLint import boundary in `.eslintrc.json` |
 | `scripts/medreport/record-form-analyses.ts` | Record live analyses of the sample forms (needs the API key) |
 | `scripts/medreport/record-demo-drafts.ts` | Record the demo drafts (needs the API key) |
-| `scripts/medreport/stamp-demo-drafts.ts` | Re-stamp demo drafts after a fixture change |
+| `scripts/medreport/stamp-demo-drafts.ts` | Re-stamp demo drafts after a fixture change (`--dir=demo-assets/insurers` for the local demonstration answers) |
+| `npm run demo:check` | Check the local demonstration forms, maps and answers (`MEDREPORT_DEMO_ASSETS_DIR`, else `demo-assets/insurers`). The default folder absent: one line, exit 0; a named folder absent, or forms with no prepared map: exit 1 |
+| `npm run demo:red` | The RED insurer-form demo on this machine: `next build` + `next start` on port 3000 with the demonstration assets and demo mode (`.env.local` overrides). Refuses to start without the folder or without a prepared map (`-- --allow-no-maps` to start anyway) |
 | `scripts/medreport/build-notes-pdf.ts`, `build-prewritten-drafts.ts`, `render-form-samples.ts` | Sample builders |
 | `scripts/medreport/video/record-demo.mjs` | Records the walkthrough video against a running server (Playwright from `NODE_PATH=$(npm root -g)`, ffmpeg); see its README |
 

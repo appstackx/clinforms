@@ -11,7 +11,6 @@ import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dat
 import {
   answerKindFor,
   answerableFields,
-  asksForReferralPartyReference,
   formRefOf,
   formToTemplate,
   isFormReport,
@@ -22,6 +21,8 @@ import {
   toFormAnswer,
   type ResolvedFormValue,
 } from "./forms";
+import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
+import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS } from "./labels";
@@ -278,23 +279,42 @@ export function createFormReport(input: CreateFormReportInput): Report {
     const structured = answerKindFor(field.answerType) !== "text";
     const src = field.fillSource;
 
-    if (src.kind === "registration" || src.kind === "computed_fact") {
+    if (src.kind === "appointments_table") {
+      // A table filled by code from the attended appointments (core/form-tables.ts).
+      const table = buildAppointmentsTableSection(field, src.columns, ctx, base);
+      sections.push(table.section);
+      if (table.gap) gaps.push(table.gap);
+      continue;
+    }
+
+    if (src.kind === "registration" || src.kind === "computed_fact" || src.kind === "fixed") {
       const resolved: ResolvedFormValue | null =
         src.kind === "registration"
           ? resolveRegistrationValue(src.path, ctx, field.answerType)
-          : resolveComputedFactValue(src.factId, src.format, ctx, field.answerType);
+          : src.kind === "computed_fact"
+            ? resolveComputedFactValue(src.factId, src.format, ctx, field.answerType)
+            : resolveFixedValue(field, src.value);
       const answer = structured ? toFormAnswer(field, resolved) : undefined;
       const usable = resolved !== null && (!answer || answer.value !== null);
 
       // A referral's reference or name belongs to the organisation that referred. On a form from a
       // different organisation it is copied in only when the question asks for the referral party's
-      // reference; otherwise it is left blank for staff to enter the issuer's own number (a wrong claim
-      // number on an insurer's form is worse than a blank one).
+      // reference (by name or "instructing …" when both are the same kind of organisation – see
+      // core/form-record-rules.ts); otherwise it is left blank for staff to enter the issuer's own number
+      // (a wrong claim number on an insurer's form is worse than a blank one).
       const referralValue = src.kind === "registration" && (src.path === "referral.reference" || src.path === "referral.referrerName");
       const otherOrganisation = referralValue && !referrerNamesMatch(form.referrer.name, input.instructingParty.name);
-      if (otherOrganisation && !asksForReferralPartyReference(field, input.instructingParty, form.referrer.name)) {
+      if (otherOrganisation && !mayCopyReferralPartyReference(field, input.instructingParty, form.referrer)) {
         sections.push({ ...base, status: field.required ? "needs_input" : "complete", paragraphs: [], ...(answer && { answer: { kind: answer.kind, value: null } }) });
         if (field.required) gaps.push(otherReferrerGap(field, resolved?.text ?? null, input.instructingParty.name, form.referrer.name));
+        continue;
+      }
+      // An insurer's membership or authorisation number goes only onto that insurer's own form.
+      const withheld =
+        src.kind === "registration" ? withheldInsurerIdentifier({ form, field, path: src.path, bundle }) : null;
+      if (withheld) {
+        sections.push({ ...base, status: field.required ? "needs_input" : "complete", paragraphs: [], ...(answer && { answer: { kind: answer.kind, value: null } }) });
+        if (field.required) gaps.push(withheld.gap);
         continue;
       }
       if (usable && resolved) {
@@ -306,7 +326,11 @@ export function createFormReport(input: CreateFormReportInput): Report {
         });
       } else {
         sections.push({ ...base, status: "needs_input", paragraphs: [], ...(answer && { answer }) });
-        gaps.push(missingValueGap(field, src.kind === "registration" ? src.path : src.factId, resolved?.text));
+        gaps.push(
+          src.kind === "fixed"
+            ? fixedValueGap(field, src.value)
+            : missingValueGap(field, src.kind === "registration" ? src.path : src.factId, resolved?.text),
+        );
       }
       continue;
     }
