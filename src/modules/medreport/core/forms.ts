@@ -25,6 +25,7 @@
  * Owner: ai agent (contract-stage baseline; exported signatures are contract).
  */
 import { DEMO_CLINIC } from "../config.public";
+import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel } from "./parties";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
@@ -512,9 +513,35 @@ export function resolveComputedFactValue(
     const n = ctx.bundle.appointments.filter((a) => a.status === status).length;
     return { text: String(n), value: String(n), sourceIds: hasFact(ctx.computedFacts, "FACT-attendance") ? ["FACT-attendance"] : ids };
   }
+  if (format === "first_score" || format === "latest_score") {
+    const instrument = /^FACT-outcomes-(.+)$/.exec(factId)?.[1];
+    const points = ctx.bundle.outcomeMeasures
+      .filter((m) => m.instrument === instrument)
+      .flatMap((m) => m.points.map((p) => ({ ...p, unit: m.unit })))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const point = format === "first_score" ? points[0] : points[points.length - 1];
+    if (!point || !instrument) return null;
+    return textValue(`${instrument} ${formatScore(point.value, point.unit)} (${formatUkDate(point.date)})`, ids);
+  }
   if (!fact) return null;
-  const text = answerType === "long_text" && fact.detail ? `${fact.value}. ${fact.detail}` : fact.value;
+  const text = answerType === "long_text" && fact.detail ? `${formFactText(fact.value)}. ${formFactText(fact.detail)}` : formFactText(fact.value);
   return textValue(text, ids);
+}
+
+/**
+ * A computed fact's value or detail as text for a referrer's form. The facts are written for citing
+ * (FACT-*, N-###, A-### IDs, status codes, arrows); a form gets plain words: no internal note or
+ * appointment IDs, no ATT/DNA/LCN/CNC codes after their words, and "→" read as "then".
+ */
+export function formFactText(text: string): string {
+  return text
+    .replace(/\s*\((?:[A-Z]{1,4}-\d{2,}(?:,\s*)?)+\)/g, "") // " (N-001)", " (N-001, N-003)"
+    .replace(/\((?:[A-Z]{1,4}-\d{2,}),\s*/g, "(") // "(A-004, reason recorded: …)" → "(reason recorded: …)"
+    .replace(/\s*\((?:ATT|DNA|LCN|CNC)\)/g, "") // "Attended (ATT): 5" → "Attended: 5"
+    .replace(/\((?:CNC),\s*/g, "(") // "(CNC, not counted above)" → "(not counted above)"
+    .replace(/\s*→\s*/g, ", then ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /**

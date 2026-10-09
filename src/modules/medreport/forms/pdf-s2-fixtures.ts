@@ -79,3 +79,27 @@ export async function flatBoxesPdf(): Promise<Uint8Array> {
   box(500, 300, 12, 12);
   return doc.save();
 }
+
+/** Rules of the ruled-box fixture: a history box with five writing lines, a three-line address box. */
+export const RULED = {
+  history: { x: 74, y: 420, width: 510, height: 90, pitch: 18 },
+  address: { x: 210, y: 300, width: 372, height: 51, pitch: 17 },
+} as const;
+
+/**
+ * A flat form whose answer boxes are ruled with writing lines (as Aviva GEN030 question 5 and CM016's
+ * GP address box): a rectangle with full-width horizontal strokes inside it.
+ */
+export async function ruledBoxesPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  page.drawText("Please complete in BLOCK CAPITALS.", { x: 40, y: 790, size: 9, font });
+  page.drawText("5. Please give a full history of the condition", { x: 74, y: 520, size: 9, font });
+  for (const [label, b] of [["", RULED.history], ["Name and full address of GP's surgery", RULED.address]] as const) {
+    page.drawRectangle({ x: b.x, y: b.y, width: b.width, height: b.height, borderColor: rgb(0, 0, 0), borderWidth: 0.8, color: rgb(1, 1, 1) });
+    for (let y = b.y + b.height - b.pitch; y > b.y + 3; y -= b.pitch) page.drawLine({ start: { x: b.x, y }, end: { x: b.x + b.width, y }, thickness: 0.5 });
+    if (label) page.drawText(label, { x: 40, y: b.y + b.height - 12, size: 8, font, maxWidth: 160 });
+  }
+  return doc.save();
+}

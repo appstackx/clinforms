@@ -8,7 +8,8 @@ import "server-only";
  *   left in the label column, else just above it) and one per row of tick boxes (each box labelled by
  *   the word printed beside it: "Yes", "No", …).
  * - snapOverlay(): post-validation, whatever proposed the map – an overlay that falls on a printed box
- *   is written inside that box (inset 2 pt), a date box with printed slashes gets its date slots, and a
+ *   is written inside that box (inset 2 pt), a date box with printed slashes gets its date slots, a box
+ *   ruled with writing lines gets its rows (`ruledRows`: one line of text per printed line), and a
  *   yes/no or choice overlay on tick boxes becomes a `pdf_overlay_ticks` anchor (an X in the chosen box).
  * - asksForBlockCapitals(): the form asks for BLOCK CAPITALS (FormDefinition.uppercase).
  * - renderPdfBoxes(): compact lines for the live analysis outline.
@@ -217,6 +218,18 @@ export interface SnappedOverlay {
 }
 
 /**
+ * The writing rows of a box with printed horizontal rules, top to bottom: between the box's top edge,
+ * each rule and its bottom edge (`y` = the row's lower boundary). Undefined for a box without rules.
+ */
+export function ruledRowsOf(box: Pick<PdfBox, "y" | "height" | "rules">): Array<{ y: number; height: number }> | undefined {
+  if (!box.rules?.length) return undefined;
+  const bounds = [box.y + box.height, ...box.rules.slice().sort((a, b) => b - a), box.y];
+  const rows: Array<{ y: number; height: number }> = [];
+  for (let i = 1; i < bounds.length; i += 1) rows.push({ y: r1(bounds[i]), height: r1(bounds[i - 1] - bounds[i]) });
+  return rows.every((row) => row.height > 0) ? rows : undefined;
+}
+
+/**
  * The anchor for an overlay on a flat PDF with printed boxes: tick boxes for a yes/no, tick-box or
  * choice answer whose region covers them; else the printed box it falls on (inset, with date slots);
  * null when it falls on no printed box (the overlay is kept as proposed).
@@ -278,6 +291,7 @@ export function snapOverlay(
   const slots = best.slots?.length ?? 0;
   const dateLike = answerType === "date" || answerType === "date_signed";
   const dateSlots = dateLike && slots >= 2 && slots <= 8 ? best.slots : undefined;
+  const ruledRows = dateSlots ? undefined : ruledRowsOf(best);
   return {
     anchor: {
       kind: "pdf_overlay",
@@ -287,10 +301,13 @@ export function snapOverlay(
       width: r1(best.width - 2 * BOX_INSET),
       height: r1(best.height - 2 * BOX_INSET),
       ...(dateSlots && { dateSlots: dateSlots.map((s) => ({ x: s.x, width: s.width })) }),
+      ...(ruledRows && { ruledRows }),
     },
     note: dateSlots
       ? "Flat PDF: the date is written part by part between the printed separators – check it in the preview."
-      : "Flat PDF: the answer is written inside the printed box – check it in the preview.",
+      : ruledRows
+        ? `Flat PDF: the answer is written on the box's ${ruledRows.length} printed lines, one line of text per line – check it in the preview.`
+        : "Flat PDF: the answer is written inside the printed box – check it in the preview.",
   };
 }
 
@@ -306,15 +323,18 @@ export function asksForBlockCapitals(parsed: ParsedForm): boolean {
 }
 
 /**
- * The printed boxes of one page as compact outline lines for the live analysis:
- *   boxes: [x=208 y=434 w=99 h=17 slots=3] [x=208 y=353 w=375 h=55] ticks: [x=210 y=815 s=17 "Yes"] …
+ * The printed boxes of one page as compact outline lines for the live analysis (`lines=N`: a box ruled
+ * with N writing lines):
+ *   boxes: [x=208 y=434 w=99 h=17 slots=3] [x=208 y=353 w=375 h=55 lines=3] ticks: [x=210 y=815 s=17 "Yes"] …
  */
 export function renderPdfBoxes(pdf: PdfFormOutline, page: number): string[] {
   const boxes = (pdf.boxes ?? []).filter((b) => b.page === page);
   if (boxes.length === 0) return [];
   const items = pageItems(pdf, page);
   const r = (n: number) => Math.round(n);
-  const answer = boxes.filter((b) => b.kind === "box").map((b) => `[x=${r(b.x)} y=${r(b.y)} w=${r(b.width)} h=${r(b.height)}${b.slots ? ` slots=${b.slots.length}` : ""}]`);
+  const answer = boxes
+    .filter((b) => b.kind === "box")
+    .map((b) => `[x=${r(b.x)} y=${r(b.y)} w=${r(b.width)} h=${r(b.height)}${b.slots ? ` slots=${b.slots.length}` : ""}${b.rules ? ` lines=${b.rules.length + 1}` : ""}]`);
   const ticks = tickRows(boxes).flatMap((row) => {
     const labels = tickRowLabels(row, items);
     return row.map((t, i) => {

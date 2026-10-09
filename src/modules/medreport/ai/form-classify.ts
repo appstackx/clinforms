@@ -114,6 +114,19 @@ const OUTCOMES: Array<[RegExp, OutcomeInstrument]> = [
   [/quick ?dash/, "QuickDASH"],
 ];
 
+const FIRST_SCORE = /\b(?:initial|baseline|first|start(?:ing)?|pre-treatment)\s+(?:score|assessment|measure|outcome|result)s?\b/;
+const LATEST_SCORE = /\b(?:current|latest|most recent|final|end|discharge|present|post-treatment)\s+(?:score|assessment|measure|outcome|result)s?\b/;
+
+/** "Initial score" → first_score, "Current score" → latest_score (label first, then its context); else the summary. */
+function scoreFormat(label: string, context: string): "first_score" | "latest_score" | "summary" {
+  for (const text of [label, context]) {
+    const first = FIRST_SCORE.test(text);
+    const latest = LATEST_SCORE.test(text);
+    if (first !== latest) return first ? "first_score" : "latest_score";
+  }
+  return "summary";
+}
+
 /** Registration paths by label wording (identifiers first). */
 function registrationFor(label: string, inSignoff: boolean, sec = ""): { path: RegistrationPath; identifier: boolean; answerType: AnswerType | null } | null {
   const l = label;
@@ -241,10 +254,14 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
   if (/^attendance\b|\battendance record\b/.test(l)) {
     return { fillSource: { kind: "computed_fact", factId: "FACT-attendance", format: "summary" }, answerType: null, identifier: false, opinion: false, ...who };
   }
+  // Outcome measures: named in the label, or in the context of a score column ("Initial score" under
+  // "Outcome Measures – such as Patient Specific Functional Scale"). The first or latest score for an
+  // "Initial" / "Current" column, the whole series otherwise.
+  const scoreColumn = /^(?:(?:initial|baseline|first|start|current|latest|most recent|final|end|discharge|present)\s+)?(?:score|outcome|result|measure)s?\b/.test(l);
   for (const [re, instrument] of OUTCOMES) {
-    if (re.test(l)) {
+    if (re.test(l) || (scoreColumn && re.test(sec))) {
       const factId = `FACT-outcomes-${instrument}` as FactId;
-      return { fillSource: { kind: "computed_fact", factId, format: "summary" }, answerType: null, identifier: false, opinion: false, ...who };
+      return { fillSource: { kind: "computed_fact", factId, format: scoreFormat(l, sec) }, answerType: null, identifier: false, opinion: false, ...who };
     }
   }
 

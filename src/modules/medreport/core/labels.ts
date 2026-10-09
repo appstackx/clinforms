@@ -130,6 +130,8 @@ export const COMPUTED_FACT_FORMAT_LABELS: Record<ComputedFactFormat, string> = {
   sessions_attended: "Number of sessions attended",
   dna_count: "Number of missed appointments (DNA)",
   summary: "Summary",
+  first_score: "First recorded score (outcome measures)",
+  latest_score: "Latest recorded score (outcome measures)",
 };
 
 export const SIGNOFF_PART_LABELS: Record<SignoffPart, string> = {

@@ -219,8 +219,12 @@ export const RegistrationPathSchema = z.enum([
   "referral.membershipNumber",
   "referral.authorisationNumber",
 ]);
-/** How a computed fact is written into a form answer (default "summary" = the fact's value). */
-export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary"]);
+/**
+ * How a computed fact is written into a form answer (default "summary" = the fact's value).
+ * first_score / latest_score: an outcome measure's first or latest recorded score with its date
+ * ("PSFS 2.7/10 (01/09/2026)") – the "Initial score" and "Current score" columns of insurer forms.
+ */
+export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary", "first_score", "latest_score"]);
 /** Sign-off parts filled from the server-signed receipt at approval (blank on a DRAFT). */
 export const SignoffPartSchema = z.enum(["signature", "name", "hcpc", "date"]);
 /**
@@ -783,6 +787,12 @@ export const PdfOverlayAnchorSchema = z.object({
    * (S2, additive).
    */
   dateSlots: z.array(z.object({ x: z.number(), width: z.number().positive() })).optional(),
+  /**
+   * A box printed with horizontal rules (lines to write on): its rows, top to bottom – bottom edge `y`
+   * (the rule, or the box's lower edge) and `height`. The answer is written one line per row, sitting
+   * just above the row's rule, so no printed line strikes through it (additive).
+   */
+  ruledRows: z.array(z.object({ y: z.number(), height: z.number().positive() })).optional(),
 });
 
 /* Tables and tick boxes (S2, additive) ------------------------------------------------------------ */
@@ -1004,6 +1014,8 @@ export const PdfBoxSchema = z.object({
   height: z.number(),
   kind: z.enum(["box", "tick"]),
   slots: z.array(z.object({ x: z.number(), width: z.number() })).optional(),
+  /** Horizontal lines ruled across the box (lines to write on), their y top to bottom (additive). */
+  rules: z.array(z.number()).optional(),
 });
 
 /** A PDF form's outline (forms/pdf-outline.ts): AcroForm fields plus positioned page text. */

@@ -290,7 +290,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                 ))}
               </>
             ) : null}
-            {a.kind === "pdf_table" || a.kind === "pdf_overlay_table" || a.kind === "pdf_overlay_ticks" || (a.kind === "pdf_overlay" && a.dateSlots) ? (
+            {a.kind === "pdf_table" || a.kind === "pdf_overlay_table" || a.kind === "pdf_overlay_ticks" || (a.kind === "pdf_overlay" && (a.dateSlots || a.ruledRows)) ? (
               <AnchorJsonEditor id={id} anchor={a} onChange={setAnchor} />
             ) : null}
           </div>

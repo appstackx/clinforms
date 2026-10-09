@@ -86,7 +86,7 @@ export function describeAnchor(anchor: FormAnchor): string {
       return `PDF field “${anchor.fieldName}” (${anchor.fieldType})${labels}`;
     }
     case "pdf_overlay":
-      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)${anchor.dateSlots?.length ? `, date in ${anchor.dateSlots.length} parts` : ""}`;
+      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)${anchor.dateSlots?.length ? `, date in ${anchor.dateSlots.length} parts` : ""}${anchor.ruledRows?.length ? `, on ${anchor.ruledRows.length} printed lines` : ""}`;
     case "pdf_char_fields":
       return `${anchor.fieldNames.length} character boxes “${anchor.fieldNames[0]}” to “${anchor.fieldNames[anchor.fieldNames.length - 1]}” (${CHAR_FORMAT_LABELS[anchor.format]})`;
     case "pdf_table":

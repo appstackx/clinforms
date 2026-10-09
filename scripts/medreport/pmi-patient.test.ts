@@ -142,7 +142,9 @@ test("Case C on the insurer on record's form: every record value filled by code,
   assert.equal(text("Therapist's email address"), DEMO_CLINIC.email);
   assert.equal(text("Treatment start date"), "01/09/2026");
   assert.deepEqual(answerOf(r, "Number of sessions to date")?.answer, { kind: "number", value: "5" });
-  assert.match(text("Outcome measure (PSFS)") ?? "", /^PSFS 2\.7\/10 → 4\.3\/10 → 5\.3\/10 \(higher is better\)\. 01\/09\/2026: 2\.7\/10 \(N-001\)/);
+  // Plain words on the form: no "→", no internal note IDs (the fact's own detail cites N-001…).
+  assert.match(text("Outcome measure (PSFS)") ?? "", /^PSFS 2\.7\/10, then 4\.3\/10, then 5\.3\/10 \(higher is better\)\. 01\/09\/2026: 2\.7\/10; 15\/09\/2026: 4\.3\/10/);
+  assert.doesNotMatch(text("Outcome measure (PSFS)") ?? "", /\b[NA]-\d{3}\b|→/);
   assert.equal(text("Country of treatment"), "United Kingdom");
   assert.deepEqual(answerOf(r, "Physiotherapist")?.answer, { kind: "checkbox", value: true });
   // Identifiers are cited to the registration record; fixed answers cite nothing (they come from the map).
@@ -204,8 +206,7 @@ test("Case C: the answers land in the synthetic PDF's fields (radio, text, tick 
     additional: "",
   });
   assert.equal(pdf.getCheckBox("physio").isChecked(), true);
-  // (The PDF's standard font has no "→": the engine writes "->".)
-  assert.match(pdf.getTextField("outcome").getText() ?? "", /PSFS 2\.7\/10 (?:→|->) 4\.3\/10 (?:→|->) 5\.3\/10/);
+  assert.match(pdf.getTextField("outcome").getText() ?? "", /PSFS 2\.7\/10, then 4\.3\/10, then 5\.3\/10/);
   assert.deepEqual(warnings.filter((w) => !/not answered|left blank/i.test(w)), []);
 
   // On another insurer's form the withheld numbers stay blank in the file.

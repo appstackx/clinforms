@@ -469,13 +469,63 @@ function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anch
   });
 }
 
-function drawOverlay(ctx: Ctx, field: FormField, text: string, a: { page: number; x: number; y: number; width: number; height: number; fontSize?: number }): void {
+type OverlayBox = { page: number; x: number; y: number; width: number; height: number; fontSize?: number; ruledRows?: Array<{ y: number; height: number }> };
+
+/** The ruled rows of an overlay, when they still lie within it (staff may have moved the box since). */
+function usableRuledRows(a: OverlayBox): Array<{ y: number; height: number }> | null {
+  const rows = a.ruledRows;
+  if (!rows || rows.length < 2) return null;
+  const inside = rows.every((r) => r.height > 0 && r.y >= a.y - 4 && r.y + r.height <= a.y + a.height + 4);
+  return inside ? rows : null;
+}
+
+/**
+ * Text on a box ruled with writing lines: one line of text per printed row, the baseline a few points
+ * above the row's rule (never struck through by it), at a size no taller than the rows allow. Too long
+ * for the rows: the leading words with a marker, and the full answer on the continuation sheet.
+ */
+function drawRuledOverlay(ctx: Ctx, field: FormField, page: PDFPage, encoded: string, a: OverlayBox, rows: Array<{ y: number; height: number }>): void {
+  const width = a.width - 2;
+  const pitch = Math.min(...rows.map((r) => r.height));
+  const preferred = Math.max(MIN_FONT, Math.min(a.fontSize ?? DEFAULT_FONT, pitch * 0.6));
+  const fits = (t: string, size: number) => wrapText(t, ctx.font, size, width).length <= rows.length;
+  let size = MIN_FONT;
+  let text = encoded;
+  let overflow = true;
+  for (let s = preferred; s >= MIN_FONT; s -= 0.5) {
+    if (fits(encoded, s)) {
+      size = s;
+      overflow = false;
+      break;
+    }
+  }
+  if (overflow) {
+    text = cutToFit(encoded, (t) => fits(t, MIN_FONT), MULTILINE_MARKERS);
+    ctx.warn(`${where(field)}: the answer is longer than the printed lines; it continues on a continuation sheet at the end of the form.`);
+    ctx.continuations.push({ field, text: encoded });
+  }
+  const lines = wrapText(text, ctx.font, size, width);
+  lines.forEach((line, i) => {
+    const row = rows[i];
+    if (!row || !line) return;
+    // Cap height of Helvetica ≈ 0.72 em: centred in the row, but at most 4 pt and at least 2.5 pt above the rule.
+    const lift = Math.max(2.5, Math.min(4, (row.height - size * 0.72) / 2));
+    page.drawText(line, { x: a.x + 1, y: row.y + lift, size, font: ctx.font, color: ANSWER_COLOR });
+  });
+}
+
+function drawOverlay(ctx: Ctx, field: FormField, text: string, a: OverlayBox): void {
   const page = ctx.doc.getPages()[a.page - 1];
   if (!page) {
     ctx.warn(`${where(field)}: page ${a.page} does not exist in this PDF.`);
     return;
   }
   const encoded = encodeAnswer(ctx, field, text);
+  const ruled = usableRuledRows(a);
+  if (ruled) {
+    drawRuledOverlay(ctx, field, page, encoded, a, ruled);
+    return;
+  }
   const multiline = a.height >= 2 * (a.fontSize ?? DEFAULT_FONT) || encoded.includes("\n");
   const fit = fitText(multiline ? encoded : encoded.replace(/\s*\n\s*/g, "; "), ctx.font, { width: a.width - 2, height: a.height - 1 }, a.fontSize ?? DEFAULT_FONT, multiline);
   if (fit.overflow) {

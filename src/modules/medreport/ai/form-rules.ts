@@ -413,7 +413,10 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
       .split(/\n| \| /)
       .map((t) => cleanLabel(t))
       .filter((t) => t.length > 1);
-    const near = segments.find((t) => !isOption(t)) ?? "";
+    // Examples printed in a box's heading ("Such as Patient Specific Functional Scale") are guidance, not
+    // the question, when the box has a heading of its own ("Initial score").
+    const example = (t: string) => /^(?:such as|e\.g\.?|eg|for example|for instance|including)\b/i.test(t);
+    const near = segments.find((t) => !isOption(t) && !example(t)) ?? segments.find((t) => !isOption(t)) ?? "";
     const label = (near.length > 2 ? near : prettifyName(f.name)).slice(0, 160);
     const yesNo = options.length === 2 && isYesNoOptions(options);
     const answerType: AnswerType | undefined =

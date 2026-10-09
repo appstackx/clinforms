@@ -16,7 +16,7 @@ import { fillPdf } from "./pdf-fill";
 import { datePartsForSlots, ticksFor } from "./pdf-overlay-marks";
 import { readPdfForm } from "./pdf-outline";
 import { detectPdfFieldTables, pdfTableAnchorOf, rowNumberedName } from "./pdf-table";
-import { ROW_STEP, ROW_TOP, flatBoxesPdf, tableFormPdf } from "./pdf-s2-fixtures";
+import { RULED, ROW_STEP, ROW_TOP, flatBoxesPdf, ruledBoxesPdf, tableFormPdf } from "./pdf-s2-fixtures";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 
 function field(id: string, label: string, anchor: FormAnchor, rest: Partial<FormField> = {}): FormField {
@@ -268,4 +268,49 @@ test("fillPdf on a flat PDF: dates between the slashes, an X in the chosen box, 
   const inBox = (x: number) => lines.filter((l) => l.x0 >= x && l.x1 <= x + 16.8 && l.y0 >= 620 && l.y1 <= 636.8 && l.x1 - l.x0 > 4);
   assert.equal(inBox(200).length, 2, "two strokes of the X in Yes");
   assert.equal(inBox(246).length, 0, "nothing in No");
+});
+
+test("ruled answer boxes: the printed writing lines are read, and an answer is written one line per row, on the line", async () => {
+  const bytes = await ruledBoxesPdf();
+  const outline = await readPdfForm(bytes);
+  const box = (outline.boxes ?? []).find((b) => Math.abs(b.x - RULED.history.x) < 1.5 && Math.abs(b.y - RULED.history.y) < 1.5);
+  assert.ok(box);
+  // Five rows of 18 pt: four rules inside the box, top to bottom.
+  assert.deepEqual(box.rules, [492, 474, 456, 438]);
+  const address = (outline.boxes ?? []).find((b) => Math.abs(b.x - RULED.address.x) < 1.5);
+  assert.deepEqual(address?.rules, [334, 317]);
+
+  const rows = [492, 474, 456, 438, 420].map((y, i) => ({ y, height: i === 0 ? 18 : 18 }));
+  const history = "Right rotator cuff related shoulder pain after lifting a 12 kg cabin case into an overhead locker on 22/08/2026. No red flags; cervical spine cleared. Improving with exercise-based physiotherapy: NPRS 7/10 to 4/10, QuickDASH 52.3 to 29.5, PSFS 2.7 to 5.3. Other condition of note: hypothyroidism, controlled on levothyroxine.";
+  const form = formOf(
+    [field("F-01", "Full history", { kind: "pdf_overlay", page: 1, x: 76, y: 422, width: 506, height: 86, ruledRows: rows }, { answerType: "long_text" })],
+    "pdf_flat",
+    { uppercase: true },
+  );
+  const warnings: string[] = [];
+  const out = await fillPdf(bytes, form, { "F-01": { text: history } }, { draft: false, flatten: true, onWarning: (m) => warnings.push(m) });
+  const written = (await textItems(out))[0].filter((i) => i.x > 70 && i.x < 80 && i.y > 420 && i.y < 510);
+  assert.ok(written.length >= 3, "the answer takes several rows");
+  for (const line of written) {
+    const row = rows.find((r) => line.y > r.y && line.y < r.y + r.height);
+    assert.ok(row, `"${line.str}" sits in a row`);
+    const lift = line.y - row.y;
+    assert.ok(lift >= 2.4 && lift <= 4.1, `"${line.str}" sits ${lift.toFixed(1)} pt above its rule (never struck through)`);
+  }
+  assert.equal(new Set(written.map((l) => Math.round(l.y))).size, written.length, "one line of text per row");
+  assert.match(written[0].str, /^RIGHT ROTATOR CUFF/);
+  assert.deepEqual(warnings, []);
+
+  // Longer than the rows: leading words with a marker, the full answer on the continuation sheet.
+  const longWarnings: string[] = [];
+  const long = await fillPdf(bytes, form, { "F-01": { text: `${history} ${history} ${history}` } }, { draft: false, flatten: true, onWarning: (m) => longWarnings.push(m) });
+  const pages = await textItems(long);
+  assert.equal(pages.length, 2);
+  assert.ok(pages[0].filter((i) => i.x > 70 && i.x < 80 && i.y > 420 && i.y < 510).length <= rows.length);
+  assert.ok(longWarnings.some((w) => /longer than the printed lines/.test(w)));
+
+  // A box moved away from its rows (staff edited the position): written as a plain box.
+  const moved = formOf([field("F-01", "Full history", { kind: "pdf_overlay", page: 1, x: 76, y: 200, width: 506, height: 86, ruledRows: rows }, { answerType: "long_text" })], "pdf_flat");
+  const plain = (await textItems(await fillPdf(bytes, moved, { "F-01": { text: "Short answer" } }, { draft: false, flatten: true })))[0];
+  assert.ok(plain.some((i) => i.str === "Short answer" && i.y > 200 && i.y < 286));
 });

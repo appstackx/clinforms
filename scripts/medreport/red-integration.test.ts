@@ -21,7 +21,7 @@ import { classifyLabel } from "@/modules/medreport/ai/form-classify";
 import { AnalysisOutputSchema, type AnalysisFieldOutput, type AnalysisOutput } from "@/modules/medreport/ai/form-analysis-schema";
 import { RECORDED_FORM_ANALYSIS_SOURCES } from "@/modules/medreport/ai/recorded/forms";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
-import { buildFormAnswers, checkFormDefinition, formAnchorKey, formAnchorPdfFieldNames } from "@/modules/medreport/core/forms";
+import { buildFormAnswers, checkFormDefinition, formAnchorKey, formAnchorPdfFieldNames, formFactText, resolveComputedFactValue } from "@/modules/medreport/core/forms";
 import { classifyPortalQuestion } from "@/modules/medreport/core/question-set";
 import { createFormReport } from "@/modules/medreport/core/report-factory";
 import { FormDefinitionSchema } from "@/modules/medreport/core/schemas";
@@ -255,6 +255,31 @@ test("rules mode on a fillable PDF: a single tick box keeps its own printed labe
   assert.deepEqual(at("numAttended"), ["numAttended", "number", "Sessions attended", "computed_fact"]);
   assert.deepEqual(at("rdoFitForWork"), ["rdoFitForWork", "single_choice", "IS THE CLAIMANT FIT FOR WORK?", "clinician_opinion"]);
   assert.deepEqual(at("txtSignature"), ["txtSignature", "signature", "Signature (typed)", "signoff"]);
+});
+
+test("computed facts on a form: plain words, no internal IDs; Initial / Current score columns get the first / latest score", () => {
+  const bundle = getDemoBundle("rebecca-lane");
+  const computedFacts = computeFacts(bundle, { asOf: "2026-10-09" });
+  const ctx = { bundle, instructingParty: bundle.referral as InstructingParty, computedFacts, reportDate: "2026-10-09" };
+  for (const factId of ["FACT-outcomes-PSFS", "FACT-attendance", "FACT-episode"] as const) {
+    const long = resolveComputedFactValue(factId, "summary", ctx, "long_text")?.text ?? "";
+    assert.ok(long.length > 20, factId);
+    assert.doesNotMatch(long, /\((?:[NA]-\d{3})|\b[NA]-\d{3}\b|→|->|\((?:ATT|DNA|LCN|CNC)\)/, `${factId}: ${long}`);
+  }
+  assert.match(resolveComputedFactValue("FACT-outcomes-PSFS", "summary", ctx, "long_text")?.text ?? "", /^PSFS 2\.7\/10, then 4\.3\/10, then 5\.3\/10 \(higher is better\)\. 01\/09\/2026: 2\.7\/10;/);
+  assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "first_score", ctx, "long_text")?.text, "PSFS 2.7/10 (01/09/2026)");
+  assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "latest_score", ctx, "short_text")?.text, "PSFS 5.3/10 (01/10/2026)");
+  assert.equal(resolveComputedFactValue("FACT-outcomes-NDI", "first_score", ctx, "long_text"), null, "no NDI on record");
+  assert.equal(formFactText("Did not attend (DNA): 1 – 12/09/2026 (A-004, reason recorded: \"unwell\")."), "Did not attend: 1 – 12/09/2026 (reason recorded: \"unwell\").");
+  assert.equal(formFactText("Discharge note: 01/10/2026 (N-005). Sarah Reid (PH-DEMO-01) 5 notes."), "Discharge note: 01/10/2026. Sarah Reid (PH-DEMO-01) 5 notes.");
+
+  // The rules: a score column under an outcome-measures heading.
+  const initial = classifyLabel("Initial score", "Assessment Such as Patient Specific Functional Scale Initial score Outcome Measures");
+  assert.deepEqual(initial.fillSource, { kind: "computed_fact", factId: "FACT-outcomes-PSFS", format: "first_score" });
+  const current = classifyLabel("Current score", "Assessment Current score Such as Patient Specific Functional Scale");
+  assert.deepEqual(current.fillSource, { kind: "computed_fact", factId: "FACT-outcomes-PSFS", format: "latest_score" });
+  assert.deepEqual(classifyLabel("NDI score").fillSource, { kind: "computed_fact", factId: "FACT-outcomes-NDI", format: "summary" });
+  assert.equal(classifyLabel("Initial assessment", "Assessment Such as Visual Analogue Scale").fillSource.kind, "notes_narrative");
 });
 
 /* ------------------------------------------------------------------------------------------------

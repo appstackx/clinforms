@@ -9,7 +9,7 @@ import { formMapSha256 } from "../auth/attestations";
 import { checkFormDefinition } from "../core/forms";
 import type { FormField } from "../core/types";
 import { decodeFormFile } from "../forms/file";
-import { flatBoxesPdf, tableFormPdf } from "../forms/pdf-s2-fixtures";
+import { RULED, flatBoxesPdf, ruledBoxesPdf, tableFormPdf } from "../forms/pdf-s2-fixtures";
 import { analyseFormFile, parseFormFile } from "./analyse-form";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { asksForBlockCapitals, flatBoxQuestions } from "./form-boxes";
@@ -89,6 +89,24 @@ test("post-validation snaps proposed overlays onto the printed boxes (dates, tic
   assert.equal(ticks.anchor.kind, "pdf_overlay_ticks");
   assert.deepEqual(ticks.options, ["Yes", "No"]);
   assert.deepEqual(other.anchor, { kind: "pdf_overlay", page: 1, x: 300, y: 200, width: 100, height: 14 }, "no printed box there: kept as proposed");
+});
+
+test("a box ruled with writing lines is mapped with its rows, so the answer is written on the lines", async () => {
+  const { form } = await analyseFormFile({ file: decoded(await ruledBoxesPdf()), fileName: "ruled.pdf", mode: "demo", rulesOnly: true });
+  const gp = byLabel(form.fields, /^Name and full address of GP's surgery$/);
+  assert.equal(gp.anchor.kind, "pdf_overlay");
+  if (gp.anchor.kind === "pdf_overlay") {
+    assert.deepEqual(gp.anchor.ruledRows, [
+      { y: 334, height: 17 },
+      { y: 317, height: 17 },
+      { y: RULED.address.y, height: 17 },
+    ]);
+  }
+  assert.match(gp.note ?? "", /3 printed lines/);
+  const history = form.fields.find((f) => f.anchor.kind === "pdf_overlay" && Math.abs(f.anchor.x - (RULED.history.x + 2)) < 1);
+  assert.ok(history && history.anchor.kind === "pdf_overlay");
+  assert.equal(history.anchor.ruledRows?.length, 5);
+  assert.deepEqual(checkFormDefinition(form), []);
 });
 
 test("the live outline of a flat PDF lists its printed boxes compactly", async () => {

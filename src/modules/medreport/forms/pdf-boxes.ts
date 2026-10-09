@@ -14,6 +14,9 @@ import "server-only";
  *   strokes or printed as text – or vertical dividers) split it into writable slots, left to right. A
  *   row of four or more touching squares (a comb of single-character cells) becomes one box whose
  *   slots are the cells.
+ * - `rules`: horizontal lines ruled across a box (Aviva GEN030 question 5, CM016's three-line GP
+ *   address box) – the y of each, top to bottom. The answer is then written one line per ruled row,
+ *   on the line, never struck through by it (form-boxes.ts snapOverlay → pdf_overlay `ruledRows`).
  *
  * Coordinates are PDF points in the page's user space (origin bottom-left), the same space as the
  * page text and pdf-lib's drawing, rounded to 0.1 pt.
@@ -181,6 +184,31 @@ function slotsOf(r: Rect, segments: readonly Segment[], items: readonly BoxTextI
   return slots.length >= 2 ? slots : undefined;
 }
 
+/** Closest a ruled line may sit to the box's top or bottom edge, and the smallest row pitch (pt). */
+const RULE_EDGE = 3;
+const MIN_RULE_PITCH = 9;
+
+/**
+ * Horizontal lines ruled across a box (lines to write on), top to bottom: each spans at least 85 % of
+ * the box's width and lies inside it, clear of its edges. Undefined when there are none, or when they
+ * are packed tighter than a line of writing (shading, hatching).
+ */
+function rulesOf(r: Rect, segments: readonly Segment[]): number[] | undefined {
+  const ys: number[] = [];
+  for (const s of segments) {
+    if (s.y1 - s.y0 > 0.6) continue;
+    const y = (s.y0 + s.y1) / 2;
+    const spans = s.x0 <= r.x + r.width * 0.075 + 2 && s.x1 >= r.x + r.width * 0.925 - 2 && s.x1 - s.x0 >= r.width * 0.85;
+    const within = s.x0 >= r.x - 2 && s.x1 <= r.x + r.width + 2 && y > r.y + RULE_EDGE && y < r.y + r.height - RULE_EDGE;
+    if (spans && within && !ys.some((v) => Math.abs(v - y) < 1)) ys.push(y);
+  }
+  if (ys.length === 0) return undefined;
+  ys.sort((a, b) => b - a);
+  const bounds = [r.y + r.height, ...ys, r.y];
+  for (let i = 1; i < bounds.length; i += 1) if (bounds[i - 1] - bounds[i] < MIN_RULE_PITCH) return undefined;
+  return ys.map(r1);
+}
+
 /**
  * Rows of four or more touching squares (single-character cells) → one box per row, with a slot per
  * cell. Returns the merged boxes and the squares left over (real tick boxes).
@@ -275,7 +303,9 @@ export async function extractPageBoxes(page: OperatorListPage, pageNumber: numbe
   for (const b of empty) {
     if (isSquareTick(b) || b.width < MIN_BOX_WIDTH || b.height < MIN_BOX_HEIGHT) continue;
     const slots = slotsOf(b, segments, items);
-    out.push({ page: pageNumber, x: r1(b.x), y: r1(b.y), width: r1(b.width), height: r1(b.height), kind: "box", ...(slots && { slots }) });
+    // Ruled writing lines (a box with vertical dividers as well is a table, not lines to write on).
+    const rules = slots ? undefined : rulesOf(b, segments);
+    out.push({ page: pageNumber, x: r1(b.x), y: r1(b.y), width: r1(b.width), height: r1(b.height), kind: "box", ...(slots && { slots }), ...(rules && { rules }) });
   }
   // Reading order: top to bottom, then left to right.
   return out.sort((a, b) => b.y + b.height - (a.y + a.height) || a.x - b.x);
