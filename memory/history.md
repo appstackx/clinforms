@@ -77,12 +77,20 @@ Add new dated entries at the bottom of §1 (chronological) as work continues.
 | 16:16 | `32499de` pushed: Playwright e2e scripts (`scripts/e2e/`) and dev tools (`scripts/dev-tools/`) copied from the cloud container with repo-relative paths; `.e2e-out/` gitignored. |
 | ~16:00–16:30 | This memory pack written (`CLAUDE.md`, `memory/`); WIP snapshot `cba79dc` pushed at 16:16, final commit follows. |
 
-### Fri 2026-10-09 (evening, desktop – RED demo)
+### Fri 2026-10-09 (evening, desktop – RED demo and production line)
+Times corrected to UTC from the commits (an earlier write-up of this section used BST).
 | Time | Event |
 |---|---|
-| ~18:00–21:15 | RED wave 1 (six slices: PMI patient `sim-pat-006`, fillable/flat PDFs, tables, parties, demo assets + footer, copy answers + portal questions) and wave 2 (live analysis prompt, prepared maps and answers for the six insurer PDFs) merged into `demo/red-physio`. |
-| ~21:15–21:50 | Browser rehearsal + prospect's-eye review + rules review: clinical text read as record-keeping ("I recorded…"), portal step failed in demo mode, SIGNED on patients' claim forms, party labels wrong, insurer wording in git, demo:red going live with a live-ready `.env.local`. |
-| ~21:50–23:45 | Fix wave (commits `44696b3` … `7d61c83`): plain clinical wording, party labels, prefill-only forms, staff-entry provenance, every outcome measure in Bupa's box, address lines + postcode, N/A dates, PDF margins/row font sizes/trim box, seeded portal question set with demo answers, demo:red demo-only, wording hygiene; rehearsal re-run in a headless browser; 448 tests (445 pass, 3 skipped). |
+| ~17:10 | Six public insurer PDFs downloaded into gitignored `clinforms/demo-assets/insurers/`. |
+| 17:32 | `a51bd9c` (`feat/production`): production architecture contract – owner decisions D1 now / Supabase later, Better Auth (D39–D40). |
+| 17:58–19:27 | RED wave 1: six slices (PMI patient `sim-pat-006`, fillable PDFs, tables + flat boxes, sections + parties, demo assets + footer, copy answers + portal questions) merged into `demo/red-physio` (`de6862a` … `574d65b`); review fixes. |
+| 19:19–20:21 | Production wave 1 merged into `feat/production` (data layer, identity, public site; review fixes `8cec4ea`). |
+| 20:01–20:14 | RED wave 2: live form analysis prompt `form-analysis-4` merged (`23311b2`); prepared maps for all six PDFs and answers for Bupa, AXA, Allianz recorded through the real drafting path (`3b34017` assembly fixes). |
+| ~20:15–21:05 | Headless browser rehearsal + prospect's-eye review + rules review (findings: "I recorded…" wording, portal step failing in demo mode, SIGNED on patients' claim forms, party labels, insurer wording in git, demo:red going live). |
+| 21:10–22:51 | Fix wave (`44696b3` … `cb8b15f`): plain clinical wording, party labels, prefill-only forms, staff-entry provenance, every outcome measure in Bupa's box, address lines + postcode, N/A dates, PDF margins/row font sizes/trim box, seeded portal question set with demo answers, demo:red demo-only, wording hygiene; rehearsal re-run (machine at load ~60); 448 tests (445 pass, 3 skipped). |
+| 21:21–22:41 | Production wave 2 merged into `feat/production` (`ec76a0a`: tenant Studio, clinic storage, actors/tenancy on the API, admin pages). |
+| 22:53 | Checked: `https://clinforms.co.uk` live on Vercel with a pre-RED build (health: ClinForms, `form-analysis-3`, live available). |
+| ~22:55–23:20 | **Call pack** `docs/demo-red-physio.md` (support matrix, Monday/Tuesday checklist, 10-minute script with click path and rehearsal timings, labels to frame, honest answers, questions for Daniel, fallbacks) + memory update (D39–D46, insurer classification, production pointer). `demo:check` OK (7 maps, 4 answer files, 6 form files). |
 
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |

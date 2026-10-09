@@ -101,7 +101,8 @@ export function useAnswersCopy(opts: {
     const { copy: c, actor: a, dispatch: d, toast: t } = latest.current;
     void copyToClipboard(c.text).then((ok) => {
       if (!ok) return t({ tone: "error", title: w.copyFailed });
-      const answered = c.entries.filter((e) => e.answer !== null).length;
+      // The same count as the panel and the progress summary: sign-off answers are not questions to answer.
+      const answered = c.entries.filter((e) => e.answer !== null && !e.signoff).length;
       t({
         tone: "success",
         title: w.copiedAll(answered),
@@ -184,8 +185,8 @@ export function CopyAnswersPanel({
             <ClipboardCopy className="h-4 w-4 text-teal-700" aria-hidden /> {w.panelTitle}
           </h2>
           {status}
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">{buttons}</div>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">{buttons}</div>
         <p className="mt-2 text-xs leading-relaxed text-slate-600" role="note">
           {w.panelIntro} {notice}
         </p>

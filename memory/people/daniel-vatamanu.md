@@ -23,6 +23,8 @@
 5. Khuram replied (text not in our records) and a **meeting is booked** (Khuram, 09/10 14:08 UTC: "i have replied and a meeting is booked"). Day "Tuesday" comes from the research text Khuram pasted at 14:08; **date 13 Oct inferred – confirm day AND time with Khuram.**
 Verbatim emails in `memory/projects/red-physiotherapy.md`.
 
+**Call:** Tue 13 Oct 2026, morning (exact time in the invite). Call pack: `docs/demo-red-physio.md`.
+
 ## What we know / don't know
 - Interested in **private medical insurer (PMI)** forms (Bupa, AXA, Aviva, Vitality, WPA).
 - **Unknown:** clinic system (PMS), size/staff/revenue, which insurers/MLCs send most, volume, Word/PDF vs portal, who signs, what "support" means (forms vs billing/claims/authorisations).

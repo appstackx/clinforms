@@ -390,14 +390,16 @@ export const ApprovedBanner = forwardRef<
         </p>
       )}
       {lastFiled && (
-        <p className="mt-2 flex flex-wrap items-center gap-x-2 text-[12px] text-teal-900">
-          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-          Filed {formatUkDateTime(lastFiled.at)} – {lastFiled.detail}
-          {clinicRecordUrl && (
-            <Link href={clinicRecordUrl} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
-              Open the patient record <ExternalLink className="h-3 w-3" aria-hidden />
-            </Link>
-          )}
+        <p className="mt-2 flex items-start gap-2 text-[12px] text-teal-900">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0">
+            Filed {formatUkDateTime(lastFiled.at)} – {lastFiled.detail}{" "}
+            {clinicRecordUrl && (
+              <Link href={clinicRecordUrl} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
+                Open the patient record <ExternalLink className="h-3 w-3" aria-hidden />
+              </Link>
+            )}
+          </span>
         </p>
       )}
     </div>

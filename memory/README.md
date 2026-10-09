@@ -17,12 +17,12 @@ Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache 
 | `people/daniel-vatamanu.md` | RED Physiotherapy co-founder: contact details, thread summary, unknowns |
 | `projects/clinforms.md` | Product + technical deep dive (flow, stack, AI config, demo data, live-demo gotchas, limits, roadmap); links to repo docs |
 | `projects/blue-heart-clinics.md` | Deal file: company research, all emails verbatim, answers to Dell's 5 questions, pricing, commitments, status |
-| `projects/red-physiotherapy.md` | Deal file: emails verbatim, assessment, insurer support matrix draft, Tuesday demo plan, questions |
+| `projects/red-physiotherapy.md` | Deal file: emails verbatim, assessment, insurer support matrix, demo as built, call guidance (full call pack: `../docs/demo-red-physio.md`) |
 | `projects/careconnect-mk.md` | Origin repo: branch, commit history, what remains, cleanup options |
 | `context/company.md` | AppStackX facts, tools/connectors/accounts (GitHub, Anthropic, ElevenLabs, Vercel…), market and name checks |
 | `context/pricing.md` | All price tiers, founding offer, reasoning, ROI model, our cost base |
 | `context/hosting-and-infra.md` | Vercel decision, Cloudflare blockers, Supabase architecture + API notes, converter, regions, environment lessons |
-| `context/insurer-forms.md` | Every insurer/referrer form with URL, public PDF vs portal, handling and priority |
+| `context/insurer-forms.md` | Every insurer/referrer form with URL, public PDF vs portal, classification (09/10), handling and priority |
 | `context/compliance.md` | GDPR/DPA commitments, disclosure rule, data minimisation, security built vs promised |
 | `sources/blue-heart-briefing.md` | Verbatim: Blue Heart research briefing (06/10) |
 | `sources/report-builder-plan.md` | Verbatim: the original approved plan (06/10 12:31 UTC, pre-pivot) |
@@ -38,6 +38,6 @@ Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache 
 
 The six build reports are historical (careconnect-mk era, pre-Sonnet, pre-rename); the module README supersedes them.
 
-Related repo docs (authoritative for code): `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
+Related repo docs (authoritative for code): `../docs/demo-red-physio.md` (RED call pack, internal), `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
 
 Conventions: times are UTC unless marked (UK = BST, UTC+1, in October 2026); **(unverified)** = not confirmed by Khuram or a source; [C] public source, [I] inference, [U] unknown (research files).
