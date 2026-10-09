@@ -15,10 +15,10 @@ remain as the fallback when a referrer sends no form. See "Revision 2 – referr
   "Simulated TM3 sandbox – demo data, not affiliated with TM3".
 - **Fictional data only.** Organisations end with "(fictional)". HCPC numbers use the invalid demo
   format `PH-DEMO-01`. Reports are stored in the browser only (demo-grade).
-- **Standalone app.** This module, the sandbox and their thin `src/app` routes are the whole app
-  (`/` redirects to `/reports`). It was extracted from its original host repo (see the root
-  `README.md`); the host design system is only `src/components/ui/*` and `src/lib/utils.ts` (reached
-  through `ui/primitives.ts`).
+- **Standalone app.** This module, the sandbox and their thin `src/app` routes are the Studio and its
+  demo (`/` is now the public website in `src/app/(marketing)`; the Studio demo stays at `/reports`).
+  It was extracted from its original host repo (see the root `README.md`); the host design system is
+  only `src/components/ui/*` and `src/lib/utils.ts` (reached through `ui/primitives.ts`).
 
 The full plan is in [`docs/plan.md`](../../../docs/plan.md) (written while the module lived in its
 original host repo; its history notes are kept as they were).
@@ -107,7 +107,8 @@ options rather than merging them, so the script writes one full pattern list per
   Dialog\*, Tooltip\*, Separator, Skeleton and Avatar\* from `@/components/ui/*`, and `cn` from
   `@/lib/utils`. It is the only file allowed to import them.
 - **The module may NOT import** `@/lib/*`, `@/components/*` (outside primitives), `@/sandbox/*`,
-  `@/app/*`, or any relative path that leaves `src/modules/medreport`.
+  `@/app/*`, `@/server/*`, `posthog-js` (product analytics is host code in `src/components/analytics`,
+  passed in through `HostHooks`), or any relative path that leaves `src/modules/medreport`.
 - **Browser-safe code** is everything in `core/`, `templates/` and `ui/`, plus `config.public.ts` and
   `api/contract.ts`. It may NOT import `server-only`, `node:*`, the Anthropic SDK, docx,
   docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib.

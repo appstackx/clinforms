@@ -69,6 +69,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -136,6 +143,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -209,6 +223,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -276,6 +297,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -349,6 +377,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -419,6 +454,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -486,6 +528,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -562,6 +611,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -642,6 +698,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -716,6 +779,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -796,6 +866,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -870,6 +947,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -950,6 +1034,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1025,6 +1116,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1060,7 +1158,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1120,6 +1220,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1155,7 +1262,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1215,6 +1324,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1250,7 +1366,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1310,6 +1428,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1345,7 +1470,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1405,6 +1532,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1440,7 +1574,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1500,6 +1636,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1535,7 +1678,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1595,6 +1740,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1630,7 +1782,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1690,6 +1844,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1725,7 +1886,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1785,6 +1948,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1820,7 +1990,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1880,6 +2052,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1915,7 +2094,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1975,6 +2156,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2010,7 +2198,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2070,6 +2260,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2105,7 +2302,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2165,6 +2364,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2186,7 +2392,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2246,6 +2454,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2267,7 +2482,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2327,6 +2544,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2348,7 +2572,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2408,6 +2634,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2429,7 +2662,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2489,6 +2724,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2510,7 +2752,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2570,6 +2814,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2591,7 +2842,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2647,6 +2900,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2682,7 +2942,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2738,6 +3000,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2773,7 +3042,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2829,6 +3100,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2850,7 +3128,9 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2875,6 +3155,73 @@
                   "**/modules/*"
                 ],
                 "message": "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP."
+              },
+              {
+                "group": [
+                  "**/workers/*",
+                  "**/workers/**"
+                ],
+                "message": "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/components/**/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*",
+                  "server-only",
+                  "node:*",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "src/components may run in the browser: no src/server, server-only, Node built-ins, database or email libraries here (call an API route or pass data from a server component)."
+              },
+              {
+                "group": [
+                  "**/workers/*",
+                  "**/workers/**"
+                ],
+                "message": "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/server/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
