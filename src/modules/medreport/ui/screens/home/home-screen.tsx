@@ -39,7 +39,7 @@ import {
   exportCase,
   importCase,
   resetDemo,
-  saveReport,
+  saveReportDurable,
   useForms,
   useReports,
 } from "../../store";
@@ -76,8 +76,9 @@ export function HomeScreen() {
       setImportMsg({ tone: "error", text: result.error });
       return;
     }
-    if (saveReport(result.report)) setImportMsg({ tone: "success", text: `Imported the case for ${result.report.patientLabel}.` });
-    else setImportMsg({ tone: "error", text: "This browser could not store the case (storage full or blocked)." });
+    // Stored before it is reported as imported (a clinic's Studio: on the server).
+    if (await saveReportDurable(result.report)) setImportMsg({ tone: "success", text: `Imported the case for ${result.report.patientLabel}.` });
+    else setImportMsg({ tone: "error", text: "The case could not be stored. Please try again." });
   };
 
   return (

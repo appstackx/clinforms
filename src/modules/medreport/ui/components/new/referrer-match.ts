@@ -5,13 +5,15 @@
  * "Harrow & Pike Medico-Legal"). One shared word ("Northfield Freight" ↔ "Northfield Assurance") is
  * not enough; staff then choose, and the choice is remembered for that referrer in this browser.
  *
- * Pure apart from the small localStorage helpers at the end (wrapped in try/catch).
+ * Pure apart from the small storage helpers at the end: localStorage in the demo (wrapped in try/catch), the
+ * clinic's settings through ui/store.ts in a clinic's own Studio (server store, wave 2).
  *
  * Owner: studio-a agent.
  */
 import { STORAGE_PREFIX } from "../../../config.public";
 import { distinctiveTokens, normaliseOrgName } from "../../../core/forms";
 import type { FormDefinition, InstructingParty } from "../../../core/types";
+import { getStoreMode, getStoredReferrerLinks, saveReferrerLinks } from "../../store";
 
 export { distinctiveTokens, normaliseOrgName } from "../../../core/forms";
 
@@ -72,6 +74,9 @@ export function matchReasonLabel(reason: MatchReason): string {
 export const REFERRER_LINKS_KEY = `${STORAGE_PREFIX}referrer-form-links`;
 
 function readLinks(): Record<string, string> {
+  // A clinic's Studio keeps them in the clinic's settings (server store), never in browser storage.
+  const stored = getStoredReferrerLinks();
+  if (stored) return { ...stored };
   try {
     const raw = typeof window === "undefined" ? null : window.localStorage.getItem(REFERRER_LINKS_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
@@ -87,6 +92,12 @@ export function getRememberedFormId(referrerName: string): string | null {
 }
 
 export function rememberFormForReferrer(referrerName: string, formId: string): void {
+  if (getStoreMode() === "server") {
+    const links = readLinks();
+    const key = normaliseOrgName(referrerName);
+    if (key && links[key] !== formId) saveReferrerLinks({ ...links, [key]: formId });
+    return;
+  }
   try {
     const links = readLinks();
     links[normaliseOrgName(referrerName)] = formId;

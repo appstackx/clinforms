@@ -1,150 +1,113 @@
 /**
- * Browser report store (demo-grade): reports live in this browser's localStorage only, one key per
- * report ("medreport.report.<id>"). The session token and live passcode live in sessionStorage.
- * Every storage access is wrapped in try/catch (private windows, blocked storage, SSR).
+ * The Studio's store. Every export and signature from before wave 2 is kept; behind them sit two backends
+ * (docs/production-architecture.md §5), chosen by the host through HostHooks.storage (ui/store/mode.ts):
  *
- * Referrer forms library (Revision 2): form maps (FormDefinition[]) in localStorage under
- * "medreport.forms"; the referrers' original files in IndexedDB ("medreport-forms", keyed by SHA-256),
- * with an in-memory fallback for this tab when IndexedDB is unavailable. Bundled sample forms are
- * seeded lazily from GET /forms/samples (ensureSampleForms).
+ * - "browser" (default, the public demo at /reports): reports in this browser's localStorage, one key per report
+ *   ("medreport.report.<id>"); form maps under "medreport.forms"; the referrers' original files in IndexedDB
+ *   ("medreport-forms", keyed by SHA-256) with an in-memory fallback; bundled sample forms seeded lazily from
+ *   GET /forms/samples (ensureSampleForms). Exactly the pre-wave-2 code (ui/store/browser-backend.ts). Same-tab
+ *   changes dispatch STORE_EVENT on window; other tabs sync via the 'storage' event.
+ * - "server" (a clinic's own Studio): the clinic's storage (/api/reports/v1/store/**) behind an in-memory cache
+ *   and a per-record write queue (ui/store/server-store.ts). Reads stay synchronous (from the cache the hooks
+ *   fill); saves update the cache at once and return true, then reach the server in order (If-Match revisions;
+ *   a clash reloads the stored copy). Other tabs sync via BroadcastChannel and a refresh on focus. NOTHING from a
+ *   report or form map is written to localStorage or IndexedDB. Sample forms are not seeded into a clinic.
  *
- * Same-tab changes dispatch STORE_EVENT on window; other tabs sync via the 'storage' event.
+ * The session token and live passcode live in sessionStorage in both modes.
+ *
+ * Async extras (wave 2) for the places where a change must reach the server before moving on:
+ * flushStore({keepalive}), saveReportDurable, saveFormDurable (in browser mode they resolve to the same result as
+ * the synchronous call), and useStoreSync() {pending, failed, error} for a save indicator.
  *
  * Shared contract (orchestrator-owned).
  */
 import { useCallback, useEffect, useState } from "react";
-import { FormSamplesResponseSchema, reportApiPaths, type FormSample } from "../api/contract";
-import { PRODUCT, STORAGE_PREFIX } from "../config.public";
+import { reportApiPaths, type FormSample } from "../api/contract";
+import type { ReferrerLinks } from "../api/store-contract";
+import { DEMO_TENANT_ID, PRODUCT, STORAGE_PREFIX } from "../config.public";
 import { sha256HexBytes } from "../core/fingerprint";
-import { hasAttestedConfirmation } from "../core/forms";
-import {
-  CASE_EXPORT_FORMAT,
-  CaseExportSchema,
-  FormDefinitionSchema,
-  FormMimeTypeSchema,
-  ReportSchema,
-  SessionTokenSchema,
-} from "../core/schemas";
-import type { FormDefinition, FormMimeType, Report, SessionToken } from "../core/types";
+import { CASE_EXPORT_FORMAT, CaseExportSchema, ReportSchema, SessionTokenSchema } from "../core/schemas";
+import type { FormDefinition, Report, SessionToken } from "../core/types";
 import { CASE_EXPORT_FORMAT_VERSION, decodeCaseReport, encodeCaseReport, type CaseExport } from "../core/case-export";
+import * as browser from "./store/browser-backend";
+import { STORE_EVENT, notify } from "./store/events";
+import { getStoreMode, setStoreMode, type StoreMode } from "./store/mode";
+import { fetchSampleForms as fetchSamples } from "./store/samples";
+import { createServerStore, type ServerStore, type StoreSyncState } from "./store/server-store";
+import type { StoredFormFile } from "./store/types";
 
-export const REPORT_KEY_PREFIX = `${STORAGE_PREFIX}report.`;
+export { STORE_EVENT, getStoreMode, setStoreMode };
+export type { StoreMode, StoreSyncState, StoredFormFile };
+export const REPORT_KEY_PREFIX = browser.REPORT_KEY_PREFIX;
 export const SESSION_KEY = `${STORAGE_PREFIX}session`;
 export const PASSCODE_KEY = `${STORAGE_PREFIX}passcode`;
-/** Window event fired after any write by this module in the current tab. */
-export const STORE_EVENT = "medreport:store";
 
-function local(): Storage | null {
-  try {
-    return typeof window === "undefined" ? null : window.localStorage;
-  } catch {
-    return null;
-  }
-}
+const server = (): boolean => getStoreMode() === "server";
 
-function session(): Storage | null {
-  try {
-    return typeof window === "undefined" ? null : window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-function notify(): void {
-  try {
-    if (typeof window !== "undefined") window.dispatchEvent(new Event(STORE_EVENT));
-  } catch {
-    // ignore
-  }
-}
-
-function readJson(storage: Storage | null, key: string): unknown {
-  if (!storage) return null;
-  try {
-    const raw = storage.getItem(key);
-    return raw === null ? null : (JSON.parse(raw) as unknown);
-  } catch {
-    return null;
-  }
-}
-
-function storageKeys(storage: Storage | null): string[] {
-  if (!storage) return [];
-  try {
-    const keys: string[] = [];
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
-      if (key !== null) keys.push(key);
-    }
-    return keys;
-  } catch {
-    return [];
-  }
+let serverStore: ServerStore | null = null;
+/** The server backend (created on first use; one per page load). */
+function srv(): ServerStore {
+  if (!serverStore) serverStore = createServerStore();
+  return serverStore;
 }
 
 /* ------------------------------------------------------------------------------------------------
  * Reports
  * ----------------------------------------------------------------------------------------------*/
 
-/** All valid reports in this browser, most recently updated first. Invalid/old entries are skipped. */
+/** All valid reports (this browser / the clinic's loaded reports), most recently updated first. */
 export function listReports(): Report[] {
-  const storage = local();
-  const reports: Report[] = [];
-  for (const key of storageKeys(storage)) {
-    if (!key.startsWith(REPORT_KEY_PREFIX)) continue;
-    const parsed = ReportSchema.safeParse(readJson(storage, key));
-    if (parsed.success) reports.push(parsed.data);
-  }
-  return reports.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  return server() ? srv().listReports() : browser.listReports();
 }
 
-/** A report by ID, or null if it is not in this browser ("This report is stored in another browser"). */
+/** A report by ID, or null if it is not here ("This report is stored in another browser" in the demo). */
 export function getReport(id: string): Report | null {
-  const parsed = ReportSchema.safeParse(readJson(local(), REPORT_KEY_PREFIX + id));
-  return parsed.success ? parsed.data : null;
-}
-
-/** Save (insert or replace). Returns false if storage is unavailable or full. Callers set updatedAt. */
-export function saveReport(report: Report): boolean {
-  const storage = local();
-  if (!storage) return false;
-  try {
-    storage.setItem(REPORT_KEY_PREFIX + report.id, JSON.stringify(report));
-    notify();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function deleteReport(id: string): void {
-  try {
-    local()?.removeItem(REPORT_KEY_PREFIX + id);
-  } catch {
-    // ignore
-  }
-  notify();
+  return server() ? srv().getReport(id) : browser.getReport(id);
 }
 
 /**
- * Remove every "medreport.*" key from localStorage and sessionStorage, and the stored form files
+ * Save (insert or replace). Browser: false if storage is unavailable or full. Server: true at once (the change is
+ * queued; saveReportDurable / flushStore say when it reached the server). Callers set updatedAt.
+ */
+export function saveReport(report: Report): boolean {
+  if (server()) return srv().saveReport(report);
+  return demoRecord(report) && browser.saveReport(report);
+}
+
+/**
+ * Browser storage only ever holds the public demo's records (tenant "demo"). A clinic's record reaching a browser
+ * write – e.g. an unmount save racing a client-side switch from a clinic's Studio to the demo – is refused.
+ */
+function demoRecord(record: { tenantId?: unknown } | null | undefined): boolean {
+  const tenantId = record?.tenantId;
+  return tenantId === undefined || tenantId === DEMO_TENANT_ID;
+}
+
+export function deleteReport(id: string): void {
+  if (server()) srv().deleteReport(id);
+  else browser.deleteReport(id);
+}
+
+/**
+ * Browser: remove every "medreport.*" key from localStorage and sessionStorage, and the stored form files
  * (IndexedDB "medreport-forms" and the in-memory fallback). Sample forms are re-seeded on next use.
+ * Server: never touches the clinic's stored records – clears this tab's session keys and in-memory copies only.
  */
 export function resetDemo(): void {
-  for (const storage of [local(), session()]) {
-    for (const key of storageKeys(storage)) {
-      if (!key.startsWith(STORAGE_PREFIX)) continue;
-      try {
-        storage?.removeItem(key);
-      } catch {
-        // ignore
-      }
+  if (!server()) {
+    browser.resetDemo();
+    return;
+  }
+  const storage = browser.sessionStore();
+  for (const key of browser.storageKeys(storage)) {
+    if (!key.startsWith(STORAGE_PREFIX)) continue;
+    try {
+      storage?.removeItem(key);
+    } catch {
+      // ignore
     }
   }
-  samplesPromise = null;
-  seedPromise = null;
-  void clearFormFiles();
-  notify();
+  srv().reset();
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -162,7 +125,7 @@ export function buildCaseExport(report: Report, now: Date = new Date()): CaseExp
   };
 }
 
-/** JSON blob of one report for download, or null if the report is not in this browser. */
+/** JSON blob of one report for download, or null if the report is not here. */
 export function exportCase(reportId: string): Blob | null {
   const report = getReport(reportId);
   if (!report) return null;
@@ -194,19 +157,19 @@ export function importCase(text: string): ImportCaseResult {
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Session token and live passcode (sessionStorage)
+ * Session token and live passcode (sessionStorage, both modes)
  * ----------------------------------------------------------------------------------------------*/
 
 /** The current session token, or null if missing or expired. */
 export function getSession(now: Date = new Date()): SessionToken | null {
-  const parsed = SessionTokenSchema.safeParse(readJson(session(), SESSION_KEY));
+  const parsed = SessionTokenSchema.safeParse(browser.readJson(browser.sessionStore(), SESSION_KEY));
   if (!parsed.success) return null;
   return parsed.data.claims.exp * 1000 > now.getTime() ? parsed.data : null;
 }
 
 export function setSession(token: SessionToken): void {
   try {
-    session()?.setItem(SESSION_KEY, JSON.stringify(token));
+    browser.sessionStore()?.setItem(SESSION_KEY, JSON.stringify(token));
   } catch {
     // ignore
   }
@@ -215,7 +178,7 @@ export function setSession(token: SessionToken): void {
 
 export function clearSession(): void {
   try {
-    session()?.removeItem(SESSION_KEY);
+    browser.sessionStore()?.removeItem(SESSION_KEY);
   } catch {
     // ignore
   }
@@ -224,7 +187,7 @@ export function clearSession(): void {
 
 export function getPasscode(): string | null {
   try {
-    return session()?.getItem(PASSCODE_KEY) ?? null;
+    return browser.sessionStore()?.getItem(PASSCODE_KEY) ?? null;
   } catch {
     return null;
   }
@@ -233,8 +196,8 @@ export function getPasscode(): string | null {
 /** Store (or clear with null/"") the live drafting passcode for this tab session. */
 export function setPasscode(passcode: string | null): void {
   try {
-    if (passcode) session()?.setItem(PASSCODE_KEY, passcode);
-    else session()?.removeItem(PASSCODE_KEY);
+    if (passcode) browser.sessionStore()?.setItem(PASSCODE_KEY, passcode);
+    else browser.sessionStore()?.removeItem(PASSCODE_KEY);
   } catch {
     // ignore
   }
@@ -245,177 +208,73 @@ export function setPasscode(passcode: string | null): void {
  * Referrer forms library (Revision 2)
  * ----------------------------------------------------------------------------------------------*/
 
-/** localStorage key holding every FormDefinition (JSON array). */
-export const FORMS_KEY = `${STORAGE_PREFIX}forms`;
+/** localStorage key holding every FormDefinition (JSON array) – browser mode. */
+export const FORMS_KEY = browser.FORMS_KEY;
 /** localStorage key: {sampleId: updatedAt} of the sample form maps already seeded into this browser. */
-export const FORMS_SEEDED_KEY = `${STORAGE_PREFIX}forms.seeded`;
-/** IndexedDB database and object store for the referrers' original files. */
-export const FORMS_DB_NAME = "medreport-forms";
-export const FORMS_FILE_STORE = "files";
+export const FORMS_SEEDED_KEY = browser.FORMS_SEEDED_KEY;
+/** IndexedDB database and object store for the referrers' original files – browser mode. */
+export const FORMS_DB_NAME = browser.FORMS_DB_NAME;
+export const FORMS_FILE_STORE = browser.FORMS_FILE_STORE;
 
-/** A referrer's original file as stored in this browser. */
-export interface StoredFormFile {
-  sha256: string;
-  fileName: string;
-  mimeType: FormMimeType;
-  bytes: Uint8Array;
-}
-
-function sortForms(forms: FormDefinition[]): FormDefinition[] {
-  return forms.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
-}
-
-function readForms(): FormDefinition[] {
-  const raw = readJson(local(), FORMS_KEY);
-  if (!Array.isArray(raw)) return [];
-  const forms: FormDefinition[] = [];
-  for (const item of raw) {
-    const parsed = FormDefinitionSchema.safeParse(item);
-    if (!parsed.success) continue;
-    const form = parsed.data;
-    // A confirmation without the server's attestation (saved before confirmations were attested) is
-    // not accepted by the server: show the map as needing confirmation again.
-    if (form.status === "confirmed" && !hasAttestedConfirmation(form)) {
-      const next: FormDefinition = { ...form, status: "proposed" };
-      delete next.confirmed;
-      forms.push(next);
-      continue;
-    }
-    forms.push(form);
-  }
-  return forms;
-}
-
-function writeForms(forms: FormDefinition[]): boolean {
-  const storage = local();
-  if (!storage) return false;
-  try {
-    storage.setItem(FORMS_KEY, JSON.stringify(forms));
-    notify();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Every valid form map in this browser, most recently updated first. */
+/** Every valid form map, most recently updated first. */
 export function listForms(): FormDefinition[] {
-  return sortForms(readForms());
+  return server() ? srv().listForms() : browser.listForms();
 }
 
 export function getForm(id: string): FormDefinition | null {
-  return readForms().find((f) => f.id === id) ?? null;
+  return server() ? srv().getForm(id) : browser.getForm(id);
 }
 
-/** Insert or replace by ID. Returns false if storage is unavailable or full. Callers set updatedAt. */
+/** Insert or replace by ID. Browser: false if storage is unavailable or full. Server: queued, true. Callers set updatedAt. */
 export function saveForm(form: FormDefinition): boolean {
-  const forms = readForms().filter((f) => f.id !== form.id);
-  forms.push(form);
-  return writeForms(forms);
+  if (server()) return srv().saveForm(form);
+  return demoRecord(form) && browser.saveForm(form);
 }
 
 /** Delete a form map, and its file when no other form map uses the same file. */
 export function deleteForm(id: string): void {
-  const forms = readForms();
-  const target = forms.find((f) => f.id === id);
-  const rest = forms.filter((f) => f.id !== id);
-  writeForms(rest);
-  if (target && !rest.some((f) => f.file.sha256 === target.file.sha256)) void deleteFormFile(target.file.sha256);
+  if (server()) srv().deleteForm(id);
+  else browser.deleteForm(id);
 }
-
-/* Files: IndexedDB with an in-memory fallback ------------------------------------------------- */
-
-const memoryFiles = new Map<string, StoredFormFile>();
-let dbPromise: Promise<IDBDatabase | null> | null = null;
-
-function openFormsDb(): Promise<IDBDatabase | null> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise<IDBDatabase | null>((resolve) => {
-    try {
-      if (typeof indexedDB === "undefined") return resolve(null);
-      const req = indexedDB.open(FORMS_DB_NAME, 1);
-      req.onupgradeneeded = () => {
-        try {
-          if (!req.result.objectStoreNames.contains(FORMS_FILE_STORE)) {
-            req.result.createObjectStore(FORMS_FILE_STORE, { keyPath: "sha256" });
-          }
-        } catch {
-          // ignore: onerror/onsuccess resolves
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(null);
-      req.onblocked = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-  return dbPromise;
-}
-
-function idb<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
-  return openFormsDb().then(
-    (db) =>
-      new Promise<T | null>((resolve) => {
-        if (!db) return resolve(null);
-        try {
-          const req = run(db.transaction(FORMS_FILE_STORE, mode).objectStore(FORMS_FILE_STORE));
-          req.onsuccess = () => resolve(req.result ?? null);
-          req.onerror = () => resolve(null);
-        } catch {
-          resolve(null);
-        }
-      }),
-  );
-}
-
-type FileRecord = { sha256: string; fileName: string; mimeType: string; bytes: ArrayBuffer };
 
 /**
- * Store a referrer's original file (keyed by its SHA-256). Resolves true when it was saved to
- * IndexedDB, false when it is kept in memory for this tab only (storage unavailable or full).
+ * Store a referrer's original file (keyed by its SHA-256). Browser: true when saved to IndexedDB, false when
+ * kept in memory for this tab only. Server: true once the clinic's storage holds it (chunked upload).
  */
-export async function saveFormFile(file: StoredFormFile): Promise<boolean> {
-  const bytes = new Uint8Array(file.bytes.byteLength);
-  bytes.set(file.bytes);
-  memoryFiles.set(file.sha256, { ...file, bytes });
-  const record: FileRecord = { sha256: file.sha256, fileName: file.fileName, mimeType: file.mimeType, bytes: bytes.buffer };
-  const saved = await idb("readwrite", (store) => store.put(record));
-  notify();
-  return saved !== null;
+export function saveFormFile(file: StoredFormFile): Promise<boolean> {
+  return server() ? srv().saveFile(file) : browser.saveFormFile(file);
 }
 
-/** A stored file by SHA-256 (memory first, then IndexedDB), or null. */
-export async function getFormFile(sha256: string): Promise<StoredFormFile | null> {
-  const cached = memoryFiles.get(sha256);
-  if (cached) return cached;
-  const record = await idb<FileRecord>("readonly", (store) => store.get(sha256) as IDBRequest<FileRecord>);
-  if (!record || !(record.bytes instanceof ArrayBuffer)) return null;
-  const mime = FormMimeTypeSchema.safeParse(record.mimeType);
-  if (!mime.success) return null;
-  const file: StoredFormFile = { sha256: record.sha256, fileName: record.fileName, mimeType: mime.data, bytes: new Uint8Array(record.bytes) };
-  memoryFiles.set(sha256, file);
-  return file;
+/** A stored file by SHA-256 (memory first, then IndexedDB / the clinic's storage), or null. */
+export function getFormFile(sha256: string): Promise<StoredFormFile | null> {
+  return server() ? srv().getFile(sha256) : browser.getFormFile(sha256);
 }
 
 export async function deleteFormFile(sha256: string): Promise<void> {
-  memoryFiles.delete(sha256);
-  await idb("readwrite", (store) => store.delete(sha256));
-  notify();
+  if (server()) {
+    // The clinic's stored file goes with its last form map (DELETE /store/forms/{id}); drop this tab's copy.
+    srv().dropFile(sha256);
+    notify();
+    return;
+  }
+  await browser.deleteFormFile(sha256);
 }
 
-/** Remove every stored form file (used by resetDemo). */
+/** Remove every form file held by this tab (browser: also IndexedDB). */
 export async function clearFormFiles(): Promise<void> {
-  memoryFiles.clear();
-  await idb("readwrite", (store) => store.clear());
+  if (server()) {
+    srv().clearFiles();
+    return;
+  }
+  await browser.clearFormFiles();
 }
 
 /**
- * The original file of a form map: from this browser, or – for a bundled sample – downloaded from
+ * The original file of a form map: from here, or – for a bundled sample – downloaded from
  * GET /forms/samples/{sampleId}/file, checked against form.file.sha256 and stored. Null if unavailable.
  */
 export async function loadFormFile(form: FormDefinition, init?: { signal?: AbortSignal }): Promise<StoredFormFile | null> {
-  const stored = await getFormFile(form.file.sha256);
+  const stored = server() ? await srv().getFile(form.file.sha256, init?.signal) : await browser.getFormFile(form.file.sha256);
   if (stored) return stored;
   if (!form.sampleId) return null;
   try {
@@ -431,74 +290,91 @@ export async function loadFormFile(form: FormDefinition, init?: { signal?: Abort
   }
 }
 
-/* Sample forms ----------------------------------------------------------------------------------- */
-
-let samplesPromise: Promise<FormSample[]> | null = null;
-let seedPromise: Promise<FormDefinition[]> | null = null;
-
 /** GET /forms/samples, once per page load ([] when unreachable; retried on the next call). */
 export function fetchSampleForms(): Promise<FormSample[]> {
-  if (!samplesPromise) {
-    samplesPromise = (async () => {
-      const res = await fetch(reportApiPaths.formSamples(), { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const parsed = FormSamplesResponseSchema.safeParse(await res.json());
-      if (!parsed.success) throw new Error("Unexpected /forms/samples response");
-      return parsed.data.samples;
-    })();
-    samplesPromise.catch(() => {
-      samplesPromise = null;
-    });
-  }
-  return samplesPromise.catch(() => [] as FormSample[]);
+  return fetchSamples();
 }
 
 /**
- * Seed the bundled sample form maps into this browser's library (lazy, once per page load).
- * A sample deleted by the user is not re-added (until resetDemo); a sample map re-recorded on the
- * server replaces the seeded copy only if the user has not changed it. Resolves to listForms().
+ * Browser: seed the bundled sample form maps into this browser's library (lazy, once per page load). A sample
+ * deleted by the user is not re-added (until resetDemo); a sample map re-recorded on the server replaces the
+ * seeded copy only if the user has not changed it. Server: loads the clinic's library (no fictional samples are
+ * added to a clinic). Resolves to listForms().
  */
 export function ensureSampleForms(): Promise<FormDefinition[]> {
-  if (!seedPromise) {
-    seedPromise = (async () => {
-      const samples = await fetchSampleForms();
-      const seededRaw = readJson(local(), FORMS_SEEDED_KEY);
-      const seeded: Record<string, string> =
-        seededRaw && typeof seededRaw === "object" && !Array.isArray(seededRaw) ? { ...(seededRaw as Record<string, string>) } : {};
-      const forms = readForms();
-      let changed = false;
-      for (const sample of samples) {
-        const form = sample.form;
-        if (!form) continue;
-        const existing = forms.find((f) => f.id === form.id);
-        const seededAt = seeded[sample.id];
-        const add = !existing && seededAt === undefined;
-        const untouched = existing !== undefined && seededAt !== undefined && existing.updatedAt === seededAt;
-        // Re-seed an untouched copy when the server's map is newer, or now carries the server's
-        // attestation that the stored copy lacks.
-        const refresh = untouched && (form.updatedAt > seededAt || (!hasAttestedConfirmation(existing) && hasAttestedConfirmation(form)));
-        if (!add && !refresh) continue;
-        const next = forms.filter((f) => f.id !== form.id);
-        next.push({ ...form, builtIn: true, sampleId: sample.id });
-        forms.splice(0, forms.length, ...next);
-        seeded[sample.id] = form.updatedAt;
-        changed = true;
-      }
-      if (changed) {
-        writeForms(forms);
-        try {
-          local()?.setItem(FORMS_SEEDED_KEY, JSON.stringify(seeded));
-        } catch {
-          // ignore
-        }
-      }
-      return listForms();
-    })();
-    seedPromise.catch(() => {
-      seedPromise = null;
-    });
-  }
-  return seedPromise.catch(() => listForms());
+  if (server()) return srv().hydrate().then(() => srv().listForms());
+  return browser.ensureSampleForms();
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Referrer → form links (server mode; the browser keeps them in ui/components/new/referrer-match.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The clinic's remembered referrer → form links in server mode; null in browser mode. */
+export function getStoredReferrerLinks(): Readonly<ReferrerLinks> | null {
+  return server() ? srv().getReferrerLinks() : null;
+}
+
+/** Replace the clinic's referrer → form links (server mode; queued). False in browser mode. */
+export function saveReferrerLinks(links: ReferrerLinks): boolean {
+  if (!server()) return false;
+  srv().setReferrerLinks(links);
+  return true;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Durable saves and sync status (wave 2)
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Wait until every queued change has reached the server (true) or could not (false). `keepalive` (page hide)
+ * sends what is waiting at once with fetch keepalive. Browser mode: true at once (writes are synchronous).
+ */
+export function flushStore(opts: { keepalive?: boolean } = {}): Promise<boolean> {
+  return server() ? srv().flush(opts) : Promise.resolve(true);
+}
+
+/** saveReport, then wait until this report is stored on the server. Browser mode: saveReport's result. */
+export function saveReportDurable(report: Report): Promise<boolean> {
+  if (!server()) return Promise.resolve(saveReport(report));
+  if (!srv().saveReport(report)) return Promise.resolve(false);
+  return srv().reportSettled(report.id);
+}
+
+/** saveForm, then wait until this form map is stored on the server. Browser mode: saveForm's result. */
+export function saveFormDurable(form: FormDefinition): Promise<boolean> {
+  if (!server()) return Promise.resolve(saveForm(form));
+  if (!srv().saveForm(form)) return Promise.resolve(false);
+  return srv().formSettled(form.id);
+}
+
+const IDLE: StoreSyncState = { pending: 0, failed: false };
+
+/** The save status now (non-hook; e.g. a beforeunload guard). Browser mode: always idle. */
+export function getStoreSyncState(): StoreSyncState {
+  return server() ? srv().syncState() : IDLE;
+}
+
+/** Try the changes that could not be saved again (a "Retry" button; also automatic on focus and when back online). */
+export function retryStoreSync(): void {
+  if (server()) srv().retryFailed();
+}
+
+/** {pending, failed, error} of the server store, kept current. Browser mode: {pending: 0, failed: false}. */
+export function useStoreSync(): StoreSyncState {
+  const [state, setState] = useState<StoreSyncState>(IDLE);
+  useEffect(() => {
+    if (!server()) return;
+    const store = srv();
+    const update = () =>
+      setState((prev) => {
+        const next = store.syncState();
+        return prev.pending === next.pending && prev.failed === next.failed && prev.error === next.error ? prev : next;
+      });
+    update();
+    return store.subscribe(update);
+  }, []);
+  return state;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -509,6 +385,8 @@ function useStoreSubscription(load: () => void): void {
   useEffect(() => {
     load();
     const onStorage = (e: StorageEvent) => {
+      // Other tabs of the demo; a clinic's Studio syncs through BroadcastChannel and focus (server-store.ts).
+      if (server()) return;
       if (e.key === null || e.key.startsWith(STORAGE_PREFIX)) load();
     };
     window.addEventListener("storage", onStorage);
@@ -520,29 +398,64 @@ function useStoreSubscription(load: () => void): void {
   }, [load]);
 }
 
-/** All reports, kept in sync across tabs. `ready` is false during SSR and the first client render. */
+/**
+ * Browser mode: true from the first render (unchanged behaviour). Server mode: false until `task` (loading from
+ * the clinic's storage) has settled – the hooks report `ready` only after hydration.
+ */
+function useServerLoad(task: () => Promise<unknown>, key: string): boolean {
+  const [done, setDone] = useState<string | null>(() => (server() ? null : key));
+  useEffect(() => {
+    if (!server()) {
+      setDone(key);
+      return;
+    }
+    let live = true;
+    void task()
+      .catch(() => undefined)
+      .then(() => {
+        if (live) setDone(key);
+      });
+    return () => {
+      live = false;
+    };
+    // `task` is derived from `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return done === key;
+}
+
+/** All reports, kept in sync. `ready` is false during SSR, the first client render and (server) loading. */
 export function useReports(): { reports: Report[]; ready: boolean } {
+  const loaded = useServerLoad(() => srv().loadAllReports(), "all");
   const [state, setState] = useState<{ reports: Report[]; ready: boolean }>({ reports: [], ready: false });
-  const load = useCallback(() => setState({ reports: listReports(), ready: true }), []);
+  const load = useCallback(() => {
+    if (loaded) setState({ reports: listReports(), ready: true });
+  }, [loaded]);
   useStoreSubscription(load);
   return state;
 }
 
-/** One report (null when not in this browser), kept in sync across tabs. */
+/** One report (null when not here), kept in sync. */
 export function useReport(id: string): { report: Report | null; ready: boolean } {
+  const loaded = useServerLoad(() => srv().ensureReport(id), id);
   const [state, setState] = useState<{ report: Report | null; ready: boolean }>({ report: null, ready: false });
-  const load = useCallback(() => setState({ report: getReport(id), ready: true }), [id]);
+  const load = useCallback(() => {
+    if (loaded) setState({ report: getReport(id), ready: true });
+  }, [id, loaded]);
   useStoreSubscription(load);
   return state;
 }
 
 /**
- * The forms library, kept in sync across tabs. Seeds the bundled sample forms on first use.
- * `ready` is false during SSR and until the first load.
+ * The forms library, kept in sync. Browser: seeds the bundled sample forms on first use. Server: the clinic's
+ * library. `ready` is false during SSR and until the first load.
  */
 export function useForms(): { forms: FormDefinition[]; ready: boolean } {
+  const loaded = useServerLoad(() => srv().hydrate(), "forms");
   const [state, setState] = useState<{ forms: FormDefinition[]; ready: boolean }>({ forms: [], ready: false });
-  const load = useCallback(() => setState({ forms: listForms(), ready: true }), []);
+  const load = useCallback(() => {
+    if (loaded) setState({ forms: listForms(), ready: true });
+  }, [loaded]);
   useStoreSubscription(load);
   useEffect(() => {
     let live = true;
@@ -557,8 +470,8 @@ export function useForms(): { forms: FormDefinition[]; ready: boolean } {
 }
 
 /**
- * One form map (null when not in this browser), kept in sync across tabs. Waits for the sample forms
- * to be seeded before reporting `ready`, so a sample's ID resolves on a direct visit.
+ * One form map (null when not here), kept in sync. Waits for the sample forms to be seeded (browser) or the
+ * library to load (server) before reporting `ready`, so a sample's ID resolves on a direct visit.
  */
 export function useForm(id: string): { form: FormDefinition | null; ready: boolean } {
   const [state, setState] = useState<{ form: FormDefinition | null; ready: boolean }>({ form: null, ready: false });

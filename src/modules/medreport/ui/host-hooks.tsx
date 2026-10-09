@@ -12,6 +12,7 @@
  */
 import { createContext, useContext, type ReactNode } from "react";
 import type { AttachReceipt, ConnectorId, SignReceipt } from "../core/types";
+import { setStoreMode } from "./store/mode";
 
 export interface FiledDocument {
   connectorId: ConnectorId;
@@ -35,11 +36,19 @@ export interface HostHooks {
   onResetDemo?(): Promise<void> | void;
   /** URL of the clinic-system record to link back to, if the host knows one. */
   clinicRecordUrl?(ref: { connectorId: ConnectorId; patientId: string }): string | null;
+  /**
+   * Where reports and form maps are kept (read by ui/store.ts; wave 2, additive). Default "browser" (the public
+   * demo). "server" = the signed-in clinic's storage (/api/reports/v1/store/**); nothing from a report or form
+   * map is then written to browser storage.
+   */
+  storage?: "browser" | "server";
 }
 
 const HostHooksContext = createContext<HostHooks>({});
 
 export function HostHooksProvider({ hooks, children }: { hooks: HostHooks; children: ReactNode }) {
+  // The store backend must be chosen before any child reads the store (children render after this line).
+  setStoreMode(hooks.storage ?? "browser");
   return <HostHooksContext.Provider value={hooks}>{children}</HostHooksContext.Provider>;
 }
 

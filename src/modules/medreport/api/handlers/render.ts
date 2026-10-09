@@ -5,6 +5,8 @@ import "server-only";
  * Query ?format=docx|pdf, body RenderRequest → file. FINAL only with a verified receipt (mac + recomputed hash) and no blocking flags; otherwise DRAFT (or 409 when requireFinal). Sets x-medreport-render and x-medreport-content-sha256.
  *
  * Form reports (report.form set): body also carries `form` and `fileBase64`; ?format=original|pdf (docx = original for a Word form).
+ * In a clinic's own Studio the clinic's stored copy of the file (by tenant and SHA-256) is preferred and
+ * `fileBase64` may be left out (handlers/store-form-file.ts).
  * The answers are written into the referrer's ORIGINAL file (forms/docx-fill.ts, forms/pdf-fill.ts; FINAL = flattened PDF,
  * sign-off fields from the verified receipt via core/forms.ts buildFormAnswers). Word → PDF uses forms/convert.ts docxToPdf();
  * where LibreOffice is unavailable → 503 PDF_CONVERSION_UNAVAILABLE (detail NOTICES.pdfConversionUnavailable).
@@ -34,11 +36,12 @@ import { getBuiltinTemplateDocx, renderDocx } from "../../docgen/docx";
 import { renderPdf } from "../../docgen/pdf";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
-import { assertFormFileMatches, decodeFormFile } from "../../forms/file";
+import { assertFormFileMatches } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
+import { formFileForRequest } from "./store-form-file";
 
 interface FinalDecision {
   final: boolean;
@@ -163,7 +166,7 @@ async function renderBuiltIn(
   }
 }
 
-export const handleRender: MedreportHandler = async (req) => {
+export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const query = parseQuery(req, RenderQuerySchema);
   if (!query.ok) return query.response;
   const parsed = await parseBody(req, RenderRequestSchema);
@@ -227,14 +230,10 @@ export const handleRender: MedreportHandler = async (req) => {
     if (format === "docx" && formDef.kind !== "docx") {
       return problem(422, "This form is a PDF", { code: "VALIDATION_FAILED", issues: [{ path: "format", message: "Use format=original (or pdf) for a PDF form." }] });
     }
-    if (!fileBase64) {
-      return problem(422, "The referrer's form file is missing", {
-        code: "VALIDATION_FAILED",
-        issues: [{ path: "fileBase64", message: "Send the referrer's original form file (from the forms library) as fileBase64." }],
-      });
-    }
-    const file = decodeFormFile(fileBase64);
-    assertFormFileMatches(file, report.form?.fileSha256 ?? formDef.file.sha256);
+    // The clinic's stored copy when it holds the file (wave 2), else fileBase64; 422 when neither.
+    const expectedSha256 = report.form?.fileSha256 ?? formDef.file.sha256;
+    const file = await formFileForRequest(req, deps, { fileBase64, sha256: expectedSha256 });
+    assertFormFileMatches(file, expectedSha256);
     let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
     if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
     const out = await renderFormFile({ form: formDef, file, answers, draft: !final, reviewMarkers: reviewCopy, format: format === "pdf" ? "pdf" : "original" });

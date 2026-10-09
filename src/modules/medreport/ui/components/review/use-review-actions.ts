@@ -14,6 +14,7 @@ import { sha256HexBytes } from "../../../core/fingerprint";
 import { planDraftGroups } from "../../../core/report-factory";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, saveBlob, toBase64, type FileDownload } from "../../api-client";
+import { flushStore } from "../../store";
 import type { HostHooks } from "../../host-hooks";
 import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../shared/session";
@@ -89,13 +90,14 @@ export function useReviewActions(opts: {
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm });
-        const saved = commit(approved);
+        // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
+        const saved = commit(approved) && (await flushStore());
         toast({
           tone: "success",
           title: isForm ? "Form approved" : "Report signed",
           detail: saved
             ? "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
-            : "Approved, but this browser could not save the change. Download the completed form now.",
+            : "Approved, but the change could not be saved. Download the completed form now.",
         });
         return { ok: true };
       } catch (err) {

@@ -41,7 +41,7 @@ import {
   TooltipProvider,
   cn,
 } from "../../primitives";
-import { getSession, loadFormFile, saveReport, useForm, useReport } from "../../store";
+import { getSession, loadFormFile, saveReportDurable, useForm, useReport } from "../../store";
 import { WORDING } from "../../wording";
 import { createId } from "../../../core/ids";
 import { useAiMode } from "../../components/shared/ai-mode";
@@ -271,11 +271,12 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const voiceAuthor = report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null);
   const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
 
-  const startAmendment = useCallback(() => {
+  const startAmendment = useCallback(async () => {
     const id = createId("rpt");
     const amended = createAmendedVersion(report, actor, id);
-    if (!saveReport(amended)) {
-      toast({ tone: "error", title: "This browser could not save the amended version (storage full or blocked)." });
+    // Must be stored before opening it (a clinic's Studio saves to the server; wait for it).
+    if (!(await saveReportDurable(amended))) {
+      toast({ tone: "error", title: "The amended version could not be saved. Please try again." });
       return;
     }
     dispatch({

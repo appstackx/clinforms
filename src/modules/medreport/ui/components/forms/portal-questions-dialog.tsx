@@ -16,7 +16,7 @@ import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
 import { EXAMPLE_PORTAL_QUESTIONS, classifyPortalQuestion, createQuestionSet, parsePortalQuestions } from "../../../core/question-set";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { ReferrerType } from "../../../core/types";
-import { saveForm } from "../../store";
+import { saveFormDurable } from "../../store";
 import { WORDING } from "../../wording";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
@@ -71,7 +71,8 @@ export function PortalQuestionsDialog({ open, onOpenChange }: PortalQuestionsDia
         questions: parsed.questions,
         warnings: parsed.warnings,
       });
-      if (!saveForm(form)) throw new Error("The question set could not be saved in this browser (storage is full or blocked).");
+      // Stored before its mapping screen opens (a clinic's Studio: on the server).
+      if (!(await saveFormDurable(form))) throw new Error("The question set could not be saved. Please try again.");
       onOpenChange(false);
       router.push(`/reports/forms/${encodeURIComponent(form.id)}`);
     } catch (err) {

@@ -185,6 +185,19 @@ export async function getReport<P = unknown>(ctx: RepoContext, tenantId: string,
   return { ...toMeta(row), payload: decryptPayload<P>(ctx, tenantId, row.id, row.payload_enc) };
 }
 
+/** One report's metadata (no decryption) – e.g. its status before an update. */
+export async function getReportMeta(ctx: RepoContext, tenantId: string, id: string): Promise<ReportMeta | null> {
+  assertTenantId(tenantId);
+  assertId(id, "Report id");
+  const row = await ctx.db
+    .selectFrom("reports")
+    .select([...META_COLUMNS])
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", id)
+    .executeTakeFirst();
+  return row ? toMeta(row) : null;
+}
+
 export interface ListReportsOptions {
   /**
    * Metadata only: default 200, at most 1000. With payloads: default and at most MAX_PAYLOAD_ROWS (20) – on D1

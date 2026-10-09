@@ -12,7 +12,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
 import type { FormAnswerRow, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
-import { saveReport } from "../../store";
+import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
   acknowledgeFlag,
   addClinicianParagraph,
@@ -162,6 +162,17 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   const save = useCallback(() => {
     const current = reportRef.current;
     if (current === lastSaved.current) return;
+    if (getStoreMode() === "server") {
+      // A clinic's Studio: the save is queued at once; the indicator follows the server's answer.
+      lastSaved.current = current;
+      setSaveState("saving");
+      void saveReportDurable(current).then((ok) => {
+        if (lastSaved.current !== current) return; // a newer save reports for itself
+        setSaveState(ok ? "saved" : "failed");
+        if (ok) setSavedAt(current.updatedAt);
+      });
+      return;
+    }
     const ok = saveReport(current);
     if (ok) {
       lastSaved.current = current;
@@ -181,10 +192,25 @@ export function useReviewState(initial: Report, stored: Report | null, template:
 
   // Save on leaving the page or the screen.
   useEffect(() => {
-    const onHide = () => save();
+    const onHide = () => {
+      save();
+      // A clinic's Studio: send what is still waiting now, with keepalive (the page may be closing).
+      void flushStore({ keepalive: true });
+    };
+    // A clinic's Studio: ask before closing the tab while changes are still on their way to the server.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (getStoreMode() !== "server") return;
+      save();
+      if (getStoreSyncState().pending > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       save();
     };
   }, [save]);

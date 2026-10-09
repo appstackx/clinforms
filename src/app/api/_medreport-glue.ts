@@ -21,6 +21,7 @@ import { getSecret, getTm3SimBaseUrl } from "@/modules/medreport/config.server";
 import { createConnectorRegistry, createDefaultConnectors } from "@/modules/medreport/connectors/registry";
 import { TRANSPORT_HEADER, type ConnectorFetch } from "@/modules/medreport/connectors/types";
 import { dispatchSimRequest } from "@/sandbox/tm3-sim/handlers";
+import { tenantDeps } from "./_medreport-tenant";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
 const HTTP_RETRY_AFTER_MS = 5 * 60_000;
@@ -120,6 +121,8 @@ let deps: MedreportDeps | null = null;
 export function getMedreportDeps(): MedreportDeps {
   if (deps) return deps;
   deps = {
+    // Tenant mode (wave 2): sign-in and the clinic's server storage (lazy; inert in the public demo).
+    ...tenantDeps(),
     connectors: createConnectorRegistry(createDefaultConnectors()),
     createConnectorContext(req, connectorId, tenantId) {
       void req; // the request is deliberately NOT used for the base URL (see simTrustedBaseUrl)

@@ -22,7 +22,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, FileCheck2, RotateCcw
 import type { BundleResponse } from "../../../api/contract";
 import type { Clinician, FormDefinition, ReportTemplate } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { getPasscode, saveReport, setSession, useForms } from "../../store";
+import { flushStore, getPasscode, getStoreMode, saveReport, setSession, useForms } from "../../store";
 import { WORDING } from "../../wording";
 import { Button, Skeleton, cn } from "../../primitives";
 import { useAiMode } from "../../components/shared/ai-mode";
@@ -164,6 +164,8 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         },
         onProgress: (groups) => setGen((g) => ({ ...g, groups })),
       });
+      // Every save of the generated report must be stored before its review opens (a clinic's Studio: the server).
+      if (!(await flushStore())) storageWarning = true;
       const codeFilled = result.report.sections.filter((s) => s.kind === "from_records" && s.status === "complete").length;
       setGen({
         running: false,
@@ -322,9 +324,16 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
               )
             ) : null}
             {gen.storageWarning ? (
-              <Notice tone="warning" title="This browser could not save the report">
-                Storage is full or blocked. Export or reset the demo data from the Reports page and try again.
-              </Notice>
+              getStoreMode() === "server" ? (
+                <Notice tone="warning" title="The report has not been saved yet">
+                  The connection to the clinic&apos;s records was interrupted. Keep this page open: the report is saved as soon as the
+                  connection is back.
+                </Notice>
+              ) : (
+                <Notice tone="warning" title="This browser could not save the report">
+                  Storage is full or blocked. Export or reset the demo data from the Reports page and try again.
+                </Notice>
+              )
             ) : null}
             {gen.error ? <Notice tone="error" title="Could not complete the form">{gen.error}</Notice> : null}
             <div className="flex flex-wrap gap-2">

@@ -17,14 +17,15 @@ import { appendAudit, listAudit } from "../audit";
 import { getClinicProfile, upsertClinicProfile } from "../clinic-profile";
 import type { RepoContext } from "../context";
 import { RepoInputError } from "../context";
-import { FILE_CHUNK_BYTES, deleteFormFile, getFormFile, hasFormFile, listFormFiles, putFormFile } from "../form-files";
+import { FILE_CHUNK_BYTES, deleteFormFile, getFormFile, getFormFileMeta, hasFormFile, listFormFiles, putFormFile } from "../form-files";
 import { createForm, deleteForm, getForm, listFormMeta, listForms, updateForm } from "../forms";
 import { claimLaunchToken, purgeExpiredLaunchTokens } from "../launch-tokens";
 import { purgeExpiredReports, purgeOldAccessRequests, runRetention } from "../maintenance";
 import { getMemberProfile, listMemberProfiles, upsertMemberProfile } from "../member-profile";
 import { createPartnerKey, listPartnerKeys, partnerKeyTenant, revokePartnerKey, verifyPartnerKey } from "../partner-keys";
 import { hitRateLimit, peekRateLimit, purgeRateLimits } from "../rate-limits";
-import { createReport, deleteReport, getReport, listReports, retentionDeadline, updateReport } from "../reports";
+import { beginFormFileUpload, formFileChunkIndexes, purgeIncompleteUploads, putFormFileChunk } from "../form-file-uploads";
+import { createReport, deleteReport, getReport, getReportMeta, listReports, retentionDeadline, updateReport } from "../reports";
 import { getTenantSettings, putTenantSettings } from "../tenant-settings";
 
 export interface SuiteDb {
@@ -407,6 +408,53 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       // The tables are still there and readable.
       const count = await sql<{ n: number }>`select count(*) as n from reports`.execute(ctx.db);
       assert.ok(Number(count.rows[0].n) >= 2);
+    });
+
+    it("chunked uploads (Studio store): resumable, length-checked, served only once complete and verified", async () => {
+      const size = FILE_CHUNK_BYTES * 2 + 77;
+      const bytes = Buffer.alloc(size);
+      for (let i = 0; i < size; i++) bytes[i] = (i * 7) % 251;
+      const sha = createHash("sha256").update(bytes).digest("hex");
+      const part = (i: number) => bytes.subarray(i * FILE_CHUNK_BYTES, Math.min(size, (i + 1) * FILE_CHUNK_BYTES));
+      const input = { sha256: sha, fileName: "upload.pdf", mimeType: "application/pdf", sizeBytes: size };
+      assert.equal(await putFormFileChunk(ctx, A, sha, 0, part(0)), "not_started");
+      const begun = await beginFormFileUpload(ctx, A, input);
+      assert.deepEqual([begun.held, begun.present, begun.meta.chunkCount], ["none", [], 3]);
+      assert.equal(await putFormFileChunk(ctx, A, sha, 2, part(2)), "written");
+      assert.equal(await putFormFileChunk(ctx, A, sha, 0, part(0)), "written");
+      await assert.rejects(putFormFileChunk(ctx, A, sha, 1, part(1).subarray(1)), RepoInputError);
+      await assert.rejects(putFormFileChunk(ctx, A, sha, 3, part(2)), RepoInputError);
+      assert.deepEqual((await beginFormFileUpload(ctx, A, input)).present, [0, 2], "resume");
+      assert.equal(await getFormFile(ctx, A, sha), null, "not served while incomplete");
+      assert.equal(await hasFormFile(ctx, A, sha), false);
+      assert.deepEqual(await formFileChunkIndexes(ctx, B, sha), [], "per tenant");
+      assert.equal(await putFormFileChunk(ctx, A, sha, 1, part(1)), "written");
+      const file = await getFormFile(ctx, A, sha);
+      assert.ok(file && file.bytes.equals(bytes), "same encryption as putFormFile: read back as a stored file");
+      assert.equal((await beginFormFileUpload(ctx, A, input)).held, "all");
+      assert.equal(await putFormFileChunk(ctx, A, sha, 0, Buffer.alloc(FILE_CHUNK_BYTES)), "complete", "a complete file is not overwritten");
+      assert.ok((await getFormFile(ctx, A, sha))?.bytes.equals(bytes));
+
+      // A partial upload recorded with another size starts afresh; abandoned uploads are purged.
+      const other = createHash("sha256").update("abandoned").digest("hex");
+      await beginFormFileUpload(ctx, A, { ...input, sha256: other, sizeBytes: FILE_CHUNK_BYTES + 10 });
+      assert.equal(await putFormFileChunk(ctx, A, other, 1, Buffer.from("abandoned!")), "written");
+      const again = await beginFormFileUpload(ctx, A, { ...input, sha256: other, sizeBytes: FILE_CHUNK_BYTES * 2 + 1 });
+      assert.deepEqual([again.held, again.present, again.meta.chunkCount], ["none", [], 3]);
+      tick(60_000);
+      assert.equal(await purgeIncompleteUploads(ctx, new Date(clock).toISOString()), 1);
+      assert.equal(await getFormFileMeta(ctx, A, other), null);
+      assert.ok(await getFormFile(ctx, A, sha), "complete files are kept");
+      assert.equal(await deleteFormFile(ctx, A, sha), true);
+    });
+
+    it("getReportMeta: one report's metadata without decrypting it", async () => {
+      await createReport(ctx, A, { id: "meta-1", status: "signed", templateId: "solicitor", payload: { x: 1 } });
+      const meta = await getReportMeta(ctx, A, "meta-1");
+      assert.deepEqual(meta && [meta.id, meta.rev, meta.status, meta.templateId], ["meta-1", 1, "signed", "solicitor"]);
+      assert.equal(await getReportMeta(ctx, B, "meta-1"), null);
+      assert.equal(await getReportMeta(ctx, A, "nope"), null);
+      await deleteReport(ctx, A, "meta-1");
     });
   });
 }

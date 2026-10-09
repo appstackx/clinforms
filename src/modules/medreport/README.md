@@ -94,7 +94,9 @@ src/modules/medreport/
                           ashcroft.ts = the flat PDF's pre-written map (offered on upload, not seeded)
     samples/generated/    *.b64.ts files + manifest.ts (SHA-256 of each file), from build-demo-forms.mjs
   api/                    contract.ts (browser-safe), http.ts, deps.ts, resolve-template.ts, handlers/*.ts (server-only)
+                          store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
+                          store/* (browser backend, server cache + write queue + transport)
 src/sandbox/tm3-sim/      config, wire-types (duplicated wire format), fixtures/, handlers, client-store, ui/
 src/app/api/_medreport-glue.ts      connector registry + in-process transport + route() binder
 src/app/reports/medreport-host.tsx  client-side HostHooks (write-back into the sandbox's browser record)
@@ -128,8 +130,8 @@ options rather than merging them, so the script writes one full pattern list per
 - **The module may NOT import** `@/lib/*`, `@/components/*` (outside primitives), `@/sandbox/*`,
   `@/app/*`, `@/server/*`, `posthog-js` (product analytics is host code in `src/components/analytics`,
   passed in through `HostHooks`), or any relative path that leaves `src/modules/medreport`.
-- **Browser-safe code** is everything in `core/`, `templates/` and `ui/`, plus `config.public.ts` and
-  `api/contract.ts`. It may NOT import `server-only`, `node:*`, the Anthropic SDK, docx,
+- **Browser-safe code** is everything in `core/`, `templates/` and `ui/`, plus `config.public.ts`,
+  `api/contract.ts` and (wave 2) `api/store-contract.ts`. It may NOT import `server-only`, `node:*`, the Anthropic SDK, docx,
   docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib.
 - **The sandbox may NOT import the module** (`@/modules/*`). It duplicates the wire types in
   `src/sandbox/tm3-sim/wire-types.ts`, and the two sides talk over HTTP.
@@ -360,6 +362,68 @@ needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **Ne
 `x-medreport-fill-warnings` (URI-encoded JSON array of plain-English warnings) and
 `x-medreport-form-kind`.
 
+## Clinic storage (wave 2): `/api/reports/v1/store/**` and the Studio's two store backends
+
+A clinic's own Studio keeps its reports, form maps, form files and referrer links on the server
+(docs/production-architecture.md §5); the public demo at `/reports` keeps browser storage, unchanged.
+
+**Choosing the backend.** `HostHooks.storage?: "browser" | "server"` (default `"browser"`).
+`<HostHooksProvider>` applies it (`ui/store/mode.ts` `setStoreMode`) before its children render, so every
+store call of a screen uses the right backend. `ui/store.ts` keeps every export and signature:
+
+| Folder / file | What |
+|---|---|
+| `ui/store/browser-backend.ts` | the pre-wave-2 code, moved unchanged: `medreport.report.<id>`, `medreport.forms`, `medreport.forms.seeded` in localStorage, files in IndexedDB `medreport-forms` |
+| `ui/store/server-store.ts` | in-memory cache per clinic + hydration + cross-tab sync (BroadcastChannel `medreport-store`, refresh on focus/visibility, retry when back online) |
+| `ui/store/write-queue.ts` | per-record coalescing write queue: one request per record in flight, newer saves replace the pending one, `If-Match` revisions, back-off, 401/403 kept until sign-in |
+| `ui/store/server-api.ts` | same-origin fetches to `/store/**` (chunked, resumable file upload; downloads verified by SHA-256) |
+| `ui/store/{events,mode,samples,types}.ts` | `STORE_EVENT`, the mode, `fetchSampleForms`, `StoredFormFile` |
+
+Server mode: synchronous reads answer from the cache (the hooks report `ready` only after hydration: the
+snapshot and every form map; one report when it opens, all reports for the home list); saves update the cache
+and return `true` at once, then reach the server in order; a 409 loads the stored copy into the cache and
+notifies (`use-review-state` already swaps in a newer stored copy); a record refused and never stored is
+dropped from the cache. Nothing from a report or form map is written to localStorage or IndexedDB (pinned by
+`scripts/medreport/store-client.test.ts`). Fictional sample forms are not seeded into a clinic. `resetDemo()`
+never deletes a clinic's records (it clears this tab's session keys and the in-memory copies).
+
+**Async extras** (`ui/store.ts`; in browser mode they resolve to the synchronous result):
+`flushStore({keepalive})`, `saveReportDurable(report)`, `saveFormDurable(form)`, `useStoreSync()` /
+`getStoreSyncState()` → `{pending, failed, error?}`, `retryStoreSync()`, and for referrer links
+`getStoredReferrerLinks()` / `saveReferrerLinks()` (server mode; `ui/components/new/referrer-match.ts` uses
+them). Used where a change must be stored before moving on: amendment (`review-screen.tsx`), approval
+(`use-review-actions.ts`: `commit()` then `flushStore()`), form confirmation (`form-mapping-screen.tsx`),
+form upload (`analyse.ts`) and portal question sets (`portal-questions-dialog.tsx`), after generation before
+opening the review (`new-report-screen.tsx`), page hide (`use-review-state.ts`: `flushStore({keepalive})` plus a
+`beforeunload` prompt while changes are pending, server mode only) and case import (`home-screen.tsx`). The
+review's save indicator follows the server's answer in server mode.
+
+**API** (`api/store-contract.ts`, browser-safe; `STORE_API_ENDPOINTS` + route coverage test; handlers
+`api/handlers/store-*.ts`). Every endpoint: a signed-in clinic member with two-step verification
+(`MedreportDeps.authenticate`; 501 without `MedreportDeps.tenantStore`, 401, 403 `TWO_FACTOR_REQUIRED`); the
+clinic always comes from the sign-in; writes need this app's `Origin` (403) and JSON (415; chunks may be
+`application/octet-stream`); every change writes an audit row (ids, revision, status – never patient data).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/store/snapshot` | `{tenantId, reports, forms, settings, limits}` – summaries only |
+| GET / PUT / DELETE | `/store/reports/{id}` | `{rev, updatedAt, report}`, `ETag: "<rev>"`; PUT without If-Match creates, with `If-Match: "<rev>"` updates; 409 `REV_CONFLICT` `{current}`; `signed` only with a receipt that verifies for this clinic and content (422 `RECEIPT_INVALID`); an approved report cannot become a draft (409 `REPORT_LOCKED`) |
+| GET / PUT / DELETE | `/store/forms/{id}` | as reports; an unattested (or another clinic's) confirmation is stored as `proposed` (`downgraded: true`); delete removes the file with its last map |
+| POST | `/store/files` | `{sha256, size, name, mime}` → `{complete, chunkCount, present}` (start / resume) |
+| PUT | `/store/files/{sha256}/chunks/{idx}` | one 512 KiB chunk (raw with `?size=`, or JSON `{size, dataBase64}`) |
+| POST | `/store/files/{sha256}/complete` | checks every chunk, size, SHA-256 (422 `UPLOAD_CORRUPT`, upload thrown away), form type (422 `FORM_INVALID`); 409 `UPLOAD_INCOMPLETE` `{missing}` |
+| GET | `/store/files/{sha256}` | the decrypted file |
+| GET / PUT | `/store/settings` | referrer → form links |
+
+`/render` and `/forms/fill-preview` read the clinic's stored copy of the form file by (tenant, SHA-256) and
+prefer it to `fileBase64`, which becomes optional for `/forms/fill-preview` (`api/handlers/store-form-file.ts`).
+The host builds `tenantStore` in `src/server/store/tenant-store.ts` (repositories; uploads in
+`src/server/repos/form-file-uploads.ts`) and wires it with `authenticate` in `src/app/api/_medreport-tenant.ts`.
+Tests: `scripts/medreport/store-api.test.ts` (handlers), `store-client.test.ts` (client against the real
+handlers), `ui/store/write-queue.test.ts`, `ui/store.browser.test.ts`; `src/server/store/*.test.ts` (real
+repositories on SQLite and PGlite, and behind a real Better Auth sign-in); the repository suite's upload cases
+also run on local D1 (`npm run test:gateway`). In-memory `TenantStore` for tests: `api/store-memory.ts`.
+
 ## Local demonstration forms (dev/demo only)
 
 Third-party forms – e.g. the public insurer PDFs for the RED Physiotherapy demo – are never committed
@@ -480,6 +544,9 @@ Each agent owns the following files (Revision 2 slices):
 - **[studio-b]**:
   - `ui/screens/review/**` and `ui/components/review/**`;
   - `src/app/reports/[id]/**`.
+- **[store]** (wave 2): `ui/store.ts` (exports unchanged) and `ui/store/**`, `api/store-contract.ts`,
+  `api/store-port.ts`, `api/store-memory.ts`, the handlers `store-*.ts`, `src/app/api/reports/v1/store/**`,
+  `src/app/api/_medreport-tenant.ts`, `src/server/store/**` and `src/server/repos/form-file-uploads.ts`.
 - **Finished slices (owned by the integrator stage from now on):** the simulated TM3 sandbox
   (`src/sandbox/**`, `src/app/pms-sandbox/**` except `layout.tsx`, `src/app/api/tm3-sim/**`,
   `connectors/tm3-sim/wire.ts`, `connectors/tm3-sim/mapper.ts`) and integration (`connectors/**`,
