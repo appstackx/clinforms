@@ -94,7 +94,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     // Never issue a form with a value cut to fit (e.g. a date written "14/02/19").
     throw new HttpError(422, "An answer does not fit the form", {
       code: "FORM_INVALID",
-      detail: `${errors.join(" ")} The final copy was not made: correct the answer, approve the report again and download it.`,
+      detail: `${errors.join(" ")} The final copy was not made. Correct the answer and approve the report again – an approved report cannot be edited, so use “Create amended version”, correct the answer there and approve the amended version.`,
     });
   }
   const pdf = await stampPdfDemoNotice(filled, form.demoNotice, { draft });

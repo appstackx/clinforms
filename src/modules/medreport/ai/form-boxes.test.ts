@@ -16,6 +16,7 @@ import { asksForBlockCapitals, flatBoxQuestions } from "./form-boxes";
 import { renderPdfOutline } from "./form-outline";
 import { postValidateFields } from "./form-postvalidate";
 import { proposeFieldsByRules } from "./form-rules";
+import { pdfTableQuestions } from "./form-tables";
 
 const decoded = (bytes: Uint8Array) => decodeFormFile(Buffer.from(bytes).toString("base64"));
 
@@ -144,6 +145,25 @@ test("a fillable PDF's table of fields becomes one table question filled from th
   // IDs stay in document order: the table sits where its first cell was.
   assert.deepEqual(form.fields.map((f) => f.id), form.fields.map((_, i) => `F-${String(i + 1).padStart(2, "0")}`));
   assert.equal(form.fields[0].answerType, "table");
+});
+
+test("a table in another party's section stays blank and says whose it is, even when no cell question was proposed", async () => {
+  const parsed = await parseFormFile(decoded(await tableFormPdf()));
+  assert.equal(parsed.kind, "pdf_acroform");
+  if (parsed.kind !== "pdf_acroform") return;
+  // As if the section heading read "– to be completed by the policyholder" (forms/pdf-sections.ts).
+  const pdf = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^PAID/.test(f.name) ? { ...f, completedBy: "policyholder" as const } : f)) };
+  const [table] = pdfTableQuestions(pdf, [], new Map(pdf.fields.map((f, i) => [f.name, i])));
+  assert.ok(table);
+  assert.deepEqual(table.field.fillSource, { kind: "leave_blank" });
+  assert.equal(table.field.completedBy, "policyholder");
+  assert.equal(table.field.required, false);
+  assert.match(table.field.note ?? "", /for the policyholder to complete/);
+  // The clinic's own table keeps its party too.
+  const ours = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^PAID/.test(f.name) ? { ...f, completedBy: "clinic" as const } : f)) };
+  const [mine] = pdfTableQuestions(ours, [], new Map(ours.fields.map((f, i) => [f.name, i])));
+  assert.equal(mine.field.fillSource.kind, "appointments_table");
+  assert.equal(mine.field.completedBy, "clinic");
 });
 
 test("a table whose cells were all left for the referrer stays blank", async () => {
