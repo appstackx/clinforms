@@ -25,6 +25,7 @@
  */
 import { DEMO_CLINIC } from "../config.public";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
+import { isNonClinicParty, partyLabel } from "./parties";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
 import type {
   AnswerType,
@@ -782,7 +783,11 @@ export function formAnchorKeys(form: Pick<FormDefinition, "fields">): Map<string
  * Sanity checks before a mapping is confirmed
  * ----------------------------------------------------------------------------------------------*/
 
-/** Plain-English problems that should stop a form map being confirmed (empty = OK). */
+/**
+ * Plain-English problems that should stop a form map being confirmed (empty = OK). Includes a sign-off
+ * (signature, name, HCPC number or date of the clinician's approval) in an answer space the form gives to
+ * someone other than the clinic (`completedBy`: the patient, policyholder, their doctor or the insurer).
+ */
 export function checkFormDefinition(form: FormDefinition): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
@@ -809,6 +814,10 @@ export function checkFormDefinition(form: FormDefinition): string[] {
     }
     if (field.answerType === "single_choice" && !field.options?.length) {
       problems.push(`${where}: a single-choice question needs its options.`);
+    }
+    // Multi-party forms: the clinician's approval never goes into another party's signature or declaration.
+    if (field.fillSource.kind === "signoff" && field.completedBy && isNonClinicParty(field.completedBy)) {
+      problems.push(`${where}: this is for ${partyLabel(field.completedBy)} to complete, so the clinician's approval cannot be written here. Set it to “Leave blank”.`);
     }
   }
   if (!form.fields.some(isAnswerableField)) problems.push("No question on this form is set to be completed.");

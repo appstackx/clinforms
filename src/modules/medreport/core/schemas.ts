@@ -207,6 +207,13 @@ export const RegistrationPathSchema = z.enum([
 export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary"]);
 /** Sign-off parts filled from the server-signed receipt at approval (blank on a DRAFT). */
 export const SignoffPartSchema = z.enum(["signature", "name", "hcpc", "date"]);
+/**
+ * Who fills in a part of a referrer's form (multi-party insurer forms carry the policyholder's, the
+ * patient's, the GP's and the clinic's sections on one form): "clinic" = the treating clinician / therapist
+ * / practitioner; "doctor" = a GP, specialist or other medical practitioner; "insurer" = office use.
+ * Detected from the form's own wording (core/parties.ts, forms/pdf-sections.ts); absent = not stated.
+ */
+export const PartySchema = z.enum(["clinic", "patient", "policyholder", "doctor", "insurer", "unknown"]);
 
 /* ------------------------------------------------------------------------------------------------
  * Citable source IDs
@@ -747,6 +754,11 @@ export const FormFieldSchema = z.object({
   confidence: FormFieldConfidenceSchema,
   /** Analysis or staff note, e.g. "Two answer boxes found; using the larger one." */
   note: z.string().optional(),
+  /**
+   * Who the form says fills in this answer space (absent = not stated). A field for anyone but the
+   * clinic is proposed as leave_blank, and never takes the clinician's sign-off (checkFormDefinition).
+   */
+  completedBy: PartySchema.optional(),
 });
 
 export const FormAnalysisSchema = z.object({
@@ -828,6 +840,10 @@ export const PdfOutlineFieldSchema = z.object({
   options: z.array(z.string()).optional(),
   /** Text printed near the field (label candidates), nearest first. */
   nearbyText: z.string(),
+  /** The form's own section heading above the field (forms/pdf-sections.ts), carried across pages. */
+  section: z.string().optional(),
+  /** Who that section (or its declaration) says completes it. */
+  completedBy: PartySchema.optional(),
 });
 
 /** A PDF form's outline (forms/pdf-outline.ts): AcroForm fields plus positioned page text. */
@@ -837,7 +853,16 @@ export const PdfFormOutlineSchema = z.object({
   pageText: z.array(
     z.object({
       page: z.number().int().min(1),
-      items: z.array(z.object({ str: z.string(), x: z.number(), y: z.number() })),
+      items: z.array(
+        z.object({
+          str: z.string(),
+          x: z.number(),
+          y: z.number(),
+          /** Section heading in effect at this text (forms/pdf-sections.ts). */
+          section: z.string().optional(),
+          completedBy: PartySchema.optional(),
+        }),
+      ),
     }),
   ),
 });

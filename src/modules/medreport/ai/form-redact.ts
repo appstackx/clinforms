@@ -12,6 +12,11 @@ import "server-only";
  *   (not their placeholder) are emptied.
  * - Everywhere (Word blocks, PDF page text and the text near PDF fields): dates of birth, full dates,
  *   NHS-style numbers, postcodes, e-mail addresses and phone numbers are replaced with tags.
+ * - PDF page text: "Label: value" is treated as a filled-in answer only INSIDE an answer space – a
+ *   fillable field's box or a detected answer box (`boxes` on the outline, when the forms engine finds
+ *   them). Printed form text around them ("Telephone numbers: Home", the insurer's "Registered address: …"
+ *   footer) is the blank form itself. A flat PDF with no detected boxes keeps the label check on all its
+ *   text, minus footer lines and option words, so a typed-in flat form is still caught.
  * - Fillable PDFs: the attached copy has every text field emptied (forms/pdf-blank.ts).
  * - Flat PDFs that look filled in: the PDF itself is NOT attached – Claude gets the redacted text only.
  *
@@ -115,7 +120,34 @@ function redactDocx(blocks: OutlineBlock[], found: Set<string>): OutlineBlock[] 
   });
 }
 
+/** An answer space on a PDF page: a fillable field's box, or a box the forms engine detected. */
+type AnswerBox = { page: number; x: number; y: number; width: number; height: number; kind?: string };
+
+/**
+ * Answer spaces of a PDF outline. `boxes` (detected answer boxes on flat PDFs) is read when the outline
+ * carries it; null when there is nothing to go by (a flat PDF without detected boxes).
+ */
+function answerBoxes(pdf: PdfFormOutline): AnswerBox[] | null {
+  const detected = (pdf as PdfFormOutline & { boxes?: AnswerBox[] }).boxes;
+  const boxes: AnswerBox[] = pdf.fields.map((f) => ({ page: f.page, ...f.rect }));
+  if (Array.isArray(detected)) boxes.push(...detected.filter((b) => b.kind !== "tick"));
+  return boxes.length > 0 || Array.isArray(detected) ? boxes : null;
+}
+
+/** Text whose baseline sits inside an answer space (1 pt tolerance). */
+function insideBox(it: { x: number; y: number }, page: number, boxes: AnswerBox[]): boolean {
+  return boxes.some((b) => b.page === page && it.x >= b.x - 1 && it.x <= b.x + b.width && it.y >= b.y - 1 && it.y <= b.y + b.height);
+}
+
+/** Lines that belong to the referrer, not to a patient: company footers and legal small print. */
+const FOOTER_LINE =
+  /\b(?:registered (?:office|address|in england|in scotland|number|no\.?)|company (?:registration )?(?:no\.?|number)|registration number|authorised and regulated|financial conduct authority|prudential regulation authority|trading name|vat (?:registration )?(?:no\.?|number)|charity (?:no\.?|number))\b/i;
+/** Values that are printed option words, not answers ("Telephone numbers: Home"). */
+const OPTION_WORDS =
+  /^(?:(?:home|work|mobile|daytime|evening|office|other|yes|no|mr|mrs|ms|miss|dr|male|female|tick|please (?:tick|state|specify)|if (?:known|applicable|different))[\s/,.()-]*)+$/i;
+
 function redactPdf(pdf: PdfFormOutline, found: Set<string>): PdfFormOutline {
+  const boxes = answerBoxes(pdf);
   return {
     ...pdf,
     fields: pdf.fields.map((f) => {
@@ -125,7 +157,12 @@ function redactPdf(pdf: PdfFormOutline, found: Set<string>): PdfFormOutline {
     pageText: pdf.pageText.map((p) => ({
       ...p,
       items: p.items.map((it) => {
-        const str = redactText(redactLabelValue(it.str, found), found);
+        // A filled-in answer: inside an answer space, or (no answer spaces known) a "Label: value" line
+        // that is neither the referrer's footer nor a printed list of options.
+        const entered = boxes
+          ? insideBox(it, p.page, boxes)
+          : !FOOTER_LINE.test(it.str) && !OPTION_WORDS.test(it.str.replace(/^[^:]*:\s*/, ""));
+        const str = entered ? redactText(redactLabelValue(it.str, found), found) : redactText(it.str, found);
         return str === it.str ? it : { ...it, str };
       }),
     })),

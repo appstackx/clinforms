@@ -14,6 +14,7 @@ import type { FormOutlineSummary } from "../api/contract";
 import { parseBlockId } from "../core/forms";
 import type { FormKind, OutlineBlock, PdfFormOutline, PdfOutlineField } from "../core/types";
 import { findPlaceholders } from "../forms/docx-dom";
+import { pdfSectionTitles } from "../forms/pdf-sections";
 import { neutraliseTags } from "./prompts";
 
 /** A parsed form, as handed to the analysis. */
@@ -248,17 +249,19 @@ const r = (n: number) => Math.round(n);
 function renderPdfField(f: PdfOutlineField): string {
   const opts = f.options?.length ? ` options=${JSON.stringify(f.options.map((o) => neutraliseTags(o)))}` : "";
   const near = f.nearbyText.trim() ? ` near=${quote(f.nearbyText)}` : "";
-  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${near}`;
+  const section = f.section ? ` section=${quote(f.section)}` : "";
+  const party = f.completedBy ? ` completedBy=${f.completedBy}` : "";
+  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${near}${section}${party}`;
 }
 
 /** Positioned page text grouped into lines (same page, y within 3 pt), top to bottom. */
-export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: number; items: Array<{ x: number; str: string }> }> {
+export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: number; items: Array<{ x: number; str: string }>; section?: string; completedBy?: string }> {
   const items = (pdf.pageText.find((p) => p.page === page)?.items ?? []).filter((it) => it.str.trim() !== "");
-  const lines: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
+  const lines: Array<{ y: number; items: Array<{ x: number; str: string }>; section?: string; completedBy?: string }> = [];
   for (const it of items.slice().sort((a, b) => b.y - a.y || a.x - b.x)) {
     const line = lines.find((l) => Math.abs(l.y - it.y) <= 3);
     if (line) line.items.push({ x: it.x, str: it.str });
-    else lines.push({ y: it.y, items: [{ x: it.x, str: it.str }] });
+    else lines.push({ y: it.y, items: [{ x: it.x, str: it.str }], ...(it.section && { section: it.section }), ...(it.completedBy && { completedBy: it.completedBy }) });
   }
   lines.forEach((l) => l.items.sort((a, b) => a.x - b.x));
   return lines;
@@ -278,7 +281,13 @@ export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pd
   for (let page = 1; page <= pdf.pages; page += 1) {
     if (!wanted(page)) continue;
     lines.push(`page ${page}:`);
+    let section = "";
     for (const line of pdfTextLines(pdf, page)) {
+      // Where a new section of the form starts (forms/pdf-sections.ts), and who completes it.
+      if (line.section && line.section !== section) {
+        section = line.section;
+        lines.push(`  section ${quote(section)}${line.completedBy ? ` completedBy=${line.completedBy}` : ""}`);
+      }
       lines.push(`  y=${r(line.y)}: ${line.items.map((it) => `x=${r(it.x)} ${quote(it.str)}`).join("  ")}`);
     }
   }
@@ -320,7 +329,7 @@ export function summariseParsedForm(form: ParsedForm): FormOutlineSummary {
     pages: form.pdf.pages,
     fillableFields: form.pdf.fields.length,
     answerSpaces: form.kind === "pdf_acroform" ? form.pdf.fields.length : flatSpaces,
-    headings: [],
+    headings: pdfSectionTitles(form.pdf).slice(0, 40),
     warnings: form.warnings.slice(),
   };
 }
