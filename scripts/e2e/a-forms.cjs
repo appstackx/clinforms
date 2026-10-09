@@ -1,0 +1,135 @@
+const L = require("./lib.cjs");
+(async () => {
+  const { ctx, page, problems, net } = await L.open({ fresh: true });
+  await L.step("A1 home loads", async () => {
+    await page.goto(`${L.BASE}/reports`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1500);
+    await L.shot(page, "d-01-home");
+  });
+  await L.step("A2 forms library shows 3 confirmed samples with previews", async () => {
+    await page.goto(`${L.BASE}/reports/forms`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(5000);
+    const txt = await page.locator("main").innerText();
+    const confirmed = (txt.match(/Confirmed by/g) || []).length;
+    console.log("   confirmed badges:", confirmed);
+    const thumbs = await page.locator("main canvas, main img, main section.docx").count();
+    console.log("   thumbnails (canvas/img/docx):", thumbs);
+    await L.shot(page, "d-02-forms-library");
+    L.assert(confirmed >= 3, "3 confirmed forms");
+  });
+  let formId;
+  await L.step("A3 upload Meridian (d) -> analyse -> review mapping", async () => {
+    await page.getByRole("button", { name: "Upload a referrer form" }).first().click();
+    await page.locator("[role=dialog] input[type=file]").setInputFiles(`${L.SP}/demo-forms/Meridian-Claims_Physiotherapy-Discharge-Report_MCS-PDR-3.docx`);
+    await page.getByRole("button", { name: /^Analyse form$/ }).waitFor({ timeout: 10000 });
+    await L.shot(page, "d-03-upload-ready", false);
+    const t = Date.now();
+    await page.getByRole("button", { name: /^Analyse form$/ }).click();
+    await page.getByRole("button", { name: /Review the mapping/ }).waitFor({ timeout: 90000 });
+    console.log("   analysis took", Date.now() - t, "ms");
+    await L.shot(page, "d-04-analysed", false);
+    console.log("   dialog:", (await page.locator("[role=dialog]").innerText()).replace(/\n+/g, " | ").slice(0, 900));
+    await page.getByRole("button", { name: /Review the mapping/ }).click();
+    await page.waitForURL(/\/reports\/forms\/.+/);
+    formId = decodeURIComponent(page.url().split("/reports/forms/")[1]);
+    console.log("   form id:", formId);
+    await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 20000 });
+    await page.waitForTimeout(1500);
+    await L.shot(page, "d-05-meridian-mapping");
+  });
+  await L.step("A4 anchor highlight on selecting a question", async () => {
+    await page.getByRole("button", { name: /likely long-term outcome/i }).first().click();
+    await page.waitForTimeout(1200);
+    const hl = await page.locator(".mr-hl").count();
+    console.log("   highlighted elements:", hl);
+    await L.shot(page, "d-06-meridian-highlight", false);
+    L.assert(hl > 0, "highlight present");
+  });
+  await L.step("A5 confirm mapping", async () => {
+    await page.getByRole("button", { name: /^Confirm mapping$/ }).first().click();
+    await page.locator("#confirm-by").fill("Sarah Reid");
+    await page.locator("[role=dialog] input[type=checkbox], [role=dialog] button[role=checkbox]").first().click();
+    await L.shot(page, "d-07-confirm-dialog", false);
+    await page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }).click();
+    await page.getByText(/Mapping confirmed by Sarah Reid/).waitFor({ timeout: 5000 });
+    await L.shot(page, "d-08-meridian-confirmed", false);
+  });
+  await L.step("A6 Harrow & Pike mapping (Word) + Northfield mapping (PDF)", async () => {
+    const forms = await page.evaluate(() => JSON.parse(localStorage.getItem("medreport.forms") || "[]").map((f) => ({ id: f.id, kind: f.kind, sampleId: f.sampleId, status: f.status, title: f.title })));
+    console.log("   library:", JSON.stringify(forms));
+    const hp = forms.find((f) => f.sampleId === "harrow-pike-treating-physio");
+    const nf = forms.find((f) => f.sampleId === "northfield-rehab-progress");
+    await page.goto(`${L.BASE}/reports/forms/${encodeURIComponent(hp.id)}`);
+    await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 20000 });
+    await page.getByRole("button", { name: /Prognosis/ }).first().click();
+    await page.waitForTimeout(1000);
+    await L.shot(page, "d-09-harrow-mapping");
+    await page.goto(`${L.BASE}/reports/forms/${encodeURIComponent(nf.id)}`);
+    await page.locator(".mr-preview canvas").first().waitFor({ timeout: 20000 });
+    await page.waitForTimeout(2000);
+    await page.getByRole("button", { name: /fit for work/i }).first().click();
+    await page.waitForTimeout(1000);
+    await L.shot(page, "d-10-northfield-mapping");
+  });
+  async function upload(file) {
+    await page.goto(`${L.BASE}/reports/forms`);
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: "Upload a referrer form" }).first().click();
+    await page.locator("[role=dialog] input[type=file]").setInputFiles(`${L.SP}/demo-forms/${file}`);
+    await page.getByRole("button", { name: /^Analyse form$/ }).waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: /^Analyse form$/ }).click();
+    await page.getByRole("button", { name: /Review the mapping/ }).waitFor({ timeout: 90000 });
+    return (await page.locator("[role=dialog]").innerText()).replace(/\n+/g, " | ");
+  }
+  await L.step("A7 upload the FLAT Ashcroft PDF -> pre-written map -> confirm", async () => {
+    const dlg = await upload("Ashcroft-MR_Physiotherapy-Update-Report_AMR-PU-2.pdf");
+    console.log("   dialog:", dlg.slice(0, 700));
+    L.assert(/Pre-written sample map/.test(dlg), "pre-written sample map of the bundled flat PDF");
+    L.assert(/Flat PDF|flat PDF/i.test(dlg), "kind shown as flat PDF");
+    await L.shot(page, "d-10a-ashcroft-analysed", false);
+    await page.getByRole("button", { name: /Review the mapping/ }).click();
+    await page.waitForURL(/\/reports\/forms\/.+/);
+    await page.locator(".mr-preview canvas").first().waitFor({ timeout: 20000 });
+    await page.waitForTimeout(1500);
+    await L.shot(page, "d-10b-ashcroft-mapping");
+    await page.getByRole("button", { name: /^Confirm mapping$/ }).first().click();
+    await page.locator("#confirm-by").fill("Sarah Reid");
+    await page.locator("[role=dialog] input[type=checkbox], [role=dialog] button[role=checkbox]").first().click();
+    await page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }).click();
+    await page.getByText(/Mapping confirmed by Sarah Reid/).waitFor({ timeout: 10000 });
+    const forms = await page.evaluate(() => JSON.parse(localStorage.getItem("medreport.forms") || "[]").map((f) => ({ sampleId: f.sampleId, status: f.status, attested: !!(f.confirmed && f.confirmed.mac) })));
+    const a = forms.find((f) => f.sampleId === "ashcroft-update-report");
+    console.log("   ashcroft:", JSON.stringify(a));
+    L.assert(a && a.status === "confirmed" && a.attested, "Ashcroft confirmed with a server attestation");
+  });
+  await L.step("A8 a Word form with a javascript: link previews inert", async () => {
+    const dialogs = [];
+    page.on("dialog", (d) => { dialogs.push(d.message()); void d.dismiss(); });
+    await upload("XSS-test_javascript-link.docx");
+    await page.getByRole("button", { name: /Review the mapping/ }).click();
+    await page.waitForURL(/\/reports\/forms\/.+/);
+    const id = decodeURIComponent(page.url().split("/reports/forms/")[1]);
+    await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 20000 });
+    await page.waitForTimeout(1000);
+    const links = await page.locator(".mr-preview a").count();
+    const hrefs = await page.locator(".mr-preview a[href], .mr-preview [href], .mr-preview [onclick]").count();
+    console.log(`   links rendered=${links} with href/onclick=${hrefs}`);
+    const link = page.locator(".mr-preview a", { hasText: "claim portal" }).first();
+    if (await link.count()) await link.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(500);
+    L.assert(hrefs === 0, "no href survives in the preview");
+    L.assert(dialogs.length === 0, "no script ran");
+    // Clean up: remove the test form from the library.
+    await page.goto(`${L.BASE}/reports/forms`);
+    await page.waitForLoadState("networkidle");
+    const card = page.locator(`a[href$="/reports/forms/${encodeURIComponent(id)}"]`).first().locator("xpath=ancestor::*[.//button[starts-with(@aria-label,'Remove ')]][1]");
+    await card.getByRole("button", { name: /^Remove / }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^Remove$/ }).click();
+    await page.waitForTimeout(500);
+  });
+  console.log("PROBLEMS:\n" + problems.join("\n"));
+  console.log("NET>=400:\n" + net.join("\n"));
+  await ctx.close();
+})().catch((e) => { console.error(e); process.exit(1); });

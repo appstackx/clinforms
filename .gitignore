@@ -44,3 +44,4 @@ next-env.d.ts
 # Third-party insurer forms and demo outputs: never commit
 /demo-assets/
 
+/.e2e-out/
