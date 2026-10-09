@@ -8,11 +8,14 @@ import "server-only";
  * 2. The proposed map:
  *    - live: Claude (form-analysis.ts, chunks in parallel) – if Claude fails, the stored map of this
  *      exact file (recorded analysis / pre-written sample map) takes over, else rules; either says so;
- *    - demo: the recorded Claude analysis of this exact file (SHA-256), else the bundled sample's
- *      pre-written map, else rules only (no AI call).
+ *    - demo: the recorded Claude analysis of this exact file (SHA-256) – or the pre-written map of a
+ *      local demonstration form (ai/demo-assets.ts) – else the bundled sample's pre-written map, else
+ *      rules only (no AI call). A stored map keeps its own mode ("demo_recorded" / "demo_prewritten").
  * 3. Deterministic post-validation (form-postvalidate.ts): anchors exist, no shared answer spaces,
  *    tick boxes match, identifiers by code, opinions for the clinician, IDs in document order.
- * 4. A FormDefinition with status "proposed" – staff check it and confirm it once.
+ * 4. A FormDefinition with status "proposed" – staff check it and confirm it once. A local
+ *    demonstration form (ai/demo-assets.ts) always carries its demonstration footer (demoNotice),
+ *    whichever way it was mapped.
  *
  * Logs nothing itself; the handler logs IDs, sizes, timings and token counts only.
  *
@@ -34,7 +37,7 @@ import { chunkParsedForm, summariseParsedForm, type ParsedForm } from "./form-ou
 import { postValidateFields } from "./form-postvalidate";
 import { guessTitle, proposeFieldsByRules } from "./form-rules";
 import { prefilledWarning, redactParsedForm } from "./form-redact";
-import { getRecordedFormAnalysis } from "./recorded-forms";
+import { demoAssetNotice, getRecordedFormAnalysis } from "./recorded-forms";
 import { blankPdfFormValues } from "../forms/pdf-blank";
 import { DraftGenerationError } from "./types";
 
@@ -170,8 +173,16 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       : null;
     const recorded = getRecordedFormAnalysis(input.file.sha256);
     if (recorded) {
+      // A stored map keeps its own mode: a pre-written map (e.g. of a local demonstration form) is never
+      // labelled as a recorded reading.
+      const prewritten = recorded.mode === "demo_prewritten";
+      const detail = !prewritten
+        ? WORDING.server.analysis.recordedDetail(recorded.recordedAt.slice(0, 10).split("-").reverse().join("/"), recorded.model)
+        : (await findSampleBySha256(input.file.sha256))
+          ? WORDING.server.analysis.prewrittenDetail
+          : WORDING.server.analysis.uploadedPrewrittenDetail;
       const analysis: FormAnalysis = {
-        mode: "demo_recorded",
+        mode: recorded.mode,
         ...(recorded.model && { model: publicEngineName(recorded.model) }),
         promptVersion: recorded.promptVersion,
         ...(recorded.durationMs !== undefined && { durationMs: recorded.durationMs }),
@@ -183,7 +194,7 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
         label: "Proposed the form map",
         status: afterLiveError ? "warning" : "ok",
         ms: Date.now() - t,
-        detail: `${fallbackNote ? `${fallbackNote} ` : ""}${WORDING.server.analysis.recordedDetail(recorded.recordedAt.slice(0, 10).split("-").reverse().join("/"), recorded.model)}`,
+        detail: `${fallbackNote ? `${fallbackNote} ` : ""}${detail}`,
       });
       return { form: asProposal(input, recorded.form, analysis, recorded.sampleId), outlineSummary, trace, dropped: 0, repaired: 0 };
     }
@@ -296,5 +307,8 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
     referrer: referrerOf(input, live?.output ?? null),
     versionLabel: live?.output.versionLabel.trim() || undefined,
   });
+  // A local demonstration form read live or by rules is labelled as such too (ai/demo-assets.ts).
+  const notice = demoAssetNotice(input.file.sha256, input.referrer?.name ?? live?.output.referrerName.trim());
+  if (notice) form.demoNotice = notice;
   return { form, outlineSummary, trace, live, dropped: checked.dropped, repaired: checked.repaired };
 }

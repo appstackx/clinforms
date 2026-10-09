@@ -109,6 +109,8 @@ export interface Wording {
     paragraphOriginAi: string;
     analysisMode: Record<FormAnalysisMode, string>;
     prewrittenDraft: string;
+    /** How a demonstration form (FormDefinition.demoNotice) with a pre-written map was analysed. */
+    prewrittenDemoFormMap: string;
   };
 
   /* "Filled by code" reassurances ---------------------------------------------------------------- */
@@ -191,6 +193,8 @@ export interface Wording {
       fallbackNote(code: string): string;
       recordedDetail(date: string, model?: string): string;
       prewrittenDetail: string;
+      /** A pre-written map of an uploaded (non-bundled) demonstration form, e.g. a public insurer form. */
+      uploadedPrewrittenDetail: string;
       tooManyCalls(calls: number): string;
       liveDetail(info: { model: string; chunks: number; effort: string; questions: number }): string;
       liveFailedRules(code: string): string;
@@ -289,6 +293,7 @@ const NEUTRAL: Wording = {
       rules: "Found by layout rules",
     },
     prewrittenDraft: "Sample draft (demo)",
+    prewrittenDemoFormMap: "Pre-written demonstration map",
   },
   byCode: {
     calculatedHeading: "Calculated by code from the record",
@@ -373,6 +378,7 @@ const NEUTRAL: Wording = {
       fallbackNote: () => "Live form reading could not finish just now; the stored map of this exact form was used instead.",
       recordedDetail: (date) => `Prepared demo reading of this exact form (${date})`,
       prewrittenDetail: "Pre-written map of this bundled sample form",
+      uploadedPrewrittenDetail: "Pre-written demonstration map of this exact uploaded form",
       tooManyCalls: (calls) => `This form needs ${calls} parallel requests and the per-minute live limit has no room for them now.`,
       liveDetail: ({ chunks, questions }) =>
         `Read live: ${plural(questions, "question")} proposed (${plural(chunks, "parallel request")})`,
@@ -471,6 +477,7 @@ const AI_ASSISTED: Wording = {
       rules: "Parsed by rules – no AI call",
     },
     prewrittenDraft: "Pre-written draft – no AI call",
+    prewrittenDemoFormMap: "Pre-written demonstration map – no AI call",
   },
   byCode: {
     calculatedHeading: "Calculated by code – never by AI",
@@ -551,6 +558,7 @@ const AI_ASSISTED: Wording = {
       fallbackNote: (code) => `Claude could not finish now (${code}); used the stored map of this exact form instead.`,
       recordedDetail: (date, model) => `Recorded Claude analysis of this exact form (${date}${model ? `, ${model}` : ""}) – no AI call now`,
       prewrittenDetail: "Pre-written map of this bundled sample form – no AI call",
+      uploadedPrewrittenDetail: "Pre-written demonstration map of this exact uploaded form – no AI call",
       tooManyCalls: (calls) => `This form needs ${calls} parallel Claude calls and the per-minute live limit has no room for them now.`,
       liveDetail: ({ model, chunks, effort, questions }) =>
         `Claude (${model}), ${chunks} parallel call${chunks === 1 ? "" : "s"}, ${effort} effort, ${questions} questions proposed`,
@@ -578,6 +586,17 @@ export const WORDING: Wording = wordingFor(DISCLOSURE);
 export function publicEngineName(model: string | undefined, disclosure: Disclosure = DISCLOSURE): string | undefined {
   if (!model) return undefined;
   return disclosure === "ai-assisted" ? model : NEUTRAL_ENGINE;
+}
+
+/**
+ * The footer line every draft preview and final render of a demonstration form carries
+ * (FormDefinition.demoNotice, e.g. a public insurer form in a private demo). The same text whatever
+ * the disclosure setting. `publisher` is the form's owner as printed on it ("Bupa"); without one the
+ * sentence names "its publisher".
+ */
+export function demoFormNotice(publisher?: string): string {
+  const name = publisher?.replace(/\s+/g, " ").trim().slice(0, 120);
+  return `Public form used for demonstration only – not affiliated with or endorsed by ${name || "its publisher"}. Fictional patient data.`;
 }
 
 /** Vendor and technology terms that must not appear in neutral customer-facing text (case-insensitive except "AI"). */

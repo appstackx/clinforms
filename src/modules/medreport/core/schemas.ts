@@ -795,6 +795,12 @@ export const FormDefinitionSchema = z.object({
   builtIn: z.boolean().optional(),
   /** ID of the bundled sample this definition came from (GET /forms/samples/{id}/file serves its bytes). */
   sampleId: z.string().optional(),
+  /**
+   * Demonstration forms only (e.g. a public insurer form used in a private demo, ai/demo-assets.ts):
+   * a footer line printed on every page of the draft previews and final renders of this form
+   * (forms/demo-notice.ts) and shown in the Studio's preview header. Absent on real clinic forms.
+   */
+  demoNotice: z.string().max(300).optional(),
 });
 
 /* Analysis inputs (deterministic parsing → Claude) --------------------------------------------- */

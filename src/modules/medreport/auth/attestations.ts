@@ -38,11 +38,13 @@ function safeEqual(a: string, b: string): boolean {
 
 /**
  * SHA-256 of everything that decides where and how answers are written: the form ID, its kind, the
- * file it is bound to and every field (label, answer type, options, anchor, fill source, required…).
- * Title, referrer and analysis notes are not part of it.
+ * file it is bound to and every field (label, answer type, options, anchor, fill source, required…),
+ * plus a demonstration form's footer (demoNotice), so an approved demo form cannot lose its label
+ * before the final render. Title, referrer and analysis notes are not part of it. A map without a
+ * demoNotice hashes exactly as before (canonicalize drops undefined members).
  */
-export function formMapSha256(form: Pick<FormDefinition, "id" | "kind" | "file" | "fields">): string {
-  const payload = { v: 1, id: form.id, kind: form.kind, fileSha256: form.file.sha256, fields: form.fields };
+export function formMapSha256(form: Pick<FormDefinition, "id" | "kind" | "file" | "fields" | "demoNotice">): string {
+  const payload = { v: 1, id: form.id, kind: form.kind, fileSha256: form.file.sha256, fields: form.fields, demoNotice: form.demoNotice };
   return createHash("sha256").update(canonicalize(payload), "utf8").digest("hex");
 }
 
@@ -59,7 +61,7 @@ function confirmationPayload(form: Pick<FormDefinition, "id" | "tenantId">, mapS
 
 /** A server-signed confirmation of this exact map. */
 export function attestFormConfirmation(
-  form: Pick<FormDefinition, "id" | "tenantId" | "kind" | "file" | "fields">,
+  form: Pick<FormDefinition, "id" | "tenantId" | "kind" | "file" | "fields" | "demoNotice">,
   by: string,
   at: string,
 ): FormConfirmation {

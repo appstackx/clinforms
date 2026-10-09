@@ -541,6 +541,12 @@ export const FormSampleSchema = z.object({
   highlights: z.array(z.string()),
   /** Pre-confirmed form map (recorded analysis), when one exists. */
   form: FormDefinitionSchema.optional(),
+  /**
+   * Local demonstration form (dev/demo only, ai/demo-assets.ts): its map is prepared, but the file is
+   * not served (GET /forms/samples/{id}/file is 404) – staff upload their own copy of exactly this
+   * file (file.sha256) and the upload gets the prepared map. Never carries `form`.
+   */
+  uploadRequired: z.boolean().optional(),
 });
 export const FormSamplesResponseSchema = z.object({ samples: z.array(FormSampleSchema) });
 // GET /forms/samples/{id}/file → binary (CONTENT_TYPES.docx or CONTENT_TYPES.pdf)

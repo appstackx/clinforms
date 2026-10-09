@@ -43,6 +43,7 @@ import { FieldEditor } from "../../components/forms/field-editor";
 import { anchorFromPick, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
+import { DemoNoticeBar } from "../../components/shared/demo-notice";
 import { OriginalFormPreview, type PreviewPick } from "../../components/shared/original-form-preview";
 import { StudioShell } from "../../components/shared/studio-shell";
 import {
@@ -251,7 +252,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Stat label="From notes / clinician" value={String(breakdown.fromNotes)} detail={`${counts.clinician_opinion} need the clinician's own opinion`} />
         <Stat
           label="How it was analysed"
-          value={FORM_ANALYSIS_MODE_LABELS[a.mode]}
+          value={a.mode === "demo_prewritten" && draft.demoNotice ? WORDING.labels.prewrittenDemoFormMap : FORM_ANALYSIS_MODE_LABELS[a.mode]}
           detail={[WORDING.formReading.showModel ? a.model : null, formatUkDateTime(a.at), a.durationMs ? formatMs(a.durationMs) : null].filter(Boolean).join(" · ")}
           small
         />
@@ -283,6 +284,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               {FORM_KIND_LABELS[draft.kind]} · {draft.file.fileName} · shown in its original layout
               {selectedField ? ` · highlighting ${selectedField.id}` : ""}
             </p>
+            <DemoNoticeBar notice={draft.demoNotice} className="mb-2" />
             <OriginalFormPreview
               file={file}
               loading={loading}
