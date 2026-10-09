@@ -210,3 +210,10 @@ test("tick boxes with no border colour get no drawn border; one-character boxes 
   assert.equal(box.getBorderStyle()?.getWidth(), 0, "no black border drawn around the printed box");
   assert.equal(out.getForm().getTextField("d1").getAlignment(), 1, "centred (TextAlignment.Center)");
 });
+
+test("character boxes for a date take the clinician's N/A when the date does not apply", () => {
+  const anchor = { kind: "pdf_char_fields" as const, fieldNames: ["d1", "d2", "m1", "m2", "y1", "y2", "y3", "y4"], format: "DDMMYYYY" as const };
+  assert.deepEqual(charFieldTexts(anchor, { text: "N/A", value: "N/A" }, "N/A"), { kind: "ok", chars: ["N", "/", "A"], cut: false, value: "N/A" });
+  assert.deepEqual(charFieldTexts(anchor, { text: "not applicable", value: "not applicable" }, "not applicable").kind, "ok");
+  assert.equal(charFieldTexts(anchor, { text: "soon", value: "soon" }, "soon").kind, "not_a_date", "any other word is still not a date");
+});

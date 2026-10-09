@@ -294,9 +294,15 @@ function TypedValueEditor({
       if (value !== null) onChange(null);
       return;
     }
+    // "N/A": the clinician's answer that the date or number does not apply – written on the form as N/A.
+    if (/^(?:n\/?a|not applicable)$/i.test(raw)) {
+      setError(null);
+      if (value !== "N/A") onChange("N/A");
+      return;
+    }
     if (isDate) {
       const iso = parseUkDate(raw) ?? (isValidIsoDate(raw) ? raw : null);
-      if (!iso) return setError("Enter the date as DD/MM/YYYY, for example 07/07/2026.");
+      if (!iso) return setError("Enter the date as DD/MM/YYYY, for example 07/07/2026 – or N/A if it does not apply.");
       setError(null);
       if (iso !== value) onChange(iso);
       return;
@@ -315,8 +321,8 @@ function TypedValueEditor({
       <input
         id={id}
         type="text"
-        inputMode={isDate ? "numeric" : "decimal"}
-        placeholder={isDate ? "DD/MM/YYYY" : "Number"}
+        inputMode={isDate ? "text" : "decimal"}
+        placeholder={isDate ? "DD/MM/YYYY or N/A" : "Number or N/A"}
         value={text}
         disabled={readOnly}
         aria-invalid={error ? true : undefined}
