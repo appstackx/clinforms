@@ -183,6 +183,45 @@ test("mapper: nulls become absent/empty, clinicians de-duplicated, source and re
   assert.equal(EpisodeBundleSchema.safeParse(bundle).success, true);
 });
 
+test("mapper: insurer identifiers and appointment charges are copied when present (trimmed), absent otherwise", () => {
+  const input = wire();
+  input.episode.referral.insurer_name = "  Test Insurer (fictional) ";
+  input.episode.referral.membership_number = "DEMO-POL-9999";
+  input.episode.referral.authorisation_number = "   ";
+  input.appointments[0].charge = { amount: 55, currency: "GBP", paid: false };
+  input.appointments[1] = { ...input.appointments[1], charge: { amount: 70, currency: "GBP", paid: true } };
+  input.appointments[2] = { ...input.appointments[2], charge: null };
+  const bundle = mapSimEpisodeToBundle(input, OPTS);
+  assert.equal(bundle.referral.insurerName, "Test Insurer (fictional)");
+  assert.equal(bundle.referral.membershipNumber, "DEMO-POL-9999");
+  assert.equal("authorisationNumber" in bundle.referral, false, "blank → absent");
+  assert.deepEqual(
+    bundle.appointments.map((a) => [a.externalId, a.charge ?? null]),
+    [
+      ["w-a1", { amount: 70, currency: "GBP", paid: true }],
+      ["w-a2", null],
+      ["w-a3", { amount: 55, currency: "GBP", paid: false }],
+      ["w-a4", null],
+    ],
+  );
+  assert.equal("charge" in bundle.appointments[1], false, "null → absent");
+  assert.equal(EpisodeBundleSchema.safeParse(bundle).success, true);
+  // Without them (every earlier fixture), nothing new appears in the bundle.
+  const plain = mapSimEpisodeToBundle(wire(), OPTS);
+  for (const key of ["insurerName", "membershipNumber", "authorisationNumber"]) assert.equal(key in plain.referral, false, key);
+  for (const a of plain.appointments) assert.equal("charge" in a, false);
+});
+
+test("wire: a charge must be a non-negative GBP amount with a paid flag", async () => {
+  const { SimAppointmentSchema } = await import("./wire");
+  const base = { ...wire().appointments[0] };
+  assert.equal(SimAppointmentSchema.safeParse(base).success, true, "charge is optional");
+  assert.equal(SimAppointmentSchema.safeParse({ ...base, charge: { amount: 55, currency: "GBP", paid: true } }).success, true);
+  assert.equal(SimAppointmentSchema.safeParse({ ...base, charge: { amount: -1, currency: "GBP", paid: true } }).success, false);
+  assert.equal(SimAppointmentSchema.safeParse({ ...base, charge: { amount: 55, currency: "EUR", paid: true } }).success, false);
+  assert.equal(SimAppointmentSchema.safeParse({ ...base, charge: { amount: 55, currency: "GBP" } }).success, false);
+});
+
 test("mapper: deterministic (same input → identical bundle) and does not mutate its input", () => {
   const input = wire();
   const before = JSON.stringify(input);

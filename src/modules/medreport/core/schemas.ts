@@ -202,6 +202,17 @@ export const RegistrationPathSchema = z.enum([
   "clinician.name",
   "clinician.hcpc",
   "clinician.profession",
+  // Added for insurer (PMI) forms – additive. Patient title and contact details come from registration,
+  // clinic contact details from the clinic's settings, and the insurer's identifiers from the referral
+  // (membership / authorisation numbers are copied only onto that insurer's own form: core/form-record-rules.ts).
+  "patient.title",
+  "patient.phone",
+  "patient.email",
+  "clinic.phone",
+  "clinic.email",
+  "referral.insurerName",
+  "referral.membershipNumber",
+  "referral.authorisationNumber",
 ]);
 /** How a computed fact is written into a form answer (default "summary" = the fact's value). */
 export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary"]);
@@ -277,6 +288,13 @@ export const InstructingPartySchema = z.object({
 export const ReferralSchema = InstructingPartySchema.extend({
   referralDate: IsoDateSchema.optional(),
   reason: z.string().optional(),
+  /**
+   * Private medical insurance (additive): the patient's insurer as the clinic system records it, and the
+   * insurer's membership / policy and pre-authorisation numbers. Identifiers – never sent to the AI.
+   */
+  insurerName: z.string().optional(),
+  membershipNumber: z.string().optional(),
+  authorisationNumber: z.string().optional(),
 });
 
 /** The referrer (MLC, insurer, solicitor, case manager, employer…) whose own form is being completed. */
@@ -326,6 +344,17 @@ export const AppointmentSchema = z.object({
   reason: z.string().optional(),
   noteId: NoteIdSchema.optional(),
   clinician: ClinicianSchema.optional(),
+  /**
+   * The clinic's charge for this appointment, when the clinic system holds one (additive; insurer claim
+   * forms' expenses tables). `amount` is in pounds (GBP major units, e.g. 55 = £55.00).
+   */
+  charge: z
+    .object({
+      amount: z.number().nonnegative(),
+      currency: z.literal("GBP"),
+      paid: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const OutcomePointSchema = z.object({
@@ -717,7 +746,9 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
  * - clinician_opinion: only an opinion a clinician actually recorded, attributed and cited; otherwise
  *   left blank and flagged for the clinician;
  * - signoff: filled from the server-signed approval receipt (blank on a DRAFT);
- * - leave_blank: the referrer's own use / not for the clinic (no report section).
+ * - leave_blank: the referrer's own use / not for the clinic (no report section);
+ * - fixed (additive): the same answer for every patient, set once in the form map by staff (e.g. tick
+ *   "Physiotherapist", "United Kingdom"); filled by CODE, never the AI.
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("registration"), path: RegistrationPathSchema }),
@@ -726,6 +757,7 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("clinician_opinion") }),
   z.object({ kind: z.literal("signoff"), part: SignoffPartSchema }),
   z.object({ kind: z.literal("leave_blank") }),
+  z.object({ kind: z.literal("fixed"), value: z.string() }),
 ]);
 
 /** One question / answer space on the referrer's form. */

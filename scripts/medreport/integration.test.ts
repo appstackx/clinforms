@@ -145,6 +145,40 @@ test("case B (Daniel Brooks): facts and data checks", () => {
   assert.deepEqual(runDataChecks(bundle).map((c) => c.code), ["MULTIPLE_CLINICIANS"]);
 });
 
+test("case C (Rebecca Lane, private medical insurance): facts and data checks", () => {
+  const bundle = getDemoBundle("rebecca-lane");
+  const facts = computeFacts(bundle, { asOf: "2026-10-06" });
+  const byId = new Map(facts.map((f) => [f.id, f]));
+  assert.deepEqual(facts.map((f) => f.id), [
+    "FACT-attendance",
+    "FACT-age",
+    "FACT-episode",
+    "FACT-outcomes-NPRS",
+    "FACT-outcomes-QuickDASH",
+    "FACT-outcomes-PSFS",
+  ]);
+  // CNC and BOOKED are reported separately, not counted as missed.
+  assert.equal(byId.get("FACT-attendance")?.value, "5 of 5 appointments attended");
+  assert.match(byId.get("FACT-attendance")?.detail ?? "", /Cancelled with notice \(CNC, not counted above\): 1 – 22\/09\/2026 \(A-004\)/);
+  assert.match(byId.get("FACT-attendance")?.detail ?? "", /Booked for a future date \(not counted above\): 1\./);
+  assert.match(byId.get("FACT-attendance")?.detail ?? "", /First attended appointment 01\/09\/2026; last attended appointment 01\/10\/2026/);
+  assert.equal(byId.get("FACT-age")?.value, "45 years");
+  assert.match(byId.get("FACT-age")?.detail ?? "", /Age at the incident on 22\/08\/2026: 45 years/);
+  assert.equal(byId.get("FACT-episode")?.value, "01/09/2026 to date (episode open; last contact 01/10/2026)");
+  assert.match(byId.get("FACT-episode")?.detail ?? "", /5 clinical notes by 1 clinician: Sarah Reid \(PH-DEMO-01\) 5 notes/);
+  assert.equal(byId.get("FACT-outcomes-NPRS")?.value, "NPRS 7/10 → 5/10 → 4/10 (lower is better)");
+  assert.equal(byId.get("FACT-outcomes-QuickDASH")?.value, "QuickDASH 52.3/100 → 38.6/100 → 29.5/100 (lower is better)");
+  assert.match(byId.get("FACT-outcomes-QuickDASH")?.detail ?? "", /22\.8 points lower .* an improvement/);
+  assert.equal(byId.get("FACT-outcomes-PSFS")?.value, "PSFS 2.7/10 → 4.3/10 → 5.3/10 (higher is better)");
+  assert.match(byId.get("FACT-outcomes-PSFS")?.detail ?? "", /01\/09\/2026: 2\.7\/10 \(N-001\); 15\/09\/2026: 4\.3\/10 \(N-003\); 01\/10\/2026: 5\.3\/10 \(N-005\)/);
+  assert.match(byId.get("FACT-outcomes-PSFS")?.detail ?? "", /2\.6 points higher .* an improvement/);
+  // No name, address, contact details or insurer identifiers in any fact (facts go to the AI).
+  const text = JSON.stringify(facts);
+  for (const pii of ["Rebecca", "Lane", "Larkspur", "07700", "example.com", "DEMO-POL", "DEMO-AUTH"]) assert.ok(!text.includes(pii), pii);
+  // History recorded (structured PMH), one clinician, consent recorded: only the open episode is reported.
+  assert.deepEqual(runDataChecks(bundle).map((c) => [c.code, c.severity]), [["EPISODE_STILL_OPEN", "info"]]);
+});
+
 test("data checks: open episode, missing discharge note, consent, single time point, incident date, DNA explained later", () => {
   const base = getDemoBundle("megan-hart");
   const open = { ...base, episodeStatus: "open" as const };
@@ -297,14 +331,17 @@ test("GET patients: search, registration-only patients, episode summaries", asyn
   const all = PatientsResponseSchema.parse(
     await (await patients(req("/api/reports/v1/connectors/tm3-sim/patients", { token }), { params: { id: "tm3-sim" } })).json(),
   );
-  assert.equal(all.patients.length, 5);
+  assert.equal(all.patients.length, 6);
   const megan = all.patients.find((p) => p.id === "sim-pat-001");
   assert.equal(megan?.displayName, "Megan Hart");
   assert.equal(megan?.registrationOnly, false);
   assert.deepEqual(megan?.episodes.map((e) => [e.id, e.referralType, e.status]), [["sim-ep-1001", "solicitor", "discharged"]]);
   assert.equal(all.patients.filter((p) => p.registrationOnly).length, 3);
+  const lane = all.patients.find((p) => p.id === "sim-pat-006");
+  assert.equal(lane?.displayName, "Rebecca Lane");
+  assert.deepEqual(lane?.episodes.map((e) => [e.id, e.referralType, e.status]), [["sim-ep-1006", "insurer", "open"]]);
   // 1 patients call + 1 episodes call per patient with episodes.
-  assert.equal(all.trace.length, 3);
+  assert.equal(all.trace.length, 4);
 
   const hart = PatientsResponseSchema.parse(
     await (await patients(req("/api/reports/v1/connectors/tm3-sim/patients?search=hart", { token }), { params: { id: "tm3-sim" } })).json(),

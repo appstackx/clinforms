@@ -56,6 +56,12 @@ export interface SimReferral {
   address: string | null;
   referral_date: string | null;
   reason: string | null;
+  /** Private medical insurance: the patient's insurer (may differ from the referring organisation). */
+  insurer_name?: string | null;
+  /** The patient's insurer membership / policy number. */
+  membership_number?: string | null;
+  /** The insurer's pre-authorisation number for this episode. */
+  authorisation_number?: string | null;
 }
 
 export interface SimIncident {
@@ -108,7 +114,16 @@ export interface SimAppointment {
   status_reason: string | null;
   clinician: SimClinician;
   note_id: string | null;
+  /** The clinic's charge for the appointment (absent when none was raised). */
+  charge?: SimCharge | null;
   _simulated: true;
+}
+
+/** Appointment charge. `amount` is in pounds (GBP major units, e.g. 55 = £55.00). */
+export interface SimCharge {
+  amount: number;
+  currency: "GBP";
+  paid: boolean;
 }
 
 export interface SimOutcomeMeasure {

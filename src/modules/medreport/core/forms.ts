@@ -13,6 +13,7 @@
  *   clinician_opinion   → clinician_opinion     only an opinion a clinician recorded (attributed); else blank + gap
  *   signoff             → declaration           the server-signed receipt at approval (blank on a DRAFT)
  *   leave_blank         → (no section)          nobody
+ *   fixed               → from_records          CODE now (the map's fixed answer; core/form-record-rules.ts)
  *
  * Answers: for text answer types the section's paragraphs ARE the answer; for yes/no, tick box, choice,
  * date and number the structured value is `section.answer` (paragraphs then hold the cited support).
@@ -218,6 +219,7 @@ export function sectionKindForFillSource(source: FillSource): SectionKind | null
   switch (source.kind) {
     case "registration":
     case "computed_fact":
+    case "fixed":
       return "from_records";
     case "notes_narrative":
       return "ai_narrative";
@@ -354,6 +356,16 @@ function textValue(text: string | undefined | null, sourceIds: string[]): Resolv
   return t ? { text: t, value: t, sourceIds } : null;
 }
 
+/**
+ * The patient's insurer as the record holds it: the referral's insurer name, or – for an insurer referral
+ * that does not name one separately – the referring insurer itself. Null when the record names no insurer.
+ */
+export function insurerNameOnRecord(bundle: Pick<EpisodeBundle, "referral">): string | null {
+  const named = bundle.referral.insurerName?.trim();
+  if (named) return named;
+  return bundle.referral.type === "insurer" && bundle.referral.name.trim() ? bundle.referral.name.trim() : null;
+}
+
 const SEX_TEXT: Record<EpisodeBundle["registration"]["sex"], string> = {
   female: "Female",
   male: "Male",
@@ -404,6 +416,20 @@ export function resolveRegistrationValue(
       return textValue(reg.occupation, REG);
     case "patient.employer":
       return textValue(reg.employer, REG);
+    case "patient.title":
+      return textValue(reg.title, REG);
+    case "patient.phone":
+      return textValue(reg.contact?.phone, REG);
+    case "patient.email":
+      return textValue(reg.contact?.email, REG);
+    case "referral.insurerName":
+      return textValue(insurerNameOnRecord(bundle), REG);
+    // Insurer identifiers: createFormReport copies them only onto the insurer's own form
+    // (core/form-record-rules.ts withheldInsurerIdentifier).
+    case "referral.membershipNumber":
+      return textValue(bundle.referral.membershipNumber, REG);
+    case "referral.authorisationNumber":
+      return textValue(bundle.referral.authorisationNumber, REG);
     case "referral.referrerName":
       return textValue(party.name, REG);
     case "referral.reference":
@@ -429,6 +455,10 @@ export function resolveRegistrationValue(
       return textValue(DEMO_CLINIC.name, []);
     case "clinic.address":
       return textValue(DEMO_CLINIC.addressLines.join(", "), []);
+    case "clinic.phone":
+      return textValue(DEMO_CLINIC.phone, []);
+    case "clinic.email":
+      return textValue(DEMO_CLINIC.email, []);
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
@@ -809,6 +839,15 @@ export function checkFormDefinition(form: FormDefinition): string[] {
     }
     if (field.answerType === "single_choice" && !field.options?.length) {
       problems.push(`${where}: a single-choice question needs its options.`);
+    }
+    if (field.fillSource.kind === "fixed") {
+      const fixed = field.fillSource.value.trim();
+      if (!fixed) problems.push(`${where}: enter the fixed answer, or choose another source.`);
+      else if (answerKindFor(field.answerType) !== "text" && parseFormAnswerValue(field, fixed).value === null) {
+        problems.push(
+          `${where}: the fixed answer “${fixed}” does not fit a ${ANSWER_TYPE_LABELS[field.answerType].toLowerCase()} question${field.options?.length ? ` (options: ${field.options.join(", ")})` : ""}.`,
+        );
+      }
     }
   }
   if (!form.fields.some(isAnswerableField)) problems.push("No question on this form is set to be completed.");

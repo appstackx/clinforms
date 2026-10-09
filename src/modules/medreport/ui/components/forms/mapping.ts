@@ -200,6 +200,8 @@ export function fillSourceOfKind(kind: FillSource["kind"], current: FillSource):
       return { kind, factId: "FACT-attendance", format: "summary" satisfies ComputedFactFormat };
     case "signoff":
       return { kind, part: "signature" satisfies SignoffPart };
+    case "fixed":
+      return { kind, value: "" };
     default:
       return { kind };
   }

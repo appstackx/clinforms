@@ -30,7 +30,7 @@ import { WORDING } from "../../wording";
 import { FILL_SOURCE_SHORT, FieldLabel, Select, Textarea } from "../shared/ui-bits";
 import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription } from "./mapping";
 
-const FILL_KINDS: FillSource["kind"][] = ["registration", "computed_fact", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"];
+const FILL_KINDS: FillSource["kind"][] = ["registration", "computed_fact", "fixed", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"];
 
 const FILL_HELP: Record<FillSource["kind"], string> = {
   registration: WORDING.byCode.fillHelpRegistration,
@@ -40,6 +40,7 @@ const FILL_HELP: Record<FillSource["kind"], string> = {
     "Only an opinion a clinician actually recorded is used, attributed with its date (“On 07/07/2026 the treating physiotherapist recorded …”). Otherwise left blank for the clinician.",
   signoff: "Completed from the approving clinician's server-signed receipt. Blank on drafts.",
   leave_blank: "Not completed by the clinic (e.g. “for office use”).",
+  fixed: "The same answer for every patient (e.g. “Physiotherapist”, “United Kingdom”), filled in by the system. Tick boxes take Yes or No; choices take an option as printed.",
 };
 
 const OPTION_TYPES = new Set(["single_choice", "yes_no", "checkbox"]);
@@ -177,6 +178,12 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                 ))}
               </Select>
             </div>
+          </div>
+        ) : null}
+        {src.kind === "fixed" ? (
+          <div>
+            <FieldLabel htmlFor={`${id}-fixed`}>Fixed answer</FieldLabel>
+            <Input id={`${id}-fixed`} value={src.value} onChange={(e) => setSource({ kind: "fixed", value: e.target.value })} />
           </div>
         ) : null}
         {src.kind === "signoff" ? (

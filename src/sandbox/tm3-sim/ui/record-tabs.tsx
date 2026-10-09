@@ -12,6 +12,7 @@ import {
   formatDate,
   formatDateTime,
   formatDateWithDay,
+  formatGbp,
   INCIDENT_LABELS,
   NOTE_TYPE_LABELS,
   REFERRAL_LABELS,
@@ -73,6 +74,17 @@ export function RegistrationTab({ patient, episode }: { patient: SimPatient; epi
               {REFERRAL_LABELS[episode.referral.source_type]} – {episode.referral.organisation_name}
             </Field>
             <Field label="Reference">{episode.referral.reference}</Field>
+            {episode.referral.insurer_name || episode.referral.membership_number || episode.referral.authorisation_number ? (
+              <>
+                <Field label="Insurer">{episode.referral.insurer_name}</Field>
+                <Field label="Membership number">
+                  {episode.referral.membership_number ? <span className="font-mono">{episode.referral.membership_number}</span> : null}
+                </Field>
+                <Field label="Authorisation number">
+                  {episode.referral.authorisation_number ? <span className="font-mono">{episode.referral.authorisation_number}</span> : null}
+                </Field>
+              </>
+            ) : null}
             <Field label="Referral contact">{episode.referral.contact_name}</Field>
             <Field label="Referral date">{episode.referral.referral_date ? formatDate(episode.referral.referral_date) : null}</Field>
             <Field label="Referrer address">{episode.referral.address}</Field>
@@ -135,6 +147,8 @@ export function AppointmentsTab({
     );
   }
   const count = (s: string) => sorted.filter((a) => a.status === s).length;
+  // Charges are shown only for episodes that record them (e.g. private medical insurance).
+  const showCharges = sorted.some((a) => a.charge);
   const summary = [
     `${sorted.length} appointments`,
     `${count("ATT")} attended`,
@@ -157,6 +171,7 @@ export function AppointmentsTab({
               <th scope="col" className="px-3 py-2.5">Time</th>
               <th scope="col" className="px-3 py-2.5">Clinician</th>
               <th scope="col" className="px-3 py-2.5">Status</th>
+              {showCharges && <th scope="col" className="px-3 py-2.5">Charge</th>}
               <th scope="col" className="px-3 py-2.5">Reason / note</th>
             </tr>
           </thead>
@@ -171,6 +186,20 @@ export function AppointmentsTab({
                 <td className="px-3 py-2.5">
                   <StatusChip status={a.status} />
                 </td>
+                {showCharges && (
+                  <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                    {a.charge ? (
+                      <>
+                        {formatGbp(a.charge.amount)}{" "}
+                        <span className={a.charge.paid ? "text-slate-500" : "font-medium text-rose-700"}>
+                          · {a.charge.paid ? "paid" : "unpaid"}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">–</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-3 py-2.5 text-slate-700">
                   {a.note_id ? (
                     <button

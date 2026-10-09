@@ -87,6 +87,7 @@ export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   clinician_opinion: "Clinician opinion – only if recorded, else for the clinician",
   signoff: "Sign-off – filled on approval",
   leave_blank: "Leave blank",
+  fixed: "Fixed answer – the same for every patient",
 };
 
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
@@ -112,6 +113,14 @@ export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "clinician.name": "Treating clinician",
   "clinician.hcpc": "Treating clinician HCPC number",
   "clinician.profession": "Treating clinician profession",
+  "patient.title": "Patient title",
+  "patient.phone": "Patient phone number",
+  "patient.email": "Patient email address",
+  "clinic.phone": "Clinic phone number",
+  "clinic.email": "Clinic email address",
+  "referral.insurerName": "Insurer name",
+  "referral.membershipNumber": "Insurer membership number",
+  "referral.authorisationNumber": "Insurer authorisation number",
 };
 
 export const COMPUTED_FACT_FORMAT_LABELS: Record<ComputedFactFormat, string> = {
