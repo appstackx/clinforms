@@ -44,3 +44,22 @@ describe("admin script helpers", () => {
     assert.ok(safeExportDir(undefined, "riverside").startsWith(path.join(os.homedir(), "clinforms-exports", "riverside-")));
   });
 });
+
+describe("auth settings provisioning plan", () => {
+  it("keeps an existing secret, generates one otherwise; production also sets the public URL; preview never does", async () => {
+    const { planAuthSettings } = await import("./provision-auth-secrets");
+    const fresh = planAuthSettings("preview", new Map(), () => "generated-secret");
+    assert.equal(fresh.generated, true);
+    assert.deepEqual(fresh.file, { PREVIEW_BETTER_AUTH_SECRET: "generated-secret", PREVIEW_CLINFORMS_EMAIL_PROVIDER: "none" });
+    assert.deepEqual(fresh.vercel.map(([n, , s]) => [n, s]), [["BETTER_AUTH_SECRET", true], ["CLINFORMS_EMAIL_PROVIDER", false]]);
+    const kept = planAuthSettings("production", new Map([["PRODUCTION_BETTER_AUTH_SECRET", "existing"], ["PRODUCTION_CLINFORMS_EMAIL_PROVIDER", "mailersend"]]), () => "never");
+    assert.equal(kept.generated, false);
+    assert.equal(kept.file.PRODUCTION_BETTER_AUTH_SECRET, "existing");
+    assert.equal(kept.file.PRODUCTION_BETTER_AUTH_URL, "https://clinforms.co.uk");
+    assert.deepEqual(kept.vercel.map(([n, v]) => [n, n === "BETTER_AUTH_SECRET" ? "…" : v]), [
+      ["BETTER_AUTH_SECRET", "…"],
+      ["CLINFORMS_EMAIL_PROVIDER", "mailersend"],
+      ["BETTER_AUTH_URL", "https://clinforms.co.uk"],
+    ]);
+  });
+});

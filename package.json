@@ -25,7 +25,9 @@
     "admin:list-clinics": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/list-clinics.ts",
     "admin:offboard-clinic": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/offboard-clinic.ts",
     "admin:reset-two-factor": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/reset-two-factor.ts",
-    "test:auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/server/auth/**/*.test.ts\" \"src/server/email/**/*.test.ts\" \"scripts/admin/**/*.test.ts\""
+    "test:auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/server/auth/**/*.test.ts\" \"src/server/email/**/*.test.ts\" \"scripts/admin/**/*.test.ts\"",
+    "admin:provision-auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/provision-auth-secrets.ts",
+    "admin:with-env": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/with-env.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

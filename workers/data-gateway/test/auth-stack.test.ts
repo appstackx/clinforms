@@ -2,7 +2,8 @@
  * The identity flows (src/server/auth/testing/auth-suite.ts) on the production database path: Better Auth →
  * the app's Kysely D1 dialect → signed HTTP → the gateway Worker's handler → D1. Twice: a node:sqlite D1
  * stand-in (always), and real local D1 in workerd with wrangler-applied migrations (needs `npm ci` in
- * workers/data-gateway). Better Auth runs without transactions here (D1 has none) – as everywhere.
+ * workers/data-gateway). Better Auth runs without transactions here (D1 has none) – as everywhere. Its start-up
+ * schema check is forced on: these stand-ins can be introspected (real remote D1 cannot, so the app turns it off).
  */
 import fs from "node:fs";
 import { Kysely } from "kysely";
@@ -27,6 +28,7 @@ defineAuthSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)
   return {
     db,
     dialect: "d1",
+    validateSchema: true,
     close: async () => {
       await db.destroy();
       d1.close();
@@ -42,6 +44,7 @@ defineAuthSuite(
     return {
       db,
       dialect: "d1",
+      validateSchema: true,
       close: async () => {
         await db.destroy();
         await proxy.dispose();

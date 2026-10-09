@@ -104,3 +104,49 @@ describe("Supabase provisioning helpers", () => {
     assert.equal(scrubConnectionString("postgres://user@host/db"), "postgres://user@host/db");
   });
 });
+
+describe("copy D1/SQLite → Postgres with Better Auth's tables (sign-in still works on the copy)", () => {
+  it("copies accounts, two-step secrets, clinics and memberships; the same secret signs in on Postgres", async () => {
+    const { createAuth } = await import("../../src/server/auth/create-auth");
+    const { createClinic } = await import("../../src/server/auth/platform");
+    const { CookieJar } = await import("../../src/server/auth/testing/cookie-jar");
+    const { parseOtpAuthUri, totp } = await import("../../src/server/auth/testing/totp");
+    const { setEmailProviderForTests } = await import("../../src/server/email");
+    setEmailProviderForTests({ name: "none", send: async () => ({ status: "not_sent", provider: "none" }) });
+    const secret = "copy-test-secret-".padEnd(48, "c");
+    const base = { kind: "static" as const, url: "http://localhost:3000" };
+    const password = "copy test long password";
+    const src = createSqliteTestDb();
+    const pglite = await createPglite();
+    await applyPostgresMigrations(pgliteMigrationClient(pglite));
+    const dst = new Kysely<Database>({ dialect: new PGliteDialect({ pglite }) });
+    try {
+      const sqliteAuth = createAuth({ db: src.db, dialect: "sqlite", secret, baseUrl: base, rateLimit: false });
+      const clinic = await createClinic(src.db, { name: "Copy Clinic (fictional)", slug: "copy-clinic", ownerEmail: "owner@copy.example", appOrigin: base.url });
+      const jar = new CookieJar();
+      jar.absorb((await sqliteAuth.api.signUpEmail({ body: { email: "owner@copy.example", password, name: "Owner" }, returnHeaders: true })).headers);
+      jar.absorb((await sqliteAuth.api.acceptInvitation({ body: { invitationId: clinic.invitationId }, headers: jar.headers(), returnHeaders: true })).headers);
+      const enabled = (await sqliteAuth.api.enableTwoFactor({ body: { password }, headers: jar.headers() })) as { totpURI: string };
+      const otp = parseOtpAuthUri(enabled.totpURI);
+      await sqliteAuth.api.verifyTOTP({ body: { code: totp(otp) }, headers: jar.headers() });
+
+      const result = await copyDatabase(sqliteSource(src.sqlite), pgliteMigrationClient(pglite));
+      for (const table of ["user", "account", "twoFactor", "organization", "member", "invitation"]) {
+        assert.ok((result.tables.find((t) => t.table === table)?.rows ?? 0) > 0, `${table} copied`);
+      }
+      const pgAuth = createAuth({ db: dst, dialect: "postgres", secret, baseUrl: base, rateLimit: false });
+      const signIn = new CookieJar();
+      const res = await pgAuth.api.signInEmail({ body: { email: "owner@copy.example", password }, returnHeaders: true });
+      signIn.absorb(res.headers);
+      assert.equal((res.response as { twoFactorRedirect?: boolean }).twoFactorRedirect, true);
+      signIn.absorb((await pgAuth.api.verifyTOTP({ body: { code: totp(otp) }, headers: signIn.headers(), returnHeaders: true })).headers);
+      const session = await pgAuth.api.getSession({ headers: signIn.headers() });
+      assert.equal(session?.user.twoFactorEnabled, true);
+      assert.equal((session?.session as { activeOrganizationId?: string }).activeOrganizationId, clinic.organizationId);
+    } finally {
+      setEmailProviderForTests(null);
+      await src.close();
+      await dst.destroy();
+    }
+  });
+});

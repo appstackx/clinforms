@@ -18,12 +18,13 @@
  *   secure cookies on https, session cookie cache 5 minutes.
  * - Every membership / security change writes an audit_log row (ids only, never patient data).
  */
+import { createHash } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { organization, twoFactor } from "better-auth/plugins";
 import type { Kysely } from "kysely";
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/account-copy";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../../lib/account-copy";
 import type { Database } from "../db/schema";
 import { deliverEmail, invitationEmail, passwordResetEmail, twoFactorEnabledEmail } from "../email";
 import { logAuthEvent } from "../email/log";
@@ -35,6 +36,14 @@ import { MEMBER_ROLES, accessControl, parseMemberRole, roles } from "./roles";
 import { assertTenantSlug } from "./tenant";
 
 export type AuthDialect = "sqlite" | "d1" | "postgres";
+
+/**
+ * An invitation's id IS the secret in its link, so audit rows record this one-way reference instead
+ * ("inv_" + 16 characters of its SHA-256): enough to match rows to each other, useless as a link.
+ */
+export function invitationRef(invitationId: string): string {
+  return `inv_${createHash("sha256").update(invitationId, "utf8").digest("base64url").slice(0, 16)}`;
+}
 
 export const INVITATION_TTL_SECONDS = 7 * 24 * 3600;
 export const RESET_TOKEN_TTL_SECONDS = 2 * 3600;
@@ -86,6 +95,8 @@ export interface CreateAuthInput {
   currentHeaders?: () => Promise<Headers | null>;
   /** Default true. Tests turn it off unless they test it. */
   rateLimit?: boolean;
+  /** Better Auth's start-up schema check. Default: on, except on D1 (see below). */
+  validateSchema?: boolean;
 }
 
 type AnyCtx = { path?: string; body?: Record<string, unknown> } | null | undefined;
@@ -192,6 +203,11 @@ export function createAuth(input: CreateAuthInput) {
       },
     },
     advanced: {
+      // Better Auth checks the live schema at start-up by introspection. On real D1 that cannot work through
+      // the gateway (D1 refuses pragma_table_info on its internal _cf_KV table, and the gateway refuses PRAGMA),
+      // so it is off there. The schema is guarded by the committed migrations instead: auth.test.ts proves
+      // Better Auth wants nothing more from them, and the local-D1 run keeps the check on.
+      database: { validateSchema: input.validateSchema ?? dialect !== "d1" },
       cookiePrefix: COOKIE_PREFIX,
       useSecureCookies: usesSecureCookies(input.baseUrl),
       defaultCookieAttributes: { sameSite: "lax", httpOnly: true },
@@ -370,12 +386,17 @@ export function createAuth(input: CreateAuthInput) {
               userId: inviter.id,
               action: "member.invite",
               targetType: "invitation",
-              targetId: invitation.id,
+              targetId: invitationRef(invitation.id),
               detail: { role: invitation.role },
             });
           },
           async afterCancelInvitation({ invitation, cancelledBy }) {
-            await audit(invitation.organizationId, { userId: cancelledBy.id, action: "member.invite_cancel", targetType: "invitation", targetId: invitation.id });
+            await audit(invitation.organizationId, {
+              userId: cancelledBy.id,
+              action: "member.invite_cancel",
+              targetType: "invitation",
+              targetId: invitationRef(invitation.id),
+            });
           },
           async afterAcceptInvitation({ invitation, member, user }) {
             await audit(invitation.organizationId, {
@@ -383,7 +404,7 @@ export function createAuth(input: CreateAuthInput) {
               action: "member.join",
               targetType: "member",
               targetId: member.id,
-              detail: { role: member.role, invitationId: invitation.id },
+              detail: { role: member.role, invitation: invitationRef(invitation.id) },
             });
           },
           async afterUpdateMemberRole({ member, previousRole }) {

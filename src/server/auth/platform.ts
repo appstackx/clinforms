@@ -22,8 +22,8 @@ import { getFormFile, listFormFiles } from "../repos/form-files";
 import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
-import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID } from "./create-auth";
-import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID, invitationRef } from "./create-auth";
+import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
 import { assertTenantSlug } from "./tenant";
 
 const ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -141,7 +141,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
     action: "clinic.create",
     targetType: "organization",
     targetId: organizationId,
-    detail: { invitationId, retentionDays, emailProvider: emailProviderName(), emailStatus: email.status },
+    detail: { invitation: invitationRef(invitationId), retentionDays, emailProvider: emailProviderName(), emailStatus: email.status },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
 }

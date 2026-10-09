@@ -1,5 +1,5 @@
 /** Better Auth / ClinForms error codes → the plain-English messages in src/lib/account-copy.ts. */
-import { ACCOUNT_ERRORS, type AccountErrorKey } from "@/lib/account-copy";
+import { ACCOUNT_ERRORS, type AccountErrorKey } from "../../lib/account-copy";
 import { RepoInputError } from "../repos/context";
 import { logAuthEvent } from "../email/log";
 import { TenantSlugError } from "./tenant";

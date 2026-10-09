@@ -26,7 +26,7 @@ contract here needs the orchestrator.
 | Database later | **Supabase Postgres, London (eu-west-2)** once a real paying clinic signs [K]. Same schema, same code, switch by env |
 | DB access from Vercel | Worker **`clinforms-data`** (and `clinforms-data-preview`) with a D1 binding – an authenticated SQL gateway. D1's REST API is admin-only (global API rate limit), so it is NOT used at runtime |
 | Files | Stored **in the database**, AES-GCM encrypted, split into ≤ 512 KiB chunks (R2 is not enabled on the account; D1 rows ≤ 2 MB) |
-| Email | Abstraction with providers `cloudflare` (Worker `send_email` binding through the gateway – needs Workers Paid $5/mo, not enabled yet), `log` (dev) and `none`. With `none`, invite/reset links are shown to the admin to copy |
+| Email | Abstraction (`src/server/email/`) with providers **`mailersend`** [K, 09/10: same service as the owner's other apps; `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`], `log` (dev) and `none` (default until the key exists). With `none`, invite/reset links are shown to the admin to copy. *(Built: the `cloudflare` provider and the gateway's `/v1/email` were dropped – Cloudflare Email Sending needs a paid plan.)* |
 | Analytics | PostHog **EU** cloud, consent-gated, proxied via `/ingest`; key `NEXT_PUBLIC_POSTHOG_KEY` (unset = disabled) |
 
 ## 2. Data layer
@@ -70,7 +70,9 @@ contract here needs the orchestrator.
   names exist on both. The repository test suite runs against both SQLite and PGlite.
 
 **Tables (our own; Better Auth adds `user`, `session`, `account`, `verification`, `twoFactor`, `organization`,
-`member`, `invitation` – generated per dialect with its CLI and committed into the same migration files)**:
+`member`, `invitation` and `rateLimit` – *built:* generated per dialect by Better Auth's own schema generator from the
+app's configuration (`scripts/db/gen-auth-migrations.ts`, the code its CLI uses) into migration `0002_auth` of both
+sets, made idempotent, RLS on in Postgres)**:
 | Table | Columns (PK first) | Notes |
 |---|---|---|
 | `clinic_profile` | `tenant_id` (= organization slug), `organization_id`, `display_name`, `legal_name`, `address_json`, `postcode`, `phone`, `email`, `retention_days` (default 365), `drafting_enabled` (0/1), `created_at`, `updated_at` | Replaces `DEMO_CLINIC` in tenant mode |
@@ -94,19 +96,37 @@ moved to another row or tenant. Decrypt picks the key by kid (rotation = add a k
 re-encrypt in the background).
 
 ## 3. Identity and tenancy
-- **Better Auth** (`src/server/auth/auth.ts`), Kysely adapter on `getDb()` with the matching `type`.
+- **Better Auth** (`src/server/auth/auth.ts` → `create-auth.ts`; *built with 1.7.6*), Kysely adapter on `getDb()` with the
+  matching `type` (`sqlite` for D1/SQLite, `postgres` for Postgres plus a Kysely plugin that hands Better Auth `Date`s
+  for its timestamptz columns, because our Postgres dialect returns ISO strings). *Built:* `transaction: false` on
+  **every** dialect (D1 has none; on SQLite/Postgres our hooks query through the shared instance and would deadlock a
+  single connection inside a Better Auth transaction); Better Auth's start-up schema check is off on D1 only (D1 refuses
+  `pragma_table_info` on its internal `_cf_KV` table, the gateway refuses `PRAGMA`; tests prove the migrations complete).
   Email + password (min 12 chars, breached-password check off-line not required), **TOTP 2FA required** for every
   member before any patient data (enforced server-side: `TWO_FACTOR_REQUIRED` 403), organization plugin
   (organization = clinic; roles `owner`, `admin`, `clinician`, `staff`), invitations, password reset,
   `rateLimit.storage = "database"`, session cookie cache 5 min, secure cookies, cookie prefix `clinforms`.
-  `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=https://clinforms.co.uk`.
+  `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=https://clinforms.co.uk`. *Built details:* invite-only is enforced by a
+  database hook (no user row without an open invitation) and the HTTP sign-up path is switched off; two-step cannot be
+  disabled and devices cannot be trusted; clinic-management endpoints refuse sessions without two-step
+  (`TWO_FACTOR_REQUIRED`); turning two-step on revokes every older session; sessions 12 h; new sessions open the
+  member's most recent clinic. **Previews leave `BETTER_AUTH_URL` unset:** the base URL comes from the request,
+  restricted to the deployment's own Vercel hostnames (`VERCEL_URL`, `VERCEL_BRANCH_URL`). Runbook: `docs/auth.md`.
 - **Invite-only** [A]: clinics are created by the platform (`scripts/admin/create-clinic.ts` or a platform-admin
   page restricted to `CLINFORMS_PLATFORM_ADMINS` emails) after the DPA is signed; the owner gets an invite link.
+  *Built:* the scripts (`create-clinic`, `list-clinics`, `offboard-clinic`, `reset-two-factor`, `provision-auth`,
+  `with-env`); no web admin page yet. Platform invitations name a system user `clinforms-platform`
+  (`platform@clinforms.invalid`, no password) as the inviter of record, because Better Auth requires one.
   The landing page has "Request access" (stored in `access_requests`).
-- **tenantId = organization slug** (`^[a-z0-9][a-z0-9-]*$`, immutable; `demo` reserved).
+- **tenantId = organization slug** (`^[a-z0-9][a-z0-9-]*$`, immutable; `demo` reserved). *Built:* 3–63 characters, no
+  trailing/double hyphen, more reserved words (`app`, `api`, `admin`, `www`…); offboarded clinics keep their
+  organization row as a tombstone so an id is never reused.
 - Module seam: `MedreportDeps.authenticate?(req): Promise<AuthContext | null>` with
   `AuthContext = {userId, authSessionId, tenantId, role, clinician?: {name, hcpc?, jobTitle?}, twoFactorVerified}`
-  and `MedreportDeps.clinicProfile?(tenantId): Promise<ClinicProfile | null>`; new `auth/actor.ts`
+  and `MedreportDeps.clinicProfile?(tenantId): Promise<ClinicProfile | null>`. *Built (types + host builder
+  `src/server/auth/medreport-actor.ts`, not wired into handlers):* `clinician` also carries `canSign: boolean`;
+  `ClinicProfile = {tenantId, displayName, legalName?, addressLines, postcode?, phone?, email?, retentionDays,
+  draftingEnabled}`. Wave 2: new `auth/actor.ts`
   `requireActor(req, deps, opts)`. Demo actor = tenant `demo` via the existing demo/launch session tokens, only when
   `CLINFORMS_PUBLIC_DEMO=1`.
 - Every endpoint that touches patient data or drafting requires an actor; tenant checks on every
@@ -121,7 +141,7 @@ re-encrypt in the background).
 |---|---|---|
 | `/` `(marketing)` | public | Landing page; `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
 | `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex |
-| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}` |
+| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). Tenant Studio: wave 2 |
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` |
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only) |
@@ -148,5 +168,6 @@ COOP same-origin, **CSP Report-Only** first (enforce after the review/mapping/pr
 Existing `MEDREPORT_*`, `TM3_SIM_*`, `ANTHROPIC_API_KEY`, plus: `CLINFORMS_DB`, `CLINFORMS_D1_GATEWAY_URL`,
 `CLINFORMS_D1_GATEWAY_SECRET`, `DATABASE_URL` (Postgres), `CLINFORMS_SQLITE_PATH`, `CLINFORMS_DATA_KEYS`,
 `CLINFORMS_DATA_KEY_ID`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `CLINFORMS_EMAIL_PROVIDER`,
-`CLINFORMS_EMAIL_FROM`, `CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO`, `CRON_SECRET`,
+`MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` (*built:* replace `CLINFORMS_EMAIL_FROM`, still read as a fallback),
+`CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO`, `CRON_SECRET`,
 `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`).

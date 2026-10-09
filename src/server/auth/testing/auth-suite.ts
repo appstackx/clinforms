@@ -34,6 +34,8 @@ export interface AuthTestDb {
   db: Kysely<Database>;
   dialect: AuthDialect;
   close: () => Promise<void>;
+  /** Force Better Auth's start-up schema check on (the D1 test databases can be introspected; real D1 cannot). */
+  validateSchema?: boolean;
 }
 
 const ORIGIN = "http://localhost:3000";
@@ -112,7 +114,14 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
     before(async () => {
       t = await setup();
       cipher = testCipher();
-      auth = createAuth({ db: t.db, dialect: t.dialect, secret: SECRET, baseUrl: { kind: "static", url: ORIGIN }, rateLimit: false });
+      auth = createAuth({
+        db: t.db,
+        dialect: t.dialect,
+        secret: SECRET,
+        baseUrl: { kind: "static", url: ORIGIN },
+        rateLimit: false,
+        validateSchema: t.validateSchema,
+      });
       setEmailProviderForTests({
         name: "none",
         async send(message) {
@@ -158,6 +167,7 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       );
       const audit = await listAudit({ db: t.db }, "riverside-test");
       assert.equal(audit[0].action, "clinic.create");
+      assert.ok(!JSON.stringify(audit).includes(clinic.invitationId), "the invitation link token is never written to the audit trail");
     });
 
     it("invite-only: no account without an open invitation; short passwords refused", async () => {
@@ -283,6 +293,7 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       clinicianJar = clinician.jar;
       const invAudit = (await listAudit({ db: t.db }, "riverside-test")).find((a) => a.action === "member.invite");
       assert.equal(invAudit?.detail?.role, "clinician");
+      assert.match(String(invAudit?.targetId), /^inv_[A-Za-z0-9_-]{16}$/);
       const forbidden = await apiError(
         auth.api.createInvitation({ body: { email: "y@riverside.example", role: "staff" }, headers: clinician.jar.headers() }),
       );

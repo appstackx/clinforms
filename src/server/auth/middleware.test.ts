@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { NextRequest } from "next/server";
-import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
+import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
 import { config, middleware } from "../../middleware";
 import { createSqliteTestDb } from "../db/testing/databases";
 import { createAuth } from "./create-auth";

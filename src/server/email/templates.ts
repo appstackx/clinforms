@@ -2,7 +2,7 @@
  * Email templates (plain text + HTML). Neutral wording: what the product does, never the technology.
  * Every dynamic value is HTML-escaped. UK English, UK dates (Europe/London).
  */
-import { COMPANY_NAME, PRODUCT_NAME, roleLabel } from "@/lib/account-copy";
+import { COMPANY_NAME, PRODUCT_NAME, roleLabel } from "../../lib/account-copy";
 import type { EmailMessage, EmailRecipient } from "./types";
 
 export function escapeHtml(value: string): string {

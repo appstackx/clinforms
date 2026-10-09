@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { appOrigin, authSecret, baseUrlSetting, isPlatformAdmin, safeNextPath, usesSecureCookies } from "./config";
 import { assignableRoles, parseMemberRole, roleCan } from "./roles";
 import { RESERVED_TENANT_SLUGS, tenantSlugProblem } from "./tenant";
-import { isValidHcpc, normaliseHcpc } from "@/lib/hcpc";
+import { isValidHcpc, normaliseHcpc } from "../../lib/hcpc";
 
 describe("auth configuration from the environment", () => {
   it("BETTER_AUTH_SECRET must be 32+ characters", () => {
@@ -82,5 +82,29 @@ describe("roles, tenant ids, HCPC numbers", () => {
     assert.equal(isValidHcpc("OT12345"), true);
     assert.equal(isValidHcpc("PH-DEMO-01"), false);
     assert.equal(isValidHcpc("123456"), false);
+  });
+});
+
+describe("Better Auth options per dialect", () => {
+  it("schema check off on D1 only; transactions off everywhere; disabled HTTP paths", async () => {
+    const { createAuth, DISABLED_PATHS } = await import("./create-auth");
+    const { createSqliteTestDb } = await import("../db/testing/databases");
+    const t = createSqliteTestDb();
+    const opts = (dialect: "d1" | "sqlite" | "postgres") =>
+      createAuth({ db: t.db, dialect, secret: "o".repeat(40), baseUrl: { kind: "static", url: "https://clinforms.co.uk" } }).options;
+    assert.equal(opts("d1").advanced?.database?.validateSchema, false);
+    assert.equal(opts("sqlite").advanced?.database?.validateSchema, true);
+    assert.equal(opts("postgres").advanced?.database?.validateSchema, true);
+    for (const d of ["d1", "sqlite", "postgres"] as const) {
+      const o = opts(d);
+      assert.equal((o.database as { transaction?: boolean }).transaction, false);
+      assert.equal(o.advanced?.cookiePrefix, "clinforms");
+      assert.equal(o.advanced?.useSecureCookies, true);
+      assert.equal(o.session?.cookieCache?.maxAge, 300);
+      assert.equal(o.rateLimit?.storage, "database");
+      assert.equal(o.emailAndPassword?.minPasswordLength, 12);
+    }
+    for (const p of ["/sign-up/email", "/two-factor/disable", "/organization/create", "/organization/delete"]) assert.ok(DISABLED_PATHS.includes(p));
+    await t.close();
   });
 });

@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { BANNED_TERM_PATTERNS } from "@/modules/medreport/core/wording";
-import { ACCOUNT_ERRORS, ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/account-copy";
+import { BANNED_TERM_PATTERNS } from "../../modules/medreport/core/wording";
+import { ACCOUNT_ERRORS, ROLE_DESCRIPTIONS, ROLE_LABELS } from "../../lib/account-copy";
 import { invitationEmail, passwordResetEmail, twoFactorEnabledEmail } from "../email/templates";
 
 function banned(text: string): RegExp | undefined {

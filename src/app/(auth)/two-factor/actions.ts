@@ -1,5 +1,9 @@
 "use server";
-/** Two-step verification setup: confirm the password → scan the QR code → enter a code → backup codes. */
+/**
+ * Two-step verification setup: confirm the password → scan the QR code, save the backup codes → enter a code →
+ * /app. The backup codes are shown BEFORE the code is checked (they only start working once it is): after the
+ * check the session is replaced and the page is left at once.
+ */
 import { redirect } from "next/navigation";
 import { ACCOUNT_ERRORS } from "@/lib/account-copy";
 import { getAuth } from "@/server/auth/auth";
@@ -12,6 +16,8 @@ export type SetupState =
   | { status: "error"; error: string }
   | { status: "scan"; qr: string; manualKey: string; backupCodes: string[] }
   | { status: "done" };
+
+export type ConfirmState = { status: "idle" } | { status: "error"; error: string };
 
 const WINDOW = 15 * 60_000;
 
@@ -30,7 +36,7 @@ export async function startSetup(_prev: SetupState, form: FormData): Promise<Set
   }
 }
 
-export async function confirmSetup(_prev: SetupState, form: FormData): Promise<SetupState> {
+export async function confirmSetup(_prev: ConfirmState, form: FormData): Promise<ConfirmState> {
   const session = await getServerSession({ fresh: true });
   if (!session) redirect("/login?next=%2Fapp");
   const code = String(form.get("code") ?? "").replace(/\s+/g, "");
@@ -42,5 +48,6 @@ export async function confirmSetup(_prev: SetupState, form: FormData): Promise<S
   } catch (err) {
     return { status: "error", error: authErrorMessage(err, "two_factor_confirm") };
   }
-  return { status: "done" };
+  // Leave this page straight away: a re-render here would still carry the old (now revoked) session cookie.
+  redirect("/app");
 }

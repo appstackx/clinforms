@@ -13,7 +13,7 @@
  * A session without an active clinic, or whose member row is gone, gives null.
  */
 import type { Kysely } from "kysely";
-import type { AuthContext, ClinicProfile } from "@/modules/medreport/api/deps";
+import type { AuthContext, ClinicProfile } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { getMemberProfile } from "../repos/member-profile";
