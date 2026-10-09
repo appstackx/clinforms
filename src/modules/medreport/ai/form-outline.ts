@@ -12,11 +12,12 @@ import "server-only";
  */
 import type { FormOutlineSummary } from "../api/contract";
 import { parseBlockId } from "../core/forms";
-import type { FormKind, OutlineBlock, PdfFormOutline, PdfOutlineField } from "../core/types";
+import type { FormKind, OutlineBlock, PdfBox, PdfFormOutline, PdfOutlineField } from "../core/types";
 import { findPlaceholders } from "../forms/docx-dom";
-import { charGroupsOf, unionRect } from "./pdf-groups";
-import { flatBoxQuestions, renderPdfBoxes } from "./form-boxes";
-import { pdfSectionTitles } from "../forms/pdf-sections";
+import { detectPdfFieldTables, type DetectedPdfTable } from "../forms/pdf-table";
+import { charGroupsOf, detectOptionGroups, unionRect, type OptionGroup } from "./pdf-groups";
+import { flatBoxQuestions, labelFor, renderPdfBoxes } from "./form-boxes";
+import { pdfSectionAt, pdfSectionTitles } from "../forms/pdf-sections";
 import { neutraliseTags } from "./prompts";
 
 /** A parsed form, as handed to the analysis. */
@@ -294,6 +295,115 @@ export function pdfAnswerSpaces(pdf: PdfFormOutline): PdfOutlineField[][] {
   return out;
 }
 
+/** Tables of fields with fewer printed rows are listed field by field (a split date or phone number read as a "table"). */
+export const OUTLINE_TABLE_MIN_ROWS = 3;
+
+/**
+ * One answer space of a fillable PDF as the LIVE analysis sees it (form-analysis-4 outline): a field, a
+ * run of one-character boxes, a group of separate tick boxes that answer one question (one box per
+ * option – pdf-groups.ts detectOptionGroups), a table of fields (forms/pdf-table.ts, at least
+ * OUTLINE_TABLE_MIN_ROWS rows), or a printed signature box no field covers. A group or table is listed
+ * once and never split across chunks, so it is mapped as one question.
+ */
+export type PdfOutlineSpace =
+  | { kind: "field"; fields: PdfOutlineField[] }
+  | { kind: "chars"; fields: PdfOutlineField[] }
+  | { kind: "options"; fields: PdfOutlineField[]; group: OptionGroup }
+  | { kind: "table"; fields: PdfOutlineField[]; table: DetectedPdfTable }
+  | { kind: "box"; fields: PdfOutlineField[]; box: PdfBox; label: string };
+
+/**
+ * A fillable PDF's printed boxes that no field covers and that are labelled as a signature (AXA's
+ * "Signature" box beside the fields for the printed name and date) – the same boxes rules mode maps
+ * (form-rules.ts printedSignatureBoxes). Logos and table headings are left out.
+ */
+export function printedSignatureBoxesOf(pdf: PdfFormOutline): Array<{ box: PdfBox; label: string }> {
+  const boxes = (pdf.boxes ?? []).filter((b) => b.kind === "box");
+  return boxes.flatMap((box) => {
+    const label = labelFor(box, pdf, boxes).replace(/\s+/g, " ").replace(/[:\s]+$/, "").trim();
+    if (!/\bsignature\b|^signed\b/i.test(label) || /\b(?:date|name|print)\b/i.test(label) || label.length > 80) return [];
+    return [{ box, label }];
+  });
+}
+
+export function pdfOutlineSpaces(pdf: PdfFormOutline): PdfOutlineSpace[] {
+  const byName = new Map<string, PdfOutlineSpace>();
+  for (const table of detectPdfFieldTables(pdf)) {
+    if (table.rows.length < OUTLINE_TABLE_MIN_ROWS) continue;
+    const fields = table.fieldNames.map((n) => pdf.fields.find((f) => f.name === n)).filter((f): f is PdfOutlineField => f !== undefined);
+    if (fields.length === 0) continue;
+    // The first cell (top row, first column) names the table.
+    const first = pdf.fields.find((f) => f.name === table.rows[0][table.columns[0].key]);
+    const ordered = first ? [first, ...fields.filter((f) => f !== first)] : fields;
+    const space: PdfOutlineSpace = { kind: "table", fields: ordered, table };
+    fields.forEach((f) => byName.set(f.name, space));
+  }
+  for (const group of detectOptionGroups(pdf)) {
+    if (group.fields.some((f) => byName.has(f.name))) continue;
+    const space: PdfOutlineSpace = { kind: "options", fields: group.fields, group };
+    group.fields.forEach((f) => byName.set(f.name, space));
+  }
+  const chars = charGroupsOf(pdf);
+  const out: PdfOutlineSpace[] = [];
+  const done = new Set<PdfOutlineSpace>();
+  const doneChars = new Set<string>();
+  for (const f of sortedPdfFields(pdf)) {
+    const grouped = byName.get(f.name);
+    if (grouped) {
+      if (!done.has(grouped)) {
+        done.add(grouped);
+        out.push(grouped);
+      }
+      continue;
+    }
+    if (f.charGroup && chars.has(f.charGroup)) {
+      if (doneChars.has(f.charGroup)) continue;
+      doneChars.add(f.charGroup);
+      out.push({ kind: "chars", fields: chars.get(f.charGroup)! });
+      continue;
+    }
+    out.push({ kind: "field", fields: [f] });
+  }
+  // Printed signature boxes, at their place in reading order (page, then top to bottom).
+  for (const { box, label } of printedSignatureBoxesOf(pdf)) {
+    const top = box.y + box.height;
+    const at = out.findIndex((s) => s.kind !== "box" && (s.fields[0].page > box.page || (s.fields[0].page === box.page && s.fields[0].rect.y + s.fields[0].rect.height < top - 1)));
+    const space: PdfOutlineSpace = { kind: "box", fields: [], box, label };
+    if (at < 0) out.push(space);
+    else out.splice(at, 0, space);
+  }
+  return out;
+}
+
+/** "page 4 box x=56 y=666 w=218 h=56": how a printed box is named in the outline and a chunk's instruction. */
+export function printedBoxRef(box: Pick<PdfBox, "page" | "x" | "y" | "width" | "height">): string {
+  return `page ${box.page} box x=${r(box.x)} y=${r(box.y)} w=${r(box.width)} h=${r(box.height)}`;
+}
+
+/** A group of separate tick boxes that answer one question: ONE entry listing every box with its printed option. */
+function renderOptionGroup(space: Extract<PdfOutlineSpace, { kind: "options" }>): string {
+  const first = space.fields[0];
+  const boxes = space.fields.map((f, i) => `${JSON.stringify(f.name)}=${JSON.stringify(neutraliseTags(space.group.options[i] ?? ""))}`).join(", ");
+  const near = first.nearbyText.trim() ? ` near=${quote(first.nearbyText)}` : "";
+  return `tick-box group page ${first.page} (separate tick boxes, one per option – map as ONE question and list EVERY box in optionAnchors, in this order) boxes: ${boxes}${near}${sectionAttrs(first)}`;
+}
+
+/** A table of fields (repeated rows): ONE entry named by its first cell. */
+function renderTable(space: Extract<PdfOutlineSpace, { kind: "table" }>): string {
+  const { table } = space;
+  const first = space.fields[0];
+  const box = unionRect(space.fields);
+  const columns = JSON.stringify(table.columns.map((c) => neutraliseTags(c.header.replace(/\s+/g, " ").trim())));
+  const label = table.label.trim() ? ` near=${quote([table.label, table.guidance].filter(Boolean).join(" | "))}` : "";
+  return `table of fields page ${first.page} rows=${table.rows.length} columns=${columns} (ONE question for the whole table: anchorRef ${JSON.stringify(first.name)}, its first cell; code writes every row and cell) box x=${r(box.x)} y=${r(box.y)} w=${r(box.width)} h=${r(box.height)}${label}${sectionAttrs(first)}`;
+}
+
+/** A printed signature box no field covers. */
+function renderPrintedBox(pdf: PdfFormOutline, space: Extract<PdfOutlineSpace, { kind: "box" }>): string {
+  const at = pdfSectionAt(pdf, space.box.page, space.box.y + space.box.height + 1);
+  return `printed box with no field (map it as pdf_overlay with this box) ${printedBoxRef(space.box)} near=${quote(space.label)}${sectionAttrs(at)}`;
+}
+
 /** Positioned page text grouped into lines (same page, y within 3 pt), top to bottom. */
 export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: number; items: Array<{ x: number; str: string }>; section?: string; completedBy?: string }> {
   const items = (pdf.pageText.find((p) => p.page === page)?.items ?? []).filter((it) => it.str.trim() !== "");
@@ -308,7 +418,9 @@ export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: numb
 }
 
 /**
- * Rendering of a PDF outline for the prompt. Fillable PDFs: the fields (with nearby text). Flat PDFs:
+ * Rendering of a PDF outline for the prompt. Fillable PDFs: the answer spaces of pdfOutlineSpaces() – each
+ * field (with nearby text), a run of character boxes, a tick-box group and a table of fields as ONE line
+ * each, and printed signature boxes no field covers. Flat PDFs:
  * the positioned text, line by line, so answer boxes can be placed (the PDF itself is attached too),
  * then the printed answer boxes and tick boxes of the page (form-boxes.ts renderPdfBoxes).
  */
@@ -316,9 +428,25 @@ export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pd
   const lines: string[] = [`pages: ${pdf.pages}`];
   const wanted = (p: number) => !pages || pages.indexOf(p) >= 0;
   if (kind === "pdf_acroform") {
-    for (const space of pdfAnswerSpaces(pdf)) {
-      if (!wanted(space[0].page)) continue;
-      lines.push(space.length > 1 ? renderCharGroup(space) : renderPdfField(space[0]));
+    for (const space of pdfOutlineSpaces(pdf)) {
+      if (!wanted(space.kind === "box" ? space.box.page : space.fields[0].page)) continue;
+      switch (space.kind) {
+        case "field":
+          lines.push(renderPdfField(space.fields[0]));
+          break;
+        case "chars":
+          lines.push(renderCharGroup(space.fields));
+          break;
+        case "options":
+          lines.push(renderOptionGroup(space));
+          break;
+        case "table":
+          lines.push(renderTable(space));
+          break;
+        case "box":
+          lines.push(renderPrintedBox(pdf, space));
+          break;
+      }
     }
     return lines.join("\n");
   }
@@ -416,7 +544,8 @@ export const MAX_ANALYSIS_CHUNKS = 6;
 export type AnalysisChunk =
   /** `parts`: the chunk's top-level blocks in order – "[p3]" or "table t2 (rows t2.r0 to t2.r9)" (form-analysis-3). */
   | { kind: "blocks"; fromId: string; toId: string; answerSpaces: number; parts?: string[] }
-  | { kind: "fields"; names: string[] }
+  /** `boxes`: printed boxes with no field in this chunk (printedBoxRef), e.g. a signature box. */
+  | { kind: "fields"; names: string[]; boxes?: string[] }
   | { kind: "pages"; pages: number[] };
 
 function chunkCount(n: number): number {
@@ -516,16 +645,23 @@ export function chunkDocx(blocks: OutlineBlock[]): AnalysisChunk[] {
   return chunks.filter((c) => c.kind !== "blocks" || c.answerSpaces > 0);
 }
 
-/** Fillable PDF: answer spaces in page order, split into equal groups (a run of character boxes stays together). */
+/**
+ * Fillable PDF: answer spaces in page order, split into equal groups. A run of character boxes, a group of
+ * tick boxes and a table stay together (each counts as one answer space); a printed signature box goes
+ * with the fields around it.
+ */
 export function chunkPdfFields(pdf: PdfFormOutline): AnalysisChunk[] {
-  const spaces = pdfAnswerSpaces(pdf);
+  const spaces = pdfOutlineSpaces(pdf);
   if (spaces.length === 0) return [];
   const n = chunkCount(spaces.length);
   const chunks: AnalysisChunk[] = [];
   let start = 0;
   for (let g = 0; g < n; g += 1) {
     const take = Math.ceil((spaces.length - start) / (n - g));
-    chunks.push({ kind: "fields", names: spaces.slice(start, start + take).reduce<string[]>((acc, sp) => acc.concat(sp.map((f) => f.name)), []) });
+    const mine = spaces.slice(start, start + take);
+    const names = mine.reduce<string[]>((acc, sp) => acc.concat(sp.fields.map((f) => f.name)), []);
+    const boxes = mine.flatMap((sp) => (sp.kind === "box" ? [printedBoxRef(sp.box)] : []));
+    chunks.push({ kind: "fields", names, ...(boxes.length && { boxes }) });
     start += take;
   }
   return chunks;

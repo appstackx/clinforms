@@ -280,14 +280,16 @@ export function snapOverlay(
     }
   }
 
-  // The printed answer box the overlay falls on (most overlap, at least half of the smaller one).
+  // The printed answer box the overlay falls on (most overlap, at least half of the smaller one). An
+  // overlay much larger than the box that only clips it (a region over several unprinted address lines,
+  // a whole table above a signature box) is not that box: at least 40 % of the overlay must lie on it.
   let best: PdfBox | null = null;
   let bestArea = 0;
   for (const b of boxes) {
     if (b.kind !== "box") continue;
     const area = overlapArea(overlay, b);
     const smaller = Math.min(overlay.width * overlay.height, b.width * b.height);
-    if (area >= smaller * 0.5 && area > bestArea) {
+    if (area >= smaller * 0.5 && area >= overlay.width * overlay.height * 0.4 && area > bestArea) {
       best = b;
       bestArea = area;
     }

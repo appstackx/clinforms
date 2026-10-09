@@ -34,6 +34,14 @@ export interface LabelClass {
   opinion: boolean;
   /** Who the form says completes this answer space (absent = not stated). */
   completedBy?: Party;
+  /**
+   * A number or name the clinic record does not hold (a scheme's number, the company holding a company
+   * policy, a work telephone number, the clinic's provider number): left blank for staff, whatever an
+   * analysis proposed (post-validation).
+   */
+  notHeld?: boolean;
+  /** A count in a treatment plan ("Number of sessions" under "Treatment plan"): sessions planned, not attended. */
+  plannedCount?: boolean;
 }
 
 const norm = (s: string) =>
@@ -124,7 +132,7 @@ const FIRST_SCORE = /\b(?:initial|baseline|first|start(?:ing)?|pre-treatment)\s+
 const LATEST_SCORE = /\b(?:current|latest|most recent|final|end|discharge|present|post-treatment)\s+(?:score|assessment|measure|outcome|result)s?\b/;
 
 /** "Initial score" → first_score, "Current score" → latest_score (label first, then its context); else the summary. */
-function scoreFormat(label: string, context: string): "first_score" | "latest_score" | "summary" {
+export function scoreFormat(label: string, context: string): "first_score" | "latest_score" | "summary" {
   for (const text of [label, context]) {
     const first = FIRST_SCORE.test(text);
     const latest = LATEST_SCORE.test(text);
@@ -241,11 +249,11 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
   // Numbers and names the clinic record does not hold: a company or group scheme's number, the company
   // that holds a company policy, a work telephone number. Staff enter them, or they stay blank.
   if (SCHEME_NUMBER.test(l) || COMPANY_POLICY.test(l) || WORK_PHONE.test(l)) {
-    return { fillSource: { kind: "leave_blank" }, answerType: "short_text", identifier: SCHEME_NUMBER.test(l), opinion: false, ...who };
+    return { fillSource: { kind: "leave_blank" }, answerType: "short_text", identifier: SCHEME_NUMBER.test(l), opinion: false, notHeld: true, ...who };
   }
   if (PROVIDER_NUMBER.test(l)) {
     // The clinic's number with the insurer: not in the record, never drafted – staff enter it.
-    return { fillSource: { kind: "leave_blank" }, answerType: "short_text", identifier: true, opinion: false, ...who };
+    return { fillSource: { kind: "leave_blank" }, answerType: "short_text", identifier: true, opinion: false, notHeld: true, ...who };
   }
 
   // Sign-off: only where the clinic signs (its declaration, or a signature on a form sent to the clinic).
@@ -266,9 +274,11 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
   const countQuestion = l.length <= 70 && !/\b(?:provided|describe|details|summary|including|type of)\b/.test(l);
   // "Number of sessions" in a treatment PLAN is the number planned, not the number attended.
   const planned = /\b(?:plan|proposed|propose|further|additional|requested|request|future|remaining|recommended|estimated)\b/.test(`${sec} ${l}`) && !/\b(?:attended|to date|so far|received|completed|used|had)\b/.test(l);
-  if (countQuestion && !planned && /\b(?:number|no\.?|total) of (?:sessions|appointments|treatments|treatment sessions|visits|consultations)(?: attended)?\b|\b(?:sessions|appointments|treatments) attended\b/.test(l) && !/\bmissed|dna|did not attend|failed|cancel/.test(l)) {
+  const sessionCount = /\b(?:number|no\.?|total) of (?:sessions|appointments|treatments|treatment sessions|visits|consultations)(?: attended)?\b|\b(?:sessions|appointments|treatments) attended\b/.test(l) && !/\bmissed|dna|did not attend|failed|cancel/.test(l);
+  if (countQuestion && !planned && sessionCount) {
     return { fillSource: { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" }, answerType: "number", identifier: false, opinion: false, ...who };
   }
+  const plannedCount = countQuestion && planned && sessionCount ? { plannedCount: true } : {};
   if (countQuestion && /\b(?:missed|dna|did not attend|failed to attend|non-?attendance)\b/.test(l) && /\b(?:number|no\.?|how many|appointments|sessions)\b/.test(l)) {
     return { fillSource: { kind: "computed_fact", factId: "FACT-attendance", format: "dna_count" }, answerType: "number", identifier: false, opinion: false, ...who };
   }
@@ -291,13 +301,13 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
     return { fillSource: reg(registration.path), answerType: registration.answerType, identifier: registration.identifier, opinion: false, ...who };
   }
 
-  if (STRONG_OPINION_RE.test(l)) return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: true, ...who };
-  if (OPINION_RE.test(l)) return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: false, ...who };
+  if (STRONG_OPINION_RE.test(l)) return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: true, ...who, ...plannedCount };
+  if (OPINION_RE.test(l)) return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: false, ...who, ...plannedCount };
   if (/\bopinion\b/.test(sec) && !/\b(?:history|examination|findings|treatment provided|symptoms)\b/.test(l)) {
-    return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: false, ...who };
+    return { fillSource: { kind: "clinician_opinion" }, answerType: null, identifier: false, opinion: false, ...who, ...plannedCount };
   }
 
-  return { fillSource: { kind: "notes_narrative" }, answerType: null, identifier: false, opinion: false, ...who };
+  return { fillSource: { kind: "notes_narrative" }, answerType: null, identifier: false, opinion: false, ...who, ...plannedCount };
 }
 
 /** Answer type suggested by the label alone (used when the layout gives no hint). */

@@ -32,7 +32,13 @@ export const ANCHOR_TARGETS = [
   "pdf_overlay",
 ] as const;
 
-export const FILL_KINDS = ["registration", "computed_fact", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"] as const;
+/**
+ * Fill sources the analysis may propose. "appointments_table" (form-analysis-4): a table of fields that
+ * lists the treatments and fees – post-validation makes it one table question filled from the attended
+ * appointments (form-tables.ts); anywhere else it is drafted from the notes. "fixed" is never proposed: a
+ * fixed answer is set by staff.
+ */
+export const FILL_KINDS = ["registration", "computed_fact", "notes_narrative", "clinician_opinion", "signoff", "leave_blank", "appointments_table"] as const;
 
 export const FACT_ID_OPTIONS = [
   "FACT-attendance",
@@ -43,7 +49,8 @@ export const FACT_ID_OPTIONS = [
 
 /**
  * Answer types the analysis may propose: every type except "table" – tables are found from the layout
- * by code (form-tables.ts), so the structured output stays exactly as before tables existed.
+ * by code (form-tables.ts). The analysis maps a table of fields once, at its first cell (fill source
+ * "appointments_table" for a list of treatments and fees), and post-validation makes it the table question.
  */
 export const AnalysisAnswerTypeSchema = AnswerTypeSchema.exclude(["table"]);
 
