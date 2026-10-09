@@ -42,21 +42,10 @@ export const APPOINTMENT_COLUMN_LABELS: Record<AppointmentColumn, string> = {
   paid: "Paid (Yes / No)",
 };
 
-/**
- * An appointment's charge, as the clinic system may send it (`AppointmentSchema.charge`, added by the
- * data slice). Read structurally so this file works whether or not that field is in the schema yet.
- */
-interface AppointmentCharge {
-  amount: number;
-  currency?: string;
-  paid?: boolean;
-}
-
-function chargeOf(appointment: Appointment): AppointmentCharge | null {
-  const charge = (appointment as Appointment & { charge?: unknown }).charge;
-  if (!charge || typeof charge !== "object") return null;
-  const c = charge as Partial<AppointmentCharge>;
-  return typeof c.amount === "number" && Number.isFinite(c.amount) ? { amount: c.amount, currency: c.currency, paid: c.paid } : null;
+/** An appointment's charge, as the clinic system sends it (`AppointmentSchema.charge`: pounds, GBP). */
+function chargeOf(appointment: Appointment): NonNullable<Appointment["charge"]> | null {
+  const c = appointment.charge;
+  return c && Number.isFinite(c.amount) ? c : null;
 }
 
 /** "£55.00", "£1,250.50". */
