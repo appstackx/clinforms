@@ -85,7 +85,13 @@ function contactFor(label: string, sec: string): { source: FillSource; identifie
 }
 
 const PROVIDER_NUMBER = /\b(?:provider|practitioner|recognition|supplier|payee) (?:no\.?|number|code|id)\b/;
-const MEMBERSHIP_NUMBER = /\b(?:membership|member|customer|scheme)(?:'s)? ?(?:no\.?|number|id)\b/;
+const MEMBERSHIP_NUMBER = /\b(?:membership|member|customer)(?:'s)? ?(?:no\.?|number|id)\b/;
+/** A company or group scheme's own number – not the patient's membership number. */
+const SCHEME_NUMBER = /\b(?:scheme|group|company|corporate)(?:'s)? ?(?:no\.?|number|id)\b/;
+/** The company that holds a company policy ("Company name (if a company policy)"). */
+const COMPANY_POLICY = /^(?:company|employer)(?:'s)? name\b.*\bpolicy\b|^name of (?:the )?company\b.*\bpolicy\b/;
+/** A work telephone number (a bare "Work" box under "Telephone numbers: Home … Work …"). */
+const WORK_PHONE = /^(?:work|office|business)(?: (?:tel(?:ephone)?|phone)(?: (?:no\.?|number))?)?\s*:?$/;
 const AUTHORISATION_NUMBER = /\b(?:pre-?)?authori[sz]ation (?:no\.?|number|code|reference|ref)\b|\bauth(?:orisation)? code\b/;
 
 /** A question put to the patient in the second person ("When did you first notice your symptoms?"). */
@@ -195,6 +201,9 @@ const OPINION_RE =
 const STRONG_OPINION_RE =
   /\b(?:prognos\w*|in your (?:professional )?opinion|causation|caused by|attributable to|(?:un)?fit (?:for|to)|fitness (?:for|to) work|return to work|restrictions? (?:on|to)|functional restrictions?|recommend\w*|permanent\w*)\b/;
 
+const PREGNANCY_RE =
+  /\b(?:pregnan\w*|maternity|childbirth|antenatal|ante-natal|postnatal|fertility treatment|ivf|(?:estimated|expected) date of (?:delivery|birth|confinement)|due date of (?:the )?(?:baby|birth))\b/;
+
 const LEAVE_BLANK_RE =
   /\b(?:office use|official use|internal use|for (?:[\w&'-]+ ){0,4}use only|invoice|payments?|payment method|bank|bank (?:name|address)|sort code|account (?:no|number|holder|holder's|holders|name)|iban|bic|swift|cheques?|payable to|vat|fee|billing|claims handler|(?:for completion|to be completed) by (?:the |your )?(?:instructing )?(?:solicitor|insurer|referrer|agency|case manager|claims handler))\b/;
 
@@ -219,10 +228,20 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
   if (LEAVE_BLANK_RE.test(l) || LEAVE_BLANK_RE.test(sec)) {
     return { fillSource: { kind: "leave_blank" }, answerType: null, identifier: false, opinion: false, ...who };
   }
+  // Pregnancy and maternity questions (an insurer's maternity claim): the patient's own information,
+  // never the physiotherapy record's – left blank for the patient.
+  if (PREGNANCY_RE.test(l) || PREGNANCY_RE.test(sec)) {
+    return { fillSource: { kind: "leave_blank" }, answerType: null, identifier: false, opinion: false, completedBy: completedBy ?? "patient" };
+  }
   // Someone else's part of the form (the policyholder's details, the GP's medical section, the patient's
   // own account, their signature): left blank.
   if (isNonClinicParty(completedBy)) {
     return { fillSource: { kind: "leave_blank" }, answerType: null, identifier: false, opinion: false, ...who };
+  }
+  // Numbers and names the clinic record does not hold: a company or group scheme's number, the company
+  // that holds a company policy, a work telephone number. Staff enter them, or they stay blank.
+  if (SCHEME_NUMBER.test(l) || COMPANY_POLICY.test(l) || WORK_PHONE.test(l)) {
+    return { fillSource: { kind: "leave_blank" }, answerType: "short_text", identifier: SCHEME_NUMBER.test(l), opinion: false, ...who };
   }
   if (PROVIDER_NUMBER.test(l)) {
     // The clinic's number with the insurer: not in the record, never drafted – staff enter it.
@@ -245,7 +264,9 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
 
   // Figures computed by code.
   const countQuestion = l.length <= 70 && !/\b(?:provided|describe|details|summary|including|type of)\b/.test(l);
-  if (countQuestion && /\b(?:number|no\.?|total) of (?:sessions|appointments|treatments|treatment sessions|visits|consultations)(?: attended)?\b|\b(?:sessions|appointments|treatments) attended\b/.test(l) && !/\bmissed|dna|did not attend|failed|cancel/.test(l)) {
+  // "Number of sessions" in a treatment PLAN is the number planned, not the number attended.
+  const planned = /\b(?:plan|proposed|propose|further|additional|requested|request|future|remaining|recommended|estimated)\b/.test(`${sec} ${l}`) && !/\b(?:attended|to date|so far|received|completed|used|had)\b/.test(l);
+  if (countQuestion && !planned && /\b(?:number|no\.?|total) of (?:sessions|appointments|treatments|treatment sessions|visits|consultations)(?: attended)?\b|\b(?:sessions|appointments|treatments) attended\b/.test(l) && !/\bmissed|dna|did not attend|failed|cancel/.test(l)) {
     return { fillSource: { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" }, answerType: "number", identifier: false, opinion: false, ...who };
   }
   if (countQuestion && /\b(?:missed|dna|did not attend|failed to attend|non-?attendance)\b/.test(l) && /\b(?:number|no\.?|how many|appointments|sessions)\b/.test(l)) {
@@ -284,6 +305,6 @@ export function answerTypeFromLabel(label: string): AnswerType | null {
   const l = norm(label);
   if (/^(?:is|are|was|were|has|have|had|did|does|do|will|would|can|could|should)\b.*\?$/.test(l)) return "yes_no";
   if (/\bdate\b/.test(l) && !/\b(?:to|up to) date\b/.test(l)) return "date";
-  if (/\b(?:number of|how many)\b/.test(l)) return "number";
+  if (/\b(?:number of|how many)\b/.test(l) && !/\b(?:tel(?:ephone)?|phone|fax|mobile|policy|membership|reference|registration|account)\b/.test(l)) return "number";
   return null;
 }

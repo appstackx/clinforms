@@ -253,7 +253,8 @@ export function snapOverlay(
         const cy = t.y + t.height / 2;
         return cx >= grown.x && cx <= grown.x + grown.width && cy >= grown.y && cy <= grown.y + grown.height;
       })
-      .sort((a, b) => topOf(b) - topOf(a) || a.x - b.x);
+      // Top to bottom, a line (within 3 pt) left to right.
+      .sort((a, b) => (Math.abs(topOf(b) - topOf(a)) > 3 ? topOf(b) - topOf(a) : a.x - b.x));
     if (ticks.length > 0) {
       const labels = tickRowLabels(ticks.slice().sort((a, b) => a.x - b.x), items);
       const byX = ticks.slice().sort((a, b) => a.x - b.x);
@@ -267,7 +268,11 @@ export function snapOverlay(
         anchor: {
           kind: "pdf_overlay_ticks",
           page: overlay.page,
-          options: ticks.map((t, i) => ({ option: named[i], x: t.x, y: t.y, size: r1(Math.min(t.width, t.height)) })),
+          // The X is a square in the middle of the box (a wide "[    ] Yes" box has room either side).
+          options: ticks.map((t, i) => {
+            const size = Math.min(t.width, t.height);
+            return { option: named[i], x: r1(t.x + (t.width - size) / 2), y: r1(t.y + (t.height - size) / 2), size: r1(size) };
+          }),
         },
         options: named,
         note: "Flat PDF: an X is drawn in the chosen printed tick box – check it in the preview.",

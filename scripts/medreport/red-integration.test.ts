@@ -283,6 +283,53 @@ test("computed facts on a form: plain words, no internal IDs; Initial / Current 
   assert.equal(classifyLabel("Initial assessment", "Assessment Such as Visual Analogue Scale").fillSource.kind, "notes_narrative");
 });
 
+/** A fillable form laid out like the insurer forms the rules misread: labels over two lines, generic field names, a list prompt. */
+async function insurerLayoutForm(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  const form = doc.getForm();
+  page.drawText("5 Treatment Plan", { x: 40, y: 800, size: 12, font });
+  // Left-column label on two lines, a field named "Text Field 39".
+  page.drawText("Country where treatment is", { x: 56.7, y: 765.4, size: 9, font });
+  page.drawText("taking place?", { x: 56.7, y: 753.4, size: 9, font });
+  form.createTextField("Text Field 39").addToPage(page, { x: 214, y: 755, width: 320, height: 16, font });
+  page.drawText("Number of sessions", { x: 56.7, y: 700, size: 9, font });
+  form.createTextField("Text Field 40").addToPage(page, { x: 214, y: 695, width: 320, height: 16, font });
+  page.drawText("Using the VAS scale, what is the", { x: 56.7, y: 640, size: 9, font });
+  page.drawText("patient's level of pain?", { x: 56.7, y: 628, size: 9, font });
+  const vas = form.createDropdown("Combo Box 1");
+  vas.addOptions(["Please select", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  vas.addToPage(page, { x: 214, y: 628, width: 60, height: 16, font });
+  // A field named after its question, its printed label wrapped so the nearest line is the question's end.
+  page.drawText("f Have you had these symptoms before? If yes, when did you have these symptoms and what treatment did you", { x: 40, y: 560, size: 8, font });
+  page.drawText("receive?", { x: 40, y: 550, size: 8, font });
+  form.createTextField("f Have you had these symptoms before If yes when did you have these symptoms and what treatment did you receive").addToPage(page, { x: 40, y: 480, width: 500, height: 60, font });
+  page.drawText("6. Pregnancy and maternity claims", { x: 40, y: 440, size: 12, font });
+  page.drawText("What is the estimated date of delivery?", { x: 40, y: 420, size: 9, font });
+  form.createTextField("62 What is the estimated date of delivery").addToPage(page, { x: 260, y: 415, width: 120, height: 16, font });
+  return doc.save();
+}
+
+test("rules on a fillable insurer-style form: whole questions as labels, planned sessions, no list prompt, maternity left blank", async () => {
+  const { form } = await analyseFormFile({ file: decoded(await insurerLayoutForm()), fileName: "plan.pdf", mode: "demo", rulesOnly: true });
+  const at = (name: string) => form.fields.find((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName === name);
+  assert.equal(at("Text Field 39")?.label, "Country where treatment is taking place?");
+  // In a treatment plan, "Number of sessions" is the number planned – not the count of attended sessions.
+  assert.notDeepEqual(at("Text Field 40")?.fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
+  const vas = at("Combo Box 1");
+  assert.equal(vas?.label, "Using the VAS scale, what is the patient's level of pain?");
+  assert.deepEqual(vas?.options, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  const before = form.fields.find((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName.startsWith("f Have you had"));
+  assert.match(before?.label ?? "", /^Have you had these symptoms before\?/);
+  const delivery = at("62 What is the estimated date of delivery");
+  assert.deepEqual(delivery?.fillSource, { kind: "leave_blank" });
+  assert.equal(delivery?.completedBy, "patient");
+  // Pregnancy wording anywhere is the patient's to answer; "Number of sessions to date" is still a count.
+  assert.deepEqual(classifyLabel("Is the pregnancy a result of fertility treatment?").fillSource, { kind: "leave_blank" });
+  assert.deepEqual(classifyLabel("Number of sessions to date", "About the treatment").fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
+});
+
 /** A fillable form whose signature box is printed, not a field (as AXA's), under the given declaration heading. */
 async function printedSignatureForm(heading: string): Promise<Uint8Array> {
   const doc = await PDFDocument.create();

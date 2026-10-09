@@ -103,6 +103,12 @@ test("a box ruled with writing lines is mapped with its rows, so the answer is w
     ]);
   }
   assert.match(gp.note ?? "", /3 printed lines/);
+  // "[      ] Yes [      ] No": one yes/no question, an X centred in the chosen wide box – not a text box
+  // and a second question called "Yes".
+  const drugs = byLabel(form.fields, /^Is the patient presently receiving any prescribed drugs\?$/);
+  assert.equal(drugs.answerType, "yes_no");
+  assert.deepEqual(drugs.anchor.kind === "pdf_overlay_ticks" && drugs.anchor.options.map((o) => [o.option, o.x, o.size]), [["Yes", 424.1, 16.8], ["No", 513.7, 16.8]]);
+  assert.ok(!form.fields.some((f) => /^(?:Yes|No)$/.test(f.label)));
   const history = form.fields.find((f) => f.anchor.kind === "pdf_overlay" && Math.abs(f.anchor.x - (RULED.history.x + 2)) < 1);
   assert.ok(history && history.anchor.kind === "pdf_overlay");
   assert.equal(history.anchor.ruledRows?.length, 5);

@@ -363,6 +363,97 @@ function prettifyName(name: string): string {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+/** Field names that say nothing ("Text Field 43", "fill_4", "Check Box 16", "undefined"). */
+const GENERIC_NAME = /^(?:text ?field|textfield|text|fill|check ?box|checkbox|radio(?: ?button)?|combo ?box|list ?box|field|button|undefined|untitled)[\s_-]*\d*$/i;
+/** A printed label cut off mid-phrase ("Country where treatment is", "Using the VAS scale, what is the"). */
+const DANGLING_END = /\b(?:is|are|was|were|on|of|the|a|an|for|to|and|or|with|in|by|from|what|your|their|be|step|any|this|that|than)$/i;
+
+/** True when a label is only a piece of the printed question (a line from its middle or its end). */
+function isFragment(label: string): boolean {
+  const t = label.trim();
+  return t.length <= 2 || /^[a-z]/.test(t) || GENERIC_NAME.test(t) || DANGLING_END.test(t.replace(/[\s,;]+$/, ""));
+}
+
+/** A field name that reads as its question ("f Have you had these symptoms before If yes …"); null for "Text Field 43". */
+function descriptiveName(name: string): string | null {
+  const last = (name.split(".").pop() ?? name).replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+  if (GENERIC_NAME.test(last) || last.split(" ").length < 4) return null;
+  const text = last.replace(/^[a-z0-9]{1,2}[.)]?\s+(?=[A-Z])/, "").replace(/\s+\d+$/, "");
+  return /^(?:what|when|why|how|who|which|where|is|are|was|were|has|have|had|did|does|do|will|would|can|could|should)\b/i.test(text) && !/[?]$/.test(text) ? `${text}?` : text;
+}
+
+type PageItem = PdfFormOutline["pageText"][number]["items"][number];
+type OutlineField = PdfFormOutline["fields"][number];
+
+/** The printed item a label segment was read from (its text, cleaned, equal to the segment). */
+function labelItem(pdf: PdfFormOutline, page: number, line: string): PageItem | null {
+  const key = line.trim().toLowerCase();
+  return (pdf.pageText.find((p) => p.page === page)?.items ?? []).find((it) => it.str.trim() && cleanLabel(it.str).toLowerCase() === key) ?? null;
+}
+
+/**
+ * The printed paragraph a label line belongs to: the lines whose first item starts at the same left
+ * edge, 13.5 pt apart at most – each line read across the label's side of the field only (left of it
+ * for a label in the left column, over its width for a label printed above it).
+ */
+function printedParagraph(pdf: PdfFormOutline, f: OutlineField, start: PageItem): string {
+  const items = (pdf.pageText.find((p) => p.page === f.page)?.items ?? []).filter((it) => it.str.trim());
+  const left = start.x < f.rect.x - 3;
+  const onSide = (it: PageItem) => (left ? it.x < f.rect.x - 3 : it.x >= f.rect.x - 3 && it.x < f.rect.x + f.rect.width);
+  const heads = items.filter((it) => Math.abs(it.x - start.x) <= 3 && onSide(it)).sort((a, b) => b.y - a.y);
+  let hi = heads.indexOf(start);
+  let lo = hi;
+  while (hi > 0 && heads[hi - 1].y - heads[hi].y <= 13.5) hi -= 1;
+  while (lo < heads.length - 1 && heads[lo].y - heads[lo + 1].y <= 13.5) lo += 1;
+  return heads
+    .slice(hi, lo + 1)
+    .map((h) =>
+      items
+        .filter((it) => Math.abs(it.y - h.y) <= 2 && it.x >= h.x - 1 && onSide(it))
+        .sort((a, b) => a.x - b.x)
+        .map((it) => it.str.trim())
+        .join(" "),
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The question of a fillable field whose nearby label is only a fragment of it ("receive?", "Text Field
+ * 43", "Country where treatment is"): the printed paragraph the fragment belongs to; else the field's
+ * name when it reads as the question (Freedom's fields are named after their questions); else the lines
+ * printed in the label column to the field's left, up to the end of the first question. The label as it
+ * is when it already reads as a question.
+ */
+function completeLabel(pdf: PdfFormOutline, f: OutlineField, near: string): string {
+  if (near && !isFragment(near)) return near;
+  // Leading option words and markers ("Yes ▶ If yes please give…"), item letters ("f Have you…").
+  const tidy = (t: string) =>
+    cleanLabel(t)
+      .replace(/^(?:yes|no)\s*[▶►>:–-]?\s+(?=if\b)/i, "")
+      .replace(/^[a-z][.)]?\s+(?=[A-Z])/, "");
+  const firstQuestion = (t: string) => {
+    const m = /^.*?[?:](?=\s|$)/.exec(t);
+    return (m ? m[0] : t).replace(/:$/, "").trim();
+  };
+  const start = near ? labelItem(pdf, f.page, near) : null;
+  if (start) {
+    const p = tidy(printedParagraph(pdf, f, start));
+    if (/^[A-Z0-9]/.test(p) && p.length > near.length) return p;
+  }
+  const named = descriptiveName(f.name);
+  if (named) return named;
+  // The label column to the field's left (not for a label printed above the field: the column there
+  // holds other questions).
+  const besideLeft = !start || start.x < f.rect.x - 3;
+  if ((f.type === "text" || f.type === "dropdown") && besideLeft) {
+    const column = tidy(firstQuestion(labelFor({ page: f.page, ...f.rect }, pdf, [])));
+    if (/^[A-Z0-9]/.test(column) && column.length > 3) return column;
+  }
+  return near || prettifyName(f.name);
+}
+
 function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
   // Separate tick boxes that answer one question (a "Yes" box and a "No" box; one box per option).
   const groups = detectOptionGroups(pdf);
@@ -405,7 +496,9 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
     }
     // Radio groups and tick boxes with a widget per option: the labels printed beside the widgets.
     const multi = f.type === "radio" || (f.type === "checkbox" && (f.options?.length ?? 0) > 1);
-    const options = multi && f.optionLabels?.length ? printedOptions(pdf, f) : f.options ?? [];
+    // A list's prompt ("Please select", "-- choose --") is not one of its answers.
+    const placeholder = (o: string) => f.type === "dropdown" && /^(?:-+\s*)?(?:please\s+)?(?:select|choose|pick)\b|^-+$|^\s*$/i.test(o.trim());
+    const options = (multi && f.optionLabels?.length ? printedOptions(pdf, f) : f.options ?? []).filter((o) => !placeholder(o));
     // The words printed beside a multi-option field's widgets are its options, not its question. A single
     // tick box's own printed label IS its question ("Treatment completed – claimant discharged").
     const known = [...(f.options ?? []), ...(multi ? f.optionLabels ?? [] : []), ...options].map((o) => o.trim().toLowerCase());
@@ -418,7 +511,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
     // the question, when the box has a heading of its own ("Initial score").
     const example = (t: string) => /^(?:such as|e\.g\.?|eg|for example|for instance|including)\b/i.test(t);
     const near = segments.find((t) => !isOption(t) && !example(t)) ?? segments.find((t) => !isOption(t)) ?? "";
-    const label = (near.length > 2 ? near : prettifyName(f.name)).slice(0, 160);
+    const label = completeLabel(pdf, f, near.length > 2 ? near : "").slice(0, 160);
     const yesNo = options.length === 2 && isYesNoOptions(options);
     const answerType: AnswerType | undefined =
       f.type === "checkbox" && !multi

@@ -88,13 +88,20 @@ export const RULED = {
 
 /**
  * A flat form whose answer boxes are ruled with writing lines (as Aviva GEN030 question 5 and CM016's
- * GP address box): a rectangle with full-width horizontal strokes inside it.
+ * GP address box): a rectangle with full-width horizontal strokes inside it; and GEN030's wide Yes / No
+ * boxes.
  */
 export async function ruledBoxesPdf(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const page = doc.addPage([595, 842]);
   page.drawText("Please complete in BLOCK CAPITALS.", { x: 40, y: 790, size: 9, font });
+  // "[      ] Yes [      ] No": short boxes wider than a square, each followed by its printed option.
+  page.drawText("3. Is the patient presently receiving any prescribed drugs?", { x: 74, y: 705, size: 9, font });
+  for (const [x, word] of [[406.6, "Yes"], [496.2, "No"]] as const) {
+    page.drawRectangle({ x, y: 696, width: 51.8, height: 16.8, borderColor: rgb(0, 0, 0), borderWidth: 0.8, color: rgb(1, 1, 1) });
+    page.drawText(word, { x: x + 59, y: 701, size: 9, font });
+  }
   page.drawText("5. Please give a full history of the condition", { x: 74, y: 520, size: 9, font });
   for (const [label, b] of [["", RULED.history], ["Name and full address of GP's surgery", RULED.address]] as const) {
     page.drawRectangle({ x: b.x, y: b.y, width: b.width, height: b.height, borderColor: rgb(0, 0, 0), borderWidth: 0.8, color: rgb(1, 1, 1) });

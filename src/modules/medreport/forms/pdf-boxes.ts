@@ -6,7 +6,8 @@ import "server-only";
  * through save/restore, `cm` and form XObjects.
  *
  * - kind "tick": a small square (sides within 20 % of each other, at most TICK_MAX_SIDE). Aviva CM016's
- *   tick boxes are 16.8 pt squares, so the limit is a little above that.
+ *   tick boxes are 16.8 pt squares, so the limit is a little above that. Also a row of two or more
+ *   short, wider boxes each followed by a printed "Yes" / "No" (Aviva GEN030's "[    ] Yes [    ] No").
  * - kind "box": any other rectangle at least 20 × 8 pt.
  * - Kept only when nothing is printed inside (an empty answer space); a rectangle that holds other
  *   boxes is a frame or a table outline and is dropped; duplicates (fill + stroke of one box) are one.
@@ -209,6 +210,22 @@ function rulesOf(r: Rect, segments: readonly Segment[]): number[] | undefined {
   return ys.map(r1);
 }
 
+/** A printed option word that makes the box before it a tick box. */
+const YES_NO_WORD = /^(?:yes|no|n\/a|not applicable|unknown|don'?t know)$/i;
+
+/**
+ * Short boxes wider than a square, each followed on its line by a printed "Yes" / "No" (within 14 pt
+ * of its right edge), two or more on one line: tick boxes, not answer boxes ("[    ] Yes [    ] No").
+ */
+function yesNoTickBoxes(boxes: readonly Rect[], items: readonly BoxTextItem[]): Rect[] {
+  const marked = boxes.filter((b) => {
+    if (b.height > TICK_MAX_SIDE + 4 || b.height < 5 || b.width > 80) return false;
+    const right = b.x + b.width;
+    return items.some((it) => YES_NO_WORD.test(it.str.trim()) && it.x >= right - 2 && it.x <= right + 14 && it.y >= b.y - 2 && it.y <= b.y + b.height);
+  });
+  return marked.filter((b) => marked.some((o) => o !== b && Math.abs(o.y - b.y) <= 2 && Math.abs(o.height - b.height) <= 1.5));
+}
+
 /**
  * Rows of four or more touching squares (single-character cells) → one box per row, with a slot per
  * cell. Returns the merged boxes and the squares left over (real tick boxes).
@@ -299,11 +316,12 @@ export async function extractPageBoxes(page: OperatorListPage, pageNumber: numbe
 
   const squares = empty.filter(isSquareTick);
   const { combs, rest } = mergeCombs(squares);
+  const wideTicks = yesNoTickBoxes(empty.filter((r) => !isSquareTick(r)), items);
   const out: PdfBox[] = [];
   for (const c of combs) out.push({ page: pageNumber, x: r1(c.x), y: r1(c.y), width: r1(c.width), height: r1(c.height), kind: "box", slots: c.slots });
-  for (const t of rest) out.push({ page: pageNumber, x: r1(t.x), y: r1(t.y), width: r1(t.width), height: r1(t.height), kind: "tick" });
+  for (const t of [...rest, ...wideTicks]) out.push({ page: pageNumber, x: r1(t.x), y: r1(t.y), width: r1(t.width), height: r1(t.height), kind: "tick" });
   for (const b of empty) {
-    if (isSquareTick(b) || b.width < MIN_BOX_WIDTH || b.height < MIN_BOX_HEIGHT) continue;
+    if (isSquareTick(b) || wideTicks.indexOf(b) >= 0 || b.width < MIN_BOX_WIDTH || b.height < MIN_BOX_HEIGHT) continue;
     const slots = slotsOf(b, segments, items);
     // Ruled writing lines (a box with vertical dividers as well is a table, not lines to write on).
     const rules = slots ? undefined : rulesOf(b, segments);

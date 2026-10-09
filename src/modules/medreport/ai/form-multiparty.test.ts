@@ -14,7 +14,7 @@ import type { FillSource, FormField, OutlineBlock, PdfFormOutline, RegistrationP
 import { decodeFormFile } from "../forms/file";
 import { analyseFormFile } from "./analyse-form";
 import { AnalysisFieldOutputSchema, AnalysisOutputSchema, LenientAnalysisOutputSchema, type AnalysisFieldOutput } from "./form-analysis-schema";
-import { classifyLabel } from "./form-classify";
+import { answerTypeFromLabel, classifyLabel } from "./form-classify";
 import { renderPdfOutline, summariseParsedForm, type ParsedForm } from "./form-outline";
 import { postValidateFields } from "./form-postvalidate";
 import { proposeFieldsByRules } from "./form-rules";
@@ -82,11 +82,20 @@ test("classifier: insurer-form record fields, bank details and the therapist's o
   assert.deepEqual(classifyLabel("Name", "2 Therapist details").fillSource, { kind: "registration", path: "clinician.name" });
   assert.deepEqual(classifyLabel("Name", "1 Patient’s details").fillSource, { kind: "registration", path: "patient.fullName" });
   // Membership / customer / scheme numbers are identifiers, filled by code.
-  for (const label of ["Bupa membership number", "Membership number/customer number", "Scheme number", "Member Number", "Customer no."]) {
+  for (const label of ["Bupa membership number", "Membership number/customer number", "Member Number", "Customer no."]) {
     const cls = classifyLabel(label);
     assert.equal(cls.identifier, true, label);
     assert.deepEqual(cls.fillSource, regOr("referral.membershipNumber", { kind: "registration", path: "referral.reference" }), label);
   }
+  // A company or group scheme's own number is not the patient's membership number (Aviva GEN030 has
+  // both): an identifier the record does not hold – staff enter it. Likewise a company policy's
+  // company name and a work telephone number.
+  for (const label of ["Scheme number", "Group scheme no.", "Company name (if a company policy)", "Work", "Work telephone number"]) {
+    assert.equal(classifyLabel(label, "1. Patient details").fillSource.kind, "leave_blank", label);
+  }
+  assert.equal(classifyLabel("Scheme number").identifier, true);
+  assert.equal(answerTypeFromLabel("Telephone number of GP's surgery"), null, "a phone number is not a count");
+  assert.equal(answerTypeFromLabel("Number of sessions requested"), "number");
   assert.deepEqual(classifyLabel("Pre-authorisation number").fillSource, regOr("referral.authorisationNumber", { kind: "registration", path: "referral.reference" }));
   const provider = classifyLabel("Bupa provider number");
   assert.deepEqual([provider.fillSource.kind, provider.identifier], ["leave_blank", true], "never drafted");
