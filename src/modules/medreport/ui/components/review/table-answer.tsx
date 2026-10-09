@@ -45,7 +45,7 @@ export function TableAnswer({ questionKey, label, field, rows, readOnly, onChang
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full min-w-[36rem] border-collapse text-left text-[13px]">
+        <table className="w-full min-w-[46rem] border-collapse text-left text-[13px]">
           <caption className="sr-only">Answer to “{label}”</caption>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -94,7 +94,7 @@ export function TableAnswer({ questionKey, label, field, rows, readOnly, onChang
                             e.currentTarget.blur();
                           }
                         }}
-                        className="min-w-[5rem] rounded-md border-transparent bg-transparent px-1 py-1 text-[13px] leading-snug shadow-none hover:border-slate-200 focus:bg-white"
+                        className="min-w-[7rem] rounded-md border-transparent bg-transparent px-1 py-1 text-[13px] leading-snug shadow-none hover:border-slate-200 focus:bg-white"
                       />
                     )}
                   </td>
