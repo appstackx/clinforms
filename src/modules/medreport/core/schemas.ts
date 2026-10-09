@@ -223,13 +223,20 @@ export const RegistrationPathSchema = z.enum([
   "referral.insurerName",
   "referral.membershipNumber",
   "referral.authorisationNumber",
+  // Additive (10/2026): a form that prints the address on several lines with a separate postcode box –
+  // the address without its postcode, one part per line, and the postcode alone (from the same record).
+  "patient.addressLines",
+  "patient.postcode",
 ]);
 /**
  * How a computed fact is written into a form answer (default "summary" = the fact's value).
  * first_score / latest_score: an outcome measure's first or latest recorded score with its date
  * ("PSFS 2.7/10 (01/09/2026)") – the "Initial score" and "Current score" columns of insurer forms.
+ * first_scores / latest_scores (additive, 10/2026): the same for EVERY outcome measure the record holds
+ * ("NPRS 7/10 · QuickDASH 52.3/100 · PSFS 2.7/10 (01/09/2026)") – for a box headed "Outcome measures"
+ * that only gives an example ("such as …"); the factId names any one of them.
  */
-export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary", "first_score", "latest_score"]);
+export const ComputedFactFormatSchema = z.enum(["sessions_attended", "dna_count", "summary", "first_score", "latest_score", "first_scores", "latest_scores"]);
 /** Sign-off parts filled from the server-signed receipt at approval (blank on a DRAFT). */
 export const SignoffPartSchema = z.enum(["signature", "name", "hcpc", "date"]);
 /**

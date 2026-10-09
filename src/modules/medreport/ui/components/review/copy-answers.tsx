@@ -143,9 +143,11 @@ export function CopyAnswersPanel({
 }) {
   const { copy, copyAll, downloadTxt } = actions;
   const w = WORDING.answersCopy;
-  const answered = copy.entries.filter((e) => e.answer !== null).length;
-  // Sign-off answers appear on approval: they are not "to answer" before it.
-  const toAnswer = copy.entries.filter((e) => e.answer !== null || e.status !== "on_approval").length;
+  // The questions to answer – the same count as the progress summary: sign-off answers (completed from the
+  // approval) are not among them, before or after approval.
+  const questions = copy.entries.filter((e) => !e.signoff && e.status !== "on_approval");
+  const answered = questions.filter((e) => e.answer !== null).length;
+  const toAnswer = questions.length;
   const notice = `${copy.approved ? w.approvedNotice : w.draftNotice}${
     copy.toComplete > 0 ? ` ${copy.approved ? w.leftBlankCount(copy.toComplete) : `${w.gapsCount(copy.toComplete)} – they are copied as “${w.toComplete}”.`}` : ""
   }`;

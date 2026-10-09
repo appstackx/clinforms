@@ -32,6 +32,7 @@ import { DraftsResponseSchema, FormSamplesResponseSchema, FormsAnalyseResponseSc
 import { formMapSha256, verifyFormConfirmation, withAttestedConfirmation } from "@/modules/medreport/auth/attestations";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
 import { formAnchorKeys, formTemplateId, formToTemplate } from "@/modules/medreport/core/forms";
+import { parsePortalQuestions, questionFields, questionSetFile } from "@/modules/medreport/core/question-set";
 import { applyDraftResult, createFormReport } from "@/modules/medreport/core/report-factory";
 import type { FormDefinition } from "@/modules/medreport/core/types";
 import { WORDING, demoFormNotice, hasBannedTerm } from "@/modules/medreport/core/wording";
@@ -52,6 +53,7 @@ const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "MEDREPORT_LIVE_PASSCODE",
   "MEDREPORT_SIGNING_SECRET",
+  "MEDREPORT_LAUNCH_SECRET",
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 const env = process.env as Record<string, string | undefined>;
@@ -344,7 +346,7 @@ test("pre-written answers: advertised in the bundle, replayed by POST /drafts, e
   assert.ok(pageText.includes("Megan Hart"));
 });
 
-test("GET /forms/samples lists the demonstration form as upload-only, in demo mode only; its file is never served", async () => {
+test("GET /forms/samples lists the demonstration form as upload-only, whatever the AI mode; its file is never served", async () => {
   const fx = await fixture();
   const list = async () => FormSamplesResponseSchema.parse(await (await route(handleFormSamples)(get("/api/reports/v1/forms/samples"), { params: {} })).json()).samples;
   const bundledCount = (await list()).length;
@@ -362,12 +364,18 @@ test("GET /forms/samples lists the demonstration form as upload-only, in demo mo
   const file = await route(handleFormSampleFile)(get(`/api/reports/v1/forms/samples/${SAMPLE_ID}/file`), { params: { id: SAMPLE_ID } });
   assert.equal(file.status, 404, "the insurer's file is never served");
 
-  // Live mode: not listed (an upload would be read live, not from the prepared map).
+  // A live-ready .env.local ("auto" with a key and a passcode): still listed – a request without the
+  // passcode is demo, so the upload gets the prepared map (an .env.local made for live work used to hide
+  // every demonstration form from npm run demo:red).
   env.MEDREPORT_AI_MODE = "auto";
   env.ANTHROPIC_API_KEY = "test-key-not-used";
   env.MEDREPORT_LIVE_PASSCODE = "test-passcode-not-used-1234";
   env.MEDREPORT_SIGNING_SECRET = "test-signing-secret-not-used-1234"; // live mode needs real secrets to attest the bundled maps
-  assert.equal((await list()).length, bundledCount);
+  env.MEDREPORT_LAUNCH_SECRET = "test-launch-secret-not-used-1234"; // live mode: the demo session the request carries needs one too
+  assert.equal((await list()).length, bundledCount + 1);
+  const uploaded = await route(handleFormsAnalyse)(post("/api/reports/v1/forms/analyse", { fileBase64: Buffer.from(fx.pdf).toString("base64"), fileName: "insurer-form.pdf" }), { params: {} });
+  assert.equal(uploaded.status, 200);
+  assert.equal(FormsAnalyseResponseSchema.parse(await uploaded.json()).form.analysis.mode, "demo_prewritten", "no passcode: the prepared map, not a live reading");
 });
 
 test("npm run demo:check: passes a good folder, explains a broken one, and is quiet when there is none", async () => {
@@ -431,4 +439,42 @@ test("scripts: stamp-demo-drafts --dir stamps the fingerprint; check-demo-assets
   const checked = run("scripts/medreport/check-demo-assets.ts", `--dir=${fx.dir}`);
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
   assert.match(checked.stdout, /^Demo assets OK: 1 map, 1 answer file, 2 form files in /m);
+});
+
+test("a prepared portal question set in the demo assets is seeded into the library, confirmed and attested – nothing to upload", async () => {
+  const fx = await fixture();
+  const fields = questionFields(parsePortalQuestions("# Progress\nDate of initial assessment [date]\nCurrent symptoms and progress [long]").questions);
+  const file = await questionSetFile(fields);
+  const at = "2026-10-10T08:00:00.000Z";
+  const qs: FormDefinition = {
+    id: "form_qs_demo_test",
+    tenantId: "demo",
+    referrer: { name: "Example portal (fictional)", type: "insurer" },
+    title: "Example portal questions (illustrative)",
+    file,
+    kind: "questions",
+    fields,
+    status: "confirmed",
+    confirmed: { by: "Practice manager (fictional)", at },
+    analysis: { mode: "rules", promptVersion: "questions-1", at, warnings: [] },
+    createdAt: at,
+    updatedAt: at,
+  };
+  writeFileSync(
+    path.join(fx.dir, "maps", "portal-test.json"),
+    JSON.stringify({ format: "appstackx-reports.form-analysis", formatVersion: 1, sampleId: "portal-test", fileSha256: file.sha256, fileName: file.fileName, mode: "demo_prewritten", recordedAt: at, promptVersion: "questions-1", form: qs, outlineSummary: { kind: "questions", answerSpaces: 2, headings: [], warnings: [] } }),
+  );
+  useAssets(fx.dir);
+  const samples = FormSamplesResponseSchema.parse(await (await route(handleFormSamples)(get("/api/reports/v1/forms/samples"), { params: {} })).json()).samples;
+  const entry = samples.find((s) => s.id === "portal-test");
+  assert.ok(entry);
+  assert.equal(entry.uploadRequired, undefined, "a question set has no file to upload");
+  assert.equal(entry.form?.status, "confirmed");
+  assert.equal(entry.form?.sampleId, "portal-test");
+  assert.ok(entry.form && verifyFormConfirmation(entry.form).ok, "the server attests the prepared map");
+  const checked = await checkDemoAssets(fx.dir);
+  assert.deepEqual(checked.problems, []);
+  // A question set whose hash is not that of its questions is refused.
+  writeFileSync(path.join(fx.dir, "maps", "portal-test.json"), JSON.stringify({ ...JSON.parse(readFileSync(path.join(fx.dir, "maps", "portal-test.json"), "utf8")), fileSha256: "1".repeat(64), form: { ...qs, file: { ...file, sha256: "1".repeat(64) } } }));
+  assert.ok((await checkDemoAssets(fx.dir)).problems.some((p) => /SHA-256 of its questions/.test(p)));
 });

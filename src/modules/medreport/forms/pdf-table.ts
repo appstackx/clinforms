@@ -16,7 +16,7 @@ import "server-only";
  * two lines where the cell is tall enough; text that still does not fit is shortened with "…" and its
  * row is repeated in full on the continuation sheet. Rows beyond the printed table go to the
  * continuation sheet as a table, with a warning. A cell that has its choices printed in it ("Yes / No"
- * under "Has this bill been paid?") gets the chosen word circled instead of text written over it.
+ * under "Fee settled?") gets the chosen word circled instead of text written over it.
  *
  * Owner: S2 (pdf-tables-flat).
  */
@@ -40,7 +40,7 @@ export interface DetectedPdfTable {
   /** Top edge of each printed row (PDF points), top to bottom. */
   rowTops: number[];
   rowHeight: number;
-  /** The question printed above the table ("Details of the medical expenses you are claiming for"). */
+  /** The question printed above the table ("List the treatment costs you are claiming"). */
   label: string;
   /** Instructions printed between that question and the table. */
   guidance: string;
@@ -48,7 +48,7 @@ export interface DetectedPdfTable {
   fieldNames: string[];
 }
 
-/** "Date of treatmentRow1" → {base, n: 1}; "Fee_3" → {base, n: 3}. Null without a row-number suffix. */
+/** "Visit dateRow1" → {base, n: 1}; "Fee_3" → {base, n: 3}. Null without a row-number suffix. */
 export function rowNumberedName(name: string): { base: string; n: number } | null {
   const last = name.split(".").pop() ?? name;
   const row = /^(.*?)[\s_.-]*row[\s_.-]*(\d{1,3})$/i.exec(last);

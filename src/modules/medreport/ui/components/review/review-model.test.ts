@@ -35,6 +35,7 @@ import {
   resolveGap,
   revertParagraph,
   setStructuredAnswer,
+  supersedeAcknowledgedGaps,
 } from "./review-model";
 import { reviewReducer } from "./use-review-state";
 
@@ -365,7 +366,9 @@ describe("labels and options", () => {
   it("formats citation chips and maps citations to questions", () => {
     const { report } = drafted();
     assert.equal(citationLabel("N-001", report.bundleSnapshot), "N-001 · 18/03");
-    assert.equal(citationLabel("FACT-attendance", report.bundleSnapshot), "FACT-attendance");
+    assert.equal(citationLabel("FACT-attendance", report.bundleSnapshot), "Attendance record");
+    assert.equal(citationLabel("FACT-outcomes-QuickDASH", report.bundleSnapshot), "QuickDASH scores");
+    assert.equal(citationLabel("REG", report.bundleSnapshot), "Registration");
     const by = citationsBySource(report);
     assert.deepEqual(by.get("N-001"), ["F-03"]);
     assert.deepEqual(by.get("REG"), ["F-01", "F-02"]);
@@ -421,5 +424,25 @@ describe("gap resolution never claims a clinician answer that does not exist", (
     assert.equal(opts.canResolve, true);
     assert.equal(opts.prefill, "");
     assert.equal(opts.minLength, MIN_GAP_REASON);
+  });
+});
+
+describe("supersedeAcknowledgedGaps", () => {
+  it("a value entered after a 'left blank' acknowledgement replaces the acknowledgement", () => {
+    const { report } = drafted();
+    const acked = resolveGap(report, "gap-F-06-ai", "acknowledged", "Left blank for the office to add later.", "Sarah Reid", NOW);
+    // Nothing entered yet: the acknowledgement stays.
+    assert.equal(supersedeAcknowledgedGaps(acked, "F-06", "Sarah Reid", NOW), acked);
+    const typed = addClinicianParagraph(acked, "F-06", "In my opinion he will keep improving.", NOW).report;
+    const next = supersedeAcknowledgedGaps(typed, "F-06", "Sarah Reid", NOW);
+    const gap = next.gaps.find((g) => g.id === "gap-F-06-ai");
+    assert.equal(gap?.resolution?.kind, "resolved");
+    assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later”\)\.$/);
+    assert.match(next.activity[next.activity.length - 1].detail, /no longer applies/);
+    // The reducer does it when the edit is logged, and when a value is typed straight into the empty answer.
+    const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: "Sarah Reid" });
+    assert.equal(viaReducer.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
+    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: "Sarah Reid" });
+    assert.equal(typedIn.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
   });
 });

@@ -101,6 +101,8 @@ export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "patient.age": "Age",
   "patient.sex": "Sex",
   "patient.address": "Address",
+  "patient.addressLines": "Address without the postcode, one part per line",
+  "patient.postcode": "Postcode",
   "patient.occupation": "Occupation",
   "patient.employer": "Employer",
   "referral.referrerName": "Referrer name",
@@ -132,6 +134,8 @@ export const COMPUTED_FACT_FORMAT_LABELS: Record<ComputedFactFormat, string> = {
   summary: "Summary",
   first_score: "First recorded score (outcome measures)",
   latest_score: "Latest recorded score (outcome measures)",
+  first_scores: "First recorded score of every outcome measure",
+  latest_scores: "Latest recorded score of every outcome measure",
 };
 
 export const SIGNOFF_PART_LABELS: Record<SignoffPart, string> = {

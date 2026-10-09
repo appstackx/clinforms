@@ -266,6 +266,9 @@ export type CharFieldsResult = { kind: "none" } | { kind: "not_a_date" } | { kin
  * the answer as written (already in the form's character set); a date format takes the ISO value, or
  * the text as DD/MM/YYYY.
  */
+/** "N/A" as a clinician enters it for a date or number that does not apply. */
+const NOT_APPLICABLE_RE = /^(?:n\/a|not applicable)$/i;
+
 export function charFieldTexts(anchor: PdfCharFieldsAnchor, answer: FormFillAnswer, text: string): CharFieldsResult {
   const n = anchor.fieldNames.length;
   const t = text.trim();
@@ -275,6 +278,9 @@ export function charFieldTexts(anchor: PdfCharFieldsAnchor, answer: FormFillAnsw
     value = t;
     if (value.length > n) value = value.replace(/\s+/g, "");
     if (value.length > n) value = value.replace(SEPARATORS_RE, "");
+  } else if (NOT_APPLICABLE_RE.test(t)) {
+    // The clinician's "N/A" for a date that does not apply (no referral back planned): in the first boxes.
+    value = "N/A";
   } else {
     const iso = typeof answer.value === "string" && isValidIsoDate(answer.value) ? answer.value : isValidIsoDate(t) ? t : t ? parseUkDate(t) : null;
     if (!iso) return t ? { kind: "not_a_date" } : { kind: "none" };

@@ -222,8 +222,8 @@ export function buildAppointmentsTableSection(
  * ----------------------------------------------------------------------------------------------*/
 
 /**
- * What a printed column most likely holds, from its header ("Date of treatment" → date, "Amount of the
- * bill" → amount, "Has this bill been paid?" → paid, "Name of service provider" → clinic). Null when the
+ * What a printed column most likely holds, from its header ("Visit date" → date, "Fee
+ * charged" → amount, "Fee settled?" → paid, "Clinic or hospital name" → clinic). Null when the
  * header names nothing the appointment record holds.
  */
 export function appointmentColumnFromHeader(header: string): AppointmentColumn | null {

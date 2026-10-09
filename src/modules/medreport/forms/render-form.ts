@@ -18,6 +18,7 @@ import { CONTENT_TYPES, HEADERS } from "../api/contract";
 import { HttpError } from "../api/http";
 import { NOTICES } from "../config.public";
 import { answerableFields, formTemplateId, type FormFillAnswers } from "../core/forms";
+import { prefillSigners } from "../core/parties";
 import type { FormDefinition, Report } from "../core/types";
 import { buildFileBaseName } from "../docgen/view-model";
 import { docxToPdf } from "./convert";
@@ -138,17 +139,22 @@ export function fillWarningsHeader(warnings: string[]): Record<string, string> {
   return { [HEADERS.fillWarnings]: encodeURIComponent(JSON.stringify(list)) };
 }
 
-/** e.g. "Hart_M_Treating-Physiotherapist-Report_2026-10-07_SIGNED" (no extension). */
+/**
+ * e.g. "Hart_M_Treating-Physiotherapist-Report_2026-10-07_SIGNED" (no extension). A form the clinic only
+ * prefills for someone else to sign (core/parties.ts prefillSigners – a patient's claim form) is never
+ * "_SIGNED": its approved file is "…_PREFILLED".
+ */
 export function formFileBaseName(report: Pick<Report, "bundleSnapshot" | "version">, form: FormDefinition, opts: { signed: boolean; dateIso: string; preview?: boolean }): string {
   const reg = report.bundleSnapshot.registration;
-  const built = buildFileBaseName({
+  const built0 = buildFileBaseName({
     firstName: reg.firstName,
     lastName: reg.lastName,
     template: { id: formTemplateId(form.id), documentTitle: form.title },
     dateIso: opts.dateIso,
     signed: opts.signed,
   });
+  const built = opts.signed && prefillSigners(form) ? built0.replace(/_SIGNED$/, "_PREFILLED") : built0;
   // An amended version says so in its file name ("…_AMENDED-v2_SIGNED").
-  const base = report.version && report.version > 1 ? built.replace(/(_SIGNED|_DRAFT)?$/, `_AMENDED-v${report.version}$1`) : built;
+  const base = report.version && report.version > 1 ? built.replace(/(_SIGNED|_PREFILLED|_DRAFT)?$/, `_AMENDED-v${report.version}$1`) : built;
   return opts.preview ? `${base}_PREVIEW` : base;
 }

@@ -24,6 +24,7 @@ import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
+import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { getTemplate } from "../../../templates/registry";
@@ -224,6 +225,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
   // The form map, only when it is the one this report was started from.
   const form: FormDefinition | null = formInfo && libraryForm && libraryForm.file.sha256 === formInfo.fileSha256 ? libraryForm : null;
+  // A form the clinic only prefills for others to sign (a patient's claim form): never "signed".
+  const prefillFor = useMemo(() => {
+    const signers = form ? prefillSigners(form) : null;
+    return signers ? prefillSignersText(signers) : null;
+  }, [form]);
   const formProblem: null | "loading" | "missing" | "mismatch" = !formInfo
     ? null
     : !formReady
@@ -499,6 +505,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         onDraftCopy={() => void actions.download(isForm ? "original" : "docx")}
         draftCopyUnavailable={isForm && (!form || (!questionSet && file.status !== "ready"))}
         downloading={actions.downloading}
+        prefillFor={prefillFor}
       />
 
       {formProblem === "missing" && formInfo && (
@@ -540,15 +547,16 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       {ownVoice.length > 0 && voiceAuthor && (
         <InlineAlert
           tone="info"
-          title={`${ownVoice.length} answer${ownVoice.length === 1 ? " describes" : "s describe"} ${voiceAuthor}'s own notes in the third person`}
+          title={`${ownVoice.length} answer${ownVoice.length === 1 ? " reports" : "s report"} what ${voiceAuthor} recorded, rather than saying it`}
           action={
             <Button type="button" size="sm" className="h-8" onClick={() => dispatch({ type: "writeInOwnVoice", authorName: voiceAuthor, actor })}>
               <PenLine className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Write in my own voice
             </Button>
           }
         >
-          This form is {voiceAuthor}&apos;s own report: “On 22/09/2026 {voiceAuthor} recorded that…” becomes “On 22/09/2026 I recorded that…”. Other
-          clinicians stay named, citations are unchanged, and each answer can be reverted.
+          This form is {voiceAuthor}&apos;s own report: “On 01/10/2026 {voiceAuthor} recorded that loading needs progressing…” becomes “On 01/10/2026,
+          loading needs progressing…”, and “recorded an assessment of…” becomes “Assessment on …:”. Other clinicians stay named, dates, figures and
+          citations are unchanged, and each answer can be reverted.
         </InlineAlert>
       )}
 
@@ -618,6 +626,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
           onAmend={startAmendment}
+          prefillFor={prefillFor}
         />
       )}
 

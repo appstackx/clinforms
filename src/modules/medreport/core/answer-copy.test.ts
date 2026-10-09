@@ -114,7 +114,7 @@ test("one answer as plain text: dates DD/MM/YYYY, yes/no as the printed option, 
   assert.equal(copyAnswerValue({ answerType: "yes_no", fillSource: { kind: "notes_narrative" } }, { paragraphs: [], answer: { kind: "yes_no", value: false } }), "No");
 });
 
-test("copy entries: form order, sign-off kept, the referrer's-use box skipped, numbered from 1", () => {
+test("copy entries: form order, sign-off kept, the referrer's-use box skipped, numbered as on the form (F-10 → 10)", () => {
   const entries = copyEntries(report("draft"), FORM);
   assert.deepEqual(
     entries.map((e) => [e.number, e.key, e.status]),
@@ -127,8 +127,8 @@ test("copy entries: form order, sign-off kept, the referrer's-use box skipped, n
       [6, "F-06", "answered"],
       [7, "F-07", "answered"],
       [8, "F-08", "to_complete"],
-      [9, "F-10", "on_approval"],
-      [10, "F-11", "answered"],
+      [10, "F-10", "on_approval"],
+      [11, "F-11", "answered"],
     ],
   );
   assert.equal(entries[2].section, "Clinical update");
@@ -176,9 +176,9 @@ test("Copy all answers before approval: marked “Draft – not yet approved” 
       "",
       "8. Prognosis: [to complete]",
       "",
-      "9. Signature: [completed on approval]",
+      "10. Signature: [completed on approval]",
       "",
-      "10. Ticked if discharged: No",
+      "11. Ticked if discharged: No",
       "",
       "Draft – not yet approved",
     ].join("\n"),
@@ -192,7 +192,8 @@ test("after approval: the approved text, who approved it and when, no draft mark
   assert.equal(copy.approved, true);
   assert.equal(copy.header[2], "Approved by Sarah Reid (HCPC PH-DEMO-01) on 09/10/2026");
   assert.ok(!copy.text.includes("Draft"), copy.text);
-  assert.ok(copy.text.includes("9. Signature: Sarah Reid – approved electronically on 09/10/2026"));
+  assert.ok(copy.text.includes("10. Signature: Sarah Reid – approved electronically on 09/10/2026"));
+  assert.equal(copy.entries.find((e) => e.key === "F-10")?.signoff, true, "a sign-off answer is not one of the questions to answer");
   assert.ok(copy.text.includes("8. Prognosis: [left blank]"));
   assert.ok(!copy.text.includes("[to complete]"));
   assert.equal(copyTextForAnswer("22/11/1991", true), "22/11/1991");
@@ -204,7 +205,7 @@ test("after approval: the approved text, who approved it and when, no draft mark
 test("without the form map in this browser the report's own sections are copied", () => {
   const entries = copyEntries(report("draft"), null);
   assert.equal(entries.length, SECTIONS.length);
-  assert.deepEqual(entries.find((e) => e.key === "F-10"), { key: "F-10", number: 9, question: "Signature", answer: null, status: "on_approval" });
+  assert.deepEqual(entries.find((e) => e.key === "F-10"), { key: "F-10", number: 9, question: "Signature", answer: null, status: "on_approval", signoff: true });
   assert.equal(entries.find((e) => e.key === "F-02")?.answer, "22/11/1991");
   assert.equal(entries.find((e) => e.key === "F-08")?.status, "to_complete");
 });

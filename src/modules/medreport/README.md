@@ -345,7 +345,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/render?format=docx\|pdf\|original` | actor | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
 | POST | `/connectors/{id}/documents` | actor | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
 | POST | `/forms/analyse` | actor (+ passcode for live in the demo) | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
-| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; in demo mode with local demonstration forms on, also those as `uploadRequired` entries (no map, file not served) |
+| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; with local demonstration forms on (any AI mode), also those as `uploadRequired` entries (no map, file not served), and a prepared portal question set as a seeded sample with its attested map |
 | GET | `/forms/samples/{id}/file` | – | forms-sample-file.ts | The sample's original .docx / .pdf |
 | POST | `/forms/confirm` | actor: owner/admin/clinician | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
 | POST | `/ai/payload-preview` | actor | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
@@ -509,18 +509,25 @@ demo-assets/insurers/
   Word: a footer paragraph on every footer the sections show), and the Studio shows it in the preview
   headers (`ui/components/shared/demo-notice.tsx`). It is part of `formMapSha256`, so an approved map
   cannot lose it before the final render; forms without it hash and render byte-for-byte as before.
-- **Forms library:** in demo mode `GET /forms/samples` also lists each mapped local form as an
-  `uploadRequired` entry ("Demonstration forms – Upload this form"); its file is never served.
+- **Forms library:** with the demo assets on – whatever `MEDREPORT_AI_MODE` says (a request without the
+  live passcode is demo, so an upload still gets its prepared map) – `GET /forms/samples` also lists each
+  mapped local form as an `uploadRequired` entry ("Demonstration forms – Upload this form"); its file is
+  never served. A map of kind `questions` (a portal question set we wrote ourselves; its `fileSha256` is the
+  SHA-256 of its questions) is returned as a seeded sample with its map attested, so it appears in the
+  library confirmed and nobody types the questions live; its answers file replays like any other.
 - **Off in production:** ignored whenever `NODE_ENV` or `VERCEL_ENV` is `production`, unless
   `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` (for a local `next start` only). On Vercel the folder does not
   exist anyway (gitignored).
 - **Commands:** `npm run demo:check` (each map against its file: schema, SHA-256, `checkFormDefinition`,
-  attestation, PDF fields / Word blocks, the upload really returning it; each answer file: patient,
+  attestation, PDF fields / Word blocks, the upload really returning it – a question-set map against the
+  SHA-256 of its questions instead; each answer file: patient,
   fingerprint, advertised, and exactly the checks of `demo-draft-quality.test.ts` – quiet when the folder
   is absent); `stamp-demo-drafts.ts --dir=demo-assets/insurers` after a fixture change; `npm run demo:red`
-  = `next build` + `next start` on port 3000 with `MEDREPORT_DEMO_ASSETS_DIR=demo-assets/insurers`,
-  `MEDREPORT_AI_MODE=demo` and `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` unless `.env.local` (read the way
-  Next reads it) or the shell says otherwise.
+  = `next build` + `next start` on port 3000 with `MEDREPORT_DEMO_ASSETS_DIR=demo-assets/insurers` and
+  `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` unless `.env.local` (read the way Next reads it) or the shell says
+  otherwise, and ALWAYS `MEDREPORT_AI_MODE=demo` unless `--live` is given (a live-ready `.env.local` would
+  otherwise offer the passcode and turn uploads and drafts live – longer answers overflow the insurer forms'
+  boxes). `npm run demo:red -- --live` keeps `.env.local`'s mode (e.g. `auto`: live once the passcode is typed).
 - Tests: `scripts/medreport/demo-assets.test.ts` (synthetic folder in a temp dir) and
   `forms/demo-notice.test.ts`.
 
@@ -1096,3 +1103,44 @@ for the insurer forms – only Daniel Brooks's built-in fitness-for-work report 
   BESS/BOA left abbreviated (not in the glossary – adding it changes both prompts' versions).
 - Replayed answers are written in the person recorded: Bupa's in the third person (no signer sent), AXA's and
   Allianz Care's in Sarah Reid's first person (she is the default signer).
+
+
+## RED call fixes (10/10/2026, from the prospect's-eye and rules reviews)
+
+**Wording on the form.**
+- **Plain clinical wording** (`core/voice.ts` `plainClinicalWording`, `inOwnClinicalWording`): the signer's own
+  record is written as a clinician writes a form, not as record-keeping – "On 01/10/2026 I recorded that X" →
+  "On 01/10/2026, X"; "I recorded an assessment of X" → "Assessment on 01/09/2026: X"; "a further treatment
+  request to Bupa for 4 sessions" → "Further treatment requested on 01/10/2026: 4 sessions"; "the goals …
+  as:" → "Goals for …:"; "the guideline followed as" → "Guideline followed:"; "in the past medical history"
+  → "Past medical history:". Applied on assembly to first-person drafts, and by "Write in my own voice",
+  which now also takes a paragraph that only says "she recorded" when it cites the author's own notes. No
+  date, figure or citation changes (the lead date of a reason or goals line is dropped). Other clinicians'
+  attributions are untouched.
+- **Whose box is blank** (`core/parties.ts` `blankFor`, `blankForWording`, `blankForSummary`): "For the
+  patient to complete", "For the patient's GP or doctor", "For <referrer>'s office", "Left blank – not
+  needed"; form cards and the mapping screen count them by party ("50 for the patient or their GP").
+- **Prefill-only forms** (`prefillSigners`): a form with no sign-off box of the clinic's own and another
+  party's signature box left blank (a patient's claim form, a GP report) is approved as a checked prefill –
+  `PREFILL_ATTESTATIONS`, its own declaration note and dialog wording ("Approve the prefill"), "Prefill
+  approved – ready for … to complete and sign", filed as "prefilled for … to sign", files `_PREFILLED`,
+  never `_SIGNED`.
+
+**Record values.** `ComputedFactFormat` `first_scores` / `latest_scores` (every outcome measure with its first
+or latest score: Bupa's "Outcome measures" box); `RegistrationPath` `patient.addressLines` /
+`patient.postcode` (`splitUkAddress`; a ruled box with fewer rows than lines puts the extra lines on its last
+row – `forms/pdf-fill.ts` `joinExtraLines`). A date or number question can be answered "N/A" (written on the
+form – the first character boxes of a DDMMYYYY date – and copied as N/A).
+
+**Review.** A value typed by staff for a missing record value shows "Entered by staff" / "Typed in by staff –
+not from the clinic record" and supersedes an earlier "left blank" acknowledgement of its gap
+(`supersedeAcknowledgedGaps`). Copied answers are numbered as on the form (F-07 → 7) and count the same
+questions as the progress summary. Citation chips read "Registration", "Attendance record", "QuickDASH
+scores". The upload dialog collapses repeated "no fillable fields" notes.
+
+**PDF fill.** Multi-line boxes get a 2.5 / 2 pt inner margin (unless it would overflow); boxes in one printed row
+share one font size; a print-ready file (trim box inside the crop box) is completed at its trimmed size, without
+crop marks.
+
+**Hygiene.** Prompt examples, test fixtures and comments use wording of our own – no insurer's question text
+in git. `demo:red` stays in demo mode unless `--live`; replayed drafts log the neutral engine name.

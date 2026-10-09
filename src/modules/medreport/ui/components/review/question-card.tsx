@@ -10,6 +10,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
+import { blankFor, blankForWording } from "../../../core/parties";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, FILL_SOURCE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
@@ -293,9 +294,15 @@ function TypedValueEditor({
       if (value !== null) onChange(null);
       return;
     }
+    // "N/A": the clinician's answer that the date or number does not apply – written on the form as N/A.
+    if (/^(?:n\/?a|not applicable)$/i.test(raw)) {
+      setError(null);
+      if (value !== "N/A") onChange("N/A");
+      return;
+    }
     if (isDate) {
       const iso = parseUkDate(raw) ?? (isValidIsoDate(raw) ? raw : null);
-      if (!iso) return setError("Enter the date as DD/MM/YYYY, for example 07/07/2026.");
+      if (!iso) return setError("Enter the date as DD/MM/YYYY, for example 07/07/2026 – or N/A if it does not apply.");
       setError(null);
       if (iso !== value) onChange(iso);
       return;
@@ -314,8 +321,8 @@ function TypedValueEditor({
       <input
         id={id}
         type="text"
-        inputMode={isDate ? "numeric" : "decimal"}
-        placeholder={isDate ? "DD/MM/YYYY" : "Number"}
+        inputMode={isDate ? "text" : "decimal"}
+        placeholder={isDate ? "DD/MM/YYYY or N/A" : "Number or N/A"}
         value={text}
         disabled={readOnly}
         aria-invalid={error ? true : undefined}
@@ -352,6 +359,21 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const meta = QUESTION_STATUS_META[status];
   const headingId = `q-${q.key}-label`;
   const field = q.field;
+  // A box left blank says whose it is ("For the patient to complete"), not just "referrer's use".
+  const blankWording = !section && field ? blankForWording(blankFor(field), props.referrerName) : null;
+  // A value the record lacks (a withheld insurer number), typed in by staff: say so, not "by the clinician".
+  const staffEntered =
+    section?.kind === "from_records" && section.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "") && !section.paragraphs.some((p) => p.origin === "from_records");
+  // A record value the record does not hold (another insurer's membership number withheld) is for staff to
+  // enter, not a clinical question.
+  const statusLabel =
+    status === "blank" && blankWording
+      ? blankWording.chip
+      : staffEntered && status === "clinician"
+        ? "Entered by staff"
+        : status === "needs_input" && section?.kind === "from_records"
+          ? "To be entered by staff"
+          : meta.label;
   const answered = section ? isSectionAnswered(section) : false;
 
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
@@ -360,7 +382,17 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const sectionFlags = flags.filter((f) => !f.paragraphId && !(showsNeedsClinician && f.code === "MISSING_PLACEHOLDER" && f.evidence === "empty section"));
   const paragraphFlags = (pid: string) => flags.filter((f) => f.paragraphId === pid);
 
-  const fillSourceText = field ? FILL_SOURCE_LABELS[field.fillSource.kind] : section ? (section.kind === "from_records" ? "From records – filled by code" : section.kind === "declaration" ? "Declaration – fixed wording" : WORDING.labels.fillSourceNotesNarrative) : "";
+  const fillSourceText = staffEntered
+    ? "Typed in by staff – not from the clinic record (see the Activity tab)"
+    : field
+      ? FILL_SOURCE_LABELS[field.fillSource.kind]
+      : section
+        ? section.kind === "from_records"
+          ? "From records – filled by code"
+          : section.kind === "declaration"
+            ? "Declaration – fixed wording"
+            : WORDING.labels.fillSourceNotesNarrative
+        : "";
 
   const structuredKind = section?.answer && section.answer.kind !== "text" ? section.answer.kind : null;
   const isRecords = section?.kind === "from_records";
@@ -378,7 +410,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const startClinicianText = (text: string) => {
     if (!section) return;
     const id = nextClinicianParagraphId(section);
-    dispatch({ type: "addParagraph", key: section.key, text });
+    dispatch({ type: "addParagraph", key: section.key, text, actor });
     setFocusId(id);
   };
 
@@ -441,7 +473,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   if (!section) {
     body = (
       <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600">
-        Left blank on the form – this box is for {props.referrerName ?? "the referrer"}&apos;s own use.
+        {blankWording ? blankWording.sentence : "Left blank on the form."}
       </p>
     );
   } else if (section.kind === "declaration" && section.fieldId && field?.fillSource.kind === "signoff") {
@@ -615,7 +647,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}
           <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
             <StatusDot status={status} />
-            {meta.label}
+            {statusLabel}
           </span>
         </span>
       </header>

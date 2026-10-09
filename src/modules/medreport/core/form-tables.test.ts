@@ -43,17 +43,17 @@ const APPOINTMENTS = [
 
 const TABLE_FIELD: FormField = {
   id: "F-01",
-  label: "Details of the medical expenses you are claiming for",
+  label: "Treatment costs you are claiming",
   guidance: "",
   answerType: "table",
   anchor: {
     kind: "pdf_table",
     columns: [
-      { key: "provider", header: "Name of service provider" },
-      { key: "treatment", header: "Treatment received" },
-      { key: "date", header: "Date of treatment" },
-      { key: "amount", header: "Amount of the bill" },
-      { key: "paid", header: "Has this bill been paid?" },
+      { key: "provider", header: "Clinic or hospital name" },
+      { key: "treatment", header: "Treatment given" },
+      { key: "date", header: "Visit date" },
+      { key: "amount", header: "Fee charged" },
+      { key: "paid", header: "Fee settled?" },
     ],
     rows: [1, 2].map((n) => ({ provider: `ProviderRow${n}`, treatment: `TreatmentRow${n}`, date: `DateRow${n}`, amount: `AmountRow${n}`, paid: `YESNO${3 - n}` })),
   },
@@ -97,11 +97,11 @@ test("appointments table: one row per attended session, by code, in date order; 
 });
 
 test("column headers map to what the appointment record holds (Freedom's expenses table)", () => {
-  assert.equal(appointmentColumnFromHeader("Name of service provider (e.g. name of hospital, clinic or doctor)"), "clinic");
-  assert.equal(appointmentColumnFromHeader("Treatment received (e.g. consultation, physiotherapy, prescription)"), "service");
-  assert.equal(appointmentColumnFromHeader("Date of treatment"), "date");
-  assert.equal(appointmentColumnFromHeader("Amount of the bill"), "amount");
-  assert.equal(appointmentColumnFromHeader("Has this bill been paid?"), "paid");
+  assert.equal(appointmentColumnFromHeader("Clinic or hospital name (or the doctor’s)"), "clinic");
+  assert.equal(appointmentColumnFromHeader("Treatment given (e.g. a session or a scan)"), "service");
+  assert.equal(appointmentColumnFromHeader("Visit date"), "date");
+  assert.equal(appointmentColumnFromHeader("Fee charged"), "amount");
+  assert.equal(appointmentColumnFromHeader("Fee settled?"), "paid");
   assert.equal(appointmentColumnFromHeader("Treating therapist"), "clinician");
   assert.equal(appointmentColumnFromHeader("Medication"), null);
   assert.deepEqual(appointmentColumnsFor([{ key: "a", header: "Medication" }, { key: "b", header: "Dose" }]), null, "no date column → not an appointments table");

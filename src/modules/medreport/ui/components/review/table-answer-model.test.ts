@@ -36,10 +36,10 @@ const form: FormDefinition = {
   fields: [
     {
       id: "F-01",
-      label: "Details of the medical expenses you are claiming for",
+      label: "Treatment costs you are claiming",
       guidance: "",
       answerType: "table",
-      anchor: { kind: "pdf_table", columns: [{ key: "date", header: "Date of treatment" }, { key: "amount", header: "Amount of the bill" }, { key: "paid", header: "Paid?" }], rows: [{ date: "D1", amount: "A1", paid: "P1" }] },
+      anchor: { kind: "pdf_table", columns: [{ key: "date", header: "Visit date" }, { key: "amount", header: "Fee charged" }, { key: "paid", header: "Paid?" }], rows: [{ date: "D1", amount: "A1", paid: "P1" }] },
       fillSource: { kind: "appointments_table", columns: { date: "date", amount: "amount", paid: "paid" } },
       required: true,
       confidence: "high",
@@ -53,7 +53,7 @@ const form: FormDefinition = {
 
 test("review: staff edit the rows – trimmed, empty rows dropped, logged, signed reports untouched", () => {
   const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: [] });
-  assert.deepEqual(tableColumnsForReview(form.fields[0], []).map((c) => c.header), ["Date of treatment", "Amount of the bill", "Paid?"]);
+  assert.deepEqual(tableColumnsForReview(form.fields[0], []).map((c) => c.header), ["Visit date", "Fee charged", "Paid?"]);
   const rows = (report.sections[0].answer?.value as Array<Record<string, string>>).slice();
   rows[2] = { ...rows[2], amount: " £55.00 ", paid: "No" };
   const edited = setRowsAnswer(report, "F-01", [...rows, { amount: " ", date: "" }], "S. Reid", new Date("2026-10-09T10:00:00Z"));
@@ -62,7 +62,7 @@ test("review: staff edit the rows – trimmed, empty rows dropped, logged, signe
   assert.equal(value[2].amount, "£55.00");
   const last = edited.activity[edited.activity.length - 1];
   assert.equal(last.action, "answer_set");
-  assert.match(last.detail, /^F-01: table “Details of the medical expenses you are claiming for” changed \(3 rows, was 3\)/);
+  assert.match(last.detail, /^F-01: table “Treatment costs you are claiming” changed \(3 rows, was 3\)/);
   assert.equal(setRowsAnswer(edited, "F-01", value, "S. Reid"), edited, "no change → same report");
   const cleared = setRowsAnswer(edited, "F-01", [], "S. Reid");
   assert.equal(cleared.sections[0].answer?.value, null);

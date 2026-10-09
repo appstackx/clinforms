@@ -27,8 +27,10 @@ export type CopyEntryStatus = "answered" | "to_complete" | "on_approval";
 export interface CopyEntry {
   /** Section key / form field ID ("F-07"). */
   key: string;
-  /** 1-based number among the copied questions. */
+  /** The question's number on the form (F-07 → 7), so copied answers match the review's numbering. */
   number: number;
+  /** A sign-off answer (completed from the approval): not one of the questions "to answer". */
+  signoff?: boolean;
   /** The question as printed (or as typed into a question set). */
   question: string;
   /** The form's heading the question sits under, if any. */
@@ -140,13 +142,15 @@ export function copyEntries(
       const section = sections.get(field.id) ?? null;
       if (!section && field.fillSource.kind !== "signoff") continue;
       const answer = copyAnswerValue(field, section, receipt);
+      const fieldNumber = /^F-(\d+)$/.exec(field.id);
       out.push({
         key: field.id,
-        number: out.length + 1,
+        number: fieldNumber ? Number(fieldNumber[1]) : out.length + 1,
         question: field.label.trim(),
         ...(field.section?.trim() ? { section: field.section.trim() } : {}),
         answer,
         status: answer !== null ? "answered" : field.fillSource.kind === "signoff" ? "on_approval" : "to_complete",
+        ...(field.fillSource.kind === "signoff" ? { signoff: true } : {}),
       });
     }
     return out;
@@ -161,6 +165,7 @@ export function copyEntries(
       question: section.title.trim(),
       answer,
       status: answer !== null ? "answered" : signoff ? "on_approval" : "to_complete",
+      ...(signoff ? { signoff: true } : {}),
     });
   }
   return out;

@@ -113,7 +113,7 @@ test("live analysis of a fillable PDF: printed radio labels, one-of-several tick
     }),
     liveField({ label: "Membership number", anchorRef: "Text Field 4", fillSource: "registration", registrationPath: "referral.membershipNumber" }),
     liveField({
-      label: "Do you have any other health insurance which may cover these costs?",
+      label: "Is the patient covered by another insurance policy?",
       answerType: "yes_no",
       options: ["Yes", "No"],
       anchorRef: "Check Box5",
@@ -149,7 +149,7 @@ test("live analysis of a fillable PDF: printed radio labels, one-of-several tick
 
   assert.deepEqual(byLabel(form.fields, /^Membership number$/).fillSource, { kind: "registration", path: "referral.membershipNumber" });
 
-  const other = byLabel(form.fields, /other health insurance/);
+  const other = byLabel(form.fields, /another insurance policy/);
   assert.equal(other.anchor.kind, "pdf_field");
   if (other.anchor.kind === "pdf_field") {
     assert.deepEqual(
@@ -179,10 +179,10 @@ test("live analysis: per-cell questions of a table of fields become one table qu
   // Fillable table: the model maps every cell (as a reader of the outline might); code merges them.
   const cells: AnalysisFieldOutput[] = [];
   for (let i = 1; i <= 4; i += 1) {
-    cells.push(liveField({ label: "Date of treatment", answerType: "date", anchorRef: `Date of treatmentRow${i}` }));
-    cells.push(liveField({ label: "Treatment received", anchorRef: `Treatment receivedRow${i}` }));
-    cells.push(liveField({ label: "Amount of the bill", anchorRef: `Amount of the billRow${i}` }));
-    cells.push(liveField({ label: "Has this bill been paid?", answerType: "yes_no", options: ["Yes", "No"], anchorRef: `PAID${5 - i}` }));
+    cells.push(liveField({ label: "Visit date", answerType: "date", anchorRef: `Visit dateRow${i}` }));
+    cells.push(liveField({ label: "Treatment given", anchorRef: `Treatment givenRow${i}` }));
+    cells.push(liveField({ label: "Fee charged", anchorRef: `Fee chargedRow${i}` }));
+    cells.push(liveField({ label: "Fee settled?", answerType: "yes_no", options: ["Yes", "No"], anchorRef: `SETTLED${5 - i}` }));
   }
   cells.push(liveField({ label: "Surname", anchorRef: "Surname", fillSource: "registration", registrationPath: "patient.lastName" }));
   const table = await analyseFormFile({ file: decoded(await tableFormPdf()), fileName: "claim.pdf", mode: "live", client: fakeClient(cells).client });
@@ -191,7 +191,7 @@ test("live analysis: per-cell questions of a table of fields become one table qu
   assert.equal(t.anchor.kind, "pdf_table");
   assert.deepEqual(t.fillSource, { kind: "appointments_table", columns: { date: "date", service: "service", amount: "amount", paid: "paid" } });
   assert.equal(formAnchorPdfFieldNames(t.anchor).length, 16, "every cell is part of the answer space");
-  assert.ok(!table.form.fields.some((f) => f.anchor.kind === "pdf_field" && /Row\d|^PAID/.test(f.anchor.fieldName)));
+  assert.ok(!table.form.fields.some((f) => f.anchor.kind === "pdf_field" && /Row\d|^SETTLED/.test(f.anchor.fieldName)));
   assert.deepEqual(checkFormDefinition(table.form), []);
 
   // Flat PDF: a live-style estimate over the Yes/No boxes becomes tick marks, the date box gets its slots.
@@ -270,17 +270,22 @@ test("computed facts on a form: plain words, no internal IDs; Initial / Current 
   assert.match(resolveComputedFactValue("FACT-outcomes-PSFS", "summary", ctx, "long_text")?.text ?? "", /^PSFS 2\.7\/10, then 4\.3\/10, then 5\.3\/10 \(higher is better\)\. 01\/09\/2026: 2\.7\/10;/);
   assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "first_score", ctx, "long_text")?.text, "PSFS 2.7/10 (01/09/2026)");
   assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "latest_score", ctx, "short_text")?.text, "PSFS 5.3/10 (01/10/2026)");
+  // Every outcome measure the record holds (an "Outcome measures" box that names only an example).
+  const firsts = resolveComputedFactValue("FACT-outcomes-PSFS", "first_scores", ctx, "short_text");
+  assert.equal(firsts?.text, "NPRS 7/10 · QuickDASH 52.3/100 · PSFS 2.7/10 (01/09/2026)");
+  assert.deepEqual(firsts?.sourceIds, ["FACT-outcomes-NPRS", "FACT-outcomes-QuickDASH", "FACT-outcomes-PSFS"]);
+  assert.equal(resolveComputedFactValue("FACT-outcomes-NPRS", "latest_scores", ctx, "short_text")?.text, "NPRS 4/10 · QuickDASH 29.5/100 · PSFS 5.3/10 (01/10/2026)");
   assert.equal(resolveComputedFactValue("FACT-outcomes-NDI", "first_score", ctx, "long_text"), null, "no NDI on record");
   assert.equal(formFactText("Did not attend (DNA): 1 – 12/09/2026 (A-004, reason recorded: \"unwell\")."), "Did not attend: 1 – 12/09/2026 (reason recorded: \"unwell\").");
   assert.equal(formFactText("Discharge note: 01/10/2026 (N-005). Sarah Reid (PH-DEMO-01) 5 notes."), "Discharge note: 01/10/2026. Sarah Reid (PH-DEMO-01) 5 notes.");
 
   // The rules: a score column under an outcome-measures heading.
-  const initial = classifyLabel("Initial score", "Assessment Such as Patient Specific Functional Scale Initial score Outcome Measures");
+  const initial = classifyLabel("Initial score", "Assessment e.g. a patient-specific functional scale Initial score Outcome scores");
   assert.deepEqual(initial.fillSource, { kind: "computed_fact", factId: "FACT-outcomes-PSFS", format: "first_score" });
-  const current = classifyLabel("Current score", "Assessment Current score Such as Patient Specific Functional Scale");
+  const current = classifyLabel("Current score", "Assessment Current score e.g. a patient-specific functional scale");
   assert.deepEqual(current.fillSource, { kind: "computed_fact", factId: "FACT-outcomes-PSFS", format: "latest_score" });
   assert.deepEqual(classifyLabel("NDI score").fillSource, { kind: "computed_fact", factId: "FACT-outcomes-NDI", format: "summary" });
-  assert.equal(classifyLabel("Initial assessment", "Assessment Such as Visual Analogue Scale").fillSource.kind, "notes_narrative");
+  assert.equal(classifyLabel("Initial assessment", "Assessment e.g. a visual analogue scale").fillSource.kind, "notes_narrative");
 });
 
 /** A fillable form laid out like the insurer forms the rules misread: labels over two lines, generic field names, a list prompt. */
@@ -289,45 +294,45 @@ async function insurerLayoutForm(): Promise<Uint8Array> {
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const page = doc.addPage([595, 842]);
   const form = doc.getForm();
-  page.drawText("5 Treatment Plan", { x: 40, y: 800, size: 12, font });
+  page.drawText("4 Plan of treatment", { x: 40, y: 800, size: 12, font });
   // Left-column label on two lines, a field named "Text Field 39".
-  page.drawText("Country where treatment is", { x: 56.7, y: 765.4, size: 9, font });
-  page.drawText("taking place?", { x: 56.7, y: 753.4, size: 9, font });
+  page.drawText("Country in which the", { x: 56.7, y: 765.4, size: 9, font });
+  page.drawText("treatment happens?", { x: 56.7, y: 753.4, size: 9, font });
   form.createTextField("Text Field 39").addToPage(page, { x: 214, y: 755, width: 320, height: 16, font });
   page.drawText("Number of sessions", { x: 56.7, y: 700, size: 9, font });
   form.createTextField("Text Field 40").addToPage(page, { x: 214, y: 695, width: 320, height: 16, font });
-  page.drawText("Using the VAS scale, what is the", { x: 56.7, y: 640, size: 9, font });
-  page.drawText("patient's level of pain?", { x: 56.7, y: 628, size: 9, font });
+  page.drawText("On a 0-10 pain scale, what is the", { x: 56.7, y: 640, size: 9, font });
+  page.drawText("patient's pain today?", { x: 56.7, y: 628, size: 9, font });
   const vas = form.createDropdown("Combo Box 1");
   vas.addOptions(["Please select", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
   vas.addToPage(page, { x: 214, y: 628, width: 60, height: 16, font });
   // A field named after its question, its printed label wrapped so the nearest line is the question's end.
-  page.drawText("f Have you had these symptoms before? If yes, when did you have these symptoms and what treatment did you", { x: 40, y: 560, size: 8, font });
-  page.drawText("receive?", { x: 40, y: 550, size: 8, font });
-  form.createTextField("f Have you had these symptoms before If yes when did you have these symptoms and what treatment did you receive").addToPage(page, { x: 40, y: 480, width: 500, height: 60, font });
-  page.drawText("6. Pregnancy and maternity claims", { x: 40, y: 440, size: 12, font });
-  page.drawText("What is the estimated date of delivery?", { x: 40, y: 420, size: 9, font });
-  form.createTextField("62 What is the estimated date of delivery").addToPage(page, { x: 260, y: 415, width: 120, height: 16, font });
+  page.drawText("c Did this problem happen before? If so, when was it and what treatment was given to", { x: 40, y: 560, size: 8, font });
+  page.drawText("you then?", { x: 40, y: 550, size: 8, font });
+  form.createTextField("c Did this problem happen before If so when was it and what treatment was given to you then").addToPage(page, { x: 40, y: 480, width: 500, height: 60, font });
+  page.drawText("6. Maternity cover", { x: 40, y: 440, size: 12, font });
+  page.drawText("What is the expected date of birth?", { x: 40, y: 420, size: 9, font });
+  form.createTextField("62 What is the expected date of birth").addToPage(page, { x: 260, y: 415, width: 120, height: 16, font });
   return doc.save();
 }
 
 test("rules on a fillable insurer-style form: whole questions as labels, planned sessions, no list prompt, maternity left blank", async () => {
   const { form } = await analyseFormFile({ file: decoded(await insurerLayoutForm()), fileName: "plan.pdf", mode: "demo", rulesOnly: true });
   const at = (name: string) => form.fields.find((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName === name);
-  assert.equal(at("Text Field 39")?.label, "Country where treatment is taking place?");
+  assert.equal(at("Text Field 39")?.label, "Country in which the treatment happens?");
   // In a treatment plan, "Number of sessions" is the number planned – not the count of attended sessions.
   assert.notDeepEqual(at("Text Field 40")?.fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
   const vas = at("Combo Box 1");
-  assert.equal(vas?.label, "Using the VAS scale, what is the patient's level of pain?");
+  assert.equal(vas?.label, "On a 0-10 pain scale, what is the patient's pain today?");
   assert.deepEqual(vas?.options, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
-  const before = form.fields.find((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName.startsWith("f Have you had"));
-  assert.match(before?.label ?? "", /^Have you had these symptoms before\?/);
-  const delivery = at("62 What is the estimated date of delivery");
+  const before = form.fields.find((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName.startsWith("c Did this problem"));
+  assert.match(before?.label ?? "", /^Did this problem happen before\?/);
+  const delivery = at("62 What is the expected date of birth");
   assert.deepEqual(delivery?.fillSource, { kind: "leave_blank" });
   assert.equal(delivery?.completedBy, "patient");
-  // Pregnancy wording anywhere is the patient's to answer; "Number of sessions to date" is still a count.
-  assert.deepEqual(classifyLabel("Is the pregnancy a result of fertility treatment?").fillSource, { kind: "leave_blank" });
-  assert.deepEqual(classifyLabel("Number of sessions to date", "About the treatment").fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
+  // Pregnancy wording anywhere is the patient's to answer; "Total of visits so far" is still a count.
+  assert.deepEqual(classifyLabel("Was IVF or other fertility treatment used?").fillSource, { kind: "leave_blank" });
+  assert.deepEqual(classifyLabel("Total of visits so far", "About the treatment").fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
 });
 
 /** A fillable form whose signature box is printed, not a field (as AXA's), under the given declaration heading. */
@@ -341,7 +346,7 @@ async function printedSignatureForm(heading: string): Promise<Uint8Array> {
   page.drawText(heading, { x: 40, y: 640, size: 12, font });
   page.drawText("Signature", { x: 40, y: 610, size: 9, font });
   page.drawRectangle({ x: 40, y: 550, width: 220, height: 55, borderColor: rgb(0.1, 0.1, 0.5), borderWidth: 0.8 });
-  page.drawText("Please print name", { x: 300, y: 610, size: 9, font });
+  page.drawText("Name in capitals", { x: 300, y: 610, size: 9, font });
   form.createTextField("printName").addToPage(page, { x: 300, y: 585, width: 220, height: 18, font });
   page.drawText("Date", { x: 300, y: 570, size: 9, font });
   form.createTextField("signedDate").addToPage(page, { x: 300, y: 548, width: 120, height: 18, font });
@@ -349,7 +354,7 @@ async function printedSignatureForm(heading: string): Promise<Uint8Array> {
 }
 
 test("fillable PDF with a printed signature box (no field): the approval signature is written in it; another party's is left blank", async () => {
-  const bytes = await printedSignatureForm("6 Your signature");
+  const bytes = await printedSignatureForm("F Signature");
   const outline = await readPdfForm(bytes);
   assert.equal(outline.classification, "acroform");
   assert.deepEqual(outline.boxes?.map((b) => [b.kind, Math.round(b.x), Math.round(b.y)]), [["box", 40, 550]], "only the box no field covers");
@@ -387,12 +392,12 @@ function tableForm(): FormDefinition {
     anchor: {
       kind: "pdf_table",
       columns: [
-        { key: "date", header: "Date of treatment" },
-        { key: "service", header: "Treatment received" },
-        { key: "amount", header: "Amount of the bill" },
-        { key: "paid", header: "Has this bill been paid?" },
+        { key: "date", header: "Visit date" },
+        { key: "service", header: "Treatment given" },
+        { key: "amount", header: "Fee charged" },
+        { key: "paid", header: "Fee settled?" },
       ],
-      rows: [1, 2, 3, 4].map((n) => ({ date: `Date of treatmentRow${n}`, service: `Treatment receivedRow${n}`, amount: `Amount of the billRow${n}`, paid: `PAID${5 - n}` })),
+      rows: [1, 2, 3, 4].map((n) => ({ date: `Visit dateRow${n}`, service: `Treatment givenRow${n}`, amount: `Fee chargedRow${n}`, paid: `SETTLED${5 - n}` })),
     },
     fillSource: { kind: "appointments_table", columns: { date: "date", service: "service", amount: "amount", paid: "paid" } },
     required: true,
@@ -453,7 +458,7 @@ test("map helpers: table cells are the table's answer space; a fixed answer on a
   const table = form.fields[0];
   assert.ok(formAnchorKey(table.anchor).startsWith("pdftable:"));
   // Picking one of the table's own cells in the preview keeps the table.
-  assert.deepEqual(anchorFromPick(table.anchor, { kind: "pdf_field", fieldName: "Amount of the billRow3", fieldType: "text" }), table.anchor);
+  assert.deepEqual(anchorFromPick(table.anchor, { kind: "pdf_field", fieldName: "Fee chargedRow3", fieldType: "text" }), table.anchor);
   // Any other field replaces it.
   assert.equal(anchorFromPick(table.anchor, { kind: "pdf_field", fieldName: "Surname", fieldType: "text" }).kind, "pdf_field");
 
@@ -461,7 +466,7 @@ test("map helpers: table cells are the table's answer space; a fixed answer on a
   assert.deepEqual(checkFormDefinition(fixedTable), ["F-01 (“Details of the treatment you are claiming for”): a table is filled from the appointment record, or left blank."]);
 
   // A table filled from the appointments counts as answered from the records.
-  assert.deepEqual(questionBreakdown(form), { toAnswer: 1, fromRecords: 1, fromNotes: 0, onApproval: 0, referrerUse: 0 });
+  assert.deepEqual(questionBreakdown(form), { toAnswer: 1, fromRecords: 1, fromNotes: 0, onApproval: 0, referrerUse: 0, leftBlank: [] });
 });
 
 test("portal question sets use the PMI record values for membership and authorisation numbers", () => {

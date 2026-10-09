@@ -365,7 +365,7 @@ function prettifyName(name: string): string {
 
 /** Field names that say nothing ("Text Field 43", "fill_4", "Check Box 16", "undefined"). */
 const GENERIC_NAME = /^(?:text ?field|textfield|text|fill|check ?box|checkbox|radio(?: ?button)?|combo ?box|list ?box|field|button|undefined|untitled)[\s_-]*\d*$/i;
-/** A printed label cut off mid-phrase ("Country where treatment is", "Using the VAS scale, what is the"). */
+/** A printed label cut off mid-phrase ("Country of treat", "On the pain scale, what is the"). */
 const DANGLING_END = /\b(?:is|are|was|were|on|of|the|a|an|for|to|and|or|with|in|by|from|what|your|their|be|step|any|this|that|than)$/i;
 
 /** True when a label is only a piece of the printed question (a line from its middle or its end). */
@@ -374,7 +374,7 @@ function isFragment(label: string): boolean {
   return t.length <= 2 || /^[a-z]/.test(t) || GENERIC_NAME.test(t) || DANGLING_END.test(t.replace(/[\s,;]+$/, ""));
 }
 
-/** A field name that reads as its question ("f Have you had these symptoms before If yes …"); null for "Text Field 43". */
+/** A field name that reads as its question ("c Did this happen before If so …"); null for "Text Field 43". */
 function descriptiveName(name: string): string | null {
   const last = (name.split(".").pop() ?? name).replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
   if (GENERIC_NAME.test(last) || last.split(" ").length < 4) return null;
@@ -507,7 +507,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
       .split(/\n| \| /)
       .map((t) => cleanLabel(t))
       .filter((t) => t.length > 1);
-    // Examples printed in a box's heading ("Such as Patient Specific Functional Scale") are guidance, not
+    // Examples printed in a box's heading ("e.g. a patient-specific functional scale") are guidance, not
     // the question, when the box has a heading of its own ("Initial score").
     const example = (t: string) => /^(?:such as|e\.g\.?|eg|for example|for instance|including)\b/i.test(t);
     const near = segments.find((t) => !isOption(t) && !example(t)) ?? segments.find((t) => !isOption(t)) ?? "";

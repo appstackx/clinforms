@@ -61,6 +61,7 @@ import {
   FillSourceChip,
   FILL_SOURCE_SHORT,
   fillSourceCounts,
+  notAnsweredText,
   questionBreakdown,
   FormKindBadge,
   FormStatusBadge,
@@ -272,7 +273,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Stat
           label="To answer"
           value={String(breakdown.toAnswer)}
-          detail={[breakdown.onApproval ? `${breakdown.onApproval} completed on approval` : "", breakdown.referrerUse ? `${breakdown.referrerUse} for the referrer's office` : ""].filter(Boolean).join(" · ") || (questionSet ? "Every question" : "Every box on the form")}
+          detail={notAnsweredText(breakdown) || (questionSet ? "Every question" : "Every box on the form")}
         />
         <Stat
           label="From records"

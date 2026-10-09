@@ -166,7 +166,9 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       form: form ? form.id : undefined,
       sections: body.sectionKeys.join("+"),
       mode: result.meta.mode,
-      model: result.meta.model,
+      // A replayed (recorded / pre-written) answer logs the neutral engine name, like form_analysed: the
+      // demo's server terminal may be on screen. A live call keeps the real model id for operations.
+      model: result.meta.mode === "live" ? result.meta.model : publicEngineName(result.meta.model),
       effort: result.meta.effort,
       ms: Date.now() - started,
       aiMs: result.meta.durationMs,

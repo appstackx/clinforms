@@ -79,6 +79,99 @@ export function rewriteInFirstPerson(text: string, authorName: string): string {
   return s.replace(/\bAt the (initial assessment|final review|discharge review|follow-up review|review|discharge)( on \d{2}\/\d{2}\/\d{4})?(,?) I\b/g, "At my $1$2$3 I");
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Plain clinical wording of the signer's own record ("On 01/10/2026 I recorded that X" → "On 01/10/2026, X")
+ * ----------------------------------------------------------------------------------------------*/
+
+const UK_DATE = "\\d{2}\\/\\d{2}\\/\\d{4}";
+/** "On 01/10/2026" / "At my review on 01/10/2026" / "At the initial assessment on 01/09/2026" before "I recorded". */
+const LEAD = `(?:(On (${UK_DATE})|At (?:my|the) (?:initial assessment|initial appointment|first appointment|assessment|latest review|final review|follow-up review|follow-up|discharge review|review|appointment|session) on (${UK_DATE})),?\\s+)?`;
+/** The rest of a sentence: up to its full stop (a decimal point "52.3" does not end it). */
+const REST = "((?:[^.!?]|\\.(?=\\d))*)";
+/** Pronoun-only voice: verbs a patient never does ("she recorded" is always the clinician). */
+const RECORD_VERBS = "recorded|documented|measured|examined";
+
+/** "the further sessions" → were; "the shoulder" → was. */
+function beFor(nounPhrase: string): string {
+  const last = nounPhrase.trim().split(/\s+/).pop() ?? "";
+  return /[^su]s$/i.test(last) && !/^(?:this|its|his|was|is)$/i.test(last) ? "were" : "was";
+}
+
+/** The body after "I recorded …" written as a clinical statement. `date` is the lead's date, if any. */
+function plainRecordedBody(body: string, lead: string, date: string): string {
+  const leadComma = lead ? `${lead}, ` : "";
+  const on = date ? ` on ${date}` : "";
+  const b = body.trim();
+  let m: RegExpExecArray | null;
+  if ((m = /^that,? in my opinion,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1]}`;
+  if ((m = /^the clinical reason(?: for (?:the )?further treatment)? (?:as follows|as):\s*([\s\S]*)$/.exec(b))) return m[1];
+  if ((m = /^as the clinical reason that,?\s+([\s\S]*)$/.exec(b))) return m[1];
+  if ((m = /^(?:the |my )?goals? ((?:for|of) [^:]+?)(?: as)?:\s*([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
+  if ((m = /^(?:the |my )?goals? ((?:for|of) .+?) as ([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
+  if ((m = /^(?:that )?the guideline (?:followed )?(?:as|was) ([\s\S]*)$/.exec(b))) return `Guideline followed: ${m[1]}`;
+  if ((m = /^(?:my|the|an) assessment that,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my assessment, ${m[1]}`;
+  if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
+  if ((m = /^a (?:further )?treatment request(?: to (?:the insurer|[A-Z][\w&'’.-]*(?: [A-Z][\w&'’.-]*)*))?(?: for| of)? ([\s\S]*)$/.exec(b))) return `Further treatment requested${on}: ${m[1]}`;
+  if ((m = /^(?:in the |the |a )?past medical history(?: of| as)?,?\s+([\s\S]*)$/.exec(b))) return `Past medical history: ${m[1]}`;
+  if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
+  if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
+  // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
+  if ((m = /^((?:the|my|an?)\s+[a-z][a-z' -]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
+    return `${leadComma}${m[1]} ${beFor(m[1])} ${m[2]}`;
+  }
+  // "right shoulder active range of movement: flexion 120°…" → "Right shoulder active range of movement on 01/09/2026: …"
+  if ((m = /^([a-z][a-z' -]{2,60}?):\s+([\s\S]+)$/.exec(b)) && !/\b(?:that|was|were|is|are)\b/.test(m[1])) return `${m[1]}${on}: ${m[2]}`;
+  if ((m = /^that,?\s+([\s\S]*)$/.exec(b))) {
+    // "I recorded that she provided education…" – the recorder is the one who provided it.
+    const clause = m[1].replace(new RegExp(`^(?:she|he) (${OWN_ACTION_VERBS})\\b`), "I $1").replace(/ and that,? /, " and ");
+    return `${leadComma}${clause}`;
+  }
+  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems."
+  return `${lead ? `${lead}: ` : ""}${b.replace(/, and that,? /, ", and ")}`;
+}
+
+/** What a clinician does in a session ("she recorded that she provided education…" is the clinician). */
+const OWN_ACTION_VERBS = "provided|gave|taught|advised|progressed|applied|performed|issued|explained|reassured|recommended|referred|discharged|assessed|measured|examined|reviewed";
+
+/**
+ * The signer's own record written as a clinician writes a form: drafted first-person attributions of
+ * record-keeping ("On 01/10/2026 I recorded that 1 pre-authorised session remained", "I recorded the
+ * clinical reason as follows: …", "I recorded an assessment of …") become clinical statements ("On
+ * 01/10/2026, 1 pre-authorised session remained", "…", "Assessment on 01/09/2026: …"). Only "I recorded"
+ * (the signer's own notes) is touched – another clinician's "Tom Ellis recorded…" keeps its attribution –
+ * and no date, figure or quotation is added, changed or dropped except the lead date of a reason or goal.
+ * Deterministic and idempotent. Applied to first-person drafts on assembly and by "Write in my own voice".
+ */
+export function plainClinicalWording(text: string): string {
+  if (!/\bI (?:also |then |later )?(?:recorded|documented)\b/.test(text)) return text;
+  let s = text;
+  // Mid-sentence: "…, and on 01/10/2026 I recorded the assessment as X" → "…, and on 01/10/2026 the assessment was X".
+  s = s.replace(new RegExp(`(\\band (?:on ${UK_DATE},? )?)I (?:also )?recorded (?:the|my|an) assessment as `, "g"), "$1the assessment was ");
+  s = s.replace(/(?<=[^.!?\s]\s+)I (?:also )?recorded progression of (the [^,;.]+)/g, "$1 was progressed");
+  s = s.replace(/(\b(?:and|but|where|when|which|while),? )I (?:also )?recorded that,? /g, "$1");
+  // Sentence starts.
+  const re = new RegExp(`(^|[.!?]\\s+|\\n\\s*)${LEAD}I (?:also |then |later )?(?:recorded|documented)\\s+${REST}`, "g");
+  s = s.replace(re, (_m, pre: string, lead: string | undefined, d1: string | undefined, d2: string | undefined, body: string) => {
+    const out = plainRecordedBody(body, lead ?? "", d1 ?? d2 ?? "");
+    return `${pre}${out.startsWith("[CLAIMANT]") ? out : capitalise(out)}`;
+  });
+  return s;
+}
+
+/**
+ * "Write in my own voice": the author's third-person attributions in the first person, then the
+ * record-keeping frames as plain clinical wording. With `pronouns`, a paragraph that does not name the
+ * author (it cites only the author's notes) has its "She recorded" taken as the author too.
+ */
+export function inOwnClinicalWording(text: string, authorName: string, opts: { pronouns?: boolean } = {}): string {
+  const name = authorName.trim();
+  let s = rewriteInFirstPerson(text, name);
+  if (opts.pronouns && name && text.indexOf(name) < 0) {
+    s = s.replace(new RegExp(`\\b(?:She|He|she|he)\\s+((?:also|then|later|again)\\s+)?(${RECORD_VERBS})\\b`, "g"), "I $1$2");
+  }
+  return plainClinicalWording(s);
+}
+
 /** N-* note IDs a paragraph cites. */
 function citedNoteIds(p: Pick<Paragraph, "sourceIds">): string[] {
   return p.sourceIds.filter((id) => /^N-\d+$/.test(id));
@@ -87,10 +180,19 @@ function citedNoteIds(p: Pick<Paragraph, "sourceIds">): string[] {
 /**
  * Whether a drafted paragraph only reports the author's OWN notes and names the author: then it can be
  * written in the author's voice. (A paragraph that also cites another clinician's note keeps names.)
+ * With `pronouns`, a paragraph that does not name the author qualifies too when it says "she recorded"
+ * or already says "I recorded" (a first-person draft) – the rewrite then gives it plain clinical wording.
  */
-export function isOwnVoiceCandidate(p: Pick<Paragraph, "text" | "sourceIds" | "origin">, bundle: Pick<EpisodeBundle, "notes">, authorName: string): boolean {
+export function isOwnVoiceCandidate(
+  p: Pick<Paragraph, "text" | "sourceIds" | "origin">,
+  bundle: Pick<EpisodeBundle, "notes">,
+  authorName: string,
+  opts: { pronouns?: boolean } = {},
+): boolean {
   const author = authorName.trim();
-  if (p.origin !== "ai" || !author || p.text.indexOf(author) < 0) return false;
+  if (p.origin !== "ai" || !author) return false;
+  const named = p.text.indexOf(author) >= 0;
+  if (!named && !(opts.pronouns && new RegExp(`\\b(?:[Ss]he|[Hh]e|I)\\s+(?:(?:also|then|later|again)\\s+)?(?:${RECORD_VERBS})\\b`).test(p.text))) return false;
   const ids = citedNoteIds(p);
   if (ids.length === 0) return false;
   if (!ids.every((id) => bundle.notes.find((n) => n.id === id)?.author.name === author)) return false;

@@ -1,6 +1,6 @@
 # RED Physiotherapy deal (Daniel Vatamanu)
 
-**Status (2026-10-09 ~16:00 UTC):** Call **booked** (Khuram 09/10 14:08); day "Tuesday" from the research text he pasted, **date 13 Oct inferred – confirm day AND time with Khuram**. Demo prep **NOT started** (cloud container could not download the insurer PDFs). Highest-priority work item. Ready-to-paste prompt: `memory/next-steps.md` §1 (base: `memory/sources/red-physio-demo-task.md`).
+**Status (2026-10-09 ~23:45 UTC):** Call **booked** (Khuram 09/10 14:08); day "Tuesday" from the research text he pasted, **date 13 Oct inferred – confirm day AND time with Khuram**. **Demo pack BUILT, reviewed, fixed and rehearsed** on branch `demo/red-physio` (`npm run demo:red`; assets in gitignored `demo-assets/insurers/`) – see `memory/next-steps.md` §1 and §8 below for the call.
 **Contact:** `memory/people/daniel-vatamanu.md`.
 
 ## 1. Company (from his email signature only – no research done yet)
@@ -48,12 +48,12 @@ Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs:
 
 | Insurer | Form | Expected handling | Priority | Status |
 |---|---|---|---|---|
-| **Bupa** | Further Physiotherapy Treatment Request (therapies management form), 3 pp | Fillable → fully supported; flat → best effort (unknown which) | **Tuesday #1** ("best match") | Not downloaded |
-| **AXA Global Healthcare** | Therapy Treatment Plan, 4 pp (international – label separately from domestic AXA Health) | As above | **Tuesday #2** | Not downloaded |
-| **Aviva** | CM016 PMI claim form, 8 pp | Clinician sections only; patient parts and declarations left for the right person | **Tuesday #3** | Not downloaded |
-| Aviva | GEN030 medical report request, 2 pp | Doctor-only – format example only, labelled | Optional | – |
-| Freedom Health Insurance | Worldwide outpatient claim form, 4 pp | Repeated rows, expenses table incl. physio | Optional | – |
-| Allianz Care | Pre-authorisation form FRM-PreAuth-EN-0825, 3 pp | Patient + doctor sections | Optional | – |
+| **Bupa** | Further Physiotherapy Treatment Request (therapies management form), 3 pp | Fillable PDF (26 fields) – fully supported; the clinic completes and signs it in the therapist's declaration | **Tuesday #1** ("best match") | Ready: prepared map + answers; lead with it |
+| **AXA Global Healthcare** | Therapy Treatment Plan, 4 pp (international – label separately from domestic AXA Health) | Fillable PDF (32); signature written in the printed box | **Tuesday #2** | Ready; membership/claim numbers blocked (Bupa's not copied) – show as the safety feature, don't approve on the call |
+| **Aviva** | CM016 PMI claim form, 8 pp | Flat PDF; the patient's/GP's form – only identification prefilled (address lines + postcode); approved as a prefill (`_PREFILLED`) | **Tuesday #3** (30 s) | Ready |
+| Aviva | GEN030 medical report request, 2 pp | Doctor-only – format example only, labelled | Optional | Map ready (patient details only) |
+| Freedom Health Insurance | Worldwide outpatient claim form, 4 pp | Policyholder's claim form; the clinic fills the expenses table only; prefill | Skip on the call | Ready |
+| Allianz Care | Pre-authorisation form FRM-PreAuth-EN-0825, 3 pp | Section 2 (medical provider) drafted; doctor-labelled name/signature/date left for a doctor → prefill | Skip on the call | Ready (answers file) |
 | Vitality | No public PDF (therapist hub) | Likely portal → copy-ready answers, no submission | List only | – |
 | WPA | No public PDF (provider hub) | Likely portal → copy-ready answers | List only | – |
 | AXA Health (domestic) | No public PDF (provider site) | Likely portal → copy-ready answers | List only | – |
@@ -78,3 +78,38 @@ Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs:
 - Company research (Companies House 13547807, website) – quick check before Tuesday.
 - Deploy a live URL for the call? (Vercel not deployed yet – running locally on Khuram's Mac with `npm run dev` is the fallback; screen-share. The insurer PDFs are not in git, so a Vercel URL can't show them, and confirmed form maps live only in the browser that made them.)
 - After the call: record RED's answers here, update the support matrix, decide on a RED-specific video.
+
+## 8. Call guidance (from the prospect's-eye review, 09/10 ~21:50 UTC – honest answers, nothing invented)
+**Flow (~10 min):** say up front "one fictional patient shown on several insurers' public layouts – not RED's own forms".
+1. Bupa end to end (rehearsed): simulated TM3 tab → Complete referrer's report form → Bupa → review (citations;
+   "Write in my own voice" turns "Sarah Reid recorded…" into plain clinical wording) → preview → approve → final PDF →
+   saved back to the record. Bupa's form is the one a UK physio clinic fills routinely.
+2. AXA Global Healthcare: stop at the identifier block ("it will not copy Bupa's membership number onto AXA's form").
+   Don't type numbers, don't approve. AXA Global Healthcare is the international plan, not AXA Health UK.
+3. Portal questions (seeded "Example portal questions (illustrative)"): drafted in demo mode, copy-ready, prognosis left
+   blank and flagged because no clinician recorded one – the answer to "AXA Health / Vitality / WPA use portals".
+4. Aviva CM016, 30 s: "it knows what not to fill" – patient/GP parts left blank, approved as a prefill, never signed.
+5. Skip Freedom and Allianz unless asked.
+
+**Support line:** "Bupa's form: routine. AXA Health / Vitality / WPA: portals, so copy-ready answers (no portal login or
+submission). Others: any Word/PDF form after a one-off check by staff." Ask which forms and portals RED gets, and how many.
+
+**Likely questions, honest answers:**
+- *Which insurers?* No fixed list; any Word/PDF form, mapped once and checked by staff; tried so far on 6 public insurer
+  PDFs with fictional data; portals → copy-ready answers.
+- *Clinic system?* Not connected to any real system yet; the demo reads a simulated TM3; today: upload a notes printout
+  (PDF) or an export (JSON/CSV); a direct TM3 link depends on TM3 granting access. Confirm RED's system first.
+- *Who writes the text / responsibility?* An automated drafting service drafts each answer from the notes, citing the
+  note; identifiers and figures are copied by code; opinions only if a clinician recorded them, else blank and flagged.
+  The checks can't catch a wrong paraphrase that cites a real note – the physio reads every answer and approves (typed
+  name, HCPC number, attestations; server-signed receipt). No user logins yet. If asked what powers it: say truthfully
+  which provider processes it (named as sub-processor in the DPA).
+- *Data / pilot now?* Not yet: everything stays in the browser in this demo; no database, logins or 2FA, nothing
+  deployed (UK hosting planned). Real data needs a DPA, a DPIA, UK hosting and access controls first; give a date only
+  after scoping.
+- *Time saved / price?* Machine time is seconds (about 7 s to draft a form live, about 15 s to read a new form – script
+  measurements); review time with real clinicians not measured. No price set for RED; offer a measured pilot on their
+  own forms once the safeguards exist.
+
+**Don't:** claim these are RED's forms; say "watch it read Bupa's form" (the maps were prepared and checked in advance –
+say so); share the terminal (server logs); show the AXA typed-number flow.

@@ -13,6 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import type { RenderFormat, RenderRequest } from "../../../api/contract";
 import { BATCH_CONCURRENCY, NOTICES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
+import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, saveBlob, toBase64, type FileDownload } from "../../api-client";
@@ -93,13 +94,13 @@ export function useReviewActions(opts: {
         const { connectorId, patientId, episodeId } = fresh.episodeRef;
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
-        const approved = markApproved(fresh, res.receipt, res.flags, { isForm });
+        const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)) });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
         hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",
-          title: isForm ? "Form approved" : "Report signed",
+          title: form && prefillSigners(form) ? "Prefill approved" : isForm ? "Form approved" : "Report signed",
           detail: saved
             ? "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
             : hooks.mode === "tenant"
@@ -208,7 +209,10 @@ export function useReviewActions(opts: {
     setFiling(true);
     try {
       const sessionToken = await sessionTokenFor({ tenantId: current.tenantId, connectorId, patientId, episodeId });
-      const baseTitle = isForm ? `${current.form?.title ?? "Completed form"} – ${current.form?.referrer.name ?? current.instructingParty.name}` : template?.documentTitle ?? "Report";
+      const signers = form ? prefillSigners(form) : null;
+      const baseTitle = isForm
+        ? `${current.form?.title ?? "Completed form"} – ${current.form?.referrer.name ?? current.instructingParty.name}${signers ? ` – prefilled for ${prefillSignersText(signers)} to sign` : ""}`
+        : template?.documentTitle ?? "Report";
 
       /** File one FINAL rendition (the server's file token ties these exact bytes to this approval). */
       const fileOne = async (out: FileDownload): Promise<string> => {
@@ -282,7 +286,7 @@ export function useReviewActions(opts: {
     } finally {
       setFiling(false);
     }
-  }, [render, isForm, template, hooks, dispatch, actor, toast]);
+  }, [render, isForm, form, template, hooks, dispatch, actor, toast]);
 
   /* Drafting (pending questions, retries) ------------------------------------------------------ */
 

@@ -94,7 +94,7 @@ test("post-validation snaps proposed overlays onto the printed boxes (dates, tic
 
 test("a box ruled with writing lines is mapped with its rows, so the answer is written on the lines", async () => {
   const { form } = await analyseFormFile({ file: decoded(await ruledBoxesPdf()), fileName: "ruled.pdf", mode: "demo", rulesOnly: true });
-  const gp = byLabel(form.fields, /^Name and full address of GP's surgery$/);
+  const gp = byLabel(form.fields, /^GP practice name and address$/);
   assert.equal(gp.anchor.kind, "pdf_overlay");
   if (gp.anchor.kind === "pdf_overlay") {
     assert.deepEqual(gp.anchor.ruledRows, [
@@ -106,7 +106,7 @@ test("a box ruled with writing lines is mapped with its rows, so the answer is w
   assert.match(gp.note ?? "", /3 printed lines/);
   // "[      ] Yes [      ] No": one yes/no question, an X centred in the chosen wide box – not a text box
   // and a second question called "Yes".
-  const drugs = byLabel(form.fields, /^Is the patient presently receiving any prescribed drugs\?$/);
+  const drugs = byLabel(form.fields, /^Does the patient take any prescribed medicines now\?$/);
   assert.equal(drugs.answerType, "yes_no");
   assert.deepEqual(drugs.anchor.kind === "pdf_overlay_ticks" && drugs.anchor.options.map((o) => [o.option, o.x, o.size]), [["Yes", 424.1, 16.8], ["No", 513.7, 16.8]]);
   assert.ok(!form.fields.some((f) => /^(?:Yes|No)$/.test(f.label)));
@@ -138,7 +138,7 @@ test("a fillable PDF's table of fields becomes one table question filled from th
   assert.equal(t.anchor.kind, "pdf_table");
   assert.equal(t.confidence, "low", "rules mode stays low confidence");
   // The 16 cells are no longer separate questions; the decoys still are.
-  assert.ok(!form.fields.some((f) => f.anchor.kind === "pdf_field" && /Row\d|^PAID/.test(f.anchor.fieldName)));
+  assert.ok(!form.fields.some((f) => f.anchor.kind === "pdf_field" && /Row\d|^SETTLED/.test(f.anchor.fieldName)));
   for (const name of ["Surname", "Surname_2", "Text Field 1", "Text Field 6"]) assert.ok(form.fields.some((f) => f.anchor.kind === "pdf_field" && f.anchor.fieldName === name), name);
   assert.ok(form.analysis.warnings.some((w) => /The 4-row table .* is one question \(16 cell questions were combined\)/.test(w)));
   assert.deepEqual(checkFormDefinition(form), []);
@@ -152,7 +152,7 @@ test("a table in another party's section stays blank and says whose it is, even 
   assert.equal(parsed.kind, "pdf_acroform");
   if (parsed.kind !== "pdf_acroform") return;
   // As if the section heading read "– to be completed by the policyholder" (forms/pdf-sections.ts).
-  const pdf = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^PAID/.test(f.name) ? { ...f, completedBy: "policyholder" as const } : f)) };
+  const pdf = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^SETTLED/.test(f.name) ? { ...f, completedBy: "policyholder" as const } : f)) };
   const [table] = pdfTableQuestions(pdf, [], new Map(pdf.fields.map((f, i) => [f.name, i])));
   assert.ok(table);
   assert.deepEqual(table.field.fillSource, { kind: "leave_blank" });
@@ -160,7 +160,7 @@ test("a table in another party's section stays blank and says whose it is, even 
   assert.equal(table.field.required, false);
   assert.match(table.field.note ?? "", /for the policyholder to complete/);
   // The clinic's own table keeps its party too.
-  const ours = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^PAID/.test(f.name) ? { ...f, completedBy: "clinic" as const } : f)) };
+  const ours = { ...parsed.pdf, fields: parsed.pdf.fields.map((f) => (/Row\d|^SETTLED/.test(f.name) ? { ...f, completedBy: "clinic" as const } : f)) };
   const [mine] = pdfTableQuestions(ours, [], new Map(ours.fields.map((f, i) => [f.name, i])));
   assert.equal(mine.field.fillSource.kind, "appointments_table");
   assert.equal(mine.field.completedBy, "clinic");
@@ -168,7 +168,7 @@ test("a table in another party's section stays blank and says whose it is, even 
 
 test("a table whose cells were all left for the referrer stays blank", async () => {
   const parsed = await parseFormFile(decoded(await tableFormPdf()));
-  const raws = proposeFieldsByRules(parsed).map((r) => (/Row\d|^PAID/.test(r.anchorRef) ? { ...r, fillSource: "leave_blank" as const } : r));
+  const raws = proposeFieldsByRules(parsed).map((r) => (/Row\d|^SETTLED/.test(r.anchorRef) ? { ...r, fillSource: "leave_blank" as const } : r));
   const { fields } = postValidateFields(parsed, raws);
   const t = fields.find((f) => f.answerType === "table");
   assert.deepEqual(t?.fillSource, { kind: "leave_blank" });

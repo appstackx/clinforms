@@ -45,7 +45,7 @@ import type {
 import { runValidators } from "../core/validation";
 import { makeFlag } from "../core/validation/context";
 import { buildSourceTexts } from "../core/validation/sources";
-import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles } from "../core/voice";
+import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, plainClinicalWording } from "../core/voice";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -146,13 +146,15 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   // Drafted wording a person reads (answers and gaps): the patient's name back in, record IDs as the
   // note's date, note shorthand in plain words ("2x/wk" → "2 times a week", ">15 kg" → "more than
   // 15 kg"), numbers kept, and job titles as the record writes them – for live and recorded output alike.
-  // On another insurer's form the insurer on record is "the insurer"; "(fictional)" labels stay.
+  // On another insurer's form the insurer on record is "the insurer"; "(fictional)" labels stay. A draft
+  // in the signer's first person reads as the signer writes a form: "On 01/10/2026 I recorded that X" →
+  // "On 01/10/2026, X" (plainClinicalWording; third-person attributions are left for "Write in my own voice").
   const otherInsurer = form ? otherInsurerOnForm(form, bundle) : null;
   const fictional = fictionalNames(stringsOf([bundle, input.instructingParty]));
   const readable = (raw: string) => {
     let text = describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts });
     if (otherInsurer) text = withoutOtherInsurerName(text, otherInsurer);
-    return keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional);
+    return plainClinicalWording(keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional));
   };
 
   const sections: ReportSection[] = [];

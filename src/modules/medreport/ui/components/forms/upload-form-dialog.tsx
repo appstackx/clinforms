@@ -296,7 +296,7 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
   // The questions counted as "to check" are listed with the layout notes, so the count has its items.
   const checks = [
     ...(low ? [`${low === 1 ? "Question" : "Questions"} to check in the mapping review: ${lowFields.map((f) => `“${f.label.trim().replace(/[.:;]$/, "")}”`).join(", ")}`] : []),
-    ...Array.from(new Set([...o.warnings, ...form.analysis.warnings])),
+    ...distinctNotes([...o.warnings, ...form.analysis.warnings]),
   ];
   const facts = [
     FORM_KIND_LABELS[o.kind],
@@ -351,4 +351,19 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
       <p className="text-sm text-slate-600">Nothing is used for patients until a member of staff checks and confirms the mapping.</p>
     </div>
   );
+}
+
+/**
+ * The layout notes without repeats: the form reader, the analysis and a prepared map can each say "This
+ * PDF has no fillable fields…" in their own words – only the last (most specific) of those is kept.
+ */
+export function distinctNotes(notes: readonly string[]): string[] {
+  const out: string[] = [];
+  const opening = (n: string) => n.split(/[,.;–]/)[0].trim().toLowerCase();
+  for (const n of notes) {
+    const i = out.findIndex((x) => x === n || (opening(x).length >= 20 && opening(x) === opening(n)));
+    if (i >= 0) out.splice(i, 1);
+    out.push(n);
+  }
+  return out;
 }

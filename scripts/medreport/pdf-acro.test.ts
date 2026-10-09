@@ -60,7 +60,7 @@ const DOB = field("F-02", "Date of birth", { kind: "pdf_field", fieldName: "Text
 const MEMBER = field("F-03", "Membership number", { kind: "pdf_field", fieldName: "Text Field 4", fieldType: "text" });
 const REFERRED = field(
   "F-04",
-  "Was the patient referred to you?",
+  "Did someone refer the patient?",
   { kind: "pdf_field", fieldName: "Check Box 13", fieldType: "checkbox", options: ["no", "Yes"], optionLabels: ["No", "Yes"] },
   { answerType: "yes_no", options: ["Yes", "No"] },
 );
@@ -81,7 +81,7 @@ const TYPE = field(
 );
 const INSURED = field(
   "F-06",
-  "Do you have any other health insurance?",
+  "Are you covered by another insurance policy?",
   {
     kind: "pdf_field",
     fieldName: "Check Box5",
@@ -100,7 +100,7 @@ const DIAGNOSED = field(
   { answerType: "date" },
 );
 const SIGNED = field("F-08", "Date", { kind: "pdf_field", fieldName: "Text Field 30", fieldType: "text" }, { answerType: "date_signed", fillSource: { kind: "signoff", part: "date" } });
-const TREATMENT = field("F-09", "Treatment received", { kind: "pdf_field", fieldName: "Treatment Row1", fieldType: "text" });
+const TREATMENT = field("F-09", "Treatment given", { kind: "pdf_field", fieldName: "Treatment Row1", fieldType: "text" });
 const AMOUNT = field("F-10", "Amount", { kind: "pdf_field", fieldName: "Amount Row1", fieldType: "text" });
 
 const ANSWERS: FormFillAnswers = {
@@ -140,7 +140,7 @@ test("readPdfForm: printed label per radio export value and per tick-box widget;
   assert.match(by["Radio Button 1"].nearbyText, /^Title \(please tick\)/, "the question leads, not the option labels");
   assert.deepEqual(by["Check Box 13"].options, ["no", "Yes"]);
   assert.deepEqual(by["Check Box 13"].optionLabels, ["No", "Yes"]);
-  assert.match(by["Check Box 13"].nearbyText, /^Was the patient referred to you\?/);
+  assert.match(by["Check Box 13"].nearbyText, /^Did someone refer the patient\?/);
   assert.deepEqual(by["Check Box 4"].optionLabels, ["Physiotherapist"]);
   assert.deepEqual(by["Check Box5"].optionLabels, ["Yes"], "label printed LEFT of the box");
   assert.deepEqual(by["Check Box6"].optionLabels, ["No"]);
@@ -193,12 +193,12 @@ test("rules mode: radio labels, one question per option group / Yes-No pair / mu
   assert.equal(byField("Check Box 6"), type, "all three boxes belong to the one question");
 
   const contact = byField("Check Box 10");
-  assert.equal(contact.label, "Please tick your preferred method of contact");
+  assert.equal(contact.label, "Please tick how we should contact you here");
   assert.deepEqual(contact.options, ["Telephone number", "Email"], "options from the boxes to the left");
 
   const insured = byField("Check Box5");
   assert.equal(insured.answerType, "yes_no");
-  assert.match(insured.label, /^Do you have any other health insurance/);
+  assert.match(insured.label, /^Are you covered by another insurance policy/);
   assert.deepEqual(insured.anchor.kind === "pdf_field" && insured.anchor.optionFields, [
     { option: "Yes", fieldName: "Check Box5" },
     { option: "No", fieldName: "Check Box6" },

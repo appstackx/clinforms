@@ -13,7 +13,7 @@ import "server-only";
  * the label's own signer ("Policyholder's signature", "Signature of medical practitioner"), else the
  * section's party (given by the caller from the PDF outline, else read from the section heading: "– to
  * be completed by the policyholder", "Therapist's declaration"), else – for a question put to the patient
- * in the second person ("When did you first notice your symptoms?") – the patient. A part of the form for
+ * in the second person ("When did your symptoms start?") – the patient. A part of the form for
  * anyone but the clinic is always leave_blank, and a signature, name or date is the clinician's sign-off
  * only where the clinic signs: never in another party's signature box or declaration.
  *
@@ -96,13 +96,13 @@ const PROVIDER_NUMBER = /\b(?:provider|practitioner|recognition|supplier|payee) 
 const MEMBERSHIP_NUMBER = /\b(?:membership|member|customer)(?:'s)? ?(?:no\.?|number|id)\b/;
 /** A company or group scheme's own number – not the patient's membership number. */
 const SCHEME_NUMBER = /\b(?:scheme|group|company|corporate)(?:'s)? ?(?:no\.?|number|id)\b/;
-/** The company that holds a company policy ("Company name (if a company policy)"). */
+/** The company that holds a company policy ("Employer's name (company policy only)"). */
 const COMPANY_POLICY = /^(?:company|employer)(?:'s)? name\b.*\bpolicy\b|^name of (?:the )?company\b.*\bpolicy\b/;
 /** A work telephone number (a bare "Work" box under "Telephone numbers: Home … Work …"). */
 const WORK_PHONE = /^(?:work|office|business)(?: (?:tel(?:ephone)?|phone)(?: (?:no\.?|number))?)?\s*:?$/;
 const AUTHORISATION_NUMBER = /\b(?:pre-?)?authori[sz]ation (?:no\.?|number|code|reference|ref)\b|\bauth(?:orisation)? code\b/;
 
-/** A question put to the patient in the second person ("When did you first notice your symptoms?"). */
+/** A question put to the patient in the second person ("When did your symptoms start?"). */
 const SECOND_PERSON = /\b(?:you|your|yourself|you've|you're|you'll)\b/;
 const PATIENT_TOPIC =
   /\b(?:doctor|gp|symptoms?|illness|medication|prescri\w*|insurance|insurer|policy|pregnan\w*|hospital|wrong with you|need (?:any )?(?:further )?treatment|your (?:medical )?condition|your injury|your claim|your health)\b/;
@@ -224,7 +224,7 @@ const LEAVE_BLANK_RE =
 export function classifyLabel(label: string, section?: string, party?: Party | null): LabelClass {
   const l = norm(label);
   const sec = norm(section ?? "");
-  // A question ("Have you signed and dated the form?") is never a signature, name or date box.
+  // A question ("Is the form signed and dated?") is never a signature, name or date box.
   const question = /\?\s*$/.test(l);
   const inSignoff = !question && (SIGNOFF_CONTEXT.test(sec) || /^(?:signed|signature)\b/.test(l));
 
@@ -286,7 +286,7 @@ export function classifyLabel(label: string, section?: string, party?: Party | n
     return { fillSource: { kind: "computed_fact", factId: "FACT-attendance", format: "summary" }, answerType: null, identifier: false, opinion: false, ...who };
   }
   // Outcome measures: named in the label, or in the context of a score column ("Initial score" under
-  // "Outcome Measures – such as Patient Specific Functional Scale"). The first or latest score for an
+  // "Outcome scores – e.g. a patient-specific functional scale"). The first or latest score for an
   // "Initial" / "Current" column, the whole series otherwise.
   const scoreColumn = /^(?:(?:initial|baseline|first|start|current|latest|most recent|final|end|discharge|present)\s+)?(?:score|outcome|result|measure)s?\b/.test(l);
   for (const [re, instrument] of OUTCOMES) {

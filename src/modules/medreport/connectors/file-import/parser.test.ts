@@ -79,7 +79,7 @@ test("sample case: facts and data checks look right", () => {
   const { bundle } = parseOk({ format: "json", content: SAMPLE_IMPORT_FILES.json.content });
   const facts = computeFacts(bundle, { asOf: "2026-10-06" });
   const byId = new Map(facts.map((f) => [f.id, f]));
-  assert.equal(byId.get("FACT-attendance")?.value, "6 of 6 appointments attended");
+  assert.equal(byId.get("FACT-attendance")?.value, "6 appointments attended to date, none missed (1 cancelled with notice)");
   assert.match(byId.get("FACT-attendance")?.detail ?? "", /Cancelled with notice \(CNC, not counted above\): 1 – 24\/04\/2026 \(A-003\)/);
   assert.equal(byId.get("FACT-age")?.value, "42 years");
   assert.equal(byId.get("FACT-outcomes-QuickDASH")?.value, "QuickDASH 52/100 → 34/100 → 20/100 (lower is better)");

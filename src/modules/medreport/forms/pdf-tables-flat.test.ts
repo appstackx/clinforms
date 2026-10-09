@@ -98,7 +98,7 @@ async function drawnPaths(bytes: Uint8Array, pageNumber: number): Promise<{ line
 /* Tables of fields ------------------------------------------------------------------------------ */
 
 test("row-numbered names: Row1 / _2 suffixes only", () => {
-  assert.deepEqual(rowNumberedName("Date of treatmentRow1"), { base: "Date of treatment", n: 1 });
+  assert.deepEqual(rowNumberedName("Visit dateRow1"), { base: "Visit date", n: 1 });
   assert.deepEqual(rowNumberedName("Fee_3"), { base: "Fee", n: 3 });
   assert.deepEqual(rowNumberedName("form.Amount row 12"), { base: "Amount", n: 12 });
   assert.equal(rowNumberedName("Text Field 12"), null);
@@ -115,19 +115,19 @@ test("detectPdfFieldTables: one table, rows by position (reversed names follow t
   assert.deepEqual(
     t.columns.map((c) => [c.key, c.header]),
     [
-      ["date", "Date of treatment"],
-      ["service", "Treatment received"],
-      ["amount", "Amount of the bill"],
-      ["paid", "Has this bill been paid?"],
+      ["date", "Visit date"],
+      ["service", "Treatment given"],
+      ["amount", "Fee charged"],
+      ["paid", "Fee settled?"],
     ],
   );
   assert.deepEqual(
     t.rows.map((r) => [r.date, r.paid]),
     [
-      ["Date of treatmentRow1", "PAID4"],
-      ["Date of treatmentRow2", "PAID3"],
-      ["Date of treatmentRow3", "PAID2"],
-      ["Date of treatmentRow4", "PAID1"],
+      ["Visit dateRow1", "SETTLED4"],
+      ["Visit dateRow2", "SETTLED3"],
+      ["Visit dateRow3", "SETTLED2"],
+      ["Visit dateRow4", "SETTLED1"],
     ],
   );
   // Widget rectangles include their border: tops within a point of the drawn rows.
@@ -158,14 +158,14 @@ test("fillPdf pdf_table: rows into the fields, printed Yes / No circled, extra a
   const out = await fillPdf(bytes, formOf([f], "pdf_acroform"), { "F-01": { text: "", rows } }, { draft: true, flatten: false, onWarning: (m) => warnings.push(m) });
   const doc = await PDFDocument.load(out);
   const form = doc.getForm();
-  assert.equal(form.getTextField("Date of treatmentRow1").getText(), "18/03/2026");
-  assert.equal(form.getTextField("Amount of the billRow4").getText(), "£55.00");
-  assert.equal(form.getTextField("Treatment receivedRow1").getText(), "Physiotherapy initial assessment");
+  assert.equal(form.getTextField("Visit dateRow1").getText(), "18/03/2026");
+  assert.equal(form.getTextField("Fee chargedRow4").getText(), "£55.00");
+  assert.equal(form.getTextField("Treatment givenRow1").getText(), "Physiotherapy initial assessment");
   // The long answer is shortened in its cell (two lines at most, ending "…").
-  assert.match(form.getTextField("Treatment receivedRow2").getText() ?? "", /…$/);
+  assert.match(form.getTextField("Treatment givenRow2").getText() ?? "", /…$/);
   // Printed "Yes / No": nothing written over it – the chosen word is circled.
-  assert.equal(form.getTextField("PAID4").getText() ?? "", "");
-  assert.equal(form.getTextField("PAID3").getText() ?? "", "");
+  assert.equal(form.getTextField("SETTLED4").getText() ?? "", "");
+  assert.equal(form.getTextField("SETTLED3").getText() ?? "", "");
   const { curves } = await drawnPaths(out, 1);
   const inPaidColumn = curves.filter((c) => c.x0 >= 455 && c.x1 <= 520 && c.y0 >= ROW_TOP - 4 * ROW_STEP && c.y1 <= ROW_TOP);
   assert.equal(inPaidColumn.length, 4, "one circle per printed Yes / No answered");
@@ -317,23 +317,23 @@ test("ruled answer boxes: the printed writing lines are read, and an answer is w
 
 test("continuation headings: no repeated section, long labels cut and wrapped inside the page", async () => {
   assert.equal(
-    continuationHeading({ section: "4. Details of the medical expenses you are claiming for", label: "Details of the medical expenses you are claiming for" }),
-    "Details of the medical expenses you are claiming for (continued)",
+    continuationHeading({ section: "4. Treatment costs you are claiming", label: "Treatment costs you are claiming" }),
+    "Treatment costs you are claiming (continued)",
   );
   assert.equal(continuationHeading({ section: "About the treatment", label: "Proposed treatment plan" }), "About the treatment – Proposed treatment plan (continued)");
   assert.equal(continuationHeading({ label: "Diagnosis" }), "Diagnosis (continued)");
-  const long = continuationHeading({ section: "About the treatment", label: `Please explain the clinical reason for further treatment, detailing best practice guidelines used ${"and more words ".repeat(12)}` });
+  const long = continuationHeading({ section: "About the treatment", label: `Why does the patient need more sessions, and which published guidance supports it ${"and more words ".repeat(12)}` });
   assert.ok(long.length < 190 && /…\s\(continued\)$/.test(long), long);
 
   // On the sheet: every heading line ends inside the page.
   const bytes = await flatBoxesPdf();
-  const label = "Please explain the clinical reason for further treatment, detailing best practice guidelines used and the expected outcome";
+  const label = "Why does the patient need more sessions, and which published guidance supports it and the expected outcome";
   const form = formOf([field("F-01", label, { kind: "pdf_overlay", page: 1, x: 202, y: 662, width: 336, height: 46 }, { answerType: "long_text", section: "About the treatment" })], "pdf_flat");
   const out = await fillPdf(bytes, form, { "F-01": { text: "Word ".repeat(400) } }, { draft: false, flatten: true });
   const doc = await PDFDocument.load(out);
   const width = doc.getPage(1).getWidth();
   const sheet = (await textItems(out))[1];
-  assert.ok(sheet.some((i) => i.str.startsWith("About the treatment – Please explain")));
+  assert.ok(sheet.some((i) => i.str.startsWith("About the treatment – Why does the patient")));
   assert.ok(sheet.some((i) => /\(continued\)$/.test(i.str)), "the heading's last line");
   const font = await doc.embedFont("Helvetica-Bold");
   for (const i of sheet.filter((x) => x.str.includes("continued") || x.str.startsWith("About"))) {

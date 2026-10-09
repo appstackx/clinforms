@@ -11,7 +11,7 @@ import { readPdfForm } from "./pdf-outline";
 import { detectPdfSections, pdfSectionAt, pdfSectionTitles } from "./pdf-sections";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 
-const POLICYHOLDER = "1. Policyholder’s details – to be completed by the policyholder";
+const POLICYHOLDER = "A. Member’s information – to be completed by the policyholder";
 
 async function multiPartyForm(): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -42,7 +42,7 @@ async function multiPartyForm(): Promise<Uint8Array> {
     "keep a copy of this form for your own records. Incomplete forms may delay the claim.",
   ].forEach((line, i) => text(p1, line, 40, 625 - i * 14));
   text(p1, "2.1 About the claim", 40, 560, 10, bold);
-  text(p1, "When did you first notice your symptoms?", 40, 540);
+  text(p1, "When did your symptoms start?", 40, 540);
   box(p1, "symptoms", 260, 540, 280);
 
   const p2 = doc.addPage([595, 842]);
@@ -146,7 +146,7 @@ test("detectPdfSections works on raw positioned text (sizes from pdfjs)", async 
   assert.deepEqual(
     sections.map((s) => [s.page, s.level, s.title.slice(0, 20), s.completedBy ?? "-", s.signoff]),
     [
-      [1, 1, "1. Policyholder's de", "policyholder", false],
+      [1, 1, "A. Member's informat", "policyholder", false],
       [1, 1, "2. Treatment details", "-", false],
       [1, 2, "2.1 About the claim", "-", false],
       [2, 1, "3. Therapist's decla", "clinic", true],

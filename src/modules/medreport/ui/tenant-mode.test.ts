@@ -126,14 +126,15 @@ describe("StudioShell", () => {
 });
 
 describe("HomeScreen", () => {
-  it("demo keeps its demo tools, Simulated TM3 tile and TM3 hero", () => {
+  it("demo keeps its demo tools, Simulated TM3 tile and its hero", () => {
     const html = render(createElement(HomeScreen), {});
     const visible = text(html);
     assert.match(visible, /Demo tools/);
     assert.match(visible, /Import case JSON/);
     assert.match(visible, /Reset demo/);
     assert.match(visible, /Simulated TM3 connected/);
-    assert.match(visible, /For physiotherapy clinics using TM3/);
+    assert.match(visible, /For physiotherapy clinics/);
+    assert.match(visible, /Complete insurer & medico-legal report forms from your clinic notes/);
     assert.ok(hrefs(html).includes("/pms-sandbox"));
     assert.ok(hrefs(html).includes("/reports/new"));
   });

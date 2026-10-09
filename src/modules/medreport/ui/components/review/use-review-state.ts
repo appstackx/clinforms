@@ -24,6 +24,7 @@ import {
   resolveGap,
   revertParagraph,
   setStructuredAnswer,
+  supersedeAcknowledgedGaps,
   writeInOwnVoice,
 } from "./review-model";
 import { setRowsAnswer } from "./table-answer-model";
@@ -32,7 +33,7 @@ export type ReviewAction =
   | { type: "replace"; report: Report }
   | { type: "editParagraph"; key: string; paragraphId: string; text: string }
   | { type: "revertParagraph"; key: string; paragraphId: string }
-  | { type: "addParagraph"; key: string; paragraphId?: string; text?: string }
+  | { type: "addParagraph"; key: string; paragraphId?: string; text?: string; actor?: string }
   | { type: "removeParagraph"; key: string; paragraphId: string; actor: string; silent?: boolean }
   | { type: "logEdit"; key: string; actor: string }
   | { type: "setAnswer"; key: string; value: string | boolean | null; actor: string }
@@ -68,7 +69,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
       return revertParagraph(report, action.key, action.paragraphId);
     case "addParagraph": {
       const next = addClinicianParagraph(report, action.key, action.text ?? "");
-      return next.report;
+      // A value typed straight into an empty answer supersedes a "left blank" acknowledgement of its gap.
+      return action.actor && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor) : next.report;
     }
     case "removeParagraph": {
       const section = report.sections.find((s) => s.key === action.key);
@@ -78,10 +80,11 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
     }
     case "logEdit": {
       const section = report.sections.find((s) => s.key === action.key);
-      return appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      const logged = appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      return supersedeAcknowledgedGaps(logged, action.key, action.actor);
     }
     case "setAnswer":
-      return setStructuredAnswer(report, action.key, action.value, action.actor);
+      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor), action.key, action.actor);
     case "setRows":
       return setRowsAnswer(report, action.key, action.rows, action.actor);
     case "resolveGap":
