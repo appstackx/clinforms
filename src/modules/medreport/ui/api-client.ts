@@ -67,7 +67,7 @@ import {
   type ValidateResponse,
 } from "../api/contract";
 import { MAX_FORM_REQUEST_BYTES } from "../config.public";
-import { getPasscode, getSession } from "./store";
+import { getPasscode, getSession, setSession } from "./store";
 
 /** A failed API call. `problem` is the server's problem+json (or a synthesised one). */
 export class ApiError extends Error {
@@ -94,6 +94,28 @@ export interface ApiClientOptions {
   fetch?: typeof fetch;
   getSessionToken?: () => string | null;
   getPasscode?: () => string | null;
+  /**
+   * Wave 2: when a call that needs a caller (anything but health, connectors, templates, sample forms,
+   * launch, launch/verify and sessions/demo) has no session token, get one first – e.g. a public-demo
+   * session (the default `api` client). Return null to send the call without one (a clinic's signed-in
+   * member is recognised by the sign-in cookie, which the server prefers to any demo session).
+   */
+  ensureSessionToken?: () => Promise<string | null>;
+}
+
+/** Paths that never need a caller (the rest of the Report API needs a signed-in member or a session). */
+const PUBLIC_PATH_PATTERNS: readonly RegExp[] = [
+  /\/health$/,
+  /\/connectors$/,
+  /\/templates(\/(?!validate$)[^/]+(\/docx)?)?$/,
+  /\/forms\/samples(\/[^/]+\/file)?$/,
+  /\/launch(\/verify)?$/,
+  /\/sessions\/demo$/,
+];
+
+function needsCaller(path: string): boolean {
+  const bare = path.split("?")[0];
+  return !PUBLIC_PATH_PATTERNS.some((re) => re.test(bare));
 }
 
 export interface CallOptions {
@@ -165,6 +187,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   async function send(path: string, init: RequestInit): Promise<Response> {
+    // Wave 2: endpoints that need a caller get a session first when there is none (the public demo).
+    if (options.ensureSessionToken && needsCaller(path)) {
+      const headers = new Headers(init.headers);
+      if (!headers.has("authorization")) {
+        const token = await options.ensureSessionToken().catch(() => null);
+        if (token) {
+          headers.set("authorization", `Bearer ${token}`);
+          init = { ...init, headers };
+        }
+      }
+    }
     // Requests carrying a form file and a report must stay under the platform's 4.5 MB body limit:
     // say so clearly instead of letting the platform answer with a bare 413.
     if (typeof init.body === "string" && init.body.length > MAX_FORM_REQUEST_BYTES) {
@@ -375,10 +408,42 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
 export type ApiClient = ReturnType<typeof createApiClient>;
 
+let pendingDemoSession: Promise<string | null> | null = null;
+let demoSessionUnavailableUntil = 0;
+
+/**
+ * The stored session token, else a new public-demo session (stored like the picker's, so the tab reuses
+ * it). Null when the public demo is off on this site (sessions/demo answers 404): then calls go without
+ * one and a clinic's sign-in cookie identifies the caller. Retried at most once a minute after a failure.
+ */
+async function ensureDemoSessionToken(): Promise<string | null> {
+  const current = getSession();
+  if (current) return current.token;
+  if (Date.now() < demoSessionUnavailableUntil) return null;
+  if (!pendingDemoSession) {
+    const plain = createApiClient({});
+    pendingDemoSession = plain
+      .demoSession({ purpose: "picker" })
+      .then(({ session }) => {
+        setSession(session);
+        return session.token;
+      })
+      .catch(() => {
+        demoSessionUnavailableUntil = Date.now() + 60_000;
+        return null;
+      })
+      .finally(() => {
+        pendingDemoSession = null;
+      });
+  }
+  return pendingDemoSession;
+}
+
 /** Default same-origin client using the stored session token and passcode. */
 export const api: ApiClient = createApiClient({
   getSessionToken: () => getSession()?.token ?? null,
   getPasscode,
+  ensureSessionToken: ensureDemoSessionToken,
 });
 
 /** Base64 of a Blob/ArrayBuffer (for template uploads and write-back). */

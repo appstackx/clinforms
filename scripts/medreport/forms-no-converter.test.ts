@@ -13,6 +13,7 @@ import { pdfConversionAvailable } from "../../src/modules/medreport/forms/conver
 import { KINGSWAY_FORM } from "../../src/modules/medreport/forms/samples/maps/kingsway";
 import { getSampleForm } from "../../src/modules/medreport/forms/samples/registry";
 import { completedSampleReport } from "./form-sample-answers";
+import { demoBearer } from "./test-actors";
 
 test("no LibreOffice → 503 PDF_CONVERSION_UNAVAILABLE for a Word form's PDF copy; Word still works", async () => {
   process.env.VERCEL = "1";
@@ -24,7 +25,7 @@ test("no LibreOffice → 503 PDF_CONVERSION_UNAVAILABLE for a Word form's PDF co
     bindHandler(handleRender, () => ({}) as MedreportDeps)(
       new Request(`http://localhost/api/reports/v1/render?format=${format}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: demoBearer() },
         body: JSON.stringify({ report, form: KINGSWAY_FORM, fileBase64 }),
       }),
       { params: {} },

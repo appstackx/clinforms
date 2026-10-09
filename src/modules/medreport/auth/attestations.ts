@@ -86,10 +86,15 @@ export function withAttestedConfirmation(form: FormDefinition, by: string, at: s
 
 export type FormConfirmationCheck =
   | { ok: true; mapSha256: string }
-  | { ok: false; reason: "NOT_CONFIRMED" | "NOT_ATTESTED" | "MAP_CHANGED" | "BAD_MAC" };
+  | { ok: false; reason: "NOT_CONFIRMED" | "NOT_ATTESTED" | "MAP_CHANGED" | "BAD_MAC" | "TENANT_MISMATCH" };
 
-/** Verify that the map is confirmed AND that the server attested exactly this map. */
-export function verifyFormConfirmation(form: FormDefinition): FormConfirmationCheck {
+/**
+ * Verify that the map is confirmed AND that the server attested exactly this map. With `tenantId` (wave 2:
+ * the caller's clinic) the map must also belong to that clinic: the attestation MAC covers form.tenantId,
+ * so a map confirmed for clinic A can neither be relabelled for clinic B nor used by clinic B as it is.
+ */
+export function verifyFormConfirmation(form: FormDefinition, opts: { tenantId?: string } = {}): FormConfirmationCheck {
+  if (opts.tenantId !== undefined && form.tenantId !== opts.tenantId) return { ok: false, reason: "TENANT_MISMATCH" };
   if (form.status !== "confirmed" || !form.confirmed) return { ok: false, reason: "NOT_CONFIRMED" };
   const { by, at, mapSha256, mac } = form.confirmed;
   if (!mapSha256 || !mac) return { ok: false, reason: "NOT_ATTESTED" };
@@ -110,6 +115,8 @@ export function formConfirmationProblem(reason: Exclude<FormConfirmationCheck, {
       return "The mapping has changed since it was confirmed. Open it in the forms library, check it and confirm it again.";
     case "BAD_MAC":
       return "The confirmation of this mapping could not be verified. Open it in the forms library and confirm it again.";
+    case "TENANT_MISMATCH":
+      return "This mapping belongs to another clinic's forms library. Upload the form to your own library and confirm it there.";
   }
 }
 

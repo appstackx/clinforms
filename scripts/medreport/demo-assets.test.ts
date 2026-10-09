@@ -39,6 +39,7 @@ import { sha256Hex } from "@/modules/medreport/forms/file";
 import { loadPdfjs, pdfjsDocumentParams } from "@/modules/medreport/forms/pdfjs";
 import { checkDemoAssets } from "./demo-assets-check";
 import { getDemoBundle } from "./dev-bundles";
+import { demoBearer } from "./test-actors";
 
 const SAMPLE_ID = "ext-example-insurer-therapy";
 const INSURER = "Example Health Insurance (fictional)";
@@ -62,7 +63,8 @@ function restoreEnv(): void {
   }
 }
 
-const post = (p: string, body: unknown) => new Request(`http://127.0.0.1:9${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const post = (p: string, body: unknown) =>
+  new Request(`http://127.0.0.1:9${p}`, { method: "POST", headers: { "content-type": "application/json", authorization: demoBearer() }, body: JSON.stringify(body) });
 const get = (p: string) => new Request(`http://127.0.0.1:9${p}`);
 
 /* A synthetic "insurer" form, its pre-written map and pre-written answers for Megan Hart ------- */

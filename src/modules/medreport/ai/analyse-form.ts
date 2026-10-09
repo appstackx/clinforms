@@ -24,7 +24,7 @@ import "server-only";
 import type { FormAnalysisStep, FormOutlineSummary } from "../api/contract";
 import { DEMO_TENANT_ID } from "../config.public";
 import { createId } from "../core/ids";
-import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType } from "../core/types";
+import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
 import { buildDocxOutline } from "../forms/docx-outline";
 import type { DecodedFormFile } from "../forms/file";
@@ -65,8 +65,11 @@ export interface AnalyseFormFileInput {
   /**
    * Live: take rate-limit slots for the extra parallel calls of a long form (the gate took one).
    * Returns false when the per-minute cap has no room – the stored map or rules are used instead.
+   * Wave 2: may be async (the limits are shared across server instances).
    */
-  reserveExtraLiveCalls?: (n: number) => boolean;
+  reserveExtraLiveCalls?: (n: number) => boolean | Promise<boolean>;
+  /** Wave 2: the clinic the proposed map belongs to (the caller's). Default: the demo tenant. */
+  tenantId?: TenantId;
 }
 
 export interface AnalyseFormFileResult {
@@ -111,7 +114,7 @@ function newForm(input: AnalyseFormFileInput, parsed: ParsedForm, fields: FormFi
   const at = analysis.at;
   return {
     id: createId("frm"),
-    tenantId: DEMO_TENANT_ID,
+    tenantId: input.tenantId ?? DEMO_TENANT_ID,
     referrer: meta.referrer,
     title: meta.title.slice(0, 200) || "Referrer form",
     ...(meta.versionLabel && { versionLabel: meta.versionLabel.slice(0, 60) }),
@@ -136,7 +139,7 @@ function asProposal(input: AnalyseFormFileInput, stored: FormDefinition, analysi
   return {
     ...rest,
     id: createId("frm"),
-    tenantId: DEMO_TENANT_ID,
+    tenantId: input.tenantId ?? DEMO_TENANT_ID,
     ...(input.referrer && { referrer: input.referrer }),
     ...(input.title && { title: input.title }),
     file: { ...stored.file, fileName: input.fileName },
@@ -247,7 +250,7 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
     t = Date.now();
     try {
       const calls = chunkParsedForm(parsed).length;
-      if (calls > 1 && input.reserveExtraLiveCalls && !input.reserveExtraLiveCalls(calls - 1)) {
+      if (calls > 1 && input.reserveExtraLiveCalls && !(await input.reserveExtraLiveCalls(calls - 1))) {
         throw new DraftGenerationError("AI_ERROR", WORDING.server.analysis.tooManyCalls(calls));
       }
       live = await analyseFormLive({

@@ -15,11 +15,18 @@ import "server-only";
  * Wrong passcodes are counted too: 5 per client and 30 per instance in 10 minutes, then 429 – so the
  * passcode cannot be guessed at request speed. Use a long random passcode (16+ characters).
  *
+ * Wave 2: the handlers use the SHARED variants at the end of this file (checkLivePasscodeShared,
+ * takeDemoLiveCalls): the same limits counted in MedreportDeps.sharedState (database `rate_limits`), so
+ * they hold across every server instance – "per instance" becomes "per deployment". Without a shared
+ * store they are exactly the in-memory functions above.
+ *
  * Owner: integration agent.
  */
 import { getLivePasscode } from "../config.server";
 import { HEADERS } from "../api/contract";
+import type { MedreportDeps } from "../api/deps";
 import { timingSafeEqualString } from "../api/http";
+import { countHit, peekCount, resetKey, subjectKey, takeSlots } from "./shared-limits";
 
 export type PasscodeCheck =
   | { ok: true }
@@ -171,4 +178,59 @@ export function liveCallRetryAfterSeconds(nowMs: number = Date.now()): number {
 /** Tests only. */
 export function resetLiveCallLimiter(): void {
   liveLimiter.reset();
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Wave 2: shared across instances (MedreportDeps.sharedState → rate_limits)
+ * ----------------------------------------------------------------------------------------------*/
+
+const PASSCODE_FAIL_ALL_KEY = "demo:passcode-fail:all";
+const passcodeFailClientKey = (req: Request) => `demo:passcode-fail:client:${subjectKey(clientKey(req))}`;
+const DEMO_LIVE_KEY = "demo:live-calls";
+
+/**
+ * checkLivePasscode() with its wrong-guess counters shared by every instance (5 per client, 30 in all,
+ * per 10-minute window). In-memory (checkLivePasscode) when there is no shared store.
+ */
+export async function checkLivePasscodeShared(req: Request, deps: MedreportDeps, nowMs: number = Date.now()): Promise<PasscodeCheck> {
+  if (!deps.sharedState) return checkLivePasscode(req, nowMs);
+  const configured = getLivePasscode();
+  if (!configured) return { ok: false, reason: "not_configured" };
+  const given = req.headers.get(HEADERS.passcode);
+  if (!given || !given.trim()) return { ok: false, reason: "missing" };
+  const clientCounter = passcodeFailClientKey(req);
+  const [mine, all] = await Promise.all([
+    peekCount(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+    peekCount(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+  ]);
+  const blocked = [mine.count >= PASSCODE_FAILURES_PER_CLIENT ? mine : null, all.count >= PASSCODE_FAILURES_PER_INSTANCE ? all : null].filter(
+    (w): w is NonNullable<typeof w> => w !== null,
+  );
+  if (blocked.length > 0) {
+    const until = Math.max(...blocked.map((w) => w.resetAtMs));
+    return { ok: false, reason: "locked", retryAfterSeconds: Math.max(1, Math.ceil((until - nowMs) / 1000)) };
+  }
+  if (timingSafeEqualString(given.trim(), configured)) return { ok: true };
+  await Promise.all([
+    countHit(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+    countHit(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+  ]);
+  return { ok: false, reason: "invalid" };
+}
+
+/**
+ * The public demo's live cap (LIVE_CALLS_PER_MINUTE), shared by every instance: take `n` slots at once
+ * (a form analysis fans out into several calls). In-memory (takeLiveCalls) when there is no shared store.
+ */
+export async function takeDemoLiveCalls(deps: MedreportDeps, n = 1, nowMs: number = Date.now()): Promise<RateLimitResult> {
+  if (!deps.sharedState) return takeLiveCalls(n, nowMs);
+  const slot = await takeSlots(deps, DEMO_LIVE_KEY, LIVE_CALLS_PER_MINUTE, 60_000, n, nowMs);
+  return slot.ok ? { ok: true, remaining: slot.remaining } : { ok: false, retryAfterSeconds: slot.retryAfterSeconds };
+}
+
+/** Tests only: forget the shared demo counters of this deployment. */
+export async function resetSharedDemoCounters(deps: MedreportDeps, req?: Request): Promise<void> {
+  await resetKey(deps, DEMO_LIVE_KEY);
+  await resetKey(deps, PASSCODE_FAIL_ALL_KEY);
+  if (req) await resetKey(deps, passcodeFailClientKey(req));
 }

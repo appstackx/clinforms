@@ -18,7 +18,8 @@ import "server-only";
  *
  * Owner: forms-engine agent (formerly docgen). The TYPE is part of the contract (additive fields only).
  */
-import { DEMO_CLINIC, PRODUCT } from "../config.public";
+import { PRODUCT } from "../config.public";
+import { bundleClinic } from "../core/clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, formatUkDateTime, todayIso } from "../core/dates";
 import { shortFingerprint } from "../core/fingerprint";
 import {
@@ -555,6 +556,8 @@ export function buildViewModel(
   const createdDate = report.createdAt.slice(0, 10);
   const age = reg.dob && reg.dob <= createdDate ? String(ageOn(reg.dob, createdDate)) : "";
   const discharged = bundle.episodeStatus === "discharged";
+  // The clinic's own details on a clinic's bundle; DEMO_CLINIC in the public demo (core/clinic.ts).
+  const clinic = bundleClinic(bundle);
 
   return {
     isDraft,
@@ -563,11 +566,11 @@ export function buildViewModel(
     reviewCopy,
     product: { name: PRODUCT.name, version: PRODUCT.version },
     clinic: {
-      name: DEMO_CLINIC.name,
-      addressLines: Array.from(DEMO_CLINIC.addressLines),
-      addressText: DEMO_CLINIC.addressLines.join(", "),
-      phone: DEMO_CLINIC.phone,
-      email: DEMO_CLINIC.email,
+      name: clinic?.name ?? "",
+      addressLines: clinic ? Array.from(clinic.addressLines) : [],
+      addressText: clinic ? clinic.addressLines.join(", ") : "",
+      phone: clinic?.phone ?? "",
+      email: clinic?.email ?? "",
     },
     report: {
       id: report.id,
@@ -636,7 +639,7 @@ export function buildViewModel(
       attestations: (receipt?.attestations ?? []).map((text) => ({ text })),
     },
     footer: {
-      left: `${DEMO_CLINIC.name} · ${template.documentTitle} · ${reg.fullName}`,
+      left: `${clinic ? `${clinic.name} · ` : ""}${template.documentTitle} · ${reg.fullName}`,
       right: receipt
         ? `Signed by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}) on ${formatUkDate(dateIso)} · Fingerprint ${hashShort}`
         : `${DRAFT_LABEL} · not for disclosure`,

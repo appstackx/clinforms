@@ -25,6 +25,7 @@ import { createFormReport, planDraftGroups } from "@/modules/medreport/core/repo
 import { SAMPLE_FORMS } from "@/modules/medreport/forms/samples/registry";
 import type { FormDefinition } from "@/modules/medreport/core/types";
 import { withAttestedConfirmation } from "@/modules/medreport/auth/attestations";
+import { demoBearer } from "./test-actors";
 
 const drafts = route(handleDrafts);
 const validate = route(handleValidate);
@@ -33,7 +34,7 @@ const analyse = route(handleFormsAnalyse);
 function post(path: string, body: unknown, headers: Record<string, string> = {}): Request {
   return new Request(`http://127.0.0.1:9${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: { "content-type": "application/json", authorization: demoBearer(), ...headers },
     body: JSON.stringify(body),
   });
 }

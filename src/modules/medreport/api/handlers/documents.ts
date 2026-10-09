@@ -3,11 +3,13 @@ import "server-only";
 /**
  * POST /api/reports/v1/connectors/[id]/documents  (write-back)
  *
- * Bearer session token. Body DocumentsRequest {patientId, episodeId, title, fileName, mimeType,
- * contentBase64, sha256, signReceipt} → DocumentsResponse {attachReceipt, trace}.
+ * An actor (auth/actor.ts: a clinic's signed-in member, or a public-demo session). Body DocumentsRequest
+ * {patientId, episodeId, title, fileName, mimeType, contentBase64, sha256, signReceipt} →
+ * DocumentsResponse {attachReceipt, trace}.
  *
  * Before anything is sent to the clinic system:
- * 1. the session must cover the connector and episode (403 SESSION_MISMATCH);
+ * 1. the actor must cover the connector and episode (403 SESSION_MISMATCH); the simulated TM3 sandbox is
+ *    the public demo's only (403 CONNECTOR_NOT_AVAILABLE);
  * 2. the connector must support write-back (422 CONNECTOR_UNSUPPORTED; 503 for real TM3);
  * 3. the decoded file must match `sha256` and be a real .docx/.pdf (422 VALIDATION_FAILED);
  * 4. the SignReceipt's MAC must verify with MEDREPORT_SIGNING_SECRET, for this tenant
@@ -22,12 +24,15 @@ import "server-only";
  * The request carries the receipt but not the report; the file token ties the bytes to the /render call
  * that verified the report, its receipt and its form map in full.
  *
- * Owner: integration agent.
+ * Wave 2: the receipt must be the actor's clinic's (the MAC covers tenantId; another clinic's receipt is
+ * refused even though its MAC verifies), and a clinic's file-back is written to its audit trail.
+ *
+ * Owner: integration agent (wave 2: API slice).
  */
 import { createHash } from "node:crypto";
 import { verifyFileToken } from "../../auth/attestations";
 import { PRODUCT } from "../../config.public";
-import { assertSessionConnector, assertSessionEpisode, requireSession } from "../../auth/session-token";
+import { AUDIT_ACTIONS, assertActorConnector, assertActorEpisode, auditActor, macPrefix, requireActor } from "../../auth/actor";
 import { verifyReceiptMac } from "../../auth/sign-receipt";
 import { callConnector, requireConnector } from "../../connectors/handler-support";
 import { CONTENT_TYPES, DocumentsRequestSchema, type DocumentsResponse } from "../contract";
@@ -40,18 +45,13 @@ function looksLike(mimeType: string, bytes: Buffer): boolean {
 }
 
 export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
-  const claims = requireSession(req);
-  const connector = requireConnector(deps, ctx.params.id, { capability: "writeBackDocuments", action: "filing documents back" });
-  assertSessionConnector(claims, connector.id);
+  const actor = await requireActor(req, deps);
+  const connector = requireConnector(deps, ctx.params.id, { capability: "writeBackDocuments", action: "filing documents back", tenantId: actor.tenantId });
+  assertActorConnector(actor, connector.id);
   const parsed = await parseBody(req, DocumentsRequestSchema);
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
-  assertSessionEpisode(claims, {
-    tenantId: claims.tenantId,
-    connectorId: connector.id,
-    patientId: body.patientId,
-    episodeId: body.episodeId,
-  });
+  assertActorEpisode(actor, { connectorId: connector.id, patientId: body.patientId, episodeId: body.episodeId });
   const attachDocument = connector.attachDocument;
   if (!attachDocument) {
     throw new HttpError(422, "Not supported by this connector", {
@@ -84,7 +84,7 @@ export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
       issues: [{ path: "sha256", message: "Does not match the decoded file." }],
     });
   }
-  if (body.signReceipt.tenantId !== claims.tenantId || !verifyReceiptMac(body.signReceipt)) {
+  if (body.signReceipt.tenantId !== actor.tenantId || !verifyReceiptMac(body.signReceipt, { tenantId: actor.tenantId })) {
     throw new HttpError(422, "Sign-off receipt invalid", {
       code: "RECEIPT_INVALID",
       detail: "Only signed reports can be filed back to the clinic system, and this receipt could not be verified. Sign the report again.",
@@ -97,7 +97,7 @@ export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
     verifyFileToken(body.fileToken, {
       receiptMac: body.signReceipt.mac,
       sha256,
-      tenantId: claims.tenantId,
+      tenantId: actor.tenantId,
       connectorId: connector.id,
       patientId: body.patientId,
       episodeId: body.episodeId,
@@ -110,7 +110,7 @@ export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
   }
 
   const started = Date.now();
-  const cctx = deps.createConnectorContext(req, connector.id, claims.tenantId);
+  const cctx = deps.createConnectorContext(req, connector.id, actor.tenantId);
   const attachReceipt = await callConnector(connector.id, () =>
     attachDocument.call(connector, cctx, {
       patientId: body.patientId,
@@ -136,6 +136,12 @@ export const handleDocuments: MedreportHandler = async (req, ctx, deps) => {
     reportId: body.signReceipt.reportId,
     bytes: bytes.length,
     ms: Date.now() - started,
+  });
+  await auditActor(deps, actor, {
+    action: AUDIT_ACTIONS.fileBack,
+    targetType: "report",
+    targetId: body.signReceipt.reportId,
+    detail: { connectorId: connector.id, receiptMac: macPrefix(body.signReceipt.mac), mimeType: body.mimeType, bytes: bytes.length },
   });
   const res: DocumentsResponse = { attachReceipt, trace: cctx.trace };
   return json(res, { status: 201 });

@@ -6,7 +6,8 @@
  * Owner: ai agent (content of the from-records paragraphs may be refined). Signatures are final.
  * Baseline implementation by the foundation.
  */
-import { DEMO_CLINIC, MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { bundleClinic } from "./clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
   answerKindFor,
@@ -460,6 +461,7 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
   const firstNote = notes[0];
   const lastNote = notes[notes.length - 1];
   const authors = Array.from(new Set(notes.map((n) => `${n.author.name} (HCPC ${n.author.hcpc})`)));
+  const clinicName = bundleClinic(bundle)?.name ?? "";
 
   switch (key) {
     case "introduction":
@@ -467,7 +469,7 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
         {
           text:
             `This report has been prepared at the request of ${party.name} (${INSTRUCTING_PARTY_LABELS[party.type].toLowerCase()})${ref}. ` +
-            `It concerns ${reg.fullName}, who received physiotherapy at ${DEMO_CLINIC.name}` +
+            `It concerns ${reg.fullName}, who received physiotherapy ${clinicName ? `at ${clinicName}` : "at this clinic"}` +
             (bundle.incident?.date ? ` following an incident on ${formatUkDate(bundle.incident.date)}` : "") +
             ". It is based solely on the clinic's records of that episode of care, which are listed under Records reviewed.",
           sourceIds: ["REG", ...factIds(facts, "FACT-episode")],

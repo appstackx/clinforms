@@ -119,6 +119,11 @@ export const GenerationModeSchema = z.enum(["live", "demo_prewritten", "demo_rec
 export const AiModeSchema = z.enum(["live", "demo"]);
 export const AiEffortSchema = z.enum(["low", "medium", "high"]);
 export const SessionKindSchema = z.enum(["launch", "demo"]);
+/**
+ * How an approval was authenticated (SignReceipt.approvedVia.kind): a session token ("launch" / "demo",
+ * the public demo) or, wave 2, a signed-in clinic member ("user"; launched from a clinic system or not).
+ */
+export const ApprovalKindSchema = z.enum(["launch", "demo", "user"]);
 export const TraceTransportSchema = z.enum(["http", "in-process"]);
 
 /* Referrer forms (Revision 2) ----------------------------------------------------------------- */
@@ -264,6 +269,19 @@ export const ClinicianSchema = z.object({
   name: z.string().min(1),
   hcpc: z.string().min(1),
   role: z.string().optional(),
+});
+
+/**
+ * The clinic written into referrer forms and report letterheads (wave 2: a clinic's own profile, put on the
+ * bundle by the server for a signed-in member; absent on demo bundles, which use DEMO_CLINIC – see
+ * core/clinic.ts bundleClinic()).
+ */
+export const ClinicDetailsSchema = z.object({
+  name: z.string().min(1).max(200),
+  /** Postal address lines, postcode last. */
+  addressLines: z.array(z.string().max(200)).max(12),
+  phone: z.string().max(40).optional(),
+  email: z.string().max(254).optional(),
 });
 
 /**
@@ -417,6 +435,8 @@ export const EpisodeBundleSchema = z.object({
   outcomeMeasures: z.array(OutcomeMeasureSeriesSchema),
   consent: ConsentSchema,
   episodeStatus: EpisodeStatusSchema,
+  /** Wave 2: the clinic (tenant bundles). Absent → DEMO_CLINIC on demo bundles, nothing on a clinic's. */
+  clinic: ClinicDetailsSchema.optional(),
 });
 
 /** Pointer to an episode in a clinic system (external IDs). */
@@ -632,10 +652,15 @@ export const SignReceiptSchema = z.object({
   /** The authenticated session the approval came through (recorded in the audit trail). */
   approvedVia: z
     .object({
-      kind: SessionKindSchema,
+      kind: ApprovalKindSchema,
+      /** The session-token id (launch / demo) or the sign-in session id (user). */
       sid: z.string().min(1),
       /** The clinician the clinic system launched the session for, if any. */
       clinician: ClinicianSchema.optional(),
+      /** Wave 2 (kind "user"): the signed-in member who approved. */
+      userId: z.string().min(1).optional(),
+      /** Wave 2 (kind "user", launched from a clinic system): the launch session's id. */
+      launchSid: z.string().min(1).optional(),
     })
     .optional(),
   /** base64url HMAC-SHA256 with MEDREPORT_SIGNING_SECRET. */

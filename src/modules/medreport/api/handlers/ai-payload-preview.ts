@@ -10,8 +10,12 @@ import "server-only";
  * without calling Claude. The bundle comes from the request, so nothing is disclosed that the caller
  * did not send. The final instruction is shown for all draftable questions at once.
  *
+ * Wave 2: an actor is required (auth/actor.ts; any role); the bundle and form must be the actor's clinic's
+ * (403 TENANT_MISMATCH).
+ *
  * Owner: ai agent.
  */
+import { assertActorTenant, requireActor } from "../../auth/actor";
 import { buildFormPromptParts, FORM_DRAFT_PROMPT_VERSION } from "../../ai/form-prompts";
 import { buildPromptParts, PROMPT_VERSION } from "../../ai/prompts";
 import { aiModel } from "../../config.server";
@@ -28,10 +32,13 @@ const FIELD_LABELS: Record<string, string> = {
   "note.socialHistory": "Social history",
 };
 
-export const handleAiPayloadPreview: MedreportHandler = async (req) => {
+export const handleAiPayloadPreview: MedreportHandler = async (req, _ctx, deps) => {
+  const actor = await requireActor(req, deps);
   const parsed = await parseBody(req, AiPayloadPreviewRequestSchema, { maxBytes: 4_000_000 });
   if (!parsed.ok) return parsed.response;
   const { templateId, bundle, instructingParty, form } = parsed.data;
+  assertActorTenant(actor, bundle.tenantId, "patient record");
+  if (form) assertActorTenant(actor, form.tenantId, "form");
 
   const isForm = formIdFromTemplateId(templateId) !== null;
   if (isForm && (!form || formIdFromTemplateId(templateId) !== form.id)) {

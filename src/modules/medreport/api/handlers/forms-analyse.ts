@@ -18,11 +18,16 @@ import "server-only";
  * a forms-engine parser is not built. Logs IDs, sizes, timings and token counts only – never form or
  * note text.
  *
+ * Wave 2: an actor is required (auth/actor.ts; any role). The proposed map is stamped with the actor's
+ * clinic (form.tenantId). Live: the same gate as /drafts (ai/live-gate.ts chooseAiModeForActor – the
+ * passcode for the public demo, the clinic's own limits for a member); the extra parallel calls of a long
+ * form count against the same limits. A clinic's live analysis is written to its audit trail.
+ *
  * Owner: ai agent.
  */
 import { analyseFormFile } from "../../ai/analyse-form";
-import { chooseAiMode } from "../../ai/live-gate";
-import { takeLiveCalls } from "../../auth/passcode";
+import { chooseAiModeForActor, takeLiveCallsFor } from "../../ai/live-gate";
+import { AUDIT_ACTIONS, auditActor, requireActor } from "../../auth/actor";
 import { DraftGenerationError } from "../../ai/types";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { decodeFormFile } from "../../forms/file";
@@ -30,14 +35,15 @@ import { FormsAnalyseRequestSchema, type FormsAnalyseResponse } from "../contrac
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 
-export const handleFormsAnalyse: MedreportHandler = async (req) => {
+export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
+  const actor = await requireActor(req, deps);
   const parsed = await parseBody(req, FormsAnalyseRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
 
   const file = decodeFormFile(body.fileBase64); // throws HttpError (413 / 422)
 
-  const gate = chooseAiMode(req, body.prefer, {
+  const gate = await chooseAiModeForActor(req, actor, deps, body.prefer, {
     action: WORDING.server.gateActionAnalyse,
     alternative: WORDING.server.analyseAlternative,
     rateTitle: "Too many live form analyses",
@@ -55,7 +61,8 @@ export const handleFormsAnalyse: MedreportHandler = async (req) => {
       effort: body.effort,
       signal: req.signal,
       // Each parallel chunk counts against the live cap, not just the request.
-      reserveExtraLiveCalls: (n) => takeLiveCalls(n).ok,
+      reserveExtraLiveCalls: async (n) => (await takeLiveCallsFor(actor, deps, n)).ok,
+      tenantId: actor.tenantId,
     });
     const usage = result.form.analysis.usage;
     logEvent("form_analysed", {
@@ -75,6 +82,20 @@ export const handleFormsAnalyse: MedreportHandler = async (req) => {
       cacheReadTok: usage?.cacheReadInputTokens,
       cacheWriteTok: usage?.cacheCreationInputTokens,
     });
+    if (result.form.analysis.mode === "live") {
+      await auditActor(deps, actor, {
+        action: AUDIT_ACTIONS.formAnalyseLive,
+        targetType: "form",
+        targetId: result.form.id,
+        detail: {
+          kind: result.form.kind,
+          fields: result.form.fields.length,
+          chunks: result.live?.chunks ?? null,
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+        },
+      });
+    }
     // The map is stored in the forms library and shown in the Studio: the engine is named neutrally
     // (core/wording.ts); the real model id stays in the log line above.
     const analysis = { ...result.form.analysis, model: publicEngineName(result.form.analysis.model) };

@@ -24,7 +24,7 @@
  *
  * Owner: ai agent (contract-stage baseline; exported signatures are contract).
  */
-import { DEMO_CLINIC } from "../config.public";
+import { bundleClinic } from "./clinic";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel } from "./parties";
@@ -474,14 +474,16 @@ export function resolveRegistrationValue(
       const discharge = notes.filter((n) => n.type === "discharge").pop() ?? notes[notes.length - 1];
       return discharge ? dateValue(discharge.date, episodeIds(discharge.id)) : null;
     }
+    // The clinic's own details (a clinic's profile on its bundle; DEMO_CLINIC in the public demo; blank for a
+    // clinic without a profile – never the fictional demo clinic): core/clinic.ts bundleClinic().
     case "clinic.name":
-      return textValue(DEMO_CLINIC.name, []);
+      return textValue(bundleClinic(bundle)?.name, []);
     case "clinic.address":
-      return textValue(DEMO_CLINIC.addressLines.join(", "), []);
+      return textValue(bundleClinic(bundle)?.addressLines.join(", "), []);
     case "clinic.phone":
-      return textValue(DEMO_CLINIC.phone, []);
+      return textValue(bundleClinic(bundle)?.phone, []);
     case "clinic.email":
-      return textValue(DEMO_CLINIC.email, []);
+      return textValue(bundleClinic(bundle)?.email, []);
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":

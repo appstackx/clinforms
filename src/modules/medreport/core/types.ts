@@ -34,6 +34,7 @@ export type GenerationMode = z.infer<typeof S.GenerationModeSchema>;
 export type AiMode = z.infer<typeof S.AiModeSchema>;
 export type AiEffort = z.infer<typeof S.AiEffortSchema>;
 export type SessionKind = z.infer<typeof S.SessionKindSchema>;
+export type ApprovalKind = z.infer<typeof S.ApprovalKindSchema>;
 export type TraceTransport = z.infer<typeof S.TraceTransportSchema>;
 
 export type NoteId = z.infer<typeof S.NoteIdSchema>;
@@ -41,6 +42,7 @@ export type FactId = z.infer<typeof S.FactIdSchema>;
 export type SourceId = z.infer<typeof S.SourceIdSchema>;
 
 export type Clinician = z.infer<typeof S.ClinicianSchema>;
+export type ClinicDetails = z.infer<typeof S.ClinicDetailsSchema>;
 export type PatientRegistration = z.infer<typeof S.PatientRegistrationSchema>;
 export type InstructingParty = z.infer<typeof S.InstructingPartySchema>;
 export type Referral = z.infer<typeof S.ReferralSchema>;

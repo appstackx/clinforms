@@ -209,8 +209,83 @@ export interface Wording {
       rulesOnlyWarning: string;
       prefilledRemoved: string;
     };
+    /** Wave 2: who may call the Report API (sign-in, clinics, roles, limits). Names no technology. */
+    access: AccessWording;
   };
 }
+
+/** Problem titles and details for sign-in, clinic (tenant), role and limit refusals (api/handlers, auth/actor.ts). */
+export interface AccessWording {
+  signInTitle: string;
+  signInDetail: string;
+  clinicSignInDetail: string;
+  twoFactorTitle: string;
+  twoFactorDetail: string;
+  noClinicTitle: string;
+  noClinicDetail: string;
+  demoOffTitle: string;
+  demoOffDetail: string;
+  otherClinicTitle: string;
+  otherClinic(what: string): string;
+  roleTitle: string;
+  role(action: string): string;
+  cannotSignTitle: string;
+  cannotSignDetail: string;
+  signAsYourselfTitle: string;
+  signAsYourself(name: string): string;
+  draftingOffTitle: string;
+  draftingOffDetail: string;
+  clinicLimitTitle: string;
+  clinicMinuteLimit(seconds: number): string;
+  clinicDailyLimit: string;
+  liveNotAvailableForClinic: string;
+  originTitle: string;
+  originDetail: string;
+  jsonTitle: string;
+  jsonDetail: string;
+  demoConnectorTitle: string;
+  demoConnectorDetail(label: string): string;
+  partnerKeyTitle: string;
+  partnerKeyDetail: string;
+  launchStateUnavailable: string;
+}
+
+/** The access wording is the same under every disclosure setting: it never names a technology. */
+const ACCESS: AccessWording = {
+  signInTitle: "Sign in required",
+  signInDetail: "Sign in to your clinic's account, or open the public demo.",
+  clinicSignInDetail: "This link belongs to a clinic's account. Sign in to that clinic first, then open the link again.",
+  twoFactorTitle: "Two-step verification required",
+  twoFactorDetail: "Set up two-step verification for your account before working with patient records.",
+  noClinicTitle: "Choose a clinic",
+  noClinicDetail: "Your account is not working in a clinic at the moment. Choose a clinic, then try again.",
+  demoOffTitle: "The public demo is switched off",
+  demoOffDetail: "The public demo is not available on this site. Sign in to your clinic's account.",
+  otherClinicTitle: "This belongs to another clinic",
+  otherClinic: (what) => `This ${what} belongs to another clinic. Open it from that clinic's own account.`,
+  roleTitle: "Not available for your role",
+  role: (action) => `Your role in this clinic cannot ${action}. Ask a clinician or an administrator of your clinic.`,
+  cannotSignTitle: "Approval needs a signing clinician",
+  cannotSignDetail:
+    "Only a clinician whose clinic profile has an HCPC number and permission to sign can approve. Ask an administrator of your clinic to update your profile.",
+  signAsYourselfTitle: "Approve as yourself",
+  signAsYourself: (name) => `You are signed in as ${name}. The approval is recorded under your own name and HCPC number.`,
+  draftingOffTitle: "Drafting is switched off",
+  draftingOffDetail: "Drafting from the notes is switched off for this clinic. Complete the answers yourself, or ask your clinic's administrator.",
+  clinicLimitTitle: "Your clinic's drafting limit is reached",
+  clinicMinuteLimit: (seconds) => `Your clinic has reached its drafting limit for this minute. Try again in ${seconds} s.`,
+  clinicDailyLimit: "Your clinic has reached its drafting limit for today. Try again tomorrow, or complete the answers yourself.",
+  liveNotAvailableForClinic: "Drafting from the notes is not available on this site at the moment. Complete the answers yourself, or try again later.",
+  originTitle: "Request refused",
+  originDetail: "This request did not come from this site, so it was refused.",
+  jsonTitle: "Unsupported request format",
+  jsonDetail: "Send the request body as JSON (content-type application/json).",
+  demoConnectorTitle: "Part of the public demo only",
+  demoConnectorDetail: (label) => `${label} is part of the public demo and is not available to clinics.`,
+  partnerKeyTitle: "Partner key required",
+  partnerKeyDetail: "POST /launch is called server-to-server by the clinic system with a valid partner key.",
+  launchStateUnavailable: "Launch links cannot be checked at the moment. Try again shortly.",
+};
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -493,6 +568,7 @@ const NEUTRAL: Wording = {
       rulesOnlyWarning: "Mapped by layout rules only: check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the form was read.",
     },
+    access: ACCESS,
   },
 };
 
@@ -675,6 +751,7 @@ const AI_ASSISTED: Wording = {
       rulesOnlyWarning: "Mapped by rules only (no AI call): check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the AI saw the form.",
     },
+    access: ACCESS,
   },
 };
 
