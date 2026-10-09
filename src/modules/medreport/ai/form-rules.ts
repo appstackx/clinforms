@@ -405,7 +405,9 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
     // Radio groups and tick boxes with a widget per option: the labels printed beside the widgets.
     const multi = f.type === "radio" || (f.type === "checkbox" && (f.options?.length ?? 0) > 1);
     const options = multi && f.optionLabels?.length ? printedOptions(pdf, f) : f.options ?? [];
-    const known = [...(f.options ?? []), ...(f.optionLabels ?? []), ...options].map((o) => o.trim().toLowerCase());
+    // The words printed beside a multi-option field's widgets are its options, not its question. A single
+    // tick box's own printed label IS its question ("Treatment completed – claimant discharged").
+    const known = [...(f.options ?? []), ...(multi ? f.optionLabels ?? [] : []), ...options].map((o) => o.trim().toLowerCase());
     const isOption = (t: string) => known.indexOf(t.trim().toLowerCase()) >= 0;
     const segments = f.nearbyText
       .split(/\n| \| /)

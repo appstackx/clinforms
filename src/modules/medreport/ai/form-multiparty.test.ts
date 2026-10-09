@@ -57,6 +57,21 @@ test("classifier: sign-off only where the clinic signs", () => {
   assert.equal(classifyLabel("Therapist’s name", "Therapist's declaration").completedBy, "clinic");
   assert.deepEqual(classifyLabel("Please print name", "6 Your signature", "clinic").fillSource, signoff("name"));
   assert.deepEqual(classifyLabel("Signature").fillSource, signoff("signature"));
+  // Declarations of a list of parties ("Patient or parent/guardian", "Policyholder/patient"): a bare
+  // "Signature" or "Date" under them is theirs, never the clinician's sign-off.
+  for (const [heading, party] of [
+    ["Patient or parent/guardian declaration", "patient"],
+    ["Policyholder/patient declaration", "policyholder"],
+    ["Patient / Policyholder Declaration", "patient"],
+    ["Claimant's / patient's declaration", "patient"],
+  ] as const) {
+    for (const label of ["Signature", "Date"]) {
+      const cls = classifyLabel(label, heading);
+      assert.deepEqual(cls.fillSource, { kind: "leave_blank" }, `${label} under “${heading}”`);
+      assert.equal(cls.completedBy, party, `${label} under “${heading}”`);
+    }
+  }
+  assert.deepEqual(classifyLabel("Signature", "Therapist / physiotherapist declaration").fillSource, signoff("signature"));
   // Not a signature box: a checklist question, and a bare "Date" outside any declaration.
   assert.notEqual(classifyLabel("signed and dated the form?").fillSource.kind, "signoff");
   assert.deepEqual(classifyLabel("Date").fillSource, { kind: "registration", path: "report.date" });

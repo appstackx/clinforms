@@ -1,13 +1,16 @@
 /**
- * Data minimisation of PDF outlines (ai/form-redact.ts): "Label: value" counts as a filled-in answer
- * only inside an answer space (a fillable field's box, or a detected answer box) – the printed form text
- * around them ("Telephone numbers: Home", the insurer's "Registered address: …" footer) is the blank form
- * and raises no "already filled in" warning. A flat PDF with no detected boxes keeps the check on all its
- * text, minus footers and option words.
+ * Data minimisation of PDF outlines (ai/form-redact.ts): on a fillable PDF "Label: value" counts as a
+ * filled-in answer only inside a field's box – the printed form text around them ("Telephone numbers:
+ * Home", the insurer's "Registered address: …" footer) is the blank form and raises no "already filled
+ * in" warning. On a flat PDF every "Label: value" line is checked (inside a detected box or beside its
+ * label), minus footers and option words – including the outline readPdfForm really produces for a flat
+ * PDF on which no box was found (`boxes: []`).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import type { PdfFormOutline } from "../core/types";
+import { readPdfForm } from "../forms/pdf-outline";
 import { redactParsedForm } from "./form-redact";
 import type { ParsedForm } from "./form-outline";
 
@@ -40,7 +43,7 @@ test("fillable PDF: printed text outside the fields is the blank form; text insi
   assert.ok(!strs(filled.parsed).some((s) => s.includes("Megan Hart")));
 });
 
-test("flat PDF with detected answer boxes: only text inside a box can be an answer", () => {
+test("flat PDF with detected answer boxes: text inside a box, or typed beside its label, is an answer", () => {
   const pdf = {
     pages: 1,
     fields: [],
@@ -54,6 +57,27 @@ test("flat PDF with detected answer boxes: only text inside a box can be an answ
   assert.deepEqual(res.findings, ["a filled-in “Claimant name”"]);
   const empty = redactParsedForm({ kind: "pdf_flat", pdf: { ...pdf, pageText: [{ page: 1, items: PRINTED }] } as PdfFormOutline, warnings: [] });
   assert.deepEqual(empty.findings, []);
+  // A value typed beside its label, outside every detected box, is still caught on a flat form.
+  const beside = redactParsedForm({ kind: "pdf_flat", pdf: { ...pdf, pageText: [{ page: 1, items: [...PRINTED, item("Patient name: Jane Doe", 40, 400)] }] } as PdfFormOutline, warnings: [] });
+  assert.deepEqual(beside.findings, ["a filled-in “Patient name”"]);
+  assert.ok(!strs(beside.parsed).some((s) => s.includes("Jane Doe")));
+});
+
+test("flat PDF read by readPdfForm with no answer boxes (boxes: []): typed-in details are still removed", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  page.drawText("Treatment Report", { x: 40, y: 790, size: 14, font });
+  page.drawText("Patient name: Jane Doe", { x: 40, y: 740, size: 10, font });
+  page.drawText("Telephone numbers: Home", { x: 40, y: 720, size: 10, font });
+  const outline = await readPdfForm(await doc.save());
+  assert.equal(outline.classification, "flat");
+  assert.deepEqual(outline.boxes, [], "the real outline shape: an empty list, not a missing key");
+  const res = redactParsedForm({ kind: "pdf_flat", pdf: outline, warnings: [] });
+  assert.deepEqual(res.findings, ["a filled-in “Patient name”"]);
+  assert.ok(strs(res.parsed).includes("Patient name: [removed]"));
+  assert.ok(!strs(res.parsed).some((s) => s.includes("Jane Doe")));
+  assert.ok(strs(res.parsed).includes("Telephone numbers: Home"), "printed option words are the blank form");
 });
 
 test("flat PDF without detected boxes: footers and option words are not answers, typed-in details still are", () => {

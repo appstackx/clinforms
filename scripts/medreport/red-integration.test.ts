@@ -29,6 +29,7 @@ import type { FormDefinition, FormField, InstructingParty } from "@/modules/medr
 import { decodeFormFile } from "@/modules/medreport/forms/file";
 import { fillPdf } from "@/modules/medreport/forms/pdf-fill";
 import { flatBoxesPdf, tableFormPdf } from "@/modules/medreport/forms/pdf-s2-fixtures";
+import { SAMPLE_FORMS } from "@/modules/medreport/forms/samples/registry";
 import { anchorFromPick } from "@/modules/medreport/ui/components/forms/mapping";
 import { questionBreakdown } from "@/modules/medreport/ui/components/shared/ui-bits";
 import { getDemoBundle } from "./dev-bundles";
@@ -239,6 +240,21 @@ test("rules mode: flat-PDF box questions carry the section printed above them an
   assert.match(date.section ?? "", /Medical details/);
   assert.equal(date.completedBy, "clinic");
   assert.notEqual(date.fillSource.kind, "leave_blank");
+});
+
+test("rules mode on a fillable PDF: a single tick box keeps its own printed label as its question (Northfield sample)", async () => {
+  const sample = SAMPLE_FORMS.find((x) => x.id === "northfield-rehab-progress");
+  assert.ok(sample);
+  const { form } = await analyseFormFile({ file: decoded(await sample.loadFile()), fileName: "northfield.pdf", mode: "demo", rulesOnly: true });
+  const pinned = form.fields.map((f) => [f.anchor.kind === "pdf_field" ? f.anchor.fieldName : f.anchor.kind, f.answerType, f.label, f.fillSource.kind]);
+  const at = (name: string) => pinned.find((p) => p[0] === name);
+  assert.deepEqual(at("chkDischarged"), ["chkDischarged", "checkbox", "Treatment completed - claimant discharged", "notes_narrative"]);
+  // The DNA count question stays the only one labelled and filled as such.
+  assert.deepEqual(at("numDNA"), ["numDNA", "number", "Sessions missed (DNA)", "computed_fact"]);
+  assert.equal(pinned.filter((p) => p[2] === "Sessions missed (DNA)").length, 1);
+  assert.deepEqual(at("numAttended"), ["numAttended", "number", "Sessions attended", "computed_fact"]);
+  assert.deepEqual(at("rdoFitForWork"), ["rdoFitForWork", "single_choice", "IS THE CLAIMANT FIT FOR WORK?", "clinician_opinion"]);
+  assert.deepEqual(at("txtSignature"), ["txtSignature", "signature", "Signature (typed)", "signoff"]);
 });
 
 /* ------------------------------------------------------------------------------------------------

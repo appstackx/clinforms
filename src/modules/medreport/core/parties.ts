@@ -12,7 +12,8 @@
  * - completerParty(text): "to be completed by X", "for completion by X", "X to complete", "X must
  *   complete" (not "… must complete Section 4", which names another part of the form).
  * - signerParty(text): "X's signature", "signature of X", "signed by X", "X's declaration",
- *   "declaration by X", "I am this patient's X", "X must sign".
+ *   "declaration by X", "I am this patient's X", "X must sign". X may be a list of parties
+ *   ("Patient or parent/guardian declaration", "Policyholder/patient declaration").
  * - headingParty(title): either of the above, plus a heading about the clinic's own details
  *   ("Therapist details"), a consent form (the patient's) and office use (the insurer's).
  *
@@ -85,10 +86,15 @@ export function partyOfWho(who: string): Party | null {
 }
 
 const WHO = "([^.;:!?\\n]{2,100})";
+/**
+ * Characters of a "who" phrase written before its verb or noun – words, possessives and lists of
+ * parties ("Patient or parent/guardian", "Policyholder/patient", "Claimant's / patient's").
+ */
+const WHO_LIST = "[a-z' ,/&]";
 const COMPLETER_RES: RegExp[] = [
   new RegExp(`\\b(?:completed|filled in|filled out|answered)\\s+by\\s+${WHO}`),
   new RegExp(`\\bfor completion by\\s+${WHO}`),
-  /\b([a-z' ,]{2,60}?)\s+(?:to|must|should|will need to|needs? to)\s+(?:complete|fill in)\b(?!\s+(?:section|part|question|box|page)s?\b)/,
+  new RegExp(`\\b(${WHO_LIST}{2,60}?)\\s+(?:to|must|should|will need to|needs? to)\\s+(?:complete|fill in)\\b(?!\\s+(?:section|part|question|box|page)s?\\b)`),
 ];
 
 /** "to be completed by the policyholder" → policyholder; null when the text names no completer. */
@@ -108,8 +114,8 @@ const SIGNER_RES: RegExp[] = [
   /\bsigned by (?:the |your |a )?([^.;:!?\n]{2,60})/,
   /\bdeclaration (?:by|of|from) (?:the |your |a )?([^.;:!?\n]{2,60})/,
   /\bi am (?:the|this|your|a|an) ([^.;:!?\n]{2,60})/,
-  /(?:^|[.;:!?(]\s*|^\s*)([a-z' ]{2,40}?)(?:'s|s')?\s+(?:signature|declaration)\b/,
-  /\b([a-z' ,]{2,60}?)\s+(?:must|should|to|will need to|needs? to)\s+sign\b(?!\s+(?:section|part|page)s?\b)/,
+  new RegExp(`(?:^|[.;:!?(]\\s*|^\\s*)(${WHO_LIST}{2,40}?)(?:'s|s')?\\s+(?:signature|declaration)\\b`),
+  new RegExp(`\\b(${WHO_LIST}{2,60}?)\\s+(?:must|should|to|will need to|needs? to)\\s+sign\\b(?!\\s+(?:section|part|page)s?\\b)`),
 ];
 
 /** "Policyholder's signature" → policyholder, "Signature of medical practitioner" → doctor, "Signature" → null. */

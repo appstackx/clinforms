@@ -167,6 +167,43 @@ test("where answers come from: identifiers and dates by code, counts and scores 
   assert.equal(classifyPortalQuestion("Current symptoms and progress").confidence, "high");
 });
 
+test("another party's signature, date or declaration is left blank – never the clinician's sign-off", async () => {
+  const parsed = parsePortalQuestions(
+    [
+      "Policyholder's signature",
+      "Signature of patient",
+      "Date signed by the patient",
+      "Therapist's signature",
+      "Date signed",
+      "# Patient or parent/guardian declaration",
+      "Signature",
+      "Date",
+    ].join("\n"),
+  );
+  assert.deepEqual(parsed.errors, []);
+  const fields = questionFields(parsed.questions);
+  const by = (i: number) => ({ source: fields[i].fillSource.kind, completedBy: fields[i].completedBy, required: fields[i].required });
+  assert.deepEqual(by(0), { source: "leave_blank", completedBy: "policyholder", required: false });
+  assert.deepEqual(by(1), { source: "leave_blank", completedBy: "patient", required: false });
+  assert.deepEqual(by(2), { source: "leave_blank", completedBy: "patient", required: false });
+  // The clinic's own signature and a bare "Date signed" stay the sign-off.
+  assert.deepEqual(fields[3].fillSource, { kind: "signoff", part: "signature" });
+  assert.equal(fields[3].completedBy, undefined);
+  assert.deepEqual(fields[4].fillSource, { kind: "signoff", part: "date" });
+  // A bare "Signature" / "Date" under another party's declaration heading.
+  assert.deepEqual(by(5), { source: "leave_blank", completedBy: "patient", required: false });
+  assert.deepEqual(by(6), { source: "leave_blank", completedBy: "patient", required: false });
+  assert.match(fields[0].note ?? "", /for the policyholder to complete/);
+  assert.equal(classifyPortalQuestion("Signature", "Patient declaration").completedBy, "patient");
+  assert.equal(classifyPortalQuestion("Signature", "Patient and treatment details").fillSource.kind, "signoff");
+
+  // The party is kept on the field: switching it to the sign-off later is refused at confirmation.
+  const form = await createQuestionSet({ referrer: REFERRER, questions: parsed.questions, now: NOW, id: "form-qs-parties" });
+  assert.deepEqual(checkFormDefinition(form), []);
+  const switched: FormDefinition = { ...form, fields: form.fields.map((f, i) => (i === 0 ? { ...f, fillSource: { kind: "signoff", part: "signature" } } : f)) };
+  assert.ok(checkFormDefinition(switched).some((p) => /for the policyholder to complete/.test(p)));
+});
+
 test("fields: F-01…, virtual anchors p0…, valid schema; a hint beats the wording's type", () => {
   const parsed = parsePortalQuestions("Date of birth\nPrognosis [yes/no]\nBank details\nCurrent symptoms");
   const fields = questionFields(parsed.questions);

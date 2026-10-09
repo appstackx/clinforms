@@ -12,11 +12,12 @@ import "server-only";
  *   (not their placeholder) are emptied.
  * - Everywhere (Word blocks, PDF page text and the text near PDF fields): dates of birth, full dates,
  *   NHS-style numbers, postcodes, e-mail addresses and phone numbers are replaced with tags.
- * - PDF page text: "Label: value" is treated as a filled-in answer only INSIDE an answer space – a
- *   fillable field's box or a detected answer box (`boxes` on the outline, when the forms engine finds
- *   them). Printed form text around them ("Telephone numbers: Home", the insurer's "Registered address: …"
- *   footer) is the blank form itself. A flat PDF with no detected boxes keeps the label check on all its
- *   text, minus footer lines and option words, so a typed-in flat form is still caught.
+ * - PDF page text: on a FILLABLE PDF, "Label: value" is treated as a filled-in answer only inside a
+ *   field's box (its values live in the fields, emptied below); printed form text around them
+ *   ("Telephone numbers: Home") is the blank form itself. On a FLAT PDF every "Label: value" line is
+ *   checked – inside a detected answer box (`boxes` on the outline) or beside its label – except the
+ *   referrer's footer lines ("Registered address: …") and printed option lists, so a typed-in flat form
+ *   is caught whether or not the forms engine found its boxes.
  * - Fillable PDFs: the attached copy has every text field emptied (forms/pdf-blank.ts).
  * - Flat PDFs that look filled in: the PDF itself is NOT attached – Claude gets the redacted text only.
  *
@@ -124,14 +125,15 @@ function redactDocx(blocks: OutlineBlock[], found: Set<string>): OutlineBlock[] 
 type AnswerBox = { page: number; x: number; y: number; width: number; height: number; kind?: string };
 
 /**
- * Answer spaces of a PDF outline. `boxes` (detected answer boxes on flat PDFs) is read when the outline
- * carries it; null when there is nothing to go by (a flat PDF without detected boxes).
+ * Answer spaces of a PDF outline: fillable fields' boxes plus the detected answer boxes (`boxes`, tick
+ * boxes excluded). Null when there are none – a flat PDF on which no answer box was found (readPdfForm
+ * then sets `boxes: []`), or one with tick boxes only – so its text keeps the label check everywhere.
  */
 function answerBoxes(pdf: PdfFormOutline): AnswerBox[] | null {
   const detected = (pdf as PdfFormOutline & { boxes?: AnswerBox[] }).boxes;
   const boxes: AnswerBox[] = pdf.fields.map((f) => ({ page: f.page, ...f.rect }));
   if (Array.isArray(detected)) boxes.push(...detected.filter((b) => b.kind !== "tick"));
-  return boxes.length > 0 || Array.isArray(detected) ? boxes : null;
+  return boxes.length > 0 ? boxes : null;
 }
 
 /** Text whose baseline sits inside an answer space (1 pt tolerance). */
@@ -148,6 +150,7 @@ const OPTION_WORDS =
 
 function redactPdf(pdf: PdfFormOutline, found: Set<string>): PdfFormOutline {
   const boxes = answerBoxes(pdf);
+  const flat = pdf.fields.length === 0;
   return {
     ...pdf,
     fields: pdf.fields.map((f) => {
@@ -160,11 +163,12 @@ function redactPdf(pdf: PdfFormOutline, found: Set<string>): PdfFormOutline {
     pageText: pdf.pageText.map((p) => ({
       ...p,
       items: p.items.map((it) => {
-        // A filled-in answer: inside an answer space, or (no answer spaces known) a "Label: value" line
-        // that is neither the referrer's footer nor a printed list of options.
-        const entered = boxes
-          ? insideBox(it, p.page, boxes)
-          : !FOOTER_LINE.test(it.str) && !OPTION_WORDS.test(it.str.replace(/^[^:]*:\s*/, ""));
+        // A filled-in answer: text inside an answer space; and on a flat PDF (no fillable fields, so a
+        // typed-in value may sit beside its label rather than in a box) any "Label: value" line that is
+        // neither the referrer's footer nor a printed list of options.
+        const entered =
+          (boxes !== null && insideBox(it, p.page, boxes)) ||
+          (flat && !FOOTER_LINE.test(it.str) && !OPTION_WORDS.test(it.str.replace(/^[^:]*:\s*/, "")));
         const str = entered ? redactText(redactLabelValue(it.str, found), found) : redactText(it.str, found);
         return str === it.str ? it : { ...it, str };
       }),

@@ -25,6 +25,7 @@ import { DEMO_TENANT_ID } from "../config.public";
 import { nowIso } from "./dates";
 import { canonicalize, sha256Hex } from "./fingerprint";
 import { createId } from "./ids";
+import { completerParty, headingParty, isNonClinicParty, partyLabel, signerParty } from "./parties";
 import type {
   AnswerType,
   DocxAnchor,
@@ -35,6 +36,7 @@ import type {
   FormFile,
   FormMimeType,
   OutcomeInstrument,
+  Party,
   ReferrerInfo,
   RegistrationPath,
 } from "./types";
@@ -290,6 +292,8 @@ export interface PortalQuestionClass {
   answerType: AnswerType | null;
   confidence: FormFieldConfidence;
   note?: string;
+  /** Who the wording says answers or signs it, when that is not the clinic (core/parties.ts). */
+  completedBy?: Party;
 }
 
 const reg = (path: RegistrationPath, answerType: AnswerType | null, note?: string): PortalQuestionClass => ({
@@ -312,13 +316,30 @@ const FORWARD_LOOKING = /\b(?:expected|estimated|anticipated|planned|predicted|l
 const OPINION =
   /\b(?:prognos\w*|opinion|recommend\w*|fit (?:for|to) (?:work|return|drive|duties)|fitness (?:for|to) work|return to (?:work|normal|full) (?:duties|activities)?|return to work|restrictions?|adjustments?|causation|caused by|attributable|further (?:treatment|sessions|physiotherapy)|additional (?:treatment|sessions)|more sessions|future treatment|recovery (?:period|time)|long[- ]term|permanent\w*|maximum (?:medical )?improvement)\b/;
 
-/** Where the answer to a portal question comes from (the mapping screen lets staff change it). */
-export function classifyPortalQuestion(label: string): PortalQuestionClass {
+/**
+ * Where the answer to a portal question comes from (the mapping screen lets staff change it).
+ * `section`: the heading the question sits under ("# Policyholder declaration").
+ */
+export function classifyPortalQuestion(label: string, section?: string): PortalQuestionClass {
   const l = norm(label);
   const narrative: PortalQuestionClass = { fillSource: { kind: "notes_narrative" }, answerType: null, confidence: "high" };
 
   if (/\b(?:office use|official use|internal use|invoice|payment|bank|sort code|account (?:no|number)|iban|bic|swift|vat|fee|billing)\b/.test(l)) {
     return { fillSource: { kind: "leave_blank" }, answerType: null, confidence: "medium", note: "Looks like a payment or office-use question, so it is left blank." };
+  }
+  // Another party's signature, declaration or answers ("Policyholder's signature", "Date signed by the
+  // patient", anything under "# Patient declaration"): left blank, never the clinician's sign-off.
+  const party = signerParty(l) ?? completerParty(l) ?? (section ? headingParty(section) : null);
+  if (party && isNonClinicParty(party)) {
+    const signs = /\bsignature\b|^signed\b|\bsigned by\b/.test(l);
+    const dated = /\bdate\b/.test(l);
+    return {
+      fillSource: { kind: "leave_blank" },
+      answerType: signs && !dated ? "signature" : null,
+      confidence: "medium",
+      completedBy: party,
+      note: `This is for ${partyLabel(party)} to complete, so it is left blank.`,
+    };
   }
   if (/\bsignature\b|^signed\b/.test(l)) return { fillSource: { kind: "signoff", part: "signature" }, answerType: "signature", confidence: "medium" };
   if (/\bdate signed\b|\bdate of signature\b/.test(l)) return { fillSource: { kind: "signoff", part: "date" }, answerType: "date_signed", confidence: "medium" };
@@ -395,7 +416,7 @@ export function classifyPortalQuestion(label: string): PortalQuestionClass {
 /** One form field per parsed question: F-01…, the virtual anchor, the inferred fill source. */
 export function questionFields(questions: readonly ParsedQuestion[]): FormField[] {
   return questions.map((q, i) => {
-    const c = classifyPortalQuestion(q.label);
+    const c = classifyPortalQuestion(q.label, q.section);
     const answerType = q.hinted ? q.answerType : c.answerType ?? q.answerType;
     return {
       id: `F-${String(i + 1).padStart(2, "0")}`,
@@ -409,6 +430,8 @@ export function questionFields(questions: readonly ParsedQuestion[]): FormField[
       required: q.required && c.fillSource.kind !== "leave_blank",
       confidence: c.confidence,
       ...(c.note ? { note: c.note } : {}),
+      // Kept on the field, so checkFormDefinition refuses a later switch of it to the clinician's sign-off.
+      ...(c.completedBy ? { completedBy: c.completedBy } : {}),
     };
   });
 }

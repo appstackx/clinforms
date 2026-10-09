@@ -35,6 +35,14 @@ test("signer phrases: whose signature or declaration it is", () => {
   assert.equal(signerParty("Therapist's declaration"), "clinic");
   assert.equal(signerParty("I am this patient’s therapist and confirm the information I have provided is correct."), "clinic");
   assert.equal(signerParty("The policyholder named in section one must sign and date below for all claims."), "policyholder");
+  // Lists of parties before "declaration" / "signature".
+  assert.equal(signerParty("Patient or parent/guardian declaration"), "patient");
+  assert.equal(signerParty("Policyholder/patient declaration"), "policyholder");
+  assert.equal(signerParty("Patient / Policyholder Declaration"), "patient");
+  assert.equal(signerParty("Claimant's / patient's declaration"), "patient");
+  assert.equal(signerParty("Policyholder & patient signature"), "policyholder");
+  assert.equal(headingParty("Patient or parent/guardian declaration"), "patient");
+  assert.equal(completerParty("Policyholder/patient to complete"), "policyholder");
   assert.equal(signerParty("Signature"), null);
   assert.equal(signerParty("Your signature"), null);
   assert.equal(signerParty("Date of signature"), null);
