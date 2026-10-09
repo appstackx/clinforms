@@ -7,10 +7,17 @@ import "server-only";
  * watermark on every page and leave sign-off fields blank (the caller passes no receipt).
  *
  * Fitting text: a multi-line field keeps its own font size when the answer fits, otherwise the size
- * shrinks (to 6 pt at the smallest). An answer that still does not fit is cut at a word boundary with
- * "(continued on the continuation sheet)", and the full answer is printed on a continuation sheet added
- * at the end of the form – with a warning (onWarning). Standard PDF fonts are used, so characters
- * outside the Windows-1252 set are transliterated (→ "->", ≥ ">=", ✓ "Yes"…).
+ * shrinks (to 8 pt at the smallest). A single-line box that is tall enough is written on two lines
+ * (at 8 pt or more) before anything is cut. An answer that still does not fit keeps its leading words
+ * with a short marker – "… (continued on the continuation sheet)" in a multi-line box, "… (see
+ * continuation sheet)" in a single-line one (never the marker alone) – and the full answer is printed
+ * on a continuation sheet added at the end of the form, with a warning (onWarning). Standard PDF fonts
+ * are used, so characters outside the Windows-1252 set are transliterated (→ "->", ≥ ">=", ✓ "Yes"…).
+ *
+ * AcroForm specifics live in ./pdf-acro-fill.ts: tick boxes set widget by widget and redrawn visibly,
+ * radio labels mapped to export values, one question across several tick-box fields (optionFields),
+ * dates in 8 / 6-character boxes written DDMMYYYY / DDMMYY, one-character boxes (pdf_char_fields).
+ * A value that would have to be cut to fit a box is an ERROR (onError), not a warning.
  *
  * Async because pdf-lib's load/save are async.
  *
@@ -28,12 +35,25 @@ import {
   degrees,
   rgb,
   type PDFDocument,
+  type PDFField,
   type PDFFont,
   type PDFForm,
   type PDFPage,
 } from "pdf-lib";
-import { isAnswerableField, isUnknownAnswer, matchOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
-import type { FormDefinition, FormField } from "../core/types";
+import { isAnswerableField, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import type { FormDefinition, FormField, PdfCharFieldsAnchor, PdfFieldAnchor, PdfOptionField } from "../core/types";
+import {
+  answerIsoDate,
+  charBoxFontSize,
+  charFieldTexts,
+  checkBoxChoice,
+  chooseOptionIndex,
+  fitMaxLength,
+  onValueFor,
+  pickExportValue,
+  setCheckBoxState,
+  wantedOf,
+} from "./pdf-acro-fill";
 import { loadPdfDocument } from "./pdf-outline";
 import type { PdfFillOptions } from "./types";
 
@@ -43,6 +63,9 @@ const DEFAULT_FONT = 10;
 const ANSWER_COLOR = rgb(0.06, 0.09, 0.2);
 const DRAFT_RED = rgb(0.71, 0.14, 0.09);
 const CONTINUED = " (continued on the continuation sheet)";
+/** Markers after the leading words of a cut answer, longest first ("" = just "…"). */
+const MULTILINE_MARKERS = [CONTINUED, " (see continuation sheet)", " (cont.)", ""];
+const SINGLE_LINE_MARKERS = [" (see continuation sheet)", " (see cont. sheet)", " (cont.)", ""];
 
 function where(field: FormField): string {
   return `${field.id} (“${field.label}”)`;
@@ -160,30 +183,71 @@ export function wrapText(text: string, font: PDFFont, size: number, width: numbe
   return lines;
 }
 
-const lineHeight = (font: PDFFont, size: number) => font.heightAtSize(size) * 1.18;
+const lineHeight = (font: PDFFont, size: number, factor = 1.18) => font.heightAtSize(size) * factor;
 
 interface Fit {
   size: number;
   text: string;
   overflow: boolean;
+  /** 2 when a single-line box is written on two lines (the caller makes the field multi-line). */
+  lines?: number;
 }
 
-/** Largest size ≤ preferred at which the text fits the box; else the text cut to fit at the minimum size. */
-export function fitText(text: string, font: PDFFont, box: { width: number; height: number }, preferred: number, multiline: boolean): Fit {
-  const fits = (t: string, size: number) =>
-    multiline ? wrapText(t, font, size, box.width).length * lineHeight(font, size) <= box.height : font.widthOfTextAtSize(t, size) <= box.width;
-  for (let size = preferred; size >= MIN_FONT; size -= 0.5) if (fits(text, size)) return { size, text, overflow: false };
-  // Cut at a word boundary so that the text plus the continuation note fits at the minimum size.
+export interface FitTextOptions {
+  /** Single-line boxes: try two lines (at 8 pt or more) when the box is tall enough, before cutting. */
+  allowTwoLines?: boolean;
+  /** Line height as a multiple of the font height (pdf-lib lays out multi-line fields at 1.2). */
+  lineHeightFactor?: number;
+}
+
+/**
+ * The leading words of `text` plus the first marker with which at least one word fits (`fits` checks
+ * the candidate); a first word too long for the box is cut by characters. Never the marker alone.
+ */
+function cutToFit(text: string, fits: (candidate: string) => boolean, markers: readonly string[]): string {
   const words = text.split(/(\s+)/);
-  let lo = 0;
-  let hi = words.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (fits(`${words.slice(0, mid).join("").trimEnd()}…${CONTINUED}`, MIN_FONT)) lo = mid;
-    else hi = mid - 1;
+  for (const marker of markers) {
+    let lo = 0;
+    let hi = words.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (fits(`${words.slice(0, mid).join("").trimEnd()}…${marker}`)) lo = mid;
+      else hi = mid - 1;
+    }
+    const cut = words.slice(0, lo).join("").trimEnd();
+    if (cut) return `${cut}…${marker}`;
   }
-  const cut = words.slice(0, lo).join("").trimEnd();
-  return { size: MIN_FONT, text: cut ? `${cut}…${CONTINUED}` : CONTINUED.trim(), overflow: true };
+  let word = text.trim();
+  while (word.length > 1 && !fits(`${word}…`)) word = word.slice(0, -1);
+  return `${word}…`;
+}
+
+/** Largest size ≤ preferred at which the text fits the box; else the leading words with a marker, at the minimum size. */
+export function fitText(
+  text: string,
+  font: PDFFont,
+  box: { width: number; height: number },
+  preferred: number,
+  multiline: boolean,
+  opts: FitTextOptions = {},
+): Fit {
+  const lh = (size: number) => lineHeight(font, size, opts.lineHeightFactor);
+  const fitsLines = (t: string, size: number, maxLines = Infinity) => {
+    const n = wrapText(t, font, size, box.width).length;
+    return n <= maxLines && n * lh(size) <= box.height;
+  };
+  const fitsOne = (t: string, size: number) => font.widthOfTextAtSize(t, size) <= box.width;
+  if (multiline) {
+    for (let size = preferred; size >= MIN_FONT; size -= 0.5) if (fitsLines(text, size)) return { size, text, overflow: false };
+    return { size: MIN_FONT, text: cutToFit(text, (t) => fitsLines(t, MIN_FONT), MULTILINE_MARKERS), overflow: true };
+  }
+  for (let size = preferred; size >= MIN_FONT; size -= 0.5) if (fitsOne(text, size)) return { size, text, overflow: false };
+  // A single-line box tall enough for two lines at the minimum size: wrap before cutting.
+  if (opts.allowTwoLines && 2 * lh(MIN_FONT) <= box.height) {
+    for (let size = preferred; size >= MIN_FONT; size -= 0.5) if (fitsLines(text, size, 2)) return { size, text, overflow: false, lines: 2 };
+    return { size: MIN_FONT, text: cutToFit(text, (t) => fitsLines(t, MIN_FONT, 2), SINGLE_LINE_MARKERS), overflow: true, lines: 2 };
+  }
+  return { size: MIN_FONT, text: cutToFit(text, (t) => fitsOne(t, MIN_FONT), SINGLE_LINE_MARKERS), overflow: true };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -205,26 +269,6 @@ function daFontSize(field: PDFTextField): number | null {
   return m ? Number(m[1]) : null;
 }
 
-function yesNoOption(options: string[], value: boolean): string | undefined {
-  return options.find((o) => (value ? /^\s*(yes|y|on|true)\b/i : /^\s*(no|n|off|false)\b/i).test(o));
-}
-
-/** Map an answer to one of the field's export values (via the printed labels when they differ). */
-function pickOption(field: FormField, answer: FormFillAnswer, exportValues: string[]): string | null {
-  const printed = field.options ?? [];
-  const toExport = (label: string | null): string | null => {
-    if (!label) return null;
-    const direct = matchOption(exportValues, label);
-    if (direct) return direct;
-    const i = printed.findIndex((p) => p === label);
-    return i >= 0 && exportValues[i] ? exportValues[i] : null;
-  };
-  if (typeof answer.value === "boolean") return toExport(yesNoOption(printed.length ? printed : exportValues, answer.value) ?? null);
-  const raw = (typeof answer.value === "string" && answer.value) || answer.text || "";
-  if (!raw.trim() || isUnknownAnswer(raw, printed.length ? printed : exportValues)) return null;
-  return toExport(matchOption(printed.length ? printed : exportValues, raw) ?? raw);
-}
-
 interface Continuation {
   field: FormField;
   text: string;
@@ -238,6 +282,8 @@ interface Ctx {
   encode: (text: string, lost?: string[]) => string;
   opts: PdfFillOptions;
   warn(message: string): void;
+  /** The written form would be wrong (a value cut to fit): onError, else onWarning. */
+  error(message: string): void;
   continuations: Continuation[];
 }
 
@@ -254,13 +300,22 @@ function encodeAnswer(ctx: Ctx, field: FormField, raw: string): string {
   return text;
 }
 
-function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string): void {
+function cutError(field: FormField, max: number, full: string, written: string): string {
+  return `${where(field)}: the box takes at most ${max} character${max === 1 ? "" : "s"}, so “${full}” would be written as “${written}” – the completed form would be wrong. Shorten the answer (or correct the form mapping) before it is approved.`;
+}
+
+function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string, answer: FormFillAnswer = {}): void {
   const widget = tf.acroField.getWidgets()[0];
   let text = encodeAnswer(ctx, field, raw);
   const max = tf.getMaxLength();
-  if (max !== undefined && text.length > max) {
-    ctx.warn(`${where(field)}: the box takes at most ${max} characters, so the answer was shortened.`);
-    text = text.slice(0, max);
+  if (max !== undefined) {
+    // A date in 8 / 6 boxes is written DDMMYYYY / DDMMYY; spaces and separators go before anything is cut.
+    const fit = fitMaxLength(text, max, answerIsoDate(field, answer));
+    if (fit.cut) ctx.error(cutError(field, max, text, fit.text));
+    else if (fit.compacted === "spaces" || fit.compacted === "separators") {
+      ctx.warn(`${where(field)}: the box takes at most ${max} characters, so the answer was written without ${fit.compacted === "spaces" ? "spaces" : "spaces or separators"} (“${fit.text}”).`);
+    }
+    text = fit.text;
   }
   if (!widget) {
     tf.setText(text);
@@ -272,50 +327,134 @@ function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string
   const multiline = tf.isMultiline();
   const flat = multiline ? text : text.replace(/\s*\n\s*/g, "; ");
   const preferred = Math.min(daFontSize(tf) || (multiline ? 9 : DEFAULT_FONT), multiline ? 11 : Math.max(MIN_FONT, rect.height - 2 * pad));
-  const fit = fitText(flat, ctx.font, { width: rect.width - 2 * pad - 2, height: rect.height - 2 * pad }, preferred, multiline);
+  if (tf.isCombed()) {
+    // One character per comb cell, laid out by the form's own cells (the length was checked above).
+    tf.setText(flat);
+    tf.setFontSize(preferred);
+    return;
+  }
+  // A single-line box may take two lines; they are laid out the way pdf-lib draws a multi-line field
+  // (inner box = border + 1 pt, line height 1.2 × the font height).
+  const fit = multiline
+    ? fitText(flat, ctx.font, { width: rect.width - 2 * pad - 2, height: rect.height - 2 * pad }, preferred, true)
+    : fitText(flat, ctx.font, { width: rect.width - 2 * pad - 2, height: rect.height - 2 * (bw + 1) }, preferred, false, { allowTwoLines: true, lineHeightFactor: 1.2 });
   if (fit.overflow) {
     ctx.warn(`${where(field)}: the answer is longer than the box; it continues on a continuation sheet at the end of the form.`);
     ctx.continuations.push({ field, text });
   }
+  if (fit.lines === 2) tf.enableMultiline();
   tf.setText(fit.text);
   tf.setFontSize(fit.size);
 }
 
-function fillField(ctx: Ctx, field: FormField, answer: FormFillAnswer, name: string): void {
-  let pdfField;
+function getPdfField(ctx: Ctx, field: FormField, name: string): PDFField | null {
   try {
-    pdfField = ctx.pdfForm.getField(name);
+    return ctx.pdfForm.getField(name);
   } catch {
     ctx.warn(`${where(field)}: the form has no field called “${name}”, so it was left blank. Check the form mapping.`);
+    return null;
+  }
+}
+
+function fillField(ctx: Ctx, field: FormField, answer: FormFillAnswer, anchor: PdfFieldAnchor): void {
+  if (anchor.optionFields?.length) {
+    fillOptionFields(ctx, field, answer, anchor.optionFields);
     return;
   }
+  const name = anchor.fieldName;
+  const pdfField = getPdfField(ctx, field, name);
+  if (!pdfField) return;
   const text = answerText(answer);
   if (pdfField instanceof PDFTextField) {
-    if (text) fillTextField(ctx, field, pdfField, text);
+    if (text) fillTextField(ctx, field, pdfField, text, answer);
     return;
   }
   if (pdfField instanceof PDFCheckBox) {
-    const v = typeof answer.value === "boolean" ? answer.value : text ? /^(yes|true|x|ticked|checked)\b/i.test(text) : null;
-    if (v === true) pdfField.check();
-    else if (v === false) pdfField.uncheck();
+    const choice = checkBoxChoice(pdfField, anchor, answer);
+    if (choice.kind === "set") setCheckBoxState(pdfField, choice.on);
+    else if (choice.kind === "unmatched") ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's tick boxes, so none was ticked.`);
     return;
   }
   if (pdfField instanceof PDFRadioGroup) {
     if (!text && typeof answer.value !== "boolean") return;
-    const opt = pickOption(field, answer, pdfField.getOptions());
+    const opt = pickExportValue(field, anchor, answer, pdfField.getOptions());
     if (opt && pdfField.getOptions().includes(opt)) pdfField.select(opt);
     else ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's options, so none was selected.`);
     return;
   }
   if (pdfField instanceof PDFDropdown || pdfField instanceof PDFOptionList) {
     if (!text) return;
-    const opt = pickOption(field, answer, pdfField.getOptions());
+    const opt = pickExportValue(field, anchor, answer, pdfField.getOptions());
     if (opt && pdfField.getOptions().includes(opt)) pdfField.select(opt);
     else if (pdfField instanceof PDFDropdown && pdfField.isEditable()) pdfField.select(encodeAnswer(ctx, field, text), true);
     else ctx.warn(`${where(field)}: the answer “${text}” is not one of the list's options, so it was left blank.`);
     return;
   }
   ctx.warn(`${where(field)}: “${name}” is not a field that can be filled (button or signature).`);
+}
+
+/**
+ * One question across several tick-box fields: tick the box of the chosen option and clear the others.
+ * No answer leaves every box as it is; a "No" with no "No" box clears them all (the "Yes" box unticked).
+ */
+function fillOptionFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, options: PdfOptionField[]): void {
+  const wanted = wantedOf(answer);
+  if (wanted.kind === "none") return;
+  let chosen = chooseOptionIndex(options.map((o) => o.option), wanted);
+  if (chosen < 0 && wanted.kind === "text" && field.options?.length === options.length) {
+    // The question's printed options, in the same order as the boxes.
+    chosen = chooseOptionIndex(field.options, wanted);
+  }
+  if (chosen < 0 && !(wanted.kind === "bool" && !wanted.value)) {
+    ctx.warn(`${where(field)}: the answer “${answerText(answer)}” does not match any of the form's tick boxes, so none was ticked.`);
+    return;
+  }
+  const pick = chosen >= 0 ? options[chosen] : null;
+  const names = Array.from(new Set(options.map((o) => o.fieldName)));
+  for (const name of names) {
+    const pdfField = getPdfField(ctx, field, name);
+    if (!pdfField) continue;
+    const mine = pick && pick.fieldName === name ? pick : null;
+    if (pdfField instanceof PDFCheckBox) {
+      const on = mine ? onValueFor(pdfField, mine.onValue) : null;
+      if (mine && !on) {
+        ctx.warn(`${where(field)}: the tick box “${name}” has no “${mine.onValue}” box, so it was left blank. Check the form mapping.`);
+        continue;
+      }
+      setCheckBoxState(pdfField, on);
+    } else if (pdfField instanceof PDFRadioGroup) {
+      const exportValue = mine ? (mine.onValue && pdfField.getOptions().includes(mine.onValue) ? mine.onValue : pdfField.getOptions()[0]) : null;
+      if (exportValue) pdfField.select(exportValue);
+    } else {
+      ctx.warn(`${where(field)}: “${name}” is not a tick box, so it was left blank. Check the form mapping.`);
+    }
+  }
+}
+
+/** One character per box (pdf_char_fields): a date as DDMMYYYY / DDMMYY, or the text. */
+function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anchor: PdfCharFieldsAnchor): void {
+  const raw = answerText(answer);
+  const res = charFieldTexts(anchor, answer, raw ? encodeAnswer(ctx, field, raw) : "");
+  if (res.kind === "none") return;
+  if (res.kind === "not_a_date") {
+    ctx.warn(`${where(field)}: the boxes take a date, but the answer “${raw}” is not one, so they were left blank.`);
+    return;
+  }
+  if (res.cut) ctx.error(cutError(field, anchor.fieldNames.length, res.value, res.chars.join("")));
+  anchor.fieldNames.forEach((name, i) => {
+    const pdfField = getPdfField(ctx, field, name);
+    if (!pdfField) return;
+    if (!(pdfField instanceof PDFTextField)) {
+      ctx.warn(`${where(field)}: “${name}” is not a text box, so it was left blank. Check the form mapping.`);
+      return;
+    }
+    const ch = res.chars[i] ?? "";
+    if (!ch.trim()) return;
+    const widget = pdfField.acroField.getWidgets()[0];
+    const box = widget ? widget.getRectangle() : { width: 16, height: 16 };
+    pdfField.setText(ch);
+    pdfField.setFontSize(charBoxFontSize(ctx.font, daFontSize(pdfField), box));
+  });
 }
 
 function drawOverlay(ctx: Ctx, field: FormField, text: string, a: { page: number; x: number; y: number; width: number; height: number; fontSize?: number }): void {
@@ -437,6 +576,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     encode: makeEncoder(font),
     opts,
     warn: (m) => opts.onWarning?.(m),
+    error: (m) => (opts.onError ? opts.onError(m) : opts.onWarning?.(m)),
     continuations: [],
   };
   if (pdfForm.hasXFA()) {
@@ -448,7 +588,8 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     if (!isAnswerableField(field)) continue;
     const answer = answers[field.id] ?? {};
     const anchor = field.anchor;
-    if (anchor.kind === "pdf_field") fillField(ctx, field, answer, anchor.fieldName);
+    if (anchor.kind === "pdf_field") fillField(ctx, field, answer, anchor);
+    else if (anchor.kind === "pdf_char_fields") fillCharFields(ctx, field, answer, anchor);
     else if (anchor.kind === "pdf_overlay") {
       const text = answerText(answer);
       if (text) drawOverlay(ctx, field, text, anchor);

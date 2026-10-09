@@ -9,7 +9,10 @@ import "server-only";
  *   above, answer below"); cells and paragraphs with ☐ tick boxes (options from the text around them).
  * - Word paragraphs: placeholders ("[Insert …]", "……", "____"), content controls, legacy form fields,
  *   and a question ending in "?" or ":" followed by an empty paragraph.
- * - Fillable PDFs: every field, labelled from its nearby text.
+ * - Fillable PDFs: every field, labelled from its nearby text; a run of one-character boxes is one
+ *   question (a date when printed D D M M Y Y Y Y), separate tick boxes printed with the options of one
+ *   question are one choice (pdf-groups.ts detectOptionGroups), and radio groups / multi-widget tick
+ *   boxes take the labels printed beside their widgets as options.
  * - Flat PDFs: lines that end with ":" / "?" or a "____" blank, with an answer box to their right.
  *
  * Answer types and fill sources come from the label (form-classify.ts). Everything is low confidence –
@@ -20,8 +23,9 @@ import "server-only";
 import type { AnswerType, OutlineBlock, PdfFormOutline } from "../core/types";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { answerTypeFromLabel, classifyLabel } from "./form-classify";
-import { cellOfParagraph, isDocxAnswerSpace, pdfFlatLabelCandidates, rowKey, sortedPdfFields, type ParsedForm } from "./form-outline";
+import { cellOfParagraph, isDocxAnswerSpace, pdfAnswerSpaces, pdfFlatLabelCandidates, rowKey, type ParsedForm } from "./form-outline";
 import { glyphOptionsFromText } from "./form-postvalidate";
+import { charGroupFormat, charGroupLabel, detectOptionGroups, isYesNoOptions, printedOptions, yesFirst, type OptionGroup } from "./pdf-groups";
 
 const ZERO_BOX = { page: 0, x: 0, y: 0, width: 0, height: 0 };
 
@@ -329,27 +333,70 @@ function prettifyName(name: string): string {
 }
 
 function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
-  return sortedPdfFields(pdf).map((f) => {
-    const options = f.options ?? [];
-    const isOption = (t: string) => options.some((o) => o.trim().toLowerCase() === t.trim().toLowerCase());
+  // Separate tick boxes that answer one question (a "Yes" box and a "No" box; one box per option).
+  const groups = detectOptionGroups(pdf);
+  const groupOf = new Map<string, OptionGroup>();
+  groups.forEach((g) => g.fields.forEach((f) => groupOf.set(f.name, g)));
+  const done = new Set<string>();
+  const out: AnalysisFieldOutput[] = [];
+  for (const space of pdfAnswerSpaces(pdf)) {
+    const f = space[0];
+    if (space.length > 1) {
+      // One-character boxes: one question, a date when they are printed D D M M Y Y (Y Y) or labelled so.
+      const label = (cleanLabel(charGroupLabel(f.nearbyText)) || prettifyName(f.name)).slice(0, 160);
+      const isDate = charGroupFormat(space.length, f.nearbyText) !== "chars";
+      out.push(raw(label, "", { ...(isDate && { answerType: "date" as const }), anchorTarget: "pdf_field", anchorRef: f.name }, f.nearbyText));
+      continue;
+    }
+    const group = groupOf.get(f.name);
+    if (group) {
+      if (done.has(group.fields[0].name)) continue;
+      done.add(group.fields[0].name);
+      const entries = group.fields.map((box, i) => ({ option: group.options[i], ref: box.name }));
+      const ordered = group.yesNo ? yesFirst(entries, (e) => e.option) : entries;
+      const label = (cleanLabel(group.label) || ordered.map((e) => e.option).join(" / ")).slice(0, 160);
+      out.push(
+        raw(
+          label,
+          "",
+          {
+            answerType: group.yesNo ? "yes_no" : "single_choice",
+            options: ordered.map((e) => e.option),
+            anchorTarget: "pdf_field",
+            anchorRef: ordered[0].ref,
+            optionAnchors: ordered.map((e) => ({ option: e.option, ref: e.ref, glyphIndex: 0 })),
+          },
+          group.label,
+        ),
+      );
+      continue;
+    }
+    // Radio groups and tick boxes with a widget per option: the labels printed beside the widgets.
+    const multi = f.type === "radio" || (f.type === "checkbox" && (f.options?.length ?? 0) > 1);
+    const options = multi && f.optionLabels?.length ? printedOptions(pdf, f) : f.options ?? [];
+    const known = [...(f.options ?? []), ...(f.optionLabels ?? []), ...options].map((o) => o.trim().toLowerCase());
+    const isOption = (t: string) => known.indexOf(t.trim().toLowerCase()) >= 0;
     const segments = f.nearbyText
       .split(/\n| \| /)
       .map((t) => cleanLabel(t))
       .filter((t) => t.length > 1);
     const near = segments.find((t) => !isOption(t)) ?? "";
     const label = (near.length > 2 ? near : prettifyName(f.name)).slice(0, 160);
+    const yesNo = options.length === 2 && isYesNoOptions(options);
     const answerType: AnswerType | undefined =
-      f.type === "checkbox"
+      f.type === "checkbox" && !multi
         ? "checkbox"
-        : f.type === "radio" || f.type === "dropdown"
-          ? options.length === 2 && /^y/i.test(options[0]) && /^n/i.test(options[1])
+        : f.type === "radio" || f.type === "dropdown" || multi
+          ? yesNo
             ? "yes_no"
             : "single_choice"
           : f.rect.height > 40
             ? "long_text"
             : undefined;
-    return raw(label, "", { ...(answerType && { answerType }), options, anchorTarget: "pdf_field", anchorRef: f.name }, segments.join(" "));
-  });
+    const opts = yesNo ? yesFirst(options, (o) => o) : options;
+    out.push(raw(label, "", { ...(answerType && { answerType }), options: opts, anchorTarget: "pdf_field", anchorRef: f.name }, segments.join(" ")));
+  }
+  return out;
 }
 
 function pdfFlatRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {

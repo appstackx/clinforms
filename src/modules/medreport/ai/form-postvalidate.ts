@@ -11,6 +11,10 @@ import "server-only";
  *   that cannot be found or repaired drops the field with a plain-English warning.
  * - Tick boxes: every option must point at a real ☐ (glyph index < the block's glyph count) and the
  *   options must match the linked glyphs one for one.
+ * - Fillable PDFs: separate tick-box fields named per option become one question (optionFields); a
+ *   tick box with a widget per option, or a radio group printed with other labels than its export
+ *   values, keeps the printed labels (optionLabels); a run of one-character boxes is one question
+ *   (pdf_char_fields, a date as DDMMYYYY / DDMMYY).
  * - No two fields may share an answer space (the later one is dropped with a warning).
  * - Identifiers (name, date of birth, address, references) are always filled by code from the
  *   registration record, and opinion questions (prognosis, causation, fitness for work, restrictions,
@@ -30,11 +34,16 @@ import type {
   FormFieldConfidence,
   OptionGlyph,
   OutlineBlock,
+  PdfFieldAnchor,
+  PdfOptionField,
+  PdfOutlineField,
   SignoffPart,
 } from "../core/types";
+import { formAnchorPdfFieldNames } from "../core/forms";
 import { FormFieldSchema } from "../core/schemas";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { classifyLabel } from "./form-classify";
+import { charGroupFormat, charGroupMembers, isYesNoOptions, printedOptions, yesFirst } from "./pdf-groups";
 import {
   docxOrder,
   indexDocx,
@@ -290,6 +299,37 @@ function docxAnchor(raw: AnalysisFieldOutput, ix: DocxIndex, label: string, opti
   }
 }
 
+function findPdfField(ix: PdfIndex, name: string): PdfOutlineField | undefined {
+  const n = name.trim();
+  if (!n) return undefined;
+  return ix.byName.get(n) ?? ix.pdf.fields.find((f) => f.name.toLowerCase() === n.toLowerCase());
+}
+
+/** A run of one-character boxes: one answer space, written one character per box. */
+function charFieldsAnchor(ix: PdfIndex, field: PdfOutlineField, label: string, answerType: AnswerType, conf: FormFieldConfidence, repaired: boolean): AnchorOutcome {
+  const members = charGroupMembers(ix.pdf, field);
+  const notes: string[] = [];
+  const format = charGroupFormat(members.length, `${field.nearbyText} | ${label}`, answerType);
+  let type = answerType;
+  if (format !== "chars" && type !== "date" && type !== "date_signed") {
+    type = "date";
+    repaired = true;
+  }
+  if (format === "chars" && (type === "date" || type === "date_signed")) {
+    notes.push(`The date is written one character per box in ${members.length} boxes – check the format.`);
+    conf = minConf(conf, "medium");
+  }
+  return {
+    ok: true,
+    anchor: { kind: "pdf_char_fields", fieldNames: members.map((m) => m.name), format },
+    conf,
+    notes,
+    repaired,
+    answerType: type,
+    options: [],
+  };
+}
+
 function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, answerType: AnswerType, options: string[]): AnchorOutcome {
   const names = [raw.anchorRef, ...raw.optionAnchors.map((o) => o.ref)].map((n) => n.trim()).filter(Boolean);
   let field = names.map((n) => ix.byName.get(n)).find((f) => f !== undefined);
@@ -307,13 +347,50 @@ function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, a
   if (!field) {
     return { ok: false, reason: `The fillable field for ${quoteLabel(label)} was not found in the PDF, so it was left out. Add it in the mapping editor.` };
   }
-  const anchor: FormAnchor = { kind: "pdf_field", fieldName: field.name, fieldType: field.type };
+  if (field.charGroup) return charFieldsAnchor(ix, field, label, answerType, conf, repaired);
+  const anchor: PdfFieldAnchor = { kind: "pdf_field", fieldName: field.name, fieldType: field.type };
   if (field.options?.length) anchor.options = field.options.slice();
   let type = answerType;
   let opts = options;
   if (field.type === "checkbox") {
-    const distinct = new Set(raw.optionAnchors.map((o) => o.ref.trim()).filter(Boolean));
-    if (type === "yes_no" && distinct.size > 1) {
+    // Separate tick-box fields per option ("Yes" box and "No" box): one question across all of them.
+    const linked: PdfOptionField[] = [];
+    const wanted = raw.optionAnchors.filter((o) => o.ref.trim());
+    for (const [i, o] of Array.from(wanted.entries())) {
+      const box = findPdfField(ix, o.ref);
+      if (!box || box.type !== "checkbox" || linked.some((l) => l.fieldName === box.name)) continue;
+      const option = clean(o.option, 120) || (box.optionLabels?.[0] ?? "").trim() || options[i] || `Option ${linked.length + 1}`;
+      linked.push({ option, fieldName: box.name });
+    }
+    const distinctRefs = new Set(wanted.map((o) => o.ref.trim()));
+    if (linked.length >= 2) {
+      const ordered = isYesNoOptions(linked.map((l) => l.option)) ? yesFirst(linked, (l) => l.option) : linked;
+      const optionFieldsAnchor: PdfFieldAnchor = { kind: "pdf_field", fieldName: ordered[0].fieldName, fieldType: "checkbox", optionFields: ordered };
+      opts = ordered.map((l) => l.option);
+      type = isYesNoOptions(opts) ? "yes_no" : "single_choice";
+      if (linked.length < distinctRefs.size) {
+        notes.push(`Only ${linked.length} of ${distinctRefs.size} tick boxes could be linked – check the options.`);
+        conf = minConf(conf, "medium");
+        repaired = true;
+      }
+      return { ok: true, anchor: optionFieldsAnchor, conf, notes, repaired, answerType: type, options: opts };
+    }
+    if (field.options && field.options.length > 1) {
+      // One field with a widget per option (on-values such as "no" / "Yes"): the printed labels pick the widget.
+      const labels = field.options.map((v, i) => (field!.optionLabels?.[i] ?? "").trim());
+      if (labels.some(Boolean)) anchor.optionLabels = labels.map((l, i) => l || field!.options![i]);
+      const printed = printedOptions(ix.pdf, field);
+      if (opts.length === 0 || !opts.every((o) => printed.some((p) => p.toLowerCase() === o.toLowerCase()))) opts = printed;
+      if (isYesNoOptions(opts)) {
+        opts = yesFirst(opts, (o) => o);
+        type = "yes_no";
+      } else if (type !== "single_choice") {
+        type = "single_choice";
+        repaired = true;
+      }
+      return { ok: true, anchor, conf, notes, repaired, answerType: type, options: opts };
+    }
+    if (type === "yes_no" && distinctRefs.size > 1) {
       notes.push("The form has separate tick boxes per option; only the first box is linked (ticked for “Yes”). Check it.");
       conf = minConf(conf, "medium");
       repaired = true;
@@ -322,7 +399,13 @@ function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, a
     type = "checkbox";
     opts = [];
   } else if (field.type === "radio" || field.type === "dropdown") {
-    if (opts.length === 0 && field.options?.length) opts = field.options.slice();
+    // Printed labels that differ from the export values ("Choice5" printed "Mrs"): kept on the anchor.
+    const labels = (field.optionLabels ?? []).map((l) => l.trim());
+    const exportValues = field.options ?? [];
+    if (labels.length === exportValues.length && labels.some((l, i) => l && l.toLowerCase() !== exportValues[i].toLowerCase())) {
+      anchor.optionLabels = labels;
+    }
+    if (opts.length === 0 && exportValues.length) opts = anchor.optionLabels ? printedOptions(ix.pdf, field) : exportValues.slice();
     if (type !== "yes_no" && type !== "single_choice") type = opts.length === 2 && /^y/i.test(opts[0]) && /^n/i.test(opts[1]) ? "yes_no" : "single_choice";
   }
   return { ok: true, anchor, conf, notes, repaired, answerType: type, options: opts };
@@ -383,7 +466,9 @@ function anchorSlots(anchor: FormAnchor, docx: DocxIndex | null): Array<{ key: s
       return [{ key: `docx:${anchor.blockId}`, capacity: 1 }];
     }
     case "pdf_field":
-      return [{ key: `pdf:${anchor.fieldName}`, capacity: 1 }];
+    case "pdf_char_fields":
+      // Every field it writes (each tick box of an option group, each character box).
+      return formAnchorPdfFieldNames(anchor).map((name) => ({ key: `pdf:${name}`, capacity: 1 }));
     case "pdf_overlay":
       return [{ key: `overlay:${anchor.page}:${Math.round(anchor.x / 6)}:${Math.round(anchor.y / 6)}`, capacity: 1 }];
   }
@@ -555,8 +640,9 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     if (docxIx && outcome.anchor.kind === "docx") {
       const ids = outcome.anchor.target === "checkbox_glyph" ? (outcome.anchor.optionGlyphs ?? []).map((g) => g.blockId) : [outcome.anchor.blockId];
       order = Math.min(...ids.map((id) => docxOrder(docxIx, id)));
-    } else if (pdfIx && outcome.anchor.kind === "pdf_field") {
-      order = pdfIx.order.get(outcome.anchor.fieldName) ?? seq;
+    } else if (pdfIx && (outcome.anchor.kind === "pdf_field" || outcome.anchor.kind === "pdf_char_fields")) {
+      const orders = formAnchorPdfFieldNames(outcome.anchor).map((n) => pdfIx.order.get(n) ?? seq);
+      order = Math.min(...orders);
     } else if (outcome.anchor.kind === "pdf_overlay") {
       order = outcome.anchor.page * 100_000 + (2_000 - Math.round(outcome.anchor.y)) * 10 + Math.min(9, Math.round(outcome.anchor.x / 100));
     }

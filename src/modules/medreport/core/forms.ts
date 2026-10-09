@@ -754,10 +754,34 @@ export function formAnchorKey(anchor: FormField["anchor"]): string {
         return `glyph:${(anchor.optionGlyphs ?? []).map((g) => `${g.blockId}#${g.glyphIndex}`).join(",")}`;
       }
       return `docx:${anchor.target === "replace_placeholder" ? `${anchor.blockId}|${anchor.placeholderText ?? ""}` : anchor.blockId}`;
-    case "pdf_field":
-      return `pdf:${anchor.fieldName}`;
+    case "pdf_field": {
+      // One question across several tick-box fields: every box it uses (a plain field keeps "pdf:<name>").
+      const names = formAnchorPdfFieldNames(anchor);
+      return names.length > 1 ? `pdfopts:${names.join("+")}` : `pdf:${names[0] ?? anchor.fieldName}`;
+    }
     case "pdf_overlay":
       return `overlay:${anchor.page}:${Math.round(anchor.x / 10)}:${Math.round(anchor.y / 10)}`;
+    case "pdf_char_fields":
+      return `pdfchars:${anchor.fieldNames.join("+")}`;
+  }
+}
+
+/**
+ * The AcroForm fields an anchor writes into (empty for Word and flat-PDF anchors): the field itself,
+ * every box of a one-of-several tick-box question, or every one-character box. For the preview's
+ * highlight and the answer-space checks.
+ */
+export function formAnchorPdfFieldNames(anchor: FormField["anchor"]): string[] {
+  switch (anchor.kind) {
+    case "pdf_field": {
+      // With optionFields the boxes listed there are the answer space (fieldName is the first of them).
+      const names = anchor.optionFields?.length ? anchor.optionFields.map((o) => o.fieldName) : [anchor.fieldName];
+      return Array.from(new Set(names.filter(Boolean)));
+    }
+    case "pdf_char_fields":
+      return anchor.fieldNames.slice();
+    default:
+      return [];
   }
 }
 
@@ -806,6 +830,22 @@ export function checkFormDefinition(form: FormDefinition): string[] {
         problems.push(`${where}: no tick boxes are linked to this question.`);
       }
       if (!parseBlockId(field.anchor.blockId)) problems.push(`${where}: the location “${field.anchor.blockId}” is not valid.`);
+    }
+    if (field.anchor.kind === "pdf_field" && field.anchor.optionFields?.length) {
+      const opts = field.anchor.optionFields;
+      if (opts.some((o) => !o.option.trim() || !o.fieldName.trim())) problems.push(`${where}: every tick box needs its option and its field.`);
+      const seenOpt = new Set<string>();
+      for (const o of opts) {
+        const k = `${o.fieldName}\u0000${o.onValue ?? ""}`;
+        if (seenOpt.has(k)) problems.push(`${where}: the tick box “${o.fieldName}” is linked to more than one option.`);
+        seenOpt.add(k);
+      }
+    }
+    if (field.anchor.kind === "pdf_char_fields") {
+      if (new Set(field.anchor.fieldNames).size !== field.anchor.fieldNames.length) problems.push(`${where}: a character box is listed twice.`);
+      if (field.anchor.format !== "chars" && field.answerType !== "date" && field.answerType !== "date_signed") {
+        problems.push(`${where}: the boxes are written as a date, so the answer type must be a date.`);
+      }
     }
     if (field.answerType === "single_choice" && !field.options?.length) {
       problems.push(`${where}: a single-choice question needs its options.`);

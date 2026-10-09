@@ -14,6 +14,7 @@ import type { FormOutlineSummary } from "../api/contract";
 import { parseBlockId } from "../core/forms";
 import type { FormKind, OutlineBlock, PdfFormOutline, PdfOutlineField } from "../core/types";
 import { findPlaceholders } from "../forms/docx-dom";
+import { charGroupsOf, unionRect } from "./pdf-groups";
 import { neutraliseTags } from "./prompts";
 
 /** A parsed form, as handed to the analysis. */
@@ -247,8 +248,41 @@ const r = (n: number) => Math.round(n);
 
 function renderPdfField(f: PdfOutlineField): string {
   const opts = f.options?.length ? ` options=${JSON.stringify(f.options.map((o) => neutraliseTags(o)))}` : "";
+  // The label printed beside each option, when it is not the option value itself ("Choice5" printed "Mrs").
+  const labels =
+    f.options && f.options.length > 1 && f.optionLabels?.length === f.options.length && f.optionLabels.some((l, i) => l.trim() && l.trim() !== f.options![i])
+      ? ` printed=${JSON.stringify(f.optionLabels.map((o) => neutraliseTags(o.trim())))}`
+      : "";
   const near = f.nearbyText.trim() ? ` near=${quote(f.nearbyText)}` : "";
-  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${near}`;
+  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${labels}${near}`;
+}
+
+/** A run of one-character boxes, rendered as ONE answer space named by its first box. */
+function renderCharGroup(members: PdfOutlineField[]): string {
+  const first = members[0];
+  const box = unionRect(members);
+  const near = first.nearbyText.trim() ? ` near=${quote(first.nearbyText)}` : "";
+  return `field ${JSON.stringify(first.name)} character-boxes=${members.length} (one character per box, ${JSON.stringify(first.name)} to ${JSON.stringify(members[members.length - 1].name)}: map as ONE question with this field name) page ${first.page} box x=${r(box.x)} y=${r(box.y)} w=${r(box.width)} h=${r(box.height)}${near}`;
+}
+
+/**
+ * The answer spaces of a fillable PDF in reading order: one entry per field, except a run of
+ * one-character boxes, which is one entry (its members, left to right).
+ */
+export function pdfAnswerSpaces(pdf: PdfFormOutline): PdfOutlineField[][] {
+  const groups = charGroupsOf(pdf);
+  const out: PdfOutlineField[][] = [];
+  const done = new Set<string>();
+  for (const f of sortedPdfFields(pdf)) {
+    if (f.charGroup && groups.has(f.charGroup)) {
+      if (done.has(f.charGroup)) continue;
+      done.add(f.charGroup);
+      out.push(groups.get(f.charGroup)!);
+      continue;
+    }
+    out.push([f]);
+  }
+  return out;
 }
 
 /** Positioned page text grouped into lines (same page, y within 3 pt), top to bottom. */
@@ -272,7 +306,10 @@ export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pd
   const lines: string[] = [`pages: ${pdf.pages}`];
   const wanted = (p: number) => !pages || pages.indexOf(p) >= 0;
   if (kind === "pdf_acroform") {
-    for (const f of sortedPdfFields(pdf)) if (wanted(f.page)) lines.push(renderPdfField(f));
+    for (const space of pdfAnswerSpaces(pdf)) {
+      if (!wanted(space[0].page)) continue;
+      lines.push(space.length > 1 ? renderCharGroup(space) : renderPdfField(space[0]));
+    }
     return lines.join("\n");
   }
   for (let page = 1; page <= pdf.pages; page += 1) {
@@ -319,7 +356,7 @@ export function summariseParsedForm(form: ParsedForm): FormOutlineSummary {
     kind: form.kind,
     pages: form.pdf.pages,
     fillableFields: form.pdf.fields.length,
-    answerSpaces: form.kind === "pdf_acroform" ? form.pdf.fields.length : flatSpaces,
+    answerSpaces: form.kind === "pdf_acroform" ? pdfAnswerSpaces(form.pdf).length : flatSpaces,
     headings: [],
     warnings: form.warnings.slice(),
   };
@@ -462,16 +499,16 @@ export function chunkDocx(blocks: OutlineBlock[]): AnalysisChunk[] {
   return chunks.filter((c) => c.kind !== "blocks" || c.answerSpaces > 0);
 }
 
-/** Fillable PDF: fields in page order, split into equal groups. */
+/** Fillable PDF: answer spaces in page order, split into equal groups (a run of character boxes stays together). */
 export function chunkPdfFields(pdf: PdfFormOutline): AnalysisChunk[] {
-  const names = sortedPdfFields(pdf).map((f) => f.name);
-  if (names.length === 0) return [];
-  const n = chunkCount(names.length);
+  const spaces = pdfAnswerSpaces(pdf);
+  if (spaces.length === 0) return [];
+  const n = chunkCount(spaces.length);
   const chunks: AnalysisChunk[] = [];
   let start = 0;
   for (let g = 0; g < n; g += 1) {
-    const take = Math.ceil((names.length - start) / (n - g));
-    chunks.push({ kind: "fields", names: names.slice(start, start + take) });
+    const take = Math.ceil((spaces.length - start) / (n - g));
+    chunks.push({ kind: "fields", names: spaces.slice(start, start + take).reduce<string[]>((acc, sp) => acc.concat(sp.map((f) => f.name)), []) });
     start += take;
   }
   return chunks;

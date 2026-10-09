@@ -682,13 +682,47 @@ export const DocxAnchorSchema = z.object({
   optionGlyphs: z.array(OptionGlyphSchema).optional(),
 });
 
+/**
+ * One option of a question answered by ticking ONE of several separate AcroForm fields (e.g. a "Yes"
+ * box and a "No" box, or one box per therapist type). `onValue`: the box's on-value when the field has
+ * several widgets with different on-values; otherwise the field's own on-value is used.
+ */
+export const PdfOptionFieldSchema = z.object({
+  /** The option as printed next to its box, e.g. "Yes", "Physiotherapist". */
+  option: z.string(),
+  fieldName: z.string().min(1),
+  onValue: z.string().optional(),
+});
+
 export const PdfFieldAnchorSchema = z.object({
   kind: z.literal("pdf_field"),
   /** Fully qualified AcroForm field name. */
   fieldName: z.string().min(1),
   fieldType: PdfFieldTypeSchema,
-  /** radio / dropdown: the export values, in order. */
+  /** radio / dropdown: the export values, in order (tick box with several widgets: their on-values). */
   options: z.array(z.string()).optional(),
+  /**
+   * The label printed next to each export value / on-value, aligned with `options` (e.g. a radio group
+   * whose export values are "Choice1"…"Choice6" printed right to left as "Other", "Dr", "Mr"…). The
+   * printed answer is matched to its export value through these.
+   */
+  optionLabels: z.array(z.string()).optional(),
+  /** One question across several separate tick-box fields: the matching box is ticked, the others cleared. */
+  optionFields: z.array(PdfOptionFieldSchema).optional(),
+});
+
+/**
+ * How a pdf_char_fields answer is written: a date as DDMMYYYY or DDMMYY digits, or the text one
+ * character per box.
+ */
+export const PdfCharFormatSchema = z.enum(["DDMMYYYY", "DDMMYY", "chars"]);
+
+/** A run of one-character AcroForm boxes on one line (e.g. a date written D D M M Y Y Y Y): one character per field. */
+export const PdfCharFieldsAnchorSchema = z.object({
+  kind: z.literal("pdf_char_fields"),
+  /** The boxes, left to right. */
+  fieldNames: z.array(z.string().min(1)).min(1),
+  format: PdfCharFormatSchema,
 });
 
 /** Flat PDF (best effort): draw the answer in this box. Page is 1-based; PDF points, origin bottom-left. */
@@ -707,6 +741,7 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
   DocxAnchorSchema,
   PdfFieldAnchorSchema,
   PdfOverlayAnchorSchema,
+  PdfCharFieldsAnchorSchema,
 ]);
 
 /**
@@ -828,6 +863,17 @@ export const PdfOutlineFieldSchema = z.object({
   options: z.array(z.string()).optional(),
   /** Text printed near the field (label candidates), nearest first. */
   nearbyText: z.string(),
+  /**
+   * Tick boxes and radio buttons: the text printed beside each widget ("" where none), aligned with
+   * `options` (radio: export values; tick box with several widgets: on-values; single tick box: one entry).
+   */
+  optionLabels: z.array(z.string()).optional(),
+  /**
+   * One-character boxes: a run of 6–8 single-line text fields on one line, equal width ≤ 20 pt, touching
+   * – e.g. a date written D D M M Y Y Y Y. Every member carries the same group ID (its leftmost field's
+   * name) and is mapped as ONE question (pdf_char_fields anchor).
+   */
+  charGroup: z.string().optional(),
 });
 
 /** A PDF form's outline (forms/pdf-outline.ts): AcroForm fields plus positioned page text. */
