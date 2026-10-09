@@ -32,6 +32,7 @@ import {
   PDFRef,
   PDFTextField,
   StandardFonts,
+  TextAlignment,
   degrees,
   rgb,
   type PDFDocument,
@@ -474,6 +475,8 @@ function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anch
     ensureTextFieldDA(ctx.pdfForm, pdfField);
     const widget = pdfField.acroField.getWidgets()[0];
     const box = widget ? widget.getRectangle() : { width: 16, height: 16 };
+    // One character in the middle of its box, not against its left edge.
+    pdfField.setAlignment(TextAlignment.Center);
     pdfField.setText(ch);
     pdfField.setFontSize(charBoxFontSize(ctx.font, daFontSize(pdfField), box));
   });

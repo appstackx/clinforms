@@ -188,3 +188,25 @@ test("fitText: a field that asks for less than 8 pt still takes a short answer w
   assert.deepEqual(fitText("DEMO-F-02", font, { width: 190, height: 14 }, 7, false), { size: 8, text: "DEMO-F-02", overflow: false });
   assert.equal(fitText("A short note.", font, { width: 190, height: 40 }, 6, true).overflow, false);
 });
+
+test("tick boxes with no border colour get no drawn border; one-character boxes are centred", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  const form = doc.getForm();
+  const cb = form.createCheckBox("physio");
+  cb.addToPage(page, { x: 40, y: 700, width: 12, height: 12, borderWidth: 1 });
+  // As AXA's: /MK /BC [] (transparent) – the box itself is printed on the page.
+  cb.acroField.getWidgets()[0].getOrCreateAppearanceCharacteristics().dict.set(PDFName.of("BC"), doc.context.obj([]));
+  const names = ["d1", "d2"];
+  names.forEach((n, i) => form.createTextField(n).addToPage(page, { x: 100 + i * 16, y: 700, width: 16, height: 16, font }));
+  const fields = [
+    { id: "F-01", label: "Physiotherapist", guidance: "", answerType: "checkbox" as const, anchor: { kind: "pdf_field" as const, fieldName: "physio", fieldType: "checkbox" as const }, fillSource: { kind: "notes_narrative" as const }, required: true, confidence: "high" as const },
+    { id: "F-02", label: "Code", guidance: "", answerType: "short_text" as const, anchor: { kind: "pdf_char_fields" as const, fieldNames: names, format: "chars" as const }, fillSource: { kind: "notes_narrative" as const }, required: true, confidence: "high" as const },
+  ];
+  const def = { id: "f", tenantId: "demo", referrer: { name: "Test (fictional)", type: "insurer" as const }, title: "t", file: { fileName: "t.pdf", mimeType: "application/pdf" as const, sha256: "0".repeat(64), sizeBytes: 1 }, kind: "pdf_acroform" as const, fields, status: "confirmed" as const, analysis: { mode: "rules" as const, promptVersion: "t", at: "2026-10-01T09:00:00.000Z", warnings: [] }, createdAt: "2026-10-01T09:00:00.000Z", updatedAt: "2026-10-01T09:00:00.000Z" } as FormDefinition;
+  const out = await PDFDocument.load(await fillPdf(await doc.save(), def, { "F-01": { text: "Yes", value: true }, "F-02": { text: "A7" } }, { draft: true, flatten: false }));
+  const box = out.getForm().getCheckBox("physio").acroField.getWidgets()[0];
+  assert.equal(box.getBorderStyle()?.getWidth(), 0, "no black border drawn around the printed box");
+  assert.equal(out.getForm().getTextField("d1").getAlignment(), 1, "centred (TextAlignment.Center)");
+});

@@ -170,6 +170,10 @@ export function setCheckBoxState(cb: PDFCheckBox, on: PDFName | null): void {
   for (const w of acro.getWidgets()) {
     w.setAppearanceState(on && widgetOnValue(w) === on ? on : OFF);
     if (isLightDaColour(w.getDefaultAppearance() ?? "")) w.setDefaultAppearance("0 g");
+    // No border colour (/MK /BC missing or []) means no border; pdf-lib would draw a black one, a heavy
+    // square beside the box the form prints. Border width 0: only the tick is drawn.
+    const bc = w.getAppearanceCharacteristics()?.getBorderColor();
+    if (!bc || bc.length === 0) w.getOrCreateBorderStyle().setWidth(0);
   }
   if (isLightDaColour(acro.getDefaultAppearance() ?? "")) acro.setDefaultAppearance("0 g");
   cb.updateAppearances();
