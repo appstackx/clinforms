@@ -4,6 +4,8 @@
  * What the review screen does with the Report API: draft questions that are still pending, approve
  * (POST /sign), download the completed form (POST /render) and save it to the clinic record
  * (POST /connectors/{id}/documents, then the host keeps the browser copy for the simulated record).
+ * A clinic's Studio also reports report_approved / report_downloaded through HostHooks.track (counts and
+ * enumerated values only – ui/studio-events.ts).
  *
  * Owner: studio-b agent.
  */
@@ -16,6 +18,8 @@ import type { FormDefinition, Report, ReportTemplate } from "../../../core/types
 import { ApiError, api, saveBlob, toBase64, type FileDownload } from "../../api-client";
 import { flushStore } from "../../store";
 import type { HostHooks } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
+import { downloadFormat, reportEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../shared/session";
 import type { ApproveInput, ApproveResult } from "./approve-dialog";
@@ -92,12 +96,15 @@ export function useReviewActions(opts: {
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
+        hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",
           title: isForm ? "Form approved" : "Report signed",
           detail: saved
             ? "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
-            : "Approved, but the change could not be saved. Download the completed form now.",
+            : hooks.mode === "tenant"
+              ? TENANT_COPY.review.approveSavedFailed
+              : "Approved, but this browser could not save the change. Download the completed form now.",
         });
         return { ok: true };
       } catch (err) {
@@ -113,7 +120,7 @@ export function useReviewActions(opts: {
         return { ok: false, title: "The approval could not be completed", detail: "Check your connection and try again." };
       }
     },
-    [validateNow, form, isForm, commit, toast],
+    [validateNow, form, isForm, commit, toast, hooks],
   );
 
   /* Render -------------------------------------------------------------------------------------- */
@@ -149,6 +156,10 @@ export function useReviewActions(opts: {
       try {
         const out = await render(kind, final);
         saveBlob(out.blob, out.fileName);
+        if (out.kind === "final") {
+          const { form_kind, referrer_type, source } = reportEventProps(current);
+          hooks.track?.("report_downloaded", { format: downloadFormat(out.contentType), form_kind, referrer_type, source });
+        }
         dispatch({
           type: "activity",
           action: "rendered",
@@ -173,7 +184,7 @@ export function useReviewActions(opts: {
         setDownloading(null);
       }
     },
-    [render, dispatch, actor, toast],
+    [render, dispatch, actor, toast, hooks],
   );
 
   /* Save to clinic record --------------------------------------------------------------------- */

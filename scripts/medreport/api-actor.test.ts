@@ -664,7 +664,7 @@ describe("clinic members – roles and approval", () => {
     });
     assert.equal(launch.status, 201, await launch.clone().text());
     const { launchUrl } = (await launch.json()) as { launchUrl: string };
-    assert.ok(launchUrl.startsWith("https://clinforms.test/app/reports/new?lt="), launchUrl);
+    assert.ok(launchUrl.startsWith("https://clinforms.test/app/studio/new?lt="), launchUrl);
     const lt = new URL(launchUrl).searchParams.get("lt") ?? "";
     // Not on the simulated sandbox.
     await expectProblem(

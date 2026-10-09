@@ -60,7 +60,7 @@ async function launchTenant(given: string | undefined, deps: MedreportDeps): Pro
 }
 
 /** Where a clinic's launch link opens (the clinic's Studio, tenant shell). The public demo opens /reports/new. */
-export const TENANT_LAUNCH_PATH = "/app/reports/new";
+export const TENANT_LAUNCH_PATH = "/app/studio/new";
 
 export const handleLaunch: MedreportHandler = async (req, _ctx, deps) => {
   const { tenantId, keyId } = await launchTenant(req.headers.get(HEADERS.partnerKey)?.trim(), deps);

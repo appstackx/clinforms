@@ -42,10 +42,11 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 | `/two-factor` | signed in | Set-up: confirm password → QR code (rendered on the server) and key → backup codes (shown once, "I have saved them" required) → code → `/app` |
 | `/accept-invite?token=…` | anyone | Create the account for the invited address (name + password) and join, or join when already signed in as that address; then `/two-factor`. The token is `<invitation id>.<MAC>` (HMAC-SHA256 under a key derived from `BETTER_AUTH_SECRET`, `src/server/auth/invite-token.ts`): an invitation id alone is not a link, and rotating the secret invalidates open links. Better Auth's `list-invitations` and `get-full-organization` endpoints are switched off (they list invitations to every member) |
 | `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link. `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
-| `/app` | member | Clinic overview (name, your role, members, open invitations) and **Open the demo studio** (`/reports`, fictional data) until tenant forms arrive |
+| `/app` | member | Clinic overview (name, your role, members, open invitations), **Open the Studio** (`/app/studio`) and a link to the public demo (`/reports`, fictional data) |
+| `/app/studio/**` | member with two-step | The clinic's own Studio (tenant mode: `src/app/app/studio/`, guard `src/server/auth/studio-access.ts`): home, `new`, `forms`, `forms/[formId]`, `templates`, `batch` (explains it needs a connected clinic system), `[id]` review; `security` redirects to the public `/security` page. Header: the clinic, the member's menu (clinic settings, sign out); footer: legal links |
 | `/app/settings/clinic` | member (edit: owner/admin) | Clinic name, legal name, address, postcode, phone, email, retention 30–3650 days. Written into referrer forms in tenant mode |
 | `/app/settings/members` | member (manage: owner/admin) | Invite (email + role; link shown when email is off), open invitations (copy link, cancel), role changes, signing details (job title, HCPC number – format check only, "may sign"), reset links, removal |
-| `/app/settings/security` | member | Two-step status, new backup codes (password), signed-in devices (sign one out, or all others) |
+| `/app/settings/security` | member | Two-step status, new backup codes (password), **Support** contact for a lost phone and backup codes, signed-in devices (sign one out, or all others) |
 | `/app/settings/api-keys` | owner/admin | Partner API keys: create (shown once), list (last 4 characters), revoke. **No connection uses them yet** |
 | `/app/select-clinic` | signed in | Pick a clinic when a member of several; open invitations; "no clinic" message |
 | `/api/auth/*` | – | Better Auth's HTTP API (switched-off paths: sign-up, two-step disable, organization create/update/delete/check-slug, delete-user, change-email) |
@@ -153,6 +154,8 @@ a session to such an account only after the second factor, and turning it on rev
 | `npm run test:auth` | The identity flows on node:sqlite and PGlite (invite → accept → two-step with a TOTP computed in the test → sign in → second factor, backup codes, roles and permissions, slug rules, password reset, session expiry, audit rows, offboarding, two-step reset); migration 0002 completeness; config, email, middleware, admin CLI helpers, neutral wording. Also run by `npm run test:db` |
 | `npm run test:gateway` | The same identity flows through the D1 dialect → gateway Worker → a D1 stand-in **and real local D1** (wrangler-applied migrations) |
 | `scripts/e2e/auth-flow.cjs` | Browser run (Playwright): invitation → account → two-step → every settings page → sign out/in with a code and with a backup code → demo still opens |
+| `src/server/auth/studio-access.test.ts` (in `test:auth`) | The tenant Studio's guard on real Better Auth: no session → `/login?next=/app/studio…`, no two-step → `/two-factor`, then the clinic and member context (signing details, drafting switch); signed out → `/login` again; the middleware's `/app/studio` redirect |
+| `scripts/e2e/tenant-studio.cjs` | Browser run of the tenant Studio (guard, no demo chrome, notes upload, forms library, batch notice, sign out, demo unchanged); preview or local only |
 
 **Live check on PREVIEW (09/10/2026):** migration 0002 applied to `clinforms-preview`; app run locally against it
 (`npm run admin:with-env -- --env preview --port 3111 -- npx next start -p 3111`); `zz-selftest-clinic` created with

@@ -13,6 +13,7 @@ export default async function ClinicLayout({ children }: { children: React.React
   const manager = isManager(membership.role);
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
+    { href: "/app/studio", label: "Studio" },
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },

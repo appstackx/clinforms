@@ -29,7 +29,10 @@ import { shortFingerprint } from "../../../core/fingerprint";
 import { referrerNamesMatch } from "../../../core/forms";
 import { FORM_KIND_LABELS, INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ActivityEntry, Report, ReportTemplate } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from "../../primitives";
+import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 import type { GenerationSummary } from "./review-model";
 import { Pill } from "./review-ui";
@@ -121,6 +124,8 @@ export function ReviewHeader({
   draftCopyUnavailable: boolean;
   downloading: DownloadKind | null;
 }) {
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   const signed = report.status === "signed";
   const form = report.form;
   const approveLabel = form ? "Approve…" : "Sign…";
@@ -130,7 +135,7 @@ export function ReviewHeader({
   return (
     <header className="space-y-3">
       <Link
-        href="/reports"
+        href={paths.home}
         className="inline-flex items-center gap-1 rounded text-sm text-slate-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden /> Reports
@@ -182,10 +187,11 @@ export function ReviewHeader({
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Saving…
                 </>
               ) : saveState === "failed" ? (
-                <span className="text-red-700">Could not save in this browser (storage full or blocked)</span>
+                <span className="text-red-700">{tenant ? TENANT_COPY.review.saveFailed : "Could not save in this browser (storage full or blocked)"}</span>
               ) : (
                 <>
-                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> Saved in this browser{savedAt ? ` · ${formatUkDateTime(savedAt).slice(11)}` : ""}
+                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> {tenant ? TENANT_COPY.review.saved : "Saved in this browser"}
+                  {savedAt ? ` · ${formatUkDateTime(savedAt).slice(11)}` : ""}
                 </>
               )}
             </span>

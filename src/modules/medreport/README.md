@@ -97,9 +97,12 @@ src/modules/medreport/
                           store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
                           store/* (browser backend, server cache + write queue + transport)
+                          routes.ts (useStudioPaths: every Studio link from HostHooks.basePath), studio-copy.ts (tenant-only
+                          production copy), studio-events.ts (non-identifying analytics properties for HostHooks.track)
 src/sandbox/tm3-sim/      config, wire-types (duplicated wire format), fixtures/, handlers, client-store, ui/
 src/app/api/_medreport-glue.ts      connector registry + in-process transport + route() binder
 src/app/reports/medreport-host.tsx  client-side HostHooks (write-back into the sandbox's browser record)
+src/app/app/studio/tenant-host.tsx  client-side HostHooks of a clinic's own Studio (tenant mode, wave 2)
 src/app/api/reports/v1/**/route.ts  thin: runtime="nodejs", dynamic="force-dynamic", export METHOD = route(handler)
 src/app/api/tm3-sim/v1/**/route.ts  thin: re-export the sandbox handler
 src/app/reports/**  src/app/pms-sandbox/**   thin pages; each layout.tsx has its own metadata
@@ -392,7 +395,7 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
 - **Connectors:** the simulated TM3 sandbox is `demoOnly` (403 `CONNECTOR_NOT_AVAILABLE` for a clinic); clinics use
   file import; real TM3 stays not configured. `/launch` maps a clinic's own partner key (`partner_keys`, SHA-256) to
   that clinic and builds `launchUrl` from `APP_ORIGIN` / `BETTER_AUTH_URL` (`config.server.ts appOrigin()`), never
-  the request's Host; a clinic's link opens `/app/reports/new` and only that clinic's member can redeem it.
+  the request's Host; a clinic's link opens `/app/studio/new` (the tenant Studio) and only that clinic's member can redeem it.
 - **Shared state** (`MedreportDeps.sharedState`, `auth/shared-limits.ts`): launch-token replay → `launch_token_uses`,
   the demo's live cap and passcode guesses → `rate_limits` (429 + `Retry-After` unchanged). The host provides it
   when `CLINFORMS_DB` is set; a single local process keeps its in-memory counters. Clinics draft live WITHOUT the
@@ -605,6 +608,38 @@ Each agent owns the following files (Revision 2 slices):
   `launch-verify.ts`, `sessions-demo.ts`, `connectors-list.ts`, `patients.ts`, `bundle.ts`,
   `file-import-bundle.ts`, `documents.ts`, `src/app/api/_medreport-glue.ts` and
   `src/app/reports/medreport-host.tsx`).
+
+## Two Studios: the public demo and a clinic's own (wave 2)
+
+The same screens serve the public demo at `/reports` (`src/app/reports/medreport-host.tsx`) and a signed-in
+clinic's Studio at `/app/studio` (`src/app/app/studio/layout.tsx` + `tenant-host.tsx`). The host decides through
+additive optional `HostHooks` members (`ui/host-hooks.tsx`):
+
+| Member | Demo (`/reports`) | Tenant (`/app/studio`) |
+|---|---|---|
+| `basePath` | unset → `/reports` | `/app/studio` |
+| `mode` | unset → `"demo"` | `"tenant"` |
+| `storage` | unset → `"browser"` | `"server"` (read by `ui/store.ts` – the server-store slice) |
+| `clinic` `{tenantId, name, draftingEnabled?}` | – | the active clinic (header; drafting switch) |
+| `member` `{name, email?, roleLabel?, hcpc?, jobTitle?, canSign?}` | – | the signed-in member: default signer, activity actor, "confirmed by" |
+| `track(event, props)` | – | host analytics (`form_uploaded`, `form_confirmed`, `draft_completed`, `report_approved`, `report_downloaded`) |
+| `accountHref`, `onSignOut` | – | the clinic's pages (`/app`) and sign-out, in the header's account menu |
+
+- **Paths:** no screen hard-codes `/reports`; links come from `ui/routes.ts` `useStudioPaths()` (pure
+  `studioPaths(base, mode)` and `studioSection(pathname, base)` for the navigation, tested in `routes.test.ts`).
+  `/pms-sandbox` links appear in demo-only branches. A clinic's Security link is the public `/security` page.
+- **Tenant mode hides demo-only UI:** the drafting-mode badge and passcode, Demo tools (import case JSON, reset),
+  Simulated TM3 tiles / source tab / sandbox launch hints, "Try the …" fictional samples, the forms library's
+  sample and demonstration forms, PH-DEMO placeholders and hints, the Security page's "In this demo" table,
+  "Use the prepared demo draft", and the batch screen (it reads a connected clinic system; tenant mode explains
+  that instead and hides Batch from the navigation). The notes upload is the source. Production copy lives in
+  `ui/studio-copy.ts` `TENANT_COPY`. Drafting is attempted when the clinic has it switched on
+  (`clinic.draftingEnabled`), not by passcode (`useAiMode().livePossible()`).
+- **Analytics:** only in tenant mode, through `HostHooks.track`; `ui/studio-events.ts` builds the properties from
+  enumerated values and counts only (no names, ids, file names or record text – pinned by `studio-events.test.ts`).
+- **Both modes:** the site's mark (`components/shared/brand-mark.tsx`, the same glyph as `src/app/icon.svg`) and
+  the legal links (privacy, cookies, terms, security) in the footer (`components/shared/legal-links.tsx`).
+- **Render tests:** `ui/tenant-mode.test.ts` renders the shell and screens in both modes with `react-dom/server`.
 
 ## Revision 2 – referrer forms
 

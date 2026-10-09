@@ -66,8 +66,8 @@ import {
   type ValidateRequest,
   type ValidateResponse,
 } from "../api/contract";
-import { MAX_FORM_REQUEST_BYTES } from "../config.public";
-import { getPasscode, getSession, setSession } from "./store";
+import { DEMO_TENANT_ID, MAX_FORM_REQUEST_BYTES } from "../config.public";
+import { getPasscode, getSession, getStoreMode, setSession } from "./store";
 
 /** A failed API call. `problem` is the server's problem+json (or a synthesised one). */
 export class ApiError extends Error {
@@ -418,6 +418,11 @@ let demoSessionUnavailableUntil = 0;
  */
 async function ensureDemoSessionToken(): Promise<string | null> {
   const current = getSession();
+  if (getStoreMode() === "server") {
+    // A clinic's own Studio: the sign-in cookie is the caller. Only a launch session of a clinic (it narrows the
+    // member to one episode) is worth sending; a public-demo session is never minted or sent here.
+    return current && current.claims.tenantId !== DEMO_TENANT_ID ? current.token : null;
+  }
   if (current) return current.token;
   if (Date.now() < demoSessionUnavailableUntil) return null;
   if (!pendingDemoSession) {
@@ -439,9 +444,20 @@ async function ensureDemoSessionToken(): Promise<string | null> {
   return pendingDemoSession;
 }
 
+/**
+ * The stored session token for a call. In a clinic's own Studio (server storage) a public-demo session left in
+ * this tab (e.g. by an earlier visit to /reports) is not sent: the sign-in cookie identifies the caller.
+ */
+function storedSessionToken(): string | null {
+  const current = getSession();
+  if (!current) return null;
+  if (getStoreMode() === "server" && current.claims.tenantId === DEMO_TENANT_ID) return null;
+  return current.token;
+}
+
 /** Default same-origin client using the stored session token and passcode. */
 export const api: ApiClient = createApiClient({
-  getSessionToken: () => getSession()?.token ?? null,
+  getSessionToken: storedSessionToken,
   getPasscode,
   ensureSessionToken: ensureDemoSessionToken,
 });

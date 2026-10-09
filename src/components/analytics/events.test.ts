@@ -16,6 +16,10 @@ test("record ids in paths are replaced by :id", () => {
   assert.equal(sanitizePath("/pms-sandbox/patients/sim-pat-001"), "/pms-sandbox/patients/:id");
   assert.equal(sanitizePath("/app/reports/abc/x#frag"), "/app/reports/:id/:id");
   assert.equal(sanitizePath("/accept-invite/inv_123"), "/accept-invite/:id");
+  // the clinic's own Studio (wave 2)
+  assert.equal(sanitizePath("/app/studio"), "/app/studio");
+  assert.equal(sanitizePath("/app/studio/rpt_9f3a2b"), "/app/studio/:id");
+  assert.equal(sanitizePath("/app/studio/forms/form_1"), "/app/studio/forms/:id");
   assert.equal(sanitizePath("/megan-hart"), "/:id");
 });
 

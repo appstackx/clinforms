@@ -15,6 +15,8 @@ import { answerableFields } from "../../../core/forms";
 import { isQuestionSet } from "../../../core/question-set";
 import { REFERRER_TYPE_LABELS } from "../../../core/labels";
 import type { FormDefinition } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
 import { deleteForm } from "../../store";
 import {
   Button,
@@ -36,7 +38,9 @@ export function FormCard({ form }: { form: FormDefinition }) {
   const { file, loading } = useFormFile(questionSet ? null : form);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const b = questionBreakdown(form);
-  const href = `/reports/forms/${encodeURIComponent(form.id)}`;
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
+  const href = paths.form(form.id);
 
   return (
     <Card className="flex flex-col overflow-hidden rounded-2xl border-slate-200 shadow-sm transition-shadow hover:shadow-md">
@@ -126,7 +130,7 @@ export function FormCard({ form }: { form: FormDefinition }) {
           </Button>
           {form.status === "confirmed" ? (
             <Button asChild size="sm">
-              <Link href={`/reports/new?form=${encodeURIComponent(form.id)}`}>
+              <Link href={paths.newReportWithForm(form.id)}>
                 <FilePlus2 className="mr-1.5 h-4 w-4" aria-hidden />
                 Use for a patient
               </Link>
@@ -139,8 +143,8 @@ export function FormCard({ form }: { form: FormDefinition }) {
           <DialogHeader>
             <DialogTitle>Remove this form?</DialogTitle>
             <DialogDescription>
-              “{form.title}” from {form.referrer.name} and its mapping will be removed from this browser. Reports already
-              completed with it are kept.
+              “{form.title}” from {form.referrer.name} and its mapping will be removed{tenant ? " from your clinic's library" : " from this browser"}.
+              Reports already completed with it are kept.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
