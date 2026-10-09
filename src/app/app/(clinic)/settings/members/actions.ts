@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS } from "@/lib/account-copy";
 import { isValidHcpc, normaliseHcpc } from "@/lib/hcpc";
 import { getAuth } from "@/server/auth/auth";
-import { appOrigin, baseUrlSetting } from "@/server/auth/config";
+import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { INVITATION_TTL_SECONDS } from "@/server/auth/create-auth";
 import { authErrorMessage } from "@/server/auth/errors";
 import { inviteLink, normaliseEmail } from "@/server/auth/platform";
@@ -16,7 +16,7 @@ import { assignableRoles, parseMemberRole } from "@/server/auth/roles";
 import { actionContext, auditAction, requestHeaders, type ActionResult, type AppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
-import { captureOutbox, linkToShare } from "@/server/email";
+import { captureOutbox, emailProviderName, linkToShare } from "@/server/email";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
 const PATH = "/app/settings/members";
@@ -55,7 +55,7 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
       getAuth().api.createInvitation({ body: { email, role, organizationId: ctx.membership.organizationId }, headers: requestHeaders() }),
     );
     const captured = outbox.find((m) => m.message.kind === "invitation");
-    const link = linkToShare(captured) ?? (captured ? null : inviteLink(appOrigin(baseUrlSetting(), requestHeaders()), result.id));
+    const link = linkToShare(captured) ?? (captured ? null : inviteLink(appOrigin(baseUrlSetting(), requestHeaders()), result.id, authSecret()));
     revalidatePath(PATH);
     return {
       ok: true,
@@ -169,10 +169,24 @@ export async function createResetLink(_prev: ResetLinkResult | null, form: FormD
   const target = await memberOfClinic(ctx, String(form.get("memberId") ?? ""));
   if (!target) return { ok: false, error: ACCOUNT_ERRORS.generic };
   if (target.role === "owner" && ctx.membership.role !== "owner") return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  // A password is account-wide. An account that also belongs to another clinic (where it may be an owner) must
+  // never have its reset link handed to THIS clinic's administrator: it can only be emailed to the person.
+  const elsewhere = await getDb()
+    .selectFrom("member")
+    .select("id")
+    .where("userId", "=", target.userId)
+    .where("organizationId", "!=", ctx.membership.organizationId)
+    .executeTakeFirst();
+  const refuse = async (reason: string): Promise<ResetLinkResult> => {
+    await auditAction(ctx, { action: "auth.password_reset_link_refused", targetType: "user", targetId: target.userId, detail: { reason } });
+    return { ok: false, error: ACCOUNT_ERRORS.resetOtherClinic };
+  };
+  if (elsewhere && emailProviderName() !== "mailersend") return refuse("other_clinic_email_off");
   try {
     const { outbox } = await captureOutbox(() => getAuth().api.requestPasswordReset({ body: { email: target.email }, headers: requestHeaders() }));
     const captured = outbox.find((m) => m.message.kind === "password_reset");
     if (!captured) return { ok: false, error: ACCOUNT_ERRORS.generic };
+    if (elsewhere && captured.result.status !== "sent") return refuse("other_clinic_email_failed");
     await auditAction(ctx, { action: "auth.password_reset_link", targetType: "user", targetId: target.userId, detail: { delivery: captured.result.status } });
     return { ok: true, link: linkToShare(captured), sent: captured.result.status === "sent" };
   } catch (err) {

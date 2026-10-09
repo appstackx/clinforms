@@ -6,6 +6,7 @@
  *   userId, authSessionId           from the session
  *   tenantId, role                  from the session's ACTIVE clinic and the member row (re-read, not cached)
  *   clinician                       from member_profile (name from the account)
+ *   (the session is read from the database, never from the cookie cache)
  *   twoFactorVerified               the account has two-step verification on. Better Auth only issues a
  *                                   session to such an account after the second factor, and turning it on
  *                                   revokes every older session (create-auth.ts), so every live session of
@@ -21,7 +22,9 @@ import type { Auth } from "./create-auth";
 import { findMembership } from "./membership";
 
 export async function buildAuthContext(auth: Auth, db: Kysely<Database>, headers: Headers): Promise<AuthContext | null> {
-  const session = await auth.api.getSession({ headers }).catch(() => null);
+  // Read past Better Auth's 5-minute cookie cache: a revoked session (signed out elsewhere, password reset,
+  // "sign out other devices") must stop acting for the clinic at once.
+  const session = await auth.api.getSession({ headers, query: { disableCookieCache: true } }).catch(() => null);
   if (!session) return null;
   const organizationId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
   if (!organizationId) return null;

@@ -113,6 +113,30 @@ export function postgresDialect(config: PostgresConfig): Dialect {
   return new PostgresDialect({ pool: createPgPool(config) });
 }
 
+/**
+ * The connection for migrations and the D1 → Postgres copy: they need ONE database session (a session-level
+ * advisory lock, one transaction per file). Prefers DATABASE_URL_SESSION (saved by db:provision-supabase) over
+ * DATABASE_URL, and refuses Supabase's transaction pooler (port 6543), where consecutive statements can run on
+ * different backend connections and a lock could be left held.
+ */
+export function sessionPostgresConfigFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): PostgresConfig {
+  const connectionString = env.DATABASE_URL_SESSION || env.DATABASE_URL;
+  const config = postgresConfigFromEnv({ ...env, DATABASE_URL: connectionString });
+  let port = "";
+  try {
+    port = new URL(config.connectionString).port;
+  } catch {
+    // pg parses other forms itself; nothing to check
+  }
+  if (port === "6543") {
+    throw new DbError(
+      "NOT_CONFIGURED",
+      "This needs a single database session: use the session pooler (port 5432) or the direct connection – set DATABASE_URL_SESSION – not the transaction pooler (port 6543).",
+    );
+  }
+  return config;
+}
+
 export function postgresConfigFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): PostgresConfig {
   const connectionString = env.DATABASE_URL;
   if (!connectionString) throw new DbError("NOT_CONFIGURED", "CLINFORMS_DB=postgres needs DATABASE_URL.");

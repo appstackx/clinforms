@@ -128,7 +128,7 @@ describe("gateway: limits and validation", () => {
     assert.equal(long.status, 400);
   });
 
-  it("denies ATTACH, DETACH, PRAGMA, VACUUM, DDL, transaction control, internal tables and stacked statements", async () => {
+  it("denies ATTACH, DETACH, PRAGMA, VACUUM, DDL, transaction control, comments, REPLACE, internal-table writes and stacked statements", async () => {
     const denied = [
       "ATTACH DATABASE 'x.db' AS x",
       "detach database x",
@@ -145,6 +145,25 @@ describe("gateway: limits and validation", () => {
       "insert into _cf_KV values (1)",
       "select 1; delete from reports",
       "select load_extension('x')",
+      // a leading comment must not hide the real first keyword (security review, wave 1)
+      "/* x */ DROP TRIGGER audit_log_no_delete",
+      "-- x\nDROP TRIGGER audit_log_no_update",
+      "select 1 /* note */",
+      "select 1 -- note",
+      // writes to internal tables are refused whatever the statement starts with
+      "WITH x AS (SELECT 1) DELETE FROM d1_migrations",
+      "with x as (select 1) insert into sqlite_master select * from x",
+      // REPLACE conflict resolution overwrites rows without firing DELETE triggers (append-only bypass)
+      "INSERT OR REPLACE INTO audit_log (id, tenant_id, action, at) VALUES ('A1', 't', 'x', 'y')",
+      "insert  or\treplace into audit_log (id) values (?)",
+      "REPLACE INTO audit_log (id, tenant_id, action, at) VALUES ('A1', 't', 'x', 'y')",
+      "update or replace audit_log set id = 'x'",
+      // only SELECT / INSERT / UPDATE / DELETE / WITH statements
+      "DROP TRIGGER audit_log_no_delete",
+      "values (1)",
+      "explain select 1",
+      "(select 1)",
+      "reindex",
     ];
     for (const sql of denied) {
       const res = await call(await signed({ statements: [{ sql, params: [] }], mode: "single" }));
@@ -156,7 +175,10 @@ describe("gateway: limits and validation", () => {
       "select name from sqlite_master where type = 'table'",
       "select * from pragma_table_info('reports')",
       "select 1;",
-      'insert into "rate_limits" ("key", "window_start", "count") values (?, ?, ?)',
+      'insert into "rate_limits" ("key", "window_start", "count") values (?, ?, ?) on conflict ("key", "window_start") do update set "count" = "rate_limits"."count" + 1 returning "count"',
+      "with recent as (select id from reports where tenant_id = ?) delete from reports where id in (select id from recent)",
+      "  \n select replace(name, 'a', 'b') from reports",
+      'select name from sqlite_schema where type = ? and name not like ?',
     ]) {
       assert.doesNotThrow(() => checkSql(sql), sql);
     }

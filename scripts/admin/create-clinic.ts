@@ -7,6 +7,7 @@
  *
  * Runbook: docs/auth.md.
  */
+import { authSecret } from "../../src/server/auth/config";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDb, getDbKind } from "../../src/server/db";
 import { applyTarget, appUrl, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
@@ -27,6 +28,7 @@ void runCli(async () => {
     ownerEmail,
     retentionDays: retention ? Number(retention) : undefined,
     appOrigin: origin,
+    linkSecret: authSecret(), // the target app's BETTER_AUTH_SECRET: the link only works on that app
   });
   console.log(`Clinic created on ${target === "current" ? `the ${getDbKind()} database` : target}.`);
   console.log(`  clinic id (tenant):  ${created.tenantId}`);

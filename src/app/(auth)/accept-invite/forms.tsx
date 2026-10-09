@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
@@ -28,6 +29,17 @@ export function CreateAccountForm({ token, email }: { token: string; email: stri
       <SubmitButton className="w-full" pendingText="Creating your account…">
         Create account and join
       </SubmitButton>
+      <p className="text-center text-xs text-slate-500">
+        By creating an account you agree to the{" "}
+        <Link href="/terms" className="font-medium text-teal-700 underline underline-offset-2">
+          terms
+        </Link>
+        . Our{" "}
+        <Link href="/privacy" className="font-medium text-teal-700 underline underline-offset-2">
+          privacy policy
+        </Link>{" "}
+        explains how your account details are used.
+      </p>
     </form>
   );
 }

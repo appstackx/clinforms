@@ -1,6 +1,9 @@
 /**
  * Schema parity: every SQLite/D1 migration applied to node:sqlite and every Supabase migration applied to
- * PGlite must give the same tables with the same column names, and match src/server/db/schema.ts.
+ * PGlite must give the same tables with the same column names and the same constraints (NOT NULL, primary keys,
+ * foreign keys with ON DELETE, unique and other indexes), keep audit_log append-only on both, and match
+ * src/server/db/schema.ts. Not compared: column types (dialect-specific by design), defaults (Better Auth's
+ * generator adds DEFAULT CURRENT_TIMESTAMP on Postgres only) and CHECK constraints.
  * Run by `npm run test:db`.
  */
 import assert from "node:assert/strict";
@@ -46,6 +49,81 @@ async function postgresShape(pglite: PGlite): Promise<Shape> {
   return shape;
 }
 
+/** Per table: NOT NULL columns, primary key, foreign keys (with ON DELETE), unique and plain indexes. */
+interface Constraints {
+  notNull: string[];
+  primaryKey: string[];
+  foreignKeys: string[];
+  unique: string[];
+  indexes: string[];
+}
+
+type Row = Record<string, unknown>;
+
+function sqliteConstraints(db: SqliteDatabaseLike, table: string): Constraints {
+  const cols = db.prepare('SELECT name, "notnull" AS nn, pk FROM pragma_table_info(?)').all(table) as Row[];
+  const fkRows = db.prepare('SELECT id, "from" AS col, "table" AS ref, "to" AS refcol, on_delete FROM pragma_foreign_key_list(?) ORDER BY id, seq').all(table) as Row[];
+  const fkById = new Map<number, Row[]>();
+  for (const r of fkRows) fkById.set(Number(r.id), [...(fkById.get(Number(r.id)) ?? []), r]);
+  const indexes = (db.prepare('SELECT name, "unique" AS u, origin FROM pragma_index_list(?)').all(table) as Row[])
+    .filter((i) => i.origin !== "pk") // SQLite's automatic index for the primary key
+    .map((i) => ({
+      unique: Number(i.u) === 1,
+      cols: (db.prepare("SELECT name FROM pragma_index_info(?) ORDER BY seqno").all(String(i.name)) as Row[]).map((c) => String(c.name)).join(","),
+    }));
+  return {
+    notNull: cols.filter((c) => Number(c.nn) === 1 || Number(c.pk) > 0).map((c) => String(c.name)).sort(),
+    primaryKey: cols.filter((c) => Number(c.pk) > 0).sort((a, b) => Number(a.pk) - Number(b.pk)).map((c) => String(c.name)),
+    foreignKeys: Array.from(fkById.values())
+      .map((rs) => `${rs.map((r) => r.col).join(",")} -> ${String(rs[0].ref)}(${rs.map((r) => r.refcol).join(",")}) on delete ${String(rs[0].on_delete)}`)
+      .sort(),
+    unique: indexes.filter((i) => i.unique).map((i) => i.cols).sort(),
+    indexes: indexes.filter((i) => !i.unique).map((i) => i.cols).sort(),
+  };
+}
+
+const PG_ON_DELETE: Record<string, string> = { a: "NO ACTION", r: "RESTRICT", c: "CASCADE", n: "SET NULL", d: "SET DEFAULT" };
+
+async function postgresConstraints(pglite: PGlite): Promise<Map<string, Constraints>> {
+  const notNull = await pglite.query<Row>("select table_name, column_name from information_schema.columns where table_schema = 'public' and is_nullable = 'NO'");
+  const pks = await pglite.query<Row>(
+    "select tc.table_name, kcu.column_name from information_schema.table_constraints tc join information_schema.key_column_usage kcu " +
+      "on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema " +
+      "where tc.table_schema = 'public' and tc.constraint_type = 'PRIMARY KEY' order by kcu.ordinal_position",
+  );
+  const cols = (keys: string, rel: string) =>
+    `array_to_string(array(select a.attname from unnest(${keys}) with ordinality k(n, o) join pg_attribute a on a.attrelid = ${rel} and a.attnum = k.n order by k.o), ',')`;
+  const fks = await pglite.query<Row>(
+    `select cl.relname as t, rc.relname as ref, c.confdeltype as del, ${cols("c.conkey", "c.conrelid")} as col, ${cols("c.confkey", "c.confrelid")} as refcol ` +
+      "from pg_constraint c join pg_class cl on cl.oid = c.conrelid join pg_namespace n on n.oid = cl.relnamespace " +
+      "join pg_class rc on rc.oid = c.confrelid where c.contype = 'f' and n.nspname = 'public'",
+  );
+  const idx = await pglite.query<Row>(
+    `select t.relname as t, ix.indisunique as u, ix.indisprimary as p, ${cols("ix.indkey", "t.oid")} as cols ` +
+      "from pg_index ix join pg_class t on t.oid = ix.indrelid join pg_namespace n on n.oid = t.relnamespace where n.nspname = 'public'",
+  );
+  const out = new Map<string, Constraints>();
+  const get = (t: unknown) => {
+    const key = String(t);
+    if (!out.has(key)) out.set(key, { notNull: [], primaryKey: [], foreignKeys: [], unique: [], indexes: [] });
+    return out.get(key) as Constraints;
+  };
+  for (const r of notNull.rows) get(r.table_name).notNull.push(String(r.column_name));
+  for (const r of pks.rows) get(r.table_name).primaryKey.push(String(r.column_name));
+  for (const r of fks.rows) get(r.t).foreignKeys.push(`${String(r.col)} -> ${String(r.ref)}(${String(r.refcol)}) on delete ${PG_ON_DELETE[String(r.del)]}`);
+  for (const r of idx.rows) {
+    if (r.p) continue;
+    (r.u ? get(r.t).unique : get(r.t).indexes).push(String(r.cols));
+  }
+  for (const c of Array.from(out.values())) {
+    c.notNull.sort();
+    c.foreignKeys.sort();
+    c.unique.sort();
+    c.indexes.sort();
+  }
+  return out;
+}
+
 function asObject(shape: Shape): Record<string, string[]> {
   return Object.fromEntries(Array.from(shape.entries()).sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -67,6 +145,38 @@ describe("migration parity (SQLite/D1 vs Postgres/Supabase)", () => {
 
   it("both migration sets create the same tables and column names", async () => {
     assert.deepEqual(asObject(await postgresShape(pglite)), asObject(sqliteShape(sqlite)));
+  });
+
+  it("both migration sets have the same constraints: NOT NULL, primary keys, foreign keys + ON DELETE, unique and other indexes", async () => {
+    const pg = await postgresConstraints(pglite);
+    for (const table of Array.from(sqliteShape(sqlite).keys())) {
+      assert.deepEqual(pg.get(table), sqliteConstraints(sqlite, table), table);
+    }
+  });
+
+  it("audit_log is append-only on both: UPDATE, DELETE and overwrite (REPLACE / upsert) are refused", async () => {
+    const triggers = (sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'audit_log' ORDER BY name").all() as Row[]).map((r) => r.name);
+    assert.deepEqual(triggers, ["audit_log_no_delete", "audit_log_no_replace", "audit_log_no_update"]);
+    const at = "2026-10-09T10:00:00.000Z";
+    sqlite.prepare("INSERT INTO audit_log (id, tenant_id, action, at) VALUES (?, ?, ?, ?)").run("P1", "t", "member.remove", at);
+    for (const sql of [
+      "UPDATE audit_log SET action = 'x' WHERE id = 'P1'",
+      "DELETE FROM audit_log WHERE id = 'P1'",
+      "INSERT OR REPLACE INTO audit_log (id, tenant_id, action, at) VALUES ('P1', 't', 'harmless.event', 'x')",
+      "REPLACE INTO audit_log (id, tenant_id, action, at) VALUES ('P1', 't', 'harmless.event', 'x')",
+      "INSERT INTO audit_log (id, tenant_id, action, at) VALUES ('P1', 't', 'x', 'x') ON CONFLICT (id) DO UPDATE SET action = 'x'",
+    ]) {
+      assert.throws(() => sqlite.exec(sql), /append-only/, sql);
+    }
+    assert.deepEqual((sqlite.prepare("SELECT action FROM audit_log WHERE id = 'P1'").all() as Row[]).map((r) => r.action), ["member.remove"]);
+    await pglite.query("insert into audit_log (id, tenant_id, action, at) values ('P1', 't', 'member.remove', now())");
+    for (const sql of [
+      "update audit_log set action = 'x' where id = 'P1'",
+      "delete from audit_log where id = 'P1'",
+      "insert into audit_log (id, tenant_id, action, at) values ('P1', 't', 'x', now()) on conflict (id) do update set action = 'x'",
+    ]) {
+      await assert.rejects(pglite.query(sql), /append-only/, sql);
+    }
   });
 
   it("the schema module lists exactly the migrated tables (ours and Better Auth's)", () => {

@@ -44,9 +44,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-GB" className={inter.variable}>
       <body className="min-h-screen bg-background font-sans antialiased">
-        {children}
-        {/* Cookie choices (never shown in the app or the demo) and consent-gated analytics. */}
+        {/* Cookie choices (never shown in the app or the demo) – first in the tab order while shown – then the page and
+            consent-gated analytics. */}
         <ConsentBanner />
+        {children}
         <AnalyticsProvider />
       </body>
     </html>

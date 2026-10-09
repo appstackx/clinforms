@@ -55,7 +55,9 @@ contract here needs the orchestrator.
 - Auth: headers `x-clinforms-ts` (unix ms) and `x-clinforms-sig` = hex HMAC-SHA256(`GATEWAY_SECRET`,
   `ts + "\n" + method + "\n" + path + "\n" + sha256hex(body)`), ±60 s window, constant-time compare.
   Reject: bodies > 8 MiB, > 100 statements, SQL containing `ATTACH`, `DETACH`, `PRAGMA`, `VACUUM`,
-  `sqlite_master` writes. Errors as `{error: {code, message}}` without echoing SQL params.
+  `sqlite_master` writes. Errors as `{error: {code, message}}` without echoing SQL params. *Built (security review):*
+  an allowlist on the first keyword (`SELECT`/`INSERT`/`UPDATE`/`DELETE`/`WITH`), no SQL comments, no `REPLACE`
+  conflict resolution, internal-table checks on every statement with a write keyword (docs/database.md §4).
 - Envs: default → `clinforms-prod` as `DB`, worker name `clinforms-data`; `preview` → `clinforms-preview`,
   name `clinforms-data-preview`. workers.dev URLs. Secret `GATEWAY_SECRET` per env.
 - `migrations_dir` points at `../../db/migrations/sqlite` so `wrangler d1 migrations apply` works.
@@ -82,7 +84,7 @@ sets, made idempotent, RLS on in Postgres)**:
 | `form_file_chunks` | (`tenant_id`, `sha256`, `idx`), `data_enc` | ≤ 512 KiB plaintext per chunk |
 | `reports` | (`tenant_id`, `id`), `rev`, `status`, `form_id`, `template_id`, `payload_enc`, `created_at`, `updated_at`, `delete_after` | index (`tenant_id`, `updated_at`) |
 | `tenant_settings` | `tenant_id`, `referrer_links_json`, `updated_at` | |
-| `audit_log` | `id` (ULID), `tenant_id`, `user_id`, `session_id`, `action`, `target_type`, `target_id`, `detail_json`, `at` | **Append-only** (SQLite: `BEFORE UPDATE/DELETE` triggers `RAISE(ABORT)`; Postgres: revoke + trigger). Never PHI |
+| `audit_log` | `id` (ULID), `tenant_id`, `user_id`, `session_id`, `action`, `target_type`, `target_id`, `detail_json`, `at` | **Append-only** (SQLite: `BEFORE UPDATE/DELETE` triggers `RAISE(ABORT)`, plus *built* `audit_log_no_replace` – migration 0003 – refusing an insert over an existing id, since REPLACE skips DELETE triggers; Postgres: revoke + trigger). Never PHI |
 | `partner_keys` | `id`, `tenant_id`, `name`, `key_hash` (sha256), `last4`, `created_by`, `created_at`, `revoked_at` | Shown once on creation |
 | `launch_token_uses` | `jti`, `expires_at` | Replaces the in-memory replay cache |
 | `rate_limits` | (`key`, `window_start`), `count` | Atomic `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count` |
@@ -112,6 +114,9 @@ re-encrypt in the background).
   (`TWO_FACTOR_REQUIRED`); turning two-step on revokes every older session; sessions 12 h; new sessions open the
   member's most recent clinic. **Previews leave `BETTER_AUTH_URL` unset:** the base URL comes from the request,
   restricted to the deployment's own Vercel hostnames (`VERCEL_URL`, `VERCEL_BRANCH_URL`). Runbook: `docs/auth.md`.
+  *Built (security review):* invitation links carry `<invitation id>.<HMAC>` (key derived from `BETTER_AUTH_SECRET`),
+  never the bare id; Better Auth's `list-invitations` and `get-full-organization` endpoints are off; `/app` and the
+  module seam read the session past the cookie cache.
 - **Invite-only** [A]: clinics are created by the platform (`scripts/admin/create-clinic.ts` or a platform-admin
   page restricted to `CLINFORMS_PLATFORM_ADMINS` emails) after the DPA is signed; the owner gets an invite link.
   *Built:* the scripts (`create-clinic`, `list-clinics`, `offboard-clinic`, `reset-two-factor`, `provision-auth`,
@@ -145,7 +150,7 @@ re-encrypt in the background).
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` |
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only) |
-| `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows |
+| `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows. *Built:* daily (vercel.json, 03:17 UTC); also deletes reports unchanged for their clinic's `retention_days` (read at run time) and access requests older than 24 months; refuses every call while `CRON_SECRET` is unset |
 
 Edge middleware (Next 14.2) only does optimistic cookie redirects for `/app` and the auth pages; real checks are
 in Node layouts and `route()`.

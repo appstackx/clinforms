@@ -31,6 +31,7 @@ import { logAuthEvent } from "../email/log";
 import { appendAudit } from "../repos/audit";
 import { deleteMemberProfile } from "../repos/member-profile";
 import { appOrigin, betterAuthBaseURL, usesSecureCookies, type BaseUrlSetting } from "./config";
+import { inviteLink } from "./invite-token";
 import { AuthDateParsePlugin } from "./pg-dates";
 import { MEMBER_ROLES, accessControl, parseMemberRole, roles } from "./roles";
 import { assertTenantSlug } from "./tenant";
@@ -38,8 +39,9 @@ import { assertTenantSlug } from "./tenant";
 export type AuthDialect = "sqlite" | "d1" | "postgres";
 
 /**
- * An invitation's id IS the secret in its link, so audit rows record this one-way reference instead
- * ("inv_" + 16 characters of its SHA-256): enough to match rows to each other, useless as a link.
+ * Audit rows record this one-way reference to an invitation ("inv_" + 16 characters of its id's SHA-256):
+ * enough to match rows to each other. (The link itself is `<id>.<MAC>` – see ./invite-token.ts – so an id
+ * alone does not accept an invitation either.)
  */
 export function invitationRef(invitationId: string): string {
   return `inv_${createHash("sha256").update(invitationId, "utf8").digest("base64url").slice(0, 16)}`;
@@ -64,6 +66,10 @@ export const DISABLED_PATHS = [
   "/organization/check-slug",
   "/delete-user",
   "/change-email",
+  // Both list a clinic's pending invitations (ids included) to ANY member, whatever the role. ClinForms shows
+  // open invitations to owners and administrators only, server-side (Settings → Members).
+  "/organization/list-invitations",
+  "/organization/get-full-organization",
 ];
 
 /** Successful calls to these paths are audited by the after hook (it knows the acting member). */
@@ -349,7 +355,7 @@ export function createAuth(input: CreateAuthInput) {
         membershipLimit: 500,
         async sendInvitationEmail(data, request) {
           const inviterName = data.inviter.user.id === PLATFORM_USER_ID ? null : data.inviter.user.name;
-          const link = `${await origin(request)}/accept-invite?token=${encodeURIComponent(data.id)}`;
+          const link = inviteLink(await origin(request), data.id, input.secret);
           await deliverEmail(
             invitationEmail({
               to: { email: data.email },

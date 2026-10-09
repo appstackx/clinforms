@@ -17,14 +17,14 @@ import type { DataCipher } from "../../crypto/envelope";
 import { testCipher } from "../../db/testing/databases";
 import { authBool, type Database } from "../../db/schema";
 import { setEmailProviderForTests, type EmailMessage } from "../../email";
-import { listAudit } from "../../repos/audit";
+import { appendAudit, listAudit } from "../../repos/audit";
 import { getClinicProfile } from "../../repos/clinic-profile";
 import { createReport } from "../../repos/reports";
 import { getMemberProfile, upsertMemberProfile } from "../../repos/member-profile";
 import { createPartnerKey } from "../../repos/partner-keys";
 import { createAuth, type Auth, type AuthDialect } from "../create-auth";
 import { buildAuthContext, loadClinicProfile } from "../medreport-actor";
-import { findMembership, findOpenInvitation, listClinicMembers, listPendingInvitations } from "../membership";
+import { findInvitationForLink, findMembership, findOpenInvitation, listClinicMembers, listPendingInvitations } from "../membership";
 import { createClinic, listClinics, offboardClinic, resetTwoFactor } from "../platform";
 import { TenantSlugError } from "../tenant";
 import { CookieJar } from "./cookie-jar";
@@ -136,10 +136,19 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
     });
 
     it("tenant slug rules: format, length, reserved 'demo'", async () => {
-      await assert.rejects(createClinic(t.db, { name: "X", slug: "demo", ownerEmail: "a@b.example", appOrigin: ORIGIN }), TenantSlugError);
-      await assert.rejects(createClinic(t.db, { name: "X", slug: "Bad Slug", ownerEmail: "a@b.example", appOrigin: ORIGIN }), TenantSlugError);
-      await assert.rejects(createClinic(t.db, { name: "X", slug: "-lead", ownerEmail: "a@b.example", appOrigin: ORIGIN }), TenantSlugError);
-      await assert.rejects(createClinic(t.db, { name: "X", slug: "ab", ownerEmail: "a@b.example", appOrigin: ORIGIN }), TenantSlugError);
+      await assert.rejects(createClinic(t.db, { name: "X", slug: "demo", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: SECRET }), TenantSlugError);
+      await assert.rejects(createClinic(t.db, { name: "X", slug: "Bad Slug", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: SECRET }), TenantSlugError);
+      await assert.rejects(createClinic(t.db, { name: "X", slug: "-lead", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: SECRET }), TenantSlugError);
+      await assert.rejects(createClinic(t.db, { name: "X", slug: "ab", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: SECRET }), TenantSlugError);
+      // an id with an earlier clinic's audit trail is never handed to a new clinic
+      await appendAudit({ db: t.db }, "used-before", { action: "clinic.offboard" });
+      await assert.rejects(
+        createClinic(t.db, { name: "X", slug: "used-before", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: SECRET }),
+        /used by an earlier clinic/,
+      );
+      // a link secret that is too short changes nothing
+      await assert.rejects(createClinic(t.db, { name: "X", slug: "short-secret", ownerEmail: "a@b.example", appOrigin: ORIGIN, linkSecret: "short" }));
+      assert.equal(await t.db.selectFrom("organization").select("id").where("slug", "=", "short-secret").executeTakeFirst(), undefined);
     });
 
     it("the platform creates a clinic: organization + clinic profile + owner invitation (link printed, email attempted)", async () => {
@@ -149,9 +158,18 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
         ownerEmail: "Owner@Riverside.example",
         retentionDays: 400,
         appOrigin: ORIGIN,
+        linkSecret: SECRET,
       });
       assert.equal(clinic.tenantId, "riverside-test");
-      assert.equal(clinic.inviteLink, `${ORIGIN}/accept-invite?token=${clinic.invitationId}`);
+      // The link carries `<invitation id>.<MAC>`: the id alone is not a link secret.
+      const linkToken = new URL(clinic.inviteLink).searchParams.get("token") ?? "";
+      assert.equal(clinic.inviteLink, `${ORIGIN}/accept-invite?token=${linkToken}`);
+      assert.match(linkToken, new RegExp(`^${clinic.invitationId}\\.[A-Za-z0-9_-]{43}$`));
+      assert.equal((await findInvitationForLink(t.db, SECRET, linkToken))?.id, clinic.invitationId);
+      assert.equal(await findInvitationForLink(t.db, SECRET, clinic.invitationId), null, "the bare id is not a link");
+      assert.equal(await findInvitationForLink(t.db, "another-secret-".padEnd(48, "z"), linkToken), null, "signed for another app");
+      const tampered = `${linkToken.slice(0, -1)}${linkToken.endsWith("A") ? "B" : "A"}`;
+      assert.equal(await findInvitationForLink(t.db, SECRET, tampered), null, "a changed MAC is refused");
       const profile = await getClinicProfile({ db: t.db }, "riverside-test");
       assert.equal(profile?.organizationId, clinic.organizationId);
       assert.equal(profile?.retentionDays, 400);
@@ -162,7 +180,7 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.equal(sent.at(-1)?.kind, "invitation");
       assert.equal(sent.at(-1)?.link, clinic.inviteLink);
       await assert.rejects(
-        createClinic(t.db, { name: "Again", slug: "riverside-test", ownerEmail: "x@y.example", appOrigin: ORIGIN }),
+        createClinic(t.db, { name: "Again", slug: "riverside-test", ownerEmail: "x@y.example", appOrigin: ORIGIN, linkSecret: SECRET }),
         /already exists/,
       );
       const audit = await listAudit({ db: t.db }, "riverside-test");
@@ -311,6 +329,26 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.deepEqual(withProfile?.clinician, { name: "Sarah Reid (fictional)", hcpc: "PH999999", jobTitle: "Senior Physiotherapist", canSign: true });
     });
 
+    it("no member reads pending invitations over HTTP; the invitation email carries the signed link", async () => {
+      const before = sent.length;
+      const pending = await auth.api.createInvitation({ body: { email: "pending-admin@riverside.example", role: "admin" }, headers: ownerJar.headers() });
+      const mail = sent.slice(before).find((m) => m.kind === "invitation");
+      const token = new URL(mail?.link ?? "http://x/").searchParams.get("token");
+      assert.equal((await findInvitationForLink(t.db, SECRET, token))?.id, pending.id);
+      assert.notEqual(token, pending.id);
+      // Better Auth lists a clinic's invitations (ids included) to ANY member: both endpoints are switched off.
+      for (const jar of [clinicianJar, ownerJar]) {
+        for (const endpoint of ["organization/list-invitations", "organization/get-full-organization"]) {
+          const res = await auth.handler(new Request(`${ORIGIN}/api/auth/${endpoint}?organizationId=${clinic.organizationId}`, { headers: jar.headers({ origin: ORIGIN }) }));
+          assert.equal(res.status, 404, endpoint);
+          assert.ok(!(await res.text()).includes(pending.id), `${endpoint} leaks no invitation id`);
+        }
+      }
+      // Knowing the id is not enough to take the invitation: the accept flow starts from the link token.
+      assert.equal(await findInvitationForLink(t.db, SECRET, pending.id), null);
+      await auth.api.cancelInvitation({ body: { invitationId: pending.id }, headers: ownerJar.headers() });
+    });
+
     it("admins manage members but cannot make owners; role changes and removals are audited", async () => {
       const admin = await onboard("admin@riverside.example", "Adam Admin", "admin");
       const ownerInvite = await apiError(
@@ -383,6 +421,14 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       ownerJar = await signIn("owner@riverside.example", ownerOtp);
     });
 
+    it("a revoked session stops acting for the clinic at once (the seam reads past the cookie cache)", async () => {
+      const other = await signIn("owner@riverside.example", ownerOtp);
+      assert.equal((await buildAuthContext(auth, t.db, other.headers()))?.tenantId, "riverside-test");
+      await auth.api.revokeOtherSessions({ headers: ownerJar.headers() });
+      assert.equal(await buildAuthContext(auth, t.db, other.headers()), null);
+      assert.equal((await buildAuthContext(auth, t.db, ownerJar.headers()))?.role, "owner");
+    });
+
     it("the HTTP handler works too (schema check, session endpoint)", async () => {
       const res = await auth.handler(new Request(`${ORIGIN}/api/auth/get-session`, { headers: ownerJar.headers() }));
       assert.equal(res.status, 200);
@@ -424,6 +470,7 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
     it("offboarding: dry run counts only; confirm exports decrypted data, deletes it, removes members and their accounts", async () => {
       await createReport({ db: t.db, cipher }, "riverside-test", { id: "r-1", status: "draft", templateId: "t", payload: { fictional: true } });
       const key = await createPartnerKey({ db: t.db }, "riverside-test", { name: "PMS" });
+      await assert.rejects(offboardClinic(t.db, cipher, { slug: "riverside-test", releaseSlug: true }), /audit rows/, "the id keeps its audit trail");
       const dry = await offboardClinic(t.db, cipher, { slug: "riverside-test" });
       assert.equal(dry.dryRun, true);
       assert.equal(dry.counts.reports, 1);
@@ -449,7 +496,7 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
         assert.equal(audit[0].action, "clinic.offboard");
         const listed = (await listClinics(t.db)).find((c) => c.tenantId === "riverside-test");
         assert.ok(listed?.offboardedAt, "the organization stays as a tombstone, so the id is never reused");
-        await assert.rejects(createClinic(t.db, { name: "New", slug: "riverside-test", ownerEmail: "n@x.example", appOrigin: ORIGIN }), /already exists/);
+        await assert.rejects(createClinic(t.db, { name: "New", slug: "riverside-test", ownerEmail: "n@x.example", appOrigin: ORIGIN, linkSecret: SECRET }), /already exists/);
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }

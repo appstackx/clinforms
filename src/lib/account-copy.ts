@@ -56,7 +56,9 @@ export const ACCOUNT_ERRORS = {
   alreadyInvited: "That person already has an open invitation.",
   lastOwner: "A clinic always needs at least one owner.",
   invalidEmail: "Enter a valid email address.",
-  invalidHcpc: "Enter the registration number as shown on the HCPC register, for example PH123456.",
+  invalidHcpc: "Enter the registration number as shown on the HCPC register: the profession's letters (PH for physiotherapists), then the digits.",
+  resetOtherClinic:
+    "This person also belongs to another clinic, so their password can only be reset by email to them. Ask them to use “Forgotten your password?” on the sign-in page.",
   canSignNeedsHcpc: "A member who signs forms needs an HCPC registration number.",
   staffCannotSign: "Staff members cannot sign forms.",
   retentionRange: `Choose between ${RETENTION_MIN_DAYS} and ${RETENTION_MAX_DAYS} days.`,

@@ -49,16 +49,15 @@ export function hasTwoFactor(session: ServerSession): boolean {
   return (session.user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled === true;
 }
 
-/** Signed in AND two-step verification on (else redirects). */
+/**
+ * Signed in AND two-step verification on (else redirects). Always read from the database, not Better Auth's
+ * 5-minute cookie cache: a session revoked elsewhere ("sign out other devices", password reset) must lose
+ * access to /app at once.
+ */
 export async function requireSignedIn(options: { allowWithoutTwoFactor?: boolean } = {}): Promise<ServerSession> {
-  let session = await getServerSession();
+  const session = await getServerSession({ fresh: true });
   if (!session) redirect(`/login?next=${encodeURIComponent(currentPath())}`);
-  if (!hasTwoFactor(session)) {
-    // The cookie cache can be up to 5 minutes old: confirm with the database before sending them to setup.
-    session = await getServerSession({ fresh: true });
-    if (!session) redirect(`/login?next=${encodeURIComponent(currentPath())}`);
-    if (!hasTwoFactor(session) && !options.allowWithoutTwoFactor) redirect("/two-factor");
-  }
+  if (!hasTwoFactor(session) && !options.allowWithoutTwoFactor) redirect("/two-factor");
   return session;
 }
 
@@ -69,12 +68,8 @@ export interface AppContext {
 
 /** Signed in, two-step on, and a member of the active clinic (else redirects). */
 export async function requireAppContext(): Promise<AppContext> {
-  let session = await requireSignedIn();
-  let orgId = activeOrganizationId(session);
-  if (!orgId) {
-    session = (await getServerSession({ fresh: true })) ?? session;
-    orgId = activeOrganizationId(session);
-  }
+  const session = await requireSignedIn();
+  const orgId = activeOrganizationId(session);
   if (!orgId) redirect("/app/select-clinic");
   const membership = await findMembership(getDb(), orgId, session.user.id);
   if (!membership) redirect("/app/select-clinic");

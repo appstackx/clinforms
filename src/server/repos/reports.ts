@@ -16,7 +16,7 @@ import {
   toInt,
   type RepoContext,
 } from "./context";
-import { MAX_PAYLOAD_BYTES, type SaveResult } from "./versioned";
+import { MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ROWS, type SaveResult } from "./versioned";
 
 const TABLE = "reports";
 
@@ -41,7 +41,11 @@ export interface ReportInput<P = unknown> {
   status: string;
   formId?: string | null;
   templateId: string;
-  /** ISO timestamp after which the retention job deletes the report (null = keep). */
+  /**
+   * An explicit, earlier deletion deadline (ISO) on top of the clinic's retention period (see
+   * maintenance.ts). Create: omitted/null = none. Update: OMITTED = leave the stored value unchanged,
+   * null = clear it, a timestamp = set it.
+   */
   deleteAfter?: string | null;
   payload: P;
 }
@@ -80,7 +84,8 @@ function validate(input: ReportInput) {
     status: assertText(input.status, "Report status", 32),
     form_id: input.formId ? assertId(input.formId, "Form id") : null,
     template_id: assertText(input.templateId, "Template id", 160),
-    delete_after: input.deleteAfter ? assertIso(input.deleteAfter, "deleteAfter") : null,
+    /** undefined = not given (an update leaves the stored value alone). */
+    delete_after: input.deleteAfter === undefined ? undefined : input.deleteAfter === null ? null : assertIso(input.deleteAfter, "deleteAfter"),
   };
 }
 
@@ -95,7 +100,7 @@ function decryptPayload<P>(ctx: RepoContext, tenantId: string, id: string, paylo
   return JSON.parse(ctx.cipher.decryptString(payloadEnc, { tenantId, table: TABLE, rowId: id })) as P;
 }
 
-/** delete_after = now + retention days (clinic_profile.retention_days). */
+/** A deadline `retentionDays` after `fromIso` (e.g. for an explicit deleteAfter). */
 export function retentionDeadline(fromIso: string, retentionDays: number): string {
   if (!Number.isInteger(retentionDays) || retentionDays < 1) throw new RepoInputError("retentionDays must be a positive integer.");
   return new Date(Date.parse(fromIso) + retentionDays * 86_400_000).toISOString();
@@ -121,6 +126,7 @@ export async function createReport<P>(ctx: RepoContext, tenantId: string, input:
       .values({
         tenant_id: tenantId,
         ...fields,
+        delete_after: fields.delete_after ?? null,
         rev: 1,
         payload_enc: encryptPayload(ctx, tenantId, fields.id, input.payload),
         created_at: at,
@@ -152,7 +158,7 @@ export async function updateReport<P>(
       status: fields.status,
       form_id: fields.form_id,
       template_id: fields.template_id,
-      delete_after: fields.delete_after,
+      ...(fields.delete_after === undefined ? {} : { delete_after: fields.delete_after }),
       payload_enc: encryptPayload(ctx, tenantId, fields.id, input.payload),
       updated_at: at,
     }))
@@ -180,7 +186,10 @@ export async function getReport<P = unknown>(ctx: RepoContext, tenantId: string,
 }
 
 export interface ListReportsOptions {
-  /** Default 200, at most 1000. */
+  /**
+   * Metadata only: default 200, at most 1000. With payloads: default and at most MAX_PAYLOAD_ROWS (20) – on D1
+   * every row travels in one gateway response; read further payloads by id (getReport).
+   */
   limit?: number;
   /** Include the decrypted payloads (default true). */
   withPayload?: boolean;
@@ -193,8 +202,9 @@ export async function listReports<P = unknown>(
   options: ListReportsOptions = {},
 ): Promise<(ReportMeta & { payload?: P })[]> {
   assertTenantId(tenantId);
-  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 200)), 1000);
   const withPayload = options.withPayload ?? true;
+  const max = withPayload ? MAX_PAYLOAD_ROWS : 1000;
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? (withPayload ? MAX_PAYLOAD_ROWS : 200))), max);
   const base = ctx.db
     .selectFrom("reports")
     .where("tenant_id", "=", tenantId)

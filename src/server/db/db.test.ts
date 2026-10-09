@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { Kysely } from "kysely";
 import { runBatch, isD1Database } from "./batch";
 import { D1GatewayClient, D1HttpDialect, signGatewayRequest, toGatewayValue } from "./dialects/d1-http";
-import { pgInt8ToNumber, pgTimestampToIso } from "./dialects/postgres";
+import { pgInt8ToNumber, pgTimestampToIso, sessionPostgresConfigFromEnv } from "./dialects/postgres";
 import { DbError, classifyDbError } from "./errors";
 import { closeDb, createDb, getDb, resolveDbKind } from "./index";
 import type { Database } from "./schema";
@@ -135,6 +135,15 @@ describe("Postgres type parsers", () => {
     assert.equal(pgTimestampToIso("2026-10-09 12:00:00"), "2026-10-09T12:00:00.000Z");
     assert.equal(pgTimestampToIso("infinity"), "infinity");
   });
+  it("migrations and the copy use one session: DATABASE_URL_SESSION first, the transaction pooler refused", () => {
+    const session = "postgresql://postgres.ref:pw@aws-0-eu-west-2.pooler.supabase.com:5432/postgres";
+    const transaction = "postgresql://postgres.ref:pw@aws-0-eu-west-2.pooler.supabase.com:6543/postgres";
+    assert.equal(sessionPostgresConfigFromEnv({ DATABASE_URL: transaction, DATABASE_URL_SESSION: session }).connectionString, session);
+    assert.equal(sessionPostgresConfigFromEnv({ DATABASE_URL: session }).connectionString, session);
+    assert.throws(() => sessionPostgresConfigFromEnv({ DATABASE_URL: transaction }), /session pooler/);
+    assert.throws(() => sessionPostgresConfigFromEnv({}), /DATABASE_URL/);
+  });
+
   it("int8 → number, refusing unsafe values", () => {
     assert.equal(pgInt8ToNumber("42"), 42);
     assert.throws(() => pgInt8ToNumber("9007199254740993"));

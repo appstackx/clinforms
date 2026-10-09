@@ -36,7 +36,7 @@ describe("middleware", () => {
     ] as const) {
       const t = createSqliteTestDb();
       const auth = createAuth({ db: t.db, dialect: "sqlite", secret: "m".repeat(40), baseUrl: { kind: "static", url }, rateLimit: false });
-      const clinic = await createClinic(t.db, { name: "Cookie Clinic (fictional)", slug: "cookie-clinic", ownerEmail: "o@cookie.example", appOrigin: url });
+      const clinic = await createClinic(t.db, { name: "Cookie Clinic (fictional)", slug: "cookie-clinic", ownerEmail: "o@cookie.example", appOrigin: url, linkSecret: "m".repeat(40) });
       assert.ok(clinic.invitationId);
       const res = await auth.api.signUpEmail({ body: { email: "o@cookie.example", password: "long enough password", name: "O" }, returnHeaders: true });
       const jar = new CookieJar().absorb(res.headers);

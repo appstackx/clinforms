@@ -49,7 +49,7 @@ export default function TermsPage() {
           each user has, and remove users who no longer need access.
         </li>
         <li>
-          Every user must sign in with their own account and two-factor authentication. Users must keep their password and
+          Every user must sign in with their own account and two-step verification. Users must keep their password and
           authenticator device secure and must not share accounts.
         </li>
         <li>
@@ -127,7 +127,7 @@ export default function TermsPage() {
 
       <h2 id="fees">7. Fees</h2>
       <p>
-        Fees are set out in the order and are charged per clinic. Unless the order says otherwise, invoices are payable
+        Fees are set out in the order. Unless the order says otherwise, invoices are payable
         within 30 days and fees exclude VAT. We may change fees for a renewal term by giving at least 60 days&rsquo;
         notice before it starts. If an invoice is unpaid 14 days after we have reminded the clinic, we may suspend the
         service until it is paid.

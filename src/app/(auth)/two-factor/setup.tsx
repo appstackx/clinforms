@@ -17,7 +17,7 @@ export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boo
       <div className="space-y-4">
         <Notice tone="success">Two-step verification is on for {email}.</Notice>
         <p className="text-sm text-slate-600">You can make new backup codes and see where you are signed in under Settings → Security.</p>
-        <Link href="/app" className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700">
+        <Link href="/app" className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">
           Continue
         </Link>
       </div>
@@ -30,15 +30,21 @@ export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boo
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">1. Add ClinForms to your authenticator app</h2>
           <p className="text-sm text-slate-600">
-            Open an authenticator app on your phone (for example Google Authenticator, Microsoft Authenticator or 1Password) and scan this
-            code, or type the key below into the app.
+            Open an authenticator app on your phone (any app that shows six-digit sign-in codes works) and scan this code, or type the key
+            below into the app.
           </p>
           <div className="flex justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element -- a generated data: URI, not an optimisable image */}
             <img src={start.qr} alt={`Authenticator set-up code for ${email}`} width={220} height={220} className="rounded-lg border border-slate-200" />
           </div>
           <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <code className="break-all font-mono text-xs text-slate-800">{start.manualKey}</code>
+            <code className="min-w-0 font-mono text-xs text-slate-800">
+              {start.manualKey.split(/\s+/).filter(Boolean).map((group, i) => (
+                <span key={i} className="mr-1.5 inline-block whitespace-nowrap">
+                  {group}
+                </span>
+              ))}
+            </code>
             <CopyButton value={start.manualKey.replace(/\s+/g, "")} label="Copy key" />
           </div>
         </section>

@@ -23,6 +23,7 @@ import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
 import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID, invitationRef } from "./create-auth";
+import { inviteLink } from "./invite-token";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
 import { assertTenantSlug } from "./tenant";
 
@@ -46,9 +47,7 @@ export function normaliseEmail(email: string): string {
   return e;
 }
 
-export function inviteLink(appOrigin: string, invitationId: string): string {
-  return `${appOrigin.replace(/\/+$/, "")}/accept-invite?token=${encodeURIComponent(invitationId)}`;
-}
+export { inviteLink } from "./invite-token";
 
 /** The platform's own user (inviter of record for platform-made invitations). No password: cannot sign in. */
 export async function ensurePlatformUser(db: Kysely<Database>): Promise<void> {
@@ -76,6 +75,8 @@ export interface CreateClinicInput {
   retentionDays?: number;
   /** The app's public origin, for the invitation link (e.g. https://clinforms.co.uk). */
   appOrigin: string;
+  /** BETTER_AUTH_SECRET of the target app: signs the invitation link (an invitation id alone is not a link). */
+  linkSecret: string;
   now?: Date;
 }
 
@@ -98,6 +99,9 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   }
   const existing = await db.selectFrom("organization").select("id").where("slug", "=", slug).executeTakeFirst();
   if (existing) throw new RepoInputError(`A clinic with the id "${slug}" already exists (or was offboarded and keeps its id).`);
+  // An earlier clinic's audit trail stays under its id for good: a new clinic must not inherit it.
+  const history = await db.selectFrom("audit_log").select("id").where("tenant_id", "=", slug).limit(1).executeTakeFirst();
+  if (history) throw new RepoInputError(`The id "${slug}" was used by an earlier clinic (its audit trail is kept): choose another id.`);
 
   await ensurePlatformUser(db);
   const now = input.now ?? new Date();
@@ -105,6 +109,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   const organizationId = authId();
   const invitationId = authId();
   const invitationExpiresAt = new Date(now.getTime() + INVITATION_TTL_SECONDS * 1000).toISOString();
+  const link = inviteLink(input.appOrigin, invitationId, input.linkSecret); // before any write: a bad secret changes nothing
   await runBatch(db, [
     db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: null }),
     db.insertInto("clinic_profile").values({
@@ -132,7 +137,6 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       inviterId: PLATFORM_USER_ID,
     }),
   ]);
-  const link = inviteLink(input.appOrigin, invitationId);
   const email = await deliverEmail(
     invitationEmail({ to: { email: ownerEmail }, clinicName: name, role: "owner", inviterName: null, link, expiresAt: invitationExpiresAt }),
   );
@@ -201,7 +205,10 @@ export interface OffboardInput {
   exportDir?: string;
   /** false (default) = dry run: count only, change nothing. */
   confirm?: boolean;
-  /** Also delete the organization row so its id can be used again (default: keep it as a tombstone). */
+  /**
+   * Also delete the organization row so its id can be used again (default: keep it as a tombstone). Refused
+   * when the id has audit rows (append-only, keyed by the id): the next clinic would inherit them.
+   */
   releaseSlug?: boolean;
 }
 
@@ -278,10 +285,17 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     .where("member.organizationId", "=", org.id)
     .execute();
   const memberUserIds = members.map((m) => m.userId);
-  const otherMemberships = memberUserIds.length
-    ? await db.selectFrom("member").select("userId").where("userId", "in", memberUserIds).where("organizationId", "!=", org.id).execute()
-    : [];
-  const keep = new Set(otherMemberships.map((m) => m.userId));
+  // In groups of 90 ids: D1 allows at most 100 bound parameters per statement.
+  const keep = new Set<string>();
+  for (let i = 0; i < memberUserIds.length; i += 90) {
+    const rows = await db
+      .selectFrom("member")
+      .select("userId")
+      .where("userId", "in", memberUserIds.slice(i, i + 90))
+      .where("organizationId", "!=", org.id)
+      .execute();
+    for (const row of rows) keep.add(row.userId);
+  }
   const deleteUserIds = memberUserIds.filter((id) => !keep.has(id) && id !== PLATFORM_USER_ID);
   const invitations = await db.selectFrom("invitation").selectAll().where("organizationId", "=", org.id).execute();
   const keys = await listPartnerKeys({ db }, tenantId);
@@ -297,6 +311,13 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     auditRows: await countRows(db, "audit_log", tenantId),
   };
   const plan: OffboardPlan = { organizationId: org.id, tenantId, counts, usersToDelete: deleteUserIds.length, usersKept: keep.size };
+  if (input.releaseSlug && counts.auditRows > 0) {
+    // The audit log is append-only and keyed by the clinic id: a new clinic created with a released id would
+    // show (and export) this clinic's audit trail as its own.
+    throw new RepoInputError(
+      `The clinic id "${tenantId}" has ${counts.auditRows} audit rows, which are kept for good: it cannot be released for reuse. Offboard without --release-slug.`,
+    );
+  }
   if (!input.confirm) return { ...plan, dryRun: true, exportDir: null, exportFiles: [] };
   if (!cipher) throw new RepoInputError("The data keys (CLINFORMS_DATA_KEYS) are needed to export the clinic's data.");
   const ctx = { db, cipher };

@@ -6,6 +6,7 @@ import { requestHeaders, requireAppContext } from "@/server/auth/session";
 import { ukDateTime } from "@/server/email/templates";
 import { revokeDevice, revokeOtherDevices } from "./actions";
 import { BackupCodesForm } from "./forms";
+import { COMPANY } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Security" };
@@ -39,8 +40,12 @@ export default async function SecurityPage() {
           <BackupCodesForm />
         </div>
         <p className="mt-5 text-sm text-slate-600">
-          Lost your phone and your backup codes? Ask ClinForms support to reset two-step verification on your account; you then set it up again
-          at your next sign-in.
+          Lost your phone and your backup codes? Email ClinForms support at{" "}
+          <a href={`mailto:${COMPANY.contactEmail}`} className="font-medium text-teal-700 underline underline-offset-2">
+            {COMPANY.contactEmail}
+          </a>{" "}
+          from your work address. We check the request with your clinic&apos;s owner, reset two-step verification on your account, and you
+          set it up again at your next sign-in.
         </p>
       </Panel>
 

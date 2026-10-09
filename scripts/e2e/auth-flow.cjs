@@ -19,7 +19,7 @@ const BASE = process.env.BASE || "http://localhost:3000";
 const OUT = process.env.E2E_OUT || path.resolve(__dirname, "../../.e2e-out/auth");
 const linkFile = process.env.INVITE_LINK_FILE;
 if (!linkFile) throw new Error("INVITE_LINK_FILE is required");
-const inviteLink = (fs.readFileSync(linkFile, "utf8").match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9_-]+/) || [])[0];
+const inviteLink = (fs.readFileSync(linkFile, "utf8").match(/https?:\/\/\S+\/accept-invite\?token=[A-Za-z0-9._-]+/) || [])[0];
 if (!inviteLink) throw new Error("No invitation link in INVITE_LINK_FILE");
 const PASSWORD = `e2e ${crypto.randomBytes(12).toString("base64url")} password`;
 
@@ -270,7 +270,7 @@ function assert(cond, msg) {
     });
   } finally {
     await shot("99-final").catch(() => undefined);
-    console.log(`final page: ${page.url().replace(/token=[A-Za-z0-9_-]+/, "token=…")}`);
+    console.log(`final page: ${page.url().replace(/token=[A-Za-z0-9._-]+/, "token=…")}`);
     fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ results, problems }, null, 2));
     console.log(`${results.filter((r) => r.ok).length}/${results.length} steps passed; ${problems.length} page problems`);
     for (const p of problems.slice(0, 10)) console.log(`  ${p}`);

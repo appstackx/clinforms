@@ -10,10 +10,13 @@
  * - "Accept analytics" and "Reject" have equal weight; "Manage" opens the settings dialog, which the
  *   footer's "Cookie settings" link also opens from any page.
  * - Rendered after hydration only (no server markup), so cached pages never show a stale banner.
+ * - Keyboard: mounted FIRST in <body> (the first Tab reaches it, before the skip link); while it shows, the page gets
+ *   a bottom scroll-padding of its height so a focused element is never hidden behind it; it stays mounted while
+ *   "Manage" is open, so closing the dialog returns focus to the Manage button.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Cookie } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { showsConsentBanner } from "@/lib/site";
@@ -51,17 +54,33 @@ export function ConsentBanner() {
     setManaging(false);
   }, []);
 
+  const configured = mounted && analyticsConfigured();
+  const showBanner = mounted && configured && !choice && !signalled && showsConsentBanner(pathname);
+  const bannerRef = useRef<HTMLElement | null>(null);
+
+  // Keep focused elements clear of the fixed banner (WCAG 2.4.11): scroll-padding-bottom = the banner's height.
+  useEffect(() => {
+    const el = bannerRef.current;
+    if (!showBanner || !el) return;
+    const root = document.documentElement;
+    const apply = () => {
+      root.style.scrollPaddingBottom = `${Math.ceil(el.getBoundingClientRect().height)}px`;
+    };
+    apply();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(apply);
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      root.style.scrollPaddingBottom = "";
+    };
+  }, [showBanner]);
+
   if (!mounted) return null;
-  const configured = analyticsConfigured();
-  const showBanner = configured && !choice && !signalled && !managing && showsConsentBanner(pathname);
 
   return (
     <>
       {showBanner ? (
-        <section
-          aria-label="Cookie choices"
-          className="fixed inset-x-0 bottom-0 z-40 p-3 sm:p-4"
-        >
+        <section ref={bannerRef} aria-label="Cookie choices" className="fixed inset-x-0 bottom-0 z-40 p-3 sm:p-4">
           <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-xl sm:flex-row sm:items-center sm:gap-5 sm:p-5">
             <div className="flex min-w-0 flex-1 gap-3">
               <Cookie className="mt-0.5 hidden h-5 w-5 shrink-0 text-teal-700 sm:block" aria-hidden />

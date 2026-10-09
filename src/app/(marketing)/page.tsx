@@ -60,14 +60,14 @@ const REFERRERS = [
 
 const BEFORE = [
   "Re-reading weeks of notes to answer each question",
-  "Re-typing the same details into every referrer's layout",
+  "Re-typing the same details into every referrer’s layout",
   "Finding a missing detail only after the form has gone",
   "Report writing pushed to the end of a full clinic day",
 ];
 
 const AFTER = [
   "Answers drafted from the notes, each linked to its source",
-  "The referrer's own form, filled in its original layout",
+  "The referrer’s own form, filled in its original layout",
   "Gaps shown before approval – never guessed",
   "Your clinician reviews and approves instead of starting from a blank page",
 ];
@@ -76,7 +76,7 @@ const STEPS = [
   {
     icon: Upload,
     title: "Upload the form once",
-    body: "Add the referrer's Word or PDF form. ClinForms finds each question and the space for its answer, and your team checks that map once. It is reused for every patient that referrer sends.",
+    body: "Add the referrer’s Word or PDF form. ClinForms finds each question and the space for its answer, and your team checks that map once. It is reused for every patient that referrer sends.",
   },
   {
     icon: FileText,
@@ -90,8 +90,8 @@ const STEPS = [
   },
   {
     icon: Download,
-    title: "Download the referrer's own form",
-    body: "Get the completed Word or PDF file in the referrer's original layout, ready to send through your usual channel.",
+    title: "Download the referrer’s own form",
+    body: "Get the completed Word or PDF file in the referrer’s original layout, ready to send through your usual channel.",
   },
 ] as const;
 
@@ -114,7 +114,7 @@ const FEATURES = [
   {
     icon: FileStack,
     title: "The original layout, kept",
-    body: "The output is the referrer's own document with the answers written in – not a new report in a different format.",
+    body: "The output is the referrer’s own document with the answers written in – not a new report in a different format.",
   },
   {
     icon: ListChecks,
@@ -129,9 +129,13 @@ const FEATURES = [
 ] as const;
 
 const SECURITY = [
-  { icon: ClipboardCheck, title: "Clinician approval first", body: "Nothing leaves the clinic until the treating clinician has reviewed and approved it." },
+  {
+    icon: ClipboardCheck,
+    title: "Clinician approval first",
+    body: "No form is final, or can be downloaded as final, until the treating clinician has reviewed and approved it.",
+  },
   { icon: SearchCheck, title: "Every answer cites its source", body: "Each drafted answer links to the notes it came from." },
-  { icon: KeyRound, title: "Two-factor sign-in", body: "Every user signs in with a password and a one-time code from an authenticator app." },
+  { icon: KeyRound, title: "Two-step verification", body: "Every user signs in with a password and a one-time code from an authenticator app." },
   { icon: Lock, title: "Encrypted, stored in the EU", body: "Clinic data is encrypted at rest with a key per clinic, and the database is stored in the EU." },
   { icon: History, title: "Audit trail", body: "Sign-ins and changes to users, roles and access are recorded in a log that cannot be edited." },
   { icon: EyeOff, title: "Data minimisation", body: "Names, dates of birth and contact details are removed before notes are used to draft answers." },
@@ -161,8 +165,8 @@ const FAQ: Array<{ q: string; a: ReactNode }> = [
     q: "Some referrers use an online portal instead of a form. Can it help?",
     a: (
       <>
-        Yes. For portals, ClinForms gives you copy-ready answers for each question, with the same sources and the same
-        clinician review, so you can paste them into the portal.
+        Not yet. ClinForms completes referrers&rsquo; own Word and PDF forms. Help with online portals is something we
+        are looking at &ndash; tell us which portals you use.
       </>
     ),
   },
@@ -195,7 +199,7 @@ const FAQ: Array<{ q: string; a: ReactNode }> = [
   },
   {
     q: "How is it priced?",
-    a: <>Per clinic, not per seat – ask us for a quote that fits the number of sites and forms you handle.</>,
+    a: <>Ask us for a quote that fits the number of sites and forms you handle.</>,
   },
   {
     q: "How do we get started?",
@@ -328,8 +332,8 @@ export default function LandingPage() {
           <SectionHeading
             id="how-title"
             eyebrow="How it works"
-            title="From the referrer's form to an approved copy"
-            intro="Set up each referrer's form once. After that, every patient takes the same four steps."
+            title="From the referrer’s form to an approved copy"
+            intro="Set up each referrer’s form once. After that, every patient takes the same four steps."
           />
           <ol className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {STEPS.map(({ icon: Icon, title, body }, i) => (

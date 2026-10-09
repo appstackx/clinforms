@@ -122,7 +122,7 @@ describe("copy D1/SQLite → Postgres with Better Auth's tables (sign-in still w
     const dst = new Kysely<Database>({ dialect: new PGliteDialect({ pglite }) });
     try {
       const sqliteAuth = createAuth({ db: src.db, dialect: "sqlite", secret, baseUrl: base, rateLimit: false });
-      const clinic = await createClinic(src.db, { name: "Copy Clinic (fictional)", slug: "copy-clinic", ownerEmail: "owner@copy.example", appOrigin: base.url });
+      const clinic = await createClinic(src.db, { name: "Copy Clinic (fictional)", slug: "copy-clinic", ownerEmail: "owner@copy.example", appOrigin: base.url, linkSecret: secret });
       const jar = new CookieJar();
       jar.absorb((await sqliteAuth.api.signUpEmail({ body: { email: "owner@copy.example", password, name: "Owner" }, returnHeaders: true })).headers);
       jar.absorb((await sqliteAuth.api.acceptInvitation({ body: { invitationId: clinic.invitationId }, headers: jar.headers(), returnHeaders: true })).headers);

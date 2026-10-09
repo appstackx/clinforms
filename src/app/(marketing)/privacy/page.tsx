@@ -93,8 +93,9 @@ export default function PrivacyPage() {
           [
             <>
               <strong>Clinic user accounts:</strong> name, work email, role, job title and professional registration number
-              (for clinicians who approve forms), password (stored only as a one-way hash), two-factor authentication
-              settings, sign-in sessions (including IP address and browser), and a record of actions such as approvals
+              (for clinicians who approve forms), password (stored only as a one-way hash), two-step verification
+              settings, sign-in sessions (including IP address and browser), and a record of account and security actions
+              (such as sign-ins and changes to roles)
             </>,
             "To provide the service to your clinic, keep accounts secure, show who approved each form, and meet our obligations to the clinic",
             "Performance of our contract with your clinic, and legitimate interests (security and accountability)",
@@ -140,8 +141,10 @@ export default function PrivacyPage() {
           <Link href="/security">Security</Link>.
         </li>
         <li>
-          <strong>Retention:</strong> completed reports are kept only for the retention period the clinic sets and then
-          deleted, and all of the clinic&rsquo;s data is returned or deleted when its agreement ends, as the DPA sets out.
+          <strong>Retention:</strong> the clinic sets how long completed reports are kept. Automatic deletion at the end
+          of that period is being introduced together with storing reports in the service (see{" "}
+          <Link href="/security">Security</Link>). All of the clinic&rsquo;s data is returned or deleted when its agreement
+          ends, as the DPA sets out.
         </li>
       </ul>
 

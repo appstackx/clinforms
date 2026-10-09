@@ -62,8 +62,8 @@ function Points({ items }: { items: ReactNode[] }) {
 
 const STATUS: Array<{ area: string; demo: string; live: string }> = [
   { area: "Patient data", demo: "Fictional patients only", live: "Real data only after the Data Processing Agreement and the DPIA are signed off with the clinic" },
-  { area: "Where reports are kept", demo: "In this browser", live: "UK-hosted database, encrypted at rest (AES-256) and in transit (TLS 1.2+)" },
-  { area: "Sign-in", demo: "Demo sessions; launch from the simulated TM3", live: "Clinic accounts with multi-factor authentication and roles; launch from TM3 in the patient's context" },
+  { area: "Where reports are kept", demo: "In this browser", live: "Database encrypted at rest (AES-256, a key per clinic) and in transit (TLS 1.2+), hosted in the UK before real patient data is used" },
+  { area: "Sign-in", demo: "Demo sessions; launch from the simulated TM3", live: "Clinic accounts with two-step verification and roles; launch from TM3 in the patient's context" },
   { area: "Audit trail", demo: "Kept with each report in this browser", live: "Server-side and append-only: every draft, edit, resolution, approval and filing, with who and when" },
   WORDING.security.statusRow,
   { area: "TM3", demo: "Simulated TM3 sandbox (not affiliated with TM3)", live: "Notes export upload now; a direct connection subject to TM3 providing access" },
@@ -115,7 +115,7 @@ export function SecurityScreen() {
         <Section icon={KeyRound} title="Who can see it" id="access">
           <Points
             items={[
-              <>Clinic accounts with multi-factor authentication and roles (clinician, practice manager, admin).</>,
+              <>Clinic accounts with two-step verification and roles (owner, administrator, clinician, staff).</>,
               <>Opened from TM3, a session covers that one patient&apos;s episode and expires after an hour; launch links work once.</>,
               <>Staff see the clinic&apos;s own reports and forms only.</>,
             ]}
@@ -125,7 +125,7 @@ export function SecurityScreen() {
         <Section icon={Server} title="Where the data lives" id="hosting">
           <Points
             items={[
-              <>UK hosting, encrypted at rest and in transit.</>,
+              <>Encrypted at rest and in transit. Before any real patient data is used, the database is hosted in the UK (see the public <Link href="/security" className="font-medium text-teal-800 underline underline-offset-2">security page</Link> for what is in place today).</>,
               <>The completed form is filed to the patient&apos;s record in TM3; working copies are kept only as long as the clinic&apos;s retention policy allows.</>,
               <>Uploaded forms and documents are processed with size limits and in an isolated converter without network access.</>,
             ]}
@@ -135,7 +135,7 @@ export function SecurityScreen() {
         <Section icon={History} title="Audit trail" id="audit">
           <Points
             items={[
-              <>Every draft, edit, gap resolution, approval and filing is recorded with who did it and when.</>,
+              <>Every draft, edit, gap resolution, approval and filing is recorded in the report&apos;s own audit trail, with who did it and when (in this demo, kept with the report in this browser).</>,
               <>Resolving a gap says who answered it; nobody can mark an opinion as answered without writing it.</>,
               <>{WORDING.security.draftsLabelled}</>,
             ]}

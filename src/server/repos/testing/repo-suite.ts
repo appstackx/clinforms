@@ -20,7 +20,7 @@ import { RepoInputError } from "../context";
 import { FILE_CHUNK_BYTES, deleteFormFile, getFormFile, hasFormFile, listFormFiles, putFormFile } from "../form-files";
 import { createForm, deleteForm, getForm, listFormMeta, listForms, updateForm } from "../forms";
 import { claimLaunchToken, purgeExpiredLaunchTokens } from "../launch-tokens";
-import { purgeExpiredReports } from "../maintenance";
+import { purgeExpiredReports, purgeOldAccessRequests, runRetention } from "../maintenance";
 import { getMemberProfile, listMemberProfiles, upsertMemberProfile } from "../member-profile";
 import { createPartnerKey, listPartnerKeys, partnerKeyTenant, revokePartnerKey, verifyPartnerKey } from "../partner-keys";
 import { hitRateLimit, peekRateLimit, purgeRateLimits } from "../rate-limits";
@@ -123,13 +123,20 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       const rep2 = await getReport(ctx, A, "rep-2");
       assert.equal(rep2?.formId, null);
       assert.equal(rep2?.deleteAfter, null);
-      // retention: rep-1's delete_after was cleared by the update (deleteAfter omitted) → nothing expires
+      // retention: an update that OMITS deleteAfter keeps the stored deadline (it must never switch deletion off)
+      const rep1 = await getReport(ctx, A, "rep-1");
+      assert.equal(rep1?.deleteAfter, retentionDeadline(rep1!.createdAt, 1));
       tick(3 * 86_400_000);
-      assert.equal(await purgeExpiredReports(ctx), 0);
-      await updateReport(ctx, A, { ...base, id: "rep-2", deleteAfter: new Date(clock - 1000).toISOString() }, 1);
+      assert.equal(await purgeExpiredReports(ctx), 1, "rep-1's deadline passed (rep-2 has none, clinic A has no profile yet)");
+      assert.equal(await getReport(ctx, A, "rep-1"), null);
+      // null clears an explicit deadline; a timestamp sets one
+      await updateReport(ctx, A, { ...base, id: "rep-2", deleteAfter: new Date(clock + 60_000).toISOString() }, 1);
+      await updateReport(ctx, A, { ...base, id: "rep-2", deleteAfter: null }, 2);
+      assert.equal((await getReport(ctx, A, "rep-2"))?.deleteAfter, null);
+      await updateReport(ctx, A, { ...base, id: "rep-2", deleteAfter: new Date(clock - 1000).toISOString() }, 3);
       assert.equal(await purgeExpiredReports(ctx), 1);
       assert.equal(await getReport(ctx, A, "rep-2"), null);
-      assert.equal(await deleteReport(ctx, A, "rep-1"), true);
+      assert.equal(await deleteReport(ctx, A, "rep-2"), false);
     });
 
     it("form files: chunked, encrypted, verified on read, idempotent, repairable", async () => {
@@ -238,6 +245,19 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       await expectDbError(ctx.db.updateTable("audit_log").set({ action: "tampered" }).where("id", "=", e1.id).execute(), "APPEND_ONLY");
       await expectDbError(ctx.db.deleteFrom("audit_log").where("id", "=", e1.id).execute(), "APPEND_ONLY");
       await expectDbError(ctx.db.deleteFrom("audit_log").execute(), "APPEND_ONLY");
+      // overwriting an entry through conflict resolution is refused too (an upsert on every dialect; REPLACE
+      // fails on every dialect: the SQLite trigger, Postgres has no REPLACE, the D1 gateway refuses it)
+      const overwrite = { id: e1.id, tenant_id: A, action: "harmless.event", at: new Date(clock).toISOString() };
+      await expectDbError(
+        ctx.db
+          .insertInto("audit_log")
+          .values(overwrite)
+          .onConflict((oc) => oc.column("id").doUpdateSet({ action: "harmless.event" }))
+          .execute(),
+        "APPEND_ONLY",
+      );
+      await assert.rejects(ctx.db.insertInto("audit_log").orReplace().values(overwrite).execute());
+      await assert.rejects(ctx.db.replaceInto("audit_log").values(overwrite).execute());
       assert.equal((await listAudit(ctx, A))[1].action, "report.sign");
       await assert.rejects(appendAudit(ctx, A, { action: "Bad Action" }), RepoInputError);
     });
@@ -321,6 +341,37 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.equal(ok.length, 3);
       assert.deepEqual(ok[2].rows, [{ referrer_links_json: '{"a":1}' }]);
       assert.deepEqual((await getTenantSettings(ctx, "batch-test"))?.referrerLinks, { a: 1 });
+    });
+
+    it("retention: the clinic's period applies at purge time; old access requests go after 24 months", async () => {
+      const C = "clinic-retention";
+      const DAY = 86_400_000;
+      const base = { status: "approved", templateId: "solicitor", payload: { fictional: true } };
+      const profile = { organizationId: "org_retention", displayName: "Retention Clinic (fictional)", retentionDays: 30 };
+      await upsertClinicProfile(ctx, C, profile);
+      await createReport(ctx, C, { ...base, id: "old" });
+      tick(10 * DAY);
+      await createReport(ctx, C, { ...base, id: "recent" });
+      await createReport(ctx, C, { ...base, id: "busy" });
+      tick(25 * DAY); // old: 35 days since its last change, recent and busy: 25
+      await updateReport(ctx, C, { ...base, id: "busy", status: "draft" }, 1); // still being worked on
+      await purgeExpiredReports(ctx);
+      assert.equal(await getReport(ctx, C, "old"), null, "past the clinic's 30 days");
+      assert.ok(await getReport(ctx, C, "recent"));
+      // shortening the period applies to EXISTING reports on the next run (nothing to recalculate)
+      await upsertClinicProfile(ctx, C, { ...profile, retentionDays: 20 });
+      await purgeExpiredReports(ctx);
+      assert.equal(await getReport(ctx, C, "recent"), null, "25 days > the new 20");
+      assert.ok(await getReport(ctx, C, "busy"), "changed today: kept");
+
+      const request = await createAccessRequest(ctx, { clinicName: "Old Clinic (fictional)", contactName: "Ann Example", email: "ann@old.example" });
+      tick(729 * DAY);
+      assert.equal(await purgeOldAccessRequests(ctx), 0);
+      tick(2 * DAY);
+      assert.ok((await purgeOldAccessRequests(ctx)) >= 1);
+      assert.ok(!(await listAccessRequests(ctx)).some((r) => r.id === request.id));
+      const pass = await runRetention(ctx);
+      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "launchTokens", "rateLimits", "reports"]);
     });
 
     it("tenants are isolated by construction (and ciphertext cannot be moved between tenants)", async () => {

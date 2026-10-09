@@ -21,16 +21,16 @@ export default async function ClinicLayout({ children }: { children: React.React
   return (
     <>
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <BrandMark />
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <BrandMark compact />
             <span className="hidden text-slate-300 sm:inline" aria-hidden>
               /
             </span>
             <span className="truncate text-sm font-medium text-slate-800">{membership.clinicName}</span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{roleLabel(membership.role)}</span>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{roleLabel(membership.role)}</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <span className="hidden text-sm text-slate-600 md:inline">{session.user.email}</span>
             <form action={signOutAction}>
               <SubmitButton variant="secondary" className="h-8 px-3 text-xs" pendingText="Signing out…">

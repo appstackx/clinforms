@@ -18,7 +18,7 @@ import path from "node:path";
 import { CompiledQuery, Kysely } from "kysely";
 import pg from "pg";
 import { D1HttpDialect } from "../../src/server/db/dialects/d1-http";
-import { pgConnectionConfig, postgresConfigFromEnv } from "../../src/server/db/dialects/postgres";
+import { pgConnectionConfig, sessionPostgresConfigFromEnv } from "../../src/server/db/dialects/postgres";
 import { openSqliteDatabase, type SqliteDatabaseLike } from "../../src/server/db/dialects/sqlite-local";
 import type { PgMigrationClient } from "../../src/server/db/migrations";
 import { PRIMARY_KEYS, TABLES_IN_FK_ORDER, type Database, type TableName } from "../../src/server/db/schema";
@@ -251,7 +251,7 @@ async function main(): Promise<void> {
       console.log("Dry run: nothing written.");
       return;
     }
-    const client = new pg.Client(pgConnectionConfig(postgresConfigFromEnv()));
+    const client = new pg.Client(pgConnectionConfig(sessionPostgresConfigFromEnv()));
     await client.connect();
     try {
       const result = await copyDatabase(source, pgMigrationClient(client), { log });

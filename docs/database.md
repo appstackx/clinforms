@@ -103,10 +103,14 @@ Use `npm run db:migrate` for Supabase, not `supabase db push`: the CLI keeps its
   Missing / short `GATEWAY_SECRET` → 503 `NOT_CONFIGURED` (closed, never open).
 - **Limits:** body ≤ 8 MiB (413), ≤ 100 statements (400 `TOO_MANY_STATEMENTS`), ≤ 100 parameters and ≤ 100 000
   characters per statement (D1's own limits), parameters only `null | string | number | boolean`.
-- **Denylist (400 `SQL_DENIED`):** `ATTACH`, `DETACH`, `PRAGMA`, `VACUUM`, `load_extension`; DDL (`CREATE`,
-  `DROP`, `ALTER`, `REINDEX`, `ANALYZE` – schema changes go through migrations); transaction statements; any
-  non-SELECT touching `sqlite_master`/`sqlite_schema`/`sqlite_sequence`/`d1_migrations`/`_cf_*`; stacked
-  statements. Read-only `pragma_table_info(…)` stays allowed.
+- **SQL rules (400 `SQL_DENIED`):** allowlist – the first keyword must be `SELECT`, `INSERT`, `UPDATE`, `DELETE` or
+  `WITH`; **no SQL comments** (`--`, `/*`: the query builder never writes them, and one could hide the real first
+  keyword); no `REPLACE` conflict resolution (`REPLACE INTO`, `INSERT/UPDATE OR REPLACE` – it would overwrite
+  append-only rows without firing DELETE triggers; use `ON CONFLICT … DO UPDATE`); never `ATTACH`, `DETACH`,
+  `PRAGMA`, `VACUUM`, `load_extension`; DDL and transaction statements refused with their own messages; any
+  statement containing a write keyword that touches `sqlite_master`/`sqlite_schema`/`sqlite_sequence`/
+  `d1_migrations`/`_cf_*` (whatever it starts with, e.g. `WITH … DELETE`); stacked statements. Read-only
+  `pragma_table_info(…)` stays allowed. Schema changes go through migrations (wrangler) only.
 - **Errors:** `{error: {code, message}}` – `CONSTRAINT_UNIQUE|FOREIGN_KEY|CHECK|NOT_NULL` and `APPEND_ONLY` (409),
   `SQL_ERROR` (400), `UNAVAILABLE` (503, no detail). SQL parameters are never echoed or logged; the Worker logs
   only `{event, code, mode, statements, message}`. The app maps codes to `DbError` (`src/server/db/errors.ts`).
@@ -153,15 +157,21 @@ app's `{db, cipher}`.
 
 | Module | Notes |
 |---|---|
-| `forms`, `reports` | `create` (rev 1, `exists` on a duplicate) / `update(expectedRev)` → `{ok, rev}` or `{reason: "conflict", currentRev}` / `not_found`; payloads encrypted; reports list newest first; `retentionDeadline()` |
+| `forms`, `reports` | `create` (rev 1, `exists` on a duplicate) / `update(expectedRev)` → `{ok, rev}` or `{reason: "conflict", currentRev}` / `not_found`; payloads encrypted; lists newest first, **at most 20 rows with payloads per call** (on D1 a list travels in one gateway response – list metadata and read payloads by id for more); report `deleteAfter`: omitted on update = unchanged, `null` = clear |
 | `form-files` | content-addressed by SHA-256; chunks ≤ 512 KiB, 2 per request; complete only when every chunk exists; reads verify size + SHA-256 (`FileIntegrityError`); re-put repairs |
 | `tenant-settings`, `clinic-profile`, `member-profile` | upserts |
-| `audit` | append-only insert + list (ULID ids, newest first); the database refuses UPDATE/DELETE |
+| `audit` | append-only insert + list (ULID ids, newest first); the database refuses UPDATE, DELETE and overwriting an id (SQLite/D1: triggers in 0001 + `audit_log_no_replace` in 0003; Postgres: revoke + trigger; the gateway also refuses REPLACE) |
 | `partner-keys` | `cfk_<tenant>_<43 chars>`, shown once; SHA-256 stored; `partnerKeyTenant()` + `verifyPartnerKey(tenant, key)`; revoke |
 | `launch-tokens` | `claimLaunchToken(jti, expiresAt)` – true exactly once (INSERT … ON CONFLICT DO NOTHING RETURNING) |
 | `rate-limits` | `hitRateLimit(key, windowMs)` – one atomic upsert, returns the window count; `peek`, `reset`, `purge` |
 | `access-requests` | landing-page requests (not tenant data) |
-| `maintenance` | `runRetention()` for `/api/cron/retention`: expired reports, launch tokens, rate-limit windows (the only cross-tenant functions) |
+| `maintenance` | `runRetention()` for `/api/cron/retention` (the only cross-tenant functions): reports not changed for their clinic's `retention_days` (read at run time, so a changed setting applies to existing reports) or past an explicit `delete_after`; used launch tokens; rate-limit windows older than a day; access requests older than 24 months |
+
+**Retention cron:** `GET /api/cron/retention` (`src/app/api/cron/retention/route.ts`, logic + tests in
+`src/server/cron/retention.ts`), scheduled daily at 03:17 UTC in `vercel.json` (Vercel runs crons on production
+deployments only). Vercel sends `Authorization: Bearer $CRON_SECRET` when `CRON_SECRET` (16+ characters) is set on
+the project; without it the endpoint refuses every call (503), so set `CRON_SECRET` in production before relying on
+automatic deletion. Counts only in the logs.
 
 ## 7. Backups and restore
 
@@ -169,13 +179,16 @@ app's `{db, cipher}`.
 - **Time Travel** (built in, no setup): point-in-time restore of the whole database (7 days on the Workers Free
   plan, 30 days on Paid):
   ```bash
+  cd workers/data-gateway && export CLOUDFLARE_ACCOUNT_ID=a04ab546d0f1be2aa339bafebcdb3ffa   # pinned wrangler lives here
   npx wrangler d1 time-travel info clinforms-prod --timestamp=2026-10-10T09:00:00Z
   npx wrangler d1 time-travel restore clinforms-prod --timestamp=2026-10-10T09:00:00Z   # overwrites current state
   ```
   Note the bookmark `info` prints before restoring, so the restore can be undone.
-- **Exports** (off-site copies; they contain ciphertext and metadata, still store them encrypted):
+- **Exports** (off-site copies; they contain ciphertext and metadata, still store them encrypted – and outside the
+  repository):
   ```bash
-  npx wrangler d1 export clinforms-prod --remote --output backups/clinforms-prod-$(date +%F).sql
+  cd workers/data-gateway && export CLOUDFLARE_ACCOUNT_ID=a04ab546d0f1be2aa339bafebcdb3ffa   # pinned wrangler lives here
+  npx wrangler d1 export clinforms-prod --remote --output ~/clinforms-backups/clinforms-prod-$(date +%F).sql
   ```
   Restore an export into a fresh database: `wrangler d1 create …`, then `wrangler d1 execute <db> --remote --file …`.
   An export blocks the database while it runs: schedule it out of hours.
@@ -192,10 +205,17 @@ Trigger: the first paying clinic signs (owner decision). Auth stays Better Auth 
    pooler URLs to `~/.config/appstackx/clinforms.supabase.env` and prints the URLs without the password.
 2. **Harden the project** (dashboard): SSL enforcement on, network restrictions if used, Data API exposed schemas
    reviewed (our tables have RLS on and no policies), PITR enabled, download the CA certificate.
-3. **Migrate the schema:** `CLINFORMS_DB=postgres DATABASE_URL=<session URL> npm run db:migrate`.
-4. **Rehearse the copy on preview data:**
-   `DATABASE_URL=<session URL of a scratch project> npm run db:copy-to-postgres -- --from gateway --env preview`.
-5. **Freeze writes:** put the app in maintenance (or block `/app` and the API writes) so D1 stops changing.
+3. **Migrate the schema:** `CLINFORMS_DB=postgres DATABASE_URL_SESSION=<session URL> npm run db:migrate`
+   (migrations and the copy need one session: they prefer `DATABASE_URL_SESSION` and refuse the transaction pooler,
+   port 6543).
+4. **Rehearse the copy on preview data:** create a scratch project, migrate it first
+   (`CLINFORMS_DB=postgres DATABASE_URL_SESSION=<scratch session URL> npm run db:migrate`), then
+   `DATABASE_URL_SESSION=<scratch session URL> npm run db:copy-to-postgres -- --from gateway --env preview`.
+5. **Freeze writes. NOT BUILT YET – there is no maintenance mode or read-only switch.** Until one exists, freeze by
+   hand: tell the clinics, then remove `CLINFORMS_D1_GATEWAY_SECRET` from the production Vercel environment and
+   redeploy (the app can then neither read nor write D1 – sign-ins, the request-access form and `/app` fail
+   closed), and run the copy with the secret from the secrets file. The copy checks the target against its first
+   read of the source only: anything written to D1 after that is not detected, so the freeze must be in place first.
 6. **Copy production:** `DATABASE_URL=<session URL> npm run db:copy-to-postgres -- --from gateway --env production`
    (`--dry-run` first). One transaction, FK order, ciphertext as-is; row counts and per-table SHA-256 checksums
    must match or it rolls back. The target must be empty.
@@ -225,7 +245,13 @@ writes happened on Postgres – copy those back by hand).
   per request (~1.4 MB) to stay well inside it. A 2.4 MB file took ~4 s to write and ~1.5 s to read from the UK
   in the preview self-test. Workers Paid ($5/month) raises the CPU limit and Time Travel to 30 days.
 - **D1 limits:** 2 MB per row/string, 100 bound parameters and 100 KB per statement, few terms per compound
-  SELECT. Payloads above 1.4 MB JSON are refused by the repositories (`RepoInputError`).
+  SELECT, and **500 MB per database on Workers Free (10 GB on Paid)** – storing form files in D1 reaches the size
+  cap first: check it with `cd workers/data-gateway && CLOUDFLARE_ACCOUNT_ID=… npx wrangler d1 info clinforms-prod`.
+  Payloads above 1.4 MB JSON are refused by the repositories (`RepoInputError`).
+- **Postgres roles (before real data on Supabase):** the app currently connects as the table owner, which could
+  disable or drop the audit triggers. Before the switch, create a login role that does not own the tables (SELECT/
+  INSERT/UPDATE/DELETE on the tables, only SELECT and INSERT on `audit_log`) for the app, and keep the owner (session
+  URL) for migrations and the copy.
 - **Better Auth** (built, `docs/auth.md`): Kysely adapter on `getDb()` with `type: "sqlite"` for d1/sqlite and
   `"postgres"` for Postgres, `transaction: false` on every dialect, start-up schema check off on D1 only (real D1
   refuses `pragma_table_info` on `_cf_KV`, and the gateway refuses `PRAGMA`). Its tables are in migration 0002.

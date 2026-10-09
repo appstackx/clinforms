@@ -1,7 +1,8 @@
 /**
- * Request validation and the SQL denylist. The gateway only runs what the app's query builder sends:
- * one statement per entry, bound parameters, no schema changes (migrations go through wrangler), no
- * transaction control (use mode "batch"), and none of ATTACH / DETACH / PRAGMA / VACUUM or writes to
+ * Request validation and the SQL rules. The gateway only runs what the app's query builder sends: one
+ * SELECT / INSERT / UPDATE / DELETE / WITH statement per entry (allowlist on the first keyword), bound
+ * parameters, no comments, no schema changes (migrations go through wrangler), no transaction control (use
+ * mode "batch"), no REPLACE conflict resolution, and none of ATTACH / DETACH / PRAGMA / VACUUM or writes to
  * SQLite's / D1's own tables.
  */
 export const LIMITS = {
@@ -36,20 +37,34 @@ export class RequestError extends Error {
 
 const DENIED_KEYWORDS = /\b(ATTACH|DETACH|PRAGMA|VACUUM)\b|\bload_extension\b/i;
 const INTERNAL_TABLES = /\b(sqlite_master|sqlite_schema|sqlite_temp_master|sqlite_temp_schema|sqlite_sequence|d1_migrations|_cf_[a-z0-9_]*)\b/i;
-const READ_ONLY_START = /^\s*(select|with)\b/i;
+/** The query builder never writes comments; a comment could hide the statement's real first keyword. */
+const COMMENT = /--|\/\*/;
+/** Allowlist: the statement kinds the app's query builder emits. Everything else (DDL, transaction control…) is refused. */
+const ALLOWED_START = /^\s*(select|insert|update|delete|with)\b/i;
 const DDL_START = /^\s*(create|drop|alter|reindex|analyze)\b/i;
 const TX_START = /^\s*(begin|commit|end|rollback|savepoint|release)\b/i;
+/** Any statement that can write, whatever it starts with (WITH … DELETE, INSERT … SELECT …). */
+const WRITE_KEYWORD = /\b(insert|update|delete|replace)\b/i;
+/**
+ * REPLACE conflict resolution (REPLACE INTO, INSERT OR REPLACE, UPDATE OR REPLACE) deletes the conflicting row
+ * WITHOUT firing DELETE triggers (recursive_triggers is off on D1), so it would overwrite append-only rows.
+ * The app uses ON CONFLICT … DO UPDATE instead.
+ */
+const REPLACE_CONFLICT = /^\s*replace\b|\bor\s+replace\b/i;
 
 /** Throws RequestError(400, "SQL_DENIED") for SQL the gateway never runs. */
 export function checkSql(sql: string): void {
   const deny = (why: string): never => {
     throw new RequestError(400, "SQL_DENIED", why);
   };
+  if (COMMENT.test(sql)) deny("SQL comments are not allowed through the gateway.");
   const keyword = DENIED_KEYWORDS.exec(sql);
   if (keyword) deny(`${keyword[0].toUpperCase()} is not allowed through the gateway.`);
   if (DDL_START.test(sql)) deny("Schema changes are not allowed through the gateway: use migrations.");
   if (TX_START.test(sql)) deny('Transaction statements are not allowed: send the statements with mode "batch".');
-  if (INTERNAL_TABLES.test(sql) && !READ_ONLY_START.test(sql)) deny("Writes to internal tables are not allowed.");
+  if (!ALLOWED_START.test(sql)) deny("Only SELECT, INSERT, UPDATE, DELETE and WITH statements are allowed.");
+  if (REPLACE_CONFLICT.test(sql)) deny("REPLACE conflict resolution is not allowed: use ON CONFLICT … DO UPDATE.");
+  if (INTERNAL_TABLES.test(sql) && WRITE_KEYWORD.test(sql)) deny("Writes to internal tables are not allowed.");
   if (sql.replace(/;\s*$/, "").includes(";")) deny("One SQL statement per entry.");
 }
 

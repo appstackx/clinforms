@@ -16,7 +16,7 @@ import {
   toInt,
   type RepoContext,
 } from "./context";
-import { MAX_PAYLOAD_BYTES, type SaveResult } from "./versioned";
+import { MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ROWS, type SaveResult } from "./versioned";
 
 const TABLE = "forms";
 
@@ -184,15 +184,20 @@ export async function getForm<P = unknown>(ctx: RepoContext, tenantId: string, i
   return { ...toMeta(row), payload: decryptPayload<P>(ctx, tenantId, row.id, row.payload_enc) };
 }
 
-/** Every form of the tenant, newest first, with payloads. */
-export async function listForms<P = unknown>(ctx: RepoContext, tenantId: string): Promise<FormRecord<P>[]> {
+/**
+ * The tenant's most recently updated forms WITH payloads – at most MAX_PAYLOAD_ROWS (default and cap). For the
+ * whole library, list the metadata (listFormMeta) and read payloads by id (getForm).
+ */
+export async function listForms<P = unknown>(ctx: RepoContext, tenantId: string, options: { limit?: number } = {}): Promise<FormRecord<P>[]> {
   assertTenantId(tenantId);
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? MAX_PAYLOAD_ROWS)), MAX_PAYLOAD_ROWS);
   const rows = await ctx.db
     .selectFrom("forms")
     .select([...META_COLUMNS, "payload_enc"])
     .where("tenant_id", "=", tenantId)
     .orderBy("updated_at", "desc")
     .orderBy("id")
+    .limit(limit)
     .execute();
   return rows.map((row) => ({ ...toMeta(row), payload: decryptPayload<P>(ctx, tenantId, row.id, row.payload_enc) }));
 }

@@ -64,7 +64,7 @@ export default async function ClinicOverviewPage() {
         </p>
         <Link
           href="/reports"
-          className="mt-4 inline-flex h-10 items-center rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700"
+          className="mt-4 inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
         >
           Open the demo studio
         </Link>

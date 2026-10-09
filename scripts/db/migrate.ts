@@ -6,14 +6,14 @@
  *   CLINFORMS_DB=d1 npm run db:migrate -- --d1-env production --yes # production D1 (orchestrator only)
  *   CLINFORMS_DB=postgres DATABASE_URL=… npm run db:migrate         # supabase/migrations via pg, idempotent
  *
- * Postgres: use the SESSION pooler (port 5432) or the direct connection for migrations – the advisory lock
- * needs one session. Nothing secret is printed.
+ * Postgres: needs the SESSION pooler (port 5432) or the direct connection – the advisory lock needs one session.
+ * DATABASE_URL_SESSION wins over DATABASE_URL; the transaction pooler (port 6543) is refused. Nothing secret is printed.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
-import { pgConnectionConfig, postgresConfigFromEnv } from "../../src/server/db/dialects/postgres";
+import { pgConnectionConfig, sessionPostgresConfigFromEnv } from "../../src/server/db/dialects/postgres";
 import { openSqliteDatabase } from "../../src/server/db/dialects/sqlite-local";
 import { DEFAULT_SQLITE_PATH, resolveDbKind } from "../../src/server/db/index";
 import { applyPostgresMigrations, applySqliteMigrations, type PgMigrationClient } from "../../src/server/db/migrations";
@@ -75,7 +75,7 @@ function migrateD1(): void {
 }
 
 async function migratePostgres(): Promise<void> {
-  const client = new pg.Client(pgConnectionConfig(postgresConfigFromEnv()));
+  const client = new pg.Client(pgConnectionConfig(sessionPostgresConfigFromEnv()));
   await client.connect();
   try {
     const applied = await applyPostgresMigrations(pgMigrationClient(client));

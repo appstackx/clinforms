@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
 import { CopyButton, SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
-import { appOrigin, baseUrlSetting } from "@/server/auth/config";
+import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { listClinicMembers, listPendingInvitations } from "@/server/auth/membership";
 import { inviteLink } from "@/server/auth/platform";
 import { assignableRoles, isManager } from "@/server/auth/roles";
@@ -27,6 +27,7 @@ export default async function MembersPage() {
   const roles = assignableRoles(membership.role);
   const emailOff = emailProviderName() === "none";
   const origin = appOrigin(baseUrlSetting(), requestHeaders());
+  const linkSecret = manager ? authSecret() : "";
 
   return (
     <>
@@ -54,7 +55,7 @@ export default async function MembersPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CopyButton value={inviteLink(origin, inv.id)} label="Copy link" />
+                  <CopyButton value={inviteLink(origin, inv.id, linkSecret)} label="Copy link" />
                   <form action={cancelInvitation}>
                     <input type="hidden" name="invitationId" value={inv.id} />
                     <SubmitButton variant="danger" className="h-8 px-2.5 text-xs" pendingText="Cancelling…" confirmText={`Cancel the invitation for ${inv.email}?`}>

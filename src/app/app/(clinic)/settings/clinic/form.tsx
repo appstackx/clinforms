@@ -53,7 +53,7 @@ export function ClinicProfileForm({ values, editable }: { values: ClinicFormValu
           inputMode="numeric"
           defaultValue={values.retentionDays}
           required
-          hint={`How long completed reports are kept before they are deleted: ${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days.`}
+          hint={`How long completed reports are kept: ${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days. Automatic deletion after this period is coming soon.`}
         />
       </fieldset>
       {editable ? <SubmitButton pendingText="Saving…">Save clinic details</SubmitButton> : null}

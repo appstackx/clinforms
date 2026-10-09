@@ -13,7 +13,7 @@ Data layer: [`database.md`](database.md). Code: `src/server/auth/`, `src/server/
 | Two-step verification | **Required.** TOTP (authenticator app, issuer "ClinForms") + 10 single-use backup codes. It cannot be switched off and devices cannot be "trusted". 10 wrong codes lock the second step for 15 minutes |
 | Clinics | Better Auth organization = clinic. **tenantId = the organization slug** (`^[a-z0-9][a-z0-9-]*$`, 3–63 characters, `demo` and other words reserved, **immutable**). A `clinic_profile` row is created with it |
 | Roles | `owner`, `admin` (Administrator), `clinician`, `staff` – see §3 |
-| Sessions | 12 hours, refreshed hourly; cookie prefix `clinforms` (`__Secure-` on https); session data cached in a signed cookie for 5 minutes (mutations always re-read the database) |
+| Sessions | 12 hours, refreshed hourly; cookie prefix `clinforms` (`__Secure-` on https); Better Auth caches session data in a signed cookie for 5 minutes, but `/app` pages, server actions and the module seam (`buildAuthContext`) always re-read the database, so a revoked session loses access at once |
 | Rate limits | Better Auth's own (HTTP API, stored in the `rateLimit` table) plus ClinForms limits in every sign-in server action (shared `rate_limits` table; IPs and addresses stored only as keyed hashes) |
 | Audit | Every membership or security change writes an `audit_log` row (ids only – never patient data, never an invitation link; invitations are recorded as `inv_<hash>`) |
 | Email | `CLINFORMS_EMAIL_PROVIDER` = `mailersend` \| `log` (development) \| `none` (default). With `none`, the administrator who invites someone or asks for a reset link is shown the link to pass on |
@@ -40,7 +40,7 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 |---|---|---|
 | `/login` | anyone | Email + password, then a 6-digit code or a backup code |
 | `/two-factor` | signed in | Set-up: confirm password → QR code (rendered on the server) and key → backup codes (shown once, "I have saved them" required) → code → `/app` |
-| `/accept-invite?token=…` | anyone | Create the account for the invited address (name + password) and join, or join when already signed in as that address; then `/two-factor` |
+| `/accept-invite?token=…` | anyone | Create the account for the invited address (name + password) and join, or join when already signed in as that address; then `/two-factor`. The token is `<invitation id>.<MAC>` (HMAC-SHA256 under a key derived from `BETTER_AUTH_SECRET`, `src/server/auth/invite-token.ts`): an invitation id alone is not a link, and rotating the secret invalidates open links. Better Auth's `list-invitations` and `get-full-organization` endpoints are switched off (they list invitations to every member) |
 | `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link. `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
 | `/app` | member | Clinic overview (name, your role, members, open invitations) and **Open the demo studio** (`/reports`, fictional data) until tenant forms arrive |
 | `/app/settings/clinic` | member (edit: owner/admin) | Clinic name, legal name, address, postcode, phone, email, retention 30–3650 days. Written into referrer forms in tenant mode |
@@ -105,6 +105,9 @@ signs in and accepts; everyone else creates their account from the link and sets
 - Email on: `/reset-password` → link by email (2 hours).
 - Email off: an owner or administrator opens **Settings → Members → Manage → Create a password reset link** and
   passes it on (administrators cannot do this for owners). The member still needs their authenticator app.
+  A password belongs to the account, not the clinic: for a member who also belongs to **another clinic** the link is
+  never shown to the administrator – it is emailed to the member, or (email off / not sent) refused and audited
+  (`auth.password_reset_link_refused`); they use "Forgotten your password?" or ask ClinForms support.
 
 ### Locked out of two-step verification (lost phone AND backup codes)
 1. Confirm the person's identity out of band (call the clinic's owner on a known number; never act on an email alone).
@@ -128,9 +131,10 @@ npm run admin:offboard-clinic -- --env production --slug riverside-physio --conf
 2. Then, in one atomic batch: deletes reports, forms, files, settings, the clinic profile and member profiles; revokes
    API keys; deletes invitations and memberships; deletes the accounts that belong to no other clinic (their
    sessions, passwords and two-step secrets go with them); clears the clinic from other members' sessions.
-3. Keeps the organization row as a tombstone (`metadata.offboardedAt`) so the id is never reused – add
-   `--release-slug` to delete it too (test clinics only). Audit rows stay (append-only) and a `clinic.offboard` row
-   is added.
+3. Keeps the organization row as a tombstone (`metadata.offboardedAt`) so the id is never reused. Audit rows stay
+   (append-only, keyed by the id) and a `clinic.offboard` row is added. `--release-slug` (delete the organization row
+   too) is refused once the id has audit rows – every clinic made by `create-clinic` has one – because a new clinic
+   with that id would inherit the old audit trail; `create-clinic` likewise refuses an id with audit history.
 4. Hand the export to the clinic over a secure channel, then delete your copy.
 
 ## 6. The module seam (wave 2)
@@ -153,12 +157,14 @@ a session to such an account only after the second factor, and turning it on rev
 **Live check on PREVIEW (09/10/2026):** migration 0002 applied to `clinforms-preview`; app run locally against it
 (`npm run admin:with-env -- --env preview --port 3111 -- npx next start -p 3111`); `zz-selftest-clinic` created with
 the admin script; the browser run passed all 17 steps on the real D1 through the gateway; the audit trail showed
-every expected row; the clinic was then offboarded with `--release-slug` (export checked, test account deleted).
+every expected row; the clinic was then offboarded with `--release-slug` (export checked, test account deleted). Since
+the security review, `--release-slug` is refused for a clinic with audit rows and `create-clinic` refuses a used id, so
+`zz-selftest-clinic` cannot be created again – use a new id for the next self-test.
 
 ## 8. Known limits
 
-- The 5-minute session cookie cache means a revoked session (another device) can keep working for up to 5 minutes on
-  pages; every mutation re-reads the database.
+- Better Auth's own HTTP endpoints (`/api/auth/*`) still honour its 5-minute session cookie cache; the app's pages,
+  actions and the module seam do not.
 - Without transactions, Better Auth's multi-step writes (e.g. sign-up = user + password rows) are not atomic. A
   half-created account would block re-using that invitation; fix by hand (delete the `user` row).
 - HCPC numbers are format-checked only (not looked up on the register).

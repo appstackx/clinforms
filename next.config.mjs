@@ -81,6 +81,10 @@ const nextConfig = {
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
     ];
   },
+  async redirects() {
+    // A short, shareable link to the public demo (the bare domain is now the website, not the Studio).
+    return [{ source: "/demo", destination: "/reports", permanent: false }];
+  },
   async rewrites() {
     return [
       { source: "/ingest/static/:path*", destination: "https://eu-assets.i.posthog.com/static/:path*" },

@@ -50,7 +50,7 @@ export default function CookiesPage() {
               <code>clinforms.*</code> (with a <code>__Secure-</code> prefix on secure connections)
             </>,
             "Cookies (first-party)",
-            "Keep clinic users signed in, complete two-factor sign-in, and protect the session",
+            "Keep clinic users signed in, complete two-step verification, and protect the session",
             "Until you sign out or the session expires",
           ],
           [

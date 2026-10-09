@@ -96,7 +96,7 @@ export function SigningForm({
       <input type="hidden" name="memberId" value={memberId} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Job title" name="jobTitle" defaultValue={jobTitle} maxLength={120} placeholder="Senior Physiotherapist" />
-        <Field label="HCPC registration number" name="hcpcNumber" defaultValue={hcpcNumber} maxLength={12} placeholder="PH123456" />
+        <Field label="HCPC registration number" name="hcpcNumber" defaultValue={hcpcNumber} maxLength={12} placeholder="As on the HCPC register" />
       </div>
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" name="canSign" defaultChecked={canSign} disabled={staff} className="h-4 w-4 rounded border-slate-300" />

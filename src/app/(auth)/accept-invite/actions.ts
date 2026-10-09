@@ -8,7 +8,8 @@ import { ACCOUNT_ERRORS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/
 import { getAuth } from "@/server/auth/auth";
 import { cookieHeaderFromSetCookie } from "@/server/auth/cookies";
 import { authErrorMessage } from "@/server/auth/errors";
-import { findOpenInvitation } from "@/server/auth/membership";
+import { authSecret } from "@/server/auth/config";
+import { findInvitationForLink } from "@/server/auth/membership";
 import { clientIp, getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 
@@ -26,7 +27,7 @@ export async function createAccountAndJoin(_prev: AcceptState, form: FormData): 
   if (password.length > PASSWORD_MAX_LENGTH) return { status: "error", error: ACCOUNT_ERRORS.passwordTooLong };
   if (password !== confirm) return { status: "error", error: ACCOUNT_ERRORS.passwordMismatch };
   if (!(await throttle("accept-ip", clientIp(), 20, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };
-  const invitation = await findOpenInvitation(getDb(), token);
+  const invitation = await findInvitationForLink(getDb(), authSecret(), token);
   if (!invitation) return { status: "error", error: ACCOUNT_ERRORS.inviteInvalid };
   if (invitation.accountExists) return { status: "error", error: ACCOUNT_ERRORS.inviteAccountExists };
   try {
@@ -49,7 +50,7 @@ export async function joinAsSignedIn(_prev: AcceptState, form: FormData): Promis
   const session = await getServerSession({ fresh: true });
   if (!session) redirect(`/login?next=${encodeURIComponent(`/accept-invite?token=${token}`)}`);
   if (!(await throttle("accept-ip", clientIp(), 20, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };
-  const invitation = await findOpenInvitation(getDb(), token);
+  const invitation = await findInvitationForLink(getDb(), authSecret(), token);
   if (!invitation) return { status: "error", error: ACCOUNT_ERRORS.inviteInvalid };
   if (invitation.email.toLowerCase() !== session.user.email.toLowerCase()) return { status: "error", error: ACCOUNT_ERRORS.inviteWrongAccount };
   try {

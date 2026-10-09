@@ -38,10 +38,10 @@ describe("gateway on local D1 (workerd via wrangler)", { skip: !available && "wr
     return { status: res.status, body: (await res.json()) as any };
   }
 
-  it("wrangler applied 0001_init: our tables and the audit triggers exist", async () => {
+  it("wrangler applied the migrations: our tables and the audit triggers exist", async () => {
     const res = await query([{ sql: "select name, type from sqlite_master where type in ('table', 'trigger') order by name", params: [] }], "single");
     const names = res.body.results[0].rows.map((r: { name: string }) => r.name);
-    for (const t of ["reports", "forms", "form_file_chunks", "audit_log", "rate_limits", "audit_log_no_update", "audit_log_no_delete"]) {
+    for (const t of ["reports", "forms", "form_file_chunks", "audit_log", "rate_limits", "audit_log_no_update", "audit_log_no_delete", "audit_log_no_replace"]) {
       assert.ok(names.includes(t), t);
     }
   });
@@ -52,6 +52,29 @@ describe("gateway on local D1 (workerd via wrangler)", { skip: !available && "wr
     assert.equal(ins.status, 200);
     assert.equal((await query([{ sql: "update audit_log set action = 'x' where id = ?", params: ["01LOCAL"] }], "single")).body.error.code, "APPEND_ONLY");
     assert.equal((await query([{ sql: "delete from audit_log where id = ?", params: ["01LOCAL"] }], "single")).body.error.code, "APPEND_ONLY");
+    // overwriting through conflict resolution: an upsert hits the trigger; REPLACE never reaches D1 …
+    const upsert = await query(
+      [{ sql: "insert into audit_log (id, tenant_id, action, at) values (?, ?, ?, ?) on conflict (id) do update set action = 'x'", params: ["01LOCAL", "t", "x", at] }],
+      "single",
+    );
+    assert.equal(upsert.body.error.code, "APPEND_ONLY");
+    const replace = await query([{ sql: "insert or replace into audit_log (id, tenant_id, action, at) values (?, ?, ?, ?)", params: ["01LOCAL", "t", "x", at] }], "single");
+    assert.equal(replace.body.error.code, "SQL_DENIED");
+    // … and even sent to D1 directly (no gateway), the 0003 trigger refuses it
+    await assert.rejects(
+      proxy.env.DB.prepare("insert or replace into audit_log (id, tenant_id, action, at) values (?, ?, ?, ?)").bind("01LOCAL", "t", "harmless.event", at).all(),
+      /append-only/,
+    );
+    const back = await query([{ sql: "select action from audit_log where id = ?", params: ["01LOCAL"] }], "single");
+    assert.deepEqual(back.body.results[0].rows, [{ action: "a.b" }]);
+  });
+
+  it("the SQL rules hold on real D1: a comment cannot smuggle DDL past the gateway", async () => {
+    for (const sql of ["/* x */ DROP TRIGGER audit_log_no_delete", "-- x\nDROP TRIGGER audit_log_no_update", "WITH x AS (SELECT 1) DELETE FROM d1_migrations"]) {
+      assert.equal((await query([{ sql, params: [] }], "single")).body.error.code, "SQL_DENIED", sql);
+    }
+    const triggers = await query([{ sql: "select count(*) as n from sqlite_master where type = 'trigger' and name like 'audit_log_%'", params: [] }], "single");
+    assert.equal(triggers.body.results[0].rows[0].n, 3);
   });
 
   it("batch is atomic on real D1", async () => {

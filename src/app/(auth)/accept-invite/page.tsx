@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { AuthShell, Notice, TextLink } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { ACCOUNT_ERRORS, roleLabel } from "@/lib/account-copy";
-import { findOpenInvitation } from "@/server/auth/membership";
+import { authSecret } from "@/server/auth/config";
+import { findInvitationForLink } from "@/server/auth/membership";
 import { getServerSession } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { ukDateTime } from "@/server/email/templates";
@@ -14,7 +15,7 @@ export const metadata: Metadata = { title: "Accept your invitation" };
 
 export default async function AcceptInvitePage({ searchParams }: { searchParams: { token?: string } }) {
   const token = String(searchParams.token ?? "");
-  const invitation = token ? await findOpenInvitation(getDb(), token) : null;
+  const invitation = token ? await findInvitationForLink(getDb(), authSecret(), token) : null;
   if (!invitation) {
     return (
       <AuthShell title="Invitation not available" footer={<TextLink href="/login">Sign in</TextLink>}>

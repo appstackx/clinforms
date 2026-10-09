@@ -113,13 +113,16 @@ export async function submitAccessRequest(raw: unknown, deps: AccessRequestDeps)
   if (body.website.trim()) return { kind: "spam" };
 
   const ctx: RepoContext = deps.now ? { ...deps.ctx, now: deps.now } : deps.ctx;
-  const global = await hitRateLimit(ctx, "access-request:all", WINDOW_MS);
+  const limited = (resetAtIso: string): AccessRequestOutcome => ({
+    kind: "rate_limited",
+    retryAfterSeconds: Math.max(1, Math.ceil((Date.parse(resetAtIso) - Date.parse(nowIso(ctx))) / 1000)),
+  });
+  // The client's own limit first: a client over it never touches the shared counter, so one sender cannot
+  // use up the site-wide allowance and block the form for everyone else.
   const client = deps.clientKey ? await hitRateLimit(ctx, `access-request:${deps.clientKey}`, WINDOW_MS) : null;
-  if (global.count > GLOBAL_LIMIT || (client && client.count > PER_CLIENT_LIMIT)) {
-    const resetAt = Date.parse((client && client.count > PER_CLIENT_LIMIT ? client : global).resetAt);
-    const nowMs = Date.parse(nowIso(ctx));
-    return { kind: "rate_limited", retryAfterSeconds: Math.max(1, Math.ceil((resetAt - nowMs) / 1000)) };
-  }
+  if (client && client.count > PER_CLIENT_LIMIT) return limited(client.resetAt);
+  const global = await hitRateLimit(ctx, "access-request:all", WINDOW_MS);
+  if (global.count > GLOBAL_LIMIT) return limited(global.resetAt);
 
   const stored = await createAccessRequest(ctx, {
     clinicName: body.clinicName,

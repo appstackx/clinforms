@@ -19,7 +19,12 @@ export function HeroIllustration() {
         <dl className="mt-4 space-y-4 text-[13px]">
           <Row q="1. Date of first assessment" a="02/09/2026" source="Registration" />
           <Row q="2. Presenting symptoms" lines={["w-full", "w-11/12", "w-2/3"]} source="N-001 · N-003" />
-          <Row q="3. Treatment provided to date" lines={["w-full", "w-4/5"]} source="N-004 · N-007 · N-011" />
+          <Row
+            q="3. Treatment provided to date"
+            lines={["w-full", "w-4/5"]}
+            source="N-004 · N-007 · N-011"
+            note={{ title: "Source: N-007", detail: "Treatment note, 23/09/2026" }}
+          />
           <div>
             <dt className="font-medium text-slate-800">4. Expected return to full duties</dt>
             <dd className="mt-1.5 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-900">
@@ -45,19 +50,22 @@ export function HeroIllustration() {
         </div>
       </div>
 
-      <div className="absolute -right-2 top-24 hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg sm:block lg:-right-6">
-        <p className="font-semibold text-slate-900">Source: N-007</p>
-        <p className="text-slate-600">Treatment note, 23/09/2026</p>
-      </div>
     </div>
   );
 }
 
-function Row({ q, a, lines, source }: { q: string; a?: string; lines?: string[]; source: string }) {
+function Row({ q, a, lines, source, note }: { q: string; a?: string; lines?: string[]; source: string; note?: { title: string; detail: string } }) {
   return (
     <div>
       <dt className="font-medium text-slate-800">{q}</dt>
-      <dd className="mt-1.5 flex items-start justify-between gap-3">
+      <dd className="relative mt-1.5 flex items-start justify-between gap-3">
+        {note ? (
+          // The cited note, opened from this answer's source tag (anchored to the row, so it never covers another answer's source).
+          <span className="absolute -right-3 top-7 z-10 hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg sm:block lg:-right-8">
+            <span className="block font-semibold text-slate-900">{note.title}</span>
+            <span className="block text-slate-600">{note.detail}</span>
+          </span>
+        ) : null}
         {a ? (
           <span className="text-slate-700">{a}</span>
         ) : (

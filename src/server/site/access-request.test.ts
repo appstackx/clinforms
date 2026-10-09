@@ -84,6 +84,16 @@ describe("submitAccessRequest", () => {
     assert.equal((await listAccessRequests(ctx)).length, 6);
   });
 
+  test("one client over its limit cannot use up the site-wide allowance (the form stays open for others)", async () => {
+    const kinds: Record<string, number> = {};
+    for (let i = 0; i < 101; i++) {
+      const kind = (await submitAccessRequest(VALID, { ctx, clientKey: "flooder" })).kind;
+      kinds[kind] = (kinds[kind] ?? 0) + 1;
+    }
+    assert.deepEqual(kinds, { stored: 5, rate_limited: 96 });
+    assert.equal((await submitAccessRequest(VALID, { ctx, clientKey: "someone-else" })).kind, "stored");
+  });
+
   test("the notification gets the details; a failed send still stores the request", async () => {
     const sent: NotificationPayload[] = [];
     const ok = await submitAccessRequest(VALID, { ctx, clientKey: "k1", notify: async (r) => void sent.push(r) });

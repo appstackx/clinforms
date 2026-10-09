@@ -6,7 +6,7 @@ import { LegalPage } from "@/components/marketing/legal-page";
 import { COMPANY, LEGAL_LAST_UPDATED } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
-const DESCRIPTION = `How ${PRODUCT.name} protects clinic and patient information: clinician approval, traceable answers, two-factor sign-in, encryption, EU storage, audit trail and data minimisation.`;
+const DESCRIPTION = `How ${PRODUCT.name} protects clinic and patient information: clinician approval, traceable answers, two-step verification, encryption, EU storage, audit trail and data minimisation.`;
 
 export const metadata: Metadata = {
   title: "Security",
@@ -46,8 +46,8 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
     heading: "Access",
     items: [
       {
-        title: "Two-factor sign-in for every user",
-        body: "Users sign in with a password and a one-time code from an authenticator app. Patient information is not available until two-factor authentication is set up.",
+        title: "Two-step verification for every user",
+        body: "Users sign in with a password and a one-time code from an authenticator app. Patient information is not available until two-step verification is set up.",
       },
       {
         title: "Invitation only, with roles",
@@ -76,7 +76,7 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
       },
       {
         title: "Audit trail",
-        body: "Sign-ins, two-factor changes, and changes to users, roles, clinic details and access keys are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
+        body: "Sign-ins, two-step verification changes, and changes to users, roles, clinic details and access keys are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
       },
     ],
   },

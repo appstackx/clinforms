@@ -20,7 +20,7 @@ export function SubmitButton({
 }) {
   const { pending } = useFormStatus();
   const styles = {
-    primary: "bg-teal-600 text-white hover:bg-teal-700 focus-visible:ring-teal-600",
+    primary: "bg-teal-700 text-white hover:bg-teal-800 focus-visible:ring-teal-700",
     secondary: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 focus-visible:ring-slate-400",
     danger: "border border-red-200 bg-white text-red-700 hover:bg-red-50 focus-visible:ring-red-500",
   }[variant];
@@ -58,7 +58,7 @@ export function CopyButton({ value, label = "Copy", copiedLabel = "Copied" }: { 
           setCopied(false);
         }
       }}
-      className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      className="inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
     >
       {copied ? copiedLabel : label}
     </button>
@@ -70,7 +70,7 @@ export function SecretBox({ value, label, note }: { value: string; label: string
   return (
     <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-amber-900">{label}</span>
+        <span className="min-w-0 break-words text-xs font-semibold text-amber-900">{label}</span>
         <CopyButton value={value} />
       </div>
       <code className="block break-all rounded bg-white px-2 py-1.5 font-mono text-xs text-slate-900">{value}</code>

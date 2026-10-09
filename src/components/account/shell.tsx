@@ -2,15 +2,32 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/account-copy";
+import { LogoMark } from "@/components/marketing/logo";
 
-export function BrandMark({ className }: { className?: string }) {
+export function BrandMark({ className, compact = false }: { className?: string; compact?: boolean }) {
   return (
-    <span className={cn("inline-flex items-center gap-2 font-semibold text-slate-900", className)}>
-      <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-600 text-xs font-bold text-white">
-        CF
-      </span>
-      {PRODUCT_NAME}
+    <span className={cn("inline-flex shrink-0 items-center gap-2 font-semibold text-slate-900", className)}>
+      <LogoMark className="h-7 w-7" />
+      {compact ? <span className="sr-only sm:not-sr-only">{PRODUCT_NAME}</span> : PRODUCT_NAME}
     </span>
+  );
+}
+
+/** Privacy, terms and cookies – on every sign-in page, where account details are collected. */
+export function LegalLinks() {
+  const link = "rounded underline-offset-4 hover:text-slate-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+  return (
+    <nav aria-label="Legal" className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
+      <Link href="/privacy" className={link}>
+        Privacy policy
+      </Link>
+      <Link href="/terms" className={link}>
+        Terms
+      </Link>
+      <Link href="/cookies" className={link}>
+        Cookie policy
+      </Link>
+    </nav>
   );
 }
 
@@ -19,7 +36,7 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
     <main className="flex min-h-screen items-start justify-center bg-slate-50 px-4 py-12 text-slate-900 sm:items-center">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
-          <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" aria-label={`${PRODUCT_NAME} home`}>
+          <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700" aria-label={`${PRODUCT_NAME} home`}>
             <BrandMark />
           </Link>
         </div>
@@ -29,6 +46,7 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
           <div className="mt-6">{children}</div>
         </section>
         {footer ? <div className="mt-4 text-center text-sm text-slate-600">{footer}</div> : null}
+        <LegalLinks />
       </div>
     </main>
   );

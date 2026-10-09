@@ -4,6 +4,7 @@
  */
 import type { Kysely } from "kysely";
 import { authBool, type Database } from "../db/schema";
+import { invitationIdFromToken } from "./invite-token";
 import { parseMemberRole, type MemberRole } from "./roles";
 
 export interface Membership {
@@ -141,14 +142,17 @@ export interface InvitationForAcceptance {
   accountExists: boolean;
 }
 
-/** An open (pending, unexpired) invitation by its id (= the link token), or null. */
-export async function findOpenInvitation(db: Kysely<Database>, token: string, now = new Date()): Promise<InvitationForAcceptance | null> {
-  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(token)) return null;
+/**
+ * An open (pending, unexpired) invitation by its ID, or null. Server-internal: an id is not a link secret –
+ * anything that starts from a link token goes through findInvitationForLink().
+ */
+export async function findOpenInvitation(db: Kysely<Database>, invitationId: string, now = new Date()): Promise<InvitationForAcceptance | null> {
+  if (typeof invitationId !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(invitationId)) return null;
   const row = await db
     .selectFrom("invitation")
     .innerJoin("organization", "organization.id", "invitation.organizationId")
     .select(["invitation.id", "invitation.email", "invitation.role", "invitation.expiresAt", "invitation.organizationId", "organization.name", "organization.slug"])
-    .where("invitation.id", "=", token)
+    .where("invitation.id", "=", invitationId)
     .where("invitation.status", "=", "pending")
     .where("invitation.expiresAt", ">", now.toISOString())
     .executeTakeFirst();
@@ -164,6 +168,20 @@ export async function findOpenInvitation(db: Kysely<Database>, token: string, no
     tenantId: row.slug,
     accountExists: Boolean(user),
   };
+}
+
+/**
+ * The open invitation an invitation LINK token (`<id>.<MAC>`, ./invite-token.ts) vouches for, or null when the
+ * token is malformed, signed with another secret, or the invitation is no longer open.
+ */
+export async function findInvitationForLink(
+  db: Kysely<Database>,
+  secret: string,
+  token: unknown,
+  now = new Date(),
+): Promise<InvitationForAcceptance | null> {
+  const invitationId = invitationIdFromToken(secret, token);
+  return invitationId ? findOpenInvitation(db, invitationId, now) : null;
 }
 
 export async function findUserByEmail(db: Kysely<Database>, email: string): Promise<{ id: string; name: string; email: string } | null> {
