@@ -458,7 +458,8 @@ export async function fillPdfFieldTable(deps: TableFillDeps, field: FormField, a
           pages[pageNo].drawEllipse({
             x: choice.x + choice.w / 2,
             y: choice.y + choice.h * 0.32,
-            xScale: choice.w / 2 + 2.2,
+            // Just round the word: clear of the "/" beside it and of the cell's border.
+            xScale: choice.w / 2 + 1.2,
             yScale: Math.max(5, choice.h * 0.62),
             borderColor: ANSWER_COLOR,
             borderWidth: 1.1,
