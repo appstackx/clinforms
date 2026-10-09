@@ -25,8 +25,11 @@ const ROOT = process.cwd();
 /** Folders whose strings are customer-facing (missing folders are skipped: (auth) and email arrive later). */
 const BANNED_TERM_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/components", "src/server/email", "src/server/site"];
 
-/** Folders whose strings are visible copy, where infrastructure vendor names may not appear either. */
-const VENDOR_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/components/consent", "src/components/marketing", "src/server/email"];
+/**
+ * Folders (or files) whose strings are visible copy, where infrastructure vendor names may not appear either.
+ * For email only the templates are copy: the provider code legitimately names its provider.
+ */
+const VENDOR_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/components/consent", "src/components/marketing", "src/server/email/templates.ts"];
 
 const MODEL_PATTERNS: readonly RegExp[] = [/\b(opus|sonnet|haiku|fable)\b/i];
 const VENDOR_PATTERNS: readonly RegExp[] = [
@@ -98,6 +101,7 @@ export function extractStrings(source: string, fileName = "file.tsx"): Extracted
 function filesUnder(rel: string): string[] {
   const abs = path.join(ROOT, rel);
   if (!fs.existsSync(abs)) return [];
+  if (fs.statSync(abs).isFile()) return [rel];
   const out: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
