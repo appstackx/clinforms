@@ -306,6 +306,29 @@ interface Ctx {
   /** The written form would be wrong (a value cut to fit): onError, else onWarning. */
   error(message: string): void;
   continuations: Continuation[];
+  /** Multi-line text fields written so far, for one font size per printed row (sameRowFontSizes). */
+  textBoxes?: Array<{ tf: PDFTextField; page: string; y: number; height: number; size: number }>;
+}
+
+/** Inner margin of a multi-line answer box, so the text never touches the printed cell rules (pt). */
+const BOX_INSET_X = 2.5;
+const BOX_INSET_Y = 2;
+
+/**
+ * Boxes side by side in one printed row (an "Initial" and a "Current" column) take the smaller of their
+ * font sizes, so neighbouring cells never read in different sizes after each shrank to fit on its own.
+ */
+function sameRowFontSizes(ctx: Ctx): void {
+  const rows = new Map<string, Array<{ tf: PDFTextField; size: number }>>();
+  for (const b of ctx.textBoxes ?? []) {
+    const key = `${b.page}|${Math.round(b.y)}|${Math.round(b.height)}`;
+    rows.set(key, [...(rows.get(key) ?? []), b]);
+  }
+  rows.forEach((boxes) => {
+    if (boxes.length < 2) return;
+    const size = Math.min(...boxes.map((b) => b.size));
+    for (const b of boxes) if (b.size !== size) b.tf.setFontSize(size);
+  });
 }
 
 /** Encode an answer for the form's font, warning when characters cannot be printed (shown as "?"). */
@@ -343,10 +366,15 @@ function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string
     tf.setText(text);
     return;
   }
-  const rect = widget.getRectangle();
+  const cell = widget.getRectangle();
+  let rect = cell;
   const bw = widget.getBorderStyle()?.getWidth() ?? 1;
   const pad = bw + 2;
   const multiline = tf.isMultiline();
+  // A multi-line box gets an inner margin (its rectangle is the printed cell, rules included) – unless
+  // the margin would push the answer onto a continuation sheet (checked below).
+  const inset = multiline && !tf.isCombed() && cell.width > 40 && cell.height > 20;
+  if (inset) rect = { x: cell.x + BOX_INSET_X, y: cell.y + BOX_INSET_Y, width: cell.width - 2 * BOX_INSET_X, height: cell.height - 2 * BOX_INSET_Y };
   const flat = multiline ? text : text.replace(/\s*\n\s*/g, "; ");
   const preferred = Math.min(daFontSize(tf) || (multiline ? 9 : DEFAULT_FONT), multiline ? 11 : Math.max(MIN_FONT, rect.height - 2 * pad));
   if (tf.isCombed()) {
@@ -357,9 +385,16 @@ function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string
   }
   // A single-line box may take two lines; they are laid out the way pdf-lib draws a multi-line field
   // (inner box = border + 1 pt, line height 1.2 × the font height).
-  const fit = multiline
-    ? fitText(flat, ctx.font, { width: rect.width - 2 * pad - 2, height: rect.height - 2 * pad }, preferred, true)
-    : fitText(flat, ctx.font, { width: rect.width - 2 * pad - 2, height: rect.height - 2 * (bw + 1) }, preferred, false, { allowTwoLines: true, lineHeightFactor: 1.2 });
+  const fitIn = (r: { width: number; height: number }) =>
+    multiline
+      ? fitText(flat, ctx.font, { width: r.width - 2 * pad - 2, height: r.height - 2 * pad }, preferred, true)
+      : fitText(flat, ctx.font, { width: r.width - 2 * pad - 2, height: r.height - 2 * (bw + 1) }, preferred, false, { allowTwoLines: true, lineHeightFactor: 1.2 });
+  let fit = fitIn(rect);
+  if (inset && fit.overflow) {
+    rect = cell;
+    fit = fitIn(rect);
+  }
+  if (rect !== cell) widget.setRectangle(rect);
   if (fit.overflow) {
     ctx.warn(`${where(field)}: the answer is longer than the box; it continues on a continuation sheet at the end of the form.`);
     ctx.continuations.push({ field, text });
@@ -367,6 +402,7 @@ function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string
   if (fit.lines === 2) tf.enableMultiline();
   tf.setText(fit.text);
   tf.setFontSize(fit.size);
+  if (multiline) (ctx.textBoxes ??= []).push({ tf, page: String(widget.P() ?? ""), y: rect.y, height: rect.height, size: fit.size });
 }
 
 function getPdfField(ctx: Ctx, field: FormField, name: string): PDFField | null {
@@ -743,8 +779,24 @@ function removeDanglingAnnots(doc: PDFDocument): void {
  * Entry point
  * ----------------------------------------------------------------------------------------------*/
 
+/**
+ * A print-ready file (a printer's proof with crop marks and a slug line outside its trim box) is shown at
+ * its trimmed size: the crop box becomes the trim box, so the completed form – and everything placed in
+ * the visible page after this (DRAFT line, demonstration footer, continuation sheets) – is the page as
+ * issued, without the printer's marks. Pages without a separate trim box are unchanged.
+ */
+export function trimPrintMarks(doc: PDFDocument): void {
+  for (const page of doc.getPages()) {
+    const crop = page.getCropBox();
+    const trim = page.getTrimBox();
+    const inside = trim.x >= crop.x - 0.5 && trim.y >= crop.y - 0.5 && trim.x + trim.width <= crop.x + crop.width + 0.5 && trim.y + trim.height <= crop.y + crop.height + 0.5;
+    if (inside && (trim.width < crop.width - 1 || trim.height < crop.height - 1)) page.setCropBox(trim.x, trim.y, trim.width, trim.height);
+  }
+}
+
 export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: PdfFillOptions): Promise<Uint8Array> {
   const doc = await loadPdfDocument(buf);
+  trimPrintMarks(doc);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const pdfForm = doc.getForm();
@@ -794,6 +846,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
   }
 
   if (ctx.continuations.length > 0) addContinuationSheet(ctx);
+  sameRowFontSizes(ctx);
   if (pdfForm.getFields().length > 0) {
     pdfForm.updateFieldAppearances(font);
     // FINAL copies are always flattened. The Studio's DRAFT copies are flattened too (render-form.ts

@@ -363,3 +363,46 @@ test("an approved form the clinic only prefills is named _PREFILLED, never _SIGN
   const own = form("pdf_acroform", [...claim.fields, field("F-03", "Therapist's signature", { kind: "pdf_field", fieldName: "tsig", fieldType: "text" }, { fillSource: { kind: "signoff", part: "signature" }, answerType: "signature" })]);
   assert.equal(formFileBaseName(report, own, { signed: true, dateIso: "2026-10-09" }), "Lane_R_Therapy-update_2026-10-09_SIGNED");
 });
+
+test("PDF: a printer's proof (trim box inside the crop box) is completed at its trimmed size, crop marks outside", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([652, 899]);
+  page.setCropBox(22.7, 22.7, 606.6, 853.2);
+  page.setTrimBox(28.3, 28.3, 595.3, 841.9);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("Full name", { x: 60, y: 800, size: 10, font });
+  const bytes = await doc.save();
+  const f = form("pdf_flat", [field("F-01", "Full name", { kind: "pdf_overlay", page: 1, x: 150, y: 795, width: 200, height: 14 })], NOTICE);
+  const out = await fillPdf(bytes, f, { "F-01": { text: "Rebecca Lane" } }, { draft: false, flatten: true });
+  const crop = (await PDFDocument.load(out)).getPage(0).getCropBox();
+  assert.deepEqual([crop.x, crop.y, crop.width, crop.height].map((n) => Math.round(n * 10) / 10), [28.3, 28.3, 595.3, 841.9]);
+  // An ordinary page (no separate trim box) keeps its crop box.
+  const plain = await PDFDocument.create();
+  plain.addPage([595, 842]);
+  const out2 = await fillPdf(await plain.save(), form("pdf_flat", [field("F-01", "Name", { kind: "pdf_overlay", page: 1, x: 100, y: 700, width: 200, height: 14 })]), { "F-01": { text: "X" } }, { draft: false, flatten: true });
+  const c2 = (await PDFDocument.load(out2)).getPage(0).getCropBox();
+  assert.deepEqual([c2.width, c2.height], [595, 842]);
+});
+
+test("PDF: multi-line boxes get an inner margin, and boxes side by side in one row share one font size", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595, 842]);
+  const pdfForm = doc.getForm();
+  for (const [name, x] of [["initial", 40], ["current", 300]] as const) {
+    const tf = pdfForm.createTextField(name);
+    tf.enableMultiline();
+    tf.addToPage(page, { x, y: 600, width: 250, height: 80 });
+  }
+  const f = form("pdf_acroform", [
+    field("F-01", "Initial", { kind: "pdf_field", fieldName: "initial", fieldType: "text" }, { answerType: "long_text" }),
+    field("F-02", "Current", { kind: "pdf_field", fieldName: "current", fieldType: "text" }, { answerType: "long_text" }),
+  ]);
+  const long = "Right shoulder active range of movement: flexion 120°, abduction 95° (painful arc 70–120°), external rotation 50°, hand behind back to L5, all painful; passive external rotation 65°, the same as left. Resisted abduction and external rotation 4/5 (painful). Hawkins-Kennedy, Neer's and empty can tests positive.";
+  const out = await fillPdf(await doc.save(), f, { "F-01": { text: long }, "F-02": { text: "Pain 4/10 at worst." } }, { draft: true, flatten: false });
+  const filled = (await PDFDocument.load(out)).getForm();
+  const da = (name: string) => /([\d.]+) Tf/.exec(filled.getTextField(name).acroField.getDefaultAppearance() ?? "")?.[1];
+  assert.ok(da("initial"));
+  assert.equal(da("current"), da("initial"), "one font size across the row");
+  const rect = filled.getTextField("current").acroField.getWidgets()[0].getRectangle();
+  assert.ok(rect.x > 300 && rect.width < 250, "inset from the printed cell");
+});
