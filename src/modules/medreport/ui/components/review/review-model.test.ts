@@ -439,8 +439,10 @@ describe("supersedeAcknowledgedGaps", () => {
     assert.equal(gap?.resolution?.kind, "resolved");
     assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later\.”\)\.$/);
     assert.match(next.activity[next.activity.length - 1].detail, /no longer applies/);
-    // The reducer does it when the edit is logged.
+    // The reducer does it when the edit is logged, and when a value is typed straight into the empty answer.
     const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: "Sarah Reid" });
     assert.equal(viaReducer.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
+    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: "Sarah Reid" });
+    assert.equal(typedIn.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
   });
 });

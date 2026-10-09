@@ -129,7 +129,7 @@ test("boxes left blank say whose they are, and the card counts them by party", (
   assert.equal(blankFor({ label: "Fax number" }), "not_needed");
   assert.equal(blankForWording("patient").chip, "For the patient to complete");
   assert.equal(blankForWording("doctor").chip, "For the patient's GP or doctor");
-  assert.equal(blankForWording("insurer", "Example Health (fictional)").sentence, "Left blank on the form – this box is for Example Health (fictional)'s office.");
+  assert.equal(blankForWording("insurer", "Example Health (fictional)").sentence, "Left blank on the form – for office use by Example Health (fictional).");
   assert.doesNotMatch(blankForWording("policyholder", "Example Health (fictional)").sentence, /own use|referrer/);
 
   const fields = [
@@ -140,7 +140,7 @@ test("boxes left blank say whose they are, and the card counts them by party", (
     { completedBy: "clinic" as const, fillSource: { kind: "leave_blank" } },
     { completedBy: "patient" as const, fillSource: { kind: "registration" } },
   ];
-  assert.deepEqual(blankForSummary(blankForCounts(fields), "Example Health (fictional)"), ["3 for the patient or their GP", "1 for Example Health (fictional)'s office", "1 not needed"]);
+  assert.deepEqual(blankForSummary(blankForCounts(fields), "Example Health (fictional)"), ["3 for the patient or their GP", "1 for office use", "1 not needed"]);
 });
 
 test("a form the clinic only prefills for others to sign is never the clinic's signed form", () => {

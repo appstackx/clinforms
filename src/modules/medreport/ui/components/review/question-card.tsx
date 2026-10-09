@@ -364,7 +364,16 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // A value the record lacks (a withheld insurer number), typed in by staff: say so, not "by the clinician".
   const staffEntered =
     section?.kind === "from_records" && section.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "") && !section.paragraphs.some((p) => p.origin === "from_records");
-  const statusLabel = status === "blank" && blankWording ? blankWording.chip : staffEntered && status === "clinician" ? "Entered by staff" : meta.label;
+  // A record value the record does not hold (another insurer's membership number withheld) is for staff to
+  // enter, not a clinical question.
+  const statusLabel =
+    status === "blank" && blankWording
+      ? blankWording.chip
+      : staffEntered && status === "clinician"
+        ? "Entered by staff"
+        : status === "needs_input" && section?.kind === "from_records"
+          ? "To be entered by staff"
+          : meta.label;
   const answered = section ? isSectionAnswered(section) : false;
 
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
@@ -401,7 +410,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const startClinicianText = (text: string) => {
     if (!section) return;
     const id = nextClinicianParagraphId(section);
-    dispatch({ type: "addParagraph", key: section.key, text });
+    dispatch({ type: "addParagraph", key: section.key, text, actor });
     setFocusId(id);
   };
 

@@ -270,7 +270,9 @@ export function ApproveDialog({
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
               {questionSet
                 ? "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record."
-                : "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the answers and your sign-off written in."}
+                : prefillFor
+                  ? `The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the prefilled answers written in – nothing in any signature box – ready for ${prefillFor}.`
+                  : "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the answers and your sign-off written in."}
             </span>
           </InlineAlert>
 

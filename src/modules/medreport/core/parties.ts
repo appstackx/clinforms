@@ -168,7 +168,6 @@ export function blankFor(field: { completedBy?: Party; label?: string; section?:
 
 /** Status chip and card sentence for a box left blank ("For the patient to complete"). */
 export function blankForWording(kind: BlankFor, referrerName?: string | null): { chip: string; sentence: string } {
-  const office = referrerName ? `${referrerName}'s office` : "the referrer's office";
   switch (kind) {
     case "patient":
       return { chip: "For the patient to complete", sentence: "Left blank on the form – this part is for the patient to complete." };
@@ -177,7 +176,7 @@ export function blankForWording(kind: BlankFor, referrerName?: string | null): {
     case "doctor":
       return { chip: "For the patient's GP or doctor", sentence: "Left blank on the form – this part is for the patient's GP or doctor to complete." };
     case "insurer":
-      return { chip: `For ${office}`, sentence: `Left blank on the form – this box is for ${office}.` };
+      return { chip: "For office use", sentence: `Left blank on the form – for office use by ${referrerName || "the referrer"}.` };
     default:
       return { chip: "Left blank – not needed", sentence: "Left blank on the form – the clinic does not need to fill it in for this patient." };
   }
@@ -190,7 +189,7 @@ export function blankForCounts(fields: ReadonlyArray<{ completedBy?: Party; labe
   return out;
 }
 
-/** "50 for the patient or their GP · 2 for Aviva's office · 3 not needed" (empty parts left out). */
+/** "50 for the patient or their GP · 2 for office use · 3 not needed" (empty parts left out). */
 export function blankForSummary(counts: Record<BlankFor, number>, referrerName?: string | null): string[] {
   const people: string[] = [];
   if (counts.patient) people.push("the patient");
@@ -199,7 +198,7 @@ export function blankForSummary(counts: Record<BlankFor, number>, referrerName?:
   const peopleN = counts.patient + counts.policyholder + counts.doctor;
   const parts: string[] = [];
   if (peopleN) parts.push(`${peopleN} for ${people.length > 1 ? `${people.slice(0, -1).join(", ")} or ${people[people.length - 1]}` : people[0]}`);
-  if (counts.insurer) parts.push(`${counts.insurer} for ${referrerName ? `${referrerName}'s` : "the referrer's"} office`);
+  if (counts.insurer) parts.push(`${counts.insurer} for office use`);
   if (counts.not_needed) parts.push(`${counts.not_needed} not needed`);
   return parts;
 }

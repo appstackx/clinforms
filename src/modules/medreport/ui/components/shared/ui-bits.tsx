@@ -108,7 +108,7 @@ export function notAnsweredText(b: QuestionBreakdown): string {
   return [b.onApproval ? `${b.onApproval} completed on approval` : "", ...b.leftBlank].filter(Boolean).join(" · ");
 }
 
-/** "16 to answer (8 from records · 8 from notes/clinician) · 4 completed on approval · 2 for Harrow & Pike's office" */
+/** "16 to answer (8 from records · 8 from notes/clinician) · 4 completed on approval · 2 for office use" */
 export function breakdownText(b: QuestionBreakdown): string {
   const parts = [`${b.toAnswer} to answer (${b.fromRecords} from records · ${b.fromNotes} from notes/clinician)`];
   const rest = notAnsweredText(b);
