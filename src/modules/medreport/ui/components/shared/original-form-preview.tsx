@@ -433,6 +433,20 @@ function PdfPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewPr
         const [x1, y1] = view.toView(anchor.x, anchor.y);
         const [x2, y2] = view.toView(anchor.x + anchor.width, anchor.y + anchor.height);
         out.push({ page: view.number, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+      } else if (anchor.kind === "pdf_table") {
+        // Every cell field of the table (S2).
+        const names = new Set(anchor.rows.flatMap((row) => Object.keys(row).map((k) => row[k])));
+        for (const w of view.widgets) if (Array.from(names).some((n) => pdfFieldMatches(w.name, n))) out.push({ page: view.number, ...w });
+      } else if ((anchor.kind === "pdf_overlay_table" || anchor.kind === "pdf_overlay_ticks") && anchor.page === view.number) {
+        const rects =
+          anchor.kind === "pdf_overlay_ticks"
+            ? anchor.options.map((o) => ({ x: o.x, y: o.y, width: o.size, height: o.size }))
+            : anchor.rowTops.flatMap((t) => anchor.columns.map((c) => ({ x: c.x, y: t - anchor.rowHeight, width: c.width, height: anchor.rowHeight })));
+        for (const r of rects) {
+          const [x1, y1] = view.toView(r.x, r.y);
+          const [x2, y2] = view.toView(r.x + r.width, r.y + r.height);
+          out.push({ page: view.number, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+        }
       }
     }
     return out;

@@ -28,6 +28,7 @@ export const FILL_SOURCE_SHORT: Record<FillSourceKind, string> = {
   clinician_opinion: "Clinician opinion",
   signoff: "Sign-off",
   leave_blank: "Leave blank",
+  appointments_table: "From appointments",
 };
 
 const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
@@ -37,6 +38,7 @@ const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
   clinician_opinion: "border-violet-200 bg-violet-50 text-violet-800",
   signoff: "border-slate-300 bg-slate-100 text-slate-700",
   leave_blank: "border-dashed border-slate-300 bg-white text-slate-500",
+  appointments_table: "border-sky-200 bg-sky-50 text-sky-800",
 };
 
 export function FillSourceChip({ kind, className }: { kind: FillSourceKind; className?: string }) {
@@ -62,6 +64,7 @@ export function fillSourceCounts(form: Pick<FormDefinition, "fields">): Record<F
     clinician_opinion: 0,
     signoff: 0,
     leave_blank: 0,
+    appointments_table: 0,
   };
   for (const f of form.fields) counts[f.fillSource.kind] += 1;
   return counts;

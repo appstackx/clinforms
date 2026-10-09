@@ -14,6 +14,7 @@ import type { FormOutlineSummary } from "../api/contract";
 import { parseBlockId } from "../core/forms";
 import type { FormKind, OutlineBlock, PdfFormOutline, PdfOutlineField } from "../core/types";
 import { findPlaceholders } from "../forms/docx-dom";
+import { flatBoxQuestions, renderPdfBoxes } from "./form-boxes";
 import { neutraliseTags } from "./prompts";
 
 /** A parsed form, as handed to the analysis. */
@@ -266,7 +267,8 @@ export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: numb
 
 /**
  * Rendering of a PDF outline for the prompt. Fillable PDFs: the fields (with nearby text). Flat PDFs:
- * the positioned text, line by line, so answer boxes can be placed (the PDF itself is attached too).
+ * the positioned text, line by line, so answer boxes can be placed (the PDF itself is attached too),
+ * then the printed answer boxes and tick boxes of the page (form-boxes.ts renderPdfBoxes).
  */
 export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pdf_flat", pages?: number[]): string {
   const lines: string[] = [`pages: ${pdf.pages}`];
@@ -281,6 +283,7 @@ export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pd
     for (const line of pdfTextLines(pdf, page)) {
       lines.push(`  y=${r(line.y)}: ${line.items.map((it) => `x=${r(it.x)} ${quote(it.str)}`).join("  ")}`);
     }
+    lines.push(...renderPdfBoxes(pdf, page));
   }
   return lines.join("\n");
 }
@@ -314,7 +317,7 @@ export function summariseParsedForm(form: ParsedForm): FormOutlineSummary {
       warnings: form.warnings.slice(),
     };
   }
-  const flatSpaces = form.kind === "pdf_flat" ? pdfFlatLabelCandidates(form.pdf).length : 0;
+  const flatSpaces = form.kind === "pdf_flat" ? (form.pdf.boxes?.length ? flatBoxQuestions(form.pdf) : pdfFlatLabelCandidates(form.pdf)).length : 0;
   return {
     kind: form.kind,
     pages: form.pdf.pages,
@@ -480,7 +483,7 @@ export function chunkPdfFields(pdf: PdfFormOutline): AnalysisChunk[] {
 /** Flat PDF: pages split into groups with about equal numbers of label candidates. */
 export function chunkPdfPages(pdf: PdfFormOutline): AnalysisChunk[] {
   const perPage: number[] = [];
-  const candidates = pdfFlatLabelCandidates(pdf);
+  const candidates: Array<{ page: number }> = pdf.boxes?.length ? flatBoxQuestions(pdf) : pdfFlatLabelCandidates(pdf);
   for (let p = 1; p <= pdf.pages; p += 1) perPage.push(candidates.filter((c) => c.page === p).length);
   const total = perPage.reduce((a, b) => a + b, 0);
   const n = Math.min(chunkCount(total), Math.max(1, pdf.pages));

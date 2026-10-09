@@ -16,6 +16,8 @@ import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceip
 import { Button, cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import { FlagItem, GapItem } from "./issues";
+import { TableAnswer } from "./table-answer";
+import { rowsOf } from "./table-answer-model";
 import {
   QUESTION_STATUS_META,
   answerOptions,
@@ -470,8 +472,36 @@ function QuestionCardImpl(props: QuestionCardProps) {
         )}
       </div>
     );
+  } else if (structuredKind === "rows") {
+    // Table answers (S2): the rows under the printed headers; staff can correct cells and rows.
+    body = (
+      <div className="space-y-3">
+        <TableAnswer
+          questionKey={q.key}
+          label={q.label}
+          field={field}
+          rows={rowsOf(section.answer?.value)}
+          readOnly={readOnly}
+          onChange={(rows) => dispatch({ type: "setRows", key: q.key, rows, actor })}
+        />
+        {paragraphs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {props.answerEdited ? (
+              <Pill className="border-violet-200 bg-violet-50 text-violet-800">Rows changed by staff</Pill>
+            ) : (
+              <OriginPill origin="from_records" label={originLabel("from_records", connectorId)} />
+            )}
+            <span className="text-[11px] text-slate-500">{paragraphs[0].text}</span>
+            {Array.from(new Set(paragraphs.flatMap((p) => p.sourceIds))).map((id) => (
+              <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} active={props.activeSourceId === id} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
   } else if (structuredKind) {
-    const value = section.answer?.value ?? null;
+    const raw = section.answer?.value ?? null;
+    const value = Array.isArray(raw) ? null : raw;
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
     const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (

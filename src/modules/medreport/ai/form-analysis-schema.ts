@@ -39,6 +39,12 @@ export const FACT_ID_OPTIONS = [
   ...OutcomeInstrumentSchema.options.map((i) => `FACT-outcomes-${i}` as const),
 ] as const;
 
+/**
+ * Answer types the analysis may propose: every type except "table" – tables are found from the layout
+ * by code (form-tables.ts), so the structured output stays exactly as before tables existed.
+ */
+export const AnalysisAnswerTypeSchema = AnswerTypeSchema.exclude(["table"]);
+
 export const AnalysisOptionAnchorSchema = z.object({
   option: z.string().describe("The option exactly as printed."),
   ref: z.string().describe("Word: the block ID holding this option's ☐. Fillable PDF: the check box field name for this option."),
@@ -49,7 +55,7 @@ export const AnalysisFieldOutputSchema = z.object({
   label: z.string().describe("The question or label exactly as printed on the form."),
   section: z.string().describe('The form\'s own heading this question sits under, exactly as printed, or "".'),
   guidance: z.string().describe("One plain-English sentence for the clinic: what the referrer wants here."),
-  answerType: AnswerTypeSchema,
+  answerType: AnalysisAnswerTypeSchema,
   options: z.array(z.string()).describe("yes_no / single_choice / checkbox: the options exactly as printed, in order. [] otherwise."),
   anchorTarget: z.enum(ANCHOR_TARGETS),
   anchorRef: z
@@ -93,7 +99,7 @@ export const LenientAnalysisOutputSchema: z.ZodType<AnalysisOutput> = z.object({
       label: z.string(),
       section: z.string().catch(""),
       guidance: z.string().catch(""),
-      answerType: AnswerTypeSchema.catch("long_text"),
+      answerType: AnalysisAnswerTypeSchema.catch("long_text"),
       options: z.array(z.string()).catch([]),
       anchorTarget: z.enum(ANCHOR_TARGETS).catch("after_paragraph"),
       anchorRef: z.string().catch(""),

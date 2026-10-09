@@ -5,6 +5,7 @@
  * Owner: studio-a agent.
  */
 import { parseBlockId } from "../../../core/forms";
+import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
   ComputedFactFormat,
@@ -75,7 +76,13 @@ export function describeAnchor(anchor: FormAnchor): string {
     case "pdf_field":
       return `PDF field “${anchor.fieldName}” (${anchor.fieldType})`;
     case "pdf_overlay":
-      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)`;
+      return `Page ${anchor.page}, box at ${Math.round(anchor.x)}, ${Math.round(anchor.y)} (${Math.round(anchor.width)} × ${Math.round(anchor.height)} pt)${anchor.dateSlots?.length ? `, date in ${anchor.dateSlots.length} parts` : ""}`;
+    case "pdf_table":
+      return `PDF table: ${anchor.rows.length} rows × ${anchor.columns.length} columns (${anchor.columns.map((c) => c.header || c.key).join(" / ")})`;
+    case "pdf_overlay_table":
+      return `Page ${anchor.page}, table of ${anchor.rowTops.length} rows × ${anchor.columns.length} columns, first row top at ${Math.round(anchor.rowTops[0] ?? 0)} pt`;
+    case "pdf_overlay_ticks":
+      return `Page ${anchor.page}, tick boxes ${anchor.options.map((o) => `“${o.option}” at ${Math.round(o.x)}, ${Math.round(o.y)}`).join(", ")}`;
   }
 }
 
@@ -125,6 +132,11 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
       }
     case "pdf_overlay":
       return `Written on page ${a.page}, in the space for ${q}`;
+    case "pdf_table":
+    case "pdf_overlay_table":
+      return `One row per line of the table for ${q} (${tableColumnsOf(a).map((c) => c.header || c.key).join(" / ")})`;
+    case "pdf_overlay_ticks":
+      return `Marks an X in one of the printed boxes ${a.options.map((o) => `“${o.option}”`).join(" / ")}`;
   }
 }
 
@@ -190,10 +202,15 @@ export function anchorFromPick(current: FormAnchor, pick: PreviewPick): FormAnch
   };
 }
 
-/** A fill source of the given kind, keeping compatible details from the current one. */
-export function fillSourceOfKind(kind: FillSource["kind"], current: FillSource): FillSource {
+/**
+ * A fill source of the given kind, keeping compatible details from the current one. `anchor` lets a
+ * table question start its appointments columns from the printed headers.
+ */
+export function fillSourceOfKind(kind: FillSource["kind"], current: FillSource, anchor?: FormAnchor): FillSource {
   if (kind === current.kind) return current;
   switch (kind) {
+    case "appointments_table":
+      return { kind, columns: (anchor && appointmentColumnsFor(tableColumnsOf(anchor))) || {} };
     case "registration":
       return { kind, path: "patient.fullName" satisfies RegistrationPath };
     case "computed_fact":

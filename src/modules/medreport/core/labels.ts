@@ -78,6 +78,7 @@ export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
   clinician_name: "Clinician name",
   hcpc_number: "HCPC number",
   date_signed: "Date signed",
+  table: "Table (rows)",
 };
 
 export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
@@ -87,6 +88,7 @@ export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   clinician_opinion: "Clinician opinion – only if recorded, else for the clinician",
   signoff: "Sign-off – filled on approval",
   leave_blank: "Leave blank",
+  appointments_table: "From the appointment record – one row per attended session, filled by code",
 };
 
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {

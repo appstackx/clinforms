@@ -26,7 +26,8 @@ import {
   type PDFWidgetAnnotation,
 } from "pdf-lib";
 import { HttpError } from "../api/http";
-import type { PdfFormOutline } from "../core/types";
+import type { PdfBox, PdfFormOutline } from "../core/types";
+import { extractPageBoxes } from "./pdf-boxes";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 
 export type PdfClassification = "acroform" | "flat";
@@ -134,7 +135,7 @@ function nearbyText(rect: Rect, items: TextItem[], type: FieldType, widgetRects:
     .slice(0, 240);
 }
 
-async function pageTextItems(buf: Uint8Array, warnings: string[]): Promise<{ page: number; items: TextItem[] }[]> {
+async function pageTextItems(buf: Uint8Array, warnings: string[], boxes?: PdfBox[]): Promise<{ page: number; items: TextItem[] }[]> {
   try {
     const pdfjs = await loadPdfjs();
     const task = pdfjs.getDocument(pdfjsDocumentParams(buf));
@@ -151,6 +152,8 @@ async function pageTextItems(buf: Uint8Array, warnings: string[]): Promise<{ pag
           items.push({ str: raw.str, x: round(e), y: round(f), w: round(raw.width), h: round(raw.height || Math.abs(d) || 8) });
         }
         pages.push({ page: n, items });
+        // Flat PDFs: the printed answer boxes and tick boxes (forms/pdf-boxes.ts).
+        if (boxes) boxes.push(...(await extractPageBoxes(page, n, pdfjs.OPS as unknown as Record<string, number>, items).catch(() => [])));
       }
       return pages;
     } finally {
@@ -169,7 +172,9 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   const form = doc.getForm();
   if (form.hasXFA()) warnings.push("This is an XFA (dynamic) form: only its standard fillable fields are used, and the dynamic layout is removed when it is filled.");
   const pageIndex = widgetPageIndex(doc);
-  const pageText = await pageTextItems(buf, warnings);
+  // A form without fillable fields is flat: its printed boxes are read too (forms/pdf-boxes.ts).
+  const boxes: PdfBox[] | undefined = form.getFields().some((f) => pdfFieldType(f) !== null) ? undefined : [];
+  const pageText = await pageTextItems(buf, warnings, boxes);
   const itemsByPage = new Map(pageText.map((p) => [p.page, p.items]));
 
   const fields: PdfFormOutline["fields"] = [];
@@ -215,6 +220,7 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
     pages: doc.getPageCount(),
     fields,
     pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(({ str, x, y }) => ({ str, x, y })) })),
+    ...(boxes && classification === "flat" && { boxes }),
     classification,
     warnings,
   };

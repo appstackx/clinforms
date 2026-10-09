@@ -490,7 +490,8 @@ export function removeParagraph(report: Report, key: string, paragraphId: string
   return changed ? touch(report, sections, now) : report;
 }
 
-function answerDisplay(value: string | boolean | null, kind: string): string {
+function answerDisplay(value: string | boolean | null | Array<Record<string, string>>, kind: string): string {
+  if (Array.isArray(value)) return `${value.length} row${value.length === 1 ? "" : "s"}`;
   if (value === null || value === "") return "blank";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return kind === "date" ? formatUkDate(value) : value;

@@ -22,6 +22,7 @@ import {
   toFormAnswer,
   type ResolvedFormValue,
 } from "./forms";
+import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS } from "./labels";
@@ -277,6 +278,14 @@ export function createFormReport(input: CreateFormReportInput): Report {
     };
     const structured = answerKindFor(field.answerType) !== "text";
     const src = field.fillSource;
+
+    if (src.kind === "appointments_table") {
+      // A table filled by code from the attended appointments (core/form-tables.ts).
+      const table = buildAppointmentsTableSection(field, src.columns, ctx, base);
+      sections.push(table.section);
+      if (table.gap) gaps.push(table.gap);
+      continue;
+    }
 
     if (src.kind === "registration" || src.kind === "computed_fact") {
       const resolved: ResolvedFormValue | null =

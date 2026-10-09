@@ -127,6 +127,15 @@ export type OutlineBlock = z.infer<typeof S.OutlineBlockSchema>;
 export type PdfOutlineField = z.infer<typeof S.PdfOutlineFieldSchema>;
 export type PdfFormOutline = z.infer<typeof S.PdfFormOutlineSchema>;
 
+/* Tables, tick boxes and flat-PDF boxes (S2, additive) */
+export type FormAnswerRow = z.infer<typeof S.FormAnswerRowSchema>;
+export type FormTableColumn = z.infer<typeof S.FormTableColumnSchema>;
+export type PdfTableAnchor = z.infer<typeof S.PdfTableAnchorSchema>;
+export type PdfOverlayTableAnchor = z.infer<typeof S.PdfOverlayTableAnchorSchema>;
+export type PdfOverlayTicksAnchor = z.infer<typeof S.PdfOverlayTicksAnchorSchema>;
+export type AppointmentColumn = z.infer<typeof S.AppointmentColumnSchema>;
+export type PdfBox = z.infer<typeof S.PdfBoxSchema>;
+
 /* AI output for referrer forms (Revision 2, added by the ai agent – additive) */
 export type FormDraftAnswerOutput = z.infer<typeof S.FormDraftAnswerOutputSchema>;
 export type FormDraftGroupOutput = z.infer<typeof S.FormDraftGroupOutputSchema>;
