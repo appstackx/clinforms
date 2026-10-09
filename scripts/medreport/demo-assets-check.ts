@@ -228,6 +228,13 @@ async function checkFolder(dir: string, report: DemoAssetsReport): Promise<void>
   for (const [sha, entry] of Array.from(files)) {
     if (!maps.has(sha)) report.notes.push(`${entry.name}: no map – an upload is mapped by layout rules (still labelled as a demonstration form)`);
   }
+  // Form files and not one prepared map: every upload falls back to the layout rules, whose maps of
+  // real insurer forms need correcting by hand – not a demo that works as prepared.
+  if (files.size > 0 && maps.size === 0) {
+    report.problems.push(
+      `No prepared maps: maps/ holds no map for any of the ${files.size} form file${files.size === 1 ? "" : "s"}, so every upload is mapped by layout rules only. Add maps/<sampleId>.json (see src/modules/medreport/ai/demo-assets.ts).`,
+    );
+  }
 
   /* Drafts ------------------------------------------------------------------------------------ */
   const draftNames = jsonFiles(path.join(dir, "drafts"));

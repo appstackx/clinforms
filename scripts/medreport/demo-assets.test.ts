@@ -41,7 +41,7 @@ import { checkDemoAssets } from "./demo-assets-check";
 import { getDemoBundle } from "./dev-bundles";
 
 const SAMPLE_ID = "ext-example-insurer-therapy";
-const INSURER = "Example Health Insurance";
+const INSURER = "Example Health Insurance (fictional)";
 const ENV_KEYS = [
   "MEDREPORT_DEMO_ASSETS_DIR",
   "MEDREPORT_DEMO_ASSETS_ALLOW_PROD",
@@ -242,7 +242,7 @@ test("demo upload: the pre-written map keeps its mode, is labelled as an uploade
   assert.equal(form.fields.length, 2);
   assert.equal(form.file.fileName, "therapy-update.pdf");
   assert.equal(form.demoNotice, demoFormNotice(INSURER), "a map without its own notice gets the standard one");
-  assert.equal(form.demoNotice, "Public form used for demonstration only – not affiliated with or endorsed by Example Health Insurance. Fictional patient data.");
+  assert.equal(form.demoNotice, "Public form used for demonstration only – not affiliated with or endorsed by Example Health Insurance (fictional). Fictional patient data.");
   const step = (body.trace ?? []).find((t) => t.label === "Proposed the form map");
   assert.equal(step?.detail, WORDING.server.analysis.uploadedPrewrittenDetail);
   assert.notEqual(WORDING.server.analysis.uploadedPrewrittenDetail, WORDING.server.analysis.prewrittenDetail);
@@ -383,6 +383,14 @@ test("npm run demo:check: passes a good folder, explains a broken one, and is qu
   assert.equal(absent.present, false);
   assert.deepEqual(absent.problems, []);
 
+  // Form files without a single prepared map: every upload would fall back to the layout rules.
+  const unmapped = await fixture();
+  rmSync(path.join(unmapped.dir, "maps"), { recursive: true, force: true });
+  rmSync(path.join(unmapped.dir, "drafts"), { recursive: true, force: true });
+  const none = await checkDemoAssets(unmapped.dir);
+  assert.equal(none.maps, 0);
+  assert.ok(none.problems.some((p) => /^No prepared maps: maps\/ holds no map for any of the 2 form files/.test(p)), none.problems.join("\n"));
+
   const broken = await fixture({ fingerprint: "stale" });
   const map = JSON.parse(readFileSync(path.join(broken.dir, "maps", `${SAMPLE_ID}.json`), "utf8"));
   map.form.fields[0].anchor.fieldName = "txtMissing";
@@ -401,7 +409,7 @@ test("npm run demo:check: passes a good folder, explains a broken one, and is qu
   assert.match(flagged, /FIGURE_NOT_IN_SOURCE|abbreviation "NPRS"/);
 });
 
-test("scripts: stamp-demo-drafts --dir stamps the fingerprint; check-demo-assets exits 0 quietly without a folder", async () => {
+test("scripts: stamp-demo-drafts --dir stamps the fingerprint; check-demo-assets fails loudly for a named folder that is missing", async () => {
   const fx = await fixture({ fingerprint: "none" });
   const run = (script: string, ...args: string[]) =>
     spawnSync(process.execPath, ["--import", "./scripts/medreport/test-setup.mjs", "--import", "tsx", script, ...args], {
@@ -413,9 +421,11 @@ test("scripts: stamp-demo-drafts --dir stamps the fingerprint; check-demo-assets
   assert.equal(stamp.status, 0, stamp.stderr);
   assert.equal(JSON.parse(readFileSync(fx.draftFile, "utf8")).bundleFingerprint, bundleNotesFingerprint(getDemoBundle("sim-pat-001")));
 
-  const quiet = run("scripts/medreport/check-demo-assets.ts", `--dir=${path.join(fx.dir, "absent")}`);
-  assert.equal(quiet.status, 0, quiet.stderr);
-  assert.equal(`${quiet.stdout}${quiet.stderr}`.trim(), "");
+  // A folder named by --dir (or MEDREPORT_DEMO_ASSETS_DIR) that does not exist – e.g. a relative path in
+  // a git worktree – is an error, not "nothing to check".
+  const missing = run("scripts/medreport/check-demo-assets.ts", `--dir=${path.join(fx.dir, "absent")}`);
+  assert.equal(missing.status, 1, missing.stdout);
+  assert.match(missing.stderr, /^problem: the demo assets folder .*absent does not exist\. Set MEDREPORT_DEMO_ASSETS_DIR/m);
   const checked = run("scripts/medreport/check-demo-assets.ts", `--dir=${fx.dir}`);
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
   assert.match(checked.stdout, /^Demo assets OK: 1 map, 1 answer file, 2 form files in /m);

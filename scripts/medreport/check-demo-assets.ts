@@ -6,21 +6,40 @@
  *   npm run demo:check                      # MEDREPORT_DEMO_ASSETS_DIR (shell or .env.local), else demo-assets/insurers
  *   npm run demo:check -- --dir=<folder>    # another folder
  *
- * Exits 0 quietly when the folder does not exist (a fresh clone has no demo assets: they are never in
- * git), 0 with a one-line summary when everything passes, 1 with one line per problem otherwise.
- * Reads .env.local the way Next does (@next/env), without printing anything about it.
+ * The default folder missing is fine (exit 0 with one line: a fresh clone has no demo assets – they
+ * are never in git); a folder named by --dir or MEDREPORT_DEMO_ASSETS_DIR that does not exist is an
+ * error (exit 1: e.g. a git worktree, where the relative path finds nothing – use an absolute path).
+ * Exit 0 with a one-line summary when everything passes, 1 with one line per problem otherwise (a
+ * folder of forms without a single prepared map is a problem). Reads .env.local the way Next does
+ * (@next/env, resolved through next itself), without printing anything about it.
  */
-import { loadEnvConfig } from "@next/env";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { checkDemoAssets } from "./demo-assets-check";
 
 const DEFAULT_DIR = "demo-assets/insurers";
 
+/** @next/env as next itself depends on it (it is not a direct dependency of this package). */
+function loadEnvConfig(dir: string): void {
+  const fromNext = createRequire(createRequire(path.join(dir, "package.json")).resolve("next/package.json"));
+  const nextEnv = fromNext("@next/env") as typeof import("@next/env");
+  nextEnv.loadEnvConfig(dir, false, { info: () => undefined, error: (...args: unknown[]) => console.error(...args) });
+}
+
 async function main(): Promise<number> {
-  loadEnvConfig(process.cwd(), false, { info: () => undefined, error: (...args: unknown[]) => console.error(...args) });
+  loadEnvConfig(process.cwd());
   const arg = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length).trim();
-  const dir = arg || process.env.MEDREPORT_DEMO_ASSETS_DIR?.trim() || DEFAULT_DIR;
+  const configured = arg || process.env.MEDREPORT_DEMO_ASSETS_DIR?.trim() || "";
+  const dir = configured || DEFAULT_DIR;
   const report = await checkDemoAssets(dir);
-  if (!report.present) return 0;
+  if (!report.present) {
+    if (!configured) {
+      console.log(`No demo assets folder at ${report.dir} – nothing to check.`);
+      return 0;
+    }
+    console.error(`problem: the demo assets folder ${report.dir} does not exist. Set MEDREPORT_DEMO_ASSETS_DIR (in .env.local) to the folder's absolute path – in a git worktree the relative path finds nothing.`);
+    return 1;
+  }
   for (const note of report.notes) console.log(`note: ${note}`);
   for (const problem of report.problems) console.error(`problem: ${problem}`);
   const summary = `${report.maps} map${report.maps === 1 ? "" : "s"}, ${report.drafts} answer file${report.drafts === 1 ? "" : "s"}, ${report.files} form file${report.files === 1 ? "" : "s"} in ${report.dir}`;

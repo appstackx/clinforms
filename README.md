@@ -171,8 +171,8 @@ unless noted):
 | `scripts/medreport/record-form-analyses.ts` | Record live analyses of the sample forms (needs the API key) |
 | `scripts/medreport/record-demo-drafts.ts` | Record the demo drafts (needs the API key) |
 | `scripts/medreport/stamp-demo-drafts.ts` | Re-stamp demo drafts after a fixture change (`--dir=demo-assets/insurers` for the local demonstration answers) |
-| `npm run demo:check` | Check the local demonstration forms, maps and answers (`MEDREPORT_DEMO_ASSETS_DIR`, else `demo-assets/insurers`; quiet when absent) |
-| `npm run demo:red` | The RED insurer-form demo on this machine: `next build` + `next start` on port 3000 with the demonstration assets and demo mode (`.env.local` overrides) |
+| `npm run demo:check` | Check the local demonstration forms, maps and answers (`MEDREPORT_DEMO_ASSETS_DIR`, else `demo-assets/insurers`). The default folder absent: one line, exit 0; a named folder absent, or forms with no prepared map: exit 1 |
+| `npm run demo:red` | The RED insurer-form demo on this machine: `next build` + `next start` on port 3000 with the demonstration assets and demo mode (`.env.local` overrides). Refuses to start without the folder or without a prepared map (`-- --allow-no-maps` to start anyway) |
 | `scripts/medreport/build-notes-pdf.ts`, `build-prewritten-drafts.ts`, `render-form-samples.ts` | Sample builders |
 | `scripts/medreport/video/record-demo.mjs` | Records the walkthrough video against a running server (Playwright from `NODE_PATH=$(npm root -g)`, ffmpeg); see its README |
 

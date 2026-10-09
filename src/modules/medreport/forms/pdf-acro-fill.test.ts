@@ -69,7 +69,7 @@ test("fitMaxLength: dates become DDMMYYYY / DDMMYY; spaces then separators go be
   assert.deepEqual(fitMaxLength("09/10/2026", 6, "2026-10-09"), { text: "091026", compacted: "date", cut: false });
   assert.deepEqual(fitMaxLength("14/02/1991", 10, "1991-02-14"), { text: "14/02/1991", compacted: "", cut: false }, "fits as it is");
   assert.deepEqual(fitMaxLength("AB 12 34 56", 8, null), { text: "AB123456", compacted: "spaces", cut: false });
-  assert.deepEqual(fitMaxLength("01908-555/0101", 11, null), { text: "019085550101".slice(0, 11), compacted: "separators", cut: true });
+  assert.deepEqual(fitMaxLength("01632-960/101", 10, null), { text: "01632960101".slice(0, 10), compacted: "separators", cut: true });
   assert.deepEqual(fitMaxLength("MK9-2AB", 6, null), { text: "MK92AB", compacted: "separators", cut: false });
   assert.deepEqual(fitMaxLength("12", 3, null), { text: "12", compacted: "", cut: false });
   assert.equal(dateDigits("2026-10-09", "DDMMYYYY"), "09102026");
