@@ -88,10 +88,15 @@ function attendanceFact(bundle: EpisodeBundle): ComputedFact | null {
   const extras: string[] = [];
   if (dna.length) extras.push(`${dna.length} DNA`);
   if (lcn.length) extras.push(`${lcn.length} late cancellation${lcn.length === 1 ? "" : "s"}`);
+  // None missed: "5 appointments attended to date, none missed (1 cancelled with notice; 1 more booked)" –
+  // not "5 of 5", which reads as if those were all the appointments.
+  const besides = [cnc.length ? `${cnc.length} cancelled with notice` : "", booked.length ? `${booked.length} more booked` : ""].filter(Boolean);
   const value =
     counted.length === 0
       ? `No appointments have taken place yet (${booked.length} booked)`
-      : `${att.length} of ${counted.length} appointments attended${extras.length ? ` (${extras.join(", ")})` : ""}`;
+      : extras.length === 0
+        ? `${att.length} appointment${att.length === 1 ? "" : "s"} attended to date, none missed${besides.length ? ` (${besides.join("; ")})` : ""}`
+        : `${att.length} of ${counted.length} appointments attended (${extras.join(", ")})`;
 
   const missed = (list: Appointment[]) =>
     list.length === 0

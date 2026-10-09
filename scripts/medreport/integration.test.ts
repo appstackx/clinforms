@@ -158,7 +158,7 @@ test("case C (Rebecca Lane, private medical insurance): facts and data checks", 
     "FACT-outcomes-PSFS",
   ]);
   // CNC and BOOKED are reported separately, not counted as missed.
-  assert.equal(byId.get("FACT-attendance")?.value, "5 of 5 appointments attended");
+  assert.equal(byId.get("FACT-attendance")?.value, "5 appointments attended to date, none missed (1 cancelled with notice; 1 more booked)");
   assert.match(byId.get("FACT-attendance")?.detail ?? "", /Cancelled with notice \(CNC, not counted above\): 1 – 22\/09\/2026 \(A-004\)/);
   assert.match(byId.get("FACT-attendance")?.detail ?? "", /Booked for a future date \(not counted above\): 1\./);
   assert.match(byId.get("FACT-attendance")?.detail ?? "", /First attended appointment 01\/09\/2026; last attended appointment 01\/10\/2026/);
