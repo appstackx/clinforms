@@ -450,6 +450,10 @@ export function resolveRegistrationValue(
       return textValue(SEX_TEXT[reg.sex], REG);
     case "patient.address":
       return textValue(reg.addressSummary, REG);
+    case "patient.addressLines":
+      return textValue(splitUkAddress(reg.addressSummary).lines.join("\n"), REG);
+    case "patient.postcode":
+      return textValue(splitUkAddress(reg.addressSummary).postcode, REG);
     case "patient.occupation":
       return textValue(reg.occupation, REG);
     case "patient.employer":
@@ -513,6 +517,36 @@ export function resolveRegistrationValue(
   }
 }
 
+/** A UK postcode at the end of an address ("MK5 8ZZ", "SW1A 1AA"). */
+const UK_POSTCODE_AT_END = /[,\s]*\b([A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2})\s*$/i;
+
+/**
+ * "22 Larkspur Mews, Loughton, Milton Keynes, MK5 8ZZ" → lines ["22 Larkspur Mews", "Loughton", "Milton
+ * Keynes"] and postcode "MK5 8ZZ" – for a form with printed address lines and a separate postcode box.
+ * Commas inside brackets ("(fictional)") never split a line. No postcode found: all parts are lines.
+ */
+export function splitUkAddress(address: string): { lines: string[]; postcode: string } {
+  const text = address.trim();
+  const m = UK_POSTCODE_AT_END.exec(text);
+  const postcode = m ? m[1].toUpperCase().replace(/^(\S+?)(\d[A-Z]{2})$/, "$1 $2") : "";
+  const rest = m ? text.slice(0, m.index) : text;
+  const lines: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of Array.from(rest)) {
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if ((ch === "," || ch === "\n") && depth === 0) {
+      if (cur.trim()) lines.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) lines.push(cur.trim());
+  return { lines, postcode };
+}
+
 /** Resolve a computed fact for a form answer (code only). Null when the record does not support it. */
 export function resolveComputedFactValue(
   factId: FactId,
@@ -527,6 +561,22 @@ export function resolveComputedFactValue(
     const status = format === "sessions_attended" ? "ATT" : "DNA";
     const n = ctx.bundle.appointments.filter((a) => a.status === status).length;
     return { text: String(n), value: String(n), sourceIds: hasFact(ctx.computedFacts, "FACT-attendance") ? ["FACT-attendance"] : ids };
+  }
+  if (format === "first_scores" || format === "latest_scores") {
+    // Every outcome measure the record holds, in the record's order: its first (or latest) score.
+    const first = format === "first_scores";
+    const picked = ctx.bundle.outcomeMeasures
+      .map((m) => {
+        const sorted = m.points.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+        const point = first ? sorted[0] : sorted[sorted.length - 1];
+        return point ? { instrument: m.instrument, unit: m.unit, point } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+    if (picked.length === 0) return null;
+    const sameDate = picked.every((p) => p.point.date === picked[0].point.date);
+    const parts = picked.map((p) => `${p.instrument} ${formatScore(p.point.value, p.unit)}${sameDate ? "" : ` (${formatUkDate(p.point.date)})`}`);
+    const sourceIds = picked.map((p) => `FACT-outcomes-${p.instrument}`).filter((id) => hasFact(ctx.computedFacts, id));
+    return textValue(`${parts.join(" · ")}${sameDate ? ` (${formatUkDate(picked[0].point.date)})` : ""}`, sourceIds.length ? sourceIds : ids);
   }
   if (format === "first_score" || format === "latest_score") {
     const instrument = /^FACT-outcomes-(.+)$/.exec(factId)?.[1];

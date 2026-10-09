@@ -497,8 +497,11 @@ function usableRuledRows(a: OverlayBox): Array<{ y: number; height: number }> | 
  * above the row's rule (never struck through by it), at a size no taller than the rows allow. Too long
  * for the rows: the leading words with a marker, and the full answer on the continuation sheet.
  */
-function drawRuledOverlay(ctx: Ctx, field: FormField, page: PDFPage, encoded: string, a: OverlayBox, rows: Array<{ y: number; height: number }>): void {
+function drawRuledOverlay(ctx: Ctx, field: FormField, page: PDFPage, encodedIn: string, a: OverlayBox, rows: Array<{ y: number; height: number }>): void {
   const width = a.width - 2;
+  // An answer given line by line (an address) with more lines than the printed rows: the last rows'
+  // lines share the last row ("Loughton, Milton Keynes"), rather than spilling onto a continuation sheet.
+  const encoded = joinExtraLines(encodedIn, rows.length);
   const pitch = Math.min(...rows.map((r) => r.height));
   const preferred = Math.max(MIN_FONT, Math.min(a.fontSize ?? DEFAULT_FONT, pitch * 0.6));
   const fits = (t: string, size: number) => wrapText(t, ctx.font, size, width).length <= rows.length;
@@ -525,6 +528,13 @@ function drawRuledOverlay(ctx: Ctx, field: FormField, page: PDFPage, encoded: st
     const lift = Math.max(2.5, Math.min(4, (row.height - size * 0.72) / 2));
     page.drawText(line, { x: a.x + 1, y: row.y + lift, size, font: ctx.font, color: ANSWER_COLOR });
   });
+}
+
+/** Text with at most `rows` explicit lines: the lines from the last row on are joined with ", ". */
+export function joinExtraLines(text: string, rows: number): string {
+  const lines = text.split("\n");
+  if (rows < 1 || lines.length <= rows) return text;
+  return [...lines.slice(0, rows - 1), lines.slice(rows - 1).filter((l) => l.trim()).join(", ")].join("\n");
 }
 
 function drawOverlay(ctx: Ctx, field: FormField, text: string, a: OverlayBox): void {

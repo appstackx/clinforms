@@ -25,6 +25,7 @@ import { demoDraftAvailability } from "@/modules/medreport/ai/draft-demo";
 import { RecordedFormAnalysisSchema, type RecordedFormAnalysis } from "@/modules/medreport/ai/recorded-forms";
 import { verifyFormConfirmation, withAttestedConfirmation } from "@/modules/medreport/auth/attestations";
 import { checkFormDefinition, formToTemplate } from "@/modules/medreport/core/forms";
+import { isQuestionSet, questionSetSha256 } from "@/modules/medreport/core/question-set";
 import type { EpisodeBundle, FormDefinition } from "@/modules/medreport/core/types";
 import { demoFormNotice } from "@/modules/medreport/core/wording";
 import { buildDocxOutline } from "@/modules/medreport/forms/docx-outline";
@@ -192,6 +193,18 @@ async function checkFolder(dir: string, report: DemoAssetsReport): Promise<void>
     if (name !== `${rec.sampleId}.json`) report.notes.push(`${where}: by convention the file is named ${rec.sampleId}.json`);
     if (rec.mode !== "demo_prewritten") report.notes.push(`${where}: mode “${rec.mode}” – it is shown as a prepared reading, not a pre-written map`);
     if (!form.demoNotice?.trim()) report.notes.push(`${where}: no demoNotice – the standard one is used: “${demoFormNotice(form.referrer.name)}”`);
+
+    // A portal question set (FormKind "questions") has no file: its placeholder SHA-256 is that of its
+    // questions, and the Studio seeds it into the forms library (GET /forms/samples) – nothing to upload.
+    if (isQuestionSet(form)) {
+      const sha = await questionSetSha256(form.fields);
+      if (sha !== rec.fileSha256) report.problems.push(`${where}: a question set's fileSha256 must be the SHA-256 of its questions (${sha.slice(0, 12)}…)`);
+      for (const p of checkFormDefinition(form)) report.problems.push(`${where}: ${p}`);
+      const attestedQs = withAttestedConfirmation(form, "Demo assets check", new Date().toISOString());
+      const verifiedQs = verifyFormConfirmation(attestedQs);
+      if (!verifiedQs.ok) report.problems.push(`${where}: the confirmation attestation does not verify (${verifiedQs.reason})`);
+      continue;
+    }
 
     const fileEntry = files.get(rec.fileSha256);
     if (!fileEntry) {

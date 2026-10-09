@@ -270,6 +270,11 @@ test("computed facts on a form: plain words, no internal IDs; Initial / Current 
   assert.match(resolveComputedFactValue("FACT-outcomes-PSFS", "summary", ctx, "long_text")?.text ?? "", /^PSFS 2\.7\/10, then 4\.3\/10, then 5\.3\/10 \(higher is better\)\. 01\/09\/2026: 2\.7\/10;/);
   assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "first_score", ctx, "long_text")?.text, "PSFS 2.7/10 (01/09/2026)");
   assert.equal(resolveComputedFactValue("FACT-outcomes-PSFS", "latest_score", ctx, "short_text")?.text, "PSFS 5.3/10 (01/10/2026)");
+  // Every outcome measure the record holds (an "Outcome measures" box that names only an example).
+  const firsts = resolveComputedFactValue("FACT-outcomes-PSFS", "first_scores", ctx, "short_text");
+  assert.equal(firsts?.text, "NPRS 7/10 · QuickDASH 52.3/100 · PSFS 2.7/10 (01/09/2026)");
+  assert.deepEqual(firsts?.sourceIds, ["FACT-outcomes-NPRS", "FACT-outcomes-QuickDASH", "FACT-outcomes-PSFS"]);
+  assert.equal(resolveComputedFactValue("FACT-outcomes-NPRS", "latest_scores", ctx, "short_text")?.text, "NPRS 4/10 · QuickDASH 29.5/100 · PSFS 5.3/10 (01/10/2026)");
   assert.equal(resolveComputedFactValue("FACT-outcomes-NDI", "first_score", ctx, "long_text"), null, "no NDI on record");
   assert.equal(formFactText("Did not attend (DNA): 1 – 12/09/2026 (A-004, reason recorded: \"unwell\")."), "Did not attend: 1 – 12/09/2026 (reason recorded: \"unwell\").");
   assert.equal(formFactText("Discharge note: 01/10/2026 (N-005). Sarah Reid (PH-DEMO-01) 5 notes."), "Discharge note: 01/10/2026. Sarah Reid (PH-DEMO-01) 5 notes.");

@@ -32,6 +32,7 @@ import { DraftsResponseSchema, FormSamplesResponseSchema, FormsAnalyseResponseSc
 import { formMapSha256, verifyFormConfirmation, withAttestedConfirmation } from "@/modules/medreport/auth/attestations";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
 import { formAnchorKeys, formTemplateId, formToTemplate } from "@/modules/medreport/core/forms";
+import { parsePortalQuestions, questionFields, questionSetFile } from "@/modules/medreport/core/question-set";
 import { applyDraftResult, createFormReport } from "@/modules/medreport/core/report-factory";
 import type { FormDefinition } from "@/modules/medreport/core/types";
 import { WORDING, demoFormNotice, hasBannedTerm } from "@/modules/medreport/core/wording";
@@ -434,4 +435,42 @@ test("scripts: stamp-demo-drafts --dir stamps the fingerprint; check-demo-assets
   const checked = run("scripts/medreport/check-demo-assets.ts", `--dir=${fx.dir}`);
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
   assert.match(checked.stdout, /^Demo assets OK: 1 map, 1 answer file, 2 form files in /m);
+});
+
+test("a prepared portal question set in the demo assets is seeded into the library, confirmed and attested – nothing to upload", async () => {
+  const fx = await fixture();
+  const fields = questionFields(parsePortalQuestions("# Progress\nDate of initial assessment [date]\nCurrent symptoms and progress [long]").questions);
+  const file = await questionSetFile(fields);
+  const at = "2026-10-10T08:00:00.000Z";
+  const qs: FormDefinition = {
+    id: "form_qs_demo_test",
+    tenantId: "demo",
+    referrer: { name: "Example portal (fictional)", type: "insurer" },
+    title: "Example portal questions (illustrative)",
+    file,
+    kind: "questions",
+    fields,
+    status: "confirmed",
+    confirmed: { by: "Practice manager (fictional)", at },
+    analysis: { mode: "rules", promptVersion: "questions-1", at, warnings: [] },
+    createdAt: at,
+    updatedAt: at,
+  };
+  writeFileSync(
+    path.join(fx.dir, "maps", "portal-test.json"),
+    JSON.stringify({ format: "appstackx-reports.form-analysis", formatVersion: 1, sampleId: "portal-test", fileSha256: file.sha256, fileName: file.fileName, mode: "demo_prewritten", recordedAt: at, promptVersion: "questions-1", form: qs, outlineSummary: { kind: "questions", answerSpaces: 2, headings: [], warnings: [] } }),
+  );
+  useAssets(fx.dir);
+  const samples = FormSamplesResponseSchema.parse(await (await route(handleFormSamples)(get("/api/reports/v1/forms/samples"), { params: {} })).json()).samples;
+  const entry = samples.find((s) => s.id === "portal-test");
+  assert.ok(entry);
+  assert.equal(entry.uploadRequired, undefined, "a question set has no file to upload");
+  assert.equal(entry.form?.status, "confirmed");
+  assert.equal(entry.form?.sampleId, "portal-test");
+  assert.ok(entry.form && verifyFormConfirmation(entry.form).ok, "the server attests the prepared map");
+  const checked = await checkDemoAssets(fx.dir);
+  assert.deepEqual(checked.problems, []);
+  // A question set whose hash is not that of its questions is refused.
+  writeFileSync(path.join(fx.dir, "maps", "portal-test.json"), JSON.stringify({ ...JSON.parse(readFileSync(path.join(fx.dir, "maps", "portal-test.json"), "utf8")), fileSha256: "1".repeat(64), form: { ...qs, file: { ...file, sha256: "1".repeat(64) } } }));
+  assert.ok((await checkDemoAssets(fx.dir)).problems.some((p) => /SHA-256 of its questions/.test(p)));
 });

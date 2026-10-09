@@ -14,6 +14,7 @@ import "server-only";
  */
 import { listDemoAssetFormAnalyses } from "../../ai/recorded-forms";
 import { verifyFormConfirmation, withAttestedConfirmation } from "../../auth/attestations";
+import { isQuestionSet } from "../../core/question-set";
 import { listSampleForms } from "../../forms/samples/registry";
 import type { FormSample, FormSamplesResponse } from "../contract";
 import { json, type MedreportHandler } from "../http";
@@ -29,8 +30,24 @@ function demoAssetSamples(bundled: FormSample[]): FormSample[] {
   const files = new Set(bundled.map((s) => s.file.sha256));
   return listDemoAssetFormAnalyses()
     .filter((rec) => !ids.has(rec.sampleId) && !files.has(rec.fileSha256))
-    .map((rec) => {
+    .map((rec): FormSample => {
       const questions = rec.form.fields.length;
+      // A prepared portal question set has no file to upload: it is seeded into the library with its
+      // confirmed map (attested here, as the bundled samples are), so nobody types the questions live.
+      if (isQuestionSet(rec.form)) {
+        const at = rec.form.confirmed?.at ?? rec.recordedAt;
+        const by = rec.form.confirmed?.by ?? "Prepared for this demonstration";
+        return {
+          id: rec.sampleId,
+          title: rec.form.title,
+          description: "Portal questions prepared for this demonstration (illustrative and fictional): answered from the notes, ready to copy into the portal.",
+          referrer: rec.form.referrer,
+          kind: rec.form.kind,
+          file: rec.form.file,
+          highlights: [`${questions} question${questions === 1 ? "" : "s"}`],
+          form: withAttestedConfirmation({ ...rec.form, status: "confirmed", sampleId: rec.sampleId }, by, at),
+        };
+      }
       return {
         id: rec.sampleId,
         title: rec.form.title,
