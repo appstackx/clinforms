@@ -4,7 +4,7 @@
  *   INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1)
  *   ON CONFLICT (key, window_start) DO UPDATE SET count = rate_limits.count + 1 RETURNING count
  */
-import { RepoInputError, assertIso, nowIso, toInt, type RepoContext } from "./context";
+import { RepoInputError, assertIso, nowIso, toInt, type DbContext } from "./context";
 
 export interface RateLimitHit {
   /** Hits in this window including this one. */
@@ -28,7 +28,7 @@ function windowOf(nowMs: number, windowMs: number): { start: string; reset: stri
 }
 
 /** Counts one hit for `key` in the current window and returns the window's total. */
-export async function hitRateLimit(ctx: RepoContext, key: string, windowMs: number): Promise<RateLimitHit> {
+export async function hitRateLimit(ctx: DbContext, key: string, windowMs: number): Promise<RateLimitHit> {
   checkKey(key);
   const { start, reset } = windowOf(Date.parse(nowIso(ctx)), windowMs);
   const row = await ctx.db
@@ -41,7 +41,7 @@ export async function hitRateLimit(ctx: RepoContext, key: string, windowMs: numb
 }
 
 /** The current window's count without counting a hit. */
-export async function peekRateLimit(ctx: RepoContext, key: string, windowMs: number): Promise<RateLimitHit> {
+export async function peekRateLimit(ctx: DbContext, key: string, windowMs: number): Promise<RateLimitHit> {
   checkKey(key);
   const { start, reset } = windowOf(Date.parse(nowIso(ctx)), windowMs);
   const row = await ctx.db
@@ -54,13 +54,13 @@ export async function peekRateLimit(ctx: RepoContext, key: string, windowMs: num
 }
 
 /** Deletes windows that started before `before` (the retention cron). Returns the number removed. */
-export async function purgeRateLimits(ctx: RepoContext, before: string): Promise<number> {
+export async function purgeRateLimits(ctx: DbContext, before: string): Promise<number> {
   const result = await ctx.db.deleteFrom("rate_limits").where("window_start", "<", assertIso(before, "before")).executeTakeFirst();
   return Number(result.numDeletedRows);
 }
 
 /** Deletes every window of one key (e.g. after a successful passcode). */
-export async function resetRateLimit(ctx: RepoContext, key: string): Promise<number> {
+export async function resetRateLimit(ctx: DbContext, key: string): Promise<number> {
   checkKey(key);
   const result = await ctx.db.deleteFrom("rate_limits").where("key", "=", key).executeTakeFirst();
   return Number(result.numDeletedRows);

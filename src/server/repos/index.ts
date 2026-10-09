@@ -20,7 +20,7 @@ export * from "./rate-limits";
 export * from "./reports";
 export * from "./tenant-settings";
 export type { SaveResult } from "./versioned";
-export { RepoInputError, TENANT_ID_PATTERN, assertTenantId, ulid, type RepoContext } from "./context";
+export { RepoInputError, TENANT_ID_PATTERN, assertTenantId, ulid, type DbContext, type RepoContext } from "./context";
 
 /** The app's repository context: the process-wide database and data cipher. */
 export function repoContext(): RepoContext {

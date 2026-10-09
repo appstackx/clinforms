@@ -24,5 +24,6 @@ These scripts were used during the build to drive the Studio UI and the simulate
 | `flows.cjs` | All flows in sequence |
 | `live.cjs`, `live2.cjs` | Live (real model) drafting runs |
 | `pdfcheck.mjs` | Inspects a filled PDF's fields |
+| `auth-flow.cjs` | Sign-in and clinic area: invitation → account → two-step set-up → settings pages → sign out/in with a code and a backup code. Needs `INVITE_LINK_FILE` (the output of `npm run admin:create-clinic`); see `docs/auth.md` §7 |
 
 They were written for the original host repo (on port 3107), and only their paths were adjusted when they were copied here, so expect to fix selectors or ports if they fail.

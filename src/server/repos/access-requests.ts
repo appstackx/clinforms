@@ -2,7 +2,7 @@
  * `access_requests` – the landing page's "Request access" submissions (not tenant data: a clinic asks to
  * become a tenant). Listed only by platform admins.
  */
-import { RepoInputError, assertId, assertText, nowIso, optionalText, randomId, type RepoContext } from "./context";
+import { RepoInputError, assertId, assertText, nowIso, optionalText, randomId, type DbContext } from "./context";
 
 export interface AccessRequestInput {
   clinicName: string;
@@ -24,7 +24,7 @@ export interface AccessRequest {
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
 
-export async function createAccessRequest(ctx: RepoContext, input: AccessRequestInput): Promise<AccessRequest> {
+export async function createAccessRequest(ctx: DbContext, input: AccessRequestInput): Promise<AccessRequest> {
   const email = assertText(input.email?.trim(), "Email", 254);
   if (!EMAIL.test(email)) throw new RepoInputError("Email is not valid.");
   const request: AccessRequest = {
@@ -51,7 +51,7 @@ export async function createAccessRequest(ctx: RepoContext, input: AccessRequest
   return request;
 }
 
-export async function listAccessRequests(ctx: RepoContext, options: { limit?: number } = {}): Promise<AccessRequest[]> {
+export async function listAccessRequests(ctx: DbContext, options: { limit?: number } = {}): Promise<AccessRequest[]> {
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 100)), 500);
   const rows = await ctx.db.selectFrom("access_requests").selectAll().orderBy("created_at", "desc").orderBy("id").limit(limit).execute();
   return rows.map((r) => ({
@@ -65,7 +65,7 @@ export async function listAccessRequests(ctx: RepoContext, options: { limit?: nu
   }));
 }
 
-export async function deleteAccessRequest(ctx: RepoContext, id: string): Promise<boolean> {
+export async function deleteAccessRequest(ctx: DbContext, id: string): Promise<boolean> {
   assertId(id, "Access request id");
   const result = await ctx.db.deleteFrom("access_requests").where("id", "=", id).executeTakeFirst();
   return Number(result.numDeletedRows) > 0;

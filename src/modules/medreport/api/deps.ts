@@ -10,6 +10,45 @@ import "server-only";
 import type { ConnectorContext, ConnectorRegistry } from "../connectors/types";
 import type { ConnectorId, TenantId } from "../core/types";
 
+/** A clinic member's role (docs/production-architecture.md §3). */
+export type MemberRole = "owner" | "admin" | "clinician" | "staff";
+
+/**
+ * Who is calling, worked out by the HOST from its own sign-in (Better Auth session + active clinic): the
+ * module never reads cookies itself. Built by src/server/auth/medreport-actor.ts.
+ */
+export interface AuthContext {
+  userId: string;
+  /** The sign-in session's id (audit trail; not a secret). */
+  authSessionId: string;
+  /** The active clinic (= its organization slug). */
+  tenantId: TenantId;
+  role: MemberRole;
+  /** The signer identity from the member's clinic profile, when they have one. */
+  clinician?: {
+    name: string;
+    hcpc?: string;
+    jobTitle?: string;
+    /** The clinic allows this member to sign (approve) forms. */
+    canSign: boolean;
+  };
+  /** The member has two-step verification on (sessions are only issued after the second factor then). */
+  twoFactorVerified: boolean;
+}
+
+/** The clinic written into referrer forms in tenant mode (replaces DEMO_CLINIC there). */
+export interface ClinicProfile {
+  tenantId: TenantId;
+  displayName: string;
+  legalName?: string;
+  addressLines: string[];
+  postcode?: string;
+  phone?: string;
+  email?: string;
+  retentionDays: number;
+  draftingEnabled: boolean;
+}
+
 export interface MedreportDeps {
   connectors: ConnectorRegistry;
   /**
@@ -18,4 +57,11 @@ export interface MedreportDeps {
    * empty trace array the handler returns to the client.
    */
   createConnectorContext(req: Request, connectorId: ConnectorId, tenantId: TenantId): ConnectorContext;
+  /**
+   * Tenant mode (wave 2): the signed-in member behind this request, or null when there is none. Absent in
+   * the public demo. Not used by any handler yet.
+   */
+  authenticate?(req: Request): Promise<AuthContext | null>;
+  /** Tenant mode (wave 2): the clinic's profile, or null. Not used by any handler yet. */
+  clinicProfile?(tenantId: TenantId): Promise<ClinicProfile | null>;
 }

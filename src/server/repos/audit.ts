@@ -10,7 +10,7 @@ import {
   optionalText,
   parseJson,
   ulid,
-  type RepoContext,
+  type DbContext,
 } from "./context";
 
 export interface AuditEntryInput {
@@ -38,7 +38,7 @@ export interface AuditEntry {
 
 const ACTION = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
 
-export async function appendAudit(ctx: RepoContext, tenantId: string, input: AuditEntryInput): Promise<AuditEntry> {
+export async function appendAudit(ctx: DbContext, tenantId: string, input: AuditEntryInput): Promise<AuditEntry> {
   assertTenantId(tenantId);
   if (typeof input.action !== "string" || !ACTION.test(input.action)) {
     throw new RepoInputError("Audit action must match [a-z0-9_.:-] (≤ 64 characters).");
@@ -80,7 +80,7 @@ export interface ListAuditOptions {
 }
 
 /** The tenant's audit trail, newest first. */
-export async function listAudit(ctx: RepoContext, tenantId: string, options: ListAuditOptions = {}): Promise<AuditEntry[]> {
+export async function listAudit(ctx: DbContext, tenantId: string, options: ListAuditOptions = {}): Promise<AuditEntry[]> {
   assertTenantId(tenantId);
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 100)), 500);
   let query = ctx.db.selectFrom("audit_log").selectAll().where("tenant_id", "=", tenantId);

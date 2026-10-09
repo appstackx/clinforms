@@ -69,7 +69,7 @@ describe("migration parity (SQLite/D1 vs Postgres/Supabase)", () => {
     assert.deepEqual(asObject(await postgresShape(pglite)), asObject(sqliteShape(sqlite)));
   });
 
-  it("the schema module lists exactly the migrated tables (until Better Auth's 0002 adds its own)", () => {
+  it("the schema module lists exactly the migrated tables (ours and Better Auth's)", () => {
     const migrated = Array.from(sqliteShape(sqlite).keys()).sort();
     assert.deepEqual(migrated, Array.from(TABLES_IN_FK_ORDER).sort());
     for (const table of TABLES_IN_FK_ORDER) {

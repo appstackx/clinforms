@@ -2,7 +2,7 @@
  * `member_profile` – the signer identity (job title, HCPC number, may sign) of a member of an organization.
  * Scoped by organizationId (the Better Auth organization behind the tenant), passed explicitly.
  */
-import { assertId, flag, nowIso, optionalText, toBool, type RepoContext } from "./context";
+import { assertId, flag, nowIso, optionalText, toBool, type DbContext } from "./context";
 
 export interface MemberProfile {
   organizationId: string;
@@ -37,7 +37,7 @@ function toProfile(row: {
   };
 }
 
-export async function getMemberProfile(ctx: RepoContext, organizationId: string, userId: string): Promise<MemberProfile | null> {
+export async function getMemberProfile(ctx: DbContext, organizationId: string, userId: string): Promise<MemberProfile | null> {
   assertId(organizationId, "organizationId");
   assertId(userId, "userId");
   const row = await ctx.db
@@ -49,7 +49,7 @@ export async function getMemberProfile(ctx: RepoContext, organizationId: string,
   return row ? toProfile(row) : null;
 }
 
-export async function listMemberProfiles(ctx: RepoContext, organizationId: string): Promise<MemberProfile[]> {
+export async function listMemberProfiles(ctx: DbContext, organizationId: string): Promise<MemberProfile[]> {
   assertId(organizationId, "organizationId");
   const rows = await ctx.db
     .selectFrom("member_profile")
@@ -61,7 +61,7 @@ export async function listMemberProfiles(ctx: RepoContext, organizationId: strin
 }
 
 export async function upsertMemberProfile(
-  ctx: RepoContext,
+  ctx: DbContext,
   organizationId: string,
   userId: string,
   input: MemberProfileInput,
@@ -82,7 +82,7 @@ export async function upsertMemberProfile(
   return { organizationId, userId, jobTitle: values.job_title, hcpcNumber: values.hcpc_number, canSign: values.can_sign === 1, updatedAt: values.updated_at };
 }
 
-export async function deleteMemberProfile(ctx: RepoContext, organizationId: string, userId: string): Promise<boolean> {
+export async function deleteMemberProfile(ctx: DbContext, organizationId: string, userId: string): Promise<boolean> {
   assertId(organizationId, "organizationId");
   assertId(userId, "userId");
   const result = await ctx.db

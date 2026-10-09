@@ -43,6 +43,14 @@ const CLIENT_UNSAFE = {
     "pg",
     "@electric-sql/pglite",
     "@electric-sql/pglite/*",
+    // identity layer (src/server/auth, src/server/email): server-only. Better Auth's browser client stays allowed.
+    "better-auth",
+    "better-auth/*",
+    "!better-auth/react",
+    "!better-auth/client",
+    "!better-auth/client/*",
+    "mailersend",
+    "mailersend/*",
   ],
   message:
     "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
@@ -119,6 +127,33 @@ overrides.push({
     {
       group: ["@/modules", "@/modules/*", "**/modules/*"],
       message: "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP.",
+    },
+    WORKERS,
+  ]),
+});
+
+// 6. Edge middleware (src/middleware.ts) only looks at cookies: no database, sign-in library, Node built-ins or
+//    host/module server code there (Next 14 middleware runs on the Edge runtime; real checks are in Node).
+overrides.push({
+  files: ["src/middleware.ts"],
+  rules: rule([
+    {
+      group: [
+        "@/server",
+        "@/server/*",
+        "@/modules/*",
+        "@/sandbox/*",
+        "server-only",
+        "node:*",
+        "kysely",
+        "kysely/*",
+        "pg",
+        "better-auth",
+        "better-auth/*",
+        "mailersend",
+        "mailersend/*",
+      ],
+      message: "src/middleware.ts runs on the Edge runtime and only does optimistic cookie checks: no server code, database or sign-in library here.",
     },
     WORKERS,
   ]),

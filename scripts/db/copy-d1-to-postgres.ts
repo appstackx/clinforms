@@ -27,8 +27,26 @@ import { readSecretsFile } from "./provision-gateway-secrets";
 
 type Row = Record<string, unknown>;
 
-/** Columns holding timestamps (TEXT in SQLite, timestamptz in Postgres): compared as ISO strings. */
-const TIMESTAMP_COLUMNS = new Set(["created_at", "updated_at", "delete_after", "at", "revoked_at", "expires_at", "window_start"]);
+/**
+ * Columns holding timestamps (TEXT in SQLite, timestamptz in Postgres): compared as ISO strings. The camelCase
+ * ones are Better Auth's (migration 0002). Better Auth's booleans (0/1 in SQLite, boolean in Postgres) are
+ * compared as 0/1 by normalise().
+ */
+const TIMESTAMP_COLUMNS = new Set([
+  "created_at",
+  "updated_at",
+  "delete_after",
+  "at",
+  "revoked_at",
+  "expires_at",
+  "window_start",
+  "createdAt",
+  "updatedAt",
+  "expiresAt",
+  "accessTokenExpiresAt",
+  "refreshTokenExpiresAt",
+  "lockedUntil",
+]);
 /** Rows per page when reading (file chunks are ~700 KB each, so 2 at a time). */
 const PAGE_SIZE: Partial<Record<TableName, number>> = { form_file_chunks: 2 };
 const DEFAULT_PAGE = 200;

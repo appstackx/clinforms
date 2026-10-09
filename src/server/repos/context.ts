@@ -21,7 +21,13 @@ export interface RepoContext {
   now?: () => Date;
 }
 
-export function nowIso(ctx: RepoContext): string {
+/**
+ * What the repositories that never touch patient payloads need (audit, profiles, keys, rate limits…): the
+ * database and the clock, no data cipher – so identity code can use them without the encryption keys.
+ */
+export type DbContext = Pick<RepoContext, "db" | "now">;
+
+export function nowIso(ctx: DbContext): string {
   return (ctx.now ? ctx.now() : new Date()).toISOString();
 }
 
