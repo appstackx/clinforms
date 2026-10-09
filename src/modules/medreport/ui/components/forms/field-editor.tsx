@@ -30,8 +30,11 @@ import { WORDING } from "../../wording";
 import { FILL_SOURCE_SHORT, FieldLabel, Select, Textarea } from "../shared/ui-bits";
 import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription } from "./mapping";
 import { PdfAnchorFields } from "./pdf-anchor-fields";
+import { AnchorJsonEditor, AppointmentColumnsEditor } from "./table-anchor-editor";
 
 const FILL_KINDS: FillSource["kind"][] = ["registration", "computed_fact", "fixed", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"];
+/** A table question is filled from the appointment record, or left blank (S2). */
+const TABLE_FILL_KINDS: FillSource["kind"][] = ["appointments_table", "leave_blank"];
 
 const FILL_HELP: Record<FillSource["kind"], string> = {
   registration: WORDING.byCode.fillHelpRegistration,
@@ -42,6 +45,8 @@ const FILL_HELP: Record<FillSource["kind"], string> = {
   signoff: "Completed from the approving clinician's server-signed receipt. Blank on drafts.",
   leave_blank: "Not completed by the clinic (e.g. “for office use”).",
   fixed: "The same answer for every patient (e.g. “Physiotherapist”, “United Kingdom”), filled in by the system. Tick boxes take Yes or No; choices take an option as printed.",
+  appointments_table:
+    "One row per attended session, filled from the appointment record (date, clinician, treatment, clinic, fee, paid). Anything the record does not hold is left blank.",
 };
 
 const OPTION_TYPES = new Set(["single_choice", "yes_no", "checkbox"]);
@@ -116,7 +121,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
       <div className="space-y-2">
         <p className="text-xs font-medium text-slate-700">Where the answer comes from</p>
         <div role="radiogroup" aria-label="Where the answer comes from" className="flex flex-wrap gap-1.5">
-          {FILL_KINDS.map((kind) => {
+          {(field.answerType === "table" ? TABLE_FILL_KINDS : FILL_KINDS).map((kind) => {
             const active = src.kind === kind;
             return (
               <button
@@ -124,7 +129,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                 type="button"
                 role="radio"
                 aria-checked={active}
-                onClick={() => setSource(fillSourceOfKind(kind, src))}
+                onClick={() => setSource(fillSourceOfKind(kind, src, a))}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600",
                   active ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-teal-400",
@@ -186,6 +191,9 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
             <FieldLabel htmlFor={`${id}-fixed`}>Fixed answer</FieldLabel>
             <Input id={`${id}-fixed`} value={src.value} onChange={(e) => setSource({ kind: "fixed", value: e.target.value })} />
           </div>
+        ) : null}
+        {src.kind === "appointments_table" ? (
+          <AppointmentColumnsEditor id={id} anchor={a} columns={src.columns} onChange={(columns) => setSource({ kind: "appointments_table", columns })} />
         ) : null}
         {src.kind === "signoff" ? (
           <div>
@@ -279,6 +287,9 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                   </div>
                 ))}
               </>
+            ) : null}
+            {a.kind === "pdf_table" || a.kind === "pdf_overlay_table" || a.kind === "pdf_overlay_ticks" || (a.kind === "pdf_overlay" && a.dateSlots) ? (
+              <AnchorJsonEditor id={id} anchor={a} onChange={setAnchor} />
             ) : null}
           </div>
         </details>

@@ -12,8 +12,11 @@ import "server-only";
  * - Fillable PDFs: every field, labelled from its nearby text; a run of one-character boxes is one
  *   question (a date when printed D D M M Y Y Y Y), separate tick boxes printed with the options of one
  *   question are one choice (pdf-groups.ts detectOptionGroups), and radio groups / multi-widget tick
- *   boxes take the labels printed beside their widgets as options.
- * - Flat PDFs: lines that end with ":" / "?" or a "____" blank, with an answer box to their right.
+ *   boxes take the labels printed beside their widgets as options. Tables of fields become one question
+ *   in post-validation (form-tables.ts).
+ * - Flat PDFs with printed boxes: one question per answer box and per row of tick boxes, labelled by the
+ *   text printed to the left (or above), written inside the box (form-boxes.ts). Without printed boxes:
+ *   lines that end with ":" / "?" or a "____" blank, with an answer box to their right.
  *
  * Answer types and fill sources come from the label (form-classify.ts). Everything is low confidence –
  * staff complete and confirm the mapping – and passes through the same post-validation as AI output.
@@ -22,6 +25,7 @@ import "server-only";
  */
 import type { AnswerType, OutlineBlock, PdfFormOutline } from "../core/types";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
+import { flatBoxQuestions } from "./form-boxes";
 import { answerTypeFromLabel, classifyLabel } from "./form-classify";
 import { cellOfParagraph, isDocxAnswerSpace, pdfAnswerSpaces, pdfFlatLabelCandidates, rowKey, type ParsedForm } from "./form-outline";
 import { glyphOptionsFromText } from "./form-postvalidate";
@@ -49,13 +53,17 @@ function isHeading(b: OutlineBlock): boolean {
   return /^(?:section|part)\s+[A-Z0-9]+\b/i.test(b.text.trim()) && b.text.trim().length < 90;
 }
 
+/** An answer type the analysis output can carry (tables are found from the layout, never from a label). */
+const noTable = (t: AnswerType): AnalysisFieldOutput["answerType"] => (t === "table" ? "long_text" : t);
+
 function raw(label: string, section: string, rest: Partial<AnalysisFieldOutput>, context = ""): AnalysisFieldOutput {
   const cls = classifyLabel(label, `${section} ${context}`.trim());
   const layoutType = rest.answerType;
-  const answerType: AnswerType =
+  const answerType = noTable(
     cls.answerType && (layoutType === undefined || layoutType === "short_text" || layoutType === "long_text")
       ? cls.answerType
-      : layoutType ?? answerTypeFromLabel(label) ?? (LONG_RE.test(label) ? "long_text" : "short_text");
+      : layoutType ?? answerTypeFromLabel(label) ?? (LONG_RE.test(label) ? "long_text" : "short_text"),
+  );
   const fill = cls.fillSource;
   return {
     label,
@@ -67,8 +75,9 @@ function raw(label: string, section: string, rest: Partial<AnalysisFieldOutput>,
     placeholderText: "",
     optionAnchors: [],
     overlay: ZERO_BOX,
-    // The analysis output has no "fixed" kind (staff set fixed answers in the map); the rules never give one.
-    fillSource: fill.kind === "fixed" ? "leave_blank" : fill.kind,
+    // The analysis output has no "fixed" kind (staff set fixed answers in the map), and rules never propose
+    // a table from a label (tables are found from the layout).
+    fillSource: fill.kind === "fixed" || fill.kind === "appointments_table" ? "leave_blank" : fill.kind,
     registrationPath: fill.kind === "registration" ? fill.path : "none",
     computedFact: fill.kind === "computed_fact" ? fill.factId : "none",
     computedFormat: fill.kind === "computed_fact" && fill.format ? fill.format : "none",
@@ -306,7 +315,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
     }
     if (b.isEmpty) {
       if (pending && !pending.answered) {
-        push(pending.label, { anchorTarget: "after_paragraph", anchorRef: pending.anchorId, answerType: answerTypeFromLabel(pending.label) ?? "long_text" }, pending.guidance);
+        push(pending.label, { anchorTarget: "after_paragraph", anchorRef: pending.anchorId, answerType: noTable(answerTypeFromLabel(pending.label) ?? "long_text") }, pending.guidance);
         pending.answered = true;
       }
       continue;
@@ -401,6 +410,18 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
 }
 
 function pdfFlatRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
+  // Printed answer boxes and tick boxes are the answer spaces (form-boxes.ts); post-validation snaps
+  // each overlay onto its box (date slots, tick boxes).
+  if (pdf.boxes?.length) {
+    return flatBoxQuestions(pdf).map((q) =>
+      raw(cleanLabel(q.label).slice(0, 200), "", {
+        ...(q.answerType && { answerType: q.answerType }),
+        options: q.options,
+        anchorTarget: "pdf_overlay",
+        overlay: q.overlay,
+      }),
+    );
+  }
   return pdfFlatLabelCandidates(pdf).map((c) => {
     const x = Math.min(c.endX + 4, 480);
     return raw(cleanLabel(c.text), "", {

@@ -27,6 +27,7 @@
 import { DEMO_CLINIC } from "../config.public";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
+import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
 import type {
   AnswerType,
   Clinician,
@@ -37,6 +38,7 @@ import type {
   FillSource,
   FormAnswer,
   FormAnswerKind,
+  FormAnswerRow,
   FormDefinition,
   FormField,
   InstructingParty,
@@ -220,6 +222,7 @@ export function sectionKindForFillSource(source: FillSource): SectionKind | null
     case "registration":
     case "computed_fact":
     case "fixed":
+    case "appointments_table":
       return "from_records";
     case "notes_narrative":
       return "ai_narrative";
@@ -256,6 +259,8 @@ export function answerKindFor(answerType: AnswerType): FormAnswerKind {
       return "date";
     case "number":
       return "number";
+    case "table":
+      return "rows";
     default:
       return "text";
   }
@@ -575,6 +580,9 @@ export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | nul
     case "yes_no":
     case "checkbox":
       return { kind, value: typeof resolved.value === "boolean" ? resolved.value : null };
+    case "rows":
+      // Table answers are built from the record by core/form-tables.ts, never from a single value.
+      return { kind, value: null };
   }
 }
 
@@ -589,6 +597,8 @@ export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | nul
  */
 export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer">): string {
   const answer = section.answer;
+  // Table answers: one line per row (core/form-tables.ts rowsToText).
+  if (answer?.kind === "rows") return Array.isArray(answer.value) ? rowsToText(answer.value) : "";
   if (answer && answer.kind !== "text") {
     const v = answer.value;
     if (v === null || v === "") return "";
@@ -614,6 +624,7 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
  * answers are answered when a paragraph has text.
  */
 export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer">): boolean {
+  if (section.answer?.kind === "rows") return hasRowContent(section.answer.value);
   if (section.answer && section.answer.kind !== "text") {
     return section.answer.value !== null && section.answer.value !== "";
   }
@@ -657,6 +668,9 @@ export function parseFormAnswerValue(field: Pick<FormField, "answerType" | "opti
       const m = /^-?\d+(?:\.\d+)?$/.exec(text.replace(/[,\s]/g, ""));
       return { kind, value: m ? m[0] : null };
     }
+    case "rows":
+      // A table is never answered by one piece of text: rows come from the record or are entered by staff.
+      return { kind, value: null };
   }
 }
 
@@ -664,6 +678,8 @@ export function parseFormAnswerValue(field: Pick<FormField, "answerType" | "opti
 export interface FormFillAnswer {
   text?: string;
   value?: string | boolean | null;
+  /** Table questions: the rows, column key → cell text (S2, additive). */
+  rows?: FormAnswerRow[];
 }
 
 /** Answers keyed by form field ID ("F-01"…). */
@@ -721,6 +737,10 @@ export function buildFormAnswers(
     }
     const text = answerToText(section);
     const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
+    if (Array.isArray(structured)) {
+      answers[field.id] = { text, rows: structured };
+      continue;
+    }
     answers[field.id] = structured === undefined ? { text } : { text, value: structured };
   }
   return answers;
@@ -793,13 +813,19 @@ export function formAnchorKey(anchor: FormField["anchor"]): string {
       return `overlay:${anchor.page}:${Math.round(anchor.x / 10)}:${Math.round(anchor.y / 10)}`;
     case "pdf_char_fields":
       return `pdfchars:${anchor.fieldNames.join("+")}`;
+    case "pdf_table":
+      return `pdftable:${anchor.rows.map((r) => anchor.columns.map((c) => r[c.key] ?? "").join("|")).join(",")}`;
+    case "pdf_overlay_table":
+      return `overlaytable:${anchor.page}:${Math.round((anchor.columns[0]?.x ?? 0) / 10)}:${Math.round((anchor.rowTops[0] ?? 0) / 10)}`;
+    case "pdf_overlay_ticks":
+      return `ticks:${anchor.page}:${anchor.options.map((o) => `${Math.round(o.x / 10)}:${Math.round(o.y / 10)}`).join(",")}`;
   }
 }
 
 /**
  * The AcroForm fields an anchor writes into (empty for Word and flat-PDF anchors): the field itself,
- * every box of a one-of-several tick-box question, or every one-character box. For the preview's
- * highlight and the answer-space checks.
+ * every box of a one-of-several tick-box question, every one-character box, or every cell of a
+ * fillable table. For the preview's highlight and the answer-space checks.
  */
 export function formAnchorPdfFieldNames(anchor: FormField["anchor"]): string[] {
   switch (anchor.kind) {
@@ -810,6 +836,11 @@ export function formAnchorPdfFieldNames(anchor: FormField["anchor"]): string[] {
     }
     case "pdf_char_fields":
       return anchor.fieldNames.slice();
+    case "pdf_table": {
+      const names: string[] = [];
+      for (const row of anchor.rows) for (const col of anchor.columns) if (row[col.key]) names.push(row[col.key]);
+      return Array.from(new Set(names));
+    }
     default:
       return [];
   }
@@ -847,7 +878,7 @@ export function checkFormDefinition(form: FormDefinition): string[] {
 
     const anchorKind = field.anchor.kind;
     if (form.kind === "docx" && anchorKind !== "docx") problems.push(`${where}: a Word form needs a Word anchor.`);
-    if (form.kind === "pdf_flat" && anchorKind !== "pdf_overlay") {
+    if (form.kind === "pdf_flat" && anchorKind !== "pdf_overlay" && anchorKind !== "pdf_overlay_table" && anchorKind !== "pdf_overlay_ticks") {
       problems.push(`${where}: a flat PDF has no fillable fields, so the answer needs a position on the page.`);
     }
     if (form.kind === "pdf_acroform" && anchorKind === "docx") problems.push(`${where}: a PDF form cannot use a Word anchor.`);
@@ -883,11 +914,21 @@ export function checkFormDefinition(form: FormDefinition): string[] {
     if (field.fillSource.kind === "fixed") {
       const fixed = field.fillSource.value.trim();
       if (!fixed) problems.push(`${where}: enter the fixed answer, or choose another source.`);
-      else if (answerKindFor(field.answerType) !== "text" && parseFormAnswerValue(field, fixed).value === null) {
+      else if (field.answerType !== "table" && answerKindFor(field.answerType) !== "text" && parseFormAnswerValue(field, fixed).value === null) {
         problems.push(
           `${where}: the fixed answer “${fixed}” does not fit a ${ANSWER_TYPE_LABELS[field.answerType].toLowerCase()} question${field.options?.length ? ` (options: ${field.options.join(", ")})` : ""}.`,
         );
       }
+    }
+    // Tables (S2): a table question needs a table position, and is filled from the appointments or left blank.
+    if ((field.answerType === "table") !== isTableAnchor(field.anchor)) {
+      problems.push(field.answerType === "table" ? `${where}: a table question needs the table's rows and columns on the form.` : `${where}: only a table question can be written into a table.`);
+    }
+    if (field.answerType === "table" && field.fillSource.kind !== "appointments_table" && field.fillSource.kind !== "leave_blank") {
+      problems.push(`${where}: a table is filled from the appointment record, or left blank.`);
+    }
+    if (field.fillSource.kind === "appointments_table" && field.answerType !== "table") {
+      problems.push(`${where}: only a table question can list the appointments.`);
     }
   }
   if (!form.fields.some(isAnswerableField)) problems.push("No question on this form is set to be completed.");

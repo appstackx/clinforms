@@ -42,8 +42,10 @@ import type {
 import { formAnchorPdfFieldNames } from "../core/forms";
 import { FormFieldSchema } from "../core/schemas";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
+import { snapOverlay } from "./form-boxes";
 import { classifyLabel } from "./form-classify";
 import { charGroupFormat, charGroupMembers, isYesNoOptions, printedOptions, yesFirst } from "./pdf-groups";
+import { pdfTableQuestions } from "./form-tables";
 import {
   docxOrder,
   indexDocx,
@@ -471,6 +473,13 @@ function anchorSlots(anchor: FormAnchor, docx: DocxIndex | null): Array<{ key: s
       return formAnchorPdfFieldNames(anchor).map((name) => ({ key: `pdf:${name}`, capacity: 1 }));
     case "pdf_overlay":
       return [{ key: `overlay:${anchor.page}:${Math.round(anchor.x / 6)}:${Math.round(anchor.y / 6)}`, capacity: 1 }];
+    // Tables and tick boxes (S2): every cell / box is one answer space.
+    case "pdf_table":
+      return anchor.rows.flatMap((row) => anchor.columns.map((c) => row[c.key]).filter(Boolean).map((name) => ({ key: `pdf:${name}`, capacity: 1 })));
+    case "pdf_overlay_table":
+      return anchor.rowTops.flatMap((t) => anchor.columns.map((c) => ({ key: `overlay:${anchor.page}:${Math.round(c.x / 6)}:${Math.round((t - anchor.rowHeight) / 6)}`, capacity: 1 })));
+    case "pdf_overlay_ticks":
+      return anchor.options.map((o) => ({ key: `tick:${anchor.page}:${Math.round(o.x)}:${Math.round(o.y)}`, capacity: 1 }));
   }
 }
 
@@ -597,6 +606,12 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       warnings.push(outcome.reason);
       return;
     }
+    // Flat PDFs with printed boxes (form-boxes.ts): written inside the box, dates between the printed
+    // separators, yes/no and choices as an X in the printed tick box.
+    if (pdfIx && outcome.anchor.kind === "pdf_overlay") {
+      const snapped = snapOverlay(outcome.anchor, pdfIx.pdf, answerType, options);
+      if (snapped) outcome = { ...outcome, anchor: snapped.anchor, notes: [snapped.note], ...(snapped.options && { options: snapped.options }) };
+    }
     if (outcome.options) options = outcome.options;
     if (outcome.answerType) answerType = outcome.answerType;
 
@@ -640,15 +655,28 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     if (docxIx && outcome.anchor.kind === "docx") {
       const ids = outcome.anchor.target === "checkbox_glyph" ? (outcome.anchor.optionGlyphs ?? []).map((g) => g.blockId) : [outcome.anchor.blockId];
       order = Math.min(...ids.map((id) => docxOrder(docxIx, id)));
-    } else if (pdfIx && (outcome.anchor.kind === "pdf_field" || outcome.anchor.kind === "pdf_char_fields")) {
+    } else if (pdfIx && (outcome.anchor.kind === "pdf_field" || outcome.anchor.kind === "pdf_char_fields" || outcome.anchor.kind === "pdf_table")) {
       const orders = formAnchorPdfFieldNames(outcome.anchor).map((n) => pdfIx.order.get(n) ?? seq);
-      order = Math.min(...orders);
-    } else if (outcome.anchor.kind === "pdf_overlay") {
-      order = outcome.anchor.page * 100_000 + (2_000 - Math.round(outcome.anchor.y)) * 10 + Math.min(9, Math.round(outcome.anchor.x / 100));
+      order = orders.length ? Math.min(...orders) : seq;
+    } else if (outcome.anchor.kind === "pdf_overlay" || outcome.anchor.kind === "pdf_overlay_ticks") {
+      const at = outcome.anchor.kind === "pdf_overlay" ? outcome.anchor : { page: outcome.anchor.page, ...outcome.anchor.options[0] };
+      order = at.page * 100_000 + (2_000 - Math.round(at.y)) * 10 + Math.min(9, Math.round(at.x / 100));
     }
     if (outcome.repaired) repairedCount += 1;
     candidates.push({ field, order, seq, repaired: outcome.repaired });
   });
+
+  // Fillable PDFs: a table of fields (repeated rows) is one question, not one per cell (form-tables.ts).
+  if (pdfIx && parsed.kind === "pdf_acroform") {
+    const tables = pdfTableQuestions(parsed.pdf, candidates.map((c) => c.field), pdfIx.order);
+    const replaced = new Set(tables.flatMap((t) => t.replaces));
+    const kept = candidates.filter((_, i) => !replaced.has(i));
+    for (const t of tables) {
+      kept.push({ field: { ...t.field, confidence: minConf(t.field.confidence, cap) }, order: t.order, seq: -1, repaired: false });
+      if (t.replaces.length > 1) warnings.push(`The ${t.table.rows.length}-row table “${t.field.label}” is one question (${t.replaces.length} cell questions were combined).`);
+    }
+    candidates.splice(0, candidates.length, ...kept);
+  }
 
   // Document order, then the model's order.
   candidates.sort((a, b) => a.order - b.order || a.seq - b.seq);

@@ -55,6 +55,8 @@ import {
   wantedOf,
 } from "./pdf-acro-fill";
 import { loadPdfDocument } from "./pdf-outline";
+import { drawOverlayDateSlots, drawOverlayTicks } from "./pdf-overlay-marks";
+import { drawContinuationTable, drawOverlayTable, fillPdfFieldTable, printedTextLoader, type ContinuationTable, type TableFillDeps } from "./pdf-table";
 import type { PdfFillOptions } from "./types";
 
 /** Smallest font for answers: below 8 pt a form is hard to read, so longer answers go to the continuation sheet. */
@@ -272,6 +274,8 @@ function daFontSize(field: PDFTextField): number | null {
 interface Continuation {
   field: FormField;
   text: string;
+  /** Table rows that did not fit on the form, printed as a table (forms/pdf-table.ts). */
+  table?: ContinuationTable;
 }
 
 interface Ctx {
@@ -506,6 +510,19 @@ function addContinuationSheet(ctx: Ctx): void {
   };
   newPage();
   for (const c of ctx.continuations) {
+    if (c.table) {
+      const cursor = drawContinuationTable(ctx, c.field, c.table, { page: page!, y }, {
+        margin,
+        width: W - 2 * margin,
+        newPage: () => {
+          newPage();
+          return { page: page!, y };
+        },
+      });
+      page = cursor.page;
+      y = cursor.y;
+      continue;
+    }
     const heading = ctx.encode(`${c.field.section ? `${c.field.section} – ` : ""}${c.field.label} (continued)`);
     const lines = wrapText(c.text, ctx.font, size, W - 2 * margin);
     if (y - lh * 3 < margin) newPage();
@@ -584,6 +601,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     ctx.warn("This was an XFA (dynamic) form: its standard fillable fields were used and the dynamic layout was removed.");
   }
 
+  let printedText: TableFillDeps["printedText"];
   for (const field of form.fields) {
     if (!isAnswerableField(field)) continue;
     const answer = answers[field.id] ?? {};
@@ -592,7 +610,23 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     else if (anchor.kind === "pdf_char_fields") fillCharFields(ctx, field, answer, anchor);
     else if (anchor.kind === "pdf_overlay") {
       const text = answerText(answer);
-      if (text) drawOverlay(ctx, field, text, anchor);
+      // A date box with printed slashes takes DD, MM and YYYY in their own slots (pdf-overlay-marks.ts).
+      if (text && !drawOverlayDateSlots(ctx, field, answer, anchor)) drawOverlay(ctx, field, form.uppercase ? text.toLocaleUpperCase("en-GB") : text, anchor);
+    } else if (anchor.kind === "pdf_overlay_ticks") drawOverlayTicks(ctx, field, answer, anchor);
+    else if (anchor.kind === "pdf_table" || anchor.kind === "pdf_overlay_table") {
+      // Table answers (forms/pdf-table.ts); rows beyond the printed table go to the continuation sheet.
+      const deps: TableFillDeps = {
+        ...ctx,
+        fitText,
+        wrapText,
+        uppercase: Boolean(form.uppercase),
+        addTableContinuation: (f, table) => ctx.continuations.push({ field: f, text: "", table }),
+        printedText: printedText ?? (printedText = printedTextLoader(buf)),
+      };
+      if (answer.rows?.length) {
+        if (anchor.kind === "pdf_table") await fillPdfFieldTable(deps, field, anchor, answer.rows);
+        else drawOverlayTable(deps, field, anchor, answer.rows);
+      }
     } else ctx.warn(`${where(field)}: this question has a Word position, so it cannot be written into a PDF.`);
   }
 

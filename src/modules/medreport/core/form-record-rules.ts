@@ -45,7 +45,8 @@ export function resolveFixedValue(field: Pick<FormField, "answerType" | "options
   const kind = answerKindFor(field.answerType);
   if (kind === "text") return { text, value: text, sourceIds: [] };
   const parsed = parseFormAnswerValue(field, text);
-  if (parsed.value === null || parsed.value === "") return { text, value: "", sourceIds: [] };
+  // A table ("rows") is never a fixed answer: checkFormDefinition refuses it, and it is left blank here.
+  if (parsed.value === null || parsed.value === "" || Array.isArray(parsed.value)) return { text, value: "", sourceIds: [] };
   if (typeof parsed.value === "boolean") return { text: parsed.value ? "Yes" : "No", value: parsed.value, sourceIds: [] };
   return { text, value: parsed.value, sourceIds: [] };
 }

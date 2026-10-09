@@ -41,8 +41,10 @@ function safeEqual(a: string, b: string): boolean {
  * file it is bound to and every field (label, answer type, options, anchor, fill source, required…).
  * Title, referrer and analysis notes are not part of it.
  */
-export function formMapSha256(form: Pick<FormDefinition, "id" | "kind" | "file" | "fields">): string {
-  const payload = { v: 1, id: form.id, kind: form.kind, fileSha256: form.file.sha256, fields: form.fields };
+export function formMapSha256(form: Pick<FormDefinition, "id" | "kind" | "file" | "fields"> & Partial<Pick<FormDefinition, "uppercase">>): string {
+  // `uppercase` changes what is printed, so it is part of the attested map – only when set, so the
+  // hashes of existing maps are unchanged.
+  const payload = { v: 1, id: form.id, kind: form.kind, fileSha256: form.file.sha256, fields: form.fields, ...(form.uppercase && { uppercase: true }) };
   return createHash("sha256").update(canonicalize(payload), "utf8").digest("hex");
 }
 

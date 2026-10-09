@@ -147,9 +147,11 @@ export const AnswerTypeSchema = z.enum([
   "clinician_name",
   "hcpc_number",
   "date_signed",
+  /** A printed table with repeated rows (e.g. an expenses list); answered as rows (S2, additive). */
+  "table",
 ]);
 /** How a structured answer is stored on a form report section (see core/forms.ts answerKindFor). */
-export const FormAnswerKindSchema = z.enum(["text", "yes_no", "checkbox", "choice", "date", "number"]);
+export const FormAnswerKindSchema = z.enum(["text", "yes_no", "checkbox", "choice", "date", "number", "rows"]);
 export const FormFieldConfidenceSchema = z.enum(["high", "medium", "low"]);
 export const FormStatusSchema = z.enum(["proposed", "confirmed"]);
 /**
@@ -482,11 +484,13 @@ export const ReportTemplateSchema = z.object({
  * Structured answer of a form report section (Revision 2). Set for non-text answers only:
  * yes_no/checkbox → boolean, choice → the exact option text, date → ISO `YYYY-MM-DD`, number → digits as
  * a string; null = not answered. For kind "text" the section's paragraphs ARE the answer (value null).
+ * Kind "rows" (answer type "table"): one object per table row, column key → cell text (S2, additive).
  * See core/forms.ts answerKindFor() / answerToText().
  */
+export const FormAnswerRowSchema = z.record(z.string(), z.string());
 export const FormAnswerSchema = z.object({
   kind: FormAnswerKindSchema,
-  value: z.union([z.string(), z.boolean(), z.null()]),
+  value: z.union([z.string(), z.boolean(), z.null(), z.array(FormAnswerRowSchema)]),
 });
 
 /** On a report that completes a referrer's own form: which form (and which exact file) it fills. */
@@ -763,6 +767,49 @@ export const PdfOverlayAnchorSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
   fontSize: z.number().positive().optional(),
+  /**
+   * A date box with printed separators ("__ / __ / ____"): the writable slots between them, left to
+   * right (2 = MM/YYYY, 3 = DD/MM/YYYY). A date is then written part by part, centred in each slot
+   * (S2, additive).
+   */
+  dateSlots: z.array(z.object({ x: z.number(), width: z.number().positive() })).optional(),
+});
+
+/* Tables and tick boxes (S2, additive) ------------------------------------------------------------ */
+
+/** One column of a printed table: `key` names it in the answer rows, `header` is the printed heading. */
+export const FormTableColumnSchema = z.object({ key: z.string().min(1), header: z.string() });
+
+/**
+ * Fillable PDF table (repeated rows of fields): `rows[i]` maps each column key to the AcroForm field of
+ * printed row i, top to bottom. Rows beyond the table go to the continuation sheet as a table.
+ */
+export const PdfTableAnchorSchema = z.object({
+  kind: z.literal("pdf_table"),
+  columns: z.array(FormTableColumnSchema).min(1),
+  rows: z.array(z.record(z.string(), z.string())).min(1),
+});
+
+/**
+ * Flat PDF table: one cell per column (x, width) and row. `rowTops` are the top edges of the printed
+ * rows, top to bottom, in PDF points from the bottom of the page; every row is `rowHeight` tall.
+ */
+export const PdfOverlayTableAnchorSchema = z.object({
+  kind: z.literal("pdf_overlay_table"),
+  page: z.number().int().min(1),
+  columns: z.array(FormTableColumnSchema.extend({ x: z.number(), width: z.number().positive() })).min(1),
+  rowTops: z.array(z.number()).min(1),
+  rowHeight: z.number().positive(),
+});
+
+/**
+ * Flat PDF tick boxes: an X is drawn in the chosen option's printed box. (x, y) is the box's
+ * bottom-left corner and `size` its side, in PDF points.
+ */
+export const PdfOverlayTicksAnchorSchema = z.object({
+  kind: z.literal("pdf_overlay_ticks"),
+  page: z.number().int().min(1),
+  options: z.array(z.object({ option: z.string(), x: z.number(), y: z.number(), size: z.number().positive() })).min(1),
 });
 
 /** Where the answer goes in the ORIGINAL document. */
@@ -771,7 +818,13 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
   PdfFieldAnchorSchema,
   PdfOverlayAnchorSchema,
   PdfCharFieldsAnchorSchema,
+  PdfTableAnchorSchema,
+  PdfOverlayTableAnchorSchema,
+  PdfOverlayTicksAnchorSchema,
 ]);
+
+/** What an "appointments_table" column holds, per attended appointment (S2, additive). */
+export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "amount", "paid", "clinic"]);
 
 /**
  * Where the answer comes from.
@@ -783,7 +836,9 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
  * - signoff: filled from the server-signed approval receipt (blank on a DRAFT);
  * - leave_blank: the referrer's own use / not for the clinic (no report section);
  * - fixed (additive): the same answer for every patient, set once in the form map by staff (e.g. tick
- *   "Physiotherapist", "United Kingdom"); filled by CODE, never the AI.
+ *   "Physiotherapist", "United Kingdom"); filled by CODE, never the AI;
+ * - appointments_table: a table answer filled by CODE, one row per attended appointment; `columns`
+ *   maps each table column key to what it holds (S2, additive).
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("registration"), path: RegistrationPathSchema }),
@@ -793,6 +848,7 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("signoff"), part: SignoffPartSchema }),
   z.object({ kind: z.literal("leave_blank") }),
   z.object({ kind: z.literal("fixed"), value: z.string() }),
+  z.object({ kind: z.literal("appointments_table"), columns: z.record(z.string(), AppointmentColumnSchema) }),
 ]);
 
 /** One question / answer space on the referrer's form. */
@@ -862,6 +918,8 @@ export const FormDefinitionSchema = z.object({
   builtIn: z.boolean().optional(),
   /** ID of the bundled sample this definition came from (GET /forms/samples/{id}/file serves its bytes). */
   sampleId: z.string().optional(),
+  /** The form asks for BLOCK CAPITALS: answers written onto a flat PDF are printed in capitals (S2, additive). */
+  uppercase: z.boolean().optional(),
 });
 
 /* Analysis inputs (deterministic parsing → Claude) --------------------------------------------- */
@@ -908,6 +966,21 @@ export const PdfOutlineFieldSchema = z.object({
   charGroup: z.string().optional(),
 });
 
+/**
+ * A printed rectangle on a flat PDF (forms/pdf-boxes.ts): an empty answer box, or a small square tick
+ * box. `slots`: the writable parts of a box split by printed separators (the slashes of a
+ * "__ / __ / ____" date box), left to right (S2, additive).
+ */
+export const PdfBoxSchema = z.object({
+  page: z.number().int().min(1),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+  kind: z.enum(["box", "tick"]),
+  slots: z.array(z.object({ x: z.number(), width: z.number() })).optional(),
+});
+
 /** A PDF form's outline (forms/pdf-outline.ts): AcroForm fields plus positioned page text. */
 export const PdfFormOutlineSchema = z.object({
   pages: z.number().int().nonnegative(),
@@ -918,6 +991,8 @@ export const PdfFormOutlineSchema = z.object({
       items: z.array(z.object({ str: z.string(), x: z.number(), y: z.number() })),
     }),
   ),
+  /** Flat PDFs: the empty answer boxes and tick boxes printed on the pages (S2, additive). */
+  boxes: z.array(PdfBoxSchema).optional(),
 });
 
 /* ------------------------------------------------------------------------------------------------

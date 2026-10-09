@@ -30,6 +30,7 @@ import { findSampleBySha256, listSampleForms } from "../forms/samples/registry";
 import type { ClaudeClient } from "./claude";
 import { DEFAULT_ANALYSIS_EFFORT, FORM_ANALYSIS_PROMPT_VERSION, analyseFormLive, type AnalyseFormLiveResult } from "./form-analysis";
 import type { AnalysisOutput } from "./form-analysis-schema";
+import { asksForBlockCapitals } from "./form-boxes";
 import { chunkParsedForm, summariseParsedForm, type ParsedForm } from "./form-outline";
 import { postValidateFields } from "./form-postvalidate";
 import { guessTitle, proposeFieldsByRules } from "./form-rules";
@@ -114,6 +115,8 @@ function newForm(input: AnalyseFormFileInput, parsed: ParsedForm, fields: FormFi
     createdAt: at,
     updatedAt: at,
     ...(meta.sampleId && { sampleId: meta.sampleId }),
+    // A flat form that asks for BLOCK CAPITALS gets its answers printed in capitals (form-boxes.ts).
+    ...(asksForBlockCapitals(parsed) && { uppercase: true }),
   };
 }
 

@@ -29,6 +29,7 @@ export const FILL_SOURCE_SHORT: Record<FillSourceKind, string> = {
   signoff: "Sign-off",
   leave_blank: "Leave blank",
   fixed: "Fixed answer",
+  appointments_table: "From appointments",
 };
 
 const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
@@ -39,6 +40,7 @@ const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
   signoff: "border-slate-300 bg-slate-100 text-slate-700",
   leave_blank: "border-dashed border-slate-300 bg-white text-slate-500",
   fixed: "border-cyan-200 bg-cyan-50 text-cyan-800",
+  appointments_table: "border-sky-200 bg-sky-50 text-sky-800",
 };
 
 export function FillSourceChip({ kind, className }: { kind: FillSourceKind; className?: string }) {
@@ -65,6 +67,7 @@ export function fillSourceCounts(form: Pick<FormDefinition, "fields">): Record<F
     signoff: 0,
     leave_blank: 0,
     fixed: 0,
+    appointments_table: 0,
   };
   for (const f of form.fields) counts[f.fillSource.kind] += 1;
   return counts;
@@ -85,7 +88,7 @@ export interface QuestionBreakdown {
 
 export function questionBreakdown(form: Pick<FormDefinition, "fields">): QuestionBreakdown {
   const c = fillSourceCounts(form);
-  const fromRecords = c.registration + c.computed_fact + c.fixed;
+  const fromRecords = c.registration + c.computed_fact + c.fixed + c.appointments_table;
   const fromNotes = c.notes_narrative + c.clinician_opinion;
   return { toAnswer: fromRecords + fromNotes, fromRecords, fromNotes, onApproval: c.signoff, referrerUse: c.leave_blank };
 }
