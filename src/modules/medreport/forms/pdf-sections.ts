@@ -16,16 +16,16 @@ import "server-only";
  *   only" at any size. Lines with a "?", questions and instructions, contact details and running headers
  *   (the same text at the same height on several pages) are never headings; a title that wraps onto a
  *   second line at the same size is one heading.
- * - level 2: a numbered sub-heading ("3.1 Patient's details (if different) – to be completed by the
- *   policyholder…", "3.2 About the claim"), a short line in capitals printed larger than the body text
- *   ("CLAIM DETAILS"), and a declaration ("7. I declare to the best of my knowledge…") inside a part of
+ * - level 2: a numbered sub-heading ("2.1 Member's details – to be completed by the policyholder…", "2.2
+ *   Your claim"), a short line in capitals printed larger than the body text ("CLAIM DETAILS"), and a
+ *   declaration ("8. I confirm that these answers are true…") inside a part of
  *   the form that is not already a declaration or signature section.
  *
  * Who completes it: the heading's own wording ("– to be completed by the policyholder", "Therapist's
  * declaration", "Therapist details", "… consent form"); else a "to be completed by" line in the first three
  * lines under it (later in the section, such a line switches the party from there on); else, in a
- * declaration or signature section, its signer ("The policyholder named in section one must sign…", "I am
- * this patient's therapist…", "Doctor's signature:"). A level-2 heading inherits its section's party;
+ * declaration or signature section, its signer ("The member named in part A must sign…", "I am the
+ * therapist treating this patient…", "Doctor's signature:"). A level-2 heading inherits its section's party;
  * "For … use only" is the insurer's.
  *
  * Owner: forms-engine agent (multi-party forms).

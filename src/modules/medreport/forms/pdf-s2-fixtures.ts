@@ -19,16 +19,16 @@ export async function tableFormPdf(): Promise<Uint8Array> {
   const form = doc.getForm();
   page.drawText("3. Details of the treatment you are claiming for", { x: 40, y: 760, size: 11, font });
   page.drawText("Please attach the invoices.", { x: 40, y: 742, size: 9, font });
-  page.drawText("Date of treatment", { x: 42, y: 712, size: 8, font });
-  page.drawText("Treatment received", { x: 142, y: 712, size: 8, font });
-  page.drawText("Amount of the bill", { x: 342, y: 712, size: 8, font });
-  page.drawText("Has this bill been paid?", { x: 442, y: 712, size: 8, font });
+  page.drawText("Visit date", { x: 42, y: 712, size: 8, font });
+  page.drawText("Treatment given", { x: 142, y: 712, size: 8, font });
+  page.drawText("Fee charged", { x: 342, y: 712, size: 8, font });
+  page.drawText("Fee settled?", { x: 442, y: 712, size: 8, font });
   for (let i = 0; i < 4; i += 1) {
     const top = ROW_TOP - i * ROW_STEP;
-    form.createTextField(`Date of treatmentRow${i + 1}`).addToPage(page, { x: 40, y: top - 22, width: 95, height: 22, font });
-    form.createTextField(`Treatment receivedRow${i + 1}`).addToPage(page, { x: 140, y: top - 22, width: 195, height: 22, font });
-    form.createTextField(`Amount of the billRow${i + 1}`).addToPage(page, { x: 340, y: top - 22, width: 95, height: 22, font });
-    form.createTextField(`PAID${4 - i}`).addToPage(page, { x: 440, y: top - 22, width: 90, height: 22, font });
+    form.createTextField(`Visit dateRow${i + 1}`).addToPage(page, { x: 40, y: top - 22, width: 95, height: 22, font });
+    form.createTextField(`Treatment givenRow${i + 1}`).addToPage(page, { x: 140, y: top - 22, width: 195, height: 22, font });
+    form.createTextField(`Fee chargedRow${i + 1}`).addToPage(page, { x: 340, y: top - 22, width: 95, height: 22, font });
+    form.createTextField(`SETTLED${4 - i}`).addToPage(page, { x: 440, y: top - 22, width: 90, height: 22, font });
     page.drawText("Yes / No", { x: 465, y: top - 15, size: 9, font });
   }
   // Decoys: a pair of numbered names that is not a table, and generic "Text Field N" grids.
@@ -97,13 +97,13 @@ export async function ruledBoxesPdf(): Promise<Uint8Array> {
   const page = doc.addPage([595, 842]);
   page.drawText("Please complete in BLOCK CAPITALS.", { x: 40, y: 790, size: 9, font });
   // "[      ] Yes [      ] No": short boxes wider than a square, each followed by its printed option.
-  page.drawText("3. Is the patient presently receiving any prescribed drugs?", { x: 74, y: 705, size: 9, font });
+  page.drawText("3. Does the patient take any prescribed medicines now?", { x: 74, y: 705, size: 9, font });
   for (const [x, word] of [[406.6, "Yes"], [496.2, "No"]] as const) {
     page.drawRectangle({ x, y: 696, width: 51.8, height: 16.8, borderColor: rgb(0, 0, 0), borderWidth: 0.8, color: rgb(1, 1, 1) });
     page.drawText(word, { x: x + 59, y: 701, size: 9, font });
   }
-  page.drawText("5. Please give a full history of the condition", { x: 74, y: 520, size: 9, font });
-  for (const [label, b] of [["", RULED.history], ["Name and full address of GP's surgery", RULED.address]] as const) {
+  page.drawText("5. Please describe the condition from its start", { x: 74, y: 520, size: 9, font });
+  for (const [label, b] of [["", RULED.history], ["GP practice name and address", RULED.address]] as const) {
     page.drawRectangle({ x: b.x, y: b.y, width: b.width, height: b.height, borderColor: rgb(0, 0, 0), borderWidth: 0.8, color: rgb(1, 1, 1) });
     for (let y = b.y + b.height - b.pitch; y > b.y + 3; y -= b.pitch) page.drawLine({ start: { x: b.x, y }, end: { x: b.x + b.width, y }, thickness: 0.5 });
     if (label) page.drawText(label, { x: 40, y: b.y + b.height - 12, size: 8, font, maxWidth: 160 });

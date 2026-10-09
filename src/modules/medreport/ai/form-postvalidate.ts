@@ -701,8 +701,8 @@ interface Candidate {
 }
 
 /**
- * A section whose questions are put to the patient ("Why did you go to the doctor?", "When did you first
- * notice your symptoms?" – at least three, and most of its questions) is the patient's part of the form:
+ * A section whose questions are put to the patient ("What made you see a doctor?", "When did your
+ * symptoms start?" – at least three, and most of its questions) is the patient's part of the form:
  * its remaining questions are left blank too, unless one of them is marked for the clinic.
  */
 function patientSections(candidates: Candidate[]): void {

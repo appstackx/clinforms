@@ -109,7 +109,7 @@ async function printedSignatureForm(heading: string): Promise<Uint8Array> {
   page.drawText(heading, { x: 40, y: 640, size: 12, font });
   page.drawText("Signature", { x: 40, y: 610, size: 9, font });
   page.drawRectangle({ x: 40, y: 550, width: 220, height: 55, borderColor: rgb(0.1, 0.1, 0.5), borderWidth: 0.8 });
-  page.drawText("Please print name", { x: 300, y: 610, size: 9, font });
+  page.drawText("Name in capitals", { x: 300, y: 610, size: 9, font });
   form.createTextField("printName").addToPage(page, { x: 300, y: 585, width: 220, height: 18, font });
   page.drawText("Date", { x: 300, y: 570, size: 9, font });
   form.createTextField("signedDate").addToPage(page, { x: 300, y: 548, width: 120, height: 18, font });
@@ -171,17 +171,17 @@ test("outline: a tick-box group is ONE answer space listing every box; a checkli
 test("outline: a table of fields is ONE answer space named by its first cell, in one chunk", async () => {
   const outline = await readPdfForm(await tableFormPdf());
   const text = renderPdfOutline(outline, "pdf_acroform");
-  assert.match(text, /^table of fields page 1 rows=4 columns=\["Date of treatment","Treatment received","Amount of the bill","Has this bill been paid\?"\] \(ONE question for the whole table: anchorRef "Date of treatmentRow1"/m);
-  assert.doesNotMatch(text, /^field "Treatment receivedRow2"/m);
-  const holding = chunkPdfFields(outline).filter((c) => c.kind === "fields" && c.names.some((n) => /Row\d|^PAID/.test(n)));
+  assert.match(text, /^table of fields page 1 rows=4 columns=\["Visit date","Treatment given","Fee charged","Fee settled\?"\] \(ONE question for the whole table: anchorRef "Visit dateRow1"/m);
+  assert.doesNotMatch(text, /^field "Treatment givenRow2"/m);
+  const holding = chunkPdfFields(outline).filter((c) => c.kind === "fields" && c.names.some((n) => /Row\d|^SETTLED/.test(n)));
   assert.equal(holding.length, 1);
-  assert.equal(holding[0].kind === "fields" && holding[0].names.filter((n) => /Row\d|^PAID/.test(n)).length, 16);
+  assert.equal(holding[0].kind === "fields" && holding[0].names.filter((n) => /Row\d|^SETTLED/.test(n)).length, 16);
 });
 
 test("outline: a printed signature box no field covers is listed with its section and given to a chunk", async () => {
-  const outline = await readPdfForm(await printedSignatureForm("6 Your signature"));
+  const outline = await readPdfForm(await printedSignatureForm("F Signature"));
   const text = renderPdfOutline(outline, "pdf_acroform");
-  assert.match(text, /^printed box with no field \(map it as pdf_overlay with this box\) page 1 box x=40 y=550 w=220 h=55 near="Signature" section="6 Your signature"/m);
+  assert.match(text, /^printed box with no field \(map it as pdf_overlay with this box\) page 1 box x=40 y=550 w=220 h=55 near="Signature" section="F Signature"/m);
   const lines = text.split("\n");
   assert.ok(lines.findIndex((l) => l.startsWith("printed box")) > lines.findIndex((l) => l.includes('"treatment"')), "in reading order");
   const chunks = chunkPdfFields(outline);
@@ -209,7 +209,7 @@ test("live proposal: a tick-box group proposed box by box becomes one question o
   const { client } = fakeClient([
     liveField({ label: "Therapist type: Physiotherapist", answerType: "checkbox", anchorRef: "Check Box 4", fillSource: "registration", registrationPath: "clinician.profession" }),
     liveField({ label: "Therapist type: Chiropractor", answerType: "checkbox", anchorRef: "Check Box 5", fillSource: "registration", registrationPath: "clinician.profession" }),
-    liveField({ label: "Do you have any other health insurance which may cover these costs?", answerType: "yes_no", options: ["Yes", "No"], anchorRef: "Check Box5", fillSource: "leave_blank", completedBy: "policyholder" }),
+    liveField({ label: "Is the patient covered by another insurance policy?", answerType: "yes_no", options: ["Yes", "No"], anchorRef: "Check Box5", fillSource: "leave_blank", completedBy: "policyholder" }),
   ]);
   const { form } = await analyseFormFile({ file: decoded(bytes), fileName: "plan.pdf", mode: "live", client });
   const type = byLabel(form.fields, /^Therapist type/);
@@ -219,7 +219,7 @@ test("live proposal: a tick-box group proposed box by box becomes one question o
   assert.equal(form.fields.filter((f) => /^Therapist type/.test(f.label)).length, 1, "the second box merged into the same question");
   assert.ok(!form.analysis.warnings.some((w) => /same answer space/.test(w)), form.analysis.warnings.join(" | "));
   // A Yes/No pair proposed on its "Yes" box only: both boxes, Yes first; the policyholder's – left blank.
-  const other = byLabel(form.fields, /other health insurance/);
+  const other = byLabel(form.fields, /another insurance policy/);
   assert.equal(other.answerType, "yes_no");
   assert.deepEqual(other.anchor.kind === "pdf_field" && other.anchor.optionFields?.map((o) => [o.option, o.fieldName]), [
     ["Yes", "Check Box5"],
@@ -231,7 +231,7 @@ test("live proposal: a tick-box group proposed box by box becomes one question o
 
 test("live proposal: a list of treatments mapped once is one table filled from the appointments; elsewhere it is drafted and flagged", async () => {
   const { client } = fakeClient([
-    liveField({ label: "Details of the treatment you are claiming for", answerType: "long_text", anchorRef: "Date of treatmentRow1", fillSource: "appointments_table" }),
+    liveField({ label: "Details of the treatment you are claiming for", answerType: "long_text", anchorRef: "Visit dateRow1", fillSource: "appointments_table" }),
     liveField({ label: "Surname", anchorRef: "Surname", fillSource: "registration", registrationPath: "patient.lastName" }),
     liveField({ label: "Other treatment received", answerType: "long_text", anchorRef: "Text Field 1", fillSource: "appointments_table" }),
   ]);
@@ -249,7 +249,7 @@ test("live proposal: a list of treatments mapped once is one table filled from t
 });
 
 test("live proposal: Initial / Current score boxes get the first / latest score; a drop-down is never a computed figure", async () => {
-  const outline = await readPdfForm(await printedSignatureForm("6 Your signature"));
+  const outline = await readPdfForm(await printedSignatureForm("F Signature"));
   const parsed = { kind: "pdf_acroform" as const, pdf: outline, warnings: [] };
   const res = postValidateFields(parsed, [
     liveField({ label: "Outcome measures – Initial score", section: "Assessment", anchorRef: "initialScore", fillSource: "computed_fact", computedFact: "FACT-outcomes-PSFS", computedFormat: "summary" }),
@@ -269,10 +269,10 @@ test("live proposal: the approval goes into the clinic's printed signature box, 
   const proposal = () => [
     liveField({ label: "Treatment provided", answerType: "long_text", anchorRef: "treatment" }),
     liveField({ label: "Signature", answerType: "signature", anchorTarget: "pdf_overlay", overlay: { page: 1, x: 40, y: 550, width: 220, height: 55 }, fillSource: "signoff", signoffPart: "signature" }),
-    liveField({ label: "Please print name", answerType: "clinician_name", anchorRef: "printName", fillSource: "signoff", signoffPart: "name" }),
+    liveField({ label: "Name in capitals", answerType: "clinician_name", anchorRef: "printName", fillSource: "signoff", signoffPart: "name" }),
     liveField({ label: "Date", answerType: "date_signed", anchorRef: "signedDate", fillSource: "signoff", signoffPart: "date" }),
   ];
-  const ours = await analyseFormFile({ file: decoded(await printedSignatureForm("6 Your signature")), fileName: "plan.pdf", mode: "live", client: fakeClient(proposal()).client });
+  const ours = await analyseFormFile({ file: decoded(await printedSignatureForm("F Signature")), fileName: "plan.pdf", mode: "live", client: fakeClient(proposal()).client });
   const sig = byLabel(ours.form.fields, /^Signature$/);
   assert.deepEqual(sig.fillSource, { kind: "signoff", part: "signature" });
   assert.ok(sig.anchor.kind === "pdf_overlay" && sig.anchor.x === 42 && sig.anchor.y === 552 && sig.anchor.width === 216, "inside the printed box (inset)");
@@ -282,7 +282,7 @@ test("live proposal: the approval goes into the clinic's printed signature box, 
 
   // The same proposal (sign-off, "clinic") under the policyholder's declaration: nothing of the approval is written.
   const theirs = await analyseFormFile({ file: decoded(await printedSignatureForm("Policyholder's declaration")), fileName: "claim.pdf", mode: "live", client: fakeClient(proposal()).client });
-  const blank = theirs.form.fields.filter((f) => /^(?:Signature|Please print name|Date)$/.test(f.label));
+  const blank = theirs.form.fields.filter((f) => /^(?:Signature|Name in capitals|Date)$/.test(f.label));
   assert.equal(blank.length, 3);
   for (const f of blank) {
     assert.deepEqual(f.fillSource, { kind: "leave_blank" }, f.label);
@@ -296,8 +296,8 @@ test("live proposal: a planned count, an 'Other – please specify' box and numb
   const parsed = { kind: "pdf_acroform" as const, pdf: outline, warnings: [] };
   const res = postValidateFields(parsed, [
     // Under a treatment plan, "Number of sessions" is the number planned.
-    liveField({ label: "Number of sessions", section: "5 Treatment Plan", answerType: "number", anchorRef: "Text Field 4", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "sessions_attended" }),
-    liveField({ label: "Other, please specify below", section: "2 Therapist details", anchorRef: "Text Field 15", fillSource: "registration", registrationPath: "clinician.profession" }),
+    liveField({ label: "Number of sessions", section: "4 Plan of treatment", answerType: "number", anchorRef: "Text Field 4", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "sessions_attended" }),
+    liveField({ label: "Other, please specify below", section: "B Therapist details", anchorRef: "Text Field 15", fillSource: "registration", registrationPath: "clinician.profession" }),
     liveField({ label: "Scheme number", anchorRef: "Text Field 18", fillSource: "registration", registrationPath: "referral.reference" }),
   ]);
   const planned = byLabel(res.fields, /^Number of sessions$/);
@@ -311,13 +311,13 @@ test("live proposal: a planned count, an 'Other – please specify' box and numb
   assert.match(scheme.note ?? "", /does not hold this/);
   // Sessions attended so far are still counted by code.
   const attended = postValidateFields(parsed, [
-    liveField({ label: "Number of sessions to date", section: "About the treatment", answerType: "number", anchorRef: "Text Field 4", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "sessions_attended" }),
+    liveField({ label: "Total of visits so far", section: "About the treatment", answerType: "number", anchorRef: "Text Field 4", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "sessions_attended" }),
   ]);
   assert.deepEqual(attended.fields[0].fillSource, { kind: "computed_fact", factId: "FACT-attendance", format: "sessions_attended" });
 });
 
 test("live proposal: a drop-down's prompt entry is not an option; an overlay only clipping a printed box is not snapped onto it", async () => {
-  const outline = await readPdfForm(await printedSignatureForm("6 Your signature"));
+  const outline = await readPdfForm(await printedSignatureForm("F Signature"));
   const res = postValidateFields({ kind: "pdf_acroform", pdf: outline, warnings: [] }, [
     liveField({ label: "Level of pain (0-10)", answerType: "single_choice", options: ["Please select", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], anchorRef: "painLevel" }),
   ]);

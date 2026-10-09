@@ -8,9 +8,9 @@ import "server-only";
  *   written one character per box – a date as DDMMYYYY / DDMMYY when the boxes are printed D D M M Y Y
  *   (Y Y) or the label asks for a date, otherwise the text.
  * - Option groups (rules mode): separate single tick boxes that answer one question – a "Yes" box and a
- *   "No" box on one line (Freedom), or a column of boxes each printed with an option (AXA's therapist
- *   type, its preferred contact method). A column of boxes whose labels are questions ("answered all
- *   questions?", "signed and dated the form?") is a checklist, not a choice, and is left alone.
+ *   "No" box on one line, or a column of boxes each printed with an option (a therapist type, a
+ *   preferred contact method). A column of boxes whose labels are questions ("every question
+ *   answered?", "form signed and dated?") is a checklist, not a choice, and is left alone.
  *
  * Pure functions of the outline. Owner: ai agent.
  */

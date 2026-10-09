@@ -36,9 +36,9 @@ test("classifier: another party's part of the form is left blank, whatever it as
   assert.equal(classifyLabel("Diagnosis", "Section 4 – to be completed by your practitioner").fillSource.kind, "notes_narrative");
   assert.equal(classifyLabel("Diagnosis", "Section 4 – to be completed by your practitioner").completedBy, "clinic");
   // A question put to the patient in the second person.
-  assert.equal(classifyLabel("When did you first notice your symptoms?").completedBy, "patient");
-  assert.equal(classifyLabel("What medication has your doctor prescribed for your condition?").fillSource.kind, "leave_blank");
-  assert.equal(classifyLabel("Was the patient referred to you?").completedBy, undefined, "addressed to the clinician");
+  assert.equal(classifyLabel("When did your symptoms start?").completedBy, "patient");
+  assert.equal(classifyLabel("Which medicines has your doctor given you?").fillSource.kind, "leave_blank");
+  assert.equal(classifyLabel("Did someone refer the patient?").completedBy, undefined, "addressed to the clinician");
   assert.equal(classifyLabel("Please describe the treatment you provided").completedBy, undefined);
 });
 
@@ -55,7 +55,7 @@ test("classifier: sign-off only where the clinic signs", () => {
   assert.deepEqual(classifyLabel("Date", "Therapist's declaration").fillSource, signoff("date"));
   assert.deepEqual(classifyLabel("Therapist’s name", "Therapist's declaration").fillSource, signoff("name"));
   assert.equal(classifyLabel("Therapist’s name", "Therapist's declaration").completedBy, "clinic");
-  assert.deepEqual(classifyLabel("Please print name", "6 Your signature", "clinic").fillSource, signoff("name"));
+  assert.deepEqual(classifyLabel("Name in capitals", "F Signature", "clinic").fillSource, signoff("name"));
   assert.deepEqual(classifyLabel("Signature").fillSource, signoff("signature"));
   // Declarations of a list of parties ("Patient or parent/guardian", "Policyholder/patient"): a bare
   // "Signature" or "Date" under them is theirs, never the clinician's sign-off.
@@ -73,7 +73,7 @@ test("classifier: sign-off only where the clinic signs", () => {
   }
   assert.deepEqual(classifyLabel("Signature", "Therapist / physiotherapist declaration").fillSource, signoff("signature"));
   // Not a signature box: a checklist question, and a bare "Date" outside any declaration.
-  assert.notEqual(classifyLabel("signed and dated the form?").fillSource.kind, "signoff");
+  assert.notEqual(classifyLabel("form signed and dated?").fillSource.kind, "signoff");
   assert.deepEqual(classifyLabel("Date").fillSource, { kind: "registration", path: "report.date" });
 });
 
@@ -90,7 +90,7 @@ test("classifier: insurer-form record fields, bank details and the therapist's o
   // A company or group scheme's own number is not the patient's membership number (Aviva GEN030 has
   // both): an identifier the record does not hold – staff enter it. Likewise a company policy's
   // company name and a work telephone number.
-  for (const label of ["Scheme number", "Group scheme no.", "Company name (if a company policy)", "Work", "Work telephone number"]) {
+  for (const label of ["Scheme number", "Group scheme no.", "Employer's name (company policy only)", "Work", "Work telephone number"]) {
     assert.equal(classifyLabel(label, "1. Patient details").fillSource.kind, "leave_blank", label);
   }
   assert.equal(classifyLabel("Scheme number").identifier, true);
@@ -100,7 +100,7 @@ test("classifier: insurer-form record fields, bank details and the therapist's o
   const provider = classifyLabel("Bupa provider number");
   assert.deepEqual([provider.fillSource.kind, provider.identifier], ["leave_blank", true], "never drafted");
   // Bank and payment details are the referrer's / policyholder's business.
-  for (const label of ["IBAN number", "BIC/Swift code", "Account holder’s name(s)", "Account number", "Sort code", "Bank name", "Bank address", "Cheques payable to", "Preferred payment method (please tick)"]) {
+  for (const label of ["IBAN", "Sort code", "Account name", "Bank name", "Bank address", "Account number", "BIC/Swift code", "Cheques payable to", "Payment method (tick one)"]) {
     assert.equal(classifyLabel(label).fillSource.kind, "leave_blank", label);
   }
   assert.deepEqual(classifyLabel("Treatment start date").fillSource, { kind: "registration", path: "episode.firstSeen" });
@@ -113,7 +113,7 @@ test("classifier: insurer-form record fields, bank details and the therapist's o
   assert.deepEqual(classifyLabel("Email", "Therapist’s details").fillSource, regOr("clinic.email", { kind: "leave_blank" }));
   assert.deepEqual(classifyLabel("Telephone number of GP’s surgery").fillSource, { kind: "leave_blank" });
   assert.deepEqual(classifyLabel("Fax number", "2 Therapist details").fillSource, { kind: "leave_blank" });
-  assert.deepEqual(classifyLabel("Daytime phone number (incl. country code and area code)").fillSource, regOr("patient.phone", { kind: "leave_blank" }));
+  assert.deepEqual(classifyLabel("Phone number during the day (with the area code)").fillSource, regOr("patient.phone", { kind: "leave_blank" }));
   assert.deepEqual(classifyLabel("Mobile").fillSource, regOr("patient.phone", { kind: "leave_blank" }));
   // Not contact-details boxes.
   assert.notEqual(classifyLabel("Number of telephone consultations").fillSource.kind, "leave_blank");
@@ -122,7 +122,7 @@ test("classifier: insurer-form record fields, bank details and the therapist's o
 });
 
 /** A multi-party AcroForm outline as readPdfForm returns it (sections from forms/pdf-sections.ts). */
-const S1 = "1. Policyholder’s details – to be completed by the policyholder";
+const S1 = "A. Member’s information – to be completed by the policyholder";
 const S3 = "3. Therapist's declaration";
 const S4 = "4. Signature";
 function f(name: string, y: number, nearbyText: string, section?: string, completedBy?: FormField["completedBy"], page = 1): PdfFormOutline["fields"][number] {
@@ -280,10 +280,10 @@ test("post-validation: a section whose questions are put to the patient is the p
   };
   const parsed: ParsedForm = { kind: "pdf_acroform", pdf: outline, warnings: [] };
   const res = postValidateFields(parsed, [
-    raw({ label: "Why did you go to the doctor or hospital?", anchorRef: "a" }),
-    raw({ label: "When did you first notice your symptoms?", anchorRef: "b" }),
-    raw({ label: "What did the doctor say was wrong with you?", anchorRef: "c" }),
-    raw({ label: "What treatment has the doctor recommended?", anchorRef: "d", fillSource: "clinician_opinion" }),
+    raw({ label: "What made you see a doctor or go to hospital?", anchorRef: "a" }),
+    raw({ label: "When did your symptoms start?", anchorRef: "b" }),
+    raw({ label: "What did your doctor tell you the problem was?", anchorRef: "c" }),
+    raw({ label: "Which treatment has the doctor advised?", anchorRef: "d", fillSource: "clinician_opinion" }),
     raw({ label: "receive?", anchorRef: "e" }),
   ]);
   assert.ok(res.fields.every((x) => x.fillSource.kind === "leave_blank" && x.completedBy === "patient"), JSON.stringify(summary(res.fields)));
@@ -291,8 +291,8 @@ test("post-validation: a section whose questions are put to the patient is the p
 
   // Not when one of them is marked for the clinic, or when only a few ask the patient.
   const mixed = postValidateFields(parsed, [
-    raw({ label: "Why did you go to the doctor or hospital?", anchorRef: "a" }),
-    raw({ label: "When did you first notice your symptoms?", anchorRef: "b" }),
+    raw({ label: "What made you see a doctor or go to hospital?", anchorRef: "a" }),
+    raw({ label: "When did your symptoms start?", anchorRef: "b" }),
     raw({ label: "Treatment provided", anchorRef: "c" }),
     raw({ label: "Progress", anchorRef: "d" }),
     raw({ label: "Plan", anchorRef: "e" }),
@@ -366,7 +366,7 @@ async function claimForm(): Promise<Uint8Array> {
     form.createTextField(name).addToPage(page, { x: 46 + font.widthOfTextAtSize(label, 10), y: y - 5, width: 200, height: 16, font });
   };
   text(page, "Example Health (fictional) – outpatient claim form", 800, 16);
-  text(page, "1. Policyholder's details – to be completed by the policyholder", 760, 12);
+  text(page, "A. Member's information – to be completed by the policyholder", 760, 12);
   labelled("Surname:", "surname", 735);
   labelled("Telephone numbers: Home", "phone", 710);
   text(page, "2. Therapist's declaration", 670, 12);

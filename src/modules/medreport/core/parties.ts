@@ -1,7 +1,7 @@
 /**
  * Who fills in which part of a referrer's form. Insurer forms often carry several people's sections on
- * one form – "Section 1 – to be completed by the policyholder", "Section 4 – Medical details (to be
- * completed by the GP, dentist, optician or other medical practitioner)", "Therapist's declaration" – and
+ * one form – "Part A – to be completed by the policyholder", "Part D – for completion by the patient's
+ * doctor or another medical practitioner", "Therapist's declaration" – and
  * the clinic must complete only its own: never the policyholder's answers, and never its clinician's
  * approval in someone else's signature box.
  *
@@ -68,7 +68,7 @@ const PARTY_WORDS: Array<[RegExp, Party]> = [
   [/\b(?:insurer|insurance company|claims? (?:team|department|handler|assessor)|underwriter|administrator)s?\b/, "insurer"],
 ];
 
-/** The party named in a "who" phrase ("the GP, dentist, optician or other medical practitioner"). */
+/** The party named in a "who" phrase ("the GP, consultant or another medical practitioner"). */
 export function partyOfWho(who: string): Party | null {
   const w = normPartyText(who)
     .replace(/\b(?:registered |other |a |any )?medical (?:practitioner|professional)s?\b/g, " doctor ")

@@ -7,7 +7,7 @@
  * - comb date boxes with a character limit of 8 and of 6 (Bupa's date of birth and declaration date),
  *   and an 8-character box for a reference number;
  * - ONE tick-box field with two widgets whose on-values are "no" and "Yes", each drawn with an
- *   on-appearance in white – a tick no viewer shows (AXA's "Was the patient referred to you?");
+ *   on-appearance in white – a tick no viewer shows (AXA's "Did someone refer the patient?");
  * - separate single tick boxes acting as one choice: a column printed with options (AXA's therapist
  *   type), boxes beside the phone / e-mail boxes (AXA's preferred contact method), and a "Yes" box and
  *   a "No" box with their labels printed LEFT of the boxes (Freedom's Yes/No questions);
@@ -100,7 +100,7 @@ export async function buildInsurerLikePdf(): Promise<InsurerLikePdf> {
   short.addToPage(page, { x: 111, y: 160, width: 120, height: 14, font });
 
   // One tick box, two widgets: "no" on top, "Yes" below, both with a white on-appearance.
-  text("Was the patient referred to you?", 322, 600);
+  text("Did someone refer the patient?", 322, 600);
   const referred = form.createCheckBox("Check Box 13");
   referred.addToPage(page, FIXTURE_RECTS.referredNo);
   referred.addToPage(page, FIXTURE_RECTS.referredYes);
@@ -123,7 +123,7 @@ export async function buildInsurerLikePdf(): Promise<InsurerLikePdf> {
   }
 
   // Tick boxes beside the phone and e-mail boxes: the option is the label of the box to the left.
-  text("Please tick your preferred method of contact", 100, 440);
+  text("Please tick how we should contact you here", 100, 440);
   text("Telephone number", 56, 420);
   form.createTextField("Text Field 15").addToPage(page, { x: 56.7, y: 398, width: 191.6, height: 16, font });
   form.createCheckBox("Check Box 10").addToPage(page, { x: 258, y: 398, width: 16, height: 16 });
@@ -132,18 +132,18 @@ export async function buildInsurerLikePdf(): Promise<InsurerLikePdf> {
   form.createCheckBox("Check Box 12").addToPage(page, { x: 258, y: 358, width: 16, height: 16 });
 
   // A "Yes" box and a "No" box with their labels printed LEFT of the boxes.
-  text("Do you have any other health insurance which may cover these costs?", 40, 322);
+  text("Are you covered by another insurance policy that may pay for this?", 40, 322);
   text("Yes", 437, 322, 10);
   form.createCheckBox("Check Box5").addToPage(page, { x: 461.8, y: 314, width: 28, height: 25 });
   text("No", 507, 322, 10);
   form.createCheckBox("Check Box6").addToPage(page, { x: 537.8, y: 314, width: 28, height: 25 });
 
   // A checklist: labels are questions, so the boxes are NOT one choice.
-  text("Help us process the claim quickly:", 400, 520);
+  text("Before you send this form:", 400, 520);
   form.createCheckBox("Check Box 2").addToPage(page, { x: 400, y: 500, width: 9, height: 9 });
-  text("answered all questions?", 413, 501);
+  text("every question answered?", 413, 501);
   form.createCheckBox("Check Box 3").addToPage(page, { x: 400, y: 482, width: 9, height: 9 });
-  text("signed and dated the form?", 413, 483);
+  text("form signed and dated?", 413, 483);
 
   // Eight touching one-character boxes, printed D D M M Y Y Y Y, labelled with a drop cap.
   page.drawText("D", { x: 56.7, y: 270, size: 12, font });
@@ -155,7 +155,7 @@ export async function buildInsurerLikePdf(): Promise<InsurerLikePdf> {
   });
 
   // Single-line table cells.
-  text("Treatment received", 204, 230);
+  text("Treatment given", 204, 230);
   form.createTextField("Treatment Row1").addToPage(page, { x: 204, y: 200, width: 184.9, height: 23.1, font });
   form.createTextField("Amount Row1").addToPage(page, { x: 391, y: 200, width: 54.5, height: 14, font });
   return { bytes: await doc.save(), whiteAppearances };

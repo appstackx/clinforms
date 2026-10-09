@@ -28,8 +28,8 @@ test("detectOptionGroups: a column of boxes printed with options is one choice; 
     box("Check Box 4", 56.5, 500, "Physiotherapist", 9, "Physiotherapist | Therapist type"),
     box("Check Box 5", 56.5, 485, "Chiropractor"),
     box("Check Box 6", 56.5, 470, "Osteopath"),
-    box("Check Box 2", 400, 500, "answered all questions?"),
-    box("Check Box 3", 400, 482, "signed and dated the form?"),
+    box("Check Box 2", 400, 500, "every question answered?"),
+    box("Check Box 3", 400, 482, "form signed and dated?"),
     box("Lonely", 56.5, 300, "Discharged"),
   ];
   const groups = detectOptionGroups({ fields });
@@ -43,8 +43,8 @@ test("detectOptionGroups: boxes beside other boxes take their option from the fi
   const text = (name: string, y: number, label: string): PdfOutlineField => ({ name, type: "text", page: 1, rect: { x: 56.7, y, width: 191.6, height: 16 }, nearbyText: label });
   const groups = detectOptionGroups({
     fields: [
-      text("Text Field 15", 398, "Telephone number | Please tick your preferred method of contact"),
-      box("Check Box 10", 258, 398, undefined, 16, "Please tick your preferred method of contact"),
+      text("Text Field 15", 398, "Telephone number | Please tick how we should contact you here"),
+      box("Check Box 10", 258, 398, undefined, 16, "Please tick how we should contact you here"),
       text("Text Field 17", 361, "Fax number"),
       box("Check Box 11", 258, 361, undefined, 16, ""),
       text("Text Field 18", 324, "Email"),
@@ -53,7 +53,7 @@ test("detectOptionGroups: boxes beside other boxes take their option from the fi
   });
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].options, ["Telephone number", "Fax number", "Email"]);
-  assert.equal(groups[0].label, "Please tick your preferred method of contact");
+  assert.equal(groups[0].label, "Please tick how we should contact you here");
 });
 
 test("detectOptionGroups: boxes without a printed option, repeated options or far apart are not grouped", () => {
@@ -64,7 +64,7 @@ test("detectOptionGroups: boxes without a printed option, repeated options or fa
 });
 
 test("one-character boxes: a date in 8 / 6 boxes, else one character per box; the label without the hints", () => {
-  assert.equal(charGroupFormat(8, "When will the patient be referred back? | DDMMYYYY"), "DDMMYYYY", "printed D D M M Y Y Y Y");
+  assert.equal(charGroupFormat(8, "Date of the next specialist review | DDMMYYYY"), "DDMMYYYY", "printed D D M M Y Y Y Y");
   assert.equal(charGroupFormat(6, "Date of injury"), "DDMMYY", "the label asks for a date");
   assert.equal(charGroupFormat(8, "Policy number"), "chars");
   assert.equal(charGroupFormat(8, "Policy number", "date"), "DDMMYYYY", "a date question");
