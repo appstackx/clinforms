@@ -8,6 +8,8 @@
  * document is the referrer's original file with the answers and sign-off written in, and can be saved
  * back to the (simulated) clinic record. Built-in template reports use the same workspace.
  * A report ID that is not in this browser shows NOTICES.otherBrowser.
+ * Form reports also offer "Copy answers" (per question, all, .txt – components/review/copy-answers.tsx);
+ * for a portal question set (no file) that is the output, with a PDF summary for the record.
  *
  * Owner: studio-b agent.
  */
@@ -44,6 +46,7 @@ import { createId } from "../../../core/ids";
 import { useAiMode } from "../../components/shared/ai-mode";
 import { ActivityPanel } from "../../components/review/activity-panel";
 import { ApproveDialog } from "../../components/review/approve-dialog";
+import { CopyAnswersPanel, useAnswersCopy } from "../../components/review/copy-answers";
 import { FlagsPanel } from "../../components/review/flags-panel";
 import { PreviewPanel, type FormFileState } from "../../components/review/preview-panel";
 import { QuestionCard } from "../../components/review/question-card";
@@ -208,7 +211,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   }, [formInfo, form, initial.templateId]);
 
   const { report, dispatch, validating, saveState, savedAt, validateNow, commit } = useReviewState(initial, stored, template);
-  const file = useFormFile(form, Boolean(formInfo));
+  // A portal question set has no file: nothing to load, the answers are copied into the portal.
+  const questionSet = formInfo?.kind === "questions";
+  const file = useFormFile(form, Boolean(formInfo) && !questionSet);
   const signed = report.status === "signed";
   const isForm = Boolean(report.form);
   const bundle = report.bundleSnapshot;
@@ -254,6 +259,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
 
   const actions = useReviewActions({ report, form, template, file, actor, hooks, dispatch, commit, validateNow, toast });
+  const answersCopy = useAnswersCopy({ report, form, actor, dispatch, toast });
   const router = useRouter();
   const aiMode = useAiMode();
   // Demo deployment, no live passcode and no recorded answers for this record: a drafting call would
@@ -453,7 +459,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         onApprove={() => setApproveOpen(true)}
         onShowFlags={() => openPanel("flags")}
         onDraftCopy={() => void actions.download(isForm ? "original" : "docx")}
-        draftCopyUnavailable={isForm && (!form || file.status !== "ready")}
+        draftCopyUnavailable={isForm && (!form || (!questionSet && file.status !== "ready"))}
         downloading={actions.downloading}
       />
 
@@ -558,14 +564,15 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           ref={approvedRef}
           report={report}
           isWordForm={report.form?.kind === "docx"}
-          isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat"}
+          isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat" || questionSet}
+          questionSet={questionSet}
           downloading={actions.downloading}
           pdfUnavailable={actions.pdfUnavailable}
           filing={actions.filing}
           filed={filedEntries(report)}
           canFile={report.episodeRef.connectorId === "tm3-sim"}
           clinicRecordUrl={hooks.clinicRecordUrl?.({ connectorId: report.episodeRef.connectorId, patientId: report.episodeRef.patientId }) ?? null}
-          fileMissing={isForm && file.status === "missing"}
+          fileMissing={isForm && !questionSet && file.status === "missing"}
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
           onAmend={startAmendment}
@@ -581,6 +588,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         )}
 
         <div ref={centreRef} className="min-w-0 space-y-6">
+          {isForm && <CopyAnswersPanel actions={answersCopy} questionSet={questionSet} referrerName={report.form?.referrer.name ?? report.instructingParty.name} />}
           {!wide && (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
               <ProgressSummary counts={counts} />
@@ -621,6 +629,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   dispatch={dispatch}
                   onOpenSource={onOpenSource}
                   canAcknowledge={canAck}
+                  onCopy={isForm ? answersCopy.copyOne : undefined}
+                  copyable={answersCopy.copyable.has(q.key)}
                   onDraft={
                     draftingUnavailable
                       ? undefined

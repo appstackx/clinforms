@@ -193,7 +193,9 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
         ) : null}
       </div>
 
-      <div className="space-y-2">
+      {formKind === "questions" ? <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-900">{WORDING.questionSet.noFile}.</p> : null}
+      {/* A portal question set has no file, so there is no location to choose (core/question-set.ts). */}
+      <div className="space-y-2" hidden={formKind === "questions"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-medium text-slate-700">Where it goes in the original form</p>
           <Button type="button" size="sm" variant={picking ? "default" : "outline"} onClick={onTogglePick} aria-pressed={picking}>

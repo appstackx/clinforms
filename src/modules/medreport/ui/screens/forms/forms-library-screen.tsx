@@ -3,12 +3,13 @@
 /**
  * Referrer forms library (/reports/forms): every MLC / insurer / case manager / employer form the clinic
  * works with, each analysed once into a confirmed mapping and reused for every patient. Upload a new
- * form, or try the bundled sample that has no mapping yet.
+ * form, try the bundled sample that has no mapping yet, or add an insurer portal's questions (a
+ * question set with no file – components/forms/portal-questions-dialog.tsx).
  *
  * Owner: studio-a agent.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Download, FileSearch, Files, Layers, ShieldCheck, Upload } from "lucide-react";
+import { Download, FileSearch, Files, Layers, ListPlus, ShieldCheck, Upload } from "lucide-react";
 import type { FormSample } from "../../../api/contract";
 import { nowIso } from "../../../core/dates";
 import { REFERRER_TYPE_LABELS } from "../../../core/labels";
@@ -16,10 +17,12 @@ import { api, saveBlob } from "../../api-client";
 import { fetchSampleForms, saveForm, useForms } from "../../store";
 import { Button, Card, Skeleton } from "../../primitives";
 import { FormCard } from "../../components/forms/form-card";
+import { PortalQuestionsDialog } from "../../components/forms/portal-questions-dialog";
 import { UploadFormDialog } from "../../components/forms/upload-form-dialog";
 import { errorMessage, plural } from "../../components/shared/format";
 import { StudioShell } from "../../components/shared/studio-shell";
 import { EmptyState, FormKindBadge, Notice } from "../../components/shared/ui-bits";
+import { WORDING } from "../../wording";
 
 export function FormsLibraryScreen() {
   const { forms, ready } = useForms();
@@ -27,6 +30,7 @@ export function FormsLibraryScreen() {
   const [upload, setUpload] = useState<{ open: boolean; file?: { name: string; bytes: Uint8Array } | null; sample?: FormSample }>({
     open: false,
   });
+  const [portalOpen, setPortalOpen] = useState(false);
   const [busySample, setBusySample] = useState<string | null>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
 
@@ -89,10 +93,16 @@ export function FormsLibraryScreen() {
       title="Referrer forms"
       description="Each MLC, insurer, case manager or employer sends its own report form. Upload it once: the questions are mapped to where the answers come from, a member of staff checks the mapping, and it is reused for every patient that referrer sends."
       actions={
-        <Button onClick={() => setUpload({ open: true })}>
-          <Upload className="mr-2 h-4 w-4" aria-hidden />
-          Upload a referrer form
-        </Button>
+        <>
+          <Button variant="outline" onClick={() => setPortalOpen(true)}>
+            <ListPlus className="mr-2 h-4 w-4" aria-hidden />
+            {WORDING.questionSet.addButton}
+          </Button>
+          <Button onClick={() => setUpload({ open: true })}>
+            <Upload className="mr-2 h-4 w-4" aria-hidden />
+            Upload a referrer form
+          </Button>
+        </>
       }
     >
       <div className="grid gap-3 sm:grid-cols-3">
@@ -199,6 +209,7 @@ export function FormsLibraryScreen() {
         </section>
       ) : null}
 
+      <PortalQuestionsDialog open={portalOpen} onOpenChange={setPortalOpen} />
       <UploadFormDialog
         open={upload.open}
         onOpenChange={(open) => setUpload((u) => ({ ...u, open }))}

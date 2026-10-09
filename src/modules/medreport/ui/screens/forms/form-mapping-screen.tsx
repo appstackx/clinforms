@@ -5,7 +5,8 @@
  * original layout with the selected question's answer space highlighted. Right: every question with
  * its section, answer type, where the answer comes from and how sure the analysis was – editable,
  * with add/remove. Staff check it once and confirm; the confirmed map is saved against this exact
- * file and reused for every patient.
+ * file and reused for every patient. A portal question set (no file) shows its questions on the left
+ * instead of a file, and has no answer locations to pick.
  *
  * Owner: studio-a agent.
  */
@@ -14,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
+import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import {
   ANSWER_TYPE_LABELS,
   FORM_ANALYSIS_MODE_LABELS,
@@ -41,6 +43,7 @@ import {
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
 import { anchorFromPick, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
 import { OriginalFormPreview, type PreviewPick } from "../../components/shared/original-form-preview";
@@ -104,7 +107,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  const { file, loading, error } = useFormFile(saved);
+  // A portal question set has no file: its questions are shown instead, and nothing is picked in a file.
+  const questionSet = isQuestionSet(saved);
+  const { file, loading, error } = useFormFile(questionSet ? null : saved);
 
   const dirty = !sameMapping(draft, saved) || draft.status !== saved.status;
   const problems = useMemo(() => checkFormDefinition(draft), [draft]);
@@ -140,8 +145,10 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     setDraft((d) => ({ ...d, fields: [...d.fields, field] }));
     setSelected(field.id);
     setFilter("all");
-    setPicking(true);
-    setShowPreviewMobile(true);
+    if (!questionSet) {
+      setPicking(true);
+      setShowPreviewMobile(true);
+    }
   };
   const onPick = (pick: PreviewPick) => {
     if (!selectedField) return;
@@ -149,8 +156,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     setPicking(false);
   };
 
-  const saveAsProposed = () => {
-    const next: FormDefinition = { ...draft, status: "proposed", updatedAt: nowIso() };
+  const saveAsProposed = async () => {
+    // A question set's placeholder file is the hash of its questions (core/question-set.ts): keep it current.
+    const next: FormDefinition = await withQuestionSetFile({ ...draft, status: "proposed", updatedAt: nowIso() });
     delete next.confirmed;
     if (saveForm(next)) {
       setSavedNotice("Changes saved. Confirm the mapping before using this form for patients.");
@@ -207,7 +215,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
       }
       actions={
         <>
-          <Button variant="outline" size="sm" disabled={!file} onClick={() => file && downloadStoredFile(file)}>
+          <Button variant="outline" size="sm" className={questionSet ? "hidden" : undefined} disabled={!file} onClick={() => file && downloadStoredFile(file)}>
             <Download className="mr-1.5 h-4 w-4" aria-hidden />
             Download original
           </Button>
@@ -236,8 +244,10 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </Notice>
       ) : (
         <Notice tone="warning" title="Proposed mapping – check it once, then confirm">
-          Click each question to see where its answer goes in the original form. Questions marked “Check” or “Needs review” were
-          less certain. {WORDING.byCode.mappingIdentifiers}
+          {questionSet
+            ? "Check each question's answer type and where its answer comes from. Questions marked “Check” or “Needs review” were matched from their wording."
+            : "Click each question to see where its answer goes in the original form. Questions marked “Check” or “Needs review” were less certain."}{" "}
+          {WORDING.byCode.mappingIdentifiers}
         </Notice>
       )}
 
@@ -245,13 +255,13 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Stat
           label="To answer"
           value={String(breakdown.toAnswer)}
-          detail={[breakdown.onApproval ? `${breakdown.onApproval} completed on approval` : "", breakdown.referrerUse ? `${breakdown.referrerUse} for the referrer's office` : ""].filter(Boolean).join(" · ") || "Every box on the form"}
+          detail={[breakdown.onApproval ? `${breakdown.onApproval} completed on approval` : "", breakdown.referrerUse ? `${breakdown.referrerUse} for the referrer's office` : ""].filter(Boolean).join(" · ") || (questionSet ? "Every question" : "Every box on the form")}
         />
         <Stat label="From records" value={String(breakdown.fromRecords)} detail="Filled by code: TM3 registration and calculated figures" />
         <Stat label="From notes / clinician" value={String(breakdown.fromNotes)} detail={`${counts.clinician_opinion} need the clinician's own opinion`} />
         <Stat
           label="How it was analysed"
-          value={FORM_ANALYSIS_MODE_LABELS[a.mode]}
+          value={questionSet ? WORDING.questionSet.analysisLabel : FORM_ANALYSIS_MODE_LABELS[a.mode]}
           detail={[WORDING.formReading.showModel ? a.model : null, formatUkDateTime(a.at), a.durationMs ? formatMs(a.durationMs) : null].filter(Boolean).join(" · ")}
           small
         />
@@ -272,7 +282,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
       <div className="lg:hidden">
         <Button variant="outline" size="sm" onClick={() => setShowPreviewMobile((v) => !v)} aria-expanded={showPreviewMobile}>
           {showPreviewMobile ? <EyeOff className="mr-1.5 h-4 w-4" aria-hidden /> : <Eye className="mr-1.5 h-4 w-4" aria-hidden />}
-          {showPreviewMobile ? "Hide the original form" : "Show the original form"}
+          {showPreviewMobile ? (questionSet ? "Hide the question list" : "Hide the original form") : questionSet ? "Show the question list" : "Show the original form"}
         </Button>
       </div>
 
@@ -280,9 +290,12 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <div className={cn("lg:block", showPreviewMobile ? "block" : "hidden")}>
           <div className="lg:sticky lg:top-[96px]">
             <p className="mb-2 text-xs text-slate-500">
-              {FORM_KIND_LABELS[draft.kind]} · {draft.file.fileName} · shown in its original layout
+              {questionSet ? `${FORM_KIND_LABELS[draft.kind]} · ${WORDING.questionSet.noFile}` : `${FORM_KIND_LABELS[draft.kind]} · ${draft.file.fileName} · shown in its original layout`}
               {selectedField ? ` · highlighting ${selectedField.id}` : ""}
             </p>
+            {questionSet ? (
+              <QuestionSetPreview form={draft} selectedId={selected} onSelect={setSelected} className="h-[70vh] lg:h-[calc(100vh-154px)]" />
+            ) : null}
             <OriginalFormPreview
               file={file}
               loading={loading}
@@ -290,7 +303,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               highlight={selectedField ? { anchor: selectedField.anchor, label: selectedField.label } : null}
               pickMode={picking && editing}
               onPick={onPick}
-              className="h-[70vh] lg:h-[calc(100vh-154px)]"
+              className={questionSet ? "hidden" : "h-[70vh] lg:h-[calc(100vh-154px)]"}
               label={`${draft.title} – original layout`}
             />
           </div>
@@ -365,7 +378,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                                 </span>
                               ) : null}
                             </div>
-                            {!active ? <p className="mt-1 truncate text-[11px] text-slate-500">{plainAnchorDescription(field)}</p> : null}
+                            {!active && !questionSet ? <p className="mt-1 truncate text-[11px] text-slate-500">{plainAnchorDescription(field)}</p> : null}
                           </div>
                         </div>
                       </button>
@@ -384,7 +397,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                             }}
                           />
                         ) : (
-                          <ReadOnlyField field={field} />
+                          <ReadOnlyField field={field} questionSet={questionSet} />
                         )
                       ) : null}
                     </li>
@@ -397,7 +410,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           {editing ? (
             <Button variant="outline" onClick={addField} className="w-full border-dashed">
               <Plus className="mr-1.5 h-4 w-4" aria-hidden />
-              Add a question the analysis missed
+              {questionSet ? "Add a question" : "Add a question the analysis missed"}
             </Button>
           ) : null}
         </div>
@@ -429,7 +442,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                   Cancel
                 </Button>
               ) : null}
-              <Button variant="outline" size="sm" disabled={!dirty} onClick={saveAsProposed}>
+              <Button variant="outline" size="sm" disabled={!dirty} onClick={() => void saveAsProposed()}>
                 <Save className="mr-1.5 h-4 w-4" aria-hidden />
                 Save changes
               </Button>
@@ -473,12 +486,12 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
   );
 }
 
-function ReadOnlyField({ field }: { field: FormField }) {
+function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
       {field.guidance ? <p className="text-slate-700">{field.guidance}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
-      <p className="text-xs text-slate-600">Goes in: {plainAnchorDescription(field)}</p>
+      <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
       {field.note ? <p className="text-xs text-slate-500">Note: {field.note}</p> : null}
     </div>
   );
@@ -605,7 +618,9 @@ function ConfirmDialog({
                 checked={checked}
                 onChange={(e) => setChecked(e.target.checked)}
               />
-              I have checked each question&apos;s answer type, where its answer comes from and where it goes in the form.
+              {isQuestionSet(draft)
+                ? "I have checked each question's wording, its answer type and where its answer comes from."
+                : "I have checked each question's answer type, where its answer comes from and where it goes in the form."}
             </label>
             {error ? (
               <Notice tone="error" title="Not confirmed">

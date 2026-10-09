@@ -9,6 +9,8 @@ import "server-only";
  * sign-off fields from the verified receipt via core/forms.ts buildFormAnswers). Word → PDF uses forms/convert.ts docxToPdf();
  * where LibreOffice is unavailable → 503 PDF_CONVERSION_UNAVAILABLE (detail NOTICES.pdfConversionUnavailable).
  * 409 FORM_MISMATCH if the file's SHA-256 ≠ report.form.fileSha256. Headers also x-medreport-form-kind, x-medreport-fill-warnings.
+ * Portal question sets (form.kind "questions") have no file: format original|pdf returns their PDF summary
+ * (docgen/question-summary.ts; `fileBase64` is not needed and ignored); format docx → 422.
  *
  * Final-render rule (both paths): receipt verifies (auth/sign-receipt.ts verifyReceipt: MAC, report and
  * tenant binding, recomputed content hash) AND the validators allow signing AND it is not a review copy
@@ -30,6 +32,7 @@ import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../
 import { validateReport, type ValidateReportResult } from "../../core/validation";
 import { getBuiltinTemplateDocx, renderDocx } from "../../docgen/docx";
 import { renderPdf } from "../../docgen/pdf";
+import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
 import { assertFormFileMatches, decodeFormFile } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
@@ -200,6 +203,25 @@ export const handleRender: MedreportHandler = async (req) => {
           }),
         }
       : {};
+
+  if (formDef && formDef.kind === "questions") {
+    // A portal question set has no file to fill: its record copy is the summary PDF.
+    if (format === "docx") {
+      return problem(422, "Portal questions have no Word file", {
+        code: "VALIDATION_FAILED",
+        detail: "Portal questions are answered for copying into the portal. Download the summary as a PDF (format=pdf or original).",
+        issues: [{ path: "format", message: "Use format=pdf (or original) for a portal question set." }],
+      });
+    }
+    const out = await renderQuestionSummaryPdf(report, formDef, template, { receipt: final ? receipt : undefined });
+    const base = reviewCopy ? `${out.baseName}_REVIEW-COPY` : out.baseName;
+    logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: 0, ms: Date.now() - started });
+    return fileResponse(out.bytes, {
+      contentType: CONTENT_TYPES.pdf,
+      fileName: `${base}.pdf`,
+      headers: { ...baseHeaders, [HEADERS.formKind]: formDef.kind, ...fillWarningsHeader([]), ...fileTokenHeader(out.bytes) },
+    });
+  }
 
   if (formDef) {
     if (format === "docx" && formDef.kind !== "docx") {

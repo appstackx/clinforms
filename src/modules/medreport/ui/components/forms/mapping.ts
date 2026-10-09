@@ -5,6 +5,7 @@
  * Owner: studio-a agent.
  */
 import { parseBlockId } from "../../../core/forms";
+import { nextQuestionAnchor, questionAnchor } from "../../../core/question-set";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
   ComputedFactFormat,
@@ -147,6 +148,9 @@ export function defaultAnchor(kind: FormKind): FormAnchor {
       return { kind: "pdf_field", fieldName: "choose-a-field", fieldType: "text" };
     case "pdf_flat":
       return { kind: "pdf_overlay", page: 1, x: 72, y: 72, width: 220, height: 14 };
+    case "questions":
+      // Portal questions have no file: a virtual place in the summary (core/question-set.ts).
+      return questionAnchor(0);
   }
 }
 
@@ -157,7 +161,7 @@ export function newField(form: Pick<FormDefinition, "fields" | "kind">, section?
     ...(section ? { section } : {}),
     guidance: "",
     answerType: "short_text",
-    anchor: defaultAnchor(form.kind),
+    anchor: form.kind === "questions" ? nextQuestionAnchor(form.fields) : defaultAnchor(form.kind),
     fillSource: { kind: "notes_narrative" },
     required: false,
     confidence: "high",

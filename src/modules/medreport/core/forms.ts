@@ -26,6 +26,7 @@
 import { DEMO_CLINIC } from "../config.public";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
+import { isQuestionAnchor, isQuestionSet } from "./question-set";
 import type {
   AnswerType,
   Clinician,
@@ -105,6 +106,17 @@ export const FORM_ATTESTATIONS = [
   "Opinions on this form are my own, or are clearly attributed to the clinician who recorded them.",
   "I understand that the automated checks cannot detect a paraphrase error that cites a valid note, and I have reviewed the drafted answers for that.",
   "I have reviewed the completed form in the referrer's original layout and it is ready to issue.",
+] as const;
+
+/**
+ * A portal question set (FormKind "questions") has no layout to review: its last statement is about the
+ * answers that staff will copy into the referrer's portal. The first three are FORM_ATTESTATIONS'.
+ */
+export const QUESTION_SET_ATTESTATIONS = [
+  FORM_ATTESTATIONS[0],
+  FORM_ATTESTATIONS[1],
+  FORM_ATTESTATIONS[2],
+  "I have reviewed every answer and they are ready to be entered in the referrer's portal.",
 ] as const;
 
 const NO_SCOPE: TemplateScope = { excludeFields: [], excludeTerms: [] };
@@ -284,13 +296,17 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
     name: form.title,
     documentTitle: form.title,
     audience: form.referrer.type,
-    description: `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
+    description: isQuestionSet(form)
+      ? `${form.referrer.name}'s portal questions, answered for entry in the portal.`
+      : `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
     scope: formScope(form.referrer.type),
     sections,
     declarationText: "",
-    declarationNote: "The referrer's own declaration wording is part of the form and is completed in place on approval.",
-    attestations: [...FORM_ATTESTATIONS],
+    declarationNote: isQuestionSet(form)
+      ? "The referrer's portal holds its own declaration; approval is recorded in the server-signed receipt."
+      : "The referrer's own declaration wording is part of the form and is completed in place on approval.",
+    attestations: isQuestionSet(form) ? [...QUESTION_SET_ATTESTATIONS] : [...FORM_ATTESTATIONS],
     docxTemplateId: formTemplateId(form.id),
   };
 }
@@ -786,6 +802,7 @@ export function formAnchorKeys(form: Pick<FormDefinition, "fields">): Map<string
 export function checkFormDefinition(form: FormDefinition): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
+  const questionPlaces = new Map<string, string>();
   for (const field of form.fields) {
     const where = `${field.id} (“${field.label}”)`;
     if (seen.has(field.id)) problems.push(`${field.id} is used by more than one question.`);
@@ -797,8 +814,17 @@ export function checkFormDefinition(form: FormDefinition): string[] {
       problems.push(`${where}: a flat PDF has no fillable fields, so the answer needs a position on the page.`);
     }
     if (form.kind === "pdf_acroform" && anchorKind === "docx") problems.push(`${where}: a PDF form cannot use a Word anchor.`);
+    if (form.kind === "questions") {
+      // Portal questions have no file: each keeps its virtual place in the summary (core/question-set.ts).
+      if (!isQuestionAnchor(field.anchor)) problems.push(`${where}: a portal question cannot point into a file. Remove it and add it again.`);
+      else {
+        const key = formAnchorKey(field.anchor);
+        if (questionPlaces.has(key)) problems.push(`${where}: shares its place in the summary with ${questionPlaces.get(key)}. Remove it and add it again.`);
+        else questionPlaces.set(key, field.id);
+      }
+    }
 
-    if (field.anchor.kind === "docx") {
+    if (field.anchor.kind === "docx" && form.kind !== "questions") {
       if (field.anchor.target === "replace_placeholder" && !field.anchor.placeholderText) {
         problems.push(`${where}: say which placeholder text to replace.`);
       }

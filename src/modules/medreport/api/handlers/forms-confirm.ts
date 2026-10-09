@@ -11,6 +11,10 @@ import "server-only";
  * /drafts, /sign and /render only accept maps whose attestation verifies – editing a field afterwards
  * (in the browser or in transit) invalidates it.
  *
+ * Portal question sets (form.kind "questions", no file): the placeholder `file` is recomputed from the
+ * questions before the check (core/question-set.ts withQuestionSetFile: SHA-256 of the canonical
+ * question list), so the attested map always carries the canonical question-set version.
+ *
  * 401 without a session; 403 for another tenant; 422 VALIDATION_FAILED listing the map's problems.
  *
  * Owner: forms-engine agent.
@@ -19,6 +23,7 @@ import { withAttestedConfirmation } from "../../auth/attestations";
 import { requireSession } from "../../auth/session-token";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { checkFormDefinition } from "../../core/forms";
+import { withQuestionSetFile } from "../../core/question-set";
 import { FormsConfirmRequestSchema, type FormsConfirmResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 
@@ -26,7 +31,8 @@ export const handleFormsConfirm: MedreportHandler = async (req) => {
   const claims = requireSession(req);
   const parsed = await parseBody(req, FormsConfirmRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
-  const { form, confirmedBy } = parsed.data;
+  const { confirmedBy } = parsed.data;
+  const form = await withQuestionSetFile(parsed.data.form);
   if (form.tenantId !== claims.tenantId) {
     return problem(403, "This form belongs to another clinic", { code: "FORBIDDEN" });
   }
