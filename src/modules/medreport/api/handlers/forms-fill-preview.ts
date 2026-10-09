@@ -2,7 +2,8 @@ import "server-only";
 
 /**
  * POST /api/reports/v1/forms/fill-preview
- * Body FormFillPreviewRequest {report, form, fileBase64, mode: "draft", reviewMarkers?}
+ * Body FormFillPreviewRequest {report, form, fileBase64?, mode: "draft", reviewMarkers?} – fileBase64 may be left out
+ * when the signed-in clinic holds the file (its stored copy is preferred; handlers/store-form-file.ts).
  *   → the referrer's original file with the current answers written in, marked DRAFT
  *     (docx → .docx via forms/docx-fill.ts; pdf → .pdf via forms/pdf-fill.ts, flattened under a DRAFT watermark).
  * Headers: x-medreport-render "draft", x-medreport-fill-warnings (URI-encoded JSON array),
@@ -24,11 +25,12 @@ import { todayIso } from "../../core/dates";
 import { buildFormAnswers } from "../../core/forms";
 import { isQuestionSet } from "../../core/question-set";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
-import { assertFormFileMatches, decodeFormFile } from "../../forms/file";
+import { assertFormFileMatches } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
 import { CONTENT_TYPES, FormFillPreviewRequestSchema, HEADERS } from "../contract";
 import { fileResponse, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
+import { formFileForRequest } from "./store-form-file";
 
 export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
@@ -57,7 +59,8 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
       headers: { [HEADERS.renderKind]: "draft", [HEADERS.formKind]: form.kind, ...fillWarningsHeader([]) },
     });
   }
-  const file = decodeFormFile(fileBase64);
+  // The clinic's stored copy when it holds the file (wave 2), else fileBase64; 422 when neither.
+  const file = await formFileForRequest(deps, { fileBase64, sha256: form.file.sha256, tenantId: actor.via === "demo" ? null : actor.tenantId });
   assertFormFileMatches(file, form.file.sha256);
 
   let answers = buildFormAnswers(report, form, { receipt: null });

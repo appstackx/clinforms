@@ -26,7 +26,7 @@ import {
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { getSession, saveForm, useForm } from "../../store";
+import { getSession, saveForm, saveFormDurable, useForm } from "../../store";
 import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../../components/shared/session";
 import {
@@ -174,7 +174,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     try {
       const sessionToken = await sessionTokenFor({ tenantId: draft.tenantId });
       const { form: next } = await api.confirmForm({ form: { ...draft, status: "proposed" }, confirmedBy: by }, { sessionToken });
-      if (!saveForm(next)) return "This browser could not save the confirmed mapping (storage full or blocked).";
+      // The confirmed map must be stored before it is used for patients (a clinic's Studio: on the server).
+      if (!(await saveFormDurable(next))) return "The confirmed mapping could not be saved. Please try again.";
       setDraft(next);
       setEditing(false);
       setPicking(false);

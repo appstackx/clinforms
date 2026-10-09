@@ -43,6 +43,7 @@ import { appendAudit } from "@/server/repos/audit";
 import { claimLaunchToken } from "@/server/repos/launch-tokens";
 import { partnerKeyTenant, verifyPartnerKey } from "@/server/repos/partner-keys";
 import { hitRateLimit, peekRateLimit, resetRateLimit } from "@/server/repos/rate-limits";
+import { tenantDeps } from "./_medreport-tenant";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
 const HTTP_RETRY_AFTER_MS = 5 * 60_000;
@@ -246,6 +247,8 @@ export function getMedreportDeps(): MedreportDeps {
   if (deps) return deps;
   deps = {
     ...hostCapabilities(),
+    // Tenant mode (wave 2): the clinic's server storage for the Studio (lazy; inert in the public demo).
+    ...tenantDeps(),
     connectors: createConnectorRegistry(createDefaultConnectors()),
     createConnectorContext(req, connectorId, tenantId) {
       void req; // the request is deliberately NOT used for the base URL (see simTrustedBaseUrl)

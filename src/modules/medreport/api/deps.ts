@@ -10,6 +10,7 @@ import "server-only";
  */
 import type { ConnectorContext, ConnectorRegistry } from "../connectors/types";
 import type { ConnectorId, TenantId } from "../core/types";
+import type { TenantStore } from "./store-port";
 
 /** A clinic member's role (docs/production-architecture.md §3). */
 export type MemberRole = "owner" | "admin" | "clinician" | "staff";
@@ -116,4 +117,11 @@ export interface MedreportDeps {
   audit?(tenantId: TenantId, event: AuditEvent): Promise<void>;
   /** Wave 2: a clinic's partner key (`x-partner-key` on POST /launch) → its tenant, or null when unknown/revoked. */
   verifyPartnerKey?(key: string): Promise<VerifiedPartnerKey | null>;
+  /**
+   * Tenant mode (wave 2, docs/production-architecture.md §5): the clinic's server storage for the Studio
+   * (reports, form maps, form files, settings, audit), used by the /store/** handlers and by /render and
+   * /forms/fill-preview to read a stored form file. Built by the host (src/server/store/tenant-store.ts).
+   * Absent in the public demo: the store endpoints then answer 501.
+   */
+  tenantStore?: TenantStore;
 }

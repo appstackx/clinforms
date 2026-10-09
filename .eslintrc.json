@@ -1167,7 +1167,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1276,7 +1276,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1385,7 +1385,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1494,7 +1494,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1603,7 +1603,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1712,7 +1712,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1821,7 +1821,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -1930,7 +1930,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2039,7 +2039,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2148,7 +2148,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2257,7 +2257,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2366,7 +2366,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2461,7 +2461,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2556,7 +2556,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2651,7 +2651,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2746,7 +2746,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2841,7 +2841,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -2936,7 +2936,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -3041,7 +3041,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -3146,7 +3146,112 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/api/store-contract.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }
@@ -3237,7 +3342,7 @@
                   "mailersend",
                   "mailersend/*"
                 ],
-                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
             ]
           }

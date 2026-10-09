@@ -15,7 +15,7 @@ import { sha256HexBytes } from "../../../core/fingerprint";
 import { nowIso } from "../../../core/dates";
 import type { FormDefinition, FormMimeType, ReferrerInfo } from "../../../core/types";
 import { api, toBase64, type ApiClient } from "../../api-client";
-import { listForms, saveForm, saveFormFile } from "../../store";
+import { listForms, saveFormDurable, saveFormFile } from "../../store";
 import { formatBytes } from "../shared/format";
 
 export const DOCX_MIME: FormMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -93,6 +93,7 @@ export async function analyseAndStore(
   });
   const form: FormDefinition = { ...res.form, status: "proposed", updatedAt: nowIso() };
   delete form.confirmed;
-  if (!saveForm(form)) throw new FormFileError("The form map could not be saved in this browser (storage is full or blocked).");
+  // Stored before the mapping screen opens it (a clinic's Studio: on the server).
+  if (!(await saveFormDurable(form))) throw new FormFileError("The form map could not be saved. Please try again.");
   return { ...res, form, fileStored };
 }

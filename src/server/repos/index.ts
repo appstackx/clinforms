@@ -10,6 +10,7 @@ import type { RepoContext } from "./context";
 export * from "./access-requests";
 export * from "./audit";
 export * from "./clinic-profile";
+export * from "./form-file-uploads";
 export * from "./form-files";
 export * from "./forms";
 export * from "./launch-tokens";

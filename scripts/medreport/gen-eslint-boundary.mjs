@@ -53,7 +53,7 @@ const CLIENT_UNSAFE = {
     "mailersend/*",
   ],
   message:
-    "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
+    "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
 };
 // Browser preview libraries (Revision 2): docx-preview and pdfjs-dist render the referrer's form in its
 // original layout in the Studio, so only ui/ may import them. forms/ may use pdfjs-dist's LEGACY build
@@ -136,6 +136,8 @@ for (const folder of ["core", "templates", "ui"]) {
 }
 overrides.push({ files: [`${M}/config.public.ts`], rules: rule([...base(0), CLIENT_UNSAFE]) });
 overrides.push({ files: [`${M}/api/contract.ts`], rules: rule([...base(1), CLIENT_UNSAFE]) });
+// The tenant-storage contract (wave 2) is shared by ui/store/server-api.ts and the store handlers: browser-safe too.
+overrides.push({ files: [`${M}/api/store-contract.ts`], rules: rule([...base(1), CLIENT_UNSAFE]) });
 // 4. The one bridge to the host design system.
 overrides.push({
   files: [`${M}/ui/primitives.ts`],

@@ -232,10 +232,17 @@ export const PROBLEM_CODES = [
   "FORM_NOT_CONFIRMED",
   "NO_DEMO_ANALYSIS",
   "PDF_CONVERSION_UNAVAILABLE",
+  // Tenant storage (/store/**, wave 2; api/store-contract.ts)
+  "TWO_FACTOR_REQUIRED",
+  "REV_CONFLICT",
+  "REPORT_LOCKED",
+  "UPLOAD_INCOMPLETE",
+  "UPLOAD_CORRUPT",
+  "UNSUPPORTED_MEDIA_TYPE",
   "NOT_IMPLEMENTED",
   "INTERNAL",
   // Wave 2: actors, clinics (tenants) and request hardening (auth/actor.ts, api/http.ts)
-  "TWO_FACTOR_REQUIRED",
+  // (TWO_FACTOR_REQUIRED and UNSUPPORTED_MEDIA_TYPE are listed with the tenant storage codes above.)
   "NO_CLINIC",
   "DEMO_DISABLED",
   "TENANT_MISMATCH",
@@ -244,7 +251,6 @@ export const PROBLEM_CODES = [
   "DRAFTING_DISABLED",
   "CONNECTOR_NOT_AVAILABLE",
   "ORIGIN_NOT_ALLOWED",
-  "UNSUPPORTED_MEDIA_TYPE",
   "SERVICE_UNAVAILABLE",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
@@ -475,7 +481,8 @@ export const RenderRequestSchema = z.object({
   form: FormDefinitionSchema.optional(),
   /**
    * Form reports: the referrer's original file as base64 (decoded ≤ MAX_FORM_FILE_BYTES; its SHA-256 must
-   * equal report.form.fileSha256, otherwise 409 FORM_MISMATCH).
+   * equal report.form.fileSha256, otherwise 409 FORM_MISMATCH). In a clinic's own Studio the server reads the
+   * file from the clinic's storage by that SHA-256 instead, when it holds it (wave 2).
    */
   fileBase64: z.string().optional(),
 });
@@ -577,8 +584,12 @@ export const FormSamplesResponseSchema = z.object({ samples: z.array(FormSampleS
 export const FormFillPreviewRequestSchema = z.object({
   report: ReportSchema,
   form: FormDefinitionSchema,
-  /** The referrer's original file (base64, decoded ≤ MAX_FORM_FILE_BYTES, SHA-256 = form.file.sha256). */
-  fileBase64: z.string().min(1),
+  /**
+   * The referrer's original file (base64, decoded ≤ MAX_FORM_FILE_BYTES, SHA-256 = form.file.sha256). Optional
+   * since wave 2: in a clinic's own Studio the server reads the file from the clinic's storage by SHA-256 (and
+   * prefers that copy); without a stored copy it is required (422).
+   */
+  fileBase64: z.string().min(1).optional(),
   /** Previews are always DRAFT (watermarked / marked "DRAFT – not approved"). */
   mode: z.literal("draft"),
   /** Highlight each written answer with its field ID (internal review copy). */
