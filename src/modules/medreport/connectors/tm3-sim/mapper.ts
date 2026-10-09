@@ -11,6 +11,8 @@ import "server-only";
  *   and linked to N-IDs (via `note_id`, or the single note on the same date).
  * - Clinicians are de-duplicated by HCPC number: primary clinician first, then note authors, then
  *   appointment clinicians.
+ * - Appointment charges and the referral's insurer, membership and authorisation numbers are copied when
+ *   the wire has them (private medical insurance episodes), and left out otherwise.
  * - Only items whose `episode_id` matches the episode are used. ISO dates are kept as they are.
  * - Wire `null`s become absent optional fields; InstructingParty strings become "" when null.
  *
@@ -106,6 +108,7 @@ export function mapSimEpisodeToBundle(
       const reason = trimToUndefined(a.status_reason);
       if (reason) out.reason = reason;
       if (noteId) out.noteId = noteId;
+      if (a.charge) out.charge = { amount: a.charge.amount, currency: a.charge.currency, paid: a.charge.paid };
       return out;
     });
 
@@ -258,6 +261,13 @@ function mapReferral(r: SimReferral): EpisodeBundle["referral"] {
   if (r.referral_date) referral.referralDate = r.referral_date;
   const reason = trimToUndefined(r.reason);
   if (reason) referral.reason = reason;
+  // Private medical insurance identifiers (optional on the wire; absent for other referrals).
+  const insurer = trimToUndefined(r.insurer_name);
+  if (insurer) referral.insurerName = insurer;
+  const membership = trimToUndefined(r.membership_number);
+  if (membership) referral.membershipNumber = membership;
+  const authorisation = trimToUndefined(r.authorisation_number);
+  if (authorisation) referral.authorisationNumber = authorisation;
   return referral;
 }
 

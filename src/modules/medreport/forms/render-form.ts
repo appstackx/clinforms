@@ -9,6 +9,9 @@ import "server-only";
  *
  * Also: review-copy source markers for the answers, the fill-warnings header and file names.
  *
+ * A demonstration form (FormDefinition.demoNotice) gets its footer line on every page of the draft and
+ * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it.
+ *
  * Owner: forms-engine agent.
  */
 import { CONTENT_TYPES, HEADERS } from "../api/contract";
@@ -18,6 +21,7 @@ import { answerableFields, formTemplateId, type FormFillAnswers } from "../core/
 import type { FormDefinition, Report } from "../core/types";
 import { buildFileBaseName } from "../docgen/view-model";
 import { docxToPdf } from "./convert";
+import { addDocxDemoNotice, stampPdfDemoNotice } from "./demo-notice";
 import { fillDocx } from "./docx-fill";
 import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "./file";
 import { fillPdf } from "./pdf-fill";
@@ -37,7 +41,10 @@ export interface FormRenderOutput {
   bytes: Uint8Array;
   contentType: typeof CONTENT_TYPES.docx | typeof CONTENT_TYPES.pdf;
   extension: "docx" | "pdf";
+  /** Plain-English warnings, errors first (a draft lists its errors here too, for the fill-warnings header). */
   warnings: string[];
+  /** Problems that make the written form wrong (PDF fill's onError). A final copy is refused with any. */
+  errors?: string[];
 }
 
 /** 422 when the file type does not match the form map's kind (cannot happen when the SHA-256 matched). */
@@ -60,7 +67,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     if (!warnings.includes(m)) warnings.push(m);
   };
   if (form.kind === "docx") {
-    const docx = fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning });
+    const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), form.demoNotice);
     if (input.format === "original") return { bytes: docx, contentType: CONTENT_TYPES.docx, extension: "docx", warnings };
     let pdf: Uint8Array | null;
     try {
@@ -78,8 +85,20 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings };
   }
   // Flattened in both cases: FINAL by rule; DRAFT so the watermark is drawn above the filled boxes.
-  const pdf = await fillPdf(file.bytes, form, answers, { draft, flatten: true, reviewMarkers: input.reviewMarkers, onWarning });
-  return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings };
+  const errors: string[] = [];
+  const onError = (m: string) => {
+    if (!errors.includes(m)) errors.push(m);
+  };
+  const filled = await fillPdf(file.bytes, form, answers, { draft, flatten: true, reviewMarkers: input.reviewMarkers, onWarning, onError });
+  if (errors.length > 0 && !draft) {
+    // Never issue a form with a value cut to fit (e.g. a date written "14/02/19").
+    throw new HttpError(422, "An answer does not fit the form", {
+      code: "FORM_INVALID",
+      detail: `${errors.join(" ")} The final copy was not made. Correct the answer and approve the report again – an approved report cannot be edited, so use “Create amended version”, correct the answer there and approve the amended version.`,
+    });
+  }
+  const pdf = await stampPdfDemoNotice(filled, form.demoNotice, { draft });
+  return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings: [...errors, ...warnings], ...(errors.length > 0 && { errors }) };
 }
 
 /**

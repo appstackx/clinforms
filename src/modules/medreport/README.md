@@ -13,8 +13,10 @@ remain as the fallback when a referrer sends no form. See "Revision 2 – referr
 - **Demo scaffolding, not the product:** the simulated clinic system at `/pms-sandbox` and
   `/api/tm3-sim/v1` (`src/sandbox/tm3-sim`). It is always labelled
   "Simulated TM3 sandbox – demo data, not affiliated with TM3".
-- **Fictional data only.** Organisations end with "(fictional)". HCPC numbers use the invalid demo
-  format `PH-DEMO-01`. Reports are stored in the browser only (demo-grade).
+- **Fictional data only.** Organisations end with "(fictional)" – the one exception is the insurer on the
+  private medical insurance demo patient's record (Bupa), named only so its public form can be filled,
+  with fake numbers (see "Demo data"). HCPC numbers use the invalid demo format `PH-DEMO-01`. Reports are
+  stored in the browser only (demo-grade).
 - **Standalone app.** This module, the sandbox and their thin `src/app` routes are the Studio and its
   demo (`/` is now the public website in `src/app/(marketing)`; the Studio demo stays at `/reports`).
   It was extracted from its original host repo (see the root `README.md`); the host design system is
@@ -35,6 +37,11 @@ src/modules/medreport/
     fingerprint.ts        canonical JSON + SHA-256 (WebCrypto)
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
     forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
+    form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
+    form-tables.ts        table answers ("rows"): the appointments table filled by code, row helpers (pure)
+    question-set.ts       portal question sets (FormKind "questions"): parse pasted questions, classify, placeholder file
+    answer-copy.ts        "Copy answers" text (one answer, all answers, .txt) shared with the question-set summary PDF
+    parties.ts            who completes which part of a form ("to be completed by the policyholder", "Therapist's declaration")
     voice.ts              first-person rewrite, note shorthand expansion, job-title casing (pure)
     computed-facts.ts     FACT-attendance / -age / -episode / -outcomes-*
     scope.ts              template scope: strip fields before drafting
@@ -54,19 +61,29 @@ src/modules/medreport/
     generate.ts draft-live.ts draft-demo.ts assemble.ts   drafting entry, live call, demo/recorded lookup, assembly
     demo-format.ts demo-drafts/*.json  recorded drafts: {patientId}__{templateId}.json, {patientId}__form-{sampleId}.json
     analyse-form.ts                   form analysis entry: stored map (recorded / pre-written) → live Claude → rules
-                                      (prompt "form-analysis-3" in form-analysis.ts)
+                                      (prompt "form-analysis-4" in form-analysis.ts; rules reader "rules-2")
     form-analysis.ts form-analysis-schema.ts form-outline.ts form-classify.ts form-postvalidate.ts form-rules.ts
+    pdf-groups.ts                     option-box groups and one-character date boxes for the analysis
+    form-boxes.ts form-tables.ts      flat-PDF printed boxes → questions / snapping; table-of-fields → one table question
     recorded-forms.ts recorded/forms/*.json   recorded Claude analyses of the sample forms (by file SHA-256)
+    demo-assets.ts                    DEV/DEMO ONLY: local demonstration forms' maps and answers (MEDREPORT_DEMO_ASSETS_DIR)
   templates/              built-in FALLBACK templates: registry.ts (+ extensions.ts), generated/*.docx.b64.ts
   docgen/                 server-only: built-in template rendering – view-model, docx, docx-validate, pdf, pdf/*
+                          (+ question-summary.ts: the PDF summary of a portal question set)
   forms/                  server-only: the referrer-form engine
     file.ts               decodeFormFile (type from bytes, size cap, SHA-256), assertFormFileMatches
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
     docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
+    pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
+    pdf-widgets.ts        printed label beside each radio / tick-box widget; runs of one-character boxes
+    pdf-boxes.ts          flat PDFs: printed answer boxes and tick boxes read from the page drawing
     pdf-fill.ts           fillPdf(buf, form, answers, opts) → Promise<Uint8Array> (shrink to fit, continuation sheet, flatten)
+    pdf-acro-fill.ts      AcroForm answers: ticks per widget, radio labels, option fields, character limits, inherited /DA
+    pdf-table.ts pdf-overlay-marks.ts   tables of fields / flat tables; X marks in flat tick boxes, date slots
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
+    demo-notice.ts        demonstration footer (FormDefinition.demoNotice) on every page: PDF bottom margin, Word footer
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)
     convert.ts            docxToPdf(buf) via LibreOffice where installed (hardened, max 2 at a time), else null
     zip-guard.ts          zip-bomb and PDF stream limits, checked before any file is opened
@@ -87,7 +104,9 @@ src/app/reports/**  src/app/pms-sandbox/**   thin pages; each layout.tsx has its
 scripts/medreport/        build-templates.mjs, build-demo-forms.mjs, record-demo-drafts.ts, record-form-analyses.ts,
                           render-form-samples.ts, form-sample-answers.ts, form-fixtures.ts,
                           gen-eslint-boundary.mjs, test-setup.mjs, dev-bundles.ts, stamp-demo-drafts.ts,
-                          build-notes-pdf.ts, build-prewritten-drafts.ts
+                          build-notes-pdf.ts, build-prewritten-drafts.ts,
+                          check-demo-assets.ts + demo-assets-check.ts (npm run demo:check), demo-draft-checks.ts,
+                          demo-red.mjs (npm run demo:red)
 ```
 
 ## Import rules (enforced by ESLint `no-restricted-imports` in `.eslintrc.json`)
@@ -175,6 +194,8 @@ options rather than merging them, so the script writes one full pattern list per
 | `TM3_SIM_TOKEN` | Bearer token for `/api/tm3-sim/v1` |
 | `TM3_SIM_BASE_URL` | Optional base URL of the simulated API. The default is this server's own origin (`VERCEL_URL` on Vercel, else `http://127.0.0.1:$PORT`), never the request's Host header |
 | `MEDREPORT_SOFFICE_PATH` | Optional LibreOffice binary for Word → PDF copies of completed forms (`forms/convert.ts`). Default: the usual install paths; never on Vercel |
+| `MEDREPORT_DEMO_ASSETS_DIR` | **Dev/demo only.** Folder (absolute, or relative to the working directory) of local demonstration forms – e.g. `demo-assets/insurers`, gitignored – with prepared maps and answers (`ai/demo-assets.ts`, see "Local demonstration forms"). Unset = off |
+| `MEDREPORT_DEMO_ASSETS_ALLOW_PROD` | `1` lets a **local** production build (`next start`, as `npm run demo:red` runs) use `MEDREPORT_DEMO_ASSETS_DIR`. Without it the folder is ignored whenever `NODE_ENV` or `VERCEL_ENV` is `production`. Never set it on a deployment |
 
 In demo AI mode, a missing launch secret, signing secret, partner key or sim token falls back to a
 **fixed** public demo constant (`config.server.ts`; the sandbox duplicates two of them in
@@ -227,6 +248,7 @@ answer space.
 | | Sonnet 5.5 · low / medium · `form-analysis-2` | 9.4–25.6 s | 3,588–7,172 | $0.09–0.13 | Kingsway 14–15 of 22 questions; duplicate-question warnings on Harrow & Pike and Meridian; low once 20 of 22 on Harrow & Pike |
 | | **Sonnet 5.5 · low · `form-analysis-3`** | **10.8–14.3 s** | **4,165–5,477** | **$0.08–0.14** | **2 runs: all pass** – every question found (22 / 23 / 22 / 17), in the same answer spaces as the Opus maps, nothing dropped; once mapped Northfield's diagnosis question as an opinion |
 | | Sonnet 5.5 · medium · `form-analysis-3` | 11.4–17.8 s | 4,222–5,554 | $0.08–0.14 | 2 runs: first (before office-use boxes were asked for) left out Harrow & Pike's two office-use boxes; then pass, with Northfield's diagnosis as an opinion and four warnings where the prompt allows three |
+| Form analysis, 6 insurer PDFs + 5 samples | **Sonnet 5.5 · low · `form-analysis-4` (S7 text, live, not recorded)** | 9.7–23.7 s | 3,657–16,418 | $0.10–0.64 | 4 rounds: Bupa and AXA every question, source and party right; no sign-off in another party's part on any form – see "Live form analysis on the RED engine (S7)" |
 
 **Chosen:** `DEFAULT_ANALYSIS_EFFORT` = `low` (`ai/form-analysis.ts`) and `DEFAULT_LIVE_EFFORT` = `medium`
 (`ai/draft-live.ts`). For drafting, low and medium cost the same within about 3 % and take the same
@@ -318,7 +340,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/render?format=docx\|pdf\|original` | – | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
 | POST | `/connectors/{id}/documents` | session | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
 | POST | `/forms/analyse` | passcode for live | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
-| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded |
+| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; in demo mode with local demonstration forms on, also those as `uploadRequired` entries (no map, file not served) |
 | GET | `/forms/samples/{id}/file` | – | forms-sample-file.ts | The sample's original .docx / .pdf |
 | POST | `/forms/confirm` | session | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
 | POST | `/ai/payload-preview` | – | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
@@ -338,12 +360,61 @@ needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **Ne
 `x-medreport-fill-warnings` (URI-encoded JSON array of plain-English warnings) and
 `x-medreport-form-kind`.
 
+## Local demonstration forms (dev/demo only)
+
+Third-party forms – e.g. the public insurer PDFs for the RED Physiotherapy demo – are never committed
+(`/demo-assets/` is gitignored) and must never be served from production. `ai/demo-assets.ts` reads them
+from `MEDREPORT_DEMO_ASSETS_DIR` at run time (no cache, so edits show without a restart):
+
+```
+demo-assets/insurers/
+  bupa-therapies-management-form.pdf …            the forms (only hashed, to recognise an upload; never served)
+  maps/<sampleId>.json                             RecordedFormAnalysis (ai/recorded-forms.ts), mode "demo_prewritten",
+                                                   fileSha256 = the form's SHA-256, form.sampleId = <sampleId>
+  drafts/<patientId>__form-<sampleId>.json         DemoDraftFile (ai/demo-format.ts): formSha256, fields (answer spaces),
+                                                   groups, bundleFingerprint of the simulated TM3 demo patient
+```
+
+- **Upload in demo mode** → the prepared map of exactly that file (`analyse-form.ts` keeps the stored
+  map's own mode; trace "Pre-written demonstration map of this exact uploaded form",
+  `WORDING.server.analysis.uploadedPrewrittenDetail`). A bundled recording of the same file wins, and a
+  local map never stands in for a bundled sample's map. Live or rules readings of a local demonstration
+  form are labelled too.
+- **Answers:** `draft-demo.ts` merges the local drafts with the bundled ones (bundled wins on a name
+  clash); the bundle response's `demoDrafts.formSha256s` advertises them, so the Studio sends the
+  drafting calls. Same binding rules as the bundled drafts (patient, notes fingerprint, file SHA-256,
+  answer spaces). Every planned group needs an answer, else its questions are left for the clinician.
+- **Demonstration footer:** every local map carries `FormDefinition.demoNotice` – its own, else
+  `core/wording.ts` `demoFormNotice(referrer)`: "Public form used for demonstration only – not
+  affiliated with or endorsed by <insurer>. Fictional patient data." `forms/demo-notice.ts` prints it on
+  every page of every draft preview and final render (PDF: small grey line in the bottom margin of each
+  page and continuation sheet, inside the crop box, upright on rotated pages, below the red DRAFT line;
+  Word: a footer paragraph on every footer the sections show), and the Studio shows it in the preview
+  headers (`ui/components/shared/demo-notice.tsx`). It is part of `formMapSha256`, so an approved map
+  cannot lose it before the final render; forms without it hash and render byte-for-byte as before.
+- **Forms library:** in demo mode `GET /forms/samples` also lists each mapped local form as an
+  `uploadRequired` entry ("Demonstration forms – Upload this form"); its file is never served.
+- **Off in production:** ignored whenever `NODE_ENV` or `VERCEL_ENV` is `production`, unless
+  `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` (for a local `next start` only). On Vercel the folder does not
+  exist anyway (gitignored).
+- **Commands:** `npm run demo:check` (each map against its file: schema, SHA-256, `checkFormDefinition`,
+  attestation, PDF fields / Word blocks, the upload really returning it; each answer file: patient,
+  fingerprint, advertised, and exactly the checks of `demo-draft-quality.test.ts` – quiet when the folder
+  is absent); `stamp-demo-drafts.ts --dir=demo-assets/insurers` after a fixture change; `npm run demo:red`
+  = `next build` + `next start` on port 3000 with `MEDREPORT_DEMO_ASSETS_DIR=demo-assets/insurers`,
+  `MEDREPORT_AI_MODE=demo` and `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` unless `.env.local` (read the way
+  Next reads it) or the shell says otherwise.
+- Tests: `scripts/medreport/demo-assets.test.ts` (synthetic folder in a temp dir) and
+  `forms/demo-notice.test.ts`.
+
 ## Simulated TM3 API `/api/tm3-sim/v1` (scaffolding)
 
 Every call needs `Authorization: Bearer TM3_SIM_TOKEN` (401 otherwise). Every response carries
 `X-Simulated: true` and `_simulated: true`. Lists are paged with `?page=&page_size=`. Payloads are
 snake_case: see `connectors/tm3-sim/wire.ts` (the module side) and `src/sandbox/tm3-sim/wire-types.ts`
-(the sandbox side). These shapes are our assumption, not TM3's schema.
+(the sandbox side). These shapes are our assumption, not TM3's schema. Optional since 10/2026 (private
+medical insurance): `referral.insurer_name`, `referral.membership_number`, `referral.authorisation_number`
+and `appointment.charge {amount (pounds), currency "GBP", paid}`; absent on the earlier cases.
 
 | Method | Path | Handler export |
 |---|---|---|
@@ -365,7 +436,8 @@ tenantId)`. The app glue builds them, so the module never imports the sandbox.
 ## Testing
 
 `npm run test:medreport` runs `node --import ./scripts/medreport/test-setup.mjs --import tsx --test`
-over `src/modules/medreport/**/*.test.ts` and `scripts/medreport/**/*.test.ts`. The setup file maps
+over `src/modules/medreport/**/*.test.ts`, `scripts/medreport/**/*.test.ts` and (since 10/2026) the
+simulated TM3 sandbox's own tests, `src/sandbox/**/*.test.ts`. The setup file maps
 `server-only` to its empty module, so server files can be unit-tested with the full React build. After
 every change, also run `npx tsc --noEmit`, `npm run lint` and `npm run build`.
 
@@ -595,6 +667,34 @@ current demo passcode would stop working; documented instead), embedding a Unico
 (`@pdf-lib/fontkit` is not installed; unprintable characters are reported), OCR for scanned notes, and
 the converter host's patching and egress blocking (operational).
 
+## Insurer (PMI) record fields (10/2026)
+
+Additive contract changes for private medical insurance forms (Bupa, AXA, Aviva…):
+- **Registration paths** (`RegistrationPathSchema`, filled by code in `core/forms.ts`
+  `resolveRegistrationValue`): `patient.title`, `patient.phone`, `patient.email` (registration contact),
+  `clinic.phone`, `clinic.email` (`DEMO_CLINIC`), `referral.insurerName` (the referral's insurer, else the
+  referring insurer itself – `insurerNameOnRecord`), `referral.membershipNumber`,
+  `referral.authorisationNumber`. `ReferralSchema` gained `insurerName?`, `membershipNumber?`,
+  `authorisationNumber?`; `AppointmentSchema` gained `charge? {amount (pounds), currency "GBP", paid?}`.
+- **Insurer identifiers go only onto that insurer's own form** (`core/form-record-rules.ts`
+  `withheldInsurerIdentifier`): a membership or authorisation number is copied in only when the form's
+  referrer matches the insurer on record (`referrerNamesMatch`). On any other organisation's form – another
+  insurer, an MLC – it is left blank for staff with a `-referrer` gap (required questions), so the review
+  shows the referrer notice and "Use the referral's reference" for a form that does belong to that insurer
+  under another name. A record that does not say which insurer issued the number never copies it.
+- **Same kind of organisation:** the referral's own reference / name on a form from a different
+  organisation of the SAME type (a Bupa authorisation number on another insurer's "Policy number") is copied
+  only when the question names the referral party or says "instructing" (`mayCopyReferralPartyReference`);
+  the generic words ("policy", "insurer") fit the form's own issuer too. Different types are unchanged.
+- **Fill source `fixed`** (`{kind: "fixed", value}`): the same answer for every patient, set in the map by
+  staff ("Physiotherapist", "United Kingdom"); filled by code (`from_records`, no source IDs). A value that
+  does not fit the question (an unprinted option, "maybe" for Yes/No) is left blank with a `-fixed` gap, and
+  `checkFormDefinition` refuses to confirm a map with a missing or misfitting fixed answer. The live
+  analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` has no `fixed`).
+- **Live analysis:** the form-analysis prompt text lists the eight paths (see "Live form analysis on the RED
+  engine (S7)" below). **Not done here:** the file-import format has no insurer fields or charges. The rules classifier now maps
+  membership / authorisation / phone / e-mail / title labels to the new paths (S3 + integration).
+
 ## Demo data
 
 Fictional fixtures served by the simulated TM3 sandbox (`src/sandbox/tm3-sim/fixtures/`). Clinic:
@@ -610,6 +710,7 @@ simulated TM3's; the mapper assigns the citable `N-001`… note IDs, `A-001`… 
 | – | `sim-pat-003` | – | Aisha Rahman (registration only) | – | – | – | – |
 | – | `sim-pat-004` | – | George Whitfield (registration only) | – | – | – | – |
 | – | `sim-pat-005` | – | Chloe Bennett (registration only) | – | – | – | – |
+| `rebecca-lane` | `sim-pat-006` | `sim-ep-1006` | Mrs Rebecca Lane, DOB 23/07/1981 (45), primary school teacher | insurer – Bupa (insurer on record; fake membership `DEMO-POL-0001`, authorisation `DEMO-AUTH-0001`); GP referral, Kents Hill Medical Practice (fictional) | 5 | 7 (5 ATT, 1 CNC, 1 BOOKED) | NPRS 7→5→4, QuickDASH 52.3→38.6→29.5, PSFS 2.7→4.3→5.3 |
 
 **Case A, Megan Hart** (RTA 12/03/2026, WAD II; episode 18/03/2026–07/07/2026, discharged). Scores
 are on N-001 (18/03), N-006 (06/05) and N-010 (07/07). Planted gaps:
@@ -632,15 +733,214 @@ Both clinicians wrote notes (→ `MULTIPLE_CLINICIANS`). Disclosure consent reco
 - Planted gap: no formal lifting / functional capacity test is documented.
 - Disclosure consent recorded 09/06/2026. Both clinicians wrote notes (Sarah Reid saw him once, N-004).
 
+**Case C, Rebecca Lane** (private medical insurance; lifting her cabin case into an aircraft's overhead
+locker on 22/08/2026; right rotator cuff related shoulder pain (subacromial pain), no red flags; episode
+OPEN since 01/09/2026). All notes by Sarah Reid; scores on N-001 (01/09), N-003 (15/09) and N-005 (01/10).
+- The insurer on record is **Bupa** – the one real organisation in the fixtures, named so the demo can fill
+  Bupa's PUBLIC further-treatment form. Never imply a partnership; the membership and authorisation numbers
+  are obviously fake (`DEMO-POL-0001`, `DEMO-AUTH-0001`); `referral.reference` is the authorisation number.
+  Identifiers, phone and email are never in the referral reason or the notes, so they never reach drafting.
+- 6 sessions pre-authorised (initial assessment + 5); 5 used; the 6th is BOOKED for 15/10/2026. The latest
+  note (N-005, 01/10/2026) records the further-treatment request (4 sessions, fortnightly over 8 weeks), the
+  clinical reason, the guideline followed and the goals. CNC on 22/09/2026 with a reason.
+- Charges: initial assessment £70, follow-ups £55; all paid except the latest (01/10/2026).
+- Structured past medical history (no previous shoulder problems; hypothyroidism) in N-001.
+- Planted gap: **no prognosis recorded by any clinician** (progress, goals and plan only).
+- Data checks: `EPISODE_STILL_OPEN` (info) only. Disclosure consent recorded 01/09/2026.
+
 **Loading a bundle in a test or script** (`scripts/medreport/dev-bundles.ts`; `scripts/` may import both
 the sandbox and the module, module files may not):
 
 ```ts
 import { getDemoBundle, getDemoEpisodeData, listDemoPatients, DEMO_FETCHED_AT } from "./dev-bundles";
-const bundle = getDemoBundle("megan-hart"); // or "sim-pat-001" / "sim-ep-1001"; "daniel-brooks" for case B
+const bundle = getDemoBundle("megan-hart"); // or "sim-pat-001" / "sim-ep-1001"; "daniel-brooks" for case B, "rebecca-lane" for case C
 ```
 
 Bundles are deterministic (tenant `demo`, `fetchedAt` `2026-10-06T09:00:00.000Z`) and each call returns a
 fresh copy. Put such tests under `scripts/medreport/**/*.test.ts` so `npm run test:medreport` runs them
 with the `server-only` shim. A module test that needs a full case without importing the sandbox should
 use an inline bundle, or a JSON snapshot it owns.
+
+## Tables and flat-PDF boxes (S2, RED demo)
+
+- **Table questions** (`answerType: "table"`, answer kind `"rows"`: `[{<column key>: <cell text>}, …]`).
+  Anchors: `pdf_table` (fillable PDF – `columns: [{key, header}]`, `rows: [{<key>: <field name>}]`, top to
+  bottom) and `pdf_overlay_table` (flat PDF – `page`, `columns: [{key, header, x, width}]`, `rowTops`,
+  `rowHeight`). Fill source `appointments_table` (`columns: {<key>: date|clinician|service|clinic|amount|paid}`)
+  is resolved by code from the attended appointments (`core/form-tables.ts`; amount/paid from
+  `appointment.charge` when the clinic system sends one, else blank). Rows beyond the printed table, and rows
+  too long for its cells, are printed on the continuation sheet as a table; a cell with its choices printed in
+  it ("Yes / No") gets the chosen word circled (`forms/pdf-table.ts`). The review shows the rows under the
+  printed headers; staff can edit cells and add or remove rows (`ui/components/review/table-answer*.ts*`).
+- **Detection:** `forms/pdf-table.ts` `detectPdfFieldTables()` – two or more columns of row-numbered fields
+  (`…Row1`, `…_2`), same left edge and width, plus numbered columns that line up with every row beside them
+  (Freedom's `YESNO7…1`, numbered bottom to top); rows always by position. Post-validation
+  (`ai/form-tables.ts`) turns the cell questions of a detected table into one table question, whatever
+  proposed the map.
+- **Flat PDFs:** `forms/pdf-boxes.ts` reads the printed answer boxes and tick boxes from the page drawing
+  (`PdfFormOutline.boxes`, kind `box` / `tick` – squares up to 18 pt; `slots` between printed slashes or comb
+  cells). Rules mode proposes one question per box / tick row (`ai/form-boxes.ts`); post-validation snaps any
+  overlay onto its printed box (inset 2 pt), adds `dateSlots` (DD / MM / YYYY between the slashes) and turns
+  yes/no and choices on tick boxes into `pdf_overlay_ticks` (an X in the chosen box,
+  `forms/pdf-overlay-marks.ts`). `FormDefinition.uppercase` (set when a flat form asks for BLOCK CAPITALS)
+  prints overlay text in capitals and is part of the attested map hash when set. The live outline lists the
+  boxes ("answer boxes: …", "tick boxes: …"); on a fillable PDF it lists a table of fields (3+ rows) once
+  ("table of fields … rows=N columns=[…]") and a printed signature box no field covers (S7).
+- **Snapping (S7):** an overlay is snapped onto a printed box only when at least half of the smaller of the
+  two AND at least 40 % of the overlay lie on it – a region over unprinted lines that merely clips a box (Aviva
+  CM016's address over the e-mail line, GEN030's history table over the doctor's signature) stays where it
+  was proposed instead of taking another question's box.
+
+## RED wave 1 integration (09/10/2026)
+
+Six slices built in parallel off `demo/red-physio` and merged in this order (`git merge --no-ff`):
+S4 data/patient → S1 fillable PDFs → S2 tables + flat boxes → S3 sections + parties → S5 demo assets +
+footer → S6 copy answers + portal questions. Every exhaustive switch now covers every new anchor
+(`pdf_char_fields`, `pdf_table`, `pdf_overlay_table`, `pdf_overlay_ticks`), fill source (`fixed`,
+`appointments_table`), answer type (`table`) and form kind (`questions`). Cross-slice regression tests:
+`scripts/medreport/red-integration.test.ts`.
+
+**Integration fixes (each with a test):**
+- `formAnchorPdfFieldNames` includes a fillable table's cells: the preview highlights them, post-validation
+  orders the table by its first cell, and picking one of the table's own cells keeps the table anchor.
+- A table filled from the appointments counts as "from records" in the question breakdown; a `fixed`
+  answer on a table gives one problem, not two; `resolveFixedValue` never returns rows.
+- `core/form-tables.ts` reads the typed `AppointmentSchema.charge` (S4) – fee and paid columns fill.
+- Sections and parties (S3) reach the new answer spaces: rules mode gives flat-PDF box questions and
+  character / option groups the section printed above them; post-validation looks up `pdf_char_fields`,
+  `pdf_table`, `pdf_overlay_ticks` and `pdf_overlay_table` too.
+- `ai/form-classify.ts`: "Title (please tick)" → `patient.title` (Bupa's radio now ticks Mrs for Case C).
+- Portal question sets: "Membership number" / "Authorisation code" → `referral.membershipNumber` /
+  `referral.authorisationNumber` (withheld on another insurer's questions, as on forms).
+- `forms/pdf-acro-fill.ts` `ensureTextFieldDA`: a text field whose `/DA` sits on its widget, parent or the
+  AcroForm (Allianz Care's pre-authorisation form) no longer crashes the fill (pdf-lib's `setFontSize`
+  reads only the field's own `/DA`).
+- `fitText` never starts below 8 pt: a field asking for 6–7 pt took every answer as "too long" and sent it
+  to the continuation sheet.
+- The red DRAFT line and watermark are placed in the VISIBLE page (crop box and `/Rotate`), like the demo
+  notice: on Aviva CM016 (media box larger than the crop box) the line used to fall outside the page.
+
+**Prompt versions (decision).** The live analysis request changed with the wave 1 engine (a required
+`completedBy`, eight registration paths, new outline markers), so `FORM_ANALYSIS_PROMPT_VERSION` was bumped
+to **`form-analysis-4`** and the rules reader to **`rules-2`**. The prompt text was then rewritten for it
+(S7, below) under the same label: `form-analysis-4` was never recorded with the earlier text. Nothing recorded
+breaks: the four recorded analyses keep their own `"form-analysis-3"` stamp and are stored
+`FormDefinition`s, matched by file SHA-256 and validated by `FormDefinitionSchema`, where every new member is
+optional (pinned by a test). `forms-7` (drafting) is unchanged.
+
+**What post-validation builds whatever proposed the map** (pinned by the fake-client tests in
+`red-integration.test.ts` and `live-prompt.test.ts`): `optionLabels` (from the outline's printed labels),
+`optionFields` (from `optionAnchors` on PDF tick boxes – and from the whole tick-box group when only one of its
+boxes was proposed), `pdf_char_fields` (any box of a character group), `pdf_table` (any cell of a detected
+table), `pdf_overlay_ticks`, `dateSlots` and `ruledRows` (overlays snapped onto printed boxes) and
+`completedBy` (the outline's party wins over the proposal's). `demoNotice`, `uppercase` and `fixed` are set by
+code or staff, never by the model.
+
+### Live form analysis on the RED engine (S7, 09/10/2026, branch `red/s7-live-prompt`)
+
+**Prompt text (`ai/form-analysis.ts`, still `form-analysis-4`).** "## The input" describes every outline
+marker: `printed=[…]` option labels, `character-boxes=N`, tick-box groups, tables of fields, printed boxes with
+no field (fillable PDFs), `answer boxes:` with `slots=` / `lines=` and `tick boxes:` (flat PDFs), `section=` /
+`completedBy=`. Under fillSource: the eight new registration paths, `first_score` / `latest_score` for
+"Initial" / "Current" score boxes (never a computed figure for a choice), `appointments_table` for a table that
+lists treatments and fees, and `signoff` only in the clinic's own declaration or signature block. A new
+section 5 says who completes each part (clinic / patient or policyholder / doctor / insurer) and that another
+party's part is ALWAYS `leave_blank` – never registration, notes, opinion or sign-off; a form the clinic does
+not complete (a patient's claim form, a GP's report) is all `leave_blank` except the treatments-and-fees table.
+One question per tick-box group with EVERY box in `optionAnchors` (replaces "map the question to the 'Yes'
+box"); flat overlays are the printed box itself, a tick row one rectangle over its boxes; a table mapped once
+at its first cell; BLOCK CAPITALS needs no question; the "Other – please specify" box, the clinic's provider
+number and a scheme's number are `leave_blank`; notes and warnings never mention other readers.
+
+**Outline (`ai/form-outline.ts` `pdfOutlineSpaces`).** A fillable PDF's tick-box group (`detectOptionGroups`)
+and table of fields (`detectPdfFieldTables`, 3+ rows) are ONE line each and never split across chunks (AXA's
+therapist type was split across two chunks and mapped box by box); printed signature boxes no field covers
+(`printedSignatureBoxesOf`, the same boxes rules mode maps) are listed in reading order and named in their
+chunk's instruction ("…and in the printed box with no field at page 4 box x=… y=…"). Freedom's outline shrank
+from 14.9k to 9.5k characters (6 chunks → 4).
+
+**Schema and post-validation.** `FILL_KINDS` gained `appointments_table` (a table of fields → the table
+question filled from the appointments; anywhere else drafted from the notes, low confidence, with a note).
+Post-validation also: widens a lone box of a tick-box group to the group (a second box of the same group merges
+silently); sets `first_score` / `latest_score` from an "Initial" / "Current" label; turns a computed figure on a
+choice into `notes_narrative` (AXA's 0–10 VAS drop-down); drops a drop-down's "Please select" from the options;
+leaves blank a planned count proposed as sessions attended ("Number of sessions" under "Treatment Plan"), the
+"Other – please specify" box and numbers the record does not hold (`LabelClass.notHeld` / `plannedCount` in
+`form-classify.ts`); says "Printed box with no fillable field" (not "Flat PDF") for a fillable form's box.
+Rules mode gives the same maps as before on all 11 forms (diffed).
+
+**Live sweep (`claude-sonnet-5-5`, effort low, 09/10/2026; scratch scripts, Case C fills rendered and read for
+Bupa, AXA, Freedom and Aviva CM016).** Before = the form-analysis-3 text on the wave 1 request; after = the
+final prompt (4 rounds). "Cold" prices every prompt token as a cache write. Wrong-party sign-off: **0 on every
+form in all 5 rounds**.
+
+| Form | Before | After | Wall time | Prompt / output tokens (cold cost) |
+|---|---|---|---|---|
+| Bupa further-treatment (26 answer spaces) | 26/26, every source and party right | 26/26, every source and party right, in all 4 rounds | 18.6 → 14.1 s | 40.9k / 6.0k ($0.16) → 47.1k / 6.0k ($0.18) |
+| AXA treatment plan (32) | 31/32 – signature box missing (no field); therapist type and contact method mapped box by box (2 extra questions, 1 dropped); ADL Yes/No as opinion | 32/32, every source and party right in the last 2 rounds (before: ADL Yes/No as an opinion; once "Other – specify" from the record and the plan's "Number of sessions" as attended – both now caught in code); signature written in the printed box; one question per tick-box group | 17.2 → 15.0 s | 65.1k / 8.7k ($0.25) → 72.6k / 8.1k ($0.26) |
+| Freedom claim form (35) | every space blank, the expenses table too (the policyholder's) | expenses table filled from the appointments (fees, paid circled); the rest blank (policyholder / patient); no sign-off | 17.9 → 15.8 s | 129.1k / 17.7k ($0.50) → 85.7k / 8.9k ($0.30) |
+| Aviva CM016 (flat, 8 pages) | 55, all blank (patient / GP parts) | 54–55, all blank in 3 of 4 rounds (once patient details as the clinic's); no sign-off | 24.8 → 23.7 s | 193.1k / 13.0k ($0.61) → 203.3k / 12.7k ($0.64) |
+| Aviva GEN030 (flat, GP report) | 15; the medical attendant's questions answered as the clinic's | 14–16; all blank (the doctor's form) in the last 2 rounds, before that the patient's identity at the top as the clinic's; no sign-off | 14.1 → 14.2 s | 22.1k / 3.7k ($0.09) → 26.2k / 3.9k ($0.10) |
+| Allianz Care pre-authorisation | 68; section 2 mixed clinic / doctor | 56–60; section 2 mostly the doctor's, a few boxes the clinic's; no sign-off | 18.1 → 16.4 s | 109.6k / 18.6k ($0.46) → 121.9k / 16.4k ($0.47) |
+| Harrow & Pike / Northfield / Kingsway / Meridian / Ashcroft (samples) | 22/22, 23/23, 21/22, 17/17, 15/16 same answer spaces as the pre-confirmed maps | 22/22, 23/23, 21/22, 17/17, 14–16/16 | 9.5–12.3 → 9.7–12.4 s | about +5k prompt tokens each, same output |
+
+Remaining differences on the samples are the known ones (Kingsway's functional capacity one dotted line lower,
+as in the recordings; Northfield's diagnosis or discharge tick as an opinion in some runs; office-use boxes now
+`completedBy: insurer`; Meridian's declaration cells sometimes as their content controls; Ashcroft's estimated
+overlays a few points off where no box is printed). **Gaps:** Allianz Care still needs a hand map (split
+Day / Month / Year and phone parts read as 2-row "tables", section 2's party inconsistent); Aviva CM016's
+address rows are not detected as printed boxes, so their overlay is estimated (it now no longer takes the
+e-mail box); who completes CM016's and GEN030's patient details varies between runs (hand maps decide);
+`forms-7` (drafting) still does not describe table questions for question sets (S6).
+
+**Real insurer PDFs (rules mode, scratch smoke run, Case C):** Bupa 26 questions (title Mrs, DOB and
+declaration date in the comb boxes, membership DEMO-POL-0001, sign-off only in the therapist's
+declaration); AXA 31 (5 character-box dates, option groups, referred Yes ticked visibly); Aviva CM016 50
+box questions (section 4 is "medical practitioner" → left blank in rules mode; the hand map decides);
+GEN030 15; Freedom 35 with one 7 × 5 appointments table (fees £70 / £55, paid circled, last unpaid);
+Allianz Care 68, fills now, but its split Day / Month / Year boxes and phone parts are not grouped (S2
+reads two of them as small leave-blank "tables") and most of its fields get no party in rules mode
+(section 1 is the patient's, section 2 the doctor's) – a hand map is needed before it is shown. Rules maps still need staff checking (or the hand-made demo maps) before the call.
+
+
+## RED wave 2 integration (09/10/2026)
+
+`red/s7-live-prompt` (live form analysis, above) merged into `demo/red-physio` (`--no-ff`, no conflicts). The
+demonstration answers for Case C were prepared in parallel, in the gitignored demo-assets folder only (never
+in git): maps for all six insurer PDFs (`maps/<sampleId>.json`, `demo_prewritten`), and answers
+(`drafts/sim-pat-006__form-<sampleId>.json`, `demo_recorded`, `forms-7`, medium effort, stamped) for the three
+forms the clinic drafts on – Bupa's further-treatment form (10 drafted answers, 5 shortened or reworded by
+hand), AXA's treatment plan (12, 6 by hand) and Allianz Care's pre-authorisation (10, 3 by hand; 5 left blank
+with a gap: the notes do not hold them). Every hand edit is listed in the file's `note`. Aviva CM016, Aviva
+GEN030 and Freedom's claim form need no answers file: their maps give `planDraftGroups` nothing to draft
+(record values, the appointments table, or another party's blanks). `npm run demo:check`: 6 maps, 3 answer
+files, 6 form files, no problems. Replayed through the real demo path, every DRAFT renders with 0 fill warnings.
+
+**Assembly fixes from the live recordings (`ai/assemble.ts`, each with a test; they change no prepared answer
+for the insurer forms – only Daniel Brooks's built-in fitness-for-work report now prints "Ashby Freight Ltd
+(fictional)"):**
+- **Another insurer's name** (`core/form-record-rules.ts` `otherInsurerOnForm`, `withoutOtherInsurerName`):
+  on a form from a DIFFERENT insurer than the one on record, drafted wording says "the insurer" instead of its
+  name – the notes' "Further treatment request to Bupa" came back as "…request to Bupa…" on AXA's and Allianz
+  Care's forms in every live run. A bracketed name is dropped ("with the insurer (Bupa)"). The insurer's own
+  form, and other referrer types (solicitor, MLC), keep the name; a question that asks for the patient's
+  insurer is still answered by code (`referral.insurerName`).
+- **"(fictional)" labels** (`core/voice.ts` `fictionalNames`, `keepFictionalLabels`): a name the record itself
+  labels "(fictional)" ("Kents Hill Medical Practice (fictional)") gets the label back when a draft drops it
+  (both live AXA and Allianz Care runs did). A real record holds no such label, so nothing changes for it.
+- **Repeated bracket** (`core/voice.ts` `collapseRepeatedBrackets`, inside `expandNoteShorthand`): "8 wks (8
+  weeks)" was written out as "8 weeks (8 weeks)"; a bracket that only repeats the words before it is dropped.
+- Checked on the saved RAW live output of all wave-2 recordings (26 groups, 97 answers and gaps), re-assembled
+  with the new code: no other insurer named, no "(fictional)" missing, no repeated bracket.
+
+**Known limits of LIVE drafting on the insurer forms (the prepared answers are not affected):**
+- **Box size:** `forms-7` allows a long answer up to about 200 words and is not told how big each box is, so
+  live answers overflow on Bupa (subjective / objective / treatment boxes, 3 of 3 runs), AXA (treatment plan,
+  daily-living details) and Allianz Care (two-line boxes) and continue on the continuation sheet (the fill
+  warns). For the call, draft these forms in demo mode. Fix later: give each answer space's capacity to the
+  drafting prompt (a `forms-8` change with a live sweep).
+- Not caught by code: an event's date taken from the note that records it ("carried bags on 24/09/2026" for
+  a flare recorded then), current medication listed under "other conditions", "cuff" for rotator cuff and
+  BESS/BOA left abbreviated (not in the glossary – adding it changes both prompts' versions).
+- Replayed answers are written in the person recorded: Bupa's in the third person (no signer sent), AXA's and
+  Allianz Care's in Sarah Reid's first person (she is the default signer).

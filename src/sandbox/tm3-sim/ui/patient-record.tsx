@@ -220,6 +220,12 @@ export function PatientRecord({
                     <dd className="font-mono text-slate-800">{episode.referral.reference}</dd>
                   </div>
                 )}
+                {episode.referral.membership_number && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Membership</dt>
+                    <dd className="font-mono text-slate-800">{episode.referral.membership_number}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between gap-3">
                   <dt className="text-slate-500">Dates</dt>
                   <dd className="text-right text-slate-800">

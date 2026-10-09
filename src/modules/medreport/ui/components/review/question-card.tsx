@@ -11,11 +11,14 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
+import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, FILL_SOURCE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { Button, cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import { FlagItem, GapItem } from "./issues";
+import { TableAnswer } from "./table-answer";
+import { rowsOf } from "./table-answer-model";
 import {
   QUESTION_STATUS_META,
   answerOptions,
@@ -26,6 +29,7 @@ import {
   type QuestionStatus,
   type ReviewQuestion,
 } from "./review-model";
+import { CopyAnswerButton } from "./copy-answers";
 import { AutoTextarea, CitationChip, OriginPill, Pill, StatusDot } from "./review-ui";
 import type { ReviewAction } from "./use-review-state";
 
@@ -56,6 +60,10 @@ export interface QuestionCardProps {
   onOpenSource(id: string): void;
   canAcknowledge(flag: ReportFlag): boolean;
   onDraft?: (key: string) => void;
+  /** "Copy" this question's answer (form reports; copy-answers.tsx). Stable callback. */
+  onCopy?: (key: string) => void;
+  /** The question has an answer to copy. */
+  copyable?: boolean;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -365,7 +373,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const absence = section && !readOnly ? supersededAbsenceSentences(section) : [];
   const referrerGap = gaps.find((g) => g.id.endsWith("-referrer") && !g.resolution) ?? null;
   const referrerField =
-    field?.fillSource.kind === "registration" && (field.fillSource.path === "referral.reference" || field.fillSource.path === "referral.referrerName");
+    field?.fillSource.kind === "registration" && showsReferrerReferenceNotice(field.fillSource.path, props.referrerName ?? null, bundle);
 
   const startClinicianText = (text: string) => {
     if (!section) return;
@@ -470,8 +478,36 @@ function QuestionCardImpl(props: QuestionCardProps) {
         )}
       </div>
     );
+  } else if (structuredKind === "rows") {
+    // Table answers (S2): the rows under the printed headers; staff can correct cells and rows.
+    body = (
+      <div className="space-y-3">
+        <TableAnswer
+          questionKey={q.key}
+          label={q.label}
+          field={field}
+          rows={rowsOf(section.answer?.value)}
+          readOnly={readOnly}
+          onChange={(rows) => dispatch({ type: "setRows", key: q.key, rows, actor })}
+        />
+        {paragraphs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {props.answerEdited ? (
+              <Pill className="border-violet-200 bg-violet-50 text-violet-800">Rows changed by staff</Pill>
+            ) : (
+              <OriginPill origin="from_records" label={originLabel("from_records", connectorId)} />
+            )}
+            <span className="text-[11px] text-slate-500">{paragraphs[0].text}</span>
+            {Array.from(new Set(paragraphs.flatMap((p) => p.sourceIds))).map((id) => (
+              <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} active={props.activeSourceId === id} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
   } else if (structuredKind) {
-    const value = section.answer?.value ?? null;
+    const raw = section.answer?.value ?? null;
+    const value = Array.isArray(raw) ? null : raw;
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
     const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (
@@ -575,9 +611,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
           </h3>
           {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{q.guidance}</p>}
         </div>
-        <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
-          <StatusDot status={status} />
-          {meta.label}
+        <span className="inline-flex shrink-0 items-center gap-1.5">
+          {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}
+          <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
+            <StatusDot status={status} />
+            {meta.label}
+          </span>
         </span>
       </header>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">

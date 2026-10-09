@@ -9,7 +9,11 @@ import "server-only";
  * classification "acroform" when the PDF has fillable fields, else "flat" (best-effort overlay).
  *
  * nearbyText: the printed labels closest to the field – to its left on the same line, above it, or (for
- * tick boxes and radio buttons) just to its right – nearest first, joined with " | ".
+ * a single tick box) just to its right – nearest first, joined with " | ".
+ *
+ * optionLabels (tick boxes and radio buttons): the label printed beside each widget, aligned with the
+ * options (radio export values; a tick box's on-values when its widgets have different ones).
+ * charGroup: runs of one-character boxes (forms/pdf-widgets.ts detectCharGroups) share a group ID.
  *
  * Owner: forms-engine agent. Signature final.
  */
@@ -17,6 +21,7 @@ import {
   PDFCheckBox,
   PDFDocument,
   PDFDropdown,
+  PDFName,
   PDFOptionList,
   PDFRadioGroup,
   PDFRef,
@@ -26,8 +31,11 @@ import {
   type PDFWidgetAnnotation,
 } from "pdf-lib";
 import { HttpError } from "../api/http";
-import type { PdfFormOutline } from "../core/types";
+import type { PdfBox, PdfFormOutline } from "../core/types";
+import { extractPageBoxes } from "./pdf-boxes";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
+import { charGroupNearbyText, detectCharGroups, widgetOptionLabels, type CharCellCandidate } from "./pdf-widgets";
+import { annotatePdfSections, outlineTextItem } from "./pdf-sections";
 
 export type PdfClassification = "acroform" | "flat";
 
@@ -134,7 +142,7 @@ function nearbyText(rect: Rect, items: TextItem[], type: FieldType, widgetRects:
     .slice(0, 240);
 }
 
-async function pageTextItems(buf: Uint8Array, warnings: string[]): Promise<{ page: number; items: TextItem[] }[]> {
+async function pageTextItems(buf: Uint8Array, warnings: string[], boxes: PdfBox[]): Promise<{ page: number; items: TextItem[] }[]> {
   try {
     const pdfjs = await loadPdfjs();
     const task = pdfjs.getDocument(pdfjsDocumentParams(buf));
@@ -151,6 +159,8 @@ async function pageTextItems(buf: Uint8Array, warnings: string[]): Promise<{ pag
           items.push({ str: raw.str, x: round(e), y: round(f), w: round(raw.width), h: round(raw.height || Math.abs(d) || 8) });
         }
         pages.push({ page: n, items });
+        // The printed answer boxes and tick boxes (forms/pdf-boxes.ts).
+        boxes.push(...(await extractPageBoxes(page, n, pdfjs.OPS as unknown as Record<string, number>, items).catch(() => [])));
       }
       return pages;
     } finally {
@@ -169,10 +179,14 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   const form = doc.getForm();
   if (form.hasXFA()) warnings.push("This is an XFA (dynamic) form: only its standard fillable fields are used, and the dynamic layout is removed when it is filled.");
   const pageIndex = widgetPageIndex(doc);
-  const pageText = await pageTextItems(buf, warnings);
+  // Printed boxes (forms/pdf-boxes.ts): on a flat form they are the answer spaces; on a fillable form
+  // only the empty boxes no field covers are kept (a printed "Signature" box the form has no field for).
+  const boxes: PdfBox[] = [];
+  const pageText = await pageTextItems(buf, warnings, boxes);
   const itemsByPage = new Map(pageText.map((p) => [p.page, p.items]));
 
   const fields: PdfFormOutline["fields"] = [];
+  const charCells: CharCellCandidate[] = [];
   let signatures = 0;
   let buttons = 0;
   for (const field of form.getFields()) {
@@ -189,17 +203,49 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
     const rect = union(rects);
     let options: string[] | undefined;
     if (field instanceof PDFRadioGroup || field instanceof PDFDropdown || field instanceof PDFOptionList) options = field.getOptions();
+    // A tick box with several widgets and different on-values ("Yes" box and "no" box of one field):
+    // its on-values are its options, like a radio group's export values.
+    if (field instanceof PDFCheckBox) {
+      const onValues = widgets.map((w) => (w.getOnValue() ?? PDFName.of("Yes")).decodeText());
+      if (new Set(onValues).size > 1) options = onValues;
+    }
+    // The label printed beside each tick box / radio button, aligned with the options.
+    let optionLabels: string[] | undefined;
+    if (type === "checkbox" || type === "radio") {
+      const labels = widgetOptionLabels(
+        widgets.map((w) => ({ page: widgetPage(doc, w, pageIndex) + 1, rect: w.getRectangle() })),
+        itemsByPage,
+      );
+      const aligned = type !== "radio" || options?.length === labels.length;
+      if (aligned && labels.some(Boolean)) optionLabels = labels;
+    }
+    const name = field.getName();
+    if (field instanceof PDFTextField && widgets.length === 1 && !field.isMultiline()) charCells.push({ name, page: page + 1, rect });
     fields.push({
-      name: field.getName(),
+      name,
       type,
       page: page + 1,
       rect: { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) },
       ...(options && options.length > 0 && { options }),
-      nearbyText: nearbyText(rect, itemsByPage.get(page + 1) ?? [], type, rects),
+      // Several widgets: their own labels are in optionLabels, so the nearby text leads with the question.
+      nearbyText: nearbyText(rect, itemsByPage.get(page + 1) ?? [], type, widgets.length > 1 ? [] : rects),
+      ...(optionLabels && { optionLabels }),
     });
+  }
+  // One-character boxes (D D M M Y Y Y Y): one group ID, and the group's label as every member's nearby text.
+  for (const names of detectCharGroups(charCells)) {
+    const members = names.map((n) => fields.find((f) => f.name === n)).filter((f): f is PdfFormOutline["fields"][number] => f !== undefined);
+    const cells = names.map((n) => charCells.find((c) => c.name === n)).filter((c): c is CharCellCandidate => c !== undefined);
+    if (members.length !== names.length || cells.length !== names.length) continue;
+    const near = charGroupNearbyText(union(cells.map((c) => c.rect)), itemsByPage.get(cells[0].page) ?? []);
+    for (const m of members) {
+      m.charGroup = names[0];
+      if (near) m.nearbyText = near;
+    }
   }
   // Reading order: page, then top to bottom, then left to right.
   fields.sort((a, b) => a.page - b.page || b.rect.y + b.rect.height - (a.rect.y + a.rect.height) || a.rect.x - b.rect.x);
+  annotatePdfSections(fields, pageText); // section headings and who completes each part (forms/pdf-sections.ts)
 
   if (signatures > 0) {
     warnings.push(
@@ -211,11 +257,21 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   if (classification === "flat") {
     warnings.push("This PDF has no fillable fields. Answers are written at the positions chosen in the mapping (best effort); a Word or fillable version of the form gives the neatest result.");
   }
+  const uncovered = classification === "flat" ? boxes : boxes.filter((b) => b.kind === "box" && !fields.some((f) => f.page === b.page && covers(f.rect, b)));
   return {
     pages: doc.getPageCount(),
     fields,
-    pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(({ str, x, y }) => ({ str, x, y })) })),
+    pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(outlineTextItem) })),
+    ...((classification === "flat" || uncovered.length > 0) && { boxes: uncovered }),
     classification,
     warnings,
   };
+}
+
+/** A field's box over a printed box: they overlap by at least 30 % of the smaller one. */
+function covers(field: { x: number; y: number; width: number; height: number }, box: PdfBox): boolean {
+  const w = Math.min(field.x + field.width, box.x + box.width) - Math.max(field.x, box.x);
+  const h = Math.min(field.y + field.height, box.y + box.height) - Math.max(field.y, box.y);
+  if (w <= 0 || h <= 0) return false;
+  return w * h >= 0.3 * Math.min(field.width * field.height, box.width * box.height);
 }

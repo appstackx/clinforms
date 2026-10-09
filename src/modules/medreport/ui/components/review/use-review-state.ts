@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
-import type { Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
+import type { FormAnswerRow, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { saveReport } from "../../store";
 import {
@@ -26,6 +26,7 @@ import {
   setStructuredAnswer,
   writeInOwnVoice,
 } from "./review-model";
+import { setRowsAnswer } from "./table-answer-model";
 
 export type ReviewAction =
   | { type: "replace"; report: Report }
@@ -35,6 +36,7 @@ export type ReviewAction =
   | { type: "removeParagraph"; key: string; paragraphId: string; actor: string; silent?: boolean }
   | { type: "logEdit"; key: string; actor: string }
   | { type: "setAnswer"; key: string; value: string | boolean | null; actor: string }
+  | { type: "setRows"; key: string; rows: FormAnswerRow[]; actor: string }
   | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string; actor: string }
   | { type: "reopenGap"; gapId: string; actor: string }
   | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
@@ -80,6 +82,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
     }
     case "setAnswer":
       return setStructuredAnswer(report, action.key, action.value, action.actor);
+    case "setRows":
+      return setRowsAnswer(report, action.key, action.rows, action.actor);
     case "resolveGap":
       return resolveGap(report, action.gapId, action.kind, action.text, action.actor);
     case "reopenGap":

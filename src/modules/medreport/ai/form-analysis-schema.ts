@@ -14,10 +14,12 @@ import {
   ComputedFactFormatSchema,
   FormFieldConfidenceSchema,
   OutcomeInstrumentSchema,
+  PartySchema,
   ReferrerTypeSchema,
   RegistrationPathSchema,
   SignoffPartSchema,
 } from "../core/schemas";
+import type { Party } from "../core/types";
 
 export const ANCHOR_TARGETS = [
   "table_cell",
@@ -30,7 +32,13 @@ export const ANCHOR_TARGETS = [
   "pdf_overlay",
 ] as const;
 
-export const FILL_KINDS = ["registration", "computed_fact", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"] as const;
+/**
+ * Fill sources the analysis may propose. "appointments_table" (form-analysis-4): a table of fields that
+ * lists the treatments and fees – post-validation makes it one table question filled from the attended
+ * appointments (form-tables.ts); anywhere else it is drafted from the notes. "fixed" is never proposed: a
+ * fixed answer is set by staff.
+ */
+export const FILL_KINDS = ["registration", "computed_fact", "notes_narrative", "clinician_opinion", "signoff", "leave_blank", "appointments_table"] as const;
 
 export const FACT_ID_OPTIONS = [
   "FACT-attendance",
@@ -39,17 +47,24 @@ export const FACT_ID_OPTIONS = [
   ...OutcomeInstrumentSchema.options.map((i) => `FACT-outcomes-${i}` as const),
 ] as const;
 
+/**
+ * Answer types the analysis may propose: every type except "table" – tables are found from the layout
+ * by code (form-tables.ts). The analysis maps a table of fields once, at its first cell (fill source
+ * "appointments_table" for a list of treatments and fees), and post-validation makes it the table question.
+ */
+export const AnalysisAnswerTypeSchema = AnswerTypeSchema.exclude(["table"]);
+
 export const AnalysisOptionAnchorSchema = z.object({
   option: z.string().describe("The option exactly as printed."),
   ref: z.string().describe("Word: the block ID holding this option's ☐. Fillable PDF: the check box field name for this option."),
   glyphIndex: z.number().int().describe("Word: 0-based index of this option's ☐ among the ☐/☒ glyphs in that block. PDF: 0."),
 });
 
-export const AnalysisFieldOutputSchema = z.object({
+const AnalysisFieldOutputBaseSchema = z.object({
   label: z.string().describe("The question or label exactly as printed on the form."),
   section: z.string().describe('The form\'s own heading this question sits under, exactly as printed, or "".'),
   guidance: z.string().describe("One plain-English sentence for the clinic: what the referrer wants here."),
-  answerType: AnswerTypeSchema,
+  answerType: AnalysisAnswerTypeSchema,
   options: z.array(z.string()).describe("yes_no / single_choice / checkbox: the options exactly as printed, in order. [] otherwise."),
   anchorTarget: z.enum(ANCHOR_TARGETS),
   anchorRef: z
@@ -70,6 +85,17 @@ export const AnalysisFieldOutputSchema = z.object({
   note: z.string().describe('Short note for the staff member when something is uncertain, else "".'),
 });
 
+/**
+ * Live output: also says who fills in each answer space (multi-party insurer forms). Added after
+ * "form-analysis-3" was recorded; post-validation also works it out from the form's own headings, and an
+ * output without it (lenient) counts as "unknown".
+ */
+export const AnalysisFieldOutputSchema = AnalysisFieldOutputBaseSchema.extend({
+  completedBy: PartySchema.describe(
+    'Who fills in this answer space according to the form\'s own wording (e.g. a section "to be completed by the policyholder", or the policyholder\'s signature): clinic (the treating physiotherapist, therapist or practitioner), patient, policyholder, doctor (GP, specialist or other medical practitioner), insurer (office use), or unknown when the form does not say.',
+  ),
+});
+
 export const AnalysisOutputSchema = z.object({
   title: z.string().describe("The form's title as printed."),
   referrerName: z.string().describe('The organisation that issued the form, as printed on it, or "".'),
@@ -79,8 +105,9 @@ export const AnalysisOutputSchema = z.object({
   warnings: z.array(z.string()).describe("Plain-English caveats for the staff member reviewing the map."),
 });
 
-export type AnalysisFieldOutput = z.infer<typeof AnalysisFieldOutputSchema>;
-export type AnalysisOutput = z.infer<typeof AnalysisOutputSchema>;
+/** One proposed field (live, recorded or rules); `completedBy` is optional outside the live schema. */
+export type AnalysisFieldOutput = z.infer<typeof AnalysisFieldOutputBaseSchema> & { completedBy?: Party };
+export type AnalysisOutput = Omit<z.infer<typeof AnalysisOutputSchema>, "fields"> & { fields: AnalysisFieldOutput[] };
 
 /** Lenient version: same shape, defaults instead of failures (post-validation checks everything). */
 export const LenientAnalysisOutputSchema: z.ZodType<AnalysisOutput> = z.object({
@@ -93,7 +120,7 @@ export const LenientAnalysisOutputSchema: z.ZodType<AnalysisOutput> = z.object({
       label: z.string(),
       section: z.string().catch(""),
       guidance: z.string().catch(""),
-      answerType: AnswerTypeSchema.catch("long_text"),
+      answerType: AnalysisAnswerTypeSchema.catch("long_text"),
       options: z.array(z.string()).catch([]),
       anchorTarget: z.enum(ANCHOR_TARGETS).catch("after_paragraph"),
       anchorRef: z.string().catch(""),
@@ -108,6 +135,7 @@ export const LenientAnalysisOutputSchema: z.ZodType<AnalysisOutput> = z.object({
       required: z.boolean().catch(true),
       confidence: FormFieldConfidenceSchema.catch("low"),
       note: z.string().catch(""),
+      completedBy: PartySchema.catch("unknown"),
     }),
   ),
   warnings: z.array(z.string()).catch([]),

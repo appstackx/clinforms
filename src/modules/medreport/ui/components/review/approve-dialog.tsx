@@ -66,6 +66,8 @@ export function ApproveDialog({
 }) {
   const ids = useId();
   const isForm = Boolean(report.form);
+  // A portal question set: no file and no sign-off boxes – the answers are copied into the portal.
+  const questionSet = report.form?.kind === "questions";
   const [name, setName] = useState(defaultSigner?.name ?? "");
   const [hcpc, setHcpc] = useState(defaultSigner?.hcpc ?? "");
   const [typed, setTyped] = useState("");
@@ -178,12 +180,14 @@ export function ApproveDialog({
                   </div>
                 ) : (
                   <p className="text-[13px] text-slate-600">
-                    This form has no sign-off fields. Your approval is recorded in the server-signed receipt and the activity log.
+                    {questionSet ? "These portal questions have" : "This form has"} no sign-off fields. Your approval is recorded in the server-signed receipt
+                    and the activity log.
                   </p>
                 )}
                 <Check id={`${ids}-statement`} checked={statement} onChange={setStatement}>
-                  I confirm that the answers on this completed form are accurate to the best of my knowledge and belief, and I approve it for
-                  issue to {referrer}.
+                  {questionSet
+                    ? `I confirm that these answers are accurate to the best of my knowledge and belief, and I approve them for entry in ${referrer}'s portal.`
+                    : `I confirm that the answers on this completed form are accurate to the best of my knowledge and belief, and I approve it for issue to ${referrer}.`}
                 </Check>
               </>
             ) : (
@@ -255,8 +259,9 @@ export function ApproveDialog({
           <InlineAlert tone="info">
             <span className="inline-flex items-start gap-1.5">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and
-              the final document is the referrer&apos;s original file with the answers and your sign-off written in.
+              {questionSet
+                ? "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record."
+                : "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the answers and your sign-off written in."}
             </span>
           </InlineAlert>
 

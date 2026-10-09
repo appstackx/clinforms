@@ -37,6 +37,11 @@ export function formatDateWithDay(iso: string): string {
   return `${WEEKDAYS[day]} ${formatDate(iso)}`;
 }
 
+/** 55 → "£55.00" (amounts are in pounds). */
+export function formatGbp(amount: number): string {
+  return `£${amount.toFixed(2)}`;
+}
+
 /** ISO date-time → "06/10/2026, 14:05" in UK local time. */
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);

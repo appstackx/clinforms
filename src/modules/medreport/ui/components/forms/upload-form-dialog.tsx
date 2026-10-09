@@ -298,7 +298,7 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
   return (
     <div className="space-y-3" aria-live="polite">
       <Notice tone="success" title={`${plural(form.fields.length, "question")} found in “${form.title}”`}>
-        {form.referrer.name} · {FORM_ANALYSIS_MODE_LABELS[form.analysis.mode]}
+        {form.referrer.name} · {form.analysis.mode === "demo_prewritten" && form.demoNotice ? WORDING.labels.prewrittenDemoFormMap : FORM_ANALYSIS_MODE_LABELS[form.analysis.mode]}
         {WORDING.formReading.showModel && form.analysis.model ? ` · ${form.analysis.model}` : ""}
         {low ? ` · ${plural(low, "question")} to check` : ""}
       </Notice>

@@ -7,27 +7,53 @@
  *
  * Fictional organisation names in recorded answers can be renamed with --rename="Old=>New" (repeatable);
  * the file's note then says so.
+ *
+ * --dir=<folder> stamps the pre-written answers of the local demonstration forms instead
+ * (ai/demo-assets.ts, never in git): either the demo-assets folder itself (its drafts/ subfolder is
+ * used, e.g. --dir=demo-assets/insurers) or a folder of draft files. A file for a patient that is not a
+ * simulated TM3 demo patient is reported and left as it is (exit code 1).
  */
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { bundleNotesFingerprint } from "@/modules/medreport/ai/bundle-fingerprint";
 import { getDemoBundle } from "./dev-bundles";
 
-const DIR = path.join(process.cwd(), "src/modules/medreport/ai/demo-drafts");
+const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
+
+function draftsDir(): string {
+  const arg = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length).trim();
+  if (!arg) return path.join(process.cwd(), "src/modules/medreport/ai/demo-drafts");
+  const dir = path.resolve(process.cwd(), arg);
+  if (!isDir(dir)) {
+    console.error(`No such folder: ${dir}`);
+    process.exit(1);
+  }
+  return isDir(path.join(dir, "drafts")) ? path.join(dir, "drafts") : dir;
+}
+
+const DIR = draftsDir();
 const renames = process.argv
   .filter((a) => a.startsWith("--rename="))
   .map((a) => a.slice("--rename=".length).split("=>"))
   .filter((p): p is [string, string] => p.length === 2 && Boolean(p[0]));
 
 let changed = 0;
+let failed = 0;
 for (const name of readdirSync(DIR).filter((f) => f.endsWith(".json")).sort()) {
   const file = path.join(DIR, name);
   let text = readFileSync(file, "utf8");
   const before = text;
   for (const [from, to] of renames) text = text.split(from).join(to);
-  const json = JSON.parse(text) as Record<string, unknown>;
-  const bundle = getDemoBundle(String(json.patientId));
-  const fingerprint = bundleNotesFingerprint(bundle);
+  let json: Record<string, unknown>;
+  let fingerprint: string;
+  try {
+    json = JSON.parse(text) as Record<string, unknown>;
+    fingerprint = bundleNotesFingerprint(getDemoBundle(String(json.patientId)));
+  } catch (err) {
+    failed += 1;
+    console.error(`${name}: not stamped – ${err instanceof Error ? err.message : String(err)}`);
+    continue;
+  }
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(json)) {
     if (k === "bundleFingerprint") continue;
@@ -44,4 +70,5 @@ for (const name of readdirSync(DIR).filter((f) => f.endsWith(".json")).sort()) {
   }
   console.log(`${name}: ${fingerprint.slice(0, 12)}…`);
 }
-console.log(`${changed} file(s) updated.`);
+console.log(`${changed} file(s) updated.${failed ? ` ${failed} file(s) could not be stamped.` : ""}`);
+if (failed) process.exitCode = 1;

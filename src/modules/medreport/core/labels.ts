@@ -64,6 +64,7 @@ export const FORM_KIND_LABELS: Record<FormKind, string> = {
   docx: "Word form",
   pdf_acroform: "Fillable PDF",
   pdf_flat: "Flat PDF (best effort)",
+  questions: "Portal questions",
 };
 
 export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
@@ -78,6 +79,7 @@ export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
   clinician_name: "Clinician name",
   hcpc_number: "HCPC number",
   date_signed: "Date signed",
+  table: "Table (rows)",
 };
 
 export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
@@ -87,6 +89,8 @@ export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   clinician_opinion: "Clinician opinion – only if recorded, else for the clinician",
   signoff: "Sign-off – filled on approval",
   leave_blank: "Leave blank",
+  fixed: "Fixed answer – the same for every patient",
+  appointments_table: "From the appointment record – one row per attended session, filled by code",
 };
 
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
@@ -112,12 +116,22 @@ export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "clinician.name": "Treating clinician",
   "clinician.hcpc": "Treating clinician HCPC number",
   "clinician.profession": "Treating clinician profession",
+  "patient.title": "Patient title",
+  "patient.phone": "Patient phone number",
+  "patient.email": "Patient email address",
+  "clinic.phone": "Clinic phone number",
+  "clinic.email": "Clinic email address",
+  "referral.insurerName": "Insurer name",
+  "referral.membershipNumber": "Insurer membership number",
+  "referral.authorisationNumber": "Insurer authorisation number",
 };
 
 export const COMPUTED_FACT_FORMAT_LABELS: Record<ComputedFactFormat, string> = {
   sessions_attended: "Number of sessions attended",
   dna_count: "Number of missed appointments (DNA)",
   summary: "Summary",
+  first_score: "First recorded score (outcome measures)",
+  latest_score: "Latest recorded score (outcome measures)",
 };
 
 export const SIGNOFF_PART_LABELS: Record<SignoffPart, string> = {

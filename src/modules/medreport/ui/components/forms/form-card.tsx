@@ -3,6 +3,7 @@
 /**
  * One referrer form in the forms library grid: thumbnail of the original first page, referrer, title,
  * kind, how many questions are mapped (and where their answers come from), status and actions.
+ * A portal question set (no file) shows its first questions instead of a page thumbnail.
  *
  * Owner: studio-a agent.
  */
@@ -11,6 +12,7 @@ import { useState } from "react";
 import { Download, FilePlus2, ListChecks, Trash2 } from "lucide-react";
 import { formatUkDate } from "../../../core/dates";
 import { answerableFields } from "../../../core/forms";
+import { isQuestionSet } from "../../../core/question-set";
 import { REFERRER_TYPE_LABELS } from "../../../core/labels";
 import type { FormDefinition } from "../../../core/types";
 import { deleteForm } from "../../store";
@@ -26,10 +28,12 @@ import {
 } from "../../primitives";
 import { FormThumbnail } from "../shared/original-form-preview";
 import { FormKindBadge, FormStatusBadge, SampleBadge, questionBreakdown } from "../shared/ui-bits";
+import { QuestionSetThumbnail } from "./question-set-preview";
 import { downloadStoredFile, useFormFile } from "./use-form-file";
 
 export function FormCard({ form }: { form: FormDefinition }) {
-  const { file, loading } = useFormFile(form);
+  const questionSet = isQuestionSet(form);
+  const { file, loading } = useFormFile(questionSet ? null : form);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const b = questionBreakdown(form);
   const href = `/reports/forms/${encodeURIComponent(form.id)}`;
@@ -38,9 +42,10 @@ export function FormCard({ form }: { form: FormDefinition }) {
     <Card className="flex flex-col overflow-hidden rounded-2xl border-slate-200 shadow-sm transition-shadow hover:shadow-md">
       <Link href={href} className="group relative block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-600" aria-label={`Review the mapping of ${form.title}`}>
         <div className="h-44 overflow-hidden border-b border-slate-200 bg-slate-100 p-3">
+          {questionSet ? <QuestionSetThumbnail form={form} className="h-[220px] rounded-md shadow-sm ring-1 ring-slate-200 transition-transform group-hover:-translate-y-0.5" /> : null}
           <FormThumbnail
             file={file}
-            className="h-[220px] rounded-md shadow-sm ring-1 ring-slate-200 transition-transform group-hover:-translate-y-0.5"
+            className={questionSet ? "hidden" : "h-[220px] rounded-md shadow-sm ring-1 ring-slate-200 transition-transform group-hover:-translate-y-0.5"}
           />
           {loading ? <span className="sr-only">Loading preview</span> : null}
         </div>
@@ -54,7 +59,7 @@ export function FormCard({ form }: { form: FormDefinition }) {
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 w-7 shrink-0 px-0"
+              className={questionSet ? "hidden" : "h-7 w-7 shrink-0 px-0"}
               disabled={!file}
               onClick={() => file && downloadStoredFile(file)}
               aria-label={`Download the original ${form.title}`}

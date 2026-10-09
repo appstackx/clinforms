@@ -165,8 +165,10 @@ const FAQ: Array<{ q: string; a: ReactNode }> = [
     q: "Some referrers use an online portal instead of a form. Can it help?",
     a: (
       <>
-        Not yet. ClinForms completes referrers&rsquo; own Word and PDF forms. Help with online portals is something we
-        are looking at &ndash; tell us which portals you use.
+        Yes. Paste or type the portal&rsquo;s questions once and ClinForms keeps them like any other form. For each
+        patient the answers are drafted from the notes with their sources and approved by your clinician; you then copy
+        each answer, or all of them at once, into the portal, and download a PDF summary of the questions and approved
+        answers for your records.
       </>
     ),
   },

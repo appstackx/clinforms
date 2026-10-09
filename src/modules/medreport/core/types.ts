@@ -109,6 +109,7 @@ export type PdfFieldType = z.infer<typeof S.PdfFieldTypeSchema>;
 export type RegistrationPath = z.infer<typeof S.RegistrationPathSchema>;
 export type ComputedFactFormat = z.infer<typeof S.ComputedFactFormatSchema>;
 export type SignoffPart = z.infer<typeof S.SignoffPartSchema>;
+export type Party = z.infer<typeof S.PartySchema>;
 export type FormAnswer = z.infer<typeof S.FormAnswerSchema>;
 export type ReportFormRef = z.infer<typeof S.ReportFormRefSchema>;
 export type FormFile = z.infer<typeof S.FormFileSchema>;
@@ -117,6 +118,9 @@ export type OptionGlyph = z.infer<typeof S.OptionGlyphSchema>;
 export type DocxAnchor = z.infer<typeof S.DocxAnchorSchema>;
 export type PdfFieldAnchor = z.infer<typeof S.PdfFieldAnchorSchema>;
 export type PdfOverlayAnchor = z.infer<typeof S.PdfOverlayAnchorSchema>;
+export type PdfOptionField = z.infer<typeof S.PdfOptionFieldSchema>;
+export type PdfCharFormat = z.infer<typeof S.PdfCharFormatSchema>;
+export type PdfCharFieldsAnchor = z.infer<typeof S.PdfCharFieldsAnchorSchema>;
 export type FormAnchor = z.infer<typeof S.FormAnchorSchema>;
 export type FillSource = z.infer<typeof S.FillSourceSchema>;
 export type FillSourceKind = FillSource["kind"];
@@ -126,6 +130,15 @@ export type FormDefinition = z.infer<typeof S.FormDefinitionSchema>;
 export type OutlineBlock = z.infer<typeof S.OutlineBlockSchema>;
 export type PdfOutlineField = z.infer<typeof S.PdfOutlineFieldSchema>;
 export type PdfFormOutline = z.infer<typeof S.PdfFormOutlineSchema>;
+
+/* Tables, tick boxes and flat-PDF boxes (S2, additive) */
+export type FormAnswerRow = z.infer<typeof S.FormAnswerRowSchema>;
+export type FormTableColumn = z.infer<typeof S.FormTableColumnSchema>;
+export type PdfTableAnchor = z.infer<typeof S.PdfTableAnchorSchema>;
+export type PdfOverlayTableAnchor = z.infer<typeof S.PdfOverlayTableAnchorSchema>;
+export type PdfOverlayTicksAnchor = z.infer<typeof S.PdfOverlayTicksAnchorSchema>;
+export type AppointmentColumn = z.infer<typeof S.AppointmentColumnSchema>;
+export type PdfBox = z.infer<typeof S.PdfBoxSchema>;
 
 /* AI output for referrer forms (Revision 2, added by the ai agent – additive) */
 export type FormDraftAnswerOutput = z.infer<typeof S.FormDraftAnswerOutputSchema>;
