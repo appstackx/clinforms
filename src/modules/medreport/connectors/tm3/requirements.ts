@@ -48,6 +48,11 @@ export const TM3_REQUIREMENTS: readonly ConnectorRequirement[] = [
     required: true,
   },
   {
+    title: "Insurer details and charges",
+    detail: "For private medical insurance forms: the patient's title and contact details, the insurer on the episode with the membership and pre-authorisation numbers, and each appointment's charge and whether it has been paid.",
+    required: false,
+  },
+  {
     title: "Document upload",
     detail: "An endpoint to file the signed report (PDF or Word) against the patient's record, returning a document ID.",
     required: false,

@@ -11,6 +11,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
+import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, FILL_SOURCE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { Button, cn } from "../../primitives";
@@ -365,7 +366,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const absence = section && !readOnly ? supersededAbsenceSentences(section) : [];
   const referrerGap = gaps.find((g) => g.id.endsWith("-referrer") && !g.resolution) ?? null;
   const referrerField =
-    field?.fillSource.kind === "registration" && (field.fillSource.path === "referral.reference" || field.fillSource.path === "referral.referrerName");
+    field?.fillSource.kind === "registration" && showsReferrerReferenceNotice(field.fillSource.path, props.referrerName ?? null, bundle);
 
   const startClinicianText = (text: string) => {
     if (!section) return;

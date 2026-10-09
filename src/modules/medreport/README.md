@@ -13,8 +13,10 @@ remain as the fallback when a referrer sends no form. See "Revision 2 – referr
 - **Demo scaffolding, not the product:** the simulated clinic system at `/pms-sandbox` and
   `/api/tm3-sim/v1` (`src/sandbox/tm3-sim`). It is always labelled
   "Simulated TM3 sandbox – demo data, not affiliated with TM3".
-- **Fictional data only.** Organisations end with "(fictional)". HCPC numbers use the invalid demo
-  format `PH-DEMO-01`. Reports are stored in the browser only (demo-grade).
+- **Fictional data only.** Organisations end with "(fictional)" – the one exception is the insurer on the
+  private medical insurance demo patient's record (Bupa), named only so its public form can be filled,
+  with fake numbers (see "Demo data"). HCPC numbers use the invalid demo format `PH-DEMO-01`. Reports are
+  stored in the browser only (demo-grade).
 - **Standalone app.** This module, the sandbox and their thin `src/app` routes are the whole app
   (`/` redirects to `/reports`). It was extracted from its original host repo (see the root
   `README.md`); the host design system is only `src/components/ui/*` and `src/lib/utils.ts` (reached
@@ -35,6 +37,7 @@ src/modules/medreport/
     fingerprint.ts        canonical JSON + SHA-256 (WebCrypto)
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
     forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
+    form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
     voice.ts              first-person rewrite, note shorthand expansion, job-title casing (pure)
     computed-facts.ts     FACT-attendance / -age / -episode / -outcomes-*
     scope.ts              template scope: strip fields before drafting
@@ -342,7 +345,9 @@ needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **Ne
 Every call needs `Authorization: Bearer TM3_SIM_TOKEN` (401 otherwise). Every response carries
 `X-Simulated: true` and `_simulated: true`. Lists are paged with `?page=&page_size=`. Payloads are
 snake_case: see `connectors/tm3-sim/wire.ts` (the module side) and `src/sandbox/tm3-sim/wire-types.ts`
-(the sandbox side). These shapes are our assumption, not TM3's schema.
+(the sandbox side). These shapes are our assumption, not TM3's schema. Optional since 10/2026 (private
+medical insurance): `referral.insurer_name`, `referral.membership_number`, `referral.authorisation_number`
+and `appointment.charge {amount (pounds), currency "GBP", paid}`; absent on the earlier cases.
 
 | Method | Path | Handler export |
 |---|---|---|
@@ -364,7 +369,8 @@ tenantId)`. The app glue builds them, so the module never imports the sandbox.
 ## Testing
 
 `npm run test:medreport` runs `node --import ./scripts/medreport/test-setup.mjs --import tsx --test`
-over `src/modules/medreport/**/*.test.ts` and `scripts/medreport/**/*.test.ts`. The setup file maps
+over `src/modules/medreport/**/*.test.ts`, `scripts/medreport/**/*.test.ts` and (since 10/2026) the
+simulated TM3 sandbox's own tests, `src/sandbox/**/*.test.ts`. The setup file maps
 `server-only` to its empty module, so server files can be unit-tested with the full React build. After
 every change, also run `npx tsc --noEmit`, `npm run lint` and `npm run build`.
 
@@ -594,6 +600,36 @@ current demo passcode would stop working; documented instead), embedding a Unico
 (`@pdf-lib/fontkit` is not installed; unprintable characters are reported), OCR for scanned notes, and
 the converter host's patching and egress blocking (operational).
 
+## Insurer (PMI) record fields (10/2026)
+
+Additive contract changes for private medical insurance forms (Bupa, AXA, Aviva…):
+- **Registration paths** (`RegistrationPathSchema`, filled by code in `core/forms.ts`
+  `resolveRegistrationValue`): `patient.title`, `patient.phone`, `patient.email` (registration contact),
+  `clinic.phone`, `clinic.email` (`DEMO_CLINIC`), `referral.insurerName` (the referral's insurer, else the
+  referring insurer itself – `insurerNameOnRecord`), `referral.membershipNumber`,
+  `referral.authorisationNumber`. `ReferralSchema` gained `insurerName?`, `membershipNumber?`,
+  `authorisationNumber?`; `AppointmentSchema` gained `charge? {amount (pounds), currency "GBP", paid?}`.
+- **Insurer identifiers go only onto that insurer's own form** (`core/form-record-rules.ts`
+  `withheldInsurerIdentifier`): a membership or authorisation number is copied in only when the form's
+  referrer matches the insurer on record (`referrerNamesMatch`). On any other organisation's form – another
+  insurer, an MLC – it is left blank for staff with a `-referrer` gap (required questions), so the review
+  shows the referrer notice and "Use the referral's reference" for a form that does belong to that insurer
+  under another name. A record that does not say which insurer issued the number never copies it.
+- **Same kind of organisation:** the referral's own reference / name on a form from a different
+  organisation of the SAME type (a Bupa authorisation number on another insurer's "Policy number") is copied
+  only when the question names the referral party or says "instructing" (`mayCopyReferralPartyReference`);
+  the generic words ("policy", "insurer") fit the form's own issuer too. Different types are unchanged.
+- **Fill source `fixed`** (`{kind: "fixed", value}`): the same answer for every patient, set in the map by
+  staff ("Physiotherapist", "United Kingdom"); filled by code (`from_records`, no source IDs). A value that
+  does not fit the question (an unprinted option, "maybe" for Yes/No) is left blank with a `-fixed` gap, and
+  `checkFormDefinition` refuses to confirm a map with a missing or misfitting fixed answer. The live
+  analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` is unchanged).
+- **Not done here (integrator):** the form-analysis prompt text (`ai/form-analysis.ts`, `form-analysis-3`)
+  still lists only the earlier paths, although its output enum is built from `RegistrationPathSchema` and so
+  already accepts the new ones – describe them there and bump `FORM_ANALYSIS_PROMPT_VERSION`; the rules
+  classifier (`ai/form-classify.ts`) still sends membership / authorisation / phone / email labels to
+  drafting; the file-import format has no insurer fields or charges.
+
 ## Demo data
 
 Fictional fixtures served by the simulated TM3 sandbox (`src/sandbox/tm3-sim/fixtures/`). Clinic:
@@ -609,6 +645,7 @@ simulated TM3's; the mapper assigns the citable `N-001`… note IDs, `A-001`… 
 | – | `sim-pat-003` | – | Aisha Rahman (registration only) | – | – | – | – |
 | – | `sim-pat-004` | – | George Whitfield (registration only) | – | – | – | – |
 | – | `sim-pat-005` | – | Chloe Bennett (registration only) | – | – | – | – |
+| `rebecca-lane` | `sim-pat-006` | `sim-ep-1006` | Mrs Rebecca Lane, DOB 23/07/1981 (45), primary school teacher | insurer – Bupa (insurer on record; fake membership `DEMO-POL-0001`, authorisation `DEMO-AUTH-0001`); GP referral, Kents Hill Medical Practice (fictional) | 5 | 7 (5 ATT, 1 CNC, 1 BOOKED) | NPRS 7→5→4, QuickDASH 52.3→38.6→29.5, PSFS 2.7→4.3→5.3 |
 
 **Case A, Megan Hart** (RTA 12/03/2026, WAD II; episode 18/03/2026–07/07/2026, discharged). Scores
 are on N-001 (18/03), N-006 (06/05) and N-010 (07/07). Planted gaps:
@@ -631,12 +668,27 @@ Both clinicians wrote notes (→ `MULTIPLE_CLINICIANS`). Disclosure consent reco
 - Planted gap: no formal lifting / functional capacity test is documented.
 - Disclosure consent recorded 09/06/2026. Both clinicians wrote notes (Sarah Reid saw him once, N-004).
 
+**Case C, Rebecca Lane** (private medical insurance; lifting her cabin case into an aircraft's overhead
+locker on 22/08/2026; right rotator cuff related shoulder pain (subacromial pain), no red flags; episode
+OPEN since 01/09/2026). All notes by Sarah Reid; scores on N-001 (01/09), N-003 (15/09) and N-005 (01/10).
+- The insurer on record is **Bupa** – the one real organisation in the fixtures, named so the demo can fill
+  Bupa's PUBLIC further-treatment form. Never imply a partnership; the membership and authorisation numbers
+  are obviously fake (`DEMO-POL-0001`, `DEMO-AUTH-0001`); `referral.reference` is the authorisation number.
+  Identifiers, phone and email are never in the referral reason or the notes, so they never reach drafting.
+- 6 sessions pre-authorised (initial assessment + 5); 5 used; the 6th is BOOKED for 15/10/2026. The latest
+  note (N-005, 01/10/2026) records the further-treatment request (4 sessions, fortnightly over 8 weeks), the
+  clinical reason, the guideline followed and the goals. CNC on 22/09/2026 with a reason.
+- Charges: initial assessment £70, follow-ups £55; all paid except the latest (01/10/2026).
+- Structured past medical history (no previous shoulder problems; hypothyroidism) in N-001.
+- Planted gap: **no prognosis recorded by any clinician** (progress, goals and plan only).
+- Data checks: `EPISODE_STILL_OPEN` (info) only. Disclosure consent recorded 01/09/2026.
+
 **Loading a bundle in a test or script** (`scripts/medreport/dev-bundles.ts`; `scripts/` may import both
 the sandbox and the module, module files may not):
 
 ```ts
 import { getDemoBundle, getDemoEpisodeData, listDemoPatients, DEMO_FETCHED_AT } from "./dev-bundles";
-const bundle = getDemoBundle("megan-hart"); // or "sim-pat-001" / "sim-ep-1001"; "daniel-brooks" for case B
+const bundle = getDemoBundle("megan-hart"); // or "sim-pat-001" / "sim-ep-1001"; "daniel-brooks" for case B, "rebecca-lane" for case C
 ```
 
 Bundles are deterministic (tenant `demo`, `fetchedAt` `2026-10-06T09:00:00.000Z`) and each call returns a

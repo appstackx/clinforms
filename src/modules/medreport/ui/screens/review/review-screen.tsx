@@ -19,6 +19,7 @@ import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
+import { referralValueForPath } from "../../../core/form-record-rules";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { getTemplate } from "../../../templates/registry";
@@ -605,15 +606,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   readOnly={signed}
                   answerEdited={editedAnswers.has(q.key)}
                   answeredByPerson={personAnswered.has(q.key)}
-                  referralValue={
-                    q.field?.fillSource.kind === "registration"
-                      ? q.field.fillSource.path === "referral.reference"
-                        ? report.instructingParty.reference ?? null
-                        : q.field.fillSource.path === "referral.referrerName"
-                          ? report.instructingParty.name
-                          : null
-                      : null
-                  }
+                  referralValue={q.field?.fillSource.kind === "registration" ? referralValueForPath(q.field.fillSource.path, report) : null}
                   receipt={report.receipt}
                   activeSourceId={activeSourceId}
                   drafting={actions.draftingKeys.has(q.key)}

@@ -55,6 +55,17 @@ export const SimReferralSchema = z.object({
   address: z.string().nullable(),
   referral_date: IsoDate.nullable(),
   reason: z.string().nullable(),
+  /** Private medical insurance (optional): the patient's insurer, membership and pre-authorisation numbers. */
+  insurer_name: z.string().nullable().optional(),
+  membership_number: z.string().nullable().optional(),
+  authorisation_number: z.string().nullable().optional(),
+});
+
+/** Appointment charge (optional). `amount` is in pounds (GBP major units, e.g. 55 = £55.00). */
+export const SimChargeSchema = z.object({
+  amount: z.number().nonnegative(),
+  currency: z.literal("GBP"),
+  paid: z.boolean(),
 });
 
 export const SimIncidentSchema = z.object({
@@ -108,6 +119,7 @@ export const SimAppointmentSchema = z.object({
   status_reason: z.string().nullable(),
   clinician: SimClinicianSchema,
   note_id: z.string().nullable(),
+  charge: SimChargeSchema.nullable().optional(),
   _simulated: Simulated,
 });
 
@@ -187,6 +199,7 @@ export type SimIncident = z.infer<typeof SimIncidentSchema>;
 export type SimEpisode = z.infer<typeof SimEpisodeSchema>;
 export type SimNote = z.infer<typeof SimNoteSchema>;
 export type SimAppointment = z.infer<typeof SimAppointmentSchema>;
+export type SimCharge = z.infer<typeof SimChargeSchema>;
 export type SimOutcomeMeasure = z.infer<typeof SimOutcomeMeasureSchema>;
 export type SimPage<T> = {
   data: T[];
