@@ -1,0 +1,39 @@
+// ClinForms data gateway – an authenticated SQL gateway in front of Cloudflare D1.
+// Contract: docs/production-architecture.md §2. Runbook: docs/database.md.
+//   production: `npx wrangler deploy`                → clinforms-data          (D1 clinforms-prod)
+//   preview:    `npx wrangler deploy --env preview`  → clinforms-data-preview  (D1 clinforms-preview)
+// Secret per environment: GATEWAY_SECRET (`npx wrangler secret put GATEWAY_SECRET [--env preview]`).
+// Always export CLOUDFLARE_ACCOUNT_ID=a04ab546d0f1be2aa339bafebcdb3ffa (account appstackx-demos).
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "clinforms-data",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-20",
+  "account_id": "a04ab546d0f1be2aa339bafebcdb3ffa",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "clinforms-prod",
+      "database_id": "c1a631fe-9cf0-414d-ab2f-28f7291282e3",
+      "migrations_dir": "../../db/migrations/sqlite"
+    }
+  ],
+  "env": {
+    "preview": {
+      "name": "clinforms-data-preview",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "clinforms-preview",
+          "database_id": "3a548cc6-45d9-4dc5-b308-23a75534dcc9",
+          "migrations_dir": "../../db/migrations/sqlite"
+        }
+      ]
+    }
+  }
+}

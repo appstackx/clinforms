@@ -9,9 +9,17 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:medreport": "node --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/modules/medreport/**/*.test.ts\" \"scripts/medreport/**/*.test.ts\"",
+    "test:db": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"db/**/*.test.ts\" \"src/server/**/*.test.ts\" \"scripts/db/**/*.test.ts\"",
+    "test:gateway": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"workers/data-gateway/test/**/*.test.ts\"",
     "medreport:templates": "tsx scripts/medreport/build-templates.mjs",
     "medreport:forms": "node scripts/medreport/build-demo-forms.mjs",
-    "medreport:eslint-boundary": "node scripts/medreport/gen-eslint-boundary.mjs"
+    "medreport:eslint-boundary": "node scripts/medreport/gen-eslint-boundary.mjs",
+    "db:migrate": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/migrate.ts",
+    "db:selftest": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/selftest-gateway.ts",
+    "db:provision-gateway": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/provision-gateway-secrets.ts",
+    "db:provision-supabase": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/provision-supabase.ts",
+    "db:copy-to-postgres": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/copy-d1-to-postgres.ts",
+    "typecheck:gateway": "tsc -p workers/data-gateway/tsconfig.json && tsc -p workers/data-gateway/test/tsconfig.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",
@@ -27,10 +35,12 @@
     "clsx": "^2.1.0",
     "docx-preview": "0.4.1",
     "docxtemplater": "3.71.0",
+    "kysely": "0.29.6",
     "lucide-react": "^0.363.0",
     "next": "^14.2.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.4.299",
+    "pg": "8.23.0",
     "pizzip": "3.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -40,7 +50,9 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@types/node": "^20.19.39",
+    "@types/pg": "8.23.1",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.27",
@@ -51,5 +63,10 @@
     "tailwindcss": "^3.4.0",
     "tsx": "4.23.15",
     "typescript": "^5.0.0"
+  },
+  "overrides": {
+    "pg-protocol": "1.16.0",
+    "pg-connection-string": "2.14.0",
+    "pg-cloudflare": "1.4.0"
   }
 }

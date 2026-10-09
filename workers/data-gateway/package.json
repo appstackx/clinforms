@@ -1,0 +1,19 @@
+{
+  "name": "clinforms-data-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ClinForms data gateway: an authenticated SQL gateway Worker in front of Cloudflare D1.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "deploy:preview": "wrangler deploy --env preview",
+    "deploy:production": "wrangler deploy",
+    "migrate:preview": "wrangler d1 migrations apply clinforms-preview --remote --env preview",
+    "migrate:production": "wrangler d1 migrations apply clinforms-prod --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260924.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.139.0"
+  }
+}

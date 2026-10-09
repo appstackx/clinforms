@@ -16,6 +16,11 @@ const LIB = { group: ["@/lib", "@/lib/*"], message: "The medreport module may no
 const COMPONENTS = { group: ["@/components", "@/components/*"], message: "Import host UI components only via src/modules/medreport/ui/primitives.ts." };
 const SANDBOX = { group: ["@/sandbox", "@/sandbox/*", "**/sandbox/*"], message: "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)." };
 const APP = { group: ["@/app", "@/app/*"], message: "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks." };
+// Production data layer (src/server: database, encryption, repositories) is host code: the module receives
+// what it needs through MedreportDeps / HostHooks (docs/production-architecture.md §0).
+const SERVER = { group: ["@/server", "@/server/*"], message: "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks." };
+// The data gateway Worker (workers/) is deployed separately; the Next app never imports its code.
+const WORKERS = { group: ["**/workers/*", "**/workers/**"], message: "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)." };
 const escape = (d) => ({
   group: ["../".repeat(d + 1) + "*"],
   message: "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts).",
@@ -33,6 +38,11 @@ const CLIENT_UNSAFE = {
     "@react-pdf/*",
     "@xmldom/xmldom",
     "pdf-lib",
+    "kysely",
+    "kysely/*",
+    "pg",
+    "@electric-sql/pglite",
+    "@electric-sql/pglite/*",
   ],
   message:
     "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
@@ -58,10 +68,13 @@ const PDFJS_BROWSER_ENTRIES = {
 };
 const PDFJS_BARE_PATH = { name: "pdfjs-dist", message: PDFJS_BROWSER_MESSAGE };
 const rule = (patterns, paths) => ({ "no-restricted-imports": ["error", paths ? { paths, patterns } : { patterns }] });
-const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, escape(d)];
+const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, escape(d)];
 const base = (d) => [...core(d), DOCX_PREVIEW, PDFJS];
 
 const overrides = [];
+// 0. All app code: no imports of the Worker. (Listed first: the module and sandbox overrides below replace
+//    this rule's options for their files and carry their own escape / WORKERS patterns.)
+overrides.push({ files: [`src/**/*.${ext}`], rules: rule([WORKERS]) });
 // 1. Every module file, by depth below src/modules/medreport.
 for (let d = 0; d <= MAX_DEPTH; d++) {
   overrides.push({ files: [`${M}/${"*/".repeat(d)}*.${ext}`], rules: rule(base(d)) });
@@ -94,6 +107,7 @@ overrides.push({
     { group: ["@/components/*", "!@/components/ui"], message: "ui/primitives.ts may re-export only @/components/ui/*." },
     SANDBOX,
     APP,
+    SERVER,
     escape(1),
     CLIENT_UNSAFE,
   ]),
@@ -106,6 +120,7 @@ overrides.push({
       group: ["@/modules", "@/modules/*", "**/modules/*"],
       message: "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP.",
     },
+    WORKERS,
   ]),
 });
 
