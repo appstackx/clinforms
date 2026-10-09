@@ -261,6 +261,8 @@ export interface AccessRequestsTable {
   phone: string | null;
   message: string | null;
   created_at: IsoTimestamp;
+  /** When ClinForms staff marked the request as contacted (migration 0004); null = not yet. */
+  contacted_at: IsoTimestamp | null;
 }
 
 export interface Database {

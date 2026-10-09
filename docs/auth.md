@@ -48,6 +48,8 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 | `/app/settings/members` | member (manage: owner/admin) | Invite (email + role; link shown when email is off), open invitations (copy link, cancel), role changes, signing details (job title, HCPC number – format check only, "may sign"), reset links, removal |
 | `/app/settings/security` | member | Two-step status, new backup codes (password), **Support** contact for a lost phone and backup codes, signed-in devices (sign one out, or all others) |
 | `/app/settings/api-keys` | owner/admin | Partner API keys: create (shown once), list (last 4 characters), revoke. **No connection uses them yet** |
+| `/app/settings/activity` | member (whole clinic: owner/admin) | The audit trail, newest first, 50 per page (cursor: Older / Newer), filter by action and (owners/administrators) by person; clinicians and staff see only their own entries, whatever the URL asks. **Download these entries (CSV)** = exactly the entries on the page (`from`/`to` ids, inclusive), columns `id, at, action, user_id, target_type, target_id` only; each download is audited (`audit.export`). Labels: `src/lib/activity-copy.ts` |
+| `/app/platform` | ClinForms staff (`CLINFORMS_PLATFORM_ADMINS`, two-step on) | **404 for everyone else.** Create a clinic + owner invitation (the same `createClinic()` as the script; link shown once), access requests newest first (mark as contacted / undo), clinics (id, created, members, open invitations, last recorded activity, closed), the last 20 platform actions. Every action is audited under the pseudo-tenant `platform` (reserved, never a clinic id) with the administrator's user and session ids; `clinic.create` is also written under the new clinic |
 | `/app/select-clinic` | signed in | Pick a clinic when a member of several; open invitations; "no clinic" message |
 | `/api/auth/*` | – | Better Auth's HTTP API (switched-off paths: sign-up, two-step disable, organization create/update/delete/check-slug, delete-user, change-email) |
 
@@ -62,7 +64,7 @@ All of them are `noindex`. Copy is neutral (no technology or vendor names) and i
 | Invite, change roles, remove members, signing details, reset links | ✓ | ✓ (not owners) | – | – |
 | Make someone an owner / change an owner | ✓ | – | – | – |
 | API keys | ✓ | ✓ | – | – |
-| Read the audit trail (wave 2 page) | ✓ | ✓ | – | – |
+| Read the audit trail (Settings → Activity) | ✓ (whole clinic) | ✓ (whole clinic) | own entries | own entries |
 | Complete forms (wave 2) | ✓ | ✓ | ✓ | ✓ |
 | Sign (approve) forms (wave 2) – also needs "may sign" + HCPC number | ✓ | ✓ | ✓ | – |
 
@@ -77,7 +79,7 @@ built-in `member` role is not a ClinForms role and is refused.
 | `BETTER_AUTH_URL` | Production: `https://clinforms.co.uk` (required there). **Previews: unset on purpose** – the base URL then comes from the request, but only when its host is one of the deployment's own Vercel hostnames (`VERCEL_URL`, `VERCEL_BRANCH_URL`); any other host falls back to the branch URL, so a forged Host header can never end up in a link. Local: default `http://localhost:$PORT` |
 | `CLINFORMS_EMAIL_PROVIDER` | `none` (default) \| `mailersend` \| `log` (development only; treated as `none` on production) |
 | `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` | For `mailersend` (same service as the owner's other apps). Sender name "ClinForms". `CLINFORMS_EMAIL_FROM` is accepted as a fallback for the from address |
-| `CLINFORMS_PLATFORM_ADMINS` | Comma-separated emails allowed into a future platform-admin page (`isPlatformAdmin()`); there is no such page in this wave |
+| `CLINFORMS_PLATFORM_ADMINS` | Comma-separated emails of ClinForms staff allowed into `/app/platform` (`isPlatformAdmin()`; the account also needs two-step verification). An account for a listed address can only be created from a **platform** invitation (§5 "Platform page") |
 
 Provisioning (values generated with node crypto, written to the secrets file first, piped to Vercel on stdin, never
 printed): `npm run admin:provision-auth -- --env preview` (done 09/10/2026) and, for production,
@@ -117,6 +119,18 @@ signs in and accepts; everyone else creates their account from the link and sets
    `auth.two_factor_reset`.
 3. At their next sign-in (password only) they must set two-step verification up again before anything else.
 
+### Platform page (`/app/platform`)
+1. **Bootstrap your own account from a platform invitation:** `npm run admin:create-clinic -- --env <env> … --owner-email <you>`
+   (or have an existing platform administrator create a clinic for you on the page), open the link, set up two-step
+   verification. Then add the address to `CLINFORMS_PLATFORM_ADMINS` (Vercel env, redeploy).
+2. Open `/app/platform` (no link in the clinic area – type it). Everyone else gets the 404 page; actions re-check on every call.
+3. **Why the account must come from a platform invitation:** while email is off, a clinic administrator is shown the
+   invitation links they create. The app therefore refuses (a) clinic invitations to a listed address that has no account
+   yet (`PLATFORM_ADMIN_ADDRESS`) and (b) creating an account for a listed address while any open invitation for it
+   comes from a clinic (`PLATFORM_INVITATION_REQUIRED`) – `src/server/auth/create-auth.ts`, tested in
+   `src/server/auth/platform-admin-identity.test.ts`. **Only list an address whose account you created this way** (an
+   account that already existed under that address may have come from a clinic's invitation).
+
 ### List clinics
 `npm run admin:list-clinics -- --env production`
 
@@ -151,7 +165,8 @@ a session to such an account only after the second factor, and turning it on rev
 
 | Command | What |
 |---|---|
-| `npm run test:auth` | The identity flows on node:sqlite and PGlite (invite → accept → two-step with a TOTP computed in the test → sign in → second factor, backup codes, roles and permissions, slug rules, password reset, session expiry, audit rows, offboarding, two-step reset); migration 0002 completeness; config, email, middleware, admin CLI helpers, neutral wording. Also run by `npm run test:db` |
+| `npm run test:auth` | The identity flows on node:sqlite and PGlite (invite → accept → two-step with a TOTP computed in the test → sign in → second factor, backup codes, roles and permissions, slug rules, password reset, session expiry, audit rows, offboarding, two-step reset); migration 0002 completeness; config, email, middleware, admin CLI helpers, neutral wording; platform administrator addresses (`platform-admin-identity.test.ts`). Also run by `npm run test:db` |
+| `npm run test:db` (`src/server/admin/admin.test.ts`) | Activity and platform pages: scope by role, cursor paging both ways with filters, the download's exact range, names, access requests, clinic creation and overview (node:sqlite, PGlite; D1 stand-in and real local D1 in `test:gateway`), the platform gate, wording, and source checks that every page/route/action applies its guard |
 | `npm run test:gateway` | The same identity flows through the D1 dialect → gateway Worker → a D1 stand-in **and real local D1** (wrangler-applied migrations) |
 | `scripts/e2e/auth-flow.cjs` | Browser run (Playwright): invitation → account → two-step → every settings page → sign out/in with a code and with a backup code → demo still opens |
 | `src/server/auth/studio-access.test.ts` (in `test:auth`) | The tenant Studio's guard on real Better Auth: no session → `/login?next=/app/studio…`, no two-step → `/two-factor`, then the clinic and member context (signing details, drafting switch); signed out → `/login` again; the middleware's `/app/studio` redirect |
@@ -172,4 +187,4 @@ the security review, `--release-slug` is refused for a clinic with audit rows an
   half-created account would block re-using that invitation; fix by hand (delete the `user` row).
 - HCPC numbers are format-checked only (not looked up on the register).
 - Email is off until a MailerSend key is set: until then invitation and reset links travel by hand.
-- No platform-admin web page yet (scripts only); `CLINFORMS_PLATFORM_ADMINS` is ready for it.
+- The platform page creates clinics and handles access requests; offboarding and two-step resets stay script-only.

@@ -40,6 +40,7 @@ const TIMESTAMP_COLUMNS = new Set([
   "revoked_at",
   "expires_at",
   "window_start",
+  "contacted_at",
   "createdAt",
   "updatedAt",
   "expiresAt",

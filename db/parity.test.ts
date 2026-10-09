@@ -124,6 +124,18 @@ async function postgresConstraints(pglite: PGlite): Promise<Map<string, Constrai
   return out;
 }
 
+/** A migration file that is one `ALTER TABLE … ADD COLUMN …` statement and comments, nothing else. */
+function isLoneAddColumn(sql: string): boolean {
+  const statements = sql
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return statements.length === 1 && /^ALTER\s+TABLE\s+\S+\s+ADD\s+(COLUMN\s+)?\S+\s+\S+/i.test(statements[0]);
+}
+
 function asObject(shape: Shape): Record<string, string[]> {
   return Object.fromEntries(Array.from(shape.entries()).sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -204,12 +216,39 @@ describe("migration parity (SQLite/D1 vs Postgres/Supabase)", () => {
     assert.equal(policies.rows[0].n, 0);
   });
 
+  it("access_requests.contacted_at (0004) is a nullable timestamp on both; audit_log has the per-user index (0005)", async () => {
+    const col = (sqlite.prepare('SELECT type, "notnull" AS nn FROM pragma_table_info(?) WHERE name = ?').all("access_requests", "contacted_at") as Row[])[0];
+    assert.deepEqual({ type: col?.type, nn: Number(col?.nn) }, { type: "TEXT", nn: 0 });
+    const pgCol = await pglite.query<Row>(
+      "select data_type, is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'access_requests' and column_name = 'contacted_at'",
+    );
+    assert.deepEqual(pgCol.rows, [{ data_type: "timestamp with time zone", is_nullable: "YES" }]);
+    assert.ok(sqliteConstraints(sqlite, "audit_log").indexes.includes("tenant_id,user_id,id"));
+    assert.ok((await postgresConstraints(pglite)).get("audit_log")?.indexes.includes("tenant_id,user_id,id"));
+  });
+
+  it("only a file holding one lone ADD COLUMN statement is exempt from re-running cleanly", () => {
+    assert.equal(isLoneAddColumn("-- why\nALTER TABLE access_requests ADD COLUMN contacted_at TEXT;\n"), true);
+    assert.equal(isLoneAddColumn("ALTER TABLE t ADD c TEXT"), true);
+    assert.equal(isLoneAddColumn("ALTER TABLE t ADD COLUMN c TEXT;\nCREATE INDEX IF NOT EXISTS i ON t (c);"), false);
+    assert.equal(isLoneAddColumn("ALTER TABLE t DROP COLUMN c;"), false);
+    assert.equal(isLoneAddColumn("ALTER TABLE t RENAME TO u;"), false);
+    assert.equal(isLoneAddColumn("-- only a comment\n"), false);
+  });
+
   it("the migration files themselves are idempotent (applying the SQL twice raises nothing)", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const sqliteDir = path.resolve("db/migrations/sqlite");
     for (const file of fs.readdirSync(sqliteDir).filter((f) => f.endsWith(".sql"))) {
-      sqlite.exec(fs.readFileSync(path.join(sqliteDir, file), "utf8"));
+      const sql = fs.readFileSync(path.join(sqliteDir, file), "utf8");
+      try {
+        sqlite.exec(sql);
+      } catch (err) {
+        // SQLite has no ADD COLUMN IF NOT EXISTS: a file holding exactly one ALTER TABLE … ADD COLUMN (and nothing
+        // else) may fail on a second run, and only because the column exists already.
+        if (!(isLoneAddColumn(sql) && /duplicate column name/i.test(err instanceof Error ? err.message : String(err)))) throw err;
+      }
     }
     const pgDir = path.resolve("supabase/migrations");
     for (const file of fs.readdirSync(pgDir).filter((f) => f.endsWith(".sql"))) {
