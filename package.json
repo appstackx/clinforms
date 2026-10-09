@@ -11,7 +11,9 @@
     "test:medreport": "node --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/modules/medreport/**/*.test.ts\" \"scripts/medreport/**/*.test.ts\" \"src/sandbox/**/*.test.ts\"",
     "medreport:templates": "tsx scripts/medreport/build-templates.mjs",
     "medreport:forms": "node scripts/medreport/build-demo-forms.mjs",
-    "medreport:eslint-boundary": "node scripts/medreport/gen-eslint-boundary.mjs"
+    "medreport:eslint-boundary": "node scripts/medreport/gen-eslint-boundary.mjs",
+    "demo:check": "node --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/check-demo-assets.ts",
+    "demo:red": "node scripts/medreport/demo-red.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

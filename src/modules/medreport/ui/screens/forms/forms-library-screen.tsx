@@ -15,6 +15,7 @@ import { REFERRER_TYPE_LABELS } from "../../../core/labels";
 import { api, saveBlob } from "../../api-client";
 import { fetchSampleForms, saveForm, useForms } from "../../store";
 import { Button, Card, Skeleton } from "../../primitives";
+import { DemoAssetForms } from "../../components/forms/demo-asset-forms";
 import { FormCard } from "../../components/forms/form-card";
 import { UploadFormDialog } from "../../components/forms/upload-form-dialog";
 import { errorMessage, plural } from "../../components/shared/format";
@@ -44,7 +45,12 @@ export function FormsLibraryScreen() {
 
   /** Bundled samples whose file is not in the library (e.g. the un-mapped "try a new form" sample). */
   const tryable = useMemo(
-    () => (samples ?? []).filter((s) => !forms.some((f) => f.file.sha256 === s.file.sha256)),
+    () => (samples ?? []).filter((s) => !s.uploadRequired && !forms.some((f) => f.file.sha256 === s.file.sha256)),
+    [samples, forms],
+  );
+  /** Local demonstration forms (dev/demo only) not in the library yet: their files are uploaded, never served. */
+  const demoForms = useMemo(
+    () => (samples ?? []).filter((s) => s.uploadRequired && !forms.some((f) => f.file.sha256 === s.file.sha256)),
     [samples, forms],
   );
 
@@ -198,6 +204,8 @@ export function FormsLibraryScreen() {
           </div>
         </section>
       ) : null}
+
+      <DemoAssetForms samples={demoForms} onUpload={(sample) => setUpload({ open: true, file: null, sample })} />
 
       <UploadFormDialog
         open={upload.open}

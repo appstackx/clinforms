@@ -18,6 +18,7 @@ import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
 import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
+import { DemoNoticeBar } from "../shared/demo-notice";
 import { InlineAlert } from "./review-ui";
 
 export type FormFileState =
@@ -310,6 +311,7 @@ export function PreviewPanel({
         {signed ? <ShieldCheck className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
         <span className="flex-1">{signed ? "FINAL – approved by the clinician" : "DRAFT – awaiting clinician approval"}</span>
       </div>
+      {isForm ? <DemoNoticeBar notice={form?.demoNotice} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
           {isForm ? NOTICES.originalLayout : "Built-in template (house layout)."}

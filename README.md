@@ -140,6 +140,8 @@ copy it to `.env.local` (gitignored – never commit real values).
 | `TM3_SIM_TOKEN` | Bearer token for the simulated TM3 API |
 | `TM3_SIM_BASE_URL` | Optional base URL of the simulated TM3 API (default: this server's own origin) |
 | `MEDREPORT_SOFFICE_PATH` | Optional path to LibreOffice for Word → PDF |
+| `MEDREPORT_DEMO_ASSETS_DIR` | Dev/demo only: folder of local demonstration forms (e.g. `demo-assets/insurers`, gitignored) with prepared maps and answers. Off in production |
+| `MEDREPORT_DEMO_ASSETS_ALLOW_PROD` | `1` lets a LOCAL production build (`next start`, as `npm run demo:red` runs) use that folder. Never on a deployment |
 
 In demo mode, unset secrets fall back to fixed public demo constants – except the launch and signing
 secrets on a **Vercel production** deployment (`VERCEL_ENV=production`), where they are derived from a
@@ -168,7 +170,9 @@ unless noted):
 | `npm run medreport:eslint-boundary` | Regenerate the ESLint import boundary in `.eslintrc.json` |
 | `scripts/medreport/record-form-analyses.ts` | Record live analyses of the sample forms (needs the API key) |
 | `scripts/medreport/record-demo-drafts.ts` | Record the demo drafts (needs the API key) |
-| `scripts/medreport/stamp-demo-drafts.ts` | Re-stamp demo drafts after a fixture change |
+| `scripts/medreport/stamp-demo-drafts.ts` | Re-stamp demo drafts after a fixture change (`--dir=demo-assets/insurers` for the local demonstration answers) |
+| `npm run demo:check` | Check the local demonstration forms, maps and answers (`MEDREPORT_DEMO_ASSETS_DIR`, else `demo-assets/insurers`; quiet when absent) |
+| `npm run demo:red` | The RED insurer-form demo on this machine: `next build` + `next start` on port 3000 with the demonstration assets and demo mode (`.env.local` overrides) |
 | `scripts/medreport/build-notes-pdf.ts`, `build-prewritten-drafts.ts`, `render-form-samples.ts` | Sample builders |
 | `scripts/medreport/video/record-demo.mjs` | Records the walkthrough video against a running server (Playwright from `NODE_PATH=$(npm root -g)`, ffmpeg); see its README |
 

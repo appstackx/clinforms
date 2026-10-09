@@ -932,6 +932,12 @@ export const FormDefinitionSchema = z.object({
   sampleId: z.string().optional(),
   /** The form asks for BLOCK CAPITALS: answers written onto a flat PDF are printed in capitals (S2, additive). */
   uppercase: z.boolean().optional(),
+  /**
+   * Demonstration forms only (e.g. a public insurer form used in a private demo, ai/demo-assets.ts):
+   * a footer line printed on every page of the draft previews and final renders of this form
+   * (forms/demo-notice.ts) and shown in the Studio's preview header. Absent on real clinic forms.
+   */
+  demoNotice: z.string().max(300).optional(),
 });
 
 /* Analysis inputs (deterministic parsing → Claude) --------------------------------------------- */

@@ -61,6 +61,7 @@ src/modules/medreport/
                                       (prompt "form-analysis-3" in form-analysis.ts)
     form-analysis.ts form-analysis-schema.ts form-outline.ts form-classify.ts form-postvalidate.ts form-rules.ts
     recorded-forms.ts recorded/forms/*.json   recorded Claude analyses of the sample forms (by file SHA-256)
+    demo-assets.ts                    DEV/DEMO ONLY: local demonstration forms' maps and answers (MEDREPORT_DEMO_ASSETS_DIR)
   templates/              built-in FALLBACK templates: registry.ts (+ extensions.ts), generated/*.docx.b64.ts
   docgen/                 server-only: built-in template rendering – view-model, docx, docx-validate, pdf, pdf/*
   forms/                  server-only: the referrer-form engine
@@ -72,6 +73,7 @@ src/modules/medreport/
     pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
     pdf-fill.ts           fillPdf(buf, form, answers, opts) → Promise<Uint8Array> (shrink to fit, continuation sheet, flatten)
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
+    demo-notice.ts        demonstration footer (FormDefinition.demoNotice) on every page: PDF bottom margin, Word footer
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)
     convert.ts            docxToPdf(buf) via LibreOffice where installed (hardened, max 2 at a time), else null
     zip-guard.ts          zip-bomb and PDF stream limits, checked before any file is opened
@@ -92,7 +94,9 @@ src/app/reports/**  src/app/pms-sandbox/**   thin pages; each layout.tsx has its
 scripts/medreport/        build-templates.mjs, build-demo-forms.mjs, record-demo-drafts.ts, record-form-analyses.ts,
                           render-form-samples.ts, form-sample-answers.ts, form-fixtures.ts,
                           gen-eslint-boundary.mjs, test-setup.mjs, dev-bundles.ts, stamp-demo-drafts.ts,
-                          build-notes-pdf.ts, build-prewritten-drafts.ts
+                          build-notes-pdf.ts, build-prewritten-drafts.ts,
+                          check-demo-assets.ts + demo-assets-check.ts (npm run demo:check), demo-draft-checks.ts,
+                          demo-red.mjs (npm run demo:red)
 ```
 
 ## Import rules (enforced by ESLint `no-restricted-imports` in `.eslintrc.json`)
@@ -179,6 +183,8 @@ options rather than merging them, so the script writes one full pattern list per
 | `TM3_SIM_TOKEN` | Bearer token for `/api/tm3-sim/v1` |
 | `TM3_SIM_BASE_URL` | Optional base URL of the simulated API. The default is this server's own origin (`VERCEL_URL` on Vercel, else `http://127.0.0.1:$PORT`), never the request's Host header |
 | `MEDREPORT_SOFFICE_PATH` | Optional LibreOffice binary for Word → PDF copies of completed forms (`forms/convert.ts`). Default: the usual install paths; never on Vercel |
+| `MEDREPORT_DEMO_ASSETS_DIR` | **Dev/demo only.** Folder (absolute, or relative to the working directory) of local demonstration forms – e.g. `demo-assets/insurers`, gitignored – with prepared maps and answers (`ai/demo-assets.ts`, see "Local demonstration forms"). Unset = off |
+| `MEDREPORT_DEMO_ASSETS_ALLOW_PROD` | `1` lets a **local** production build (`next start`, as `npm run demo:red` runs) use `MEDREPORT_DEMO_ASSETS_DIR`. Without it the folder is ignored whenever `NODE_ENV` or `VERCEL_ENV` is `production`. Never set it on a deployment |
 
 In demo AI mode, a missing launch secret, signing secret, partner key or sim token falls back to a
 **fixed** public demo constant (`config.server.ts`; the sandbox duplicates two of them in
@@ -322,7 +328,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/render?format=docx\|pdf\|original` | – | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
 | POST | `/connectors/{id}/documents` | session | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
 | POST | `/forms/analyse` | passcode for live | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
-| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded |
+| GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; in demo mode with local demonstration forms on, also those as `uploadRequired` entries (no map, file not served) |
 | GET | `/forms/samples/{id}/file` | – | forms-sample-file.ts | The sample's original .docx / .pdf |
 | POST | `/forms/confirm` | session | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
 | POST | `/ai/payload-preview` | – | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
@@ -341,6 +347,53 @@ map/report), `FORM_NOT_CONFIRMED`, `NO_DEMO_ANALYSIS`, `PDF_CONVERSION_UNAVAILAB
 needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **New headers:**
 `x-medreport-fill-warnings` (URI-encoded JSON array of plain-English warnings) and
 `x-medreport-form-kind`.
+
+## Local demonstration forms (dev/demo only)
+
+Third-party forms – e.g. the public insurer PDFs for the RED Physiotherapy demo – are never committed
+(`/demo-assets/` is gitignored) and must never be served from production. `ai/demo-assets.ts` reads them
+from `MEDREPORT_DEMO_ASSETS_DIR` at run time (no cache, so edits show without a restart):
+
+```
+demo-assets/insurers/
+  bupa-therapies-management-form.pdf …            the forms (only hashed, to recognise an upload; never served)
+  maps/<sampleId>.json                             RecordedFormAnalysis (ai/recorded-forms.ts), mode "demo_prewritten",
+                                                   fileSha256 = the form's SHA-256, form.sampleId = <sampleId>
+  drafts/<patientId>__form-<sampleId>.json         DemoDraftFile (ai/demo-format.ts): formSha256, fields (answer spaces),
+                                                   groups, bundleFingerprint of the simulated TM3 demo patient
+```
+
+- **Upload in demo mode** → the prepared map of exactly that file (`analyse-form.ts` keeps the stored
+  map's own mode; trace "Pre-written demonstration map of this exact uploaded form",
+  `WORDING.server.analysis.uploadedPrewrittenDetail`). A bundled recording of the same file wins, and a
+  local map never stands in for a bundled sample's map. Live or rules readings of a local demonstration
+  form are labelled too.
+- **Answers:** `draft-demo.ts` merges the local drafts with the bundled ones (bundled wins on a name
+  clash); the bundle response's `demoDrafts.formSha256s` advertises them, so the Studio sends the
+  drafting calls. Same binding rules as the bundled drafts (patient, notes fingerprint, file SHA-256,
+  answer spaces). Every planned group needs an answer, else its questions are left for the clinician.
+- **Demonstration footer:** every local map carries `FormDefinition.demoNotice` – its own, else
+  `core/wording.ts` `demoFormNotice(referrer)`: "Public form used for demonstration only – not
+  affiliated with or endorsed by <insurer>. Fictional patient data." `forms/demo-notice.ts` prints it on
+  every page of every draft preview and final render (PDF: small grey line in the bottom margin of each
+  page and continuation sheet, inside the crop box, upright on rotated pages, below the red DRAFT line;
+  Word: a footer paragraph on every footer the sections show), and the Studio shows it in the preview
+  headers (`ui/components/shared/demo-notice.tsx`). It is part of `formMapSha256`, so an approved map
+  cannot lose it before the final render; forms without it hash and render byte-for-byte as before.
+- **Forms library:** in demo mode `GET /forms/samples` also lists each mapped local form as an
+  `uploadRequired` entry ("Demonstration forms – Upload this form"); its file is never served.
+- **Off in production:** ignored whenever `NODE_ENV` or `VERCEL_ENV` is `production`, unless
+  `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` (for a local `next start` only). On Vercel the folder does not
+  exist anyway (gitignored).
+- **Commands:** `npm run demo:check` (each map against its file: schema, SHA-256, `checkFormDefinition`,
+  attestation, PDF fields / Word blocks, the upload really returning it; each answer file: patient,
+  fingerprint, advertised, and exactly the checks of `demo-draft-quality.test.ts` – quiet when the folder
+  is absent); `stamp-demo-drafts.ts --dir=demo-assets/insurers` after a fixture change; `npm run demo:red`
+  = `next build` + `next start` on port 3000 with `MEDREPORT_DEMO_ASSETS_DIR=demo-assets/insurers`,
+  `MEDREPORT_AI_MODE=demo` and `MEDREPORT_DEMO_ASSETS_ALLOW_PROD=1` unless `.env.local` (read the way
+  Next reads it) or the shell says otherwise.
+- Tests: `scripts/medreport/demo-assets.test.ts` (synthetic folder in a temp dir) and
+  `forms/demo-notice.test.ts`.
 
 ## Simulated TM3 API `/api/tm3-sim/v1` (scaffolding)
 

@@ -9,6 +9,9 @@ import "server-only";
  *
  * Also: review-copy source markers for the answers, the fill-warnings header and file names.
  *
+ * A demonstration form (FormDefinition.demoNotice) gets its footer line on every page of the draft and
+ * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it.
+ *
  * Owner: forms-engine agent.
  */
 import { CONTENT_TYPES, HEADERS } from "../api/contract";
@@ -18,6 +21,7 @@ import { answerableFields, formTemplateId, type FormFillAnswers } from "../core/
 import type { FormDefinition, Report } from "../core/types";
 import { buildFileBaseName } from "../docgen/view-model";
 import { docxToPdf } from "./convert";
+import { addDocxDemoNotice, stampPdfDemoNotice } from "./demo-notice";
 import { fillDocx } from "./docx-fill";
 import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "./file";
 import { fillPdf } from "./pdf-fill";
@@ -63,7 +67,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     if (!warnings.includes(m)) warnings.push(m);
   };
   if (form.kind === "docx") {
-    const docx = fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning });
+    const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), form.demoNotice);
     if (input.format === "original") return { bytes: docx, contentType: CONTENT_TYPES.docx, extension: "docx", warnings };
     let pdf: Uint8Array | null;
     try {
@@ -85,7 +89,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
   const onError = (m: string) => {
     if (!errors.includes(m)) errors.push(m);
   };
-  const pdf = await fillPdf(file.bytes, form, answers, { draft, flatten: true, reviewMarkers: input.reviewMarkers, onWarning, onError });
+  const filled = await fillPdf(file.bytes, form, answers, { draft, flatten: true, reviewMarkers: input.reviewMarkers, onWarning, onError });
   if (errors.length > 0 && !draft) {
     // Never issue a form with a value cut to fit (e.g. a date written "14/02/19").
     throw new HttpError(422, "An answer does not fit the form", {
@@ -93,6 +97,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
       detail: `${errors.join(" ")} The final copy was not made: correct the answer, approve the report again and download it.`,
     });
   }
+  const pdf = await stampPdfDemoNotice(filled, form.demoNotice, { draft });
   return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings: [...errors, ...warnings], ...(errors.length > 0 && { errors }) };
 }
 
