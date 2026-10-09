@@ -132,8 +132,11 @@ export const FormMimeTypeSchema = z.enum([
  * docx: Word form, completed in place (Word in → Word out).
  * pdf_acroform: fillable PDF, fields filled and flattened (PDF in → PDF out).
  * pdf_flat: PDF without fields; best-effort text overlay at analysed positions.
+ * questions: a question set with NO file (an insurer's online portal): staff paste the portal's
+ *   questions; the output is the copied answers plus a PDF summary (core/question-set.ts documents the
+ *   placeholder `file` and anchors it uses). Added for portals – additive.
  */
-export const FormKindSchema = z.enum(["docx", "pdf_acroform", "pdf_flat"]);
+export const FormKindSchema = z.enum(["docx", "pdf_acroform", "pdf_flat", "questions"]);
 /** What kind of answer a form question expects. */
 export const AnswerTypeSchema = z.enum([
   "short_text",

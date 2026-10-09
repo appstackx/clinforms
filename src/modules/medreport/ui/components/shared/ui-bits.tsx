@@ -108,11 +108,12 @@ export function breakdownText(b: QuestionBreakdown): string {
 const PILL = "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium";
 
 export function FormKindBadge({ kind, className }: { kind: FormKind; className?: string }) {
-  const short: Record<FormKind, string> = { docx: "Word", pdf_acroform: "Fillable PDF", pdf_flat: "Flat PDF" };
+  const short: Record<FormKind, string> = { docx: "Word", pdf_acroform: "Fillable PDF", pdf_flat: "Flat PDF", questions: "Portal questions" };
   const tone: Record<FormKind, string> = {
     docx: "border-blue-200 bg-blue-50 text-blue-800",
     pdf_acroform: "border-rose-200 bg-rose-50 text-rose-800",
     pdf_flat: "border-orange-200 bg-orange-50 text-orange-800",
+    questions: "border-violet-200 bg-violet-50 text-violet-800",
   };
   return (
     <span className={cn(PILL, tone[kind], className)} title={FORM_KIND_LABELS[kind]}>

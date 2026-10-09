@@ -136,6 +136,12 @@ export interface Wording {
     showModel: boolean;
   };
 
+  /* Copying answers (review screen: per question, all, .txt) ------------------------------------ */
+  answersCopy: AnswersCopyWording;
+
+  /* Insurer portal question sets (forms library, mapping, review) -------------------------------- */
+  questionSet: QuestionSetWording;
+
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
   payload: {
     toggle: string;
@@ -207,6 +213,103 @@ export interface Wording {
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Copying answers out of a completed form (core/answer-copy.ts and the review screen). */
+export interface AnswersCopyWording {
+  /** Marks copied text while the answers are not approved (spec wording – keep exactly). */
+  draftMarker: string;
+  /** Shown for a question nobody has answered yet. */
+  toComplete: string;
+  /** Shown, once approved, for an (optional) question the clinician left blank. */
+  leftBlank: string;
+  /** Shown for a sign-off answer before approval. */
+  onApproval: string;
+  panelTitle: string;
+  panelTitlePortal: string;
+  panelIntro: string;
+  panelIntroPortal(referrer: string): string;
+  draftNotice: string;
+  approvedNotice: string;
+  copyAll: string;
+  downloadTxt: string;
+  copyOne: string;
+  copyOneAria(label: string): string;
+  nothingToCopy: string;
+  copiedOne(label: string): string;
+  copiedAll(count: number): string;
+  copiedDraftDetail: string;
+  copiedApprovedDetail: string;
+  copyFailed: string;
+  downloaded: string;
+  gapsCount(count: number): string;
+  leftBlankCount(count: number): string;
+  approvedHeader(name: string, hcpc: string, date: string): string;
+}
+
+/** Portal question sets: an insurer's online questions with no file (core/question-set.ts). */
+export interface QuestionSetWording {
+  addButton: string;
+  dialogTitle: string;
+  dialogDescription: string;
+  hintHelp: string;
+  exampleButton: string;
+  submit: string;
+  howItWorks: string;
+  analysisLabel: string;
+  noFile: string;
+  previewTitle: string;
+  previewNote: string;
+  approvedTitle: string;
+  summaryPdf: string;
+}
+
+/* Copy and portal wording describe what staff do, not how answers are drafted: one text for both variants. */
+const ANSWERS_COPY: AnswersCopyWording = {
+  draftMarker: "Draft – not yet approved",
+  toComplete: "[to complete]",
+  leftBlank: "[left blank]",
+  onApproval: "[completed on approval]",
+  panelTitle: "Copy answers",
+  panelTitlePortal: "Answers for the portal",
+  panelIntro: "Copy an answer, or all of them, as plain text – for a portal, an e-mail or a letter. Dates are DD/MM/YYYY and ticks are written as the option chosen.",
+  panelIntroPortal: (referrer) =>
+    `Copy each answer into ${referrer}'s portal, question by question, or copy them all at once. Dates are DD/MM/YYYY and ticks are written as the option chosen.`,
+  draftNotice: "Not approved yet: copied text is marked “Draft – not yet approved”. Approve the answers before entering them anywhere.",
+  approvedNotice: "Approved: copied text is the approved answers.",
+  copyAll: "Copy all answers",
+  downloadTxt: "Download answers (.txt)",
+  copyOne: "Copy",
+  copyOneAria: (label) => `Copy the answer to “${label}”`,
+  nothingToCopy: "No answer to copy yet",
+  copiedOne: (label) => `Answer to “${label}” copied`,
+  copiedAll: (count) => `${plural(count, "answer")} copied`,
+  copiedDraftDetail: "Marked “Draft – not yet approved” until a clinician approves the answers.",
+  copiedApprovedDetail: "The approved answers, ready to paste.",
+  copyFailed: "This browser did not allow copying. Download the answers (.txt) instead, or select the text and copy it.",
+  downloaded: "Answers downloaded",
+  gapsCount: (count) => `${plural(count, "question")} still to complete`,
+  leftBlankCount: (count) => `${plural(count, "question")} left blank on approval – copied as “[left blank]”.`,
+  approvedHeader: (name, hcpc, date) => `Approved by ${name} (HCPC ${hcpc}) on ${date}`,
+};
+
+const QUESTION_SET: QuestionSetWording = {
+  addButton: "Add portal questions",
+  dialogTitle: "Add an insurer portal's questions",
+  dialogDescription:
+    "Some insurers take treatment reports through an online portal instead of a form. Paste or type the portal's questions once; they are then answered for every patient like any other form.",
+  hintHelp:
+    "One question per line. Optionally end a line with its answer type: [date], [yes/no], [number], [long] or [short] – or [choice: A | B | C] and [optional]. Start a line with # for a heading.",
+  exampleButton: "Insert example questions",
+  submit: "Add and check the questions",
+  howItWorks:
+    "Each answer is drafted from the notes with its sources, checked and approved by the clinician, then copied into the portal. A PDF summary of the questions and approved answers is kept for the record.",
+  analysisLabel: "Typed or pasted by staff",
+  noFile: "No file – the answers are copied into the portal",
+  previewTitle: "Summary of the questions and answers",
+  previewNote: "Portal questions have no form file: this summary is what is kept for the record.",
+  approvedTitle: "Approved – the answers are final",
+  summaryPdf: "Summary (PDF)",
+};
 
 /** Problem codes in plain words (the codes themselves stay in the API). */
 const NEUTRAL_FAILURE_CODES: Record<string, string> = {
@@ -315,6 +418,8 @@ const NEUTRAL: Wording = {
     stepDemo: "Loading the prepared reading of this file, or matching questions by layout rules",
     showModel: false,
   },
+  answersCopy: ANSWERS_COPY,
+  questionSet: QUESTION_SET,
   payload: {
     toggle: "See exactly what the drafting service receives",
     subtitle: "The minimised record for this patient, exactly as a drafting request would send it – nothing is sent to show it.",
@@ -498,6 +603,8 @@ const AI_ASSISTED: Wording = {
     stepDemo: "Loading the recorded analysis for this file, or matching questions by rules (no AI call)",
     showModel: true,
   },
+  answersCopy: ANSWERS_COPY,
+  questionSet: QUESTION_SET,
   payload: {
     toggle: "See exactly what is sent to the AI",
     subtitle: "The minimised record for this patient, as a drafting call would send it – no AI call is made to show it.",

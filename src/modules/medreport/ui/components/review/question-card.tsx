@@ -29,6 +29,7 @@ import {
   type QuestionStatus,
   type ReviewQuestion,
 } from "./review-model";
+import { CopyAnswerButton } from "./copy-answers";
 import { AutoTextarea, CitationChip, OriginPill, Pill, StatusDot } from "./review-ui";
 import type { ReviewAction } from "./use-review-state";
 
@@ -59,6 +60,10 @@ export interface QuestionCardProps {
   onOpenSource(id: string): void;
   canAcknowledge(flag: ReportFlag): boolean;
   onDraft?: (key: string) => void;
+  /** "Copy" this question's answer (form reports; copy-answers.tsx). Stable callback. */
+  onCopy?: (key: string) => void;
+  /** The question has an answer to copy. */
+  copyable?: boolean;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -606,9 +611,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
           </h3>
           {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{q.guidance}</p>}
         </div>
-        <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
-          <StatusDot status={status} />
-          {meta.label}
+        <span className="inline-flex shrink-0 items-center gap-1.5">
+          {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}
+          <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
+            <StatusDot status={status} />
+            {meta.label}
+          </span>
         </span>
       </header>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">

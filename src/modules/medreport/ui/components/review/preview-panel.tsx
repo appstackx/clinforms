@@ -5,6 +5,8 @@
  * (POST /forms/fill-preview → docx-preview for Word, pdfjs canvas for PDF), refreshed a moment after
  * each edit and marked DRAFT until a clinician approves it. After approval it shows the final
  * completed form (POST /render with the receipt). Built-in template reports preview the draft PDF.
+ * A portal question set has no file: it previews its PDF summary of the questions and answers
+ * (POST /render, no file sent).
  *
  * Owner: studio-b agent.
  */
@@ -14,11 +16,13 @@ import { CONTENT_TYPES } from "../../../api/contract";
 import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { buildFormAnswers } from "../../../core/forms";
+import { isQuestionSet } from "../../../core/question-set";
 import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
 import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
 import { DemoNoticeBar } from "../shared/demo-notice";
+import { WORDING } from "../../wording";
 import { InlineAlert } from "./review-ui";
 
 export type FormFileState =
@@ -213,6 +217,9 @@ export function PreviewPanel({
   onPreviewed?: (warnings: string[]) => void;
 }) {
   const isForm = Boolean(report.form);
+  // Portal questions: no file to fill – the summary PDF is rendered from the answers alone.
+  const questionSet = isQuestionSet(report.form);
+  const needsFile = isForm && !questionSet;
   const signed = report.status === "signed" && Boolean(report.receipt);
   const [doc, setDoc] = useState<FileDownload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -234,7 +241,7 @@ export function PreviewPanel({
   const blocked: string | null = isForm
     ? !form
       ? "The form map for this report is not in this browser's forms library, so the form cannot be previewed."
-      : file.status === "missing"
+      : needsFile && file.status === "missing"
         ? "The referrer's original file is not stored in this browser. Add it again in the forms library to preview the completed form."
         : null
     : null;
@@ -249,7 +256,14 @@ export function PreviewPanel({
     setError(null);
     try {
       let out: FileDownload;
-      if (isForm) {
+      if (questionSet) {
+        if (!form) return;
+        out = await api.render(
+          "pdf",
+          signed && current.receipt ? { report: current, receipt: current.receipt, form, requireFinal: true } : { report: current, form },
+          { signal: ctrl.signal },
+        );
+      } else if (isForm) {
         if (!form || file.status !== "ready") return;
         out =
           signed && current.receipt
@@ -277,20 +291,24 @@ export function PreviewPanel({
         abortRef.current = null;
       }
     }
-  }, [key, isForm, form, file, signed]);
+  }, [key, isForm, questionSet, form, file, signed]);
 
   // Fetch when visible and stale: at once the first time, then a moment after the last edit.
   useEffect(() => {
     if (!active || blocked || !key || key === renderedKey) return;
-    if (isForm && file.status !== "ready") return;
+    if (needsFile && file.status !== "ready") return;
     const t = window.setTimeout(() => void fetchPreview(), renderedKey === null ? 0 : REFRESH_DELAY_MS);
     return () => window.clearTimeout(t);
-  }, [active, blocked, key, renderedKey, isForm, file.status, fetchPreview]);
+  }, [active, blocked, key, renderedKey, needsFile, file.status, fetchPreview]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const stale = Boolean(doc) && key !== renderedKey;
-  const label = isForm ? `Preview of the completed form “${report.form?.title ?? ""}” in its original layout` : "Preview of the report";
+  const label = questionSet
+    ? `${WORDING.questionSet.previewTitle} – “${report.form?.title ?? ""}”`
+    : isForm
+      ? `Preview of the completed form “${report.form?.title ?? ""}” in its original layout`
+      : "Preview of the report";
 
   if (blocked) {
     return (
@@ -314,7 +332,7 @@ export function PreviewPanel({
       {isForm ? <DemoNoticeBar notice={form?.demoNotice} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
-          {isForm ? NOTICES.originalLayout : "Built-in template (house layout)."}
+          {questionSet ? WORDING.questionSet.previewNote : isForm ? NOTICES.originalLayout : "Built-in template (house layout)."}
           {renderedAt && !loading && <span className="ml-1">Updated {formatUkDateTime(renderedAt).slice(11)}.</span>}
         </span>
         <div className="flex items-center gap-1">
@@ -355,13 +373,13 @@ export function PreviewPanel({
       ) : (
         !error && (
           <div className="flex aspect-[1/1.414] w-full flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 text-sm text-slate-500">
-            {isForm && file.status === "loading" ? (
+            {needsFile && file.status === "loading" ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin text-[#0D9488]" aria-hidden /> Loading the referrer&apos;s form…
               </>
             ) : (
               <>
-                <Loader2 className="h-5 w-5 animate-spin text-[#0D9488]" aria-hidden /> Filling in the form…
+                <Loader2 className="h-5 w-5 animate-spin text-[#0D9488]" aria-hidden /> {questionSet ? "Preparing the summary…" : "Filling in the form…"}
               </>
             )}
           </div>
@@ -384,7 +402,7 @@ export function PreviewPanel({
             <DialogTitle>{isForm ? report.form?.title : "Report preview"}</DialogTitle>
             <DialogDescription>
               {signed ? "Final completed form." : "DRAFT – awaiting clinician approval. "}
-              {isForm ? ` ${report.form?.referrer.name ?? ""} – original layout.` : ""}
+              {questionSet ? ` ${report.form?.referrer.name ?? ""} – ${WORDING.questionSet.previewTitle.toLowerCase()}.` : isForm ? ` ${report.form?.referrer.name ?? ""} – original layout.` : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">{doc && expanded && <DocumentView doc={doc} label={label} />}</div>

@@ -64,6 +64,7 @@ export const FORM_KIND_LABELS: Record<FormKind, string> = {
   docx: "Word form",
   pdf_acroform: "Fillable PDF",
   pdf_flat: "Flat PDF (best effort)",
+  questions: "Portal questions",
 };
 
 export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
