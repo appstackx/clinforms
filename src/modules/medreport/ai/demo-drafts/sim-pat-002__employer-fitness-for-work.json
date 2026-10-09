@@ -1,0 +1,242 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-002",
+  "bundleFingerprint": "6aacbd4de32b68cffdc071ed4b5db333fa2e9bc3a0b1eb19449bf97574262f18",
+  "templateId": "employer-fitness-for-work",
+  "templateVersion": "1.0.0",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:48:27.636Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "2",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case. Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "reason_for_referral+functional_status": {
+      "sections": [
+        {
+          "sectionKey": "reason_for_referral",
+          "paragraphs": [
+            {
+              "text": "[CLAIMANT], a warehouse operative, was referred by his employer, Ashby Freight Ltd, for physiotherapy for low back pain following a lifting incident at work on 02/06/2026. The referral was received on 05/06/2026, and a fitness for work report was requested on discharge.",
+              "sourceIds": [
+                "REG"
+              ],
+              "basis": "record"
+            },
+            {
+              "text": "At the initial assessment on 09/06/2026 [CLAIMANT] reported that on 02/06/2026, during a night shift, he lifted a carton of approximately 20 kg from floor level onto a pallet while twisting to his right, with immediate sharp pain across the low back, right more than left. He reported that he finished the shift on light tasks, reported the incident to his supervisor and had it logged in the accident book. He reported that he had been off work since 03/06/2026.",
+              "sourceIds": [
+                "N-001",
+                "REG"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "[CLAIMANT] described his work as 4 nights on and 4 off in 12-hour shifts, with manual handling of cartons up to 25 kg, frequent floor-to-pallet lifting and operation of a pallet truck. On 09/06/2026 Tom Ellis, physiotherapist, recorded an assessment of acute non-specific mechanical low back pain following a lifting injury at work on 02/06/2026, with no red flags and no neurological signs.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "functional_status",
+          "paragraphs": [
+            {
+              "text": "At the final review on 22/09/2026 [CLAIMANT] reported low back pain of 1–2/10 at worst after 4 nights of shifts, settling on rest days, with no leg symptoms and no flare-ups in the last 6 weeks. He reported that he was on amended duties with occasional lifts up to 15 kg and no repetitive floor-level lifting, was attending the gym 3 times a week, and was confident with his lifting technique.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that lumbar active range of movement was full and pain-free in all directions, with no tenderness on palpation. He recorded that neurological testing of dermatomes, myotomes and reflexes showed no abnormality detected, and straight leg raise was 85° bilaterally.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "The Oswestry Disability Index scores were 48% on 09/06/2026, 30% on 14/07/2026 and 18% on 22/09/2026. On 22/09/2026 Tom Ellis recorded minimal disability on the Oswestry Disability Index (18%).",
+              "sourceIds": [
+                "FACT-outcomes-ODI",
+                "N-006"
+              ],
+              "basis": "record"
+            },
+            {
+              "text": "On 14/07/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] could sit for 1 hr without problem. Walking tolerance, sitting tolerance beyond this, driving and carrying were not recorded at the final review.",
+              "sourceIds": [
+                "N-004"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "functional_status",
+          "issue": "No functional or lifting capacity test relevant to warehouse work (for example a graded lifting assessment) is recorded. Floor-level and repetitive lifting capacity is only described by self-report and gym exercise review (Tom Ellis's note of 11/08/2026).",
+          "suggestedQuestion": "Was any functional or lifting capacity test performed relevant to warehouse duties, and if so what were the results?",
+          "relatedNoteIds": [
+            "N-005",
+            "N-006"
+          ]
+        },
+        {
+          "sectionKey": "functional_status",
+          "issue": "Current sitting and standing tolerance, driving and bending tolerance at discharge are not recorded in Tom Ellis's note of 22/09/2026; the last sitting tolerance recorded was in Sarah Reid's note of 14/07/2026.",
+          "suggestedQuestion": "What were [CLAIMANT]'s sitting, standing, bending and driving tolerances at discharge on 22/09/2026?",
+          "relatedNoteIds": [
+            "N-006",
+            "N-004"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 10277,
+        "usage": {
+          "inputTokens": 39,
+          "outputTokens": 1469,
+          "cacheReadInputTokens": 3044,
+          "cacheCreationInputTokens": 5608
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "treatment_attendance+fitness_opinion": {
+      "sections": [
+        {
+          "sectionKey": "treatment_attendance",
+          "paragraphs": [
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded that the treatment plan comprised soft tissue mobilisation of the right lumbar paraspinals and quadratus lumborum, Maitland grade II central postero-anterior mobilisations at L4–L5, and heat, with a home exercise programme of pelvic tilts, knee rolls, cat–camel and a walking programme. He recorded that weekly sessions were planned and that [CLAIMANT] was reassured about the benign nature of mechanical low back pain and the benefits of staying active.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 16/06/2026 Tom Ellis recorded treatment of soft tissue mobilisation, grade III central postero-anterior mobilisations at L4–L5 and right unilateral postero-anterior mobilisation at L4/5, with the home exercise programme progressed to bridges, bird-dog and sit-to-stand, and advice on pacing for the return to amended duties. On 30/06/2026 he recorded soft tissue mobilisation and grade III central postero-anterior mobilisations at L4–L5, a further progression of the home exercise programme, and a discussion of manual handling technique (hip hinge, load close to the body, turning the feet rather than twisting).",
+              "sourceIds": [
+                "N-002",
+                "N-003"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 14/07/2026 Sarah Reid, senior physiotherapist, recorded education on graded loading and load tolerance and progression of the home exercise programme to loaded strength work. She recorded that sessions were reduced to every 3–4 weeks alongside a self-directed gym programme. On 11/08/2026 Tom Ellis recorded that [CLAIMANT] reported attending the gym three times a week, that his gym exercise technique was reviewed and found to be good form with no symptoms, and that the home exercise programme was progressed.",
+              "sourceIds": [
+                "N-004",
+                "N-005"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis recorded that [CLAIMANT] was discharged from active physiotherapy to self-management, advised to continue the gym programme two to three times a week and a maintenance home exercise programme, and to contact the clinic if symptoms recur. The attendance record shows 6 of 7 appointments attended, with 1 late cancellation on 23/06/2026 and no non-attendances. The recorded reason for the late cancellation was that [CLAIMANT] phoned on the morning of the appointment, in his first week back on amended night shifts and unable to attend after a shift.",
+              "sourceIds": [
+                "N-006",
+                "FACT-attendance"
+              ],
+              "basis": "record"
+            }
+          ]
+        },
+        {
+          "sectionKey": "fitness_opinion",
+          "paragraphs": [
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded in his assessment that [CLAIMANT] was not fit for full warehouse duties (heavy manual handling) at present. He also recorded that [CLAIMANT] could return on amended duties (no lifting from floor level, no loads over 10 kg) if the employer could accommodate this, to be discussed with HR/OH.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_opinion_recorded"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded under opinion on work: \"in my opinion he is fit for a phased return to normal duties over 2 weeks; he should avoid repetitive lifting >15 kg for 4 weeks; review in 6 weeks.\" The same note contained a return-to-work recommendation for HR/OH to the same effect.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 7435,
+        "usage": {
+          "inputTokens": 56,
+          "outputTokens": 1316,
+          "cacheReadInputTokens": 3044,
+          "cacheCreationInputTokens": 5608
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "adjustments+review_date": {
+      "sections": [
+        {
+          "sectionKey": "adjustments",
+          "paragraphs": [
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] could return on amended duties (no lifting from floor level, no loads over 10 kg) if the employer could accommodate this, and that this was to be discussed with HR/OH.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_opinion_recorded"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded in the discharge note that in his opinion [CLAIMANT] was fit for a phased return to normal duties over 2 weeks and should avoid repetitive lifting over 15 kg for 4 weeks. The same note recorded a return-to-work recommendation for HR/OH to the same effect: a phased return to normal duties over 2 weeks and avoidance of repetitive lifting over 15 kg for 4 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "review_date",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded in the discharge note, both in his opinion on work and in the return-to-work recommendation for HR/OH, \"review in 6 weeks\". No calendar date for the review was recorded in that note.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "review_date",
+          "issue": "Tom Ellis's note of 22/09/2026 records a review in 6 weeks but gives no calendar date, and does not say who is to carry out the review or whether it is a physiotherapy or employer/occupational health review. The same note records discharge from active physiotherapy.",
+          "suggestedQuestion": "On what date should [CLAIMANT] be reviewed, and by whom (the clinic or HR/OH)?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 4879,
+        "usage": {
+          "inputTokens": 35,
+          "outputTokens": 683,
+          "cacheReadInputTokens": 3044,
+          "cacheCreationInputTokens": 5608
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

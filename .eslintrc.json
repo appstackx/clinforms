@@ -1,0 +1,2521 @@
+{
+  "extends": "next/core-web-vitals",
+  "overrides": [
+    {
+      "files": [
+        "src/modules/medreport/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/*/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/forms/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "pdfjs-dist",
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist/build/*",
+                  "pdfjs-dist/web/*",
+                  "pdfjs-dist/image_decoders/*"
+                ],
+                "message": "forms/ runs in Node: use pdfjs-dist's legacy build via forms/pdfjs.ts loadPdfjs(), not the browser entry points."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/core/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/templates/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/config.public.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/api/contract.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The medreport module may not import src/lib. Use ui/primitives.ts (cn) or the module's own core/."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "Import host UI components only via src/modules/medreport/ui/primitives.ts."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/medreport/ui/primitives.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib/*",
+                  "!@/lib/utils"
+                ],
+                "message": "ui/primitives.ts may re-export only @/lib/utils (cn) from src/lib."
+              },
+              {
+                "group": [
+                  "@/components/*",
+                  "!@/components/ui"
+                ],
+                "message": "ui/primitives.ts may re-export only @/components/ui/*."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/sandbox/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/modules",
+                  "@/modules/*",
+                  "**/modules/*"
+                ],
+                "message": "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

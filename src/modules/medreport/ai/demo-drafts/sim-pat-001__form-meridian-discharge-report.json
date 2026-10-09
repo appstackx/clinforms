@@ -1,0 +1,295 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-001",
+  "bundleFingerprint": "dfe456a3ec41c2563bd6337e052266c7a76053659d8b2abd2980dd63ad149346",
+  "templateId": "form:frm_da47bbbb344c7652",
+  "templateVersion": "1",
+  "sampleId": "meridian-discharge-report",
+  "formSha256": "306a878a9836d485f8d5a82f99961dbeb11f9f15d7132fe19ff3c2753362fa2d",
+  "fields": {
+    "F-01": {
+      "anchor": "docx:t0.r1.c1",
+      "answerType": "short_text",
+      "label": "Claimant's full name"
+    },
+    "F-02": {
+      "anchor": "docx:t0.r2.c1",
+      "answerType": "date",
+      "label": "Date of birth"
+    },
+    "F-03": {
+      "anchor": "docx:t0.r3.c1",
+      "answerType": "short_text",
+      "label": "Meridian claim reference"
+    },
+    "F-04": {
+      "anchor": "docx:t0.r4.c1",
+      "answerType": "date",
+      "label": "Date treatment started"
+    },
+    "F-05": {
+      "anchor": "docx:t0.r5.c1",
+      "answerType": "date",
+      "label": "Date of discharge"
+    },
+    "F-06": {
+      "anchor": "docx:t1.r1.c0.p0",
+      "answerType": "long_text",
+      "label": "What was your final diagnosis? Please include the mechanism of injury as reported to you."
+    },
+    "F-07": {
+      "anchor": "docx:t2.r1.c0.p0",
+      "answerType": "long_text",
+      "label": "Please summarise the claimant's progress during treatment, including any objective outcome measures."
+    },
+    "F-08": {
+      "anchor": "docx:t2.r2.c0.p0",
+      "answerType": "long_text",
+      "label": "Please comment on the claimant's ability to carry out normal daily activities."
+    },
+    "F-09": {
+      "anchor": "docx:t2.r3.c0",
+      "answerType": "number",
+      "label": "Sessions attended"
+    },
+    "F-10": {
+      "anchor": "docx:t2.r3.c0#2",
+      "answerType": "number",
+      "label": "Sessions missed"
+    },
+    "F-11": {
+      "anchor": "glyph:t3.r1.c0.p1#0,t3.r1.c0.p1#1,t3.r1.c0.p1#2,t3.r1.c0.p1#3",
+      "answerType": "single_choice",
+      "label": "Reason for discharge"
+    },
+    "F-12": {
+      "anchor": "glyph:t3.r2.c0.p1#0,t3.r2.c0.p1#1",
+      "answerType": "yes_no",
+      "label": "Is any further treatment or investigation recommended?"
+    },
+    "F-13": {
+      "anchor": "docx:t3.r2.c0.p2",
+      "answerType": "long_text",
+      "label": "If yes, please give details:"
+    },
+    "F-14": {
+      "anchor": "docx:t3.r3.c0.p0",
+      "answerType": "long_text",
+      "label": "In your opinion, what is the likely long-term outcome for this claimant?"
+    },
+    "F-15": {
+      "anchor": "docx:t4.r2.c1",
+      "answerType": "clinician_name",
+      "label": "Name"
+    },
+    "F-16": {
+      "anchor": "docx:t4.r3.c1",
+      "answerType": "hcpc_number",
+      "label": "Professional registration number"
+    },
+    "F-17": {
+      "anchor": "docx:t4.r4.c1",
+      "answerType": "date_signed",
+      "label": "Date"
+    }
+  },
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:48:17.343Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "forms-7",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case on the sample form \"meridian-discharge-report\". Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "F-06+F-07": {
+      "sections": [
+        {
+          "sectionKey": "F-06",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded that the presentation was consistent with whiplash-associated disorder grade II (Quebec Task Force), with neck pain, musculoskeletal signs and no neurological signs, and that the headaches were consistent with a cervicogenic component. On 07/07/2026 Sarah Reid recorded in the discharge note that the episode of care was complete, with residual intermittent low-level neck ache with prolonged sitting or driving, full functional active range of movement and no neurological signs.",
+              "sourceIds": [
+                "N-001",
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "[CLAIMANT] reported that on 12/03/2026 she was the restrained driver of a stationary car queuing at traffic lights when it was struck from behind in a rear-end collision. Airbags did not deploy, and she reported no head strike and no loss of consciousness. She reported that neck stiffness began the same evening and was worse on waking on 13/03/2026.",
+              "sourceIds": [
+                "REG",
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-07",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "[CLAIMANT] attended 10 of 11 appointments between 18/03/2026 and 07/07/2026. At the initial assessment on 18/03/2026 Sarah Reid, senior physiotherapist, recorded a Neck Disability Index score of 42% and a Numeric Pain Rating Scale score of 7/10. [CLAIMANT] then reported headaches 3 to 4 times a week and disturbed sleep. Treatment comprised soft tissue mobilisation, joint mobilisation, sustained natural apophyseal glides and a progressed home exercise programme.",
+              "sourceIds": [
+                "FACT-attendance",
+                "N-001",
+                "FACT-outcomes-NDI",
+                "FACT-outcomes-NPRS"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "At reassessment on 06/05/2026 Sarah Reid recorded a Neck Disability Index score of 24% and a Numeric Pain Rating Scale score of 4/10, with active range of movement improving, and assessed mild disability. At discharge on 07/07/2026 she recorded a Neck Disability Index score of 12% and a Numeric Pain Rating Scale score of 2/10. She recorded cervical flexion of 55°, extension of 55°, left rotation of 75° and right rotation of 80°, with mild pull at end-range left rotation and no pain, and no neurological signs.",
+              "sourceIds": [
+                "N-006",
+                "N-010",
+                "FACT-outcomes-NDI",
+                "FACT-outcomes-NPRS"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "At discharge [CLAIMANT] reported 1 mild headache in the last 3 weeks, sleeping well and occasional neck ache after long days at the computer or drives over 1 hour. Sarah Reid discharged her from active physiotherapy to self-management.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 7557,
+        "usage": {
+          "inputTokens": 106,
+          "outputTokens": 1077,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7387
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-08+F-11+F-12": {
+      "sections": [
+        {
+          "sectionKey": "F-08",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "At the initial assessment on 18/03/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] was an office administrator working full-time in a desk-based role. [CLAIMANT] had been off work on 13/03/2026 and 16/03/2026 and had been back since 17/03/2026, taking extra breaks. [CLAIMANT] reported driving short local journeys only, feeling anxious and checking the rear-view mirror repeatedly when stopped in traffic. Neck pain was aggravated by driving, sitting at a computer for more than 30 minutes and looking up to high shelves, and sleep was disturbed, waking 2 to 3 times a night on turning.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 06/05/2026 Sarah Reid recorded that [CLAIMANT] was working full days with breaks and driving to work again (25 minutes each way), with some neck discomfort after longer drives. On 03/06/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] had returned to swimming once a week, with neck ache after breaststroke.",
+              "sourceIds": [
+                "N-006",
+                "N-008"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "At the final review on 07/07/2026 Sarah Reid recorded that [CLAIMANT] reported occasional neck ache (Numeric Pain Rating Scale 2/10 at worst) after long days at the computer or drives over 1 hour, and 0/10 most days. [CLAIMANT] reported sleeping well, working full-time with normal duties, driving without restriction and swimming 2 times a week. [CLAIMANT] was less anxious driving but still checked the mirror more than before the accident. The Neck Disability Index was 12% (24% on 06/05/2026 and 42% on 18/03/2026).",
+              "sourceIds": [
+                "N-010",
+                "FACT-outcomes-NDI"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-11",
+          "answer": "Goals achieved",
+          "paragraphs": [
+            {
+              "text": "On 07/07/2026 Sarah Reid, senior physiotherapist, recorded that the episode of care was complete and that [CLAIMANT] was discharged from active physiotherapy to self-management.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-12",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-12",
+          "issue": "Sarah Reid's discharge note of 07/07/2026 records discharge to self-management with a maintenance home exercise programme and advice to contact the clinic or GP if symptoms increase, but does not state whether further treatment or investigation is recommended.",
+          "suggestedQuestion": "In your opinion, is any further treatment or investigation recommended for [CLAIMANT] after discharge on 07/07/2026?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6011,
+        "usage": {
+          "inputTokens": 110,
+          "outputTokens": 1039,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7387
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-13+F-14": {
+      "sections": [
+        {
+          "sectionKey": "F-13",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-14",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-13",
+          "issue": "No clinician recorded an opinion that further treatment or investigation is recommended. Sarah Reid's discharge note of 07/07/2026 records discharge to self-management with a maintenance home exercise programme, workstation breaks and advice to contact the clinic or GP if symptoms increase. That is a discharge plan, not a recommendation for further treatment or investigation.",
+          "suggestedQuestion": "Do you recommend any further treatment or investigation for [CLAIMANT] after discharge on 07/07/2026? If so, what?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-14",
+          "issue": "No clinician recorded an opinion on the likely long-term outcome or prognosis. Sarah Reid's discharge note of 07/07/2026 records the current status (residual intermittent low-level neck ache with prolonged sitting or driving, full functional active range of movement, no neurological signs) but gives no prognosis.",
+          "suggestedQuestion": "In your opinion, what is the likely long-term outcome for [CLAIMANT]?",
+          "relatedNoteIds": [
+            "N-010",
+            "N-009"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 4926,
+        "usage": {
+          "inputTokens": 83,
+          "outputTokens": 458,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7387
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

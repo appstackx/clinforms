@@ -1,0 +1,139 @@
+# Walkthrough video recorder (`scripts/medreport/video`)
+
+Records the proof-of-concept walkthrough of ClinForms prepared for Dell Baines, Blue Heart Clinics:
+completing each MLC and insurer's own report form from TM3 registration details and physiotherapy notes.
+
+The video is written as a point-by-point reply to Dell's e-mail. Every chapter opens with a card quoting
+his own question ("You asked: …") and ends with a one-line plain answer. The chapter chip reads
+"Your question n of 5 · …". Screen order: 1 → 3 → 2 → 4 → 1 again (his "different structure" example,
+side by side) → 3 again (filing back to TM3, with its own question card and answer) → 5, then a recap of
+the five answers (with the times they were shown) and the next step, which takes up his offer of
+anonymised examples.
+
+The copy already rendered and sent was made before the product was renamed, so it shows the earlier
+name ("AppStackX Reports") and the earlier file names. Re-running the recorder produces ClinForms output.
+
+| File | Purpose |
+|---|---|
+| `record-demo.mjs` | Drives the Studio and the Simulated TM3 sandbox with Playwright, captures frames, assembles the MP4s and the other outputs |
+| `captions.json` | Every caption, chapter chip, question card, answer line, card and suggested voice-over line. Edit the wording here, not in the script |
+
+## What it produces
+
+All files go to `--out DIR`, or `$VIDEO_OUT`, or `$TMPDIR/clinforms-video` if neither is set.
+Outputs are never written into the repo.
+
+- `clinforms-demo-blue-heart.mp4`: the master. 1920×1080, H.264 (libx264 `-crf 18 -preset slow`,
+  yuv420p, 30 fps, `+faststart`), with no audio track.
+- `clinforms-demo-blue-heart-email.mp4`: the same video at 24 MB or less for e-mail
+  (`-preset slow -tune stillimage`, CRF 27 and up until it is under 23 MB, decimal).
+- `clinforms-demo-blue-heart.srt`: subtitles using the same timings as the burned-in captions.
+- `narration-script.md`: a voice-over script timed to the video, with honesty notes for the narrator.
+- `poster.png` (also `clinforms-demo-blue-heart-poster.png`): the title card.
+- `frames/`: one review frame every 8 s, one 2.5 s into each chapter, and one inside each sped-up wait.
+- `cards/`: the title, intro, GDPR, recap and next-step cards (HTML and PNG).
+- `work/`: raw screencast frames, `timeline.json` (frames, captions, cuts, sped-up waits, chapters, guard
+  results), `summary.json`, clips, downloads, badges and the viewer pages. This folder can be deleted.
+
+## Running it
+
+```bash
+npm run build                                       # if the build is stale
+MEDREPORT_AI_MODE=auto PORT=3110 npm run start &    # live drafting must be available (checked via /health)
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /path/to/video
+# Re-assemble only (after editing the assembly code; captions are burned in at record time):
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /path/to/video --assemble-only [--cards]
+# Rewrite only the SRT and narration script (after editing captions.json "vo"/"srt" wording; no re-encoding):
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /path/to/video --docs-only
+# Prepared demo outputs instead of live (server in MEDREPORT_AI_MODE=demo; captions must then say so):
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /path/to/video --demo
+# Dry run of the whole flow without live calls or the slow e-mail encode (timings ≈ the live video's):
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /tmp/dry --demo --no-email
+# Check the final-PDF viewer and the side-by-side page against two downloaded final PDFs:
+NODE_PATH=$(npm root -g) node scripts/medreport/video/record-demo.mjs --out /tmp/x --viewer-test HP.pdf NF.pdf
+```
+
+Environment variables:
+
+- `BASE`: the app URL. Defaults to `http://localhost:3110`.
+- `CHROMIUM_PATH`: the browser to use. Defaults to the newest `/opt/pw-browsers/chromium-*`, then
+  Playwright's own browser.
+
+The live passcode is read from `MEDREPORT_LIVE_PASSCODE` in `.env.local` and put straight into the tab's
+sessionStorage by an init script. It is never printed, logged or shown: the mode dialog is never opened.
+
+You also need `ffmpeg`/`ffprobe`, `unzip`, plus `pdftoppm` and `pdftotext` (poppler) to render and scan
+the final PDFs. A full run takes about 10 minutes and makes 8 live calls (2 for the form reading, 3 for
+each of the two drafts).
+
+## How it works
+
+- **State.** The run starts from a fresh browser context, and the app's own *Demo tools → Reset demo*
+  is pressed before recording. The new form uploaded on screen is the bundled Meridian sample, fetched
+  from `/api/reports/v1/forms/samples/meridian-discharge-report/file`; staff type the referrer's name in
+  the upload dialog, because it is only in the form's page header.
+- **Capture.** Frames come from the Chrome DevTools screencast (JPEG quality 92, every frame). The
+  1600×900 CSS viewport is rendered at device scale 1.2 (`--force-device-scale-factor`,
+  `viewport: null`), so each frame is native 1920×1080 and needs no upscaling. This was tested against
+  Playwright's `recordVideo`, which upscales a 1600×900 VP8 stream and gave visibly softer text.
+  Frames are assembled with the ffmpeg concat demuxer, using each frame's real timestamp as its duration.
+- **Overlay.** `addInitScript` injects the chapter bar, the question card, the caption bar (answer lines
+  in green with a tick) and the cursor dot with its click ripple, all inside a shadow root. The chapter
+  bar sits in a 36 px strip that the recorder reserves at the top of the page with CSS (body padding,
+  and the Studio's sticky header and sticky side panels moved down by the same amount). The Studio's toasts are lifted above the caption bar with CSS, so a caption never covers one.
+  A 2 px "heartbeat" repaint runs every 100 ms. Without it the screencast can drop the last frame of
+  a transition. No app code is changed by the recorder.
+- **Pacing.** Each caption stays on screen for at least 0.35 s per word, and never less than 2.5 s.
+  Question cards stay for 0.3 s per word (at least 3.2 s). Cursor moves are eased and typing runs at a
+  human pace. Before each caption the recorder closes any open tooltip (blurs its trigger and moves the
+  cursor off it), so none is left over the content.
+- **Live waits.** The form reading and the two drafts run live. Each wait is recorded in full, then sped
+  up in post to about 3 s (`spedDuration`), with an amber "Sped up – real time about N s" badge over it
+  and the same label in the SRT (one entry, not repeated without it). N is the measured wall time from the
+  click to the result on screen, so it can be a second or two more than the app's own "Drafted from the
+  notes in N s" chip, which times the drafting alone – hence "about".
+- **Live checks.** After each live draft the recorder reads the stored report and aborts the run if a
+  group was not drafted live, a drafted paragraph is uncited, the prognosis was answered instead of left
+  for the clinician, or there is a blocking flag other than gaps. Re-run the recording if that happens.
+- **Cuts.** Other waits (page loads, downloads, the PDF copy) are hard cuts once they pass 0.5 s.
+  Opening a new tab is cut from the click (`clickNewTab`): while the new tab starts, Chrome briefly shows
+  a "Debugger paused in another tab" infobar on the opener, which must never be in the video. Stretches
+  of repetitive clinician clicks are also cut, and the caption on screen says so: the remaining Harrow &
+  Pike answers and resolutions; the Northfield opinions, claim number and checks; and the Northfield
+  approval dialog. On Northfield the questions that don't apply ("If modified duties…", "Estimated number
+  of further sessions") are answered on screen ("Not applicable", 0), and the recorder aborts unless the
+  progress panel reads N of N answered and clear before approval – no form is approved with open items.
+- **Final PDFs.** The recorder downloads the final PDFs, renders their pages to PNG with `pdftoppm`, and
+  shows them in local viewer pages: Harrow & Pike full screen, then both forms side by side with the
+  matching questions (prognosis, functional restrictions, treatment recommendations) highlighted pair by
+  pair. Highlight boxes are positioned from `pdftotext -bbox-layout` word coordinates. In the viewer the
+  cursor points at each highlight from the page margin, never over the document's text.
+- **Subtitles for cards.** A card's `srt` in `captions.json` can be a list of short entries; they are
+  shown one after another over the card (a static card is not chopped into fast fragments).
+- **Returning to a tab.** A review page that sat behind the viewer pages may still be drawing its
+  preview; the recorder waits for it (and refreshes it if needed) inside the cut, so "Drawing the form…"
+  or "Preview unavailable" is never on screen.
+- **Recap times.** The recap card shows where each answer was given, from the chapter times computed
+  from the recording's cuts and sped-up waits.
+
+## Banned-term guard (keep it)
+
+Customer-facing wording is neutral: no "AI", vendor, model or technology terms anywhere a customer can
+see or download (`src/modules/medreport/core/wording.ts`). The recorder enforces it:
+
+- Before every caption, question card and chapter, it scans the page's visible text, title, aria-labels,
+  titles, placeholders and alt text, and **aborts the recording** on a hit, naming the scene.
+- It scans `captions.json` before recording, every card page, the badges, the SRT, the narration script
+  and the downloaded final Word and PDF files before writing them. The results are in `summary.json`.
+
+## Honesty rules (built in, keep them)
+
+- Live by default. With `--demo`, the analysis and drafts are the prepared demo outputs and the
+  captions must say so ("prepared earlier from the same notes").
+- Sped-up waits always carry their real time. Nothing else is sped up.
+- Counts such as "12 of 16 answered and clear" and "10 notes · 11 appointments · 6 scores" are read
+  from the UI during the recording.
+- The TM3 shown is always the *Simulated TM3 sandbox – demo data, not affiliated with TM3*. All
+  patients and referrers are fictional. A direct TM3 connection is "subject to TM3 providing access";
+  today's route is a TM3 export.
+- Make no time-saving claims, and do not use real MLC or insurer branding.

@@ -1,0 +1,484 @@
+{
+  "format": "appstackx-reports.form-analysis",
+  "formatVersion": 1,
+  "sampleId": "northfield-rehab-progress",
+  "fileSha256": "c7801018ddc7fa5b3c7f73831b14d98516bf9cd50b7791ae23ed01f0b068c717",
+  "fileName": "Northfield-Assurance_Rehabilitation-Progress-Report_NA-RPR-2.pdf",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:02:03.049Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "form-analysis-3",
+  "effort": "low",
+  "durationMs": 13111,
+  "chunks": 3,
+  "usage": {
+    "inputTokens": 608,
+    "outputTokens": 5477,
+    "cacheReadInputTokens": 16086,
+    "cacheCreationInputTokens": 15645
+  },
+  "form": {
+    "id": "frm_475a1a4126c69954",
+    "tenantId": "demo",
+    "referrer": {
+      "name": "Northfield Assurance (fictional)",
+      "type": "insurer"
+    },
+    "title": "Rehabilitation Progress Report",
+    "versionLabel": "Form NA-RPR-2 (Rev. 05/2026)",
+    "file": {
+      "fileName": "Northfield-Assurance_Rehabilitation-Progress-Report_NA-RPR-2.pdf",
+      "mimeType": "application/pdf",
+      "sha256": "c7801018ddc7fa5b3c7f73831b14d98516bf9cd50b7791ae23ed01f0b068c717",
+      "sizeBytes": 39486
+    },
+    "kind": "pdf_acroform",
+    "fields": [
+      {
+        "id": "F-01",
+        "label": "Policy / claim no.",
+        "section": "CLAIM DETAILS",
+        "guidance": "The insurer's policy or claim reference for this case.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtPolicyNo",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "referral.reference"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-02",
+        "label": "Date of injury",
+        "section": "CLAIM DETAILS",
+        "guidance": "The date the claimant was injured.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtInjuryDate",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "incident.date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-03",
+        "label": "Claimant",
+        "section": "CLAIM DETAILS",
+        "guidance": "The claimant's full name.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtClaimant",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.fullName"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-04",
+        "label": "Date of birth",
+        "section": "CLAIM DETAILS",
+        "guidance": "The claimant's date of birth.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtDOB",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.dob"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-05",
+        "label": "Date of first treatment",
+        "section": "CLAIM DETAILS",
+        "guidance": "The date the claimant was first treated by the clinic.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtFirstSeen",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.firstSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-06",
+        "label": "Date of this report",
+        "section": "CLAIM DETAILS",
+        "guidance": "The date this report is written.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtReportDate",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "report.date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-07",
+        "label": "DIAGNOSIS / WORKING DIAGNOSIS",
+        "section": "1. DIAGNOSIS / WORKING DIAGNOSIS",
+        "guidance": "The diagnosis or working diagnosis for the claimant's condition.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ1Diagnosis",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Diagnosis is a clinical judgement; clinician should review the draft."
+      },
+      {
+        "id": "F-08",
+        "label": "Type of treatment, exercise programme and advice given",
+        "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+        "guidance": "Describe the treatment provided, exercise programme and advice given so far.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ2Treatment",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-09",
+        "label": "Sessions attended",
+        "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+        "guidance": "Number of sessions the claimant attended.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "numAttended",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "sessions_attended"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-10",
+        "label": "Sessions missed (DNA)",
+        "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+        "guidance": "Number of appointments the claimant missed without notice.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "numDNA",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "dna_count"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-11",
+        "label": "Treatment completed - claimant discharged",
+        "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+        "guidance": "Tick if treatment is complete and the claimant has been discharged.",
+        "answerType": "checkbox",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "chkDischarged",
+          "fieldType": "checkbox"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": false,
+        "confidence": "medium",
+        "note": "Confirm discharge status from the notes before ticking."
+      },
+      {
+        "id": "F-12",
+        "label": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+        "section": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+        "guidance": "Describe the claimant's functional limitations affecting work and daily activities.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ3Limitations",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-13",
+        "label": "4. IS THE CLAIMANT FIT FOR WORK?",
+        "section": "4. IS THE CLAIMANT FIT FOR WORK?",
+        "guidance": "State whether the claimant is fit for work, unfit, or fit for modified duties.",
+        "answerType": "single_choice",
+        "options": [
+          "Yes",
+          "No",
+          "Modified duties"
+        ],
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "rdoFitForWork",
+          "fieldType": "radio",
+          "options": [
+            "Yes",
+            "No",
+            "Modified duties"
+          ]
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-14",
+        "label": "If modified duties, please give details (duties, hours and expected duration)",
+        "section": "4. IS THE CLAIMANT FIT FOR WORK?",
+        "guidance": "If modified duties apply, give the duties, hours and expected duration.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ4Details",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": false,
+        "confidence": "high",
+        "note": "Only needed if Modified duties is selected."
+      },
+      {
+        "id": "F-15",
+        "label": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+        "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+        "guidance": "Describe any further treatment recommended.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ5Further",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-16",
+        "label": "Estimated number of further sessions",
+        "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+        "guidance": "Estimated number of further sessions needed.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "numFurtherSessions",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-17",
+        "label": "EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+        "section": "6. EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+        "guidance": "The insurer wants the therapist's opinion on how long recovery is expected to take.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtQ6Prognosis",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-18",
+        "label": "Therapist name",
+        "section": "DECLARATION",
+        "guidance": "The name of the treating therapist signing the declaration.",
+        "answerType": "clinician_name",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtTherapistName",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "name"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-19",
+        "label": "HCPC registration no.",
+        "section": "DECLARATION",
+        "guidance": "The signing therapist's HCPC registration number.",
+        "answerType": "hcpc_number",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtHCPC",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "hcpc"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-20",
+        "label": "Signature (typed)",
+        "section": "DECLARATION",
+        "guidance": "The therapist's typed signature confirming the declaration.",
+        "answerType": "signature",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtSignature",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "signature"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-21",
+        "label": "Date",
+        "section": "DECLARATION",
+        "guidance": "The date the declaration is signed.",
+        "answerType": "date_signed",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtSignedDate",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-22",
+        "label": "Claims handler",
+        "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+        "guidance": "For the insurer's own use; the clinic does not complete it.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtOfficeHandler",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "leave_blank"
+        },
+        "required": false,
+        "confidence": "high"
+      },
+      {
+        "id": "F-23",
+        "label": "Date received",
+        "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+        "guidance": "For the insurer's own use; the clinic does not complete it.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "pdf_field",
+          "fieldName": "txtOfficeReceived",
+          "fieldType": "text"
+        },
+        "fillSource": {
+          "kind": "leave_blank"
+        },
+        "required": false,
+        "confidence": "high"
+      }
+    ],
+    "status": "proposed",
+    "analysis": {
+      "mode": "live",
+      "model": "claude-sonnet-5-5",
+      "promptVersion": "form-analysis-3",
+      "durationMs": 13111,
+      "usage": {
+        "inputTokens": 608,
+        "outputTokens": 5477,
+        "cacheReadInputTokens": 16086,
+        "cacheCreationInputTokens": 15645
+      },
+      "at": "2026-10-09T08:01:48.878Z",
+      "warnings": []
+    },
+    "createdAt": "2026-10-09T08:01:48.878Z",
+    "updatedAt": "2026-10-09T08:01:48.878Z",
+    "sampleId": "northfield-rehab-progress"
+  },
+  "outlineSummary": {
+    "kind": "pdf_acroform",
+    "pages": 2,
+    "fillableFields": 23,
+    "answerSpaces": 23,
+    "headings": [],
+    "warnings": []
+  },
+  "note": "Real Claude analysis of a bundled fictional sample form, recorded by scripts/medreport/record-form-analyses.ts and post-validated against the parsed document."
+}

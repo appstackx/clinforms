@@ -1,0 +1,6 @@
+# Auto detect text files and normalise line endings to LF
+* text=auto eol=lf
+
+# Generated base64 payloads (built-in Word templates, sample referrer forms, fonts): hide from diffs
+# and language stats. Rebuild them with the scripts in scripts/medreport instead of editing by hand.
+*.b64.ts linguist-generated=true -diff

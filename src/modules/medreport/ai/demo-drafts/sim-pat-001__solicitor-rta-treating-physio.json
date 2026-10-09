@@ -1,0 +1,288 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-001",
+  "bundleFingerprint": "dfe456a3ec41c2563bd6337e052266c7a76053659d8b2abd2980dd63ad149346",
+  "templateId": "solicitor-rta-treating-physio",
+  "templateVersion": "1.0.0",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:47:46.928Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "2",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case. Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "incident_history+presenting_complaints": {
+      "sections": [
+        {
+          "sectionKey": "incident_history",
+          "paragraphs": [
+            {
+              "text": "The registration record states that the incident was a road traffic accident on 12/03/2026, a rear-end collision in which [CLAIMANT] was the restrained driver of a stationary car queuing at traffic lights and was struck from behind by another car. The record states that the airbags did not deploy and that there was no head strike and no loss of consciousness.",
+              "sourceIds": [
+                "REG"
+              ],
+              "basis": "record"
+            },
+            {
+              "text": "At the initial assessment on 18/03/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] reported being the restrained driver of a stationary car queuing at traffic lights when it was struck from behind. [CLAIMANT] reported that the airbags did not deploy, that there was no head strike and no loss of consciousness, and that she self-extricated and exchanged details at the scene.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "[CLAIMANT] reported that neck stiffness came on the same evening and was worse on waking on 13/03/2026. She reported attending an urgent treatment centre on 13/03/2026, where, as she described it, no imaging was performed and she was advised to take simple analgesia and to keep moving. [CLAIMANT] reported that occipital headaches started 2 days after the accident.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "presenting_complaints",
+          "paragraphs": [
+            {
+              "text": "At the initial assessment on 18/03/2026 [CLAIMANT] reported central and bilateral neck pain, left more than right, spreading into both upper trapezius muscles. She reported no arm pain, pins and needles or weakness. She rated her pain on the Numeric Pain Rating Scale as 7/10 at worst and 3/10 at best. Sarah Reid, senior physiotherapist, recorded these reports.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "[CLAIMANT] reported occipital headaches 3–4 times a week lasting 2–3 hours. She reported disturbed sleep, waking 2–3 times a night on turning, and stiffness of about 45 minutes on waking that was worse at the end of the working day. She reported that driving (especially checking the blind spot and reversing), sitting at a computer for more than 30 minutes and looking up to high shelves aggravated her symptoms, and that heat, paracetamol and ibuprofen, and gentle movement eased them.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "[CLAIMANT] reported working full-time in a desk-based office administrator role. She reported being off work on 13/03/2026 and 16/03/2026 and back at work since 17/03/2026, taking extra breaks. She reported driving short local journeys only, and feeling anxious and repeatedly checking the rear-view mirror when stopped in traffic. Sarah Reid recorded that [CLAIMANT]'s goals were to drive without neck pain, get through a working day without headache and sleep through the night.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "Sarah Reid recorded that [CLAIMANT] reported no dizziness, diplopia, dysarthria, dysphagia, drop attacks or nausea, no symptoms in both arms and no gait disturbance. She also recorded that [CLAIMANT] reported taking paracetamol 1 g four times a day and ibuprofen 400 mg three times a day as required with food.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 7887,
+        "usage": {
+          "inputTokens": 45,
+          "outputTokens": 1246,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 10945
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "examination_findings+treatment_provided": {
+      "sections": [
+        {
+          "sectionKey": "examination_findings",
+          "paragraphs": [
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] had forward head posture and guarded neck movement, and turned the trunk to look over the shoulder. Cervical spine active range of movement was recorded as flexion 30° (pain at end range), extension 25° (pain in the posterior neck), left rotation 45° (pain on the left side), right rotation 50° (pain), left side flexion 20° and right side flexion 25°.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "Sarah Reid recorded tenderness on palpation of the bilateral upper trapezius and levator scapulae (left more than right) and of the C2–C4 paraspinals (left more than right), with increased tone in the left sub-occipitals. Central posteroanterior passive accessory intervertebral movements at C2–C5 were recorded as stiff and reproduced local neck pain, and left unilateral posteroanterior movement at C3/4 was recorded as most comparable.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On the neurological screen Sarah Reid recorded upper limb dermatomes C5–T1 intact to light touch, myotomes C5–T1 5/5 bilaterally, and biceps, triceps and brachioradialis reflexes 2+ and symmetrical. Spurling's test and the upper limb tension test 1 (median) were recorded as negative bilaterally. The flexion-rotation test was recorded as 28° left and 35° right (positive left), and the cranio-cervical flexion test as holding 22 mmHg for 10 seconds, with the claimant unable to progress to 24 mmHg.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "In her assessment Sarah Reid recorded a presentation consistent with whiplash-associated disorder grade II (Quebec Task Force), with neck pain with musculoskeletal signs (reduced active range of movement, point tenderness) and no neurological signs. She recorded the headaches as consistent with a cervicogenic component (positive flexion-rotation test on the left, reproduced with left upper cervical passive accessory intervertebral movements).",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_opinion_recorded"
+            },
+            {
+              "text": "On 08/04/2026 Tom Ellis, physiotherapist, recorded active range of movement of flexion 40°, extension 35°, left rotation 55° (pain), right rotation 60°, left side flexion 25° and right side flexion 30°. He recorded tenderness on palpation of the left C3/4 paraspinals and left levator scapulae, and no abnormality detected on the upper limb dermatome, myotome and reflex screen. His assessment was whiplash-associated disorder grade II and neurologically intact.",
+              "sourceIds": [
+                "N-004"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 06/05/2026 Sarah Reid recorded active range of movement of flexion 45°, extension 45° (end-range stiffness only), left rotation 65°, right rotation 70°, left side flexion 35° and right side flexion 38°, with mild tenderness on palpation of the left upper trapezius. The flexion-rotation test was 40° left and 42° right, the cranio-cervical flexion test was 26 mmHg for 10 seconds and 28 mmHg for 6 seconds, and the upper limb neurological screen showed no abnormality detected. Her assessment was whiplash-associated disorder grade II, improving, with residual end-range stiffness, a deep neck flexor endurance deficit and a left levator scapulae trigger point.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 07/07/2026 Sarah Reid recorded active range of movement of flexion 55°, extension 55°, left rotation 75°, right rotation 80°, left side flexion 40° and right side flexion 45°, with a mild pull but no pain at end-range left rotation. She recorded no tenderness on palpation, no abnormality detected on the upper limb neurological screen, and a flexion-rotation test of 42° left and 44° right. Her assessment was full functional active range of movement with no neurological signs.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "treatment_provided",
+          "paragraphs": [
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded that she explained whiplash-associated disorder to [CLAIMANT] and reassured her, and advised her to stay active, not to use a collar and to use regular heat. Treatment comprised soft tissue mobilisation to the bilateral upper trapezius and levator scapulae, Maitland grade II central posteroanterior mobilisations at C2–C5 and sub-occipital release. A home exercise programme of chin tucks, active rotation and scapular setting was given, together with advice on posture breaks every 30 minutes and raising the screen to eye level.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 25/03/2026 Sarah Reid recorded treatment of soft tissue mobilisation, grade II–III central posteroanterior mobilisations at C2–C5 and sub-occipital release, with an upper trapezius stretch added to the home exercise programme. On 01/04/2026 she recorded soft tissue mobilisation, grade III left unilateral posteroanterior mobilisation at C3/4 and sustained natural apophyseal glides into left rotation. The home exercise programme then included cranio-cervical flexion training and theraband rows, and she advised a graded increase in driving time and discussed driving anxiety, with [CLAIMANT] to raise it with her GP if it did not settle.",
+              "sourceIds": [
+                "N-002",
+                "N-003"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 08/04/2026 Tom Ellis, physiotherapist, recorded soft tissue mobilisation, grade III left unilateral posteroanterior mobilisation at C3/4 and thoracic extension mobilisation over a foam roller. He added thoracic extension over a towel roll to the home exercise programme and reinforced workstation advice.",
+              "sourceIds": [
+                "N-004"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 22/04/2026 Sarah Reid recorded soft tissue mobilisation to the left levator scapulae and sustained natural apophyseal glides into left rotation, with the home exercise programme progressed to cranio-cervical flexion with head lift, prone Y/T raises and theraband rows. On 06/05/2026 she recorded soft tissue mobilisation and sustained natural apophyseal glides, with the home exercise programme progressed to strength and endurance exercises (cranio-cervical flexion, prone cervical extension holds and band pull-aparts), and sessions reduced to fortnightly.",
+              "sourceIds": [
+                "N-005",
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 20/05/2026 Tom Ellis recorded sustained natural apophyseal glides into left rotation and soft tissue mobilisation to the left levator scapulae, with resisted isometrics in 4 directions added to the home exercise programme. On 03/06/2026 he recorded sustained natural apophyseal glides and swimming advice to alternate strokes and avoid prolonged neck extension in breaststroke, with the home exercise programme progressed to prone Y/T/W with 1 kg and chin tuck with rotation.",
+              "sourceIds": [
+                "N-007",
+                "N-008"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 17/06/2026 Sarah Reid recorded that the home exercise programme was reviewed and progressed to a maintenance programme three times a week, and that a discharge plan of 3 weeks of self-management followed by a final review was discussed. On 07/07/2026 she recorded discharge from active physiotherapy to self-management, with a maintenance programme of cranio-cervical flexion, prone Y/T/W, and active rotation and upper trapezius stretches daily, continued swimming, workstation breaks every 30–45 minutes, and advice to contact the clinic or GP if symptoms increased.",
+              "sourceIds": [
+                "N-009",
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 21577,
+        "usage": {
+          "inputTokens": 45,
+          "outputTokens": 2867,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 10945
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "progress_current_status+prognosis": {
+      "sections": [
+        {
+          "sectionKey": "progress_current_status",
+          "paragraphs": [
+            {
+              "text": "On 25/03/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] described the neck as 'a bit easier', with the Numeric Pain Rating Scale at 6/10 at worst, and she recorded early improvement in active range of movement. On 01/04/2026 Sarah Reid recorded a worst Numeric Pain Rating Scale score of 5/10, headaches twice a week and sleep improving. On 08/04/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] reported the neck as 'about the same as last week' and that, in his assessment, there was a plateau that week linked to workload.",
+              "sourceIds": [
+                "N-002",
+                "N-003",
+                "N-004"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 22/04/2026 Sarah Reid recorded that [CLAIMANT] felt she was 'getting there', with a worst Numeric Pain Rating Scale score of 4/10 and driving up to 30 min without an increase in symptoms. On 06/05/2026 Sarah Reid recorded a reassessment in which [CLAIMANT] was working full days with breaks and driving to work again, with some neck discomfort after longer drives. She recorded the assessment as whiplash-associated disorder grade II, improving, with residual end-range stiffness, a deep neck flexor endurance deficit and a left levator scapulae trigger point.",
+              "sourceIds": [
+                "N-005",
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 17/06/2026 Sarah Reid recorded that [CLAIMANT] described the neck as 'much better', with a worst Numeric Pain Rating Scale score of 2/10, driving up to 1 hr without symptoms, working full days and swimming twice a week. She recorded minimal residual symptoms and a plan for self-management with a final review.",
+              "sourceIds": [
+                "N-009"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 07/07/2026 Sarah Reid recorded at the final review that [CLAIMANT] reported occasional neck ache (Numeric Pain Rating Scale 2/10 at worst) after long days at the computer or drives over 1 hr, and 0/10 most days. [CLAIMANT] reported 1 mild headache in the last 3 weeks, sleeping well, working full-time on normal duties and driving without restriction. [CLAIMANT] was less anxious driving but still checked the mirror more than before the accident. Sarah Reid recorded that the episode of care was complete, with residual intermittent low-level neck ache with prolonged sitting or driving, full functional active range of movement and no neurological signs, and that [CLAIMANT] was discharged from active physiotherapy to self-management.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "The recorded Neck Disability Index scores were 42% on 18/03/2026, 24% on 06/05/2026 and 12% on 07/07/2026. The recorded Numeric Pain Rating Scale scores were 7/10 on 18/03/2026, 4/10 on 06/05/2026 and 2/10 on 07/07/2026.",
+              "sourceIds": [
+                "FACT-outcomes-NDI",
+                "FACT-outcomes-NPRS"
+              ],
+              "basis": "record"
+            }
+          ]
+        },
+        {
+          "sectionKey": "prognosis",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "prognosis",
+          "issue": "No clinician recorded a prognosis in any note, including Sarah Reid's discharge note of 07/07/2026.",
+          "suggestedQuestion": "What is your opinion on [CLAIMANT]'s prognosis, including any expected further recovery or residual symptoms, and on what basis?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 7769,
+        "usage": {
+          "inputTokens": 49,
+          "outputTokens": 1305,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 10945
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

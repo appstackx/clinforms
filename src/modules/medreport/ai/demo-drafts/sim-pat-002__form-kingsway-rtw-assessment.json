@@ -1,0 +1,343 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-002",
+  "bundleFingerprint": "6aacbd4de32b68cffdc071ed4b5db333fa2e9bc3a0b1eb19449bf97574262f18",
+  "templateId": "form:frm_sample_kingsway_rtw01",
+  "templateVersion": "KCM-RTW-01 Rev. 2 (01/2026)",
+  "sampleId": "kingsway-rtw-assessment",
+  "formSha256": "4dee546ab5bea0bf530c24deed8e89db9de12abd06652af38218616b95675469",
+  "fields": {
+    "F-01": {
+      "anchor": "docx:p3|..................................",
+      "answerType": "short_text",
+      "label": "Employer / client reference"
+    },
+    "F-02": {
+      "anchor": "docx:p3|..........................",
+      "answerType": "short_text",
+      "label": "Kingsway case no."
+    },
+    "F-03": {
+      "anchor": "docx:p5|____________________________________",
+      "answerType": "short_text",
+      "label": "Employee name"
+    },
+    "F-04": {
+      "anchor": "docx:p5|________________",
+      "answerType": "date",
+      "label": "Date of birth"
+    },
+    "F-05": {
+      "anchor": "docx:p6|______________________________",
+      "answerType": "short_text",
+      "label": "Job title"
+    },
+    "F-06": {
+      "anchor": "docx:p6|________________________________",
+      "answerType": "short_text",
+      "label": "Employer"
+    },
+    "F-07": {
+      "anchor": "docx:p7|______________",
+      "answerType": "date",
+      "label": "Date of injury / onset"
+    },
+    "F-08": {
+      "anchor": "docx:p7|______________#2",
+      "answerType": "date",
+      "label": "Date first seen"
+    },
+    "F-09": {
+      "anchor": "docx:p7|______________#3",
+      "answerType": "date",
+      "label": "Date last seen"
+    },
+    "F-10": {
+      "anchor": "docx:p10|______________________________________________________________________________",
+      "answerType": "long_text",
+      "label": "1. Nature of the injury and diagnosis"
+    },
+    "F-11": {
+      "anchor": "docx:p14|______________________________________________________________________________",
+      "answerType": "long_text",
+      "label": "2. Treatment provided to date, including the number of sessions attended"
+    },
+    "F-12": {
+      "anchor": "docx:p18",
+      "answerType": "long_text",
+      "label": "3. Current functional capacity"
+    },
+    "F-13": {
+      "anchor": "glyph:p24#0,p24#1",
+      "answerType": "yes_no",
+      "label": "4. In your opinion, is the employee fit to return to their normal duties?"
+    },
+    "F-14": {
+      "anchor": "glyph:p26#0,p26#1,p26#2",
+      "answerType": "single_choice",
+      "label": "5. If not, are they fit for modified or restricted duties?"
+    },
+    "F-15": {
+      "anchor": "docx:p28",
+      "answerType": "long_text",
+      "label": "6. Recommended adjustments or restrictions"
+    },
+    "F-16": {
+      "anchor": "docx:p32|______________________________________________________________________________",
+      "answerType": "long_text",
+      "label": "7. Recommended return-to-work plan and timescale"
+    },
+    "F-17": {
+      "anchor": "docx:p35|______________________________________________________________________________",
+      "answerType": "long_text",
+      "label": "8. Is further treatment required? If so, please give details."
+    },
+    "F-18": {
+      "anchor": "docx:p38|________________________________________",
+      "answerType": "short_text",
+      "label": "9. When should the employee be reviewed?"
+    },
+    "F-19": {
+      "anchor": "docx:p41|__________________________________",
+      "answerType": "clinician_name",
+      "label": "Therapist name"
+    },
+    "F-20": {
+      "anchor": "docx:p41|________________",
+      "answerType": "hcpc_number",
+      "label": "HCPC no."
+    },
+    "F-21": {
+      "anchor": "docx:p42|______________________________________",
+      "answerType": "signature",
+      "label": "Signature"
+    },
+    "F-22": {
+      "anchor": "docx:p42|________________",
+      "answerType": "date_signed",
+      "label": "Date"
+    }
+  },
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:48:34.371Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "forms-7",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case on the sample form \"kingsway-rtw-assessment\". Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "F-10+F-11": {
+      "sections": [
+        {
+          "sectionKey": "F-10",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "[CLAIMANT] reported that on 02/06/2026, during a night shift, he lifted a carton of approximately 20 kg from floor level onto a pallet, twisting to his right, and had immediate sharp pain across the low back, right more than left.",
+              "sourceIds": [
+                "N-001",
+                "REG"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded an assessment of acute non-specific mechanical low back pain following a lifting injury at work on 02/06/2026, with no red flags and no neurological signs. On 22/09/2026 Tom Ellis recorded an assessment of mechanical low back pain following the workplace lifting injury on 02/06/2026.",
+              "sourceIds": [
+                "N-001",
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-11",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded treatment with soft tissue mobilisation of the right lumbar paraspinals and quadratus lumborum, Maitland grade II central posteroanterior glides at L4–L5, and heat, with reassurance and a home exercise programme of pelvic tilts, knee rolls, cat–camel and walking. On 16/06/2026 he recorded soft tissue mobilisation, grade III central posteroanterior glides at L4–L5 and right unilateral posteroanterior glides at L4/5, with the home exercise programme progressed to bridges, bird-dog and sit-to-stand, and advice on pacing for the return to amended duties.",
+              "sourceIds": [
+                "N-001",
+                "N-002"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 30/06/2026 Tom Ellis recorded soft tissue mobilisation and grade III central posteroanterior glides at L4–L5, a home exercise programme progressed to hip hinge with dowel, bodyweight goblet squat and side plank, and discussion of manual handling technique. On 14/07/2026 Sarah Reid, senior physiotherapist, recorded education on graded loading and load tolerance, the home exercise programme progressed to loaded strength work, and sessions reduced to every 3–4 weeks alongside a self-directed gym programme. On 11/08/2026 Tom Ellis recorded a review of gym exercise technique and progression of the programme to kettlebell deadlift 16 kg, suitcase carry and step-ups. On 22/09/2026 he recorded discharge to self-management with a continued gym programme and maintenance home exercise programme.",
+              "sourceIds": [
+                "N-003",
+                "N-004",
+                "N-005",
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "Attendance was 6 of 7 appointments, with no non-attendances without notice and 1 late cancellation on 23/06/2026, when [CLAIMANT] phoned on the morning of the appointment to say that, in his first week back on amended night shifts, he was unable to attend after a shift.",
+              "sourceIds": [
+                "FACT-attendance"
+              ],
+              "basis": "record"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6504,
+        "usage": {
+          "inputTokens": 87,
+          "outputTokens": 1083,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5805
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-12+F-13+F-14": {
+      "sections": [
+        {
+          "sectionKey": "F-12",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] reported low back pain of 1–2/10 at worst after 4 nights of shifts, settling on rest days, with no leg symptoms and no flare-ups in the last 6 weeks. [CLAIMANT] reported being on amended duties with occasional lifts up to 15 kg and no repetitive floor-level lifting, attending the gym 3 times a week, and being confident with lifting technique.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis recorded that lumbar active range of movement was full and pain-free in all directions, with no tenderness on palpation and straight leg raise of 85° bilaterally. On 14/07/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] reported sitting for 1 hour without problem.",
+              "sourceIds": [
+                "N-006",
+                "N-004"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-13",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-14",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-12",
+          "issue": "The record does not state whether a formal functional or lifting assessment was carried out, and Tom Ellis's note of 22/09/2026 does not record prolonged standing or carrying capacity. Bending is not described at the latest review beyond full range of movement.",
+          "suggestedQuestion": "Was any formal functional or lifting assessment carried out, and what was [CLAIMANT]'s tolerance for prolonged standing, carrying and bending at the final review on 22/09/2026?",
+          "relatedNoteIds": [
+            "N-006",
+            "N-005"
+          ]
+        },
+        {
+          "sectionKey": "F-13",
+          "issue": "Tom Ellis's note of 22/09/2026 records an opinion that he is fit for a phased return to normal duties over 2 weeks, avoiding repetitive lifting more than 15 kg for 4 weeks, with review in 6 weeks. This is a qualified opinion and does not match a plain Yes or No.",
+          "suggestedQuestion": "Given the recorded opinion of a phased return to normal duties over 2 weeks with avoidance of repetitive lifting more than 15 kg for 4 weeks, do you wish to answer Yes or No to fitness for normal duties?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        },
+        {
+          "sectionKey": "F-14",
+          "issue": "Tom Ellis's note of 22/09/2026 records a phased return to normal duties with avoidance of repetitive lifting more than 15 kg for 4 weeks. It does not say whether he is fit for modified duties in the form's terms, so none of the options clearly matches.",
+          "suggestedQuestion": "Given the recorded opinion of a phased return to normal duties over 2 weeks with avoidance of repetitive lifting more than 15 kg for 4 weeks, which option applies: Yes, with the adjustments below; No; or Not applicable?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6719,
+        "usage": {
+          "inputTokens": 116,
+          "outputTokens": 1081,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5805
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-15+F-16+F-17+F-18": {
+      "sections": [
+        {
+          "sectionKey": "F-15",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that in his opinion [CLAIMANT] should avoid repetitive lifting more than 15 kg for 4 weeks, as part of a phased return to normal duties over 2 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-16",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that in his opinion [CLAIMANT] is fit for a phased return to normal duties over 2 weeks. His return-to-work recommendation for HR and occupational health was a phased return to normal duties over 2 weeks, avoiding repetitive lifting more than 15 kg for 4 weeks, with review in 6 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-17",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] was discharged from active physiotherapy to self-management. He recorded advice to continue the gym programme 2 to 3 times a week and a maintenance home exercise programme (bridges, bird-dog, side plank, hip hinge), and to contact the clinic if symptoms recur.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-18",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded a review in 6 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 4357,
+        "usage": {
+          "inputTokens": 136,
+          "outputTokens": 656,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5805
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+.npm-cache
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# Cloudflare (OpenNext) build output, if that adapter is added later
+/.open-next/
+/.wrangler/
+
+# misc
+.DS_Store
+*.pem
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files (secrets) – .env.example is the committed template
+.env*.local
+.env
+.dev.vars
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

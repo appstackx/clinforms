@@ -1,0 +1,349 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-002",
+  "bundleFingerprint": "6aacbd4de32b68cffdc071ed4b5db333fa2e9bc3a0b1eb19449bf97574262f18",
+  "templateId": "form:frm_sample_northfield_rpr2",
+  "templateVersion": "NA-RPR-2 (Rev. 05/2026)",
+  "sampleId": "northfield-rehab-progress",
+  "formSha256": "c7801018ddc7fa5b3c7f73831b14d98516bf9cd50b7791ae23ed01f0b068c717",
+  "fields": {
+    "F-01": {
+      "anchor": "pdf:txtPolicyNo",
+      "answerType": "short_text",
+      "label": "Policy / claim no."
+    },
+    "F-02": {
+      "anchor": "pdf:txtInjuryDate",
+      "answerType": "date",
+      "label": "Date of injury"
+    },
+    "F-03": {
+      "anchor": "pdf:txtClaimant",
+      "answerType": "short_text",
+      "label": "Claimant"
+    },
+    "F-04": {
+      "anchor": "pdf:txtDOB",
+      "answerType": "date",
+      "label": "Date of birth"
+    },
+    "F-05": {
+      "anchor": "pdf:txtFirstSeen",
+      "answerType": "date",
+      "label": "Date of first treatment"
+    },
+    "F-06": {
+      "anchor": "pdf:txtReportDate",
+      "answerType": "date",
+      "label": "Date of this report"
+    },
+    "F-07": {
+      "anchor": "pdf:txtQ1Diagnosis",
+      "answerType": "long_text",
+      "label": "1. Diagnosis / working diagnosis"
+    },
+    "F-08": {
+      "anchor": "pdf:txtQ2Treatment",
+      "answerType": "long_text",
+      "label": "2. Treatment to date and attendance"
+    },
+    "F-09": {
+      "anchor": "pdf:numAttended",
+      "answerType": "number",
+      "label": "Sessions attended"
+    },
+    "F-10": {
+      "anchor": "pdf:numDNA",
+      "answerType": "number",
+      "label": "Sessions missed (DNA)"
+    },
+    "F-11": {
+      "anchor": "pdf:chkDischarged",
+      "answerType": "checkbox",
+      "label": "Treatment completed – claimant discharged"
+    },
+    "F-12": {
+      "anchor": "pdf:txtQ3Limitations",
+      "answerType": "long_text",
+      "label": "3. Functional limitations affecting work and daily activities"
+    },
+    "F-13": {
+      "anchor": "pdf:rdoFitForWork",
+      "answerType": "single_choice",
+      "label": "4. Is the claimant fit for work?"
+    },
+    "F-14": {
+      "anchor": "pdf:txtQ4Details",
+      "answerType": "long_text",
+      "label": "If modified duties, please give details"
+    },
+    "F-15": {
+      "anchor": "pdf:txtQ5Further",
+      "answerType": "long_text",
+      "label": "5. Recommended further treatment and estimated sessions"
+    },
+    "F-16": {
+      "anchor": "pdf:numFurtherSessions",
+      "answerType": "number",
+      "label": "Estimated number of further sessions"
+    },
+    "F-17": {
+      "anchor": "pdf:txtQ6Prognosis",
+      "answerType": "long_text",
+      "label": "6. Expected recovery timescale (prognosis)"
+    },
+    "F-18": {
+      "anchor": "pdf:txtTherapistName",
+      "answerType": "clinician_name",
+      "label": "Therapist name"
+    },
+    "F-19": {
+      "anchor": "pdf:txtHCPC",
+      "answerType": "hcpc_number",
+      "label": "HCPC registration no."
+    },
+    "F-20": {
+      "anchor": "pdf:txtSignature",
+      "answerType": "signature",
+      "label": "Signature (typed)"
+    },
+    "F-21": {
+      "anchor": "pdf:txtSignedDate",
+      "answerType": "date_signed",
+      "label": "Date"
+    },
+    "F-22": {
+      "anchor": "pdf:txtOfficeHandler",
+      "answerType": "short_text",
+      "label": "Claims handler (insurer use)"
+    },
+    "F-23": {
+      "anchor": "pdf:txtOfficeReceived",
+      "answerType": "short_text",
+      "label": "Date received (insurer use)"
+    }
+  },
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:48:41.142Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "forms-7",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case on the sample form \"northfield-rehab-progress\". Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "F-07+F-08": {
+      "sections": [
+        {
+          "sectionKey": "F-07",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 09/06/2026 Tom Ellis, physiotherapist, recorded an assessment of acute non-specific mechanical low back pain following a lifting injury at work on 02/06/2026, with no red flags and no neurological signs. On 22/09/2026 Tom Ellis recorded the assessment as mechanical low back pain following the workplace lifting injury on 02/06/2026.",
+              "sourceIds": [
+                "N-001",
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            },
+            {
+              "text": "[CLAIMANT] reported that on 02/06/2026, during a night shift, he lifted a carton of approximately 20 kg from floor level onto a pallet, twisting to the right, with immediate sharp pain across the low back, right more than left.",
+              "sourceIds": [
+                "N-001",
+                "REG"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-08",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "Tom Ellis, physiotherapist, recorded treatment of soft tissue mobilisation to the right lumbar paraspinals and quadratus lumborum, Maitland grade II central posteroanterior glides at L4–L5 and heat on 09/06/2026. On 16/06/2026 he recorded grade III central glides at L4–L5 and right unilateral posteroanterior glides at L4/5, and on 30/06/2026 soft tissue mobilisation and grade III central glides at L4–L5. He recorded reassurance and advice to stay active on 09/06/2026, advice on pacing for the return to amended duties on 16/06/2026, and a discussion of manual handling technique (hip hinge, load close to the body, turning the feet rather than twisting) on 30/06/2026.",
+              "sourceIds": [
+                "N-001",
+                "N-002",
+                "N-003"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "A home exercise programme was set on 09/06/2026 (pelvic tilts, knee rolls, cat–camel, walking 20 min/day building up) and progressed on 16/06/2026 (bridges, bird-dog, sit-to-stand) and 30/06/2026 (hip hinge with dowel, bodyweight goblet squat, side plank). On 14/07/2026 Sarah Reid, senior physiotherapist, recorded education on graded loading and load tolerance, progression to loaded strength work (kettlebell deadlift 12 kg, goblet squat 8 kg, side plank) and sessions reduced to every 3–4 weeks alongside a self-directed gym programme. On 11/08/2026 Tom Ellis recorded a review of gym exercise technique and progression of the programme (kettlebell deadlift 16 kg, suitcase carry, step-ups). On 22/09/2026 he recorded discharge to self-management, with advice to continue the gym programme 2–3 times a week and maintenance home exercises, and to contact the clinic if symptoms recur.",
+              "sourceIds": [
+                "N-001",
+                "N-002",
+                "N-003",
+                "N-004",
+                "N-005",
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "6 of 7 appointments were attended, with 0 did not attend and 1 late cancellation on 23/06/2026.",
+              "sourceIds": [
+                "FACT-attendance"
+              ],
+              "basis": "record"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6758,
+        "usage": {
+          "inputTokens": 79,
+          "outputTokens": 1132,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5821
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-11+F-12+F-13+F-14": {
+      "sections": [
+        {
+          "sectionKey": "F-11",
+          "answer": "Yes",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] was discharged from active physiotherapy to self-management.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-12",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] was on amended duties with occasional lifts up to 15 kg and no repetitive floor-level lifting. [CLAIMANT] reported low back pain of 1–2/10 at worst after 4 nights of shifts, settling on rest days, with no leg symptoms and no flare-ups in the last 6 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis recorded that lumbar active range of movement was full and pain-free in all directions, and an Oswestry Disability Index score of 18%, assessed as minimal disability. He recorded that, in his opinion, [CLAIMANT] should avoid repetitive lifting more than 15 kg for 4 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-13",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-14",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that in his opinion [CLAIMANT] is fit for a phased return to normal duties over 2 weeks, should avoid repetitive lifting more than 15 kg for 4 weeks, with review in 6 weeks. He recorded the same as a return-to-work recommendation for HR and occupational health.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-13",
+          "issue": "Tom Ellis's note of 22/09/2026 records a qualified opinion: fit for a phased return to normal duties over 2 weeks, avoiding repetitive lifting more than 15 kg for 4 weeks, review in 6 weeks. This does not match Yes, No or Modified duties exactly, so no option was chosen.",
+          "suggestedQuestion": "Which option do you wish to select for fitness for work (Yes, No or Modified duties), given your recorded opinion of a phased return to normal duties over 2 weeks with avoidance of repetitive lifting more than 15 kg for 4 weeks?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 5725,
+        "usage": {
+          "inputTokens": 128,
+          "outputTokens": 931,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5821
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-15+F-16+F-17": {
+      "sections": [
+        {
+          "sectionKey": "F-15",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 22/09/2026 Tom Ellis, physiotherapist, recorded that [CLAIMANT] was discharged from active physiotherapy to self-management. He recorded advice to continue the gym programme 2–3 times a week and a maintenance home exercise programme (bridges, bird-dog, side plank, hip hinge), and advised [CLAIMANT] to contact the clinic if symptoms recur.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 22/09/2026 Tom Ellis recorded that, in his opinion, [CLAIMANT] was fit for a phased return to normal duties over 2 weeks, should avoid repetitive lifting more than 15 kg for 4 weeks, with review in 6 weeks.",
+              "sourceIds": [
+                "N-006"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-16",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-17",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-16",
+          "issue": "No estimated number of further sessions was recorded; Tom Ellis's note of 22/09/2026 records discharge to self-management and a review in 6 weeks without a session number.",
+          "suggestedQuestion": "Do you wish to give an estimated number of further physiotherapy sessions, or is none anticipated following discharge on 22/09/2026?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        },
+        {
+          "sectionKey": "F-17",
+          "issue": "No clinician recorded an opinion on prognosis or expected recovery timescale in any note.",
+          "suggestedQuestion": "What is your opinion on [CLAIMANT]'s prognosis and expected recovery timescale, if you wish to give one?",
+          "relatedNoteIds": [
+            "N-006"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 4711,
+        "usage": {
+          "inputTokens": 105,
+          "outputTokens": 653,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 5821
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

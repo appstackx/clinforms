@@ -1,0 +1,350 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-001",
+  "bundleFingerprint": "dfe456a3ec41c2563bd6337e052266c7a76053659d8b2abd2980dd63ad149346",
+  "templateId": "form:frm_sample_harrow_pike_tp3",
+  "templateVersion": "HPM-TP3 v4.2 (03/2026)",
+  "sampleId": "harrow-pike-treating-physio",
+  "formSha256": "fb8d568515871a45f00e31ca60fce135d8a6ba84cb65fb3d4af6c8e4a5310bab",
+  "fields": {
+    "F-01": {
+      "anchor": "docx:t1.r0.c1",
+      "answerType": "short_text",
+      "label": "Claimant name"
+    },
+    "F-02": {
+      "anchor": "docx:t1.r1.c1",
+      "answerType": "date",
+      "label": "Date of birth"
+    },
+    "F-03": {
+      "anchor": "docx:t1.r2.c1",
+      "answerType": "short_text",
+      "label": "Our reference"
+    },
+    "F-04": {
+      "anchor": "docx:t1.r3.c1",
+      "answerType": "date",
+      "label": "Date of accident"
+    },
+    "F-05": {
+      "anchor": "docx:t1.r4.c1",
+      "answerType": "date",
+      "label": "Date of first assessment"
+    },
+    "F-06": {
+      "anchor": "docx:t1.r5.c1",
+      "answerType": "date",
+      "label": "Date of last treatment"
+    },
+    "F-07": {
+      "anchor": "docx:t2.r1.c1",
+      "answerType": "long_text",
+      "label": "B1. Mechanism of injury"
+    },
+    "F-08": {
+      "anchor": "docx:t2.r2.c1",
+      "answerType": "long_text",
+      "label": "B2. Presenting symptoms at initial assessment"
+    },
+    "F-09": {
+      "anchor": "docx:t2.r3.c1",
+      "answerType": "long_text",
+      "label": "B3. Treatment provided to date"
+    },
+    "F-10": {
+      "anchor": "docx:t2.r4.c1|__________",
+      "answerType": "number",
+      "label": "B4. Number of sessions attended"
+    },
+    "F-11": {
+      "anchor": "docx:t2.r4.c1|__________#2",
+      "answerType": "number",
+      "label": "B4. Number of sessions failed to attend"
+    },
+    "F-12": {
+      "anchor": "docx:t2.r5.c1",
+      "answerType": "long_text",
+      "label": "B5. Current symptoms and progress"
+    },
+    "F-13": {
+      "anchor": "glyph:t2.r6.c1#0,t2.r6.c1#1",
+      "answerType": "yes_no",
+      "label": "B6. Has the claimant reached maximum medical improvement?"
+    },
+    "F-14": {
+      "anchor": "docx:t2.r7.c1",
+      "answerType": "long_text",
+      "label": "B7. Prognosis"
+    },
+    "F-15": {
+      "anchor": "docx:t2.r8.c1",
+      "answerType": "long_text",
+      "label": "B8. Functional restrictions"
+    },
+    "F-16": {
+      "anchor": "docx:t2.r9.c1",
+      "answerType": "long_text",
+      "label": "B9. Treatment recommendations"
+    },
+    "F-17": {
+      "anchor": "docx:t3.r0.c1",
+      "answerType": "clinician_name",
+      "label": "Name"
+    },
+    "F-18": {
+      "anchor": "docx:t3.r1.c1",
+      "answerType": "hcpc_number",
+      "label": "HCPC registration number"
+    },
+    "F-19": {
+      "anchor": "docx:t3.r2.c1",
+      "answerType": "signature",
+      "label": "Signature"
+    },
+    "F-20": {
+      "anchor": "docx:t3.r3.c1",
+      "answerType": "date_signed",
+      "label": "Date"
+    },
+    "F-21": {
+      "anchor": "docx:t4.r1.c1",
+      "answerType": "short_text",
+      "label": "Date received (office use)"
+    },
+    "F-22": {
+      "anchor": "docx:t4.r1.c3",
+      "answerType": "short_text",
+      "label": "Checked by (office use)"
+    }
+  },
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:47:55.209Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "forms-7",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case on the sample form \"harrow-pike-treating-physio\". Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "F-07+F-08": {
+      "sections": [
+        {
+          "sectionKey": "F-07",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "At the initial assessment on 18/03/2026, [CLAIMANT] reported that on 12/03/2026 she was the restrained driver of a stationary car queuing at traffic lights when it was struck from behind. She reported that the airbags did not deploy, that there was no head strike and no loss of consciousness, and that she self-extricated and exchanged details at the scene.",
+              "sourceIds": [
+                "N-001",
+                "REG"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "[CLAIMANT] reported that neck stiffness came on the same evening and was worse on waking on 13/03/2026. She reported attending an urgent treatment centre on 13/03/2026, where no imaging was done and she was advised to take simple analgesia and keep moving.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-08",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "At the initial assessment on 18/03/2026, [CLAIMANT] reported central and bilateral neck pain, left more than right, spreading into both upper trapezius muscles, with no arm pain, pins and needles or weakness. She reported Numeric Pain Rating Scale 7/10 at worst and 3/10 at best, occipital headaches 3–4 times a week lasting 2–3 hours that started 2 days after the accident, and disturbed sleep, waking 2–3 times a night on turning. She reported stiffness of about 45 minutes on waking, aggravation by driving, sitting at a computer for more than 30 minutes and looking up to high shelves, and some driving-related anxiety.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded forward head posture and guarded neck movement. Cervical active range of movement was flexion 30°, extension 25°, left rotation 45°, right rotation 50°, left side flexion 20° and right side flexion 25°, with pain at end range in several directions. She recorded tenderness on palpation of the upper trapezius, levator scapulae and C2–C4 paraspinals, left more than right, and stiff central posteroanterior movements at C2–C5 reproducing local neck pain. Neurological examination was intact. The flexion-rotation test was 28° left and 35° right, and the cranio-cervical flexion test held 22 mmHg for 10 seconds.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "Outcome scores taken then were Neck Disability Index 42% and Numeric Pain Rating Scale 7/10. Sarah Reid recorded a presentation consistent with whiplash-associated disorder grade II and headaches consistent with a cervicogenic component.",
+              "sourceIds": [
+                "N-001",
+                "FACT-outcomes-NDI",
+                "FACT-outcomes-NPRS"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6020,
+        "usage": {
+          "inputTokens": 80,
+          "outputTokens": 1029,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 12005
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-09+F-12": {
+      "sections": [
+        {
+          "sectionKey": "F-09",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded that she explained whiplash-associated disorder and reassured [CLAIMANT], advised her to stay active, not to use a collar and to use regular heat, and advised posture breaks every 30 minutes with the screen raised to eye level. Manual therapy comprised soft tissue mobilisation to the bilateral upper trapezius and levator scapulae, Maitland grade II central posteroanterior glides C2 to C5 and sub-occipital release. A home exercise programme of chin tucks, active rotation and scapular setting was given.",
+              "sourceIds": [
+                "N-001"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "Over the following sessions, treatment recorded by Sarah Reid and Tom Ellis, physiotherapist, included soft tissue mobilisation, grade II to III central posteroanterior glides, grade III left unilateral posteroanterior glides at C3/4, sustained natural apophyseal glides into left rotation, sub-occipital release and thoracic extension mobilisation over a foam roller (notes of 25/03/2026, 01/04/2026, 08/04/2026, 22/04/2026, 06/05/2026, 20/05/2026 and 03/06/2026). The home exercise programme was progressed from stretching to cranio-cervical flexion training, theraband rows, thoracic extension, prone Y/T/W raises, resisted isometrics and strength and endurance work. Advice included a graded increase in driving time, workstation advice and swimming advice to alternate strokes and avoid prolonged neck extension in breaststroke. Sessions were reduced to fortnightly on 06/05/2026.",
+              "sourceIds": [
+                "N-002",
+                "N-003",
+                "N-004",
+                "N-005",
+                "N-006",
+                "N-007",
+                "N-008"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "On 17/06/2026 Sarah Reid recorded that the home exercise programme was reviewed and progressed to a maintenance programme 3 times a week. On 07/07/2026 she recorded discharge to self-management with a maintenance home exercise programme and workstation breaks every 30 to 45 minutes.",
+              "sourceIds": [
+                "N-009",
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-12",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "At the final review on 07/07/2026 [CLAIMANT] reported occasional neck ache (Numeric Pain Rating Scale 2/10 at worst) after long days at the computer or drives over 1 hour, and 0/10 most days. She reported 1 mild headache in the last 3 weeks, sleeping well, working full-time with normal duties, driving without restriction, swimming 2 times a week and doing the maintenance home exercise programme 3 times a week. She reported being less anxious driving but still checking the mirror more than before the accident.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "On 07/07/2026 Sarah Reid, senior physiotherapist, recorded active range of movement of flexion 55°, extension 55°, left rotation 75°, right rotation 80°, left side flexion 40° and right side flexion 45°, with a mild pull at end-range left rotation and no pain, no tenderness on palpation and no abnormality detected on the upper limb neurological examination. She assessed a residual intermittent low-level neck ache with prolonged sitting or driving, full functional active range of movement and no neurological signs.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            },
+            {
+              "text": "Over the episode the Neck Disability Index was 42% on 18/03/2026, 24% on 06/05/2026 and 12% on 07/07/2026. The Numeric Pain Rating Scale at worst was 7/10, 4/10 and 2/10 on the same dates. At the initial assessment [CLAIMANT] reported headaches 3 to 4 times a week, which had reduced to 1 mild headache in 3 weeks by 07/07/2026.",
+              "sourceIds": [
+                "FACT-outcomes-NDI",
+                "FACT-outcomes-NPRS",
+                "N-001",
+                "N-010"
+              ],
+              "basis": "record"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 8251,
+        "usage": {
+          "inputTokens": 75,
+          "outputTokens": 1454,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 12005
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-13+F-14+F-15+F-16": {
+      "sections": [
+        {
+          "sectionKey": "F-13",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-14",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-15",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-16",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-13",
+          "issue": "No clinician recorded an opinion on whether the claimant has reached maximum medical improvement. Sarah Reid's discharge note of 07/07/2026 records that the episode of care was complete and that the claimant was discharged to self-management, but does not address this question.",
+          "suggestedQuestion": "In your opinion, has the claimant reached maximum medical improvement? If so, please answer Yes or No.",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-14",
+          "issue": "No clinician recorded a prognosis or an expected time to recovery. Sarah Reid's notes of 06/05/2026, 17/06/2026 and 07/07/2026 describe progress and residual symptoms but do not state a prognosis.",
+          "suggestedQuestion": "What is your opinion on the likely course of recovery and time to recovery for the claimant?",
+          "relatedNoteIds": [
+            "N-006",
+            "N-009",
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-15",
+          "issue": "No clinician recorded functional restrictions on work, domestic, social or leisure activities. Sarah Reid's discharge note of 07/07/2026 records full-time normal duties and driving without restriction, with advice on workstation breaks every 30–45 minutes, but does not record this as a restriction.",
+          "suggestedQuestion": "Do you consider that the claimant has any functional restrictions on work, domestic, social or leisure activities? If so, please give details.",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-16",
+          "issue": "No clinician recorded whether further treatment is required, or its type and number of sessions. Sarah Reid's discharge note of 07/07/2026 records discharge from active physiotherapy to self-management with advice to contact the clinic or GP if symptoms increase, which does not state whether further treatment is required.",
+          "suggestedQuestion": "In your opinion, is further treatment required? If so, what type and how many sessions?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 5246,
+        "usage": {
+          "inputTokens": 124,
+          "outputTokens": 794,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 12005
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

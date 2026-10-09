@@ -1,0 +1,477 @@
+{
+  "format": "appstackx-reports.form-analysis",
+  "formatVersion": 1,
+  "sampleId": "harrow-pike-treating-physio",
+  "fileSha256": "fb8d568515871a45f00e31ca60fce135d8a6ba84cb65fb3d4af6c8e4a5310bab",
+  "fileName": "Harrow-Pike-ML_Treating-Physiotherapist-Report_HPM-TP3.docx",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:01:48.871Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "form-analysis-3",
+  "effort": "low",
+  "durationMs": 11740,
+  "chunks": 3,
+  "usage": {
+    "inputTokens": 724,
+    "outputTokens": 4921,
+    "cacheReadInputTokens": 16086,
+    "cacheCreationInputTokens": 5301
+  },
+  "form": {
+    "id": "frm_dee408354b7aeb48",
+    "tenantId": "demo",
+    "referrer": {
+      "name": "Harrow & Pike Medico-Legal (fictional)",
+      "type": "mlc"
+    },
+    "title": "Treating Physiotherapist Report",
+    "file": {
+      "fileName": "Harrow-Pike-ML_Treating-Physiotherapist-Report_HPM-TP3.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sha256": "fb8d568515871a45f00e31ca60fce135d8a6ba84cb65fb3d4af6c8e4a5310bab",
+      "sizeBytes": 13733
+    },
+    "kind": "docx",
+    "fields": [
+      {
+        "id": "F-01",
+        "label": "Claimant name",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The claimant's full name.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r0.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.fullName"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-02",
+        "label": "Date of birth",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The claimant's date of birth.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r1.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.dob"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-03",
+        "label": "Our reference",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The referrer's reference for this case.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r2.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "referral.reference"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-04",
+        "label": "Date of accident",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The date the accident happened.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r3.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "incident.date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-05",
+        "label": "Date of first assessment",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The date the claimant was first assessed by the clinic.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r4.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.firstSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-06",
+        "label": "Date of last treatment",
+        "section": "PART A – CLAIMANT DETAILS",
+        "guidance": "The date of the claimant's most recent treatment.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t1.r5.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.lastSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-07",
+        "label": "Mechanism of injury",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Describe how the injury happened, as reported to the physiotherapist by the claimant.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r1.c1"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-08",
+        "label": "Presenting symptoms at initial assessment",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Set out the symptoms the claimant presented with at the first assessment.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r2.c1"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-09",
+        "label": "Treatment provided to date",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Describe treatment given, including manual therapy, exercise programme and advice.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r3.c1"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-10",
+        "label": "Number of sessions attended",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "State how many sessions the claimant attended.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "t2.r4.c1",
+          "placeholderText": "__________"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "sessions_attended"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-11",
+        "label": "Number of sessions failed to attend",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "State how many appointments the claimant failed to attend.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "t2.r4.c1",
+          "placeholderText": "__________"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "dna_count"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-12",
+        "label": "Current symptoms and progress",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Describe current symptoms and progress, including any outcome measures used.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r5.c1"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Outcome scores may be added from computed outcome measures."
+      },
+      {
+        "id": "F-13",
+        "label": "Has the claimant reached maximum medical improvement?",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Tick whether the claimant has reached maximum medical improvement.",
+        "answerType": "yes_no",
+        "options": [
+          "Yes",
+          "No"
+        ],
+        "anchor": {
+          "kind": "docx",
+          "target": "checkbox_glyph",
+          "blockId": "t2.r6.c1",
+          "optionGlyphs": [
+            {
+              "option": "Yes",
+              "blockId": "t2.r6.c1",
+              "glyphIndex": 0
+            },
+            {
+              "option": "No",
+              "blockId": "t2.r6.c1",
+              "glyphIndex": 1
+            }
+          ]
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-14",
+        "label": "Prognosis",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "Give your opinion on the likely course of recovery and expected time to recovery.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r7.c1"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-15",
+        "label": "Functional restrictions",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "List any restrictions on work, domestic, social or leisure activities.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r8.c1"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-16",
+        "label": "Treatment recommendations",
+        "section": "PART B – CLINICAL INFORMATION",
+        "guidance": "State whether further treatment is required and, if so, the type and number of sessions.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t2.r9.c1"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-17",
+        "label": "Name",
+        "section": "PART C – DECLARATION",
+        "guidance": "The name of the treating physiotherapist signing the declaration.",
+        "answerType": "clinician_name",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t3.r0.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "name"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-18",
+        "label": "HCPC registration number",
+        "section": "PART C – DECLARATION",
+        "guidance": "The signing clinician's HCPC registration number.",
+        "answerType": "hcpc_number",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t3.r1.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "hcpc"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-19",
+        "label": "Signature",
+        "section": "PART C – DECLARATION",
+        "guidance": "The clinician's signature confirming the declaration.",
+        "answerType": "signature",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t3.r2.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "signature"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-20",
+        "label": "Date",
+        "section": "PART C – DECLARATION",
+        "guidance": "The date the declaration is signed.",
+        "answerType": "date_signed",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t3.r3.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-21",
+        "label": "Date received",
+        "section": "FOR OFFICE USE ONLY",
+        "guidance": "For the referrer's office use; the clinic leaves it blank.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t4.r1.c1"
+        },
+        "fillSource": {
+          "kind": "leave_blank"
+        },
+        "required": false,
+        "confidence": "high"
+      },
+      {
+        "id": "F-22",
+        "label": "Checked by",
+        "section": "FOR OFFICE USE ONLY",
+        "guidance": "For the referrer's office use; the clinic leaves it blank.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "table_cell",
+          "blockId": "t4.r1.c3"
+        },
+        "fillSource": {
+          "kind": "leave_blank"
+        },
+        "required": false,
+        "confidence": "high"
+      }
+    ],
+    "status": "proposed",
+    "analysis": {
+      "mode": "live",
+      "model": "claude-sonnet-5-5",
+      "promptVersion": "form-analysis-3",
+      "durationMs": 11740,
+      "usage": {
+        "inputTokens": 724,
+        "outputTokens": 4921,
+        "cacheReadInputTokens": 16086,
+        "cacheCreationInputTokens": 5301
+      },
+      "at": "2026-10-09T08:01:37.053Z",
+      "warnings": []
+    },
+    "createdAt": "2026-10-09T08:01:37.053Z",
+    "updatedAt": "2026-10-09T08:01:37.053Z",
+    "sampleId": "harrow-pike-treating-physio"
+  },
+  "outlineSummary": {
+    "kind": "docx",
+    "paragraphs": 22,
+    "tables": 5,
+    "fillableFields": 0,
+    "answerSpaces": 21,
+    "headings": [
+      "PART A – CLAIMANT DETAILS",
+      "PART B – CLINICAL INFORMATION",
+      "PART C – DECLARATION"
+    ],
+    "warnings": []
+  },
+  "note": "Real Claude analysis of a bundled fictional sample form, recorded by scripts/medreport/record-form-analyses.ts and post-validated against the parsed document."
+}

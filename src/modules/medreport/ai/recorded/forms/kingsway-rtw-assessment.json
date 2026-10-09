@@ -1,0 +1,532 @@
+{
+  "format": "appstackx-reports.form-analysis",
+  "formatVersion": 1,
+  "sampleId": "kingsway-rtw-assessment",
+  "fileSha256": "4dee546ab5bea0bf530c24deed8e89db9de12abd06652af38218616b95675469",
+  "fileName": "Kingsway-CM_Return-to-Work-Assessment_KCM-RTW-01.docx",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:02:14.364Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "form-analysis-3",
+  "effort": "low",
+  "durationMs": 11291,
+  "chunks": 3,
+  "usage": {
+    "inputTokens": 750,
+    "outputTokens": 5084,
+    "cacheReadInputTokens": 16086,
+    "cacheCreationInputTokens": 4341
+  },
+  "form": {
+    "id": "frm_75ac8bbcafb2b422",
+    "tenantId": "demo",
+    "referrer": {
+      "name": "Kingsway Case Management (fictional)",
+      "type": "case_manager"
+    },
+    "title": "Return to Work Assessment",
+    "file": {
+      "fileName": "Kingsway-CM_Return-to-Work-Assessment_KCM-RTW-01.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sha256": "4dee546ab5bea0bf530c24deed8e89db9de12abd06652af38218616b95675469",
+      "sizeBytes": 12537
+    },
+    "kind": "docx",
+    "fields": [
+      {
+        "id": "F-01",
+        "label": "Employer / client reference",
+        "guidance": "The employer's or client's reference for this case.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p3",
+          "placeholderText": ".................................."
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "referral.reference"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Check whether this is the employer's reference or the referrer's; both references sit on one line."
+      },
+      {
+        "id": "F-02",
+        "label": "Kingsway case no.",
+        "guidance": "Kingsway's own case number for this referral.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p3",
+          "placeholderText": ".........................."
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "referral.reference"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Both references on this line map to the same reference field; check each is right."
+      },
+      {
+        "id": "F-03",
+        "label": "Employee name",
+        "section": "Section A – Employee details",
+        "guidance": "Full name of the employee.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p5",
+          "placeholderText": "____________________________________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.fullName"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-04",
+        "label": "Date of birth",
+        "section": "Section A – Employee details",
+        "guidance": "Employee's date of birth.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p5",
+          "placeholderText": "________________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.dob"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-05",
+        "label": "Job title",
+        "section": "Section A – Employee details",
+        "guidance": "Employee's job title.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p6",
+          "placeholderText": "______________________________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.occupation"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-06",
+        "label": "Employer",
+        "section": "Section A – Employee details",
+        "guidance": "Name of the employee's employer.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p6",
+          "placeholderText": "________________________________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.employer"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-07",
+        "label": "Date of injury / onset",
+        "section": "Section A – Employee details",
+        "guidance": "Date the injury occurred or symptoms began.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p7",
+          "placeholderText": "______________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "incident.date"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-08",
+        "label": "Date first seen",
+        "section": "Section A – Employee details",
+        "guidance": "Date of the first appointment at the clinic.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p7",
+          "placeholderText": "______________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.firstSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-09",
+        "label": "Date last seen",
+        "section": "Section A – Employee details",
+        "guidance": "Date of the most recent appointment.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p7",
+          "placeholderText": "______________"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.lastSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-10",
+        "label": "Nature of the injury and diagnosis",
+        "section": "Section B – Clinical findings",
+        "guidance": "Describe the injury and the diagnosis.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p10",
+          "placeholderText": "______________________________________________________________________________"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Two further dotted lines below continue this answer; only the first line is mapped."
+      },
+      {
+        "id": "F-11",
+        "label": "Treatment provided to date, including the number of sessions attended",
+        "section": "Section B – Clinical findings",
+        "guidance": "Describe the treatment given so far and state how many sessions the employee has attended.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p14",
+          "placeholderText": "______________________________________________________________________________"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Answer runs over several lines; the following dotted lines are continuation space, not separate questions."
+      },
+      {
+        "id": "F-12",
+        "label": "Current functional capacity",
+        "section": "Section B – Clinical findings",
+        "guidance": "Comment on lifting and carrying, bending, prolonged sitting and standing, and say whether a formal functional or lifting assessment has been done.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p19",
+          "placeholderText": "................................................................................................................................................................................"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Lines below are continuation space for the same answer."
+      },
+      {
+        "id": "F-13",
+        "label": "In your opinion, is the employee fit to return to their normal duties?",
+        "section": "Section C – Fitness for work",
+        "guidance": "Give the clinician's opinion on whether the employee can return to normal duties.",
+        "answerType": "yes_no",
+        "options": [
+          "Yes",
+          "No"
+        ],
+        "anchor": {
+          "kind": "docx",
+          "target": "checkbox_glyph",
+          "blockId": "p24",
+          "optionGlyphs": [
+            {
+              "option": "Yes",
+              "blockId": "p24",
+              "glyphIndex": 0
+            },
+            {
+              "option": "No",
+              "blockId": "p24",
+              "glyphIndex": 1
+            }
+          ]
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-14",
+        "label": "5. If not, are they fit for modified or restricted duties?",
+        "section": "Section C – Fitness for work",
+        "guidance": "Tick whether the employee is fit for modified or restricted duties.",
+        "answerType": "single_choice",
+        "options": [
+          "Yes, with the adjustments below",
+          "No",
+          "Not applicable"
+        ],
+        "anchor": {
+          "kind": "docx",
+          "target": "checkbox_glyph",
+          "blockId": "p26",
+          "optionGlyphs": [
+            {
+              "option": "Yes, with the adjustments below",
+              "blockId": "p26",
+              "glyphIndex": 0
+            },
+            {
+              "option": "No",
+              "blockId": "p26",
+              "glyphIndex": 1
+            },
+            {
+              "option": "Not applicable",
+              "blockId": "p26",
+              "glyphIndex": 2
+            }
+          ]
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-15",
+        "label": "6. Recommended adjustments or restrictions",
+        "section": "Section C – Fitness for work",
+        "guidance": "Describe recommended adjustments or restrictions such as lifting limits, reduced hours, tasks to avoid and duration.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "after_paragraph",
+          "blockId": "p28"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Answer goes in the empty paragraphs after the example line."
+      },
+      {
+        "id": "F-16",
+        "label": "7. Recommended return-to-work plan and timescale",
+        "section": "Section C – Fitness for work",
+        "guidance": "Set out the recommended return-to-work plan and expected timescale.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p32",
+          "placeholderText": "______________________________________________________________________________"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-17",
+        "label": "8. Is further treatment required? If so, please give details.",
+        "section": "Section C – Fitness for work",
+        "guidance": "State whether further treatment is needed and give details if so.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p35",
+          "placeholderText": "______________________________________________________________________________"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-18",
+        "label": "9. When should the employee be reviewed?",
+        "section": "Section C – Fitness for work",
+        "guidance": "Say when the employee should be reviewed.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p38",
+          "placeholderText": "________________________________________"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-19",
+        "label": "Therapist name",
+        "section": "Section D – Declaration",
+        "guidance": "Name of the signing therapist.",
+        "answerType": "clinician_name",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p41",
+          "placeholderText": "__________________________________"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "name"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-20",
+        "label": "HCPC no.",
+        "section": "Section D – Declaration",
+        "guidance": "HCPC registration number of the signing therapist.",
+        "answerType": "hcpc_number",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p41",
+          "placeholderText": "________________"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "hcpc"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-21",
+        "label": "Signature",
+        "section": "Section D – Declaration",
+        "guidance": "Therapist's signature confirming the declaration.",
+        "answerType": "signature",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p42",
+          "placeholderText": "______________________________________"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "signature"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-22",
+        "label": "Date",
+        "section": "Section D – Declaration",
+        "guidance": "Date the form is signed.",
+        "answerType": "date_signed",
+        "anchor": {
+          "kind": "docx",
+          "target": "replace_placeholder",
+          "blockId": "p42",
+          "placeholderText": "________________"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "date"
+        },
+        "required": true,
+        "confidence": "high"
+      }
+    ],
+    "status": "proposed",
+    "analysis": {
+      "mode": "live",
+      "model": "claude-sonnet-5-5",
+      "promptVersion": "form-analysis-3",
+      "durationMs": 11291,
+      "usage": {
+        "inputTokens": 750,
+        "outputTokens": 5084,
+        "cacheReadInputTokens": 16086,
+        "cacheCreationInputTokens": 4341
+      },
+      "at": "2026-10-09T08:02:03.053Z",
+      "warnings": [
+        "The reference line holds two references (employer/client and Kingsway case number); confirm which value goes in each.",
+        "Questions 7 and 8 have extra dotted lines below the first answer line; only the first line is filled."
+      ]
+    },
+    "createdAt": "2026-10-09T08:02:03.053Z",
+    "updatedAt": "2026-10-09T08:02:03.053Z",
+    "sampleId": "kingsway-rtw-assessment"
+  },
+  "outlineSummary": {
+    "kind": "docx",
+    "paragraphs": 43,
+    "tables": 0,
+    "fillableFields": 0,
+    "answerSpaces": 22,
+    "headings": [
+      "Return to Work Assessment",
+      "Section A – Employee details",
+      "Section B – Clinical findings",
+      "1. Nature of the injury and diagnosis",
+      "2. Treatment provided to date, including the number of sessions attended",
+      "3. Current functional capacity",
+      "Section C – Fitness for work",
+      "4. In your opinion, is the employee fit to return to their normal duties?",
+      "5. If not, are they fit for modified or restricted duties?",
+      "6. Recommended adjustments or restrictions",
+      "7. Recommended return-to-work plan and timescale",
+      "8. Is further treatment required? If so, please give details.",
+      "9. When should the employee be reviewed?",
+      "Section D – Declaration"
+    ],
+    "warnings": []
+  },
+  "note": "Real Claude analysis of a bundled fictional sample form, recorded by scripts/medreport/record-form-analyses.ts and post-validated against the parsed document."
+}

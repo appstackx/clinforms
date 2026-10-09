@@ -1,0 +1,367 @@
+{
+  "about": "Captions, chapter chips, question cards, answer lines and cards for the Blue Heart Clinics walkthrough video (record-demo.mjs). It is written as a point-by-point reply to Dell Baines's email: each chapter opens with his own question (quote) and ends with a one-line plain answer. {placeholders} are filled at record time from the live UI (counts) and from the measured waits, so every number shown is real. 'vo' is the suggested voice-over line for narration-script.md (defaults to the caption text). Customer-facing wording is neutral: never name a vendor or the technology (src/modules/medreport/core/wording.ts); the recorder scans every customer-facing string here before rendering. q2.review's {blockedNote} explains the red “Blocked” count when the draft has one.",
+  "chapters": {
+    "q1": {
+      "n": "Your question 1 of 5",
+      "label": "Works with each referrer's own form"
+    },
+    "q3": {
+      "n": "Your question 3 of 5",
+      "label": "Uses TM3 data – no retyping"
+    },
+    "q2": {
+      "n": "Your question 2 of 5",
+      "label": "Completed in the referrer's own layout"
+    },
+    "q4": {
+      "n": "Your question 4 of 5",
+      "label": "Clinician review, amendment & approval"
+    },
+    "q1b": {
+      "n": "Your question 1 of 5",
+      "label": "Same notes, different form"
+    },
+    "q3b": {
+      "n": "Your question 3 of 5",
+      "label": "Filed back to the patient's record"
+    },
+    "q5": {
+      "n": "Your question 5 of 5",
+      "label": "Secure and GDPR-compliant"
+    }
+  },
+  "quotes": {
+    "q1": {
+      "kicker": "Your question 1 of 5",
+      "lead": "You asked:",
+      "text": "“Whether the system can work from different MLC/insurer report templates.”",
+      "vo": "Your first question: different report templates."
+    },
+    "q3": {
+      "kicker": "Your question 3 of 5",
+      "lead": "You asked:",
+      "text": "“Whether it can use TM3 registration details and physiotherapy notes without us duplicating data manually.”",
+      "vo": "Your third question: using TM3 data without retyping."
+    },
+    "q2": {
+      "kicker": "Your question 2 of 5",
+      "lead": "You asked:",
+      "text": "“Whether it can complete the report in the original format/layout sent to us.”",
+      "vo": "Your second question: the referrer's original layout."
+    },
+    "q4": {
+      "kicker": "Your question 4 of 5",
+      "lead": "You asked:",
+      "text": "“How clinician review, amendment and approval would work before the final report is issued.”",
+      "vo": "Your fourth question: review, amendment and approval."
+    },
+    "q1b": {
+      "kicker": "Your question 1 of 5 – your example",
+      "lead": "You wrote:",
+      "text": "“…another may ask similar clinical questions in a completely different structure.”",
+      "vo": "And your own example: a different structure."
+    },
+    "q3b": {
+      "kicker": "Your question 3 of 5 – back into the patient's record",
+      "lead": "You asked:",
+      "text": "“…without us duplicating data manually.”",
+      "vo": "Back to your third question: no duplicated data."
+    },
+    "q5": {
+      "kicker": "Your question 5 of 5",
+      "lead": "You asked:",
+      "text": "“Whether patient data would remain secure and GDPR compliant.”",
+      "vo": "Your fifth question: security and GDPR."
+    }
+  },
+  "captions": {
+    "q1.library": {
+      "text": "Three of your referrers' own forms, each in its own layout: two Word forms and a fillable PDF (fictional examples).",
+      "vo": "Here are three of your referrers' own forms, each in its own layout: two Word forms and a fillable PDF."
+    },
+    "q1.upload": {
+      "text": "A new referrer sends a form you haven't seen before. Your staff upload it once, exactly as received.",
+      "vo": "A new referrer sends a new form. Your staff upload it once, exactly as received."
+    },
+    "q1.reading": {
+      "text": "The system reads the blank form and identifies each question and answer space – no patient data is involved.",
+      "vo": "The system reads the blank form and finds each question and answer space – no patient data involved."
+    },
+    "q1.analysed": {
+      "text": "{questions} questions found in Meridian's form – {toCheckPhrase} for a person to check.",
+      "vo": "It found {questions} questions – {toCheckPhrase} for a person to check."
+    },
+    "q1.mapping": {
+      "text": "For each question it proposes the source – TM3 registration, the notes, the clinician's opinion or sign-off.",
+      "vo": "For each question it proposes the source – TM3 registration, the notes, the clinician's opinion or sign-off."
+    },
+    "q1.confirm": {
+      "text": "Your team confirms it once; it is then reused for every patient that referrer sends."
+    },
+    "q1.answer": {
+      "text": "Yes – each referrer's form is set up once, confirmed by your team, then reused for every patient.",
+      "vo": "So yes: each form is set up once, confirmed by your team, then reused for every patient."
+    },
+    "q3.sandbox": {
+      "text": "Your clinic system – here our Simulated TM3 sandbox: fictional demo data, not affiliated with TM3.",
+      "vo": "Your clinic system – here a simulated TM3 sandbox with fictional data, not affiliated with TM3."
+    },
+    "q3.record": {
+      "text": "Megan's record: registration details, {appts} appointments and {notes} clinical notes. One click opens the form tool."
+    },
+    "q3.imported": {
+      "text": "Imported automatically – {notes} notes, {appts} appointments, {scores} outcome scores. Nothing is retyped, and every call to TM3 is logged.",
+      "vo": "It all comes across automatically – {notes} notes, {appts} appointments, {scores} scores – nothing retyped, every call logged."
+    },
+    "q3.answer": {
+      "text": "Yes – imported from TM3, nothing retyped. Today via a TM3 export; a direct link is subject to TM3 providing access.",
+      "vo": "So yes – nothing retyped. Today via a TM3 export; a direct link is subject to TM3 providing access."
+    },
+    "q2.choose": {
+      "text": "Choose the referrer's form – Harrow & Pike's medico-legal form is suggested, because Megan's referral came from Harrow & Pike.",
+      "vo": "Choose the referrer's form – Harrow and Pike's is suggested, because Megan's referral came from Harrow and Pike."
+    },
+    "q2.drafting": {
+      "text": "Registration details are filled in by code; each clinical answer is drafted from Megan's notes, citing its note.",
+      "vo": "Registration details are filled in by code; clinical answers are drafted from Megan's notes, with citations."
+    },
+    "q2.review": {
+      "text": "{total} questions: {fromRecords} filled from TM3 records, {drafted} drafted from the notes, {left} left for the clinician{blockedNote}.",
+      "vo": "{total} questions: {fromRecords} from TM3 records, {drafted} drafted from the notes, {left} left for the clinician{blockedNote}."
+    },
+    "q2.preview": {
+      "text": "Harrow & Pike's own Word form, filled in – their layout, headings and boxes. Marked DRAFT until a clinician approves it.",
+      "vo": "This is Harrow and Pike's own Word form, filled in – their layout and boxes – marked draft until approved."
+    },
+    "q2.answer": {
+      "text": "Yes – answers are written into the referrer's own document; the layout is unchanged.",
+      "vo": "So yes: the answers go into the referrer's own document, with the layout unchanged."
+    },
+    "q4.cite": {
+      "text": "Every drafted answer cites its source. Click a citation to check it against the original note."
+    },
+    "q4.edit": {
+      "text": "Suppose someone adds a statement the notes don't support – here, a recovery date…",
+      "vo": "Now suppose someone adds a statement the notes don't support – a recovery date."
+    },
+    "q4.flags": {
+      "text": "…the checks flag it at once and block approval: the date isn't in the cited note, and the clinician never recorded that opinion.",
+      "vo": "The checks flag it at once and block approval: that date isn't in the cited note, and it's unrecorded opinion."
+    },
+    "q4.undo": {
+      "text": "Undo the edit and the flags clear."
+    },
+    "q4.prognosis": {
+      "text": "Megan's notes record no prognosis, so it is left blank – not guessed – and blocks approval until the treating physiotherapist writes it in her own words.",
+      "vo": "Megan's notes record no prognosis, so it's left blank rather than guessed, until the physiotherapist writes it in her own words."
+    },
+    "q4.rest": {
+      "text": "She answers the other opinion questions and resolves the remaining checks – every edit is logged with who and when.",
+      "vo": "She answers the other opinion questions and resolves the remaining checks; every edit is logged."
+    },
+    "q4.approve": {
+      "text": "{answered} of {total} answered and clear. Approval records her name, HCPC number (fictional), typed signature and four attestations.",
+      "vo": "{answered} of {total} answered and clear. Approval records her name, HCPC number – fictional here – a typed signature and four attestations."
+    },
+    "q4.approved": {
+      "text": "Approved: final and read-only – download it as Word or PDF, or save it to the patient's record.",
+      "vo": "Approved: final and read-only – download it as Word or PDF, or save it to the record."
+    },
+    "q4.final1": {
+      "text": "The final PDF as downloaded: their layout, TM3 details by code, answers from the notes, her own prognosis and approval – no DRAFT mark.",
+      "vo": "The final PDF as downloaded: their layout, TM3 details by code, answers from the notes, her own prognosis and approval – no draft mark."
+    },
+    "q4.answer": {
+      "text": "Nothing is issued until the treating clinician has reviewed, amended and approved it – every change is logged.",
+      "vo": "So nothing is issued until the treating clinician has reviewed, amended and approved it."
+    },
+    "q1b.intro": {
+      "text": "Same patient, same notes – now Northfield Assurance's fillable PDF, with similar questions in a different structure.",
+      "vo": "Same patient, same notes – now Northfield's fillable PDF, with similar questions in a different structure."
+    },
+    "q1b.drafting": {
+      "text": "The system drafts Megan's answers again – this time to Northfield's own questions."
+    },
+    "q1b.drafted": {
+      "text": "{answered} of {total} answered and clear after drafting. As before, she adds her opinions and Northfield's claim number…",
+      "vo": "{answered} of {total} answered after drafting. As before, she adds her opinions and Northfield's claim number…"
+    },
+    "q1b.complete": {
+      "text": "…and answers what doesn't apply (“Not applicable”, 0 further sessions): all {total} answered and clear before she approves.",
+      "vo": "…and answers what doesn't apply, so all {total} are answered and clear before she approves."
+    },
+    "q1b.compare": {
+      "text": "Your example: one referrer asks for prognosis, functional restrictions and treatment recommendations in one format; another asks similar questions in a different structure. Same notes – each form completed in its own structure.",
+      "vo": "Your example: one referrer asks for prognosis, functional restrictions and treatment recommendations; another asks similar questions differently. Same notes – each form completed in its own structure."
+    },
+    "q1b.answer": {
+      "text": "Yes – same notes, each referrer's form completed in its own structure, whether Word or fillable PDF.",
+      "vo": "So yes: same notes, each form in its own structure – Word or fillable PDF."
+    },
+    "q3b.save": {
+      "text": "One click – “Save to clinic record” – files it back: in the simulated TM3, Megan's Documents tab now lists both completed forms.",
+      "vo": "One click – Save to clinic record – files it back: in the simulated TM3, Megan's documents now list both completed forms."
+    },
+    "q3b.answer": {
+      "text": "Filed back to the record. With your real TM3 this needs TM3 access – until then, it's one download and attach.",
+      "vo": "Filed back to the record. With your real TM3 that needs TM3 access – until then, one download and attach."
+    },
+    "q5.payload": {
+      "text": "You can see exactly what the drafting service receives: the name becomes [CLAIMANT]; no date of birth, address or contact details.",
+      "vo": "You can see exactly what the drafting service receives: the name becomes 'claimant', and no date of birth, address or contact details."
+    },
+    "q5.security": {
+      "text": "The Security & GDPR page sets out the rest – what this demo does today, and what is in place before real patient data.",
+      "vo": "The Security and GDPR page sets out the rest – what this demo does today, and what's in place before real patient data."
+    }
+  },
+  "sped": {
+    "label": "Sped up – real time about {secs} s",
+    "srt": "(sped up – real time about {secs} s)"
+  },
+  "cards": {
+    "title": {
+      "seconds": 5,
+      "kicker": "Prepared for Dell Baines, Blue Heart Clinics",
+      "title": "Completing your referrers' own report forms from TM3 notes",
+      "lede": "Each MLC or insurer's own form, in its original layout – completed from the patient's registration details and physiotherapy notes, then reviewed and approved by your clinician.",
+      "footer": "AppStackX · proof-of-concept walkthrough · all data fictional",
+      "srt": [
+        "Completing your referrers' own report forms from TM3 notes – for Blue Heart Clinics."
+      ],
+      "vo": "Hello Dell – this walkthrough was prepared for Blue Heart Clinics."
+    },
+    "intro": {
+      "seconds": 15,
+      "kicker": "You told us:",
+      "quotes": [
+        "“…the MLCs/insurers we work with usually send us their own report forms. These all have different layouts, questions, headings and formats.”",
+        "“…complete the specific report form provided by that MLC, using the patient's registration details and the physiotherapy clinical notes, rather than producing a separate generic report.”"
+      ],
+      "notGeneric": "So this is not a generic report on one standard Blue Heart Clinics template – every output you'll see is the referrer's own document.",
+      "questionsTitle": "This walkthrough answers your five questions in turn:",
+      "questions": [
+        "Whether the system can work from different MLC/insurer report templates.",
+        "Whether it can complete the report in the original format/layout sent to us.",
+        "Whether it can use TM3 registration details and physiotherapy notes without us duplicating data manually.",
+        "How clinician review, amendment and approval would work before the final report is issued.",
+        "Whether patient data would remain secure and GDPR compliant."
+      ],
+      "note": "Fictional patients and referrers throughout. The TM3 shown is a simulated sandbox, not affiliated with TM3.",
+      "srt": [
+        "You told us your MLCs and insurers send their own report forms, with different layouts, questions, headings and formats.",
+        "You need that specific form completed from the patient's registration details and physiotherapy notes – not a generic report.",
+        "This walkthrough answers your five questions in turn."
+      ],
+      "vo": "You told us each referrer sends its own form, and you need that form completed from TM3 notes, not a generic report. Here are your five questions."
+    },
+    "gdpr": {
+      "seconds": 13,
+      "kicker": "Your question 5 of 5 · Secure and GDPR-compliant",
+      "title": "What will be in place before any real patient data is used",
+      "bullets": [
+        [
+          "Data Processing Agreement",
+          "your clinic is the controller, AppStackX the processor – and a DPIA completed with you"
+        ],
+        [
+          "UK hosting",
+          "encrypted in transit and at rest"
+        ],
+        [
+          "Two-factor login and role-based access",
+          "for your staff"
+        ],
+        [
+          "Only minimised data goes to sub-processors",
+          "under contract in the DPA – names and identifiers are filled in by our own code; your data is not used for training"
+        ],
+        [
+          "Audit trail",
+          "of every draft, edit and approval"
+        ],
+        [
+          "Nothing is final until a clinician approves it",
+          ""
+        ],
+        [
+          "Retention and deletion",
+          "automatic deletion after an agreed period"
+        ],
+        [
+          "Proof of concept",
+          "anonymised data only"
+        ]
+      ],
+      "answer": "Your patient data stays minimised and protected – and all of this is in place before any real patient data is used.",
+      "srt": [
+        "Your question 5: what will be in place before any real patient data is used.",
+        "A Data Processing Agreement and DPIA, UK hosting, encryption, two-factor login.",
+        "Minimised data under contract, an audit trail, clinician approval, agreed deletion."
+      ],
+      "vo": "Before any real patient data: a data processing agreement and DPIA, UK hosting, encryption, two-factor login, minimised data under contract, an audit trail, and clinician approval for everything."
+    },
+    "recap": {
+      "seconds": 14,
+      "kicker": "Your five questions – answered",
+      "rows": [
+        {
+          "q": "Different MLC/insurer templates",
+          "a": "Yes – each referrer's own form is set up once, confirmed by your team, reused for every patient",
+          "chapters": [
+            "q1",
+            "q1b"
+          ]
+        },
+        {
+          "q": "Original format/layout",
+          "a": "Yes – answers written into the referrer's own Word or PDF form; layout unchanged",
+          "chapters": [
+            "q2"
+          ]
+        },
+        {
+          "q": "TM3 details and notes, no retyping",
+          "a": "Yes – imported from TM3, nothing retyped; today via TM3 export, direct link subject to TM3 access",
+          "chapters": [
+            "q3",
+            "q3b"
+          ]
+        },
+        {
+          "q": "Clinician review, amendment, approval",
+          "a": "Every answer checked against its note, edited, opinions in her own words; nothing issued before approval",
+          "chapters": [
+            "q4"
+          ]
+        },
+        {
+          "q": "Secure and GDPR-compliant",
+          "a": "Minimised data, DPA and DPIA, UK hosting – measures in place before any real patient data is used",
+          "chapters": [
+            "q5"
+          ]
+        }
+      ],
+      "srt": [
+        "Your five questions, answered. Templates: yes, set up once. Original layout: yes.",
+        "TM3 data: yes, no retyping – today via TM3 export; direct link subject to TM3 access.",
+        "Nothing issued before clinician approval. Security: in place before real patient data."
+      ],
+      "vo": "Your five questions, answered: templates, yes; original layout, yes; TM3 data without retyping, yes; clinician approval before anything is issued; and security in place before real data."
+    },
+    "next": {
+      "seconds": 9,
+      "kicker": "Your next step",
+      "offer": "You offered to send “anonymised examples of an MLC report form and corresponding anonymised clinical notes so you can assess whether a proof of concept is realistic”.",
+      "title": "Send us an anonymised MLC report form and the matching anonymised clinical notes",
+      "body": "We'll run them through exactly this process and send you the completed draft for review.",
+      "footer": "AppStackX · appstackx.co.uk",
+      "srt": [
+        "Your next step: send us an anonymised MLC report form and the matching anonymised clinical notes.",
+        "We'll run them through this process and send you the completed draft to review."
+      ],
+      "vo": "Next step: send us an anonymised MLC form with matching notes, and we'll send you the completed draft."
+    }
+  }
+}

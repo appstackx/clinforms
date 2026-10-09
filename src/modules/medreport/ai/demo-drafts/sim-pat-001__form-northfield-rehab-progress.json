@@ -1,0 +1,357 @@
+{
+  "format": "appstackx-reports.demo-draft",
+  "formatVersion": 1,
+  "patientId": "sim-pat-001",
+  "bundleFingerprint": "dfe456a3ec41c2563bd6337e052266c7a76053659d8b2abd2980dd63ad149346",
+  "templateId": "form:frm_sample_northfield_rpr2",
+  "templateVersion": "NA-RPR-2 (Rev. 05/2026)",
+  "sampleId": "northfield-rehab-progress",
+  "formSha256": "c7801018ddc7fa5b3c7f73831b14d98516bf9cd50b7791ae23ed01f0b068c717",
+  "fields": {
+    "F-01": {
+      "anchor": "pdf:txtPolicyNo",
+      "answerType": "short_text",
+      "label": "Policy / claim no."
+    },
+    "F-02": {
+      "anchor": "pdf:txtInjuryDate",
+      "answerType": "date",
+      "label": "Date of injury"
+    },
+    "F-03": {
+      "anchor": "pdf:txtClaimant",
+      "answerType": "short_text",
+      "label": "Claimant"
+    },
+    "F-04": {
+      "anchor": "pdf:txtDOB",
+      "answerType": "date",
+      "label": "Date of birth"
+    },
+    "F-05": {
+      "anchor": "pdf:txtFirstSeen",
+      "answerType": "date",
+      "label": "Date of first treatment"
+    },
+    "F-06": {
+      "anchor": "pdf:txtReportDate",
+      "answerType": "date",
+      "label": "Date of this report"
+    },
+    "F-07": {
+      "anchor": "pdf:txtQ1Diagnosis",
+      "answerType": "long_text",
+      "label": "1. Diagnosis / working diagnosis"
+    },
+    "F-08": {
+      "anchor": "pdf:txtQ2Treatment",
+      "answerType": "long_text",
+      "label": "2. Treatment to date and attendance"
+    },
+    "F-09": {
+      "anchor": "pdf:numAttended",
+      "answerType": "number",
+      "label": "Sessions attended"
+    },
+    "F-10": {
+      "anchor": "pdf:numDNA",
+      "answerType": "number",
+      "label": "Sessions missed (DNA)"
+    },
+    "F-11": {
+      "anchor": "pdf:chkDischarged",
+      "answerType": "checkbox",
+      "label": "Treatment completed – claimant discharged"
+    },
+    "F-12": {
+      "anchor": "pdf:txtQ3Limitations",
+      "answerType": "long_text",
+      "label": "3. Functional limitations affecting work and daily activities"
+    },
+    "F-13": {
+      "anchor": "pdf:rdoFitForWork",
+      "answerType": "single_choice",
+      "label": "4. Is the claimant fit for work?"
+    },
+    "F-14": {
+      "anchor": "pdf:txtQ4Details",
+      "answerType": "long_text",
+      "label": "If modified duties, please give details"
+    },
+    "F-15": {
+      "anchor": "pdf:txtQ5Further",
+      "answerType": "long_text",
+      "label": "5. Recommended further treatment and estimated sessions"
+    },
+    "F-16": {
+      "anchor": "pdf:numFurtherSessions",
+      "answerType": "number",
+      "label": "Estimated number of further sessions"
+    },
+    "F-17": {
+      "anchor": "pdf:txtQ6Prognosis",
+      "answerType": "long_text",
+      "label": "6. Expected recovery timescale (prognosis)"
+    },
+    "F-18": {
+      "anchor": "pdf:txtTherapistName",
+      "answerType": "clinician_name",
+      "label": "Therapist name"
+    },
+    "F-19": {
+      "anchor": "pdf:txtHCPC",
+      "answerType": "hcpc_number",
+      "label": "HCPC registration no."
+    },
+    "F-20": {
+      "anchor": "pdf:txtSignature",
+      "answerType": "signature",
+      "label": "Signature (typed)"
+    },
+    "F-21": {
+      "anchor": "pdf:txtSignedDate",
+      "answerType": "date_signed",
+      "label": "Date"
+    },
+    "F-22": {
+      "anchor": "pdf:txtOfficeHandler",
+      "answerType": "short_text",
+      "label": "Claims handler (insurer use)"
+    },
+    "F-23": {
+      "anchor": "pdf:txtOfficeReceived",
+      "answerType": "short_text",
+      "label": "Date received (insurer use)"
+    }
+  },
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:48:09.772Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "forms-7",
+  "effort": "medium",
+  "note": "Real Claude output recorded by scripts/medreport/record-demo-drafts.ts from the fictional simulated TM3 demo case on the sample form \"northfield-rehab-progress\". Raw model output: [CLAIMANT] is replaced with the patient's name when the draft is assembled.",
+  "groups": {
+    "F-07+F-08": {
+      "sections": [
+        {
+          "sectionKey": "F-07",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 18/03/2026 Sarah Reid, senior physiotherapist, recorded an assessment that the presentation was consistent with whiplash-associated disorder grade II (Quebec Task Force), with neck pain, musculoskeletal signs and no neurological signs. She also recorded that the headaches were consistent with a cervicogenic component. Whiplash-associated disorder II was recorded again in the assessments of 06/05/2026 (Sarah Reid) and 17/06/2026 (Sarah Reid), and on 08/04/2026 by Tom Ellis, physiotherapist.",
+              "sourceIds": [
+                "N-001",
+                "N-004",
+                "N-006",
+                "N-009"
+              ],
+              "basis": "clinician_opinion_recorded"
+            },
+            {
+              "text": "[CLAIMANT] reported that on 12/03/2026 she was the restrained driver of a stationary car queuing at traffic lights when it was struck from behind by another car. Airbags did not deploy, and she reported no head strike and no loss of consciousness. Neck stiffness began the same evening and was worse on waking on 13/03/2026.",
+              "sourceIds": [
+                "REG",
+                "N-001"
+              ],
+              "basis": "patient_reported"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-08",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "Attendance was 10 of 11 appointments, with 1 did not attend (15/04/2026), between 18/03/2026 and 07/07/2026. Treatment, given by Sarah Reid and Tom Ellis, comprised soft tissue mobilisation of the upper trapezius and levator scapulae, sub-occipital release, Maitland central and left unilateral postero-anterior mobilisations of the cervical spine, sustained natural apophyseal glides into left rotation and, on 08/04/2026, thoracic extension mobilisation over a foam roller. Sessions were weekly, reduced to fortnightly from 06/05/2026.",
+              "sourceIds": [
+                "FACT-attendance",
+                "N-001",
+                "N-002",
+                "N-003",
+                "N-004",
+                "N-005",
+                "N-006",
+                "N-007"
+              ],
+              "basis": "record"
+            },
+            {
+              "text": "A home exercise programme was set on 18/03/2026 (chin tucks, active rotation, scapular setting) and progressed through upper trapezius stretching, cranio-cervical flexion training, theraband rows, thoracic extension over a towel roll, strength and endurance exercises, prone Y/T/W raises and resisted isometrics. On 17/06/2026 it was progressed to a maintenance programme 3 times a week.",
+              "sourceIds": [
+                "N-001",
+                "N-002",
+                "N-003",
+                "N-004",
+                "N-005",
+                "N-006",
+                "N-007",
+                "N-008",
+                "N-009"
+              ],
+              "basis": "record"
+            },
+            {
+              "text": "Advice included an explanation of whiplash-associated disorder with reassurance, staying active, no collar, regular heat, posture breaks every 30 minutes with the screen raised to eye level, workstation advice, graded increase in driving time, and swimming advice (alternate strokes, avoid prolonged neck extension in breaststroke). On 07/07/2026 Sarah Reid recorded discharge to self-management with workstation breaks every 30–45 minutes.",
+              "sourceIds": [
+                "N-001",
+                "N-003",
+                "N-004",
+                "N-008",
+                "N-010"
+              ],
+              "basis": "record"
+            }
+          ]
+        }
+      ],
+      "gaps": [],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 6842,
+        "usage": {
+          "inputTokens": 79,
+          "outputTokens": 1123,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7610
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-11+F-12+F-13+F-14": {
+      "sections": [
+        {
+          "sectionKey": "F-11",
+          "answer": "Yes",
+          "paragraphs": [
+            {
+              "text": "On 07/07/2026 Sarah Reid, physiotherapist, recorded that [CLAIMANT] was discharged from active physiotherapy to self-management and that the episode of care was complete.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-12",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 07/07/2026 Sarah Reid, senior physiotherapist, recorded at the final review that [CLAIMANT] had an occasional neck ache (Numeric Pain Rating Scale 2/10 at worst) after long days at the computer or drives over 1 hour, and 0/10 on most days. She recorded that [CLAIMANT] was working full-time on normal duties, driving without restriction and swimming 2 times a week.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "patient_reported"
+            },
+            {
+              "text": "In her assessment Sarah Reid recorded a residual intermittent low-level neck ache with prolonged sitting or driving, and full functional active range of movement with no neurological signs. She also recorded that [CLAIMANT] was less anxious driving but still checked the mirror more than before the accident.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_observed"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-13",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-14",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-13",
+          "issue": "No clinician recorded an opinion on fitness for work. Sarah Reid's note of 07/07/2026 records [CLAIMANT] working full-time on normal duties, but not a fitness-for-work opinion.",
+          "suggestedQuestion": "In your opinion, is [CLAIMANT] fit for work: Yes, No or Modified duties?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-14",
+          "issue": "No modified duties were recommended in the record. Sarah Reid's note of 07/07/2026 records full-time work on normal duties and workstation breaks every 30–45 minutes, but no recommendation on duties, hours or duration.",
+          "suggestedQuestion": "Do you recommend any modified duties for [CLAIMANT]? If so, what duties, hours and expected duration?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 14546,
+        "usage": {
+          "inputTokens": 128,
+          "outputTokens": 827,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7610
+        },
+        "stopReason": "end_turn"
+      }
+    },
+    "F-15+F-16+F-17": {
+      "sections": [
+        {
+          "sectionKey": "F-15",
+          "answer": "",
+          "paragraphs": [
+            {
+              "text": "On 07/07/2026 Sarah Reid, senior physiotherapist, recorded that [CLAIMANT] was discharged from active physiotherapy to self-management. The maintenance home exercise programme comprised cranio-cervical flexion 10 x 10 s, prone Y/T/W 3 x 12, and active rotation and upper trapezius stretches daily, with continued swimming. Sarah Reid also recorded advice on workstation breaks every 30–45 minutes and to contact the clinic or GP if symptoms increase.",
+              "sourceIds": [
+                "N-010"
+              ],
+              "basis": "clinician_opinion_recorded"
+            }
+          ]
+        },
+        {
+          "sectionKey": "F-16",
+          "answer": "",
+          "paragraphs": []
+        },
+        {
+          "sectionKey": "F-17",
+          "answer": "",
+          "paragraphs": []
+        }
+      ],
+      "gaps": [
+        {
+          "sectionKey": "F-16",
+          "issue": "No clinician recorded an estimated number of further sessions. Sarah Reid's note of 07/07/2026 records discharge to self-management without a session estimate.",
+          "suggestedQuestion": "Do you wish to give an estimated number of further sessions, or should this be left blank because [CLAIMANT] was discharged to self-management on 07/07/2026?",
+          "relatedNoteIds": [
+            "N-010"
+          ]
+        },
+        {
+          "sectionKey": "F-17",
+          "issue": "No clinician recorded an opinion on prognosis or expected recovery timescale. Sarah Reid's note of 07/07/2026 records the assessment at discharge and a residual intermittent low-level neck ache, but no prognosis.",
+          "suggestedQuestion": "What is your opinion on [CLAIMANT]'s prognosis and expected recovery timescale, if you wish to give one?",
+          "relatedNoteIds": [
+            "N-010",
+            "N-009"
+          ]
+        }
+      ],
+      "recording": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "durationMs": 5591,
+        "usage": {
+          "inputTokens": 105,
+          "outputTokens": 624,
+          "cacheReadInputTokens": 4497,
+          "cacheCreationInputTokens": 7610
+        },
+        "stopReason": "end_turn"
+      }
+    }
+  }
+}

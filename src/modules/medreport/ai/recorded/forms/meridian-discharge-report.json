@@ -1,0 +1,414 @@
+{
+  "format": "appstackx-reports.form-analysis",
+  "formatVersion": 1,
+  "sampleId": "meridian-discharge-report",
+  "fileSha256": "306a878a9836d485f8d5a82f99961dbeb11f9f15d7132fe19ff3c2753362fa2d",
+  "fileName": "Meridian-Claims_Physiotherapy-Discharge-Report_MCS-PDR-3.docx",
+  "mode": "demo_recorded",
+  "recordedAt": "2026-10-09T08:02:25.511Z",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "form-analysis-3",
+  "effort": "low",
+  "durationMs": 11118,
+  "chunks": 2,
+  "usage": {
+    "inputTokens": 508,
+    "outputTokens": 4165,
+    "cacheReadInputTokens": 10724,
+    "cacheCreationInputTokens": 3376
+  },
+  "form": {
+    "id": "frm_da47bbbb344c7652",
+    "tenantId": "demo",
+    "referrer": {
+      "name": "Meridian Claims Services (fictional)",
+      "type": "insurer"
+    },
+    "title": "Physiotherapy Discharge Report",
+    "file": {
+      "fileName": "Meridian-Claims_Physiotherapy-Discharge-Report_MCS-PDR-3.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sha256": "306a878a9836d485f8d5a82f99961dbeb11f9f15d7132fe19ff3c2753362fa2d",
+      "sizeBytes": 13257
+    },
+    "kind": "docx",
+    "fields": [
+      {
+        "id": "F-01",
+        "label": "Claimant's full name",
+        "section": "1 CLAIMANT AND TREATMENT DETAILS",
+        "guidance": "The claimant's full name.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t0.r1.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.fullName"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-02",
+        "label": "Date of birth",
+        "section": "1 CLAIMANT AND TREATMENT DETAILS",
+        "guidance": "The claimant's date of birth.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t0.r2.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "patient.dob"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-03",
+        "label": "Meridian claim reference",
+        "section": "1 CLAIMANT AND TREATMENT DETAILS",
+        "guidance": "Meridian's reference for this claim.",
+        "answerType": "short_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t0.r3.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "referral.reference"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-04",
+        "label": "Date treatment started",
+        "section": "1 CLAIMANT AND TREATMENT DETAILS",
+        "guidance": "The date treatment began.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t0.r4.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.firstSeen"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-05",
+        "label": "Date of discharge",
+        "section": "1 CLAIMANT AND TREATMENT DETAILS",
+        "guidance": "The date the claimant was discharged.",
+        "answerType": "date",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t0.r5.c1"
+        },
+        "fillSource": {
+          "kind": "registration",
+          "path": "episode.dischargeDate"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-06",
+        "label": "What was your final diagnosis? Please include the mechanism of injury as reported to you.",
+        "section": "2 DIAGNOSIS",
+        "guidance": "Give the final diagnosis and the mechanism of injury as reported.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "after_paragraph",
+          "blockId": "t1.r1.c0.p0"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-07",
+        "label": "Please summarise the claimant's progress during treatment, including any objective outcome measures.",
+        "section": "3 PROGRESS DURING TREATMENT",
+        "guidance": "Summarise progress, with objective outcome measure results.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "after_paragraph",
+          "blockId": "t2.r1.c0.p0"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "medium",
+        "note": "Outcome measure scores may be added from computed figures."
+      },
+      {
+        "id": "F-08",
+        "label": "Please comment on the claimant's ability to carry out normal daily activities.",
+        "section": "3 PROGRESS DURING TREATMENT",
+        "guidance": "Comment on the claimant's ability to manage daily activities.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "after_paragraph",
+          "blockId": "t2.r2.c0.p0"
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-09",
+        "label": "Sessions attended",
+        "section": "3 PROGRESS DURING TREATMENT",
+        "guidance": "Number of sessions the claimant attended.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t2.r3.c0"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "sessions_attended"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-10",
+        "label": "Sessions missed",
+        "section": "3 PROGRESS DURING TREATMENT",
+        "guidance": "Number of sessions the claimant missed.",
+        "answerType": "number",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t2.r3.c0"
+        },
+        "fillSource": {
+          "kind": "computed_fact",
+          "factId": "FACT-attendance",
+          "format": "dna_count"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-11",
+        "label": "Reason for discharge",
+        "section": "4 OUTCOME AND RECOMMENDATIONS",
+        "guidance": "Tick the option that best describes why the claimant was discharged.",
+        "answerType": "single_choice",
+        "options": [
+          "Goals achieved",
+          "Plateaued",
+          "Self-discharged",
+          "Did not attend"
+        ],
+        "anchor": {
+          "kind": "docx",
+          "target": "checkbox_glyph",
+          "blockId": "t3.r1.c0.p1",
+          "optionGlyphs": [
+            {
+              "option": "Goals achieved",
+              "blockId": "t3.r1.c0.p1",
+              "glyphIndex": 0
+            },
+            {
+              "option": "Plateaued",
+              "blockId": "t3.r1.c0.p1",
+              "glyphIndex": 1
+            },
+            {
+              "option": "Self-discharged",
+              "blockId": "t3.r1.c0.p1",
+              "glyphIndex": 2
+            },
+            {
+              "option": "Did not attend",
+              "blockId": "t3.r1.c0.p1",
+              "glyphIndex": 3
+            }
+          ]
+        },
+        "fillSource": {
+          "kind": "notes_narrative"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-12",
+        "label": "Is any further treatment or investigation recommended?",
+        "section": "4 OUTCOME AND RECOMMENDATIONS",
+        "guidance": "Say whether further treatment or investigation is recommended.",
+        "answerType": "yes_no",
+        "options": [
+          "Yes",
+          "No"
+        ],
+        "anchor": {
+          "kind": "docx",
+          "target": "checkbox_glyph",
+          "blockId": "t3.r2.c0.p1",
+          "optionGlyphs": [
+            {
+              "option": "Yes",
+              "blockId": "t3.r2.c0.p1",
+              "glyphIndex": 0
+            },
+            {
+              "option": "No",
+              "blockId": "t3.r2.c0.p1",
+              "glyphIndex": 1
+            }
+          ]
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-13",
+        "label": "If yes, please give details:",
+        "section": "4 OUTCOME AND RECOMMENDATIONS",
+        "guidance": "Give details of any further treatment or investigation recommended.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t3.r2.c0.p2"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": false,
+        "confidence": "high"
+      },
+      {
+        "id": "F-14",
+        "label": "In your opinion, what is the likely long-term outcome for this claimant?",
+        "section": "4 OUTCOME AND RECOMMENDATIONS",
+        "guidance": "Give the clinician's opinion on the claimant's likely long-term outcome.",
+        "answerType": "long_text",
+        "anchor": {
+          "kind": "docx",
+          "target": "after_paragraph",
+          "blockId": "t3.r3.c0.p0"
+        },
+        "fillSource": {
+          "kind": "clinician_opinion"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-15",
+        "label": "Name",
+        "section": "5 THERAPIST DECLARATION",
+        "guidance": "Name of the therapist signing the declaration.",
+        "answerType": "clinician_name",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t4.r2.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "name"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-16",
+        "label": "Professional registration number",
+        "section": "5 THERAPIST DECLARATION",
+        "guidance": "The signing therapist's professional registration number.",
+        "answerType": "hcpc_number",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t4.r3.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "hcpc"
+        },
+        "required": true,
+        "confidence": "high"
+      },
+      {
+        "id": "F-17",
+        "label": "Date",
+        "section": "5 THERAPIST DECLARATION",
+        "guidance": "Date the declaration is signed.",
+        "answerType": "date_signed",
+        "anchor": {
+          "kind": "docx",
+          "target": "content_control",
+          "blockId": "t4.r4.c1"
+        },
+        "fillSource": {
+          "kind": "signoff",
+          "part": "date"
+        },
+        "required": true,
+        "confidence": "high"
+      }
+    ],
+    "status": "proposed",
+    "analysis": {
+      "mode": "live",
+      "model": "claude-sonnet-5-5",
+      "promptVersion": "form-analysis-3",
+      "durationMs": 11118,
+      "usage": {
+        "inputTokens": 508,
+        "outputTokens": 4165,
+        "cacheReadInputTokens": 10724,
+        "cacheCreationInputTokens": 3376
+      },
+      "at": "2026-10-09T08:02:14.369Z",
+      "warnings": [
+        "The declaration has no separate signature box; the name field serves as the sign-off."
+      ]
+    },
+    "createdAt": "2026-10-09T08:02:14.369Z",
+    "updatedAt": "2026-10-09T08:02:14.369Z",
+    "sampleId": "meridian-discharge-report"
+  },
+  "outlineSummary": {
+    "kind": "docx",
+    "paragraphs": 24,
+    "tables": 5,
+    "fillableFields": 14,
+    "answerSpaces": 15,
+    "headings": [],
+    "warnings": []
+  },
+  "note": "Real Claude analysis of a bundled fictional sample form, recorded by scripts/medreport/record-form-analyses.ts and post-validated against the parsed document."
+}
