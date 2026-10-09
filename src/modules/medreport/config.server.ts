@@ -8,7 +8,8 @@ import "server-only";
  *
  * Env vars (see .env.example): ANTHROPIC_API_KEY, MEDREPORT_AI_MODE, MEDREPORT_MODEL,
  * MEDREPORT_LIVE_PASSCODE, MEDREPORT_LAUNCH_SECRET, MEDREPORT_SIGNING_SECRET, MEDREPORT_PARTNER_KEY,
- * TM3_SIM_TOKEN, TM3_SIM_BASE_URL.
+ * TM3_SIM_TOKEN, TM3_SIM_BASE_URL; wave 2: CLINFORMS_PUBLIC_DEMO, APP_ORIGIN (else BETTER_AUTH_URL),
+ * CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE, CLINFORMS_TENANT_LIVE_CALLS_PER_DAY.
  */
 import { createHmac } from "node:crypto";
 import type { AiMode } from "./core/types";
@@ -179,7 +180,7 @@ export function getSecret(name: SecretName): string {
  * A purpose-bound key derived from MEDREPORT_SIGNING_SECRET (domain separation: a receipt MAC can
  * never be replayed as a form-map confirmation or a filed-document token).
  */
-export function signingKey(purpose: "receipt" | "form-confirmation" | "file-token"): string {
+export function signingKey(purpose: "receipt" | "form-confirmation" | "file-token" | "rate-limit-key"): string {
   const secret = getSecret("MEDREPORT_SIGNING_SECRET");
   return purpose === "receipt" ? secret : createHmac("sha256", secret).update(`appstackx-reports:${purpose}:v1`, "utf8").digest("base64url");
 }
@@ -195,4 +196,142 @@ export function getLivePasscode(): string | null {
  */
 export function getTm3SimBaseUrl(): string | null {
   return env("TM3_SIM_BASE_URL") ?? null;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Wave 2: the public demo, clinics (tenant actors) and trusted origins
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * CLINFORMS_PUBLIC_DEMO: the public demo – tenant "demo" at /reports and /pms-sandbox, fictional data,
+ * browser storage, anonymous demo sessions – is ON unless this is exactly "0".
+ */
+export function publicDemoEnabled(): boolean {
+  return env("CLINFORMS_PUBLIC_DEMO") !== "0";
+}
+
+/**
+ * Live drafting and form analysis for a CLINIC (a signed-in member): the mode is not forced to "demo" and
+ * an API key is configured. No passcode – the passcode gates the public demo only; a clinic's use is
+ * governed by clinic_profile.drafting_enabled and the per-clinic limits below.
+ */
+export function tenantLiveAiAvailable(): boolean {
+  return aiModeSetting() !== "demo" && hasAnthropicKey();
+}
+
+export interface TenantDraftingLimits {
+  /** Live calls (drafting groups + analysis chunks) per clinic per minute. */
+  perMinute: number;
+  /** Live calls per clinic per UTC day. */
+  perDay: number;
+}
+
+export const DEFAULT_TENANT_LIVE_CALLS_PER_MINUTE = 10;
+export const DEFAULT_TENANT_LIVE_CALLS_PER_DAY = 400;
+
+function intSetting(name: string, fallback: number, min: number, max: number): number {
+  const raw = env(name);
+  if (!raw || !/^\d+$/.test(raw)) return fallback;
+  const n = Number(raw);
+  return n >= min && n <= max ? n : fallback;
+}
+
+/** CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE (default 10) and CLINFORMS_TENANT_LIVE_CALLS_PER_DAY (default 400). */
+export function tenantDraftingLimits(): TenantDraftingLimits {
+  return {
+    perMinute: intSetting("CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE", DEFAULT_TENANT_LIVE_CALLS_PER_MINUTE, 1, 600),
+    perDay: intSetting("CLINFORMS_TENANT_LIVE_CALLS_PER_DAY", DEFAULT_TENANT_LIVE_CALLS_PER_DAY, 1, 1_000_000),
+  };
+}
+
+function originOf(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function requestHost(req: Request | undefined): string | null {
+  if (!req) return null;
+  const forwarded = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwarded || req.headers.get("host")?.trim();
+  if (host) return host.toLowerCase();
+  try {
+    return new URL(req.url).host.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function requestProto(req: Request): "http" | "https" {
+  const forwarded = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwarded === "http" || forwarded === "https") return forwarded;
+  try {
+    return new URL(req.url).protocol === "https:" ? "https" : "http";
+  } catch {
+    return "https";
+  }
+}
+
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** This Vercel deployment's own hostnames (platform-set, never from the request). */
+function vercelHosts(): string[] {
+  if (!env("VERCEL")) return [];
+  return Array.from(
+    new Set(
+      [env("VERCEL_BRANCH_URL"), env("VERCEL_URL"), env("VERCEL_PROJECT_PRODUCTION_URL")]
+        .filter((h): h is string => Boolean(h))
+        .map((h) => h.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase()),
+    ),
+  );
+}
+
+/**
+ * The app's public origin for links the server builds (the launch URL of POST /launch): APP_ORIGIN, else
+ * BETTER_AUTH_URL, else – on Vercel – the request's host when it is one of THIS deployment's own
+ * hostnames (else its branch/deployment URL), else – locally – the request's host when it is the loopback
+ * interface (else http://localhost:$PORT), or TM3_SIM_BASE_URL's origin when the request came to that host.
+ * Never a forged Host header.
+ */
+export function appOrigin(req?: Request): string {
+  const configured = originOf(env("APP_ORIGIN")) ?? originOf(env("BETTER_AUTH_URL"));
+  if (configured) return configured;
+  const host = requestHost(req);
+  const hosts = vercelHosts();
+  if (hosts.length > 0) {
+    if (host && hosts.indexOf(host) >= 0) return `https://${host}`;
+    return `https://${hosts[0]}`;
+  }
+  if (req && host) {
+    let hostname = "";
+    try {
+      hostname = new URL(`http://${host}`).hostname.toLowerCase();
+    } catch {
+      hostname = "";
+    }
+    if (LOOPBACK_HOSTNAMES.has(hostname)) return `${requestProto(req)}://${host}`;
+    const sim = originOf(env("TM3_SIM_BASE_URL"));
+    if (sim && new URL(sim).host.toLowerCase() === host) return sim;
+  }
+  return `http://localhost:${env("PORT") ?? "3000"}`;
+}
+
+/**
+ * Origins a state-changing browser request may come from (CSRF check in api/http.ts bindHandler): the
+ * request's own origin, APP_ORIGIN, BETTER_AUTH_URL, this Vercel deployment's hostnames and TM3_SIM_BASE_URL.
+ */
+export function allowedRequestOrigins(req: Request): string[] {
+  const list: string[] = [];
+  const host = requestHost(req);
+  if (host) list.push(`${requestProto(req)}://${host}`);
+  for (const raw of [env("APP_ORIGIN"), env("BETTER_AUTH_URL"), env("TM3_SIM_BASE_URL")]) {
+    const o = originOf(raw);
+    if (o) list.push(o);
+  }
+  for (const h of vercelHosts()) list.push(`https://${h}`);
+  return Array.from(new Set(list.map((o) => o.toLowerCase())));
 }

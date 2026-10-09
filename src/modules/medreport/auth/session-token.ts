@@ -7,6 +7,9 @@ import "server-only";
  * Handlers call `requireSession(req)` (Bearer token → claims, or a 401 problem) and then
  * `sessionAllowsEpisode` / `assertSessionConnector` before touching patient data.
  *
+ * Wave 2: the handlers use auth/actor.ts `requireActor()` instead (a clinic's signed-in member, or these
+ * session tokens for the public demo). `requireSession` is kept for compatibility (demo tenant only).
+ *
  * Owner: integration agent.
  */
 import { getSecret } from "../config.server";

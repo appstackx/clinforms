@@ -135,7 +135,15 @@ export const tm3SimPaths = {
  * Endpoint tables (README, tests, route coverage)
  * ----------------------------------------------------------------------------------------------*/
 
-export type EndpointAuth = "none" | "partner-key" | "session" | "passcode-for-live" | "bearer-tm3-sim";
+/**
+ * - "actor" (wave 2): a signed-in clinic member (sign-in cookie, two-step verification) or a public-demo
+ *   session token (Bearer, tenant "demo"); see auth/actor.ts. Live drafting/analysis additionally needs the
+ *   passcode in the public demo only.
+ * - "launch-token" (wave 2): the launch token in the body; a clinic's launch also needs that clinic's
+ *   signed-in member.
+ * The older values describe the pre-wave-2 contract and are kept for compatibility.
+ */
+export type EndpointAuth = "none" | "partner-key" | "session" | "passcode-for-live" | "bearer-tm3-sim" | "actor" | "launch-token";
 
 export interface EndpointSpec {
   name: string;
@@ -152,26 +160,26 @@ export const REPORT_API_ENDPOINTS: readonly EndpointSpec[] = [
   { name: "health", method: "GET", path: "/api/reports/v1/health", auth: "none", handler: "health.ts", summary: "Product, version, AI mode, live AI availability, model" },
   { name: "connectorsList", method: "GET", path: "/api/reports/v1/connectors", auth: "none", handler: "connectors-list.ts", summary: "Connector tiles (tm3-sim, file-import, tm3)" },
   { name: "launch", method: "POST", path: "/api/reports/v1/launch", auth: "partner-key", handler: "launch.ts", summary: "Clinic system asks for a launch URL with a 10-minute launch token" },
-  { name: "launchVerify", method: "POST", path: "/api/reports/v1/launch/verify", auth: "none", handler: "launch-verify.ts", summary: "Exchange a launch token for its claims and a 1-hour session token" },
+  { name: "launchVerify", method: "POST", path: "/api/reports/v1/launch/verify", auth: "launch-token", handler: "launch-verify.ts", summary: "Exchange a launch token for its claims and a 1-hour session token" },
   { name: "sessionsDemo", method: "POST", path: "/api/reports/v1/sessions/demo", auth: "none", handler: "sessions-demo.ts", summary: "Demo-tenant session for the manual picker, uploads and batch" },
-  { name: "patients", method: "GET", path: "/api/reports/v1/connectors/[id]/patients", auth: "session", handler: "patients.ts", summary: "Search patients (with episode summaries) via a connector" },
-  { name: "bundle", method: "GET", path: "/api/reports/v1/connectors/[id]/patients/[pid]/episodes/[eid]/bundle", auth: "session", handler: "bundle.ts", summary: "EpisodeBundle + computed facts + data checks + integration trace; claims must match the path" },
-  { name: "fileImportBundle", method: "POST", path: "/api/reports/v1/connectors/file-import/bundle", auth: "session", handler: "file-import-bundle.ts", summary: "Map an uploaded export (JSON/CSV) or pasted notes to an EpisodeBundle" },
+  { name: "patients", method: "GET", path: "/api/reports/v1/connectors/[id]/patients", auth: "actor", handler: "patients.ts", summary: "Search patients (with episode summaries) via a connector" },
+  { name: "bundle", method: "GET", path: "/api/reports/v1/connectors/[id]/patients/[pid]/episodes/[eid]/bundle", auth: "actor", handler: "bundle.ts", summary: "EpisodeBundle + computed facts + data checks + integration trace; claims must match the path" },
+  { name: "fileImportBundle", method: "POST", path: "/api/reports/v1/connectors/file-import/bundle", auth: "actor", handler: "file-import-bundle.ts", summary: "Map an uploaded export (JSON/CSV) or pasted notes to an EpisodeBundle" },
   { name: "templatesList", method: "GET", path: "/api/reports/v1/templates", auth: "none", handler: "templates-list.ts", summary: "Report templates" },
   { name: "templateGet", method: "GET", path: "/api/reports/v1/templates/[id]", auth: "none", handler: "template-get.ts", summary: "One template's section spec" },
   { name: "templateDocx", method: "GET", path: "/api/reports/v1/templates/[id]/docx", auth: "none", handler: "template-docx.ts", summary: "Download the tagged Word template" },
-  { name: "templatesValidate", method: "POST", path: "/api/reports/v1/templates/validate", auth: "none", handler: "templates-validate.ts", summary: "Validate an uploaded tagged .docx; plain-English TemplateErrors" },
-  { name: "drafts", method: "POST", path: "/api/reports/v1/drafts", auth: "passcode-for-live", handler: "drafts.ts", summary: "Draft one group of 1–2 sections (live Claude or badged demo draft)" },
-  { name: "validate", method: "POST", path: "/api/reports/v1/validate", auth: "none", handler: "validate.ts", summary: "Run the validators; flags + canSign" },
-  { name: "sign", method: "POST", path: "/api/reports/v1/sign", auth: "session", handler: "sign.ts", summary: "Re-validate and issue an HMAC'd SignReceipt bound to the session, the form map and the content (409 SIGNOFF_BLOCKED if blocked)" },
-  { name: "render", method: "POST", path: "/api/reports/v1/render", auth: "none", handler: "render.ts", summary: "Render .docx or .pdf (?format=docx|pdf), or a completed referrer form (?format=original|pdf); FINAL only with a valid receipt, otherwise DRAFT" },
-  { name: "documents", method: "POST", path: "/api/reports/v1/connectors/[id]/documents", auth: "session", handler: "documents.ts", summary: "Write a signed file back to the clinic system with its receipt" },
-  { name: "formsAnalyse", method: "POST", path: "/api/reports/v1/forms/analyse", auth: "passcode-for-live", handler: "forms-analyse.ts", summary: "Analyse a referrer's form (.docx or PDF) into a proposed form map (live Claude, recorded analysis or rules)" },
+  { name: "templatesValidate", method: "POST", path: "/api/reports/v1/templates/validate", auth: "actor", handler: "templates-validate.ts", summary: "Validate an uploaded tagged .docx; plain-English TemplateErrors" },
+  { name: "drafts", method: "POST", path: "/api/reports/v1/drafts", auth: "actor", handler: "drafts.ts", summary: "Draft one group of 1–2 sections (live Claude or badged demo draft)" },
+  { name: "validate", method: "POST", path: "/api/reports/v1/validate", auth: "actor", handler: "validate.ts", summary: "Run the validators; flags + canSign" },
+  { name: "sign", method: "POST", path: "/api/reports/v1/sign", auth: "actor", handler: "sign.ts", summary: "Re-validate and issue an HMAC'd SignReceipt bound to the session, the form map and the content (409 SIGNOFF_BLOCKED if blocked)" },
+  { name: "render", method: "POST", path: "/api/reports/v1/render", auth: "actor", handler: "render.ts", summary: "Render .docx or .pdf (?format=docx|pdf), or a completed referrer form (?format=original|pdf); FINAL only with a valid receipt, otherwise DRAFT" },
+  { name: "documents", method: "POST", path: "/api/reports/v1/connectors/[id]/documents", auth: "actor", handler: "documents.ts", summary: "Write a signed file back to the clinic system with its receipt" },
+  { name: "formsAnalyse", method: "POST", path: "/api/reports/v1/forms/analyse", auth: "actor", handler: "forms-analyse.ts", summary: "Analyse a referrer's form (.docx or PDF) into a proposed form map (live Claude, recorded analysis or rules)" },
   { name: "formsSamples", method: "GET", path: "/api/reports/v1/forms/samples", auth: "none", handler: "forms-samples.ts", summary: "Bundled fictional referrer forms with their pre-confirmed form maps" },
   { name: "formsSampleFile", method: "GET", path: "/api/reports/v1/forms/samples/[id]/file", auth: "none", handler: "forms-sample-file.ts", summary: "The original file of a bundled sample form" },
-  { name: "formsFillPreview", method: "POST", path: "/api/reports/v1/forms/fill-preview", auth: "none", handler: "forms-fill-preview.ts", summary: "The referrer's form filled with the current answers, marked DRAFT (for the live preview)" },
-  { name: "formsConfirm", method: "POST", path: "/api/reports/v1/forms/confirm", auth: "session", handler: "forms-confirm.ts", summary: "Check a reviewed form map and return it confirmed, with the server's attestation of exactly that map" },
-  { name: "aiPayloadPreview", method: "POST", path: "/api/reports/v1/ai/payload-preview", auth: "none", handler: "ai-payload-preview.ts", summary: "Exactly what a drafting call would send to Claude for this record (minimised), without calling it" },
+  { name: "formsFillPreview", method: "POST", path: "/api/reports/v1/forms/fill-preview", auth: "actor", handler: "forms-fill-preview.ts", summary: "The referrer's form filled with the current answers, marked DRAFT (for the live preview)" },
+  { name: "formsConfirm", method: "POST", path: "/api/reports/v1/forms/confirm", auth: "actor", handler: "forms-confirm.ts", summary: "Check a reviewed form map and return it confirmed, with the server's attestation of exactly that map" },
+  { name: "aiPayloadPreview", method: "POST", path: "/api/reports/v1/ai/payload-preview", auth: "actor", handler: "ai-payload-preview.ts", summary: "Exactly what a drafting call would send to Claude for this record (minimised), without calling it" },
 ];
 
 export const TM3_SIM_ENDPOINTS: readonly EndpointSpec[] = [
@@ -226,6 +234,18 @@ export const PROBLEM_CODES = [
   "PDF_CONVERSION_UNAVAILABLE",
   "NOT_IMPLEMENTED",
   "INTERNAL",
+  // Wave 2: actors, clinics (tenants) and request hardening (auth/actor.ts, api/http.ts)
+  "TWO_FACTOR_REQUIRED",
+  "NO_CLINIC",
+  "DEMO_DISABLED",
+  "TENANT_MISMATCH",
+  "ROLE_NOT_ALLOWED",
+  "SIGNER_NOT_ALLOWED",
+  "DRAFTING_DISABLED",
+  "CONNECTOR_NOT_AVAILABLE",
+  "ORIGIN_NOT_ALLOWED",
+  "UNSUPPORTED_MEDIA_TYPE",
+  "SERVICE_UNAVAILABLE",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -380,6 +400,8 @@ export const DraftsRequestSchema = z
      * what they recorded in the first person ("I recorded…"); other clinicians stay named.
      */
     author: ClinicianSchema.optional(),
+    /** Wave 2: the report being drafted (recorded in a clinic's audit trail; never required). */
+    reportId: z.string().min(1).max(128).optional(),
   })
   .superRefine((body, ctx) => {
     if (!body.form && body.sectionKeys.length > MAX_SECTIONS_PER_DRAFT) {

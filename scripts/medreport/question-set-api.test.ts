@@ -151,16 +151,16 @@ test("completing a question set for a patient: code-filled answers, draft groups
   const parsed = DraftsRequestSchema.safeParse(request);
   assert.ok(parsed.success, JSON.stringify(parsed.error?.issues));
   // Demo mode holds no prepared answers for a question set: an honest 404, not a validation error.
-  const res = await post(handleDrafts, "/drafts", request, null);
+  const res = await post(handleDrafts, "/drafts", request);
   assert.equal(res.status, 404, await res.clone().text());
   assert.equal(ProblemSchema.parse(await res.json()).code, "NO_DEMO_DRAFT");
   // An unconfirmed question set is refused like any unconfirmed form.
-  const unconfirmed = await post(handleDrafts, "/drafts", { ...request, form: { ...form, status: "proposed", confirmed: undefined } }, null);
+  const unconfirmed = await post(handleDrafts, "/drafts", { ...request, form: { ...form, status: "proposed", confirmed: undefined } });
   assert.equal(unconfirmed.status, 409);
   assert.equal(ProblemSchema.parse(await unconfirmed.json()).code, "FORM_NOT_CONFIRMED");
 
   // What a drafting call would send: the portal's questions, never the patient's identifiers.
-  const preview = await post(handleAiPayloadPreview, "/ai/payload-preview", { templateId: report.templateId, bundle, instructingParty: bundle.referral, form }, null);
+  const preview = await post(handleAiPayloadPreview, "/ai/payload-preview", { templateId: report.templateId, bundle, instructingParty: bundle.referral, form });
   assert.equal(preview.status, 200, await preview.clone().text());
   const body = AiPayloadPreviewResponseSchema.parse(await preview.json());
   const sent = body.blocks.map((b) => b.text).join("\n");
@@ -174,7 +174,7 @@ test("render and fill-preview give a question set's PDF summary instead of filli
   const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle), now: NOW });
 
   for (const format of ["pdf", "original"] as const) {
-    const res = await post(handleRender, `/render?format=${format}`, { report, form }, null);
+    const res = await post(handleRender, `/render?format=${format}`, { report, form });
     assert.equal(res.status, 200, await res.clone().text());
     assert.equal(res.headers.get("content-type"), "application/pdf");
     assert.equal(res.headers.get(HEADERS.renderKind), "draft");
@@ -188,12 +188,12 @@ test("render and fill-preview give a question set's PDF summary instead of filli
     assert.ok(text.includes("DRAFT"));
   }
 
-  const docx = await post(handleRender, "/render?format=docx", { report, form }, null);
+  const docx = await post(handleRender, "/render?format=docx", { report, form });
   assert.equal(docx.status, 422);
   assert.match(ProblemSchema.parse(await docx.json()).detail ?? "", /copying into the portal/);
 
   // fill-preview has no file to fill: it answers with the DRAFT summary (the file sent is ignored).
-  const preview = await post(handleFormsFillPreview, "/forms/fill-preview", { report, form, fileBase64: "AA==", mode: "draft" }, null);
+  const preview = await post(handleFormsFillPreview, "/forms/fill-preview", { report, form, fileBase64: "AA==", mode: "draft" });
   assert.equal(preview.status, 200, await preview.clone().text());
   assert.equal(preview.headers.get(HEADERS.renderKind), "draft");
   assert.equal(preview.headers.get(HEADERS.formKind), "questions");
@@ -235,7 +235,7 @@ test("approval needs the question set's own attestations; the FINAL summary and 
   assert.deepEqual(receipt.attestations, [...QUESTION_SET_ATTESTATIONS]);
   const signed: Report = { ...draft, status: "signed", receipt };
 
-  const final = await post(handleRender, "/render?format=original", { report: signed, receipt, form, requireFinal: true }, null);
+  const final = await post(handleRender, "/render?format=original", { report: signed, receipt, form, requireFinal: true });
   assert.equal(final.status, 200, await final.clone().text());
   assert.equal(final.headers.get(HEADERS.renderKind), "final");
   assert.ok(final.headers.get(HEADERS.fileToken), "a FINAL summary can be filed to the clinic record");
@@ -246,12 +246,12 @@ test("approval needs the question set's own attestations; the FINAL summary and 
 
   // A question edited after approval is not the map the report was started from and approved with.
   const edited = { ...form, fields: form.fields.map((f, i) => (i === 0 ? { ...f, label: "Member's full name" } : f)) };
-  const refused = await post(handleRender, "/render?format=pdf", { report: signed, receipt, form: edited, requireFinal: true }, null);
+  const refused = await post(handleRender, "/render?format=pdf", { report: signed, receipt, form: edited, requireFinal: true });
   assert.equal(refused.status, 409);
   assert.equal(ProblemSchema.parse(await refused.json()).code, "FORM_MISMATCH");
   // …and once its placeholder file is recomputed it is another version of the question set altogether.
   const reVersioned = { ...edited, file: { ...edited.file, sha256: await questionSetSha256(edited.fields) } };
-  const other = await post(handleRender, "/render?format=pdf", { report: signed, receipt, form: reVersioned, requireFinal: true }, null);
+  const other = await post(handleRender, "/render?format=pdf", { report: signed, receipt, form: reVersioned, requireFinal: true });
   assert.equal(other.status, 409);
   assert.match(ProblemSchema.parse(await other.json()).title, /not the form the report was started from/);
 

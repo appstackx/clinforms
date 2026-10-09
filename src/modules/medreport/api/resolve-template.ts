@@ -10,6 +10,7 @@ import "server-only";
 import { formConfirmationProblem, formMapSha256, verifyFormConfirmation } from "../auth/attestations";
 import { formIdFromTemplateId, formToTemplate } from "../core/forms";
 import type { FormDefinition, ReportFormRef, ReportTemplate } from "../core/types";
+import { WORDING } from "../core/wording";
 import { getTemplate } from "../templates/registry";
 import { problem } from "./http";
 
@@ -92,11 +93,15 @@ export function resolveTemplate(input: ResolveTemplateInput): TemplateResolution
 
 /**
  * 409 FORM_NOT_CONFIRMED unless the map carries a valid server-attested confirmation of exactly these
- * fields (auth/attestations.ts). Null when it does.
+ * fields (auth/attestations.ts). Null when it does. With `tenantId` (wave 2: the caller's clinic), a map of
+ * another clinic is 403 TENANT_MISMATCH.
  */
-export function requireAttestedForm(form: FormDefinition): Response | null {
-  const check = verifyFormConfirmation(form);
+export function requireAttestedForm(form: FormDefinition, tenantId?: string): Response | null {
+  const check = verifyFormConfirmation(form, tenantId !== undefined ? { tenantId } : {});
   if (check.ok) return null;
+  if (check.reason === "TENANT_MISMATCH") {
+    return problem(403, WORDING.server.access.otherClinicTitle, { code: "TENANT_MISMATCH", detail: WORDING.server.access.otherClinic("form") });
+  }
   return problem(409, check.reason === "NOT_CONFIRMED" ? "The form mapping has not been confirmed" : "The form mapping needs confirming again", {
     code: "FORM_NOT_CONFIRMED",
     detail: formConfirmationProblem(check.reason),

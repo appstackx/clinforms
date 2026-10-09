@@ -9,18 +9,40 @@ import "server-only";
  *   preview protection or a loopback/DNS problem – the trace then shows transport "in-process".
  *   The base URL is NEVER taken from request headers (Host / X-Forwarded-Host are client-controlled
  *   on a self-hosted server, and the call carries the TM3_SIM_TOKEN bearer token);
- * - binding Report API handlers to these dependencies for the thin route files.
+ * - binding Report API handlers to these dependencies for the thin route files;
+ * - wave 2 – the host capabilities the module may not import itself (docs/production-architecture.md §3):
+ *     authenticate   Better Auth session (read from the database, never the cookie cache) → AuthContext
+ *                    (src/server/auth/medreport-actor.ts). Only consulted when the request carries a sign-in
+ *                    cookie, so the public demo never needs the database or auth settings. A session without
+ *                    an active clinic is 403 NO_CLINIC (never the demo); a sign-in that cannot be checked is 503.
+ *     clinicProfile  clinic_profile → ClinicProfile
+ *     sharedState    rate_limits / launch_token_uses (shared by every instance) when CLINFORMS_DB is set
+ *     audit          audit_log (append-only)
+ *     verifyPartnerKey  partner_keys (SHA-256, revocable; the key names its clinic)
+ *   Each one degrades on its own: without a database the module keeps its per-instance fallbacks and the
+ *   public demo keeps working.
  *
  * Only src/app may import both the module and the sandbox.
  *
- * Owner: integration agent. (`route` and `getMedreportDeps` signatures are relied on by every route file.)
+ * Owner: integration agent (wave 2: API slice). (`route` and `getMedreportDeps` signatures are relied on by
+ * every route file.)
  */
-import type { MedreportDeps } from "@/modules/medreport/api/deps";
-import { bindHandler, logEvent, type HandlerFn, type MedreportHandler } from "@/modules/medreport/api/http";
+import type { AuthContext, MedreportDeps, SharedStateStore } from "@/modules/medreport/api/deps";
+import { HttpError, bindHandler, logEvent, type HandlerFn, type MedreportHandler } from "@/modules/medreport/api/http";
 import { getSecret, getTm3SimBaseUrl } from "@/modules/medreport/config.server";
 import { createConnectorRegistry, createDefaultConnectors } from "@/modules/medreport/connectors/registry";
 import { TRANSPORT_HEADER, type ConnectorFetch } from "@/modules/medreport/connectors/types";
+import { WORDING } from "@/modules/medreport/core/wording";
 import { dispatchSimRequest } from "@/sandbox/tm3-sim/handlers";
+import { SESSION_COOKIE_NAMES } from "@/lib/session-cookie";
+import { getAuth } from "@/server/auth/auth";
+import { loadClinicProfile, resolveMedreportCaller } from "@/server/auth/medreport-actor";
+import { getDb, type Database } from "@/server/db";
+import type { Kysely } from "kysely";
+import { appendAudit } from "@/server/repos/audit";
+import { claimLaunchToken } from "@/server/repos/launch-tokens";
+import { partnerKeyTenant, verifyPartnerKey } from "@/server/repos/partner-keys";
+import { hitRateLimit, peekRateLimit, resetRateLimit } from "@/server/repos/rate-limits";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
 const HTTP_RETRY_AFTER_MS = 5 * 60_000;
@@ -115,11 +137,115 @@ const simTransport: ConnectorFetch = async (url, init) => {
   return inProcess(url, init);
 };
 
+/** Whether the request carries a sign-in cookie (Better Auth's session cookie, ClinForms prefix). */
+export function hasSignInCookie(req: Request): boolean {
+  const header = req.headers.get("cookie");
+  if (!header) return false;
+  return header.split(";").some((part) => {
+    const eq = part.indexOf("=");
+    if (eq <= 0) return false;
+    const name = part.slice(0, eq).trim();
+    return (SESSION_COOKIE_NAMES as readonly string[]).indexOf(name) >= 0 && part.slice(eq + 1).trim() !== "";
+  });
+}
+
+/**
+ * MedreportDeps.authenticate: the signed-in clinic member, or null (no sign-in cookie, no valid session,
+ * or auth not configured on this deployment – the public demo needs neither).
+ */
+export async function authenticateMember(req: Request): Promise<AuthContext | null> {
+  if (!hasSignInCookie(req)) return null;
+  let auth: ReturnType<typeof getAuth>;
+  try {
+    auth = getAuth();
+  } catch (err) {
+    logEvent("auth_unavailable", { error: err instanceof Error ? err.name : "error" });
+    return null;
+  }
+  let caller: Awaited<ReturnType<typeof resolveMedreportCaller>>;
+  try {
+    caller = await resolveMedreportCaller(auth, getDb(), req.headers);
+  } catch (err) {
+    logEvent("auth_check_failed", { error: err instanceof Error ? err.name : "error" });
+    throw new HttpError(503, "Please try again shortly", {
+      code: "SERVICE_UNAVAILABLE",
+      detail: "Your sign-in could not be checked just now. Try again in a moment.",
+      retryable: true,
+    });
+  }
+  if (caller.kind === "none") return null;
+  if (caller.kind === "no_clinic") {
+    throw new HttpError(403, WORDING.server.access.noClinicTitle, { code: "NO_CLINIC", detail: WORDING.server.access.noClinicDetail });
+  }
+  return caller.context;
+}
+
+type DbSource = () => Kysely<Database>;
+
+/** rate_limits / launch_token_uses: the state every server instance shares. */
+export function dbSharedState(db: DbSource): SharedStateStore {
+  return {
+    async hit(key, windowMs) {
+      const h = await hitRateLimit({ db: db() }, key, windowMs);
+      return { count: h.count, resetAt: h.resetAt };
+    },
+    async peek(key, windowMs) {
+      const h = await peekRateLimit({ db: db() }, key, windowMs);
+      return { count: h.count, resetAt: h.resetAt };
+    },
+    async reset(key) {
+      await resetRateLimit({ db: db() }, key);
+    },
+    claimOnce: (id, expiresAt) => claimLaunchToken({ db: db() }, id, expiresAt),
+  };
+}
+
+/** audit_log (append-only). */
+export function dbAudit(db: DbSource): NonNullable<MedreportDeps["audit"]> {
+  return async (tenantId, event) => {
+    await appendAudit({ db: db() }, tenantId, event);
+  };
+}
+
+/** partner_keys: the key names its clinic; only an active (unrevoked) key of that clinic verifies. */
+export function dbPartnerKeys(db: DbSource): NonNullable<MedreportDeps["verifyPartnerKey"]> {
+  return async (key) => {
+    const tenantId = partnerKeyTenant(key);
+    if (!tenantId) return null;
+    const verified = await verifyPartnerKey({ db: db() }, tenantId, key);
+    return verified ? { id: verified.id, tenantId: verified.tenantId } : null;
+  };
+}
+
+const DB_SHARED_STATE = dbSharedState(getDb);
+
+/**
+ * The shared store when this deployment names its database explicitly (CLINFORMS_DB – required on Vercel,
+ * where instances are many). Unset (a local single process: `next dev`, `npm run demo:red`, tests) → none:
+ * the module's per-process counters ARE shared state there, and the public demo never touches the local
+ * database file.
+ */
+function sharedStateForEnv(): SharedStateStore | undefined {
+  return process.env.CLINFORMS_DB?.trim() ? DB_SHARED_STATE : undefined;
+}
+
+/** The host capabilities of wave 2 (database-backed; see the header). */
+export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey"> {
+  return {
+    authenticate: authenticateMember,
+    clinicProfile: (tenantId) => loadClinicProfile(getDb(), tenantId),
+    sharedState: sharedStateForEnv(),
+    audit: dbAudit(getDb),
+    verifyPartnerKey: dbPartnerKeys(getDb),
+  };
+}
+
 let deps: MedreportDeps | null = null;
 
 export function getMedreportDeps(): MedreportDeps {
   if (deps) return deps;
   deps = {
+    ...hostCapabilities(),
     connectors: createConnectorRegistry(createDefaultConnectors()),
     createConnectorContext(req, connectorId, tenantId) {
       void req; // the request is deliberately NOT used for the base URL (see simTrustedBaseUrl)

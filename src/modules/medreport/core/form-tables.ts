@@ -15,7 +15,7 @@
  *
  * Owner: S2 (pdf-tables-flat).
  */
-import { DEMO_CLINIC } from "../config.public";
+import { bundleClinic } from "./clinic";
 import { compareIsoDateTime, formatUkDate } from "./dates";
 import type {
   Appointment,
@@ -141,7 +141,7 @@ function cellValue(column: AppointmentColumn, appointment: Appointment, bundle: 
     case "service":
       return (note && SERVICE_BY_NOTE_TYPE[note.type]) || "Physiotherapy session";
     case "clinic":
-      return DEMO_CLINIC.name;
+      return bundleClinic(bundle)?.name ?? "";
     case "amount": {
       const charge = chargeOf(appointment);
       return charge && (!charge.currency || charge.currency === "GBP") ? formatPounds(charge.amount) : "";

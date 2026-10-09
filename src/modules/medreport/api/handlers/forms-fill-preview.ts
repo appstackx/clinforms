@@ -13,8 +13,12 @@ import "server-only";
  * Portal question sets (form.kind "questions") have no file to fill: the response is their DRAFT
  * summary PDF (docgen/question-summary.ts), and `fileBase64` is ignored.
  *
+ * Wave 2: an actor is required (auth/actor.ts; any role); the report and the form map must be the actor's
+ * clinic's (403 TENANT_MISMATCH).
+ *
  * Owner: forms-engine agent.
  */
+import { assertActorTenant, requireActor } from "../../auth/actor";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
 import { buildFormAnswers } from "../../core/forms";
@@ -26,10 +30,13 @@ import { CONTENT_TYPES, FormFillPreviewRequestSchema, HEADERS } from "../contrac
 import { fileResponse, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
 
-export const handleFormsFillPreview: MedreportHandler = async (req) => {
+export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) => {
+  const actor = await requireActor(req, deps);
   const parsed = await parseBody(req, FormFillPreviewRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
   const { report, form, fileBase64, reviewMarkers } = parsed.data;
+  assertActorTenant(actor, report.tenantId, "report");
+  assertActorTenant(actor, form.tenantId, "form");
   if (!report.form) {
     return problem(422, "This report does not complete a referrer's form", {
       code: "VALIDATION_FAILED",

@@ -322,29 +322,29 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 
 | Method | Path | Auth | Handler | Purpose |
 |---|---|---|---|---|
-| GET | `/health` | – | health.ts | `{product, version, aiMode, liveAiAvailable, model, promptVersion}` |
+| GET | `/health` | – | health.ts | `{product, version, aiMode, liveAiAvailable, model, promptVersion}`; anonymous callers get the neutral engine name and an empty `promptVersion` |
 | GET | `/connectors` | – | connectors-list.ts | Connector tiles |
-| POST | `/launch` | `x-partner-key` | launch.ts | `{connectorId, patientId, episodeId, clinician}` → `{launchUrl, expiresAt}` |
-| POST | `/launch/verify` | – | launch-verify.ts | `{token}` → `{claims, session}` |
+| POST | `/launch` | `x-partner-key` | launch.ts | `{connectorId, patientId, episodeId, clinician}` → `{launchUrl, expiresAt}`; the demo key → tenant `demo`, a clinic's key (partner_keys) → that clinic |
+| POST | `/launch/verify` | launch token (+ the clinic's member for a clinic launch) | launch-verify.ts | `{token}` → `{claims, session}` |
 | POST | `/sessions/demo` | – | sessions-demo.ts | Demo-tenant session for the picker, uploads and batch |
-| GET | `/connectors/{id}/patients?search=` | session | patients.ts | `{patients, trace}` |
-| GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | session (claims match path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
-| POST | `/connectors/file-import/bundle` | session | file-import-bundle.ts | Upload (ImportPayload) → bundle response |
+| GET | `/connectors/{id}/patients?search=` | actor | patients.ts | `{patients, trace}` |
+| GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | actor (launch scope matches path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
+| POST | `/connectors/file-import/bundle` | actor | file-import-bundle.ts | Upload (ImportPayload) → bundle response (a clinic's bundle carries `clinic`) |
 | GET | `/templates` | – | templates-list.ts | `{templates}` |
 | GET | `/templates/{id}` | – | template-get.ts | `{template}` |
 | GET | `/templates/{id}/docx` | – | template-docx.ts | Tagged .docx download |
-| POST | `/templates/validate` | – | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
-| POST | `/drafts` | passcode for live | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
-| POST | `/validate` | – | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
-| POST | `/sign` | session | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
-| POST | `/render?format=docx\|pdf\|original` | – | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
-| POST | `/connectors/{id}/documents` | session | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
-| POST | `/forms/analyse` | passcode for live | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
+| POST | `/templates/validate` | actor | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
+| POST | `/drafts` | actor (+ passcode for live in the demo) | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
+| POST | `/validate` | actor | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
+| POST | `/sign` | actor (signer = the member) | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
+| POST | `/render?format=docx\|pdf\|original` | actor | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
+| POST | `/connectors/{id}/documents` | actor | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
+| POST | `/forms/analyse` | actor (+ passcode for live in the demo) | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
 | GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; in demo mode with local demonstration forms on, also those as `uploadRequired` entries (no map, file not served) |
 | GET | `/forms/samples/{id}/file` | – | forms-sample-file.ts | The sample's original .docx / .pdf |
-| POST | `/forms/confirm` | session | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
-| POST | `/ai/payload-preview` | – | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
-| POST | `/forms/fill-preview` | – | forms-fill-preview.ts | `{report, form, fileBase64, mode: "draft", reviewMarkers?}` → the original file filled, DRAFT; `x-medreport-fill-warnings`; `maxDuration = 60` |
+| POST | `/forms/confirm` | actor: owner/admin/clinician | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
+| POST | `/ai/payload-preview` | actor | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
+| POST | `/forms/fill-preview` | actor | forms-fill-preview.ts | `{report, form, fileBase64, mode: "draft", reviewMarkers?}` → the original file filled, DRAFT; `x-medreport-fill-warnings`; `maxDuration = 60` |
 
 **Stateless:** the bundle travels inside `report.bundleSnapshot`. `/validate`, `/sign` and `/render`
 take the report alone, not a separate bundle. Form maps and the referrers' files live in the browser
@@ -359,6 +359,53 @@ map/report), `FORM_NOT_CONFIRMED`, `NO_DEMO_ANALYSIS`, `PDF_CONVERSION_UNAVAILAB
 needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **New headers:**
 `x-medreport-fill-warnings` (URI-encoded JSON array of plain-English warnings) and
 `x-medreport-form-kind`.
+
+## Production wave 2 – callers, clinics and hardening (API slice)
+
+`auth/actor.ts` `requireActor(req, deps, {roles?, scope?, connectorId?})` → `Actor {tenantId, userId?, sid, via,
+role, name?, clinician?, scope?, session?}` on every endpoint that touches patient data or drafting (table above:
+"actor"). Public: `/health`, `/connectors`, the template GETs, `/forms/samples` (+ file), `/sessions/demo`, `/launch`
+(partner key).
+
+- **Two kinds of caller.** A clinic's signed-in member (`via "user"`): the host resolves it
+  (`MedreportDeps.authenticate` → `src/server/auth/medreport-actor.ts`, Better Auth session read from the database,
+  active clinic, role, member profile); 403 `TWO_FACTOR_REQUIRED` without two-step verification, 403 `NO_CLINIC`
+  without an active clinic. A launch session of the same clinic sent alongside narrows it to that episode
+  (`"user+launch"`); other session tokens are ignored. The public demo (`via "demo"`, tenant `demo`): ONLY the demo /
+  launch session tokens, only while `CLINFORMS_PUBLIC_DEMO` is not `0` (403 `DEMO_DISABLED`). A request from the
+  demo's own pages (`/reports`, `/pms-sandbox`, same-origin Referer) carrying a demo session is the demo even when
+  the browser also holds a clinic sign-in; anywhere else a signed-in member is never the demo.
+- **Tenant checks:** every report, bundle, form map and receipt in a request must be the actor's clinic's (403
+  `TENANT_MISMATCH`). Form-map attestations and receipts already MAC the tenant; `verifyFormConfirmation(form,
+  {tenantId})`, `verifyReceipt(…, {tenantId})` and `verifyReceiptMac(…, {tenantId})` refuse another clinic's.
+  `/forms/analyse` and file import stamp the actor's tenant.
+- **Roles:** confirm a map – owner/admin/clinician (403 `ROLE_NOT_ALLOWED`); approve – owner/admin/clinician with an
+  HCPC number and "may sign" on the member profile (403 `SIGNER_NOT_ALLOWED`; staff never). Drafting, previews,
+  renders: any role.
+- **Signer = the member** (name from the account, HCPC and job title from `member_profile`); a body `signer` with
+  another HCPC is 403 `SIGNER_MISMATCH`. `approvedVia {kind "user", sid, userId, launchSid?}` (additive). The demo
+  keeps the body's fictional signer.
+- **Clinic profile replaces DEMO_CLINIC** (`core/clinic.ts`): a clinic's bundle carries `bundle.clinic` (optional,
+  from its profile); demo bundles carry none and keep DEMO_CLINIC; a clinic without a profile names no clinic.
+- **Connectors:** the simulated TM3 sandbox is `demoOnly` (403 `CONNECTOR_NOT_AVAILABLE` for a clinic); clinics use
+  file import; real TM3 stays not configured. `/launch` maps a clinic's own partner key (`partner_keys`, SHA-256) to
+  that clinic and builds `launchUrl` from `APP_ORIGIN` / `BETTER_AUTH_URL` (`config.server.ts appOrigin()`), never
+  the request's Host; a clinic's link opens `/app/reports/new` and only that clinic's member can redeem it.
+- **Shared state** (`MedreportDeps.sharedState`, `auth/shared-limits.ts`): launch-token replay → `launch_token_uses`,
+  the demo's live cap and passcode guesses → `rate_limits` (429 + `Retry-After` unchanged). The host provides it
+  when `CLINFORMS_DB` is set; a single local process keeps its in-memory counters. Clinics draft live WITHOUT the
+  passcode while `clinic_profile.drafting_enabled` (no profile = on): prefer "live" with it off → 403
+  `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
+- **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
+  marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
+  `UNSUPPORTED_MEDIA_TYPE`.
+- **Audit** (`MedreportDeps.audit`, clinics only, ids and counts only): `form.confirm`, `form.analyse_live`,
+  `report.draft_live`, `report.sign`, `report.render_final`, `report.file_back`, `launch.issue`
+  (`AUDIT_ACTIONS` also names `report.delete` / `report.export` for the server store).
+- **Studio:** the default `api` client gets a demo session before a call that needs a caller when none is stored
+  (`ensureSessionToken`); a clinic's sign-in cookie takes precedence on the server.
+- Tests: `scripts/medreport/api-actor.test.ts` (per endpoint, two instances on one database) and
+  `api-actor-auth.test.ts` (the glue's real Better Auth wiring).
 
 ## Local demonstration forms (dev/demo only)
 

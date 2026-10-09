@@ -12,21 +12,33 @@ import "server-only";
  */
 import type { MedreportDeps } from "../api/deps";
 import { HttpError, logEvent } from "../api/http";
+import { DEMO_TENANT_ID } from "../config.public";
 import type { ConnectorCapabilities, ConnectorId } from "../core/types";
+import { WORDING } from "../core/wording";
 import { ImportError } from "./file-import/parser";
 import { ConnectorError, type ClinicSystemConnector } from "./types";
 
-/** The registered connector, or 404. Optionally 503 when not configured / 422 when it lacks a capability. */
+/**
+ * The registered connector, or 404. Optionally 503 when not configured / 422 when it lacks a capability.
+ * With `tenantId` (wave 2: the caller's clinic), a demo-only connector (the simulated TM3 sandbox) is
+ * 403 CONNECTOR_NOT_AVAILABLE to anyone but the public demo.
+ */
 export function requireConnector(
   deps: MedreportDeps,
   id: string | undefined,
-  opts: { capability?: keyof ConnectorCapabilities; action?: string } = {},
+  opts: { capability?: keyof ConnectorCapabilities; action?: string; tenantId?: string } = {},
 ): ClinicSystemConnector & { id: ConnectorId } {
   const connector = id ? deps.connectors.get(id) : undefined;
   if (!connector) {
     throw new HttpError(404, "Unknown connector", {
       code: "NOT_FOUND",
       detail: `There is no connector "${id ?? ""}". Known connectors: ${deps.connectors.list().map((c) => c.id).join(", ")}.`,
+    });
+  }
+  if (connector.demoOnly && opts.tenantId !== undefined && opts.tenantId !== DEMO_TENANT_ID) {
+    throw new HttpError(403, WORDING.server.access.demoConnectorTitle, {
+      code: "CONNECTOR_NOT_AVAILABLE",
+      detail: WORDING.server.access.demoConnectorDetail(connector.label),
     });
   }
   if (connector.status === "not_configured") {

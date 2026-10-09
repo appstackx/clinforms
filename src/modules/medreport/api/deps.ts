@@ -3,7 +3,8 @@ import "server-only";
 /**
  * Dependencies the Report API handlers receive from the host app. The module never imports the
  * sandbox or the app; `src/app/api/_medreport-glue.ts` builds these (connector registry with the
- * tm3-sim connector, in-process transport, credentials) and binds them to each route.
+ * tm3-sim connector, in-process transport, credentials, sign-in, shared state, audit trail) and binds
+ * them to each route.
  *
  * Shared contract (orchestrator-owned): additive optional members only.
  */
@@ -24,6 +25,8 @@ export interface AuthContext {
   /** The active clinic (= its organization slug). */
   tenantId: TenantId;
   role: MemberRole;
+  /** The member's display name (from the account). Wave 2: recorded as who confirmed a form map. */
+  name?: string;
   /** The signer identity from the member's clinic profile, when they have one. */
   clinician?: {
     name: string;
@@ -49,6 +52,48 @@ export interface ClinicProfile {
   draftingEnabled: boolean;
 }
 
+/** One fixed window of a shared counter (rate_limits). */
+export interface SharedCounterWindow {
+  /** Hits in this window (including the one just counted, for hit()). */
+  count: number;
+  /** When the window ends (ISO). */
+  resetAt: string;
+}
+
+/**
+ * State shared by every server instance (wave 2: the database tables `rate_limits` and
+ * `launch_token_uses`). The module falls back to per-instance memory when this is absent or fails –
+ * except where a missing shared store would weaken a clinic's security (see auth/shared-limits.ts).
+ */
+export interface SharedStateStore {
+  /** Count one hit for `key` in the current fixed window of `windowMs`. Atomic. */
+  hit(key: string, windowMs: number): Promise<SharedCounterWindow>;
+  /** The current window's count without counting a hit. */
+  peek(key: string, windowMs: number): Promise<SharedCounterWindow>;
+  /** Forget every window of `key`. */
+  reset(key: string): Promise<void>;
+  /** Single use: true the first time `id` is claimed, false on every later attempt (until `expiresAt`). */
+  claimOnce(id: string, expiresAt: string): Promise<boolean>;
+}
+
+/** An audit-trail row (append-only). Ids, actions and counts only – never patient data. */
+export interface AuditEvent {
+  userId?: string | null;
+  sessionId?: string | null;
+  /** e.g. "report.sign" – [a-z0-9_.:-], ≤ 64. */
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  /** Small JSON (≤ 4 KB). No names, notes or answers. */
+  detail?: Record<string, unknown> | null;
+}
+
+/** A clinic's partner (API) key, as verified by the host. */
+export interface VerifiedPartnerKey {
+  id: string;
+  tenantId: TenantId;
+}
+
 export interface MedreportDeps {
   connectors: ConnectorRegistry;
   /**
@@ -58,10 +103,17 @@ export interface MedreportDeps {
    */
   createConnectorContext(req: Request, connectorId: ConnectorId, tenantId: TenantId): ConnectorContext;
   /**
-   * Tenant mode (wave 2): the signed-in member behind this request, or null when there is none. Absent in
-   * the public demo. Not used by any handler yet.
+   * Tenant mode: the signed-in member behind this request, or null when there is none (no sign-in
+   * cookie). May throw an api/http HttpError (e.g. 403 when the session has no active clinic).
+   * Used by auth/actor.ts requireActor(). Absent → only the public demo works.
    */
   authenticate?(req: Request): Promise<AuthContext | null>;
-  /** Tenant mode (wave 2): the clinic's profile, or null. Not used by any handler yet. */
+  /** Tenant mode: the clinic's profile, or null. */
   clinicProfile?(tenantId: TenantId): Promise<ClinicProfile | null>;
+  /** Wave 2: shared counters and single-use ids (rate limits, passcode guesses, launch-token replay). */
+  sharedState?: SharedStateStore;
+  /** Wave 2: append a row to the clinic's audit trail (tenant actors only; never the demo). */
+  audit?(tenantId: TenantId, event: AuditEvent): Promise<void>;
+  /** Wave 2: a clinic's partner key (`x-partner-key` on POST /launch) → its tenant, or null when unknown/revoked. */
+  verifyPartnerKey?(key: string): Promise<VerifiedPartnerKey | null>;
 }
