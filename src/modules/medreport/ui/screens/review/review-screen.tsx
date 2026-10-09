@@ -499,15 +499,16 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       {ownVoice.length > 0 && voiceAuthor && (
         <InlineAlert
           tone="info"
-          title={`${ownVoice.length} answer${ownVoice.length === 1 ? " describes" : "s describe"} ${voiceAuthor}'s own notes in the third person`}
+          title={`${ownVoice.length} answer${ownVoice.length === 1 ? " reports" : "s report"} what ${voiceAuthor} recorded, rather than saying it`}
           action={
             <Button type="button" size="sm" className="h-8" onClick={() => dispatch({ type: "writeInOwnVoice", authorName: voiceAuthor, actor })}>
               <PenLine className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Write in my own voice
             </Button>
           }
         >
-          This form is {voiceAuthor}&apos;s own report: “On 22/09/2026 {voiceAuthor} recorded that…” becomes “On 22/09/2026 I recorded that…”. Other
-          clinicians stay named, citations are unchanged, and each answer can be reverted.
+          This form is {voiceAuthor}&apos;s own report: “On 01/10/2026 {voiceAuthor} recorded that loading needs progressing…” becomes “On 01/10/2026,
+          loading needs progressing…”, and “recorded an assessment of…” becomes “Assessment on …:”. Other clinicians stay named, dates, figures and
+          citations are unchanged, and each answer can be reverted.
         </InlineAlert>
       )}
 

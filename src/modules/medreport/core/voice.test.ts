@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { collapseRepeatedBrackets, describeSourceIds, expandNoteShorthand, fictionalNames, isOwnVoiceCandidate, keepFictionalLabels, normaliseJobTitles, rewriteInFirstPerson } from "./voice";
+import { collapseRepeatedBrackets, describeSourceIds, expandNoteShorthand, fictionalNames, inOwnClinicalWording, isOwnVoiceCandidate, keepFictionalLabels, normaliseJobTitles, plainClinicalWording, rewriteInFirstPerson } from "./voice";
 
 test("the signer's recorded opinion becomes their own voice", () => {
   assert.equal(
@@ -132,4 +132,53 @@ test("names the record labels \"(fictional)\" keep the label in drafted wording"
     assert.equal(keepFictionalLabels(text, names), text);
   }
   assert.deepEqual(fictionalNames(["Kents Hill Medical Practice"]), [], "a real record holds none: nothing changes");
+});
+
+test("the signer's own record reads as clinical statements, not record-keeping (\"On 01/10/2026 I recorded that…\")", () => {
+  const cases: Array<[string, string]> = [
+    ["On 01/10/2026 I recorded that 1 pre-authorised session remained (booked 15/10/2026) and that I had made a further treatment request.", "On 01/10/2026, 1 pre-authorised session remained (booked 15/10/2026) and I had made a further treatment request."],
+    ["On 01/10/2026 I recorded the clinical reason as follows: Mrs Lane was improving with progressive exercise (PSFS 5.3).", "Mrs Lane was improving with progressive exercise (PSFS 5.3)."],
+    ["On 01/09/2026 I recorded an assessment of right rotator cuff related shoulder pain following a lifting strain on 22/08/2026.", "Assessment on 01/09/2026: right rotator cuff related shoulder pain following a lifting strain on 22/08/2026."],
+    ["At the initial assessment on 01/09/2026 I recorded my assessment of the condition being treated as right shoulder pain.", "Assessment on 01/09/2026: right shoulder pain."],
+    ["I recorded the goals for the further sessions as: front crawl for 20 minutes; lift a box.", "Goals for the further sessions: front crawl for 20 minutes; lift a box."],
+    ["On 01/10/2026 I recorded goals for the further sessions: front crawl for 20 minutes.", "Goals for the further sessions: front crawl for 20 minutes."],
+    ["I recorded the guideline followed as the BESS/BOA pathway.", "Guideline followed: the BESS/BOA pathway."],
+    ["On 01/10/2026 I recorded a further treatment request to Bupa for 4 further sessions, fortnightly over 8 weeks.", "Further treatment requested on 01/10/2026: 4 further sessions, fortnightly over 8 weeks."],
+    ["On 01/09/2026 I recorded in the past medical history hypothyroidism, stable. I also recorded no previous shoulder problems.", "Past medical history: hypothyroidism, stable. No previous shoulder problems."],
+    ["On 01/10/2026 I recorded the shoulder as improving: QuickDASH 52.3 to 29.5.", "On 01/10/2026, the shoulder was improving: QuickDASH 52.3 to 29.5."],
+    ["On 01/09/2026 I recorded Mrs Lane's medication as ibuprofen 400 mg.", "On 01/09/2026, Mrs Lane's medication was ibuprofen 400 mg."],
+    ["At my latest review on 01/10/2026 I recorded right shoulder active range of movement as flexion 155°.", "At my latest review on 01/10/2026, right shoulder active range of movement was flexion 155°."],
+    ["On 01/09/2026 I recorded right shoulder active range of movement: flexion 120°, abduction 95°.", "Right shoulder active range of movement on 01/09/2026: flexion 120°, abduction 95°."],
+    ["On 01/10/2026 I recorded QuickDASH 29.5 and a painful arc 120–150°.", "On 01/10/2026: QuickDASH 29.5 and a painful arc 120–150°."],
+    ["On 24/09/2026 I recorded advice to carry loads close to the body.", "On 24/09/2026, advice was given to carry loads close to the body."],
+    ["On 01/09/2026 I recorded that she provided education on load management.", "On 01/09/2026, I provided education on load management."],
+    ["On 01/09/2026 I recorded an assessment of shoulder pain, and on 01/10/2026 I recorded the assessment as shoulder pain, improving.", "Assessment on 01/09/2026: shoulder pain, and on 01/10/2026 the assessment was shoulder pain, improving."],
+    ["On 22/09/2026 I recorded that, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks.", "On 22/09/2026, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks."],
+    ["I recorded my assessment that the presentation was consistent with WAD II.", "In my assessment, the presentation was consistent with WAD II."],
+  ];
+  for (const [input, expected] of cases) {
+    assert.equal(plainClinicalWording(input), expected, input);
+    assert.equal(plainClinicalWording(expected), expected, `idempotent: ${expected}`);
+  }
+  // Untouched: another clinician's attribution, the patient's report, text with no "I recorded".
+  for (const keep of ["On 08/04/2026 Tom Ellis recorded no abnormality.", "Mrs Lane reported pain of 4/10 at worst.", "At my review on 01/10/2026, Mrs Lane told me she was swimming."]) {
+    assert.equal(plainClinicalWording(keep), keep);
+  }
+});
+
+test("\"Write in my own voice\" gives plain clinical wording, including a paragraph that only says \"she recorded\"", () => {
+  assert.equal(
+    inOwnClinicalWording("On 01/10/2026 Sarah Reid, physiotherapist, recorded a further treatment request to Bupa for 4 further sessions. She recorded the goals for the further sessions as: front crawl.", "Sarah Reid"),
+    "Further treatment requested on 01/10/2026: 4 further sessions. Goals for the further sessions: front crawl.",
+  );
+  const pronounOnly = "On 01/10/2026 she recorded the shoulder as improving, and Mrs Lane's goals not yet met.";
+  assert.equal(inOwnClinicalWording(pronounOnly, "Sarah Reid"), pronounOnly, "without the pronoun option a paragraph that does not name the author is left alone");
+  assert.equal(inOwnClinicalWording(pronounOnly, "Sarah Reid", { pronouns: true }), "On 01/10/2026, the shoulder was improving, and Mrs Lane's goals not yet met.");
+  assert.equal(inOwnClinicalWording("She reported pain on 01/10/2026.", "Sarah Reid", { pronouns: true }), "She reported pain on 01/10/2026.", "the patient's own report is not the clinician's");
+
+  const bundle = { notes: [{ id: "N-004", author: { name: "Sarah Reid" } }, { id: "N-005", author: { name: "Sarah Reid" } }, { id: "N-009", author: { name: "Tom Ellis" } }] } as unknown as Parameters<typeof isOwnVoiceCandidate>[1];
+  assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-004", "N-005"], origin: "ai" }, bundle, "Sarah Reid"), false);
+  assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-004", "N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), true);
+  assert.equal(isOwnVoiceCandidate({ text: "On 01/10/2026 I recorded that X.", sourceIds: ["N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), true, "a first-person draft");
+  assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-009"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), false, "another clinician's note");
 });

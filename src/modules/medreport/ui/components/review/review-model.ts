@@ -7,7 +7,7 @@
  *
  * Owner: studio-b agent.
  */
-import { isOwnVoiceCandidate, rewriteInFirstPerson } from "../../../core/voice";
+import { inOwnClinicalWording, isOwnVoiceCandidate } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
@@ -692,12 +692,16 @@ export function blockingLines(blocking: readonly ReportFlag[], report: Pick<Repo
  * The signer's own voice, leftover "not recorded" sentences, amendments
  * ----------------------------------------------------------------------------------------------*/
 
-/** Drafted paragraphs that report `authorName`'s own notes in the third person (core/voice.ts). */
+/**
+ * Drafted paragraphs that report `authorName`'s own notes as record-keeping – in the third person ("Sarah
+ * Reid recorded…", "she recorded…") or as "I recorded…" – which "Write in my own voice" turns into the
+ * signer's plain clinical wording (core/voice.ts inOwnClinicalWording).
+ */
 export function ownVoiceCandidates(report: Pick<Report, "sections" | "bundleSnapshot">, authorName: string): Array<{ key: string; paragraphId: string }> {
   const out: Array<{ key: string; paragraphId: string }> = [];
   for (const s of report.sections) {
     for (const p of s.paragraphs) {
-      if (isOwnVoiceCandidate(p, report.bundleSnapshot, authorName) && rewriteInFirstPerson(p.text, authorName) !== p.text) out.push({ key: s.key, paragraphId: p.id });
+      if (isOwnVoiceCandidate(p, report.bundleSnapshot, authorName, { pronouns: true }) && inOwnClinicalWording(p.text, authorName, { pronouns: true }) !== p.text) out.push({ key: s.key, paragraphId: p.id });
     }
   }
   return out;
@@ -713,11 +717,11 @@ export function writeInOwnVoice(report: Report, authorName: string, actor: strin
   let next = report;
   for (const t of targets) {
     const p = next.sections.find((s) => s.key === t.key)?.paragraphs.find((x) => x.id === t.paragraphId);
-    if (p) next = editParagraph(next, t.key, t.paragraphId, rewriteInFirstPerson(p.text, authorName), now);
+    if (p) next = editParagraph(next, t.key, t.paragraphId, inOwnClinicalWording(p.text, authorName, { pronouns: true }), now);
   }
   return appendActivity(
     next,
-    { actor, action: "edited", detail: `Wrote ${targets.length} drafted answer${targets.length === 1 ? "" : "s"} about ${authorName}'s own notes in the first person (citations unchanged).` },
+    { actor, action: "edited", detail: `Wrote ${targets.length} drafted answer${targets.length === 1 ? "" : "s"} about ${authorName}'s own notes in ${authorName}'s own clinical wording (citations unchanged).` },
     now,
   );
 }

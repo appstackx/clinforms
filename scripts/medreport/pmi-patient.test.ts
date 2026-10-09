@@ -252,7 +252,8 @@ test("Case C drafted wording: the insurer on record is not named on another insu
       {
         sectionKey: "F-01",
         paragraphs: [
-          { text: "On 01/10/2026 I recorded a further treatment request to Bupa for 4 further sessions, fortnightly over 8 wks (8 weeks).", sourceIds: ["N-005"], basis: "record" as const },
+          { text: "On 01/10/2026 I made a further treatment request to Bupa for 4 further sessions, fortnightly over 8 wks (8 weeks).", sourceIds: ["N-005"], basis: "record" as const },
+          { text: "On 01/10/2026 I recorded that the request was discussed with [CLAIMANT] and agreed.", sourceIds: ["N-005"], basis: "record" as const },
           { text: "Dr A Forsyth, GP, Kents Hill Medical Practice, referred [CLAIMANT] by letter dated 26/08/2026.", sourceIds: ["N-001"], basis: "record" as const },
         ],
       },
@@ -273,7 +274,9 @@ test("Case C drafted wording: the insurer on record is not named on another insu
     }).sections[0].paragraphs.map((p) => p.text);
 
   assert.deepEqual(draft(formFrom({ name: "AXA Global Healthcare (fictional test)", type: "insurer" })), [
-    "On 01/10/2026 I recorded a further treatment request to the insurer for 4 further sessions, fortnightly over 8 weeks.",
+    "On 01/10/2026 I made a further treatment request to the insurer for 4 further sessions, fortnightly over 8 weeks.",
+    // A first-person draft reads as the signer writes a form, not as record-keeping (core/voice.ts plainClinicalWording).
+    "On 01/10/2026, the request was discussed with Mrs Lane and agreed.",
     "Dr A Forsyth, GP, Kents Hill Medical Practice (fictional), referred Mrs Lane by letter dated 26/08/2026.",
   ]);
   // The insurer on record's own form, and a form that is not an insurer's, keep the name.
