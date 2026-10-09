@@ -36,7 +36,7 @@ Update this file at the end of every session (status, blockers, what changed).
   `npm run demo:check` → "Demo assets OK: 7 maps, 4 answer files, 6 form files". Finals of the rehearsal:
   `demo-assets/outputs/`; screenshots `demo-assets/rehearsal/` (older sets in `_wave2-before/` – never show).
 - **What remains (Khuram):**
-  1. **Monday evening:** one rehearsal in his own Chrome, in a separate "ClinForms demo" profile, from the worktree
+  1. **Monday evening:** one rehearsal in his own Chrome, in a separate "ClinForms demo" profile, from `~/Projects/Appstackx/clinforms` on `main`
      (call pack §2.2) – maps live in the browser that confirmed them; then Reset demo.
   2. **Tuesday morning:** quit heavy processes/agent workflows, `npm run demo:red -- --skip-build`, pre-upload and
      confirm AXA + Aviva CM016, leave Bupa to upload live, two tabs (call pack §2.3).
