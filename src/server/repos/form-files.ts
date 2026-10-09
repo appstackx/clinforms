@@ -18,6 +18,7 @@ import {
   assertText,
   nowIso,
   toInt,
+  type DbContext,
   type RepoContext,
 } from "./context";
 
@@ -216,7 +217,7 @@ export async function listFormFiles(ctx: RepoContext, tenantId: string): Promise
 }
 
 /** Deletes the file and its chunks (one atomic batch). */
-export async function deleteFormFile(ctx: RepoContext, tenantId: string, sha256: string): Promise<boolean> {
+export async function deleteFormFile(ctx: DbContext, tenantId: string, sha256: string): Promise<boolean> {
   assertTenantId(tenantId);
   assertSha256(sha256);
   const [, files] = await runBatch(ctx.db, [

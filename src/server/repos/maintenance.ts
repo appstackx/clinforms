@@ -7,6 +7,7 @@
  * every existing report on the next run – or earlier, once its own explicit `delete_after` has passed.
  */
 import { assertIso, nowIso, type DbContext } from "./context";
+import { purgeIncompleteUploads } from "./form-file-uploads";
 import { purgeExpiredLaunchTokens } from "./launch-tokens";
 import { purgeRateLimits } from "./rate-limits";
 
@@ -54,11 +55,13 @@ export interface RetentionResult {
   launchTokens: number;
   rateLimits: number;
   accessRequests: number;
+  /** Form-file uploads started more than a day ago and never completed (they are never served). */
+  incompleteUploads: number;
 }
 
 /**
- * The whole retention pass: expired reports, launch-token claims, rate-limit windows older than a day and old
- * access requests.
+ * The whole retention pass: expired reports, launch-token claims, rate-limit windows older than a day, old
+ * access requests and form-file uploads abandoned for more than a day.
  */
 export async function runRetention(ctx: DbContext): Promise<RetentionResult> {
   const now = nowIso(ctx);
@@ -67,5 +70,6 @@ export async function runRetention(ctx: DbContext): Promise<RetentionResult> {
     launchTokens: await purgeExpiredLaunchTokens(ctx, now),
     rateLimits: await purgeRateLimits(ctx, daysBefore(now, 1)),
     accessRequests: await purgeOldAccessRequests(ctx, now),
+    incompleteUploads: await purgeIncompleteUploads(ctx, daysBefore(now, 1)),
   };
 }

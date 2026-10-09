@@ -18,6 +18,8 @@ export default async function ClinicLayout({ children }: { children: React.React
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
+    // Every role: owners and administrators see the whole clinic's activity, everyone else their own.
+    { href: "/app/settings/activity", label: "Activity" },
   ];
   return (
     <>

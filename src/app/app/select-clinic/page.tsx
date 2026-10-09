@@ -3,6 +3,8 @@ import Link from "next/link";
 import { AuthShell, Notice } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { authSecret } from "@/server/auth/config";
+import { inviteToken } from "@/server/auth/invite-token";
 import { listMemberships } from "@/server/auth/membership";
 import { requireSignedIn } from "@/server/auth/session";
 import { getDb } from "@/server/db";
@@ -56,7 +58,9 @@ export default async function SelectClinicPage() {
               <p className="text-sm font-medium">{inv.name}</p>
               <p className="text-xs text-slate-600">Invitation · {roleLabel(inv.role ?? "")}</p>
             </div>
-            <Link href={`/accept-invite?token=${encodeURIComponent(inv.id)}`} className="text-sm font-semibold text-teal-700 hover:underline">
+            {/* The signed link token (invite-token.ts): the bare invitation id is never accepted. The invitation is
+                addressed to this signed-in account's own email, so it is theirs to open. */}
+            <Link href={`/accept-invite?token=${encodeURIComponent(inviteToken(authSecret(), inv.id))}`} className="text-sm font-semibold text-teal-700 hover:underline">
               View
             </Link>
           </div>

@@ -372,7 +372,7 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.ok((await purgeOldAccessRequests(ctx)) >= 1);
       assert.ok(!(await listAccessRequests(ctx)).some((r) => r.id === request.id));
       const pass = await runRetention(ctx);
-      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "launchTokens", "rateLimits", "reports"]);
+      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "incompleteUploads", "launchTokens", "rateLimits", "reports"]);
     });
 
     it("tenants are isolated by construction (and ciphertext cannot be moved between tenants)", async () => {

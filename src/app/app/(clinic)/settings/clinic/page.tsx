@@ -32,6 +32,7 @@ export default async function ClinicSettingsPage() {
             phone: profile?.phone ?? "",
             email: profile?.email ?? "",
             retentionDays: profile?.retentionDays ?? 365,
+            draftingEnabled: profile?.draftingEnabled === true,
           }}
         />
         <p className="mt-6 text-xs text-slate-500">Clinic id: {membership.tenantId} (fixed).</p>

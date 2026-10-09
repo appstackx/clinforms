@@ -37,8 +37,23 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
     actions: ["clinic.create", "clinic.update", "clinic.offboard", "api_key.create", "api_key.revoke", "audit.export"],
   },
   {
-    label: "Forms and reports",
-    actions: ["report.sign", "report.render"],
+    label: "Forms",
+    actions: ["file.upload", "form.create", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
+  },
+  {
+    label: "Reports",
+    actions: [
+      "report.create",
+      "report.update",
+      "report.draft_live",
+      "report.sign",
+      "report.store_signed",
+      "report.render_final",
+      "report.file_back",
+      "report.export",
+      "report.delete",
+      "launch.issue",
+    ],
   },
 ];
 
@@ -63,8 +78,25 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
-  "report.sign": "Report signed",
-  "report.render": "Final document produced",
+  // The Studio and the Report API (src/modules/medreport: auth/actor.ts AUDIT_ACTIONS and the /store handlers).
+  "file.upload": "Form file uploaded",
+  "form.create": "Form added to the library",
+  "form.update": "Form mapping saved",
+  "form.analyse_live": "Form questions read from the file",
+  "form.confirm": "Form mapping confirmed",
+  "form.store_confirmed": "Confirmed form mapping saved",
+  "form.delete": "Form removed from the library",
+  "settings.update": "Referrer form links updated",
+  "report.create": "Report started",
+  "report.update": "Report saved",
+  "report.draft_live": "Answers drafted from the notes",
+  "report.sign": "Report approved",
+  "report.store_signed": "Approved report saved",
+  "report.render_final": "Final document produced",
+  "report.file_back": "Final document saved to the clinic system",
+  "report.export": "Report exported",
+  "report.delete": "Report deleted",
+  "launch.issue": "Opened from the clinic system",
   // The platform's own trail (/app/platform; pseudo-tenant "platform").
   "platform.clinic_create": "Clinic created",
   "platform.access_request_contacted": "Access request marked as contacted",
@@ -79,6 +111,9 @@ const NOUNS: Readonly<Record<string, string>> = {
   audit: "Activity",
   report: "Report",
   form: "Form",
+  file: "File",
+  settings: "Settings",
+  launch: "Clinic system",
   platform: "Platform",
 };
 
@@ -104,6 +139,7 @@ const CLINIC_FIELDS: Readonly<Record<string, string>> = {
   phone: "phone",
   email: "email",
   retentionDays: "how long reports are kept",
+  draftingEnabled: "drafting from the notes",
   created: "first saved",
 };
 
@@ -151,6 +187,19 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       return typeof detail.last4 === "string" ? `Key ending …${detail.last4}` : null;
     case "audit.export":
       return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "entry" : "entries"}` : null;
+    case "report.draft_live":
+      return typeof detail.paragraphs === "number" && typeof detail.sections === "number"
+        ? `${detail.sections} ${detail.sections === 1 ? "question" : "questions"}, ${detail.paragraphs} ${detail.paragraphs === 1 ? "paragraph" : "paragraphs"}`
+        : null;
+    case "form.analyse_live":
+    case "form.confirm":
+      return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"}` : null;
+    case "report.render_final":
+      return detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+    case "report.update":
+    case "report.create":
+    case "report.store_signed":
+      return typeof detail.rev === "number" ? `Version ${detail.rev}` : null;
     case "platform.clinic_create":
       return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}` : null;
     default:
@@ -175,13 +224,16 @@ export const ACTIVITY_TARGETS: Readonly<Record<string, string>> = {
   clinic: "Clinic details",
   report: "Report",
   form: "Form",
+  form_file: "Form file",
+  template: "Report template",
+  tenant_settings: "Clinic settings",
   access_request: "Access request",
 };
 
 export const ACTIVITY_COPY = {
   title: "Activity",
   managerIntro:
-    "What happened in your clinic account and who did it: sign-ins, members, clinic details and API keys. Entries cannot be changed or deleted, and they hold ids and actions only – never patient details.",
+    "What happened in your clinic account and who did it: sign-ins, members, clinic details, API keys, forms and reports. Entries cannot be changed or deleted, and they hold ids and actions only – never patient details.",
   memberIntro:
     "Your own activity in this clinic account. Owners and administrators can see the whole clinic's activity. Entries cannot be changed or deleted.",
   timesNote: "Times are UK time.",

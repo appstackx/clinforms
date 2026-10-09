@@ -14,6 +14,7 @@ export interface ClinicFormValues {
   phone: string;
   email: string;
   retentionDays: number;
+  draftingEnabled: boolean;
 }
 
 export function ClinicProfileForm({ values, editable }: { values: ClinicFormValues; editable: boolean }) {
@@ -55,6 +56,26 @@ export function ClinicProfileForm({ values, editable }: { values: ClinicFormValu
           required
           hint={`How long completed reports are kept: ${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days. Automatic deletion after this period is coming soon.`}
         />
+        <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <input
+            id="f-drafting"
+            name="draftingEnabled"
+            type="checkbox"
+            value="on"
+            defaultChecked={values.draftingEnabled}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600"
+            aria-describedby="f-drafting-hint"
+          />
+          <div>
+            <label htmlFor="f-drafting" className="block text-sm font-medium text-slate-800">
+              Draft answers from the notes
+            </label>
+            <p id="f-drafting-hint" className="text-xs text-slate-500">
+              When this is on, ClinForms drafts each answer from the patient&apos;s notes, with the source of every fact, for a
+              clinician to review and approve. When it is off, your clinicians complete the answers themselves.
+            </p>
+          </div>
+        </div>
       </fieldset>
       {editable ? <SubmitButton pendingText="Saving…">Save clinic details</SubmitButton> : null}
     </form>

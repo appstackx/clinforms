@@ -110,7 +110,7 @@ export async function putFormFileChunk(ctx: RepoContext, tenantId: string, sha25
 }
 
 /** Deletes uploads recorded before `beforeIso` that never got all their chunks. Returns how many. */
-export async function purgeIncompleteUploads(ctx: RepoContext, beforeIso: string): Promise<number> {
+export async function purgeIncompleteUploads(ctx: DbContext, beforeIso: string): Promise<number> {
   const rows = await ctx.db
     .selectFrom("form_files")
     .leftJoin("form_file_chunks", (join) =>

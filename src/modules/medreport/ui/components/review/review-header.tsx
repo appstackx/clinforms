@@ -271,6 +271,7 @@ export const ApprovedBanner = forwardRef<
   }
 >(function ApprovedBanner(props, ref) {
   const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet } = props;
+  const tenant = useStudioMode() === "tenant";
   const receipt = report.receipt;
   if (!receipt) return null;
   const isForm = Boolean(report.form);
@@ -300,7 +301,9 @@ export const ApprovedBanner = forwardRef<
 
       {fileMissing && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900 ring-1 ring-amber-200">
-          The referrer&apos;s original file is not stored in this browser, so the completed form cannot be produced here. Add the form again in the forms library.
+          {tenant
+            ? TENANT_COPY.files.missingForCompletion
+            : "The referrer's original file is not stored in this browser, so the completed form cannot be produced here. Add the form again in the forms library."}
         </p>
       )}
 

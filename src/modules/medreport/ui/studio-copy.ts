@@ -42,6 +42,15 @@ export const TENANT_COPY = {
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
   },
+  files: {
+    missing: "The referrer's original file is not in your clinic's storage. Upload the referrer's form again to preview, fill or download it.",
+    missingForCompletion:
+      "The referrer's original file is not in your clinic's storage, so the completed form cannot be produced. Add the form again in the forms library.",
+    mapMissingForPreview: "The form map for this report is not in your clinic's forms library, so the form cannot be previewed.",
+    fileMissingForPreview: "The referrer's original file is not in your clinic's storage. Add it again in the forms library to preview the completed form.",
+    mapMissing: "The form map is not in your clinic's forms library.",
+    fileMissing: "The referrer's original file is not in your clinic's storage.",
+  },
   forms: {
     notFoundTitle: "This form is not in your clinic's library",
     notFoundBody: "It may have been deleted. Upload the referrer's form again to map it.",

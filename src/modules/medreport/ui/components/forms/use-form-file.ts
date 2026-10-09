@@ -9,7 +9,8 @@
 import { useEffect, useState } from "react";
 import type { FormDefinition } from "../../../core/types";
 import { saveBlob } from "../../api-client";
-import { loadFormFile, type StoredFormFile } from "../../store";
+import { getStoreMode, loadFormFile, type StoredFormFile } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
 
 export interface FormFileState {
   file: StoredFormFile | null;
@@ -20,6 +21,11 @@ export interface FormFileState {
 
 export const MISSING_FILE_MESSAGE =
   "The original file is not stored in this browser. Upload the referrer's form again to preview, fill or download it.";
+
+/** The missing-file message for the store in use (a clinic's Studio keeps files in the clinic's storage). */
+export function missingFileMessage(): string {
+  return getStoreMode() === "server" ? TENANT_COPY.files.missing : MISSING_FILE_MESSAGE;
+}
 
 export function useFormFile(form: Pick<FormDefinition, "file" | "sampleId"> | null): FormFileState {
   const [state, setState] = useState<FormFileState>({ file: null, loading: true, error: null });
@@ -40,10 +46,10 @@ export function useFormFile(form: Pick<FormDefinition, "file" | "sampleId"> | nu
       signal: controller.signal,
     }).then(
       (file) => {
-        if (!controller.signal.aborted) setState({ file, loading: false, error: file ? null : MISSING_FILE_MESSAGE });
+        if (!controller.signal.aborted) setState({ file, loading: false, error: file ? null : missingFileMessage() });
       },
       () => {
-        if (!controller.signal.aborted) setState({ file: null, loading: false, error: MISSING_FILE_MESSAGE });
+        if (!controller.signal.aborted) setState({ file: null, loading: false, error: missingFileMessage() });
       },
     );
     return () => controller.abort();

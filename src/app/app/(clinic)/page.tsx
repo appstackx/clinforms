@@ -20,6 +20,11 @@ export default async function ClinicOverviewPage() {
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
     { href: "/app/settings/security", label: "Security", text: "Backup codes and where you are signed in." },
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys", text: "Keys for connecting your practice-management system." }] : []),
+    {
+      href: "/app/settings/activity",
+      label: "Activity",
+      text: manager ? "Who did what in the clinic, newest first." : "What you have done in the clinic, newest first.",
+    },
   ];
   return (
     <>

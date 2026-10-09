@@ -126,6 +126,27 @@ function actionsInCode(): string[] {
   return Array.from(found).sort();
 }
 
+/**
+ * The audit actions the Report API writes (src/modules/medreport): the AUDIT_ACTIONS table in auth/actor.ts and the
+ * `action:` expressions of the handlers (the /store handlers choose between codes with conditionals).
+ */
+function moduleActionsInCode(): string[] {
+  const found = new Set<string>();
+  const actor = fs.readFileSync(path.resolve("src/modules/medreport/auth/actor.ts"), "utf8");
+  const table = /export const AUDIT_ACTIONS = \{([\s\S]*?)\} as const;/.exec(actor);
+  assert.ok(table, "AUDIT_ACTIONS table found");
+  for (const m of Array.from(table[1].matchAll(/: "([a-z0-9_]+\.[a-z0-9_.:-]+)"/g))) found.add(m[1]);
+  const dir = path.resolve("src/modules/medreport/api/handlers");
+  for (const name of fs.readdirSync(dir)) {
+    if (!/\.ts$/.test(name) || /\.test\.ts$/.test(name)) continue;
+    for (const line of fs.readFileSync(path.join(dir, name), "utf8").split("\n")) {
+      if (!/\baction: /.test(line)) continue;
+      for (const m of Array.from(line.matchAll(/"([a-z0-9_]+\.[a-z0-9_.:-]+)"/g))) found.add(m[1]);
+    }
+  }
+  return Array.from(found).sort();
+}
+
 describe("activity wording", () => {
   it("every audit action the app writes has a plain-English label", () => {
     const actions = actionsInCode();
@@ -135,8 +156,18 @@ describe("activity wording", () => {
     for (const group of ACTIVITY_GROUPS) for (const a of group.actions) assert.ok(ACTIVITY_LABELS[a], a);
   });
 
+  it("every audit action the Report API and the Studio's storage write has a label and a filter group", () => {
+    const actions = moduleActionsInCode();
+    for (const expected of ["report.sign", "report.draft_live", "form.confirm", "report.create", "file.upload", "settings.update"]) {
+      assert.ok(actions.indexOf(expected) >= 0, `found ${expected}`);
+    }
+    assert.deepEqual(actions.filter((a) => !ACTIVITY_LABELS[a]), []);
+    const grouped = new Set(ACTIVITY_GROUPS.flatMap((g) => g.actions));
+    assert.deepEqual(actions.filter((a) => !grouped.has(a)), []);
+  });
+
   it("unknown actions still get a readable name", () => {
-    assert.equal(activityLabel("report.file_back"), "Report: file back");
+    assert.equal(activityLabel("report.archive_later"), "Report: archive later");
     assert.equal(activityLabel("form.map_confirm"), "Form: map confirm");
     assert.equal(activityLabel("custom"), "Custom");
     assert.equal(describeActivityDetail("unknown.action", { secret: "x" }), null, "unknown details are never shown");

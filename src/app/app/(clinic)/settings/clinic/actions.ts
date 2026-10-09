@@ -48,6 +48,8 @@ export async function saveClinicProfile(_prev: ActionResult | null, form: FormDa
       phone,
       email: email ? email.toLowerCase() : null,
       retentionDays,
+      // Drafting from the notes (clinic_profile.drafting_enabled): off until an owner or administrator turns it on.
+      draftingEnabled: form.get("draftingEnabled") === "on",
     };
   } catch {
     return { ok: false, error: "One of the fields is too long." };
@@ -59,7 +61,6 @@ export async function saveClinicProfile(_prev: ActionResult | null, form: FormDa
     await upsertClinicProfile({ db }, tenantId, {
       ...input,
       organizationId: ctx.membership.organizationId,
-      draftingEnabled: current?.draftingEnabled ?? false,
     });
     if (input.displayName !== ctx.membership.clinicName) {
       // Keep the clinic's name in the account (shown in invitations and the clinic picker) in step.
@@ -81,6 +82,7 @@ export async function saveClinicProfile(_prev: ActionResult | null, form: FormDa
           ["phone", current.phone, input.phone],
           ["email", current.email, input.email],
           ["retentionDays", current.retentionDays, input.retentionDays],
+          ["draftingEnabled", current.draftingEnabled, input.draftingEnabled],
         ] as const
       )
         .filter(([, a, b]) => a !== b)

@@ -145,7 +145,13 @@ function defineSuite(label: string, factory: () => Promise<TestDb> | TestDb): vo
       const report = { ...completedSampleReport("megan-hart", form, { id: "rpt_fill" }), tenantId: A };
       const preview = await a("/api/reports/v1/forms/fill-preview", postJson({ report, form, mode: "draft" }));
       assert.equal(preview.status, 200, await preview.clone().text());
-      assert.equal((await b("/api/reports/v1/forms/fill-preview", postJson({ report, form, mode: "draft" }))).status, 422);
+      // Clinic B can neither use clinic A's report and map (403 TENANT_MISMATCH) nor read A's stored file.
+      const other = await b("/api/reports/v1/forms/fill-preview", postJson({ report, form, mode: "draft" }));
+      assert.equal(other.status, 403);
+      assert.equal((await other.json()).code, "TENANT_MISMATCH");
+      const formB = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: B }, "Practice manager", "2026-10-01T09:00:00.000Z");
+      const reportB = { ...completedSampleReport("megan-hart", formB, { id: "rpt_fill_b" }), tenantId: B };
+      assert.equal((await b("/api/reports/v1/forms/fill-preview", postJson({ report: reportB, form: formB, mode: "draft" }))).status, 422);
 
       const actions = (await listAudit(ctx, A)).map((e) => e.action);
       assert.equal(actions.filter((x) => x === "file.upload").length, 2);
