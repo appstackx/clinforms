@@ -27,15 +27,24 @@ Update this file at the end of every session (status, blockers, what changed).
 ## 1. RED Physiotherapy demo pack – **P0, deadline: the RED call (Tue 2026-10-13, inferred – confirm)**
 - **Goal:** live demo answering Daniel's "Which insurers do you support?" – ClinForms completes **Bupa, AXA Global Healthcare, Aviva CM016** (real public forms) in their original layout from **one fictional PMI patient**, plus a support matrix and 10-minute call script.
 - **Why:** booked call; second prospect; proves real insurer forms (nothing real tested yet).
-- **Status:** NOT STARTED (cloud couldn't download PDFs). Base prompt: `memory/sources/red-physio-demo-task.md`. Context: `memory/projects/red-physiotherapy.md`, `memory/context/insurer-forms.md`.
-- **Blockers:**
-  - **BLOCKER: live drafting needs a rotated `ANTHROPIC_API_KEY` plus `MEDREPORT_LIVE_PASSCODE` in `.env.local`** (Khuram must create both; ask him for the rotated key first). Demo mode cannot draft a new patient on new insurer forms: it only replays drafts recorded for an exact patient + form file (statically bundled JSON in `src/modules/medreport/ai/demo-drafts/`, keyed `{patientId}__form-{sampleId}` and bound to the form file's SHA-256). Any other question returns `NO_DEMO_DRAFT` and is left blank for the clinician (`ai/draft-demo.ts`, `ui/components/new/generate.ts`). Without a key, form analysis falls back to the low-confidence `rules-1` path.
-  - Live mode (key + passcode → `resolveAiMode()` = live) also needs `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY` and `TM3_SIM_TOKEN` in `.env.local`, or the app throws "<NAME> is not configured" on launch, sim connector or sign (fixed demo constants are used only in demo mode – `config.server.ts` `getSecret()`). Locally these can be any random values; Khuram generates them himself (e.g. `openssl rand -base64 32` each, and a 24-char passcode), never pasted in chat. The cloud `.env.local` was not preserved.
-  - The insurer URLs must download on the desktop (they were blocked in the cloud).
-- **IMPORTANT – form maps live only in the browser:** confirmed form maps and uploaded form files are stored in the browser that created them (localStorage `medreport.forms` + IndexedDB `medreport-forms`); there is no export/import for maps (`ui/store.ts` only has `exportCase`/`importCase` for reports). Maps confirmed in the agent's Playwright browser will NOT appear in Khuram's Chrome on the call. So the demo must be reproducible in his own Chrome: (a) **default** – `npm run demo:red` or a dev-only preload page/route that reads the PDFs from gitignored `demo-assets/insurers/` at runtime, attests the three maps via `POST /forms/confirm` and seeds them into the browser (dev/local only, never production; the 15:43 plan already included "a one-command run"), or (b) an exact rehearsal checklist Khuram follows in his Chrome before the call (upload → correct → confirm each form, using the saved map corrections). On a Vercel URL the insurer PDFs are not deployed (not in git), so present locally via screen share unless Khuram decides otherwise.
-- **Call-day fallback (before Tuesday):** (1) Khuram checks the Anthropic credit balance and spend limit and tops up if low (credit ran out 06/10 and 09/10; balance unknown). (2) Keep the three approved finals in `demo-assets/outputs/` plus screenshots of each step, so the call works with no API. (3) Optionally record the RED drafts and analyses into a gitignored location only (`scripts/medreport/record-demo-drafts.ts` / `record-form-analyses.ts` only handle the bundled sample forms today – would need adapting); they derive from third-party PDFs, so ask Khuram before committing anything derived from them. (4) Rehearse the click path once live, allowing ~60 s between a form analysis and the next live form (6 live calls/min). (5) On the call, use the new PMI patient, not Daniel Brooks (`sim-pat-002`) – the name clashes with Daniel Vatamanu. (6) Say "works from an export of any clinic system" – RED's PMS is unknown and the sandbox is TM3-styled.
-- **Budget:** the Claude weekly usage limit last reset Fri 09/10 06:00 UTC; the next reset is probably Fri 16/10 06:00 UTC (unverified), i.e. AFTER the RED call (the 07/10 00:35 limit hit cost ~31 h). Do the RED pack lean: single session or small workflows, no multi-agent fan-outs or full video re-records until the call is done. Commit after each verified step so a limit hit loses nothing.
-- **Needs from Khuram:** call day + time; rotated `ANTHROPIC_API_KEY` plus the five values above in his own `.env.local`; decision whether to show it locally (screen share, recommended) or on a Vercel URL.
+- **Status (09/10 ~23:45 UTC): BUILT, reviewed, fixed and rehearsed** on branch `demo/red-physio` (worktree
+  `clinforms-wt/red-integrate`; wave 2 + fix commits NOT pushed – push when Khuram agrees). `npm run demo:red` (always
+  demo mode unless `--live`) with the gitignored `demo-assets/insurers/`: 6 insurer PDFs, 7 prepared maps (Bupa, AXA
+  Global Healthcare, Aviva CM016 + GEN030, Freedom, Allianz Care, and our own illustrative portal question set, seeded
+  into the library), 4 answer files (Bupa, AXA, Allianz, portal) recorded from the real drafting path for Rebecca Lane
+  (`sim-pat-006`). `npm run demo:check` must say "Demo assets OK". Finals/drafts of the rehearsal:
+  `demo-assets/outputs/`; screenshots `demo-assets/rehearsal/` (earlier wave-2 set in `_wave2-before/`).
+- **Before the call (Khuram):** rehearse once in his own Chrome (maps live in the browser: upload each insurer PDF from
+  the library's "Demonstration forms" entries, confirm, then complete for Rebecca Lane from the simulated TM3 tab);
+  share only the browser window; confirm RED's practice system (the home page no longer says "TM3"); check Anthropic
+  credit only if he wants to show live drafting (`npm run demo:red -- --live` + passcode).
+- **Call guidance:** `memory/projects/red-physiotherapy.md` §8 (flow, what not to show, honest answers).
+- **Still open after the fixes:** one fictional patient on four insurers' forms (a second patient whose record names
+  AXA Global Healthcare would make AXA approvable without typed numbers); the maps were hand-made (say so: "set up and
+  checked in advance; a new form takes ~15 s to read, then staff check it once"); no logins/roles (anyone can type a
+  clinician's name to approve); whether AXA accepts an electronic approval line in its signature box is unknown;
+  review time with real clinicians not measured; live drafting still writes longer answers than the boxes hold
+  (`forms-8` with box capacities); `Write in my own voice` is a deterministic rewrite – read each answer.
 - **Ready-to-paste prompt:**
 
 ```text

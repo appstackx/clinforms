@@ -636,7 +636,7 @@ export function supersedeAcknowledgedGaps(report: Report, key: string, actor: st
   const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged");
   if (stale.length === 0) return report;
   const at = nowIso(now);
-  const text = `Answered on the form by ${actor} (replaces “${stale[0].resolution?.text ?? ""}”).`;
+  const text = `Answered on the form by ${actor} (replaces “${(stale[0].resolution?.text ?? "").replace(/[.\s]+$/, "")}”).`;
   const gaps = report.gaps.map((g) => (stale.indexOf(g) >= 0 ? { ...g, resolution: { kind: "resolved" as const, text, at } } : g));
   return appendActivity({ ...report, gaps, updatedAt: at }, { actor, action: "gap_resolved", detail: `${key}: a value was entered, so the earlier “left blank” acknowledgement no longer applies.` }, now);
 }

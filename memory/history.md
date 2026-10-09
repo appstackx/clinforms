@@ -77,6 +77,13 @@ Add new dated entries at the bottom of §1 (chronological) as work continues.
 | 16:16 | `32499de` pushed: Playwright e2e scripts (`scripts/e2e/`) and dev tools (`scripts/dev-tools/`) copied from the cloud container with repo-relative paths; `.e2e-out/` gitignored. |
 | ~16:00–16:30 | This memory pack written (`CLAUDE.md`, `memory/`); WIP snapshot `cba79dc` pushed at 16:16, final commit follows. |
 
+### Fri 2026-10-09 (evening, desktop – RED demo)
+| Time | Event |
+|---|---|
+| ~18:00–21:15 | RED wave 1 (six slices: PMI patient `sim-pat-006`, fillable/flat PDFs, tables, parties, demo assets + footer, copy answers + portal questions) and wave 2 (live analysis prompt, prepared maps and answers for the six insurer PDFs) merged into `demo/red-physio`. |
+| ~21:15–21:50 | Browser rehearsal + prospect's-eye review + rules review: clinical text read as record-keeping ("I recorded…"), portal step failed in demo mode, SIGNED on patients' claim forms, party labels wrong, insurer wording in git, demo:red going live with a live-ready `.env.local`. |
+| ~21:50–23:45 | Fix wave (commits `44696b3` … `7d61c83`): plain clinical wording, party labels, prefill-only forms, staff-entry provenance, every outcome measure in Bupa's box, address lines + postcode, N/A dates, PDF margins/row font sizes/trim box, seeded portal question set with demo answers, demo:red demo-only, wording hygiene; rehearsal re-run in a headless browser; 448 tests (445 pass, 3 skipped). |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|

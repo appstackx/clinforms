@@ -5,6 +5,11 @@ Add new rows at the top. Keep entries short; link to detail files.
 
 | # | When | Who | Decision | Why | Status |
 |---|---|---|---|---|---|
+| D38 | 2026-10-09 23:00 | A | RED call plan: Bupa end to end; AXA only to show the identifier block (never type AXA numbers or approve AXA on the call); seeded portal questions in demo mode; Aviva 30 s as a prefill; skip Freedom and Allianz | Prospect's-eye review: one Bupa-insured patient on four insurers' forms looks staged | PROPOSED (Khuram decides) |
+| D37 | 2026-10-09 22:30 | A | A prepared portal question set (our own illustrative questions) lives in the gitignored demo assets and is seeded into the library with demo answers, instead of typing the mini-syntax live | Portal step was a failure screen in demo mode | DONE |
+| D36 | 2026-10-09 22:00 | A | `npm run demo:red` always runs in demo mode unless `--live`; demonstration forms are listed in any AI mode | A live-ready `.env.local` hid every demo form and offered the passcode | DONE |
+| D35 | 2026-10-09 21:45 | A | Forms the clinic only prefills (no clinic sign-off box; another party signs) are approved as a checked prefill: `_PREFILLED` files, prefill attestations, never "signed" | Freedom/Aviva were labelled SIGNED | DONE |
+| D34 | 2026-10-09 21:30 | A | Drafted wording is written as the clinician writes a form ("On 01/10/2026, X", "Assessment on …:"), by a deterministic rewrite of "I recorded …" frames; insurer wording never in git (prompt examples, fixtures and comments paraphrased) | Prospect's and rules reviews | DONE |
 | D33 | 2026-10-09 15:44 | K | Push everything + memory to the repo; continue in the **Claude desktop app** on a local checkout ("make sure memory has all the details so new widnwo do not forget things") | Cloud network blocks; continuity | DONE (this pack) |
 | D32 | 2026-10-09 15:43 | K | "wait" – stopped the cloud agent before it started Vercel readiness / RED pack / Supabase scripts / Cloudflare spike | Move to desktop | – |
 | D31 | 2026-10-09 15:39 | K | "3- for demos and base account, can we use cloudFlare but have supabase scripts ready to create new db plus onboard new client ?" | Cost | **OPEN** – A (15:43): Vercel Pro has unlimited projects so demo/base cost nothing extra; Cloudflare ≈ $5/mo + 1–2 days porting. Clarify scope (project-per-client vs tenant) → `context/hosting-and-infra.md` |

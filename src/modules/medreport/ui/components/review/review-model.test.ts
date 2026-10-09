@@ -437,7 +437,7 @@ describe("supersedeAcknowledgedGaps", () => {
     const next = supersedeAcknowledgedGaps(typed, "F-06", "Sarah Reid", NOW);
     const gap = next.gaps.find((g) => g.id === "gap-F-06-ai");
     assert.equal(gap?.resolution?.kind, "resolved");
-    assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later\.”\)\.$/);
+    assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later”\)\.$/);
     assert.match(next.activity[next.activity.length - 1].detail, /no longer applies/);
     // The reducer does it when the edit is logged, and when a value is typed straight into the empty answer.
     const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: "Sarah Reid" });

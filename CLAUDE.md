@@ -1,7 +1,7 @@
 # ClinForms – working memory (hot cache)
 
-Last updated: **Fri 2026-10-09 ~16:00 UTC**, written at the hand-off from the cloud session to the
-Claude desktop app. Deep memory lives in `memory/` (index: `memory/README.md`).
+Last updated: **Fri 2026-10-09 ~23:45 UTC** (branch `demo/red-physio`: RED demo pack built, reviewed and fixed;
+earlier hand-off from the cloud session at ~16:00 UTC). Deep memory lives in `memory/` (index: `memory/README.md`).
 
 ## Start here (every new session)
 1. Read **`memory/next-steps.md`** (prioritised backlog, ready-to-paste prompts) and **`memory/README.md`**
@@ -9,9 +9,12 @@ Claude desktop app. Deep memory lives in `memory/` (index: `memory/README.md`).
 2. Check repo state: `git fetch && git log --oneline -5` (expect `7f6fcf8` → `32499de` → `cba79dc` (WIP memory,
    pushed 16:16) → final memory commit, or later),
    `git status`, Node 22 (`nvm use`), `npm ci`.
-3. **The RED Physiotherapy call is booked (Khuram 09/10 14:08: "a meeting is booked") and its demo prep has NOT
-   started** – the most urgent item unless Khuram says otherwise. "Tuesday" comes only from the research text he
-   pasted at 14:08; the date **Tue 13 Oct is inferred – confirm day AND time with Khuram.**
+3. **The RED Physiotherapy call is booked (Khuram 09/10 14:08: "a meeting is booked"); the demo pack is BUILT** on
+   branch `demo/red-physio` (waves 1–2 + review fixes, rehearsed in a browser 09/10 ~23:00 UTC): `npm run demo:red`
+   with the gitignored `demo-assets/insurers/` (6 insurer PDFs, 7 maps incl. a prepared portal question set, 4
+   answer files). What is left: Khuram rehearses once in his own Chrome and confirms RED's clinic system; call
+   guidance in `memory/projects/red-physiotherapy.md` §8. "Tuesday" comes only from the research text he pasted at
+   14:08; the date **Tue 13 Oct is inferred – confirm day AND time with Khuram.**
    **Budget:** the Claude weekly usage limit last reset Fri 09/10 06:00 UTC; next reset probably Fri 16/10 06:00 UTC
    (unverified) – i.e. AFTER the RED call. Work lean until then (single session or small workflows, no multi-agent
    fan-outs or full video re-records); commit after each verified step so a limit hit loses nothing.
@@ -93,7 +96,7 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 |---|---|---|
 | **ClinForms** | The product: completes each referrer's own form, original layout, from clinic notes | Demo-grade, verified; **not deployed** → `memory/projects/clinforms.md` |
 | **Blue Heart deal** | Dell; MLC/case-manager forms; voiced 6:15 video made 09/10 | Waiting on Dell (video send unconfirmed) → `memory/projects/blue-heart-clinics.md` |
-| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct (inferred – confirm) | **Demo prep not started** → `memory/projects/red-physiotherapy.md` |
+| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct (inferred – confirm) | **Demo pack ready** (`npm run demo:red`), rehearse in Khuram's Chrome → `memory/projects/red-physiotherapy.md` |
 | **careconnect-mk** | Origin repo (patient-portal portfolio demo); module first built on branch `claude/confident-noether-z6l7kr` @ `ff05fab` | Superseded; unmerged → `memory/projects/careconnect-mk.md` |
 
 ## Status snapshot (2026-10-09 ~16:00 UTC)
@@ -101,8 +104,8 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
   `7f6fcf8` (Dell video assets, 15:48) → `32499de` (Playwright e2e scripts + dev tools, 16:16) →
   `cba79dc` (WIP memory, 16:16) → final memory commit. Verified: tsc, lint, **243/243** `test:medreport`,
   sandbox tests 26/26, build, 42-step browser E2E (at extraction), ClinForms rebrand.
-  Branch `demo/red-physio` (RED wave 1 + wave 2 + fixes): `test:medreport` (sandbox included) **437 tests, 434
-  pass, 3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
+  Branch `demo/red-physio` (RED wave 1 + wave 2 + review fixes, not pushed since wave 2): `test:medreport` (sandbox
+  included) **448 tests, 445 pass, 3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
 - **Built:** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
   cited drafting (Claude **Sonnet 5.5**, `claude-sonnet-5-5`), validators, review + approval, Word/PDF in
   original layout, file-back to simulated TM3, batch, Security & GDPR page. Reports stored in browser.
@@ -112,13 +115,13 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
   (6:15, 17.7 MB). Whether Khuram emailed it to Dell is **unverified** – ask.
 
 ## Top next actions (detail + prompts in `memory/next-steps.md`)
-1. **RED demo pack** (Bupa, AXA Global Healthcare, Aviva CM016 from one fictional PMI patient) on branch
-   `demo/red-physio` – deadline: the call (Tue 13 Oct, inferred). **BLOCKER: live drafting needs a rotated
-   `ANTHROPIC_API_KEY` + `MEDREPORT_LIVE_PASSCODE` in `.env.local`** (plus `MEDREPORT_LAUNCH_SECRET`,
-   `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`, or live mode throws "… is not configured").
-   Khuram must create them; demo mode cannot draft a new patient on new insurer forms (`NO_DEMO_DRAFT`). Ask him for
-   the rotated key first. Form maps live only in the browser that confirmed them → the demo must be reproducible in
-   Khuram's own Chrome (preload/one-command run or rehearsal checklist – `memory/next-steps.md` §1).
+1. **RED call** (Tue 13 Oct, inferred) – the demo pack is ready on `demo/red-physio` (`npm run demo:red`, demo mode,
+   prepared maps and answers in the gitignored `demo-assets/insurers/`). Before the call: Khuram rehearses once in
+   his own Chrome (upload Bupa/AXA/Aviva from the library's demonstration entries, confirm, complete for Rebecca
+   Lane); confirm RED's practice system; push the branch when he agrees. On the call: lead with Bupa end to end;
+   show AXA's identifier block as the safety feature (do NOT type AXA numbers or approve AXA); portal questions
+   (seeded, demo answers, prognosis gap); Aviva 30 s ("prefilled for the patient to sign"); skip Freedom/Allianz.
+   Honest answers to Daniel's likely questions: `memory/projects/red-physiotherapy.md` §8.
 2. **Vercel deploy** – blocker: Khuram imports the repo (Pro) or provides a token; fresh secrets; rotated key.
 3. **Ask Khuram** (one message): RED call day (Tue 13 Oct?) + time; Vercel plan/access; domains reserved?; key rotated?;
    Dell video sent/replied?; what "Cloudflare for demos + Supabase scripts" means exactly.
@@ -134,7 +137,8 @@ npm run typecheck && npm run lint && npm run test:medreport && npm run build   #
 # test:medreport includes the sandbox tests (src/sandbox/**/*.test.ts) since demo/red-physio – no separate run
 PORT=3000 MEDREPORT_AI_MODE=demo npm run start   # prod build; PORT matters (self-calls sim API)
 npm run demo:check                         # check the local demo assets (maps, answers, insurer PDFs)
-npm run demo:red                           # RED demo on this machine: build + start with demo assets (refuses without maps)
+npm run demo:red                           # RED demo on this machine: build + start with demo assets, always demo mode (refuses without maps)
+npm run demo:red -- --live                 # same, but .env.local's MEDREPORT_AI_MODE (auto) allows live calls once the passcode is typed
 npm run medreport:eslint-boundary          # regenerate .eslintrc.json (never hand-edit)
 ```
 
@@ -144,7 +148,10 @@ npm run medreport:eslint-boundary          # regenerate .eslintrc.json (never ha
 `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`, `TM3_SIM_BASE_URL`, `MEDREPORT_SOFFICE_PATH`,
 `MEDREPORT_DEMO_ASSETS_DIR` (local insurer forms + prepared maps/answers; use an ABSOLUTE path in a git worktree),
 `MEDREPORT_DEMO_ASSETS_ALLOW_PROD` (local `next start` only – never on a deployment).
-Empty `.env.local` = demo mode (fine for most work). No `.env.local` exists in this checkout yet.
+Empty `.env.local` = demo mode (fine for most work). Both checkouts (`clinforms/` and the worktree
+`clinforms-wt/red-integrate/`) have a `.env.local` with a key, a passcode and `MEDREPORT_AI_MODE=auto`; the
+worktree's also sets `MEDREPORT_DEMO_ASSETS_DIR` to the absolute `clinforms/demo-assets/insurers` path. `npm run demo:red`
+ignores the `auto` and runs in demo mode unless `--live`.
 
 ## Key paths
 | Path | What |
