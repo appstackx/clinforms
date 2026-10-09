@@ -56,8 +56,18 @@ import {
   wantedOf,
 } from "./pdf-acro-fill";
 import { loadPdfDocument } from "./pdf-outline";
+import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 import { drawOverlayDateSlots, drawOverlayTicks } from "./pdf-overlay-marks";
-import { drawContinuationTable, drawOverlayTable, fillPdfFieldTable, printedTextLoader, type ContinuationTable, type TableFillDeps } from "./pdf-table";
+import {
+  continuationHeading,
+  drawContinuationTable,
+  drawOverlayTable,
+  drawWrappedHeading,
+  fillPdfFieldTable,
+  printedTextLoader,
+  type ContinuationTable,
+  type TableFillDeps,
+} from "./pdf-table";
 import type { PdfFillOptions } from "./types";
 
 /** Smallest font for answers: below 8 pt a form is hard to read, so longer answers go to the continuation sheet. */
@@ -547,8 +557,9 @@ function drawOverlay(ctx: Ctx, field: FormField, text: string, a: OverlayBox): v
  * ----------------------------------------------------------------------------------------------*/
 
 function addContinuationSheet(ctx: Ctx): void {
+  // The size the form's pages are SHOWN at (crop box): a print-ready file's media box is larger.
   const first = ctx.doc.getPages()[0];
-  const { width: W, height: H } = first ? first.getSize() : { width: 595.28, height: 841.89 };
+  const { width: W, height: H } = first ? first.getCropBox() : { width: 595.28, height: 841.89 };
   const margin = 48;
   const size = 9.5;
   const lh = lineHeight(ctx.font, size);
@@ -581,10 +592,10 @@ function addContinuationSheet(ctx: Ctx): void {
       y = cursor.y;
       continue;
     }
-    const heading = ctx.encode(`${c.field.section ? `${c.field.section} – ` : ""}${c.field.label} (continued)`);
+    const heading = ctx.encode(continuationHeading(c.field));
     const lines = wrapText(c.text, ctx.font, size, W - 2 * margin);
     if (y - lh * 3 < margin) newPage();
-    page!.drawText(heading, { x: margin, y, size: 10, font: ctx.bold, color: rgb(0.1, 0.12, 0.2) });
+    y = drawWrappedHeading(page!, heading, ctx.bold, margin, y, W - 2 * margin);
     y -= lh * 1.4;
     for (const line of lines) {
       if (y < margin) newPage();
@@ -623,29 +634,80 @@ export function visibleToUserSpace(box: { x: number; y: number; width: number; h
   }
 }
 
+/** Baseline of the red DRAFT line above the visible bottom edge (pt), and the highest it may move to clear printed text. */
+const DRAFT_NOTE_BASELINE = 12;
+const DRAFT_NOTE_MAX_BASELINE = 30;
+
+/**
+ * Printed text near the foot of each page (a page number, a form reference), in visible coordinates
+ * of an upright page: one pdf.js pass over the form. Pages turned by /Rotate are left out (empty).
+ */
+async function printedFooterText(buf: Uint8Array, doc: PDFDocument): Promise<Array<Array<{ x0: number; x1: number; y0: number; y1: number }>>> {
+  const out = doc.getPages().map(() => [] as Array<{ x0: number; x1: number; y0: number; y1: number }>);
+  try {
+    const pdfjs = await loadPdfjs();
+    const task = pdfjs.getDocument(pdfjsDocumentParams(buf));
+    try {
+      const pdf = await task.promise;
+      for (let n = 1; n <= Math.min(pdf.numPages, out.length); n += 1) {
+        const page = doc.getPages()[n - 1];
+        if (pageQuarterTurn(page) !== 0) continue;
+        const box = page.getCropBox();
+        for (const raw of (await (await pdf.getPage(n)).getTextContent()).items) {
+          if (!("str" in raw) || !raw.str.trim()) continue;
+          const t = raw.transform as number[];
+          const h = raw.height || Math.abs(t[3]) || 8;
+          const vy = t[5] - box.y;
+          if (vy < DRAFT_NOTE_MAX_BASELINE + 4 && vy + h > 0) out[n - 1].push({ x0: t[4] - box.x, x1: t[4] - box.x + raw.width, y0: vy - h * 0.25, y1: vy + h * 0.8 });
+        }
+      }
+    } finally {
+      await task.destroy();
+    }
+  } catch {
+    // Unreadable text: the line keeps its usual place.
+  }
+  return out;
+}
+
 /**
  * The DRAFT watermark and the red line at the foot of every page, placed in the VISIBLE page (crop box
  * and /Rotate): a print-ready file whose media box is larger than its crop box (Aviva CM016) would
- * otherwise have the line drawn outside what readers show.
+ * otherwise have the line drawn outside what readers show. The watermark is sized so its diagonal fits
+ * the page (no letter cut off at the corners); the red line moves up, when the form prints something at
+ * its place (a page number), to just above it.
  */
-function drawDraftMarks(ctx: Ctx): void {
+function drawDraftMarks(ctx: Ctx, footers: ReadonlyArray<ReadonlyArray<{ x0: number; x1: number; y0: number; y1: number }>>): void {
   const label = "DRAFT - NOT APPROVED";
   const note = "DRAFT - awaiting clinician approval - not for issue";
-  for (const page of ctx.doc.getPages()) {
+  const noteSize = 7.5;
+  ctx.doc.getPages().forEach((page, i) => {
     const box = page.getCropBox();
     const quarter = pageQuarterTurn(page);
     const W = quarter === 90 || quarter === 270 ? box.height : box.width;
     const H = quarter === 90 || quarter === 270 ? box.width : box.height;
-    const size = Math.min(W, H) / 8.5;
+    const t = Math.PI / 4;
+    // Width × cos 45° plus the letters' height × sin 45° within 90 % of the shorter side.
+    const unit = ctx.bold.widthOfTextAtSize(label, 1);
+    const size = Math.min(Math.min(W, H) / 8.5, (0.9 * Math.min(W, H)) / ((unit + 0.7) * Math.cos(t)));
     const w = ctx.bold.widthOfTextAtSize(label, size);
     const h = size * 0.7;
-    const t = Math.PI / 4;
     const mark = visibleToUserSpace(box, quarter, W / 2 - (w / 2) * Math.cos(t) + (h / 2) * Math.sin(t), H / 2 - (w / 2) * Math.sin(t) - (h / 2) * Math.cos(t));
     page.drawText(label, { ...mark, size, font: ctx.bold, color: DRAFT_RED, opacity: 0.16, rotate: degrees(45 + quarter) });
-    const nw = ctx.bold.widthOfTextAtSize(note, 7.5);
-    const at = visibleToUserSpace(box, quarter, (W - nw) / 2, 12);
-    page.drawText(note, { ...at, size: 7.5, font: ctx.bold, color: DRAFT_RED, rotate: degrees(quarter) });
-  }
+    const nw = ctx.bold.widthOfTextAtSize(note, noteSize);
+    const nx = (W - nw) / 2;
+    let baseline = DRAFT_NOTE_BASELINE;
+    const clashes = (b: number) => (footers[i] ?? []).filter((r) => r.x1 > nx - 2 && r.x0 < nx + nw + 2 && r.y1 > b - 2 && r.y0 < b + noteSize * 0.75 + 1);
+    for (let k = 0; k < 4; k += 1) {
+      const hit = clashes(baseline);
+      if (hit.length === 0) break;
+      const above = Math.max(...hit.map((r) => r.y1)) + 2;
+      if (above > DRAFT_NOTE_MAX_BASELINE) break;
+      baseline = above;
+    }
+    const at = visibleToUserSpace(box, quarter, nx, baseline);
+    page.drawText(note, { ...at, size: noteSize, font: ctx.bold, color: DRAFT_RED, rotate: degrees(quarter) });
+  });
 }
 
 /**
@@ -729,7 +791,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
       removeDanglingAnnots(doc);
     }
   }
-  if (opts.draft) drawDraftMarks(ctx);
+  if (opts.draft) drawDraftMarks(ctx, await printedFooterText(buf, doc));
   // A classic cross-reference table (no object streams) opens in the widest range of PDF readers.
   return doc.save({ useObjectStreams: false });
 }

@@ -388,7 +388,9 @@ function shortenToWidth(text: string, font: PDFFont, width: number): string {
     const space = cut.lastIndexOf(" ");
     cut = space > 0 ? cut.slice(0, space).trimEnd() : cut.slice(0, -1);
   }
-  return `${cut}${ELLIPSIS}`;
+  // "INITIAL ASSESSMENT;…" reads as a typo: no separator before the ellipsis.
+  const trimmed = cut.replace(/[\s,;:.\u2013\u2014-]+$/, "");
+  return `${trimmed || cut}${ELLIPSIS}`;
 }
 
 /**
@@ -485,19 +487,35 @@ export function drawOverlayTable(deps: TableFillDeps, field: FormField, anchor: 
     return;
   }
   const extra: ContinuationTable["rows"] = [];
+  const cased = (row: FormAnswerRow): FormAnswerRow => (deps.uppercase ? upperRow(row) : row);
+  const cellBox = (col: PdfOverlayTableAnchor["columns"][number], rowTop: number) => ({ x: col.x + 2, y: rowTop - anchor.rowHeight + 1.5, width: col.width - 4, height: anchor.rowHeight - 3 });
+  const cellText = (row: FormAnswerRow, key: string) => deps.encode(cased(row)[key]?.trim() ?? "");
+  // One font size for the whole printed table: the smallest any of its cells needs (8 pt at least), so a
+  // row never mixes sizes. Cells that only fit shortened do not set it.
+  let tableSize = CELL_FONT;
+  rows.forEach((row, i) => {
+    const rowTop = anchor.rowTops[i];
+    if (rowTop === undefined) return;
+    for (const col of anchor.columns) {
+      const text = cellText(row, col.key);
+      if (!text) continue;
+      const box = cellBox(col, rowTop);
+      const fit = fitCell(deps, text, box, Math.min(CELL_FONT, Math.max(MIN_FONT, box.height - 2)));
+      if (!fit.shortened) tableSize = Math.min(tableSize, fit.size);
+    }
+  });
   rows.forEach((row, i) => {
     const rowTop = anchor.rowTops[i];
     if (rowTop === undefined) {
-      extra.push({ n: i + 1, cells: row, shortened: false });
+      extra.push({ n: i + 1, cells: cased(row), shortened: false });
       return;
     }
     let shortened = false;
     for (const col of anchor.columns) {
-      const raw = (row[col.key] ?? "").trim();
-      if (!raw) continue;
-      const text = deps.encode(deps.uppercase ? raw.toLocaleUpperCase("en-GB") : raw);
-      const box = { x: col.x + 2, y: rowTop - anchor.rowHeight + 1.5, width: col.width - 4, height: anchor.rowHeight - 3 };
-      const fit = fitCell(deps, text, box, Math.min(CELL_FONT, Math.max(MIN_FONT, box.height - 2)));
+      const text = cellText(row, col.key);
+      if (!text) continue;
+      const box = cellBox(col, rowTop);
+      const fit = fitCell(deps, text, box, Math.max(MIN_FONT, Math.min(tableSize, box.height - 2)));
       const lh = lineHeight(deps.font, fit.size);
       const blockHeight = fit.lines.length === 1 ? fit.size * 0.72 : fit.lines.length * lh;
       // Single lines sit in the middle of the cell; wrapped lines start at its top.
@@ -508,9 +526,45 @@ export function drawOverlayTable(deps: TableFillDeps, field: FormField, anchor: 
       }
       if (fit.shortened) shortened = true;
     }
-    if (shortened) extra.push({ n: i + 1, cells: row, shortened: true });
+    if (shortened) extra.push({ n: i + 1, cells: cased(row), shortened: true });
   });
   report(deps, field, anchor.columns.map(({ key, header }) => ({ key, header })), anchor.rowTops.length, extra);
+}
+
+/** A table row in BLOCK CAPITALS (forms that ask for them – on the form and on its continuation sheet). */
+function upperRow(row: FormAnswerRow): FormAnswerRow {
+  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === "string" ? v.toLocaleUpperCase("en-GB") : v])) as FormAnswerRow;
+}
+
+/** Longest question label repeated in a continuation heading (characters). */
+const HEADING_LABEL_MAX = 120;
+
+/**
+ * The heading of a field's part of the continuation sheet: "<section> – <label> (continued)", without
+ * the section when the label already says it (or the section is the label), the label cut at about
+ * 120 characters.
+ */
+export function continuationHeading(field: Pick<FormField, "section" | "label">): string {
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  let label = field.label.replace(/\s+/g, " ").trim();
+  if (label.length > HEADING_LABEL_MAX) {
+    const cut = label.slice(0, HEADING_LABEL_MAX);
+    const space = cut.lastIndexOf(" ");
+    label = `${(space > 60 ? cut.slice(0, space) : cut).replace(/[\s,;:.\u2013\u2014-]+$/, "")}${ELLIPSIS}`;
+  }
+  const section = (field.section ?? "").replace(/\s+/g, " ").trim();
+  const s = norm(section);
+  const l = norm(field.label);
+  const showSection = s !== "" && !l.includes(s) && !s.includes(l);
+  return `${showSection ? `${section} – ` : ""}${label} (continued)`;
+}
+
+/** Draw a bold heading wrapped to the sheet's width; returns the y below it. */
+export function drawWrappedHeading(page: PDFPage, text: string, font: PDFFont, x: number, y: number, width: number, size = 10): number {
+  const lines = wrapLines(text, font, size, width);
+  const lh = lineHeight(font, size);
+  lines.forEach((line, i) => page.drawText(line, { x, y: y - i * lh, size, font, color: rgb(0.1, 0.12, 0.2) }));
+  return y - (lines.length - 1) * lh;
 }
 
 function report(deps: TableFillDeps, field: FormField, columns: FormTableColumn[], capacity: number, extra: ContinuationTable["rows"]): void {
@@ -551,9 +605,9 @@ export function drawContinuationTable(
   const lh = lineHeight(font, size);
   const pad = 3;
   let { page, y } = cursor;
-  const heading = encode(`${field.section ? `${field.section} – ` : ""}${field.label} (continued)`);
+  const heading = encode(continuationHeading(field));
   if (y - lh * 5 < layout.margin) ({ page, y } = layout.newPage());
-  page.drawText(heading, { x: layout.margin, y, size: 10, font: bold, color: rgb(0.1, 0.12, 0.2) });
+  y = drawWrappedHeading(page, heading, bold, layout.margin, y, layout.width);
   y -= lh * 1.3;
   const beyond = table.rows.filter((r) => r.n > table.capacity).length;
   const note =

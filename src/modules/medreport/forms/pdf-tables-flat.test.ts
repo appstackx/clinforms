@@ -15,7 +15,7 @@ import type { FormAnchor, FormDefinition, FormField } from "../core/types";
 import { fillPdf } from "./pdf-fill";
 import { datePartsForSlots, ticksFor } from "./pdf-overlay-marks";
 import { readPdfForm } from "./pdf-outline";
-import { detectPdfFieldTables, pdfTableAnchorOf, rowNumberedName } from "./pdf-table";
+import { continuationHeading, detectPdfFieldTables, pdfTableAnchorOf, rowNumberedName } from "./pdf-table";
 import { RULED, ROW_STEP, ROW_TOP, flatBoxesPdf, ruledBoxesPdf, tableFormPdf } from "./pdf-s2-fixtures";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 
@@ -261,7 +261,7 @@ test("fillPdf on a flat PDF: dates between the slashes, an X in the chosen box, 
   assert.ok(find("INITIAL ASSESSMENT") && Math.abs(find("INITIAL ASSESSMENT")!.x - 122) < 1);
   assert.ok(find("25/03/2026") && find("25/03/2026")!.y < 360 && find("25/03/2026")!.y > 340);
   assert.equal(pages.length, 2);
-  assert.match(pages[1].map((i) => i.str).join(" "), /01\/04\/2026 .*Discharge/);
+  assert.match(pages[1].map((i) => i.str).join(" "), /01\/04\/2026 .*DISCHARGE/, "BLOCK CAPITALS on the continuation sheet too");
   assert.ok(warnings.some((w) => /has 2 rows; the other 1 row is on the continuation sheet/.test(w)));
   // The X is in the Yes box, not the No box.
   const { lines } = await drawnPaths(out, 1);
@@ -313,4 +313,61 @@ test("ruled answer boxes: the printed writing lines are read, and an answer is w
   const moved = formOf([field("F-01", "Full history", { kind: "pdf_overlay", page: 1, x: 76, y: 200, width: 506, height: 86, ruledRows: rows }, { answerType: "long_text" })], "pdf_flat");
   const plain = (await textItems(await fillPdf(bytes, moved, { "F-01": { text: "Short answer" } }, { draft: false, flatten: true })))[0];
   assert.ok(plain.some((i) => i.str === "Short answer" && i.y > 200 && i.y < 286));
+});
+
+test("continuation headings: no repeated section, long labels cut and wrapped inside the page", async () => {
+  assert.equal(
+    continuationHeading({ section: "4. Details of the medical expenses you are claiming for", label: "Details of the medical expenses you are claiming for" }),
+    "Details of the medical expenses you are claiming for (continued)",
+  );
+  assert.equal(continuationHeading({ section: "About the treatment", label: "Proposed treatment plan" }), "About the treatment – Proposed treatment plan (continued)");
+  assert.equal(continuationHeading({ label: "Diagnosis" }), "Diagnosis (continued)");
+  const long = continuationHeading({ section: "About the treatment", label: `Please explain the clinical reason for further treatment, detailing best practice guidelines used ${"and more words ".repeat(12)}` });
+  assert.ok(long.length < 190 && /…\s\(continued\)$/.test(long), long);
+
+  // On the sheet: every heading line ends inside the page.
+  const bytes = await flatBoxesPdf();
+  const label = "Please explain the clinical reason for further treatment, detailing best practice guidelines used and the expected outcome";
+  const form = formOf([field("F-01", label, { kind: "pdf_overlay", page: 1, x: 202, y: 662, width: 336, height: 46 }, { answerType: "long_text", section: "About the treatment" })], "pdf_flat");
+  const out = await fillPdf(bytes, form, { "F-01": { text: "Word ".repeat(400) } }, { draft: false, flatten: true });
+  const doc = await PDFDocument.load(out);
+  const width = doc.getPage(1).getWidth();
+  const sheet = (await textItems(out))[1];
+  assert.ok(sheet.some((i) => i.str.startsWith("About the treatment – Please explain")));
+  assert.ok(sheet.some((i) => /\(continued\)$/.test(i.str)), "the heading's last line");
+  const font = await doc.embedFont("Helvetica-Bold");
+  for (const i of sheet.filter((x) => x.str.includes("continued") || x.str.startsWith("About"))) {
+    assert.ok(i.x + font.widthOfTextAtSize(i.str, 10) <= width - 40, `“${i.str}” runs off the page`);
+  }
+});
+
+test("overlay tables: one font size for the whole table; a shortened cell ends without a dangling separator", async () => {
+  const bytes = await flatBoxesPdf();
+  // The treatment column fits "STM; isometric and band loading" at 8.5 pt, not at 9.
+  const helv = await (await PDFDocument.create()).embedFont("Helvetica");
+  const serviceWidth = helv.widthOfTextAtSize("STM; isometric and band loading", 8.5) + 4.5;
+  const table = field(
+    "F-01",
+    "Sessions",
+    { kind: "pdf_overlay_table", page: 1, columns: [{ key: "date", header: "Date", x: 40, width: 80 }, { key: "service", header: "Treatment", x: 120, width: serviceWidth }], rowTops: [380, 360], rowHeight: 20 },
+    { answerType: "table", fillSource: { kind: "appointments_table", columns: { date: "date", service: "service" } } },
+  );
+  const out = await fillPdf(
+    bytes,
+    formOf([table], "pdf_flat"),
+    { "F-01": { rows: [{ date: "18/03/2026", service: "STM; isometric and band loading" }, { date: "25/03/2026", service: "Initial assessment; Hawkins-Kennedy, Neer's and empty can tests, all positive" }] } },
+    { draft: false, flatten: true },
+  );
+  const pdfjs = await loadPdfjs();
+  const task = pdfjs.getDocument(pdfjsDocumentParams(out));
+  const page = await (await task.promise).getPage(1);
+  const items = (await page.getTextContent()).items.flatMap((it) => ("str" in it && it.str.trim() && (it.transform[5] as number) < 382 && (it.transform[5] as number) > 338 ? [{ str: it.str, size: Math.round((it.transform[0] as number) * 10) / 10 }] : []));
+  await task.destroy();
+  const unshortened = items.filter((i) => !i.str.endsWith("…"));
+  assert.ok(unshortened.length >= 3, JSON.stringify(items));
+  assert.equal(new Set(unshortened.map((i) => i.size)).size, 1, `one size: ${JSON.stringify(items)}`);
+  assert.equal(unshortened[0].size, 8.5, "the size the tightest cell needs");
+  const cut = items.find((i) => i.str.endsWith("…"));
+  assert.ok(cut, "the long cell is shortened on the form");
+  assert.doesNotMatch(cut.str, /[;,:.\s]…$/);
 });

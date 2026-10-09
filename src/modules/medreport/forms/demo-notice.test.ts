@@ -321,3 +321,32 @@ test("Word: render-form puts the notice on drafts and finals; without demoNotice
   const input = new Uint8Array([1, 2, 3]);
   assert.equal(addDocxDemoNotice(input, "  "), input, "no notice: the same bytes object back");
 });
+
+test("PDF DRAFT: the red line moves above a printed page number; continuation sheets take the crop box's size", async () => {
+  // A print-ready page (crop box inside the media box) with its page number where the red line goes.
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([652, 899]);
+  page.setCropBox(22.68, 22.68, 607, 853);
+  page.drawText("3", { x: 22.68 + 300, y: 22.68 + 10, size: 9, font });
+  const pdfForm = doc.getForm();
+  const box = pdfForm.createTextField("progress");
+  box.enableMultiline();
+  box.addToPage(page, { x: 60, y: 700, width: 200, height: 40, font });
+  const bytes = await doc.save();
+  const out = await fillPdf(bytes, form("pdf_acroform", [field("F-01", "Progress", { kind: "pdf_field", fieldName: "progress", fieldType: "text" }, { answerType: "long_text" })]), { "F-01": { text: LONG } }, { draft: true, flatten: true });
+  const pages = await pageItems(out);
+  const line = pages[0].find((it) => it.str.startsWith("DRAFT - awaiting clinician approval"));
+  const number = pages[0].find((it) => it.str === "3");
+  assert.ok(line && number);
+  // Viewport y runs down: the line's baseline sits above the top of the printed "3" (9 pt type).
+  assert.ok(line.y < number.y - 9 * 0.7, `the red line (${line.y}) clears the page number (${number.y})`);
+  assert.ok(line.pageHeight - line.y <= 34, "still at the foot of the page");
+  // The continuation sheet is shown at the same size as the form's page.
+  const filled = await PDFDocument.load(out);
+  assert.equal(filled.getPageCount(), 2);
+  const sheet = filled.getPage(1);
+  assert.deepEqual([Math.round(sheet.getWidth()), Math.round(sheet.getHeight())], [607, 853]);
+  const crop = sheet.getCropBox();
+  assert.deepEqual([Math.round(crop.width), Math.round(crop.height)], [607, 853]);
+});

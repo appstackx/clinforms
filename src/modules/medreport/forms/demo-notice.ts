@@ -36,7 +36,8 @@ export function normaliseDemoNotice(notice: string | undefined | null): string {
  * PDF
  * ----------------------------------------------------------------------------------------------*/
 
-const NOTICE_GREY = rgb(0.42, 0.45, 0.5);
+// Dark enough to read on coloured artwork (Aviva CM016's yellow back page) as well as on white.
+const NOTICE_GREY = rgb(0.28, 0.3, 0.34);
 /** Side margin of the notice line (pt). */
 const SIDE = 18;
 /** Final copies: baseline 8 pt above the visible bottom edge, 6.5 pt type. */
