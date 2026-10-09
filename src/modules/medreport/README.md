@@ -643,3 +643,28 @@ Bundles are deterministic (tenant `demo`, `fetchedAt` `2026-10-06T09:00:00.000Z`
 fresh copy. Put such tests under `scripts/medreport/**/*.test.ts` so `npm run test:medreport` runs them
 with the `server-only` shim. A module test that needs a full case without importing the sandbox should
 use an inline bundle, or a JSON snapshot it owns.
+
+## Tables and flat-PDF boxes (S2, RED demo)
+
+- **Table questions** (`answerType: "table"`, answer kind `"rows"`: `[{<column key>: <cell text>}, …]`).
+  Anchors: `pdf_table` (fillable PDF – `columns: [{key, header}]`, `rows: [{<key>: <field name>}]`, top to
+  bottom) and `pdf_overlay_table` (flat PDF – `page`, `columns: [{key, header, x, width}]`, `rowTops`,
+  `rowHeight`). Fill source `appointments_table` (`columns: {<key>: date|clinician|service|clinic|amount|paid}`)
+  is resolved by code from the attended appointments (`core/form-tables.ts`; amount/paid from
+  `appointment.charge` when the clinic system sends one, else blank). Rows beyond the printed table, and rows
+  too long for its cells, are printed on the continuation sheet as a table; a cell with its choices printed in
+  it ("Yes / No") gets the chosen word circled (`forms/pdf-table.ts`). The review shows the rows under the
+  printed headers; staff can edit cells and add or remove rows (`ui/components/review/table-answer*.ts*`).
+- **Detection:** `forms/pdf-table.ts` `detectPdfFieldTables()` – two or more columns of row-numbered fields
+  (`…Row1`, `…_2`), same left edge and width, plus numbered columns that line up with every row beside them
+  (Freedom's `YESNO7…1`, numbered bottom to top); rows always by position. Post-validation
+  (`ai/form-tables.ts`) turns the cell questions of a detected table into one table question, whatever
+  proposed the map.
+- **Flat PDFs:** `forms/pdf-boxes.ts` reads the printed answer boxes and tick boxes from the page drawing
+  (`PdfFormOutline.boxes`, kind `box` / `tick` – squares up to 18 pt; `slots` between printed slashes or comb
+  cells). Rules mode proposes one question per box / tick row (`ai/form-boxes.ts`); post-validation snaps any
+  overlay onto its printed box (inset 2 pt), adds `dateSlots` (DD / MM / YYYY between the slashes) and turns
+  yes/no and choices on tick boxes into `pdf_overlay_ticks` (an X in the chosen box,
+  `forms/pdf-overlay-marks.ts`). `FormDefinition.uppercase` (set when a flat form asks for BLOCK CAPITALS)
+  prints overlay text in capitals and is part of the attested map hash when set. The live outline lists the
+  boxes ("answer boxes: …", "tick boxes: …").

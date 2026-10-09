@@ -12,6 +12,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { tableCapacity } from "../../../core/form-tables";
 import type { FormAnswerRow, FormField } from "../../../core/types";
 import { cn } from "../../primitives";
+import { AutoTextarea } from "./review-ui";
 import { tableColumnsForReview } from "./table-answer-model";
 
 export interface TableAnswerProps {
@@ -44,7 +45,7 @@ export function TableAnswer({ questionKey, label, field, rows, readOnly, onChang
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full min-w-[32rem] border-collapse text-left text-[13px]">
+        <table className="w-full min-w-[36rem] border-collapse text-left text-[13px]">
           <caption className="sr-only">Answer to “{label}”</caption>
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
@@ -79,14 +80,21 @@ export function TableAnswer({ questionKey, label, field, rows, readOnly, onChang
                     {readOnly ? (
                       <span className="block px-1 py-0.5 text-slate-900">{row[c.key] || <span className="text-slate-400">–</span>}</span>
                     ) : (
-                      <input
-                        type="text"
+                      // Wraps and grows with its text, so a long treatment description stays readable.
+                      <AutoTextarea
+                        minRows={1}
                         aria-label={`${c.header || c.key}, row ${i + 1} of “${label}”`}
                         id={`table-${questionKey}-${i}-${c.key}`}
                         value={row[c.key] ?? ""}
-                        onChange={(e) => setCell(i, c.key, e.target.value)}
+                        onChange={(e) => setCell(i, c.key, e.target.value.replace(/\n/g, " "))}
                         onBlur={() => commit(draft)}
-                        className="h-8 w-full min-w-[5rem] rounded-md border border-transparent bg-transparent px-1 text-[13px] text-slate-900 hover:border-slate-200 focus:border-[#0D9488] focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className="min-w-[5rem] rounded-md border-transparent bg-transparent px-1 py-1 text-[13px] leading-snug shadow-none hover:border-slate-200 focus:bg-white"
                       />
                     )}
                   </td>

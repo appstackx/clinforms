@@ -5,6 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { formMapSha256 } from "../auth/attestations";
 import { checkFormDefinition } from "../core/forms";
 import type { FormField } from "../core/types";
 import { decodeFormFile } from "../forms/file";
@@ -128,4 +129,12 @@ test("a table whose cells were all left for the referrer stays blank", async () 
   const t = fields.find((f) => f.answerType === "table");
   assert.deepEqual(t?.fillSource, { kind: "leave_blank" });
   assert.equal(t?.required, false);
+});
+
+test("BLOCK CAPITALS is part of the attested map only when set (existing map hashes are unchanged)", async () => {
+  const { form } = await analyseFormFile({ file: decoded(await flatBoxesPdf()), fileName: "flat.pdf", mode: "demo", rulesOnly: true });
+  const { uppercase, ...without } = form;
+  assert.equal(uppercase, true);
+  assert.equal(formMapSha256(without), formMapSha256({ ...without, uppercase: false }), "absent and false hash alike");
+  assert.notEqual(formMapSha256(form), formMapSha256(without), "switching capitals on changes the attested map");
 });
