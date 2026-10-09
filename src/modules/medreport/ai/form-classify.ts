@@ -133,6 +133,15 @@ function registrationFor(label: string, inSignoff: boolean, sec = ""): { path: R
   if (/\b(?:claimant|patient|client|employee|home)(?:'s)? address\b|^address\s*:?$/.test(l)) return { path: "patient.address", identifier: true, answerType: "long_text" };
   if (/^age\b|\bage of (?:claimant|patient|employee)\b|\bage at\b/.test(l)) return { path: "patient.age", identifier: false, answerType: "number" };
   if (/^(?:sex|gender)\b/.test(l)) return { path: "patient.sex", identifier: false, answerType: "short_text" };
+  // The patient's title (Mr, Mrs, Ms…), often a radio group or tick boxes: "Title (please tick)".
+  if (
+    !inSignoff &&
+    !inClinicianSection(sec) &&
+    /^(?:(?:claimant|patient|client|member|policy ?holder|insured)(?:'s)? )?title(?: \((?:please )?(?:tick|circle|select|state)[^)]*\))?\s*:?$/.test(l)
+  ) {
+    const path = optionalPath("patient.title");
+    if (path) return { path, identifier: false, answerType: null };
+  }
   if (/\b(?:occupation|job title|job role|position held)\b/.test(l)) return { path: "patient.occupation", identifier: false, answerType: "short_text" };
   if (/\bemployer(?:'s name)?\s*:?$|\bname of employer\b/.test(l)) return { path: "patient.employer", identifier: false, answerType: "short_text" };
   if (MEMBERSHIP_NUMBER.test(l)) return { path: optionalPath("referral.membershipNumber") ?? "referral.reference", identifier: true, answerType: "short_text" };

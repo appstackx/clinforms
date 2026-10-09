@@ -176,6 +176,33 @@ test("PDF: rotated and cropped pages get the notice upright at their visible bot
   });
 });
 
+test("PDF: the red DRAFT line sits in the visible page of a print-ready file (crop box inside the media box, rotated)", async () => {
+  // As Aviva CM016: media box 652 × 899 with crop marks, crop box 607 × 853 offset by 22.68 pt.
+  const doc = await PDFDocument.create();
+  for (const angle of [0, 90, 180, 270]) {
+    const page = doc.addPage([652, 899]);
+    page.setCropBox(22.68, 22.68, 607, 853);
+    page.setRotation(degrees(angle));
+  }
+  const out = await renderFormFile({ form: form("pdf_flat", [], NOTICE), file: decoded(await doc.save(), PDF_MIME), answers: {}, draft: true, format: "original" });
+  const pages = await pageItems(out.bytes);
+  assert.equal(pages.length, 4);
+  pages.forEach((items, i) => {
+    const line = items.find((it) => it.str.startsWith("DRAFT - awaiting clinician approval"));
+    assert.ok(line, `page ${i + 1}: ${joined(items)}`);
+    const fromBottom = line.pageHeight - line.y;
+    assert.ok(fromBottom > 4 && fromBottom <= 20, `page ${i + 1}: the DRAFT line is ${fromBottom} pt above the visible bottom edge`);
+    assert.ok(line.dirX > 0 && Math.abs(line.dirY) < 1e-6, `page ${i + 1} reads left to right`);
+    const notice = items.find((it) => it.str.includes("Public form used for demonstration only"));
+    assert.ok(notice && notice.y > line.y + 4, `page ${i + 1}: the notice sits below the DRAFT line`);
+    // The diagonal watermark crosses the visible page at 45° (pdf.js may split its first letter off).
+    const mark = items.find((it) => it.str.includes("NOT A"));
+    assert.ok(mark, `page ${i + 1}: the watermark`);
+    assert.ok(mark.dirX > 0 && mark.dirY < 0 && Math.abs(mark.dirX + mark.dirY) < 1e-6, `page ${i + 1}: up and to the right`);
+    assert.ok(mark.x > 0 && mark.x < (i % 2 ? 853 : 607) / 2, `page ${i + 1}: starts in the left half of the visible page`);
+  });
+});
+
 test("normaliseDemoNotice: one printable line", () => {
   assert.equal(normaliseDemoNotice("  A\n notice\t here "), "A notice here");
   assert.equal(normaliseDemoNotice(undefined), "");

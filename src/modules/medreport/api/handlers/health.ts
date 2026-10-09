@@ -4,7 +4,7 @@ import "server-only";
  * GET /api/reports/v1/health → HealthResponse {product, version, aiMode, liveAiAvailable, model, promptVersion}.
  * Drives the Studio's mode badge. Never reveals whether individual secrets are set beyond liveAiAvailable.
  * promptVersion lists the three frozen prompts: built-in templates · referrer-form answers · form analysis
- * (e.g. "2 · forms-7 · form-analysis-3").
+ * (e.g. "2 · forms-7 · form-analysis-4").
  *
  * Owner: ai agent. (Baseline implementation by the foundation.)
  */

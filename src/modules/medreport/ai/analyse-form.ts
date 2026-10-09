@@ -42,7 +42,12 @@ import { demoAssetNotice, getRecordedFormAnalysis } from "./recorded-forms";
 import { blankPdfFormValues } from "../forms/pdf-blank";
 import { DraftGenerationError } from "./types";
 
-export const RULES_PROMPT_VERSION = "rules-1" as const;
+/**
+ * Version of the rules-mode reader. "rules-2" (RED wave 1): printed option labels, option-box groups and
+ * one-character date boxes, tables of fields, flat-PDF printed boxes, form sections and who completes
+ * each part.
+ */
+export const RULES_PROMPT_VERSION = "rules-2" as const;
 
 export interface AnalyseFormFileInput {
   file: DecodedFormFile;

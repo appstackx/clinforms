@@ -48,6 +48,7 @@ import {
   charFieldTexts,
   checkBoxChoice,
   chooseOptionIndex,
+  ensureTextFieldDA,
   fitMaxLength,
   onValueFor,
   pickExportValue,
@@ -224,15 +225,20 @@ function cutToFit(text: string, fits: (candidate: string) => boolean, markers: r
   return `${word}…`;
 }
 
-/** Largest size ≤ preferred at which the text fits the box; else the leading words with a marker, at the minimum size. */
+/**
+ * Largest size ≤ preferred at which the text fits the box; else the leading words with a marker, at the
+ * minimum size. A preferred size below the minimum (a form whose fields ask for 6 or 7 pt) starts at the
+ * minimum: answers are never printed smaller than MIN_FONT, and a short answer is not "cut".
+ */
 export function fitText(
   text: string,
   font: PDFFont,
   box: { width: number; height: number },
-  preferred: number,
+  preferredSize: number,
   multiline: boolean,
   opts: FitTextOptions = {},
 ): Fit {
+  const preferred = Math.max(MIN_FONT, preferredSize);
   const lh = (size: number) => lineHeight(font, size, opts.lineHeightFactor);
   const fitsLines = (t: string, size: number, maxLines = Infinity) => {
     const n = wrapText(t, font, size, box.width).length;
@@ -309,6 +315,7 @@ function cutError(field: FormField, max: number, full: string, written: string):
 }
 
 function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string, answer: FormFillAnswer = {}): void {
+  ensureTextFieldDA(ctx.pdfForm, tf);
   const widget = tf.acroField.getWidgets()[0];
   let text = encodeAnswer(ctx, field, raw);
   const max = tf.getMaxLength();
@@ -454,6 +461,7 @@ function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anch
     }
     const ch = res.chars[i] ?? "";
     if (!ch.trim()) return;
+    ensureTextFieldDA(ctx.pdfForm, pdfField);
     const widget = pdfField.acroField.getWidgets()[0];
     const box = widget ? widget.getRectangle() : { width: 16, height: 16 };
     pdfField.setText(ch);
@@ -537,26 +545,56 @@ function addContinuationSheet(ctx: Ctx): void {
   }
 }
 
+/** A page's /Rotate as a quarter turn (0, 90, 180 or 270). */
+export function pageQuarterTurn(page: PDFPage): 0 | 90 | 180 | 270 {
+  const r = ((Math.round(page.getRotation().angle / 90) * 90) % 360 + 360) % 360;
+  return r === 90 || r === 180 || r === 270 ? r : 0;
+}
+
+/**
+ * A point of the page as a reader shows it – the crop box, turned by /Rotate – in user space, where it
+ * is drawn (with `rotate: degrees(quarter)` the text reads left to right on screen). Origin: the visible
+ * bottom-left corner.
+ */
+export function visibleToUserSpace(box: { x: number; y: number; width: number; height: number }, quarter: 0 | 90 | 180 | 270, vx: number, vy: number): { x: number; y: number } {
+  const x0 = box.x;
+  const y0 = box.y;
+  const x1 = box.x + box.width;
+  const y1 = box.y + box.height;
+  switch (quarter) {
+    case 90:
+      return { x: x1 - vy, y: y0 + vx };
+    case 180:
+      return { x: x1 - vx, y: y1 - vy };
+    case 270:
+      return { x: x0 + vy, y: y1 - vx };
+    default:
+      return { x: x0 + vx, y: y0 + vy };
+  }
+}
+
+/**
+ * The DRAFT watermark and the red line at the foot of every page, placed in the VISIBLE page (crop box
+ * and /Rotate): a print-ready file whose media box is larger than its crop box (Aviva CM016) would
+ * otherwise have the line drawn outside what readers show.
+ */
 function drawDraftMarks(ctx: Ctx): void {
   const label = "DRAFT - NOT APPROVED";
   const note = "DRAFT - awaiting clinician approval - not for issue";
   for (const page of ctx.doc.getPages()) {
-    const { width: W, height: H } = page.getSize();
+    const box = page.getCropBox();
+    const quarter = pageQuarterTurn(page);
+    const W = quarter === 90 || quarter === 270 ? box.height : box.width;
+    const H = quarter === 90 || quarter === 270 ? box.width : box.height;
     const size = Math.min(W, H) / 8.5;
     const w = ctx.bold.widthOfTextAtSize(label, size);
     const h = size * 0.7;
     const t = Math.PI / 4;
-    page.drawText(label, {
-      x: W / 2 - (w / 2) * Math.cos(t) + (h / 2) * Math.sin(t),
-      y: H / 2 - (w / 2) * Math.sin(t) - (h / 2) * Math.cos(t),
-      size,
-      font: ctx.bold,
-      color: DRAFT_RED,
-      opacity: 0.16,
-      rotate: degrees(45),
-    });
+    const mark = visibleToUserSpace(box, quarter, W / 2 - (w / 2) * Math.cos(t) + (h / 2) * Math.sin(t), H / 2 - (w / 2) * Math.sin(t) - (h / 2) * Math.cos(t));
+    page.drawText(label, { ...mark, size, font: ctx.bold, color: DRAFT_RED, opacity: 0.16, rotate: degrees(45 + quarter) });
     const nw = ctx.bold.widthOfTextAtSize(note, 7.5);
-    page.drawText(note, { x: (W - nw) / 2, y: 12, size: 7.5, font: ctx.bold, color: DRAFT_RED });
+    const at = visibleToUserSpace(box, quarter, (W - nw) / 2, 12);
+    page.drawText(note, { ...at, size: 7.5, font: ctx.bold, color: DRAFT_RED, rotate: degrees(quarter) });
   }
 }
 

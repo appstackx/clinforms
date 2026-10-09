@@ -2,14 +2,25 @@
  * Unit tests for the AcroForm answer helpers (forms/pdf-acro-fill.ts) and the text fitting of
  * forms/pdf-fill.ts: option choice by printed label, radio export values through optionLabels, dates in
  * 8 / 6-character boxes, spaces and separators taken out before a value is cut, one character per box,
- * unreadable (white) tick colours, two-line single-line boxes and the continuation markers.
+ * unreadable (white) tick colours, two-line single-line boxes and the continuation markers, and text
+ * fields whose default appearance is inherited (fillPdf must not throw on them).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import type { PdfFieldAnchor } from "../core/types";
-import { charFieldTexts, chooseOptionIndex, dateDigits, fitMaxLength, isLightDaColour, labelsForExportValues, pickExportValue, wantedOf } from "./pdf-acro-fill";
-import { fitText } from "./pdf-fill";
+import { PDFDocument, PDFName, PDFString, StandardFonts } from "pdf-lib";
+import type { FormDefinition, PdfFieldAnchor } from "../core/types";
+import {
+  charFieldTexts,
+  chooseOptionIndex,
+  dateDigits,
+  ensureTextFieldDA,
+  fitMaxLength,
+  isLightDaColour,
+  labelsForExportValues,
+  pickExportValue,
+  wantedOf,
+} from "./pdf-acro-fill";
+import { fillPdf, fitText } from "./pdf-fill";
 
 const BUPA_EXPORTS = ["Choice1", "Choice2", "Choice3", "Choice4", "Choice5", "Choice6"];
 const BUPA_ANCHOR: PdfFieldAnchor = {
@@ -114,4 +125,66 @@ test("fitText: never only the marker in a box – shorter markers, then the lead
   const long = Array.from({ length: 30 }, (_, i) => `Sentence ${i + 1} of the answer.`).join(" ");
   const multi = fitText(long, font, { width: 200, height: 40 }, 9, true);
   assert.match(multi.text, /^Sentence 1 of the answer\.[\s\S]*… \(continued on the continuation sheet\)$/);
+});
+
+test("text fields whose /DA is inherited (widget, parent field, AcroForm) are filled, not a crash", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  const form = doc.getForm();
+  const names = ["Policy Number", "Widget DA", "No DA anywhere", "Colour only"];
+  names.forEach((name, i) => form.createTextField(name).addToPage(page, { x: 100, y: 700 - i * 40, width: 200, height: 18, font }));
+  const acroDict = (name: string) => form.getTextField(name).acroField.dict;
+  // As on Allianz Care's form: no /DA on the field itself, one on the AcroForm dictionary.
+  form.acroForm.dict.set(PDFName.of("DA"), PDFString.of("/Helv 9 Tf 0 0 0.5 rg"));
+  acroDict("Policy Number").delete(PDFName.of("DA"));
+  acroDict("Widget DA").delete(PDFName.of("DA"));
+  form.getTextField("Widget DA").acroField.getWidgets()[0].setDefaultAppearance("/Helv 7 Tf 0 g");
+  acroDict("Colour only").set(PDFName.of("DA"), PDFString.of("0.2 g"));
+  const bytes = await doc.save();
+
+  // The helper alone: the inherited value is copied onto the field, with a font operator.
+  const reloaded = await PDFDocument.load(bytes);
+  const f = reloaded.getForm();
+  for (const name of names) ensureTextFieldDA(f, f.getTextField(name));
+  assert.equal(f.getTextField("Policy Number").acroField.getDefaultAppearance(), "/Helv 9 Tf 0 0 0.5 rg");
+  assert.equal(f.getTextField("Widget DA").acroField.getDefaultAppearance(), "/Helv 7 Tf 0 g");
+  assert.equal(f.getTextField("Colour only").acroField.getDefaultAppearance(), "/Helv 9 Tf 0 0 0.5 rg", "the form's own font size and colour");
+
+  // End to end: fillPdf writes every box.
+  const fields = names.map((name, i) => ({
+    id: `F-0${i + 1}`,
+    label: name,
+    guidance: "",
+    answerType: "short_text" as const,
+    anchor: { kind: "pdf_field" as const, fieldName: name, fieldType: "text" as const },
+    fillSource: { kind: "notes_narrative" as const },
+    required: true,
+    confidence: "high" as const,
+  }));
+  const map = {
+    id: "frm_da_test",
+    tenantId: "demo",
+    referrer: { name: "Test Insurer (fictional)", type: "insurer" },
+    title: "DA test (fictional)",
+    file: { fileName: "t.pdf", mimeType: "application/pdf", sha256: "0".repeat(64), sizeBytes: 1 },
+    kind: "pdf_acroform",
+    fields,
+    status: "confirmed",
+    analysis: { mode: "rules", promptVersion: "test", at: "2026-10-09T09:00:00.000Z", warnings: [] },
+    createdAt: "2026-10-09T09:00:00.000Z",
+    updatedAt: "2026-10-09T09:00:00.000Z",
+  } as FormDefinition;
+  const answers = Object.fromEntries(fields.map((x) => [x.id, { text: `DEMO-${x.id}` }]));
+  // A draft that is not flattened keeps the fields, so their values can be read back.
+  const out = await fillPdf(bytes, map, answers, { draft: true, flatten: false });
+  const filled = (await PDFDocument.load(out)).getForm();
+  for (const x of fields) assert.equal(filled.getTextField(x.anchor.fieldName).getText(), `DEMO-${x.id}`);
+});
+
+test("fitText: a field that asks for less than 8 pt still takes a short answer whole, at 8 pt", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  assert.deepEqual(fitText("DEMO-F-02", font, { width: 190, height: 14 }, 7, false), { size: 8, text: "DEMO-F-02", overflow: false });
+  assert.equal(fitText("A short note.", font, { width: 190, height: 40 }, 6, true).overflow, false);
 });

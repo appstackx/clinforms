@@ -38,6 +38,9 @@ src/modules/medreport/
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
     forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
     form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
+    form-tables.ts        table answers ("rows"): the appointments table filled by code, row helpers (pure)
+    question-set.ts       portal question sets (FormKind "questions"): parse pasted questions, classify, placeholder file
+    answer-copy.ts        "Copy answers" text (one answer, all answers, .txt) shared with the question-set summary PDF
     parties.ts            who completes which part of a form ("to be completed by the policyholder", "Therapist's declaration")
     voice.ts              first-person rewrite, note shorthand expansion, job-title casing (pure)
     computed-facts.ts     FACT-attendance / -age / -episode / -outcomes-*
@@ -58,12 +61,15 @@ src/modules/medreport/
     generate.ts draft-live.ts draft-demo.ts assemble.ts   drafting entry, live call, demo/recorded lookup, assembly
     demo-format.ts demo-drafts/*.json  recorded drafts: {patientId}__{templateId}.json, {patientId}__form-{sampleId}.json
     analyse-form.ts                   form analysis entry: stored map (recorded / pre-written) → live Claude → rules
-                                      (prompt "form-analysis-3" in form-analysis.ts)
+                                      (prompt "form-analysis-4" in form-analysis.ts; rules reader "rules-2")
     form-analysis.ts form-analysis-schema.ts form-outline.ts form-classify.ts form-postvalidate.ts form-rules.ts
+    pdf-groups.ts                     option-box groups and one-character date boxes for the analysis
+    form-boxes.ts form-tables.ts      flat-PDF printed boxes → questions / snapping; table-of-fields → one table question
     recorded-forms.ts recorded/forms/*.json   recorded Claude analyses of the sample forms (by file SHA-256)
     demo-assets.ts                    DEV/DEMO ONLY: local demonstration forms' maps and answers (MEDREPORT_DEMO_ASSETS_DIR)
   templates/              built-in FALLBACK templates: registry.ts (+ extensions.ts), generated/*.docx.b64.ts
   docgen/                 server-only: built-in template rendering – view-model, docx, docx-validate, pdf, pdf/*
+                          (+ question-summary.ts: the PDF summary of a portal question set)
   forms/                  server-only: the referrer-form engine
     file.ts               decodeFormFile (type from bytes, size cap, SHA-256), assertFormFileMatches
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
@@ -71,7 +77,11 @@ src/modules/medreport/
     docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
     pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
+    pdf-widgets.ts        printed label beside each radio / tick-box widget; runs of one-character boxes
+    pdf-boxes.ts          flat PDFs: printed answer boxes and tick boxes read from the page drawing
     pdf-fill.ts           fillPdf(buf, form, answers, opts) → Promise<Uint8Array> (shrink to fit, continuation sheet, flatten)
+    pdf-acro-fill.ts      AcroForm answers: ticks per widget, radio labels, option fields, character limits, inherited /DA
+    pdf-table.ts pdf-overlay-marks.ts   tables of fields / flat tables; X marks in flat tick boxes, date slots
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
     demo-notice.ts        demonstration footer (FormDefinition.demoNotice) on every page: PDF bottom margin, Word footer
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)
@@ -679,11 +689,10 @@ Additive contract changes for private medical insurance forms (Bupa, AXA, Aviva�
   does not fit the question (an unprinted option, "maybe" for Yes/No) is left blank with a `-fixed` gap, and
   `checkFormDefinition` refuses to confirm a map with a missing or misfitting fixed answer. The live
   analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` is unchanged).
-- **Not done here (integrator):** the form-analysis prompt text (`ai/form-analysis.ts`, `form-analysis-3`)
-  still lists only the earlier paths, although its output enum is built from `RegistrationPathSchema` and so
-  already accepts the new ones – describe them there and bump `FORM_ANALYSIS_PROMPT_VERSION`; the rules
-  classifier (`ai/form-classify.ts`) still sends membership / authorisation / phone / email labels to
-  drafting; the file-import format has no insurer fields or charges.
+- **Not done here:** the form-analysis prompt TEXT still lists only the earlier paths (its output enum
+  already accepts the new ones; see "RED wave 1 integration" for the version bump and what a later prompt
+  change should add); the file-import format has no insurer fields or charges. The rules classifier now maps
+  membership / authorisation / phone / e-mail / title labels to the new paths (S3 + integration).
 
 ## Demo data
 
@@ -775,3 +784,68 @@ use an inline bundle, or a JSON snapshot it owns.
   `forms/pdf-overlay-marks.ts`). `FormDefinition.uppercase` (set when a flat form asks for BLOCK CAPITALS)
   prints overlay text in capitals and is part of the attested map hash when set. The live outline lists the
   boxes ("answer boxes: …", "tick boxes: …").
+
+## RED wave 1 integration (09/10/2026)
+
+Six slices built in parallel off `demo/red-physio` and merged in this order (`git merge --no-ff`):
+S4 data/patient → S1 fillable PDFs → S2 tables + flat boxes → S3 sections + parties → S5 demo assets +
+footer → S6 copy answers + portal questions. Every exhaustive switch now covers every new anchor
+(`pdf_char_fields`, `pdf_table`, `pdf_overlay_table`, `pdf_overlay_ticks`), fill source (`fixed`,
+`appointments_table`), answer type (`table`) and form kind (`questions`). Cross-slice regression tests:
+`scripts/medreport/red-integration.test.ts`.
+
+**Integration fixes (each with a test):**
+- `formAnchorPdfFieldNames` includes a fillable table's cells: the preview highlights them, post-validation
+  orders the table by its first cell, and picking one of the table's own cells keeps the table anchor.
+- A table filled from the appointments counts as "from records" in the question breakdown; a `fixed`
+  answer on a table gives one problem, not two; `resolveFixedValue` never returns rows.
+- `core/form-tables.ts` reads the typed `AppointmentSchema.charge` (S4) – fee and paid columns fill.
+- Sections and parties (S3) reach the new answer spaces: rules mode gives flat-PDF box questions and
+  character / option groups the section printed above them; post-validation looks up `pdf_char_fields`,
+  `pdf_table`, `pdf_overlay_ticks` and `pdf_overlay_table` too.
+- `ai/form-classify.ts`: "Title (please tick)" → `patient.title` (Bupa's radio now ticks Mrs for Case C).
+- Portal question sets: "Membership number" / "Authorisation code" → `referral.membershipNumber` /
+  `referral.authorisationNumber` (withheld on another insurer's questions, as on forms).
+- `forms/pdf-acro-fill.ts` `ensureTextFieldDA`: a text field whose `/DA` sits on its widget, parent or the
+  AcroForm (Allianz Care's pre-authorisation form) no longer crashes the fill (pdf-lib's `setFontSize`
+  reads only the field's own `/DA`).
+- `fitText` never starts below 8 pt: a field asking for 6–7 pt took every answer as "too long" and sent it
+  to the continuation sheet.
+- The red DRAFT line and watermark are placed in the VISIBLE page (crop box and `/Rotate`), like the demo
+  notice: on Aviva CM016 (media box larger than the crop box) the line used to fall outside the page.
+
+**Prompt versions (decision).** The live analysis request changed without a prompt-text change: the
+structured output gained a required `completedBy` (S3) and eight registration paths (S4), and the outline
+gained `printed=[…]` labels, `character-boxes=N` groups (S1), `answer boxes:` / `tick boxes:` lines (S2)
+and `section=… completedBy=…` markers (S3). `FORM_ANALYSIS_PROMPT_VERSION` is therefore bumped to
+**`form-analysis-4`** (the text itself is still the form-analysis-3 text), and the rules reader to
+**`rules-2`**. A bump breaks nothing recorded: the four recorded analyses keep their own
+`"form-analysis-3"` stamp and are stored `FormDefinition`s, matched by file SHA-256 and validated by
+`FormDefinitionSchema`, where every new member is optional (pinned by a test). `forms-7` (drafting) is
+unchanged – no slice changed what drafting sends.
+
+**What the live analysis can already produce** (post-validation builds the anchors from the outline,
+whatever proposed the map – pinned by the fake-client tests in `red-integration.test.ts`): `optionLabels`
+(from the outline's printed labels), `optionFields` (from `optionAnchors` on PDF tick boxes),
+`pdf_char_fields` (any box of a character group), `pdf_table` (per-cell questions of a detected table),
+`pdf_overlay_ticks` and `dateSlots` (overlays snapped onto printed boxes) and `completedBy` (live schema;
+the outline's party wins). `demoNotice`, `uppercase` and `fixed` are set by code or staff, not the model.
+
+**Left for a later live-prompt change** (needs the rotated key and a live sweep over the four sample forms
+and the RED insurer forms, then re-recording if the maps change – bump to `form-analysis-5`):
+describe the new outline markers in "## The input"; list the eight new registration paths under
+fillSource; explain `completedBy` and that another party's part is `leave_blank`; replace "Separate Yes/No
+tick-box fields: map the question to the 'Yes' box" with "one box per option: list every box in
+optionAnchors with its printed option"; flat PDFs: put the overlay inside the printed box, a tick row as one
+overlay over its boxes; tables: map the table once (code merges the cells). Also consider describing table
+questions for question sets in `forms-7` (S6) – a drafting prompt change.
+
+**Real insurer PDFs (rules mode, scratch smoke run, Case C):** Bupa 26 questions (title Mrs, DOB and
+declaration date in the comb boxes, membership DEMO-POL-0001, sign-off only in the therapist's
+declaration); AXA 31 (5 character-box dates, option groups, referred Yes ticked visibly); Aviva CM016 50
+box questions (section 4 is "medical practitioner" → left blank in rules mode; the hand map decides);
+GEN030 15; Freedom 35 with one 7 × 5 appointments table (fees £70 / £55, paid circled, last unpaid);
+Allianz Care 68, fills now, but its split Day / Month / Year boxes and phone parts are not grouped (S2
+reads two of them as small leave-blank "tables") and most of its fields get no party in rules mode
+(section 1 is the patient's, section 2 the doctor's) – a hand map is needed before it is shown. Rules maps still need staff checking (or the hand-made demo maps) before the call.
+

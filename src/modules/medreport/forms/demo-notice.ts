@@ -24,7 +24,7 @@ import "server-only";
 import { DOMParser, XMLSerializer, type Document as XmlDocument, type Element as XmlElement } from "@xmldom/xmldom";
 import { StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import PizZip from "pizzip";
-import { makeEncoder, wrapText } from "./pdf-fill";
+import { makeEncoder, pageQuarterTurn, visibleToUserSpace, wrapText } from "./pdf-fill";
 import { loadPdfDocument } from "./pdf-outline";
 
 /** The notice as printed: one line of plain text, or "" when there is none. */
@@ -45,28 +45,9 @@ const FINAL = { baseline: 8, size: 6.5 } as const;
 const DRAFT = { baseline: 3.5, size: 6 } as const;
 const MIN_SIZE = 4.5;
 
-/** A point in the page's visible (rotated, cropped) frame → user space, for /Rotate 0, 90, 180 or 270. */
-function toUserSpace(box: { x: number; y: number; width: number; height: number }, rotation: number, vx: number, vy: number): { x: number; y: number } {
-  const x0 = box.x;
-  const y0 = box.y;
-  const x1 = box.x + box.width;
-  const y1 = box.y + box.height;
-  switch (rotation) {
-    case 90:
-      return { x: x1 - vy, y: y0 + vx };
-    case 180:
-      return { x: x1 - vx, y: y1 - vy };
-    case 270:
-      return { x: x0 + vy, y: y1 - vx };
-    default:
-      return { x: x0 + vx, y: y0 + vy };
-  }
-}
-
 function drawNoticeOnPage(page: PDFPage, font: PDFFont, text: string, draft: boolean): void {
   const box = page.getCropBox();
-  const rotation = (((page.getRotation().angle % 360) + 360) % 360) as number;
-  const quarter = rotation === 90 || rotation === 270 ? rotation : rotation === 180 ? 180 : 0;
+  const quarter = pageQuarterTurn(page);
   const visibleWidth = quarter === 90 || quarter === 270 ? box.height : box.width;
   const maxWidth = Math.max(40, visibleWidth - 2 * SIDE);
   const spec = draft ? DRAFT : FINAL;
@@ -77,7 +58,7 @@ function drawNoticeOnPage(page: PDFPage, font: PDFFont, text: string, draft: boo
   lines.forEach((line, i) => {
     const vy = spec.baseline + (lines.length - 1 - i) * lineHeight;
     const vx = Math.max(SIDE, (visibleWidth - font.widthOfTextAtSize(line, size)) / 2);
-    const at = toUserSpace(box, quarter, vx, vy);
+    const at = visibleToUserSpace(box, quarter, vx, vy);
     page.drawText(line, { x: at.x, y: at.y, size, font, color: NOTICE_GREY, rotate: degrees(quarter) });
   });
 }

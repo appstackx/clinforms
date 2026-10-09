@@ -22,6 +22,7 @@ import "server-only";
  */
 import { PDFCheckBox, PDFTextField, rgb, type PDFDocument, type PDFFont, type PDFForm, type PDFPage } from "pdf-lib";
 import { appointmentColumnFromHeader } from "../core/form-tables";
+import { ensureTextFieldDA, onValueFor, setCheckBoxState } from "./pdf-acro-fill";
 import { widgetPage, widgetPageIndex } from "./pdf-outline";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 import type { FormAnswerRow, FormField, FormTableColumn, PdfFormOutline, PdfOutlineField, PdfOverlayTableAnchor, PdfTableAnchor } from "../core/types";
@@ -433,10 +434,12 @@ export async function fillPdfFieldTable(deps: TableFillDeps, field: FormField, a
         continue;
       }
       if (pdfField instanceof PDFCheckBox) {
-        if (isYes(raw)) pdfField.check();
+        // Every widget's state set by hand, with a visible tick (forms/pdf-acro-fill.ts).
+        if (isYes(raw)) setCheckBoxState(pdfField, onValueFor(pdfField, undefined));
         continue;
       }
       if (!(pdfField instanceof PDFTextField)) continue;
+      ensureTextFieldDA(deps.pdfForm, pdfField);
       const text = deps.encode(raw);
       const widget = pdfField.acroField.getWidgets()[0];
       const max = pdfField.getMaxLength();

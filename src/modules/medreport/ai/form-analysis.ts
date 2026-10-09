@@ -24,7 +24,18 @@ import { AnalysisOutputSchema, LenientAnalysisOutputSchema, type AnalysisFieldOu
 import { chunkParsedForm, renderDocxOutline, renderPdfOutline, type AnalysisChunk, type ParsedForm } from "./form-outline";
 import { neutraliseTags } from "./prompts";
 
-export const FORM_ANALYSIS_PROMPT_VERSION = "form-analysis-3" as const;
+/**
+ * "form-analysis-4" (RED wave 1 integration, 09/10/2026): the system prompt TEXT is still the
+ * form-analysis-3 text, but the request changed, so the label did too. The structured output gained a
+ * required `completedBy` per field and eight registration paths (patient.title / phone / email,
+ * clinic.phone / email, referral.insurerName / membershipNumber / authorisationNumber), and the outline
+ * now shows printed labels per widget (printed=[…]), one-character box runs as one answer space
+ * (character-boxes=N), flat-PDF "answer boxes:" / "tick boxes:" lines and section=… completedBy=…
+ * markers. Recorded analyses keep their own "form-analysis-3" stamp and still load: they are stored
+ * FormDefinitions, and every new member is optional there. Not yet re-swept live (no key): describing
+ * these markers in the prompt text is a later prompt change (README "RED wave 1 integration").
+ */
+export const FORM_ANALYSIS_PROMPT_VERSION = "form-analysis-4" as const;
 
 /**
  * Effort for live analysis. Measured on claude-sonnet-5-5 (09/10/2026, the four sample forms, README →

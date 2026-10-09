@@ -18,10 +18,13 @@ import "server-only";
  *   other answers lose spaces and separators before anything is cut, and a cut answer is an ERROR
  *   (the form would be wrong), never a quiet warning (fitMaxLength).
  * - One-character boxes (pdf_char_fields): one character per box (charFieldTexts).
+ * - Text fields whose default appearance (/DA) sits on the widget, a parent field or the form itself
+ *   (Allianz Care's pre-authorisation form): pdf-lib's setFontSize() reads only the field's own /DA and
+ *   throws, so ensureTextFieldDA() copies the inherited one onto the field first.
  *
  * Owner: forms-engine agent.
  */
-import { PDFName, type PDFCheckBox, type PDFFont, type PDFWidgetAnnotation } from "pdf-lib";
+import { PDFDict, PDFHexString, PDFName, PDFString, type PDFCheckBox, type PDFFont, type PDFForm, type PDFTextField, type PDFWidgetAnnotation } from "pdf-lib";
 import { isUnknownAnswer, matchOption, type FormFillAnswer } from "../core/forms";
 import { isValidIsoDate, parseUkDate } from "../core/dates";
 import type { FormField, PdfCharFieldsAnchor, PdfFieldAnchor } from "../core/types";
@@ -282,4 +285,47 @@ export function charBoxFontSize(font: PDFFont, daSize: number | null, box: { wid
   let size = Math.min(daSize || 10, Math.max(6, box.height - 4));
   while (size > 6 && font.widthOfTextAtSize("W", size) > box.width - 2) size -= 0.5;
   return size;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Default appearance of a text field
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A font operator in a /DA string, as pdf-lib's setFontSize() looks for it. */
+const DA_TF_RE = /\/[^\0\t\n\f\r ]+[\0\t\n\f\r ]*(?:\d*\.\d+|\d+)?[\0\t\n\f\r ]+Tf/;
+/** A colour operator (gray, RGB or CMYK) in a /DA string. */
+const DA_COLOUR_RE = /(?:^|\s)(?:g|rg|k)(?:\s|$)/;
+
+function daOf(dict: PDFDict | undefined): string | undefined {
+  const da = dict?.lookup(PDFName.of("DA"));
+  if (da instanceof PDFString) return da.asString();
+  if (da instanceof PDFHexString) return da.decodeText();
+  return undefined;
+}
+
+/**
+ * Give a text field its own default appearance (/DA) with a font operator, so its font size can be set.
+ * PDF readers inherit /DA from the widget, the parent fields and the form's AcroForm dictionary; pdf-lib
+ * reads only the field's own entry and setFontSize() throws without one (MissingDAEntryError /
+ * MissingTfOperatorError). The inherited value is copied (colour kept); "/Helv 0 Tf 0 g" when the form
+ * gives none. The appearance is redrawn with the embedded font afterwards, so the font name only has to
+ * be well-formed.
+ */
+export function ensureTextFieldDA(pdfForm: PDFForm, tf: PDFTextField): void {
+  const acro = tf.acroField;
+  const own = acro.getDefaultAppearance();
+  if (own && DA_TF_RE.test(own)) return;
+  const candidates: Array<string | undefined> = [own];
+  for (const w of acro.getWidgets()) candidates.push(w.getDefaultAppearance());
+  let parent = acro.dict.lookup(PDFName.of("Parent"));
+  for (let depth = 0; parent instanceof PDFDict && depth < 16; depth += 1) {
+    candidates.push(daOf(parent));
+    parent = parent.lookup(PDFName.of("Parent"));
+  }
+  candidates.push(daOf(pdfForm.acroForm.dict));
+  const present = candidates.filter((d): d is string => Boolean(d && d.trim()));
+  const withFont = present.find((d) => DA_TF_RE.test(d));
+  let da = withFont ?? `${present[0] ?? ""} /Helv 0 Tf`.trim();
+  if (!DA_COLOUR_RE.test(da)) da = `${da} 0 g`;
+  acro.setDefaultAppearance(da);
 }

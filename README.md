@@ -153,12 +153,12 @@ variables".
 ```bash
 npx tsc --noEmit          # or: npm run typecheck
 npm run lint              # includes the import-boundary rules
-npm run test:medreport    # node:test over src/modules/medreport/**/*.test.ts and scripts/medreport/**/*.test.ts
+npm run test:medreport    # node:test over src/modules/medreport, scripts/medreport and src/sandbox *.test.ts
 npm run build
 ```
 
 `test:medreport` loads `scripts/medreport/test-setup.mjs` (maps `server-only` to an empty module) and
-runs the TypeScript tests with `tsx` – 243 tests, no network, no API key needed.
+runs the TypeScript tests with `tsx` – 410 tests (RED wave 1, 09/10/2026), no network, no API key needed.
 
 Other scripts (run with `node --env-file=.env.local --import ./scripts/medreport/test-setup.mjs --import tsx <script>`
 unless noted):
