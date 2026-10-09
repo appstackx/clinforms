@@ -1,5 +1,5 @@
 /** `tenant_settings` – per-tenant settings (today: the referrer → form links of the Studio). */
-import { assertTenantId, jsonOrNull, nowIso, type RepoContext } from "./context";
+import { assertTenantId, jsonOrNull, nowIso, type DbContext } from "./context";
 
 export interface TenantSettings<L = unknown> {
   tenantId: string;
@@ -9,7 +9,7 @@ export interface TenantSettings<L = unknown> {
 
 const MAX_SETTINGS_BYTES = 256 * 1024;
 
-export async function getTenantSettings<L = unknown>(ctx: RepoContext, tenantId: string): Promise<TenantSettings<L> | null> {
+export async function getTenantSettings<L = unknown>(ctx: DbContext, tenantId: string): Promise<TenantSettings<L> | null> {
   assertTenantId(tenantId);
   const row = await ctx.db
     .selectFrom("tenant_settings")
@@ -20,7 +20,7 @@ export async function getTenantSettings<L = unknown>(ctx: RepoContext, tenantId:
   return { tenantId: row.tenant_id, referrerLinks: JSON.parse(row.referrer_links_json) as L, updatedAt: row.updated_at };
 }
 
-export async function putTenantSettings<L>(ctx: RepoContext, tenantId: string, referrerLinks: L): Promise<TenantSettings<L>> {
+export async function putTenantSettings<L>(ctx: DbContext, tenantId: string, referrerLinks: L): Promise<TenantSettings<L>> {
   assertTenantId(tenantId);
   const json = jsonOrNull(referrerLinks ?? {}, "referrerLinks", MAX_SETTINGS_BYTES) ?? "{}";
   const at = nowIso(ctx);
@@ -32,7 +32,7 @@ export async function putTenantSettings<L>(ctx: RepoContext, tenantId: string, r
   return { tenantId, referrerLinks, updatedAt: at };
 }
 
-export async function deleteTenantSettings(ctx: RepoContext, tenantId: string): Promise<boolean> {
+export async function deleteTenantSettings(ctx: DbContext, tenantId: string): Promise<boolean> {
   assertTenantId(tenantId);
   const result = await ctx.db.deleteFrom("tenant_settings").where("tenant_id", "=", tenantId).executeTakeFirst();
   return Number(result.numDeletedRows) > 0;

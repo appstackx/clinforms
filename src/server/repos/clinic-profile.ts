@@ -11,7 +11,7 @@ import {
   parseJson,
   toBool,
   toInt,
-  type RepoContext,
+  type DbContext,
 } from "./context";
 
 export interface ClinicProfile {
@@ -74,14 +74,14 @@ function toProfile(row: {
   };
 }
 
-export async function getClinicProfile(ctx: RepoContext, tenantId: string): Promise<ClinicProfile | null> {
+export async function getClinicProfile(ctx: DbContext, tenantId: string): Promise<ClinicProfile | null> {
   assertTenantId(tenantId);
   const row = await ctx.db.selectFrom("clinic_profile").selectAll().where("tenant_id", "=", tenantId).executeTakeFirst();
   return row ? toProfile(row) : null;
 }
 
 /** Creates or replaces the tenant's profile (created_at is kept on update). */
-export async function upsertClinicProfile(ctx: RepoContext, tenantId: string, input: ClinicProfileInput): Promise<ClinicProfile> {
+export async function upsertClinicProfile(ctx: DbContext, tenantId: string, input: ClinicProfileInput): Promise<ClinicProfile> {
   assertTenantId(tenantId);
   const retentionDays = input.retentionDays ?? 365;
   if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 36500) {
@@ -112,7 +112,7 @@ export async function upsertClinicProfile(ctx: RepoContext, tenantId: string, in
   return saved;
 }
 
-export async function deleteClinicProfile(ctx: RepoContext, tenantId: string): Promise<boolean> {
+export async function deleteClinicProfile(ctx: DbContext, tenantId: string): Promise<boolean> {
   assertTenantId(tenantId);
   const result = await ctx.db.deleteFrom("clinic_profile").where("tenant_id", "=", tenantId).executeTakeFirst();
   return Number(result.numDeletedRows) > 0;

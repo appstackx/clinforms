@@ -9,8 +9,13 @@
  * - booleans are INTEGER 0/1 in our own tables;
  * - JSON and ciphertext are TEXT (code parses / decrypts).
  *
- * Only our own tables live here. Better Auth's tables (user, session, account, verification, twoFactor,
- * organization, member, invitation) are added by the auth slice in migration 0002.
+ * Better Auth's tables (user, session, account, verification, twoFactor, organization, member, invitation,
+ * rateLimit) come from migration 0002, generated per dialect by Better Auth itself
+ * (scripts/db/gen-auth-migrations.ts): camelCase columns; booleans INTEGER 0/1 in SQLite/D1 and boolean in
+ * Postgres; dates ISO TEXT in SQLite/D1 and timestamptz in Postgres (read back as ISO strings through
+ * getDb(); src/server/auth/pg-dates.ts turns them into Dates for Better Auth only). Better Auth owns
+ * writes to them – our code reads them (and the platform scripts write a few rows through Better Auth's
+ * adapter).
  */
 import type { ColumnType, Insertable, Selectable } from "kysely";
 
@@ -19,6 +24,107 @@ export type IsoTimestamp = string;
 
 /** A column with a database default: optional on insert. */
 type WithDefault<T> = ColumnType<T, T | undefined, T>;
+
+/** Better Auth boolean: 0/1 in SQLite/D1, boolean in Postgres. Read with `authBool()`. */
+export type AuthBoolean = number | boolean;
+
+/* ------------------------------------------------------------------------------------------------
+ * Better Auth tables (migration 0002). Column names are Better Auth's (camelCase).
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface AuthUserTable {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: AuthBoolean;
+  image: string | null;
+  createdAt: IsoTimestamp;
+  updatedAt: IsoTimestamp;
+  twoFactorEnabled: AuthBoolean | null;
+}
+
+export interface AuthSessionTable {
+  id: string;
+  expiresAt: IsoTimestamp;
+  token: string;
+  createdAt: IsoTimestamp;
+  updatedAt: IsoTimestamp;
+  ipAddress: string | null;
+  userAgent: string | null;
+  userId: string;
+  activeOrganizationId: string | null;
+}
+
+export interface AuthAccountTable {
+  id: string;
+  accountId: string;
+  providerId: string;
+  userId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  idToken: string | null;
+  accessTokenExpiresAt: IsoTimestamp | null;
+  refreshTokenExpiresAt: IsoTimestamp | null;
+  scope: string | null;
+  password: string | null;
+  createdAt: IsoTimestamp;
+  updatedAt: IsoTimestamp;
+}
+
+export interface AuthVerificationTable {
+  id: string;
+  identifier: string;
+  value: string;
+  expiresAt: IsoTimestamp;
+  createdAt: IsoTimestamp;
+  updatedAt: IsoTimestamp;
+}
+
+export interface AuthTwoFactorTable {
+  id: string;
+  secret: string;
+  backupCodes: string;
+  userId: string;
+  verified: AuthBoolean | null;
+  failedVerificationCount: number | null;
+  lockedUntil: IsoTimestamp | null;
+}
+
+export interface AuthOrganizationTable {
+  id: string;
+  name: string;
+  /** = tenantId (immutable). */
+  slug: string;
+  logo: string | null;
+  createdAt: IsoTimestamp;
+  metadata: string | null;
+}
+
+export interface AuthMemberTable {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: string;
+  createdAt: IsoTimestamp;
+}
+
+export interface AuthInvitationTable {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string | null;
+  status: string;
+  expiresAt: IsoTimestamp;
+  createdAt: IsoTimestamp;
+  inviterId: string;
+}
+
+export interface AuthRateLimitTable {
+  id: string;
+  key: string;
+  count: number;
+  lastRequest: number;
+}
 
 /** `clinic_profile` – one row per tenant (clinic). tenant_id = the organization slug. */
 export interface ClinicProfileTable {
@@ -158,6 +264,15 @@ export interface AccessRequestsTable {
 }
 
 export interface Database {
+  user: AuthUserTable;
+  session: AuthSessionTable;
+  account: AuthAccountTable;
+  verification: AuthVerificationTable;
+  twoFactor: AuthTwoFactorTable;
+  organization: AuthOrganizationTable;
+  member: AuthMemberTable;
+  invitation: AuthInvitationTable;
+  rateLimit: AuthRateLimitTable;
   clinic_profile: ClinicProfileTable;
   member_profile: MemberProfileTable;
   forms: FormsTable;
@@ -172,8 +287,22 @@ export interface Database {
   access_requests: AccessRequestsTable;
 }
 
-/** Our tables in foreign-key order (parents first): the copy script and the parity test use it. */
+/** Better Auth's tables in foreign-key order (parents first). */
+export const AUTH_TABLES_IN_FK_ORDER = [
+  "user",
+  "organization",
+  "session",
+  "account",
+  "verification",
+  "twoFactor",
+  "member",
+  "invitation",
+  "rateLimit",
+] as const satisfies readonly (keyof Database)[];
+
+/** Every table in foreign-key order (parents first): the copy script and the parity test use it. */
 export const TABLES_IN_FK_ORDER = [
+  ...AUTH_TABLES_IN_FK_ORDER,
   "clinic_profile",
   "member_profile",
   "tenant_settings",
@@ -192,6 +321,15 @@ export type TableName = (typeof TABLES_IN_FK_ORDER)[number];
 
 /** Primary-key columns per table (the copy script orders and checksums rows by them). */
 export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database[T] & string)[] } = {
+  user: ["id"],
+  organization: ["id"],
+  session: ["id"],
+  account: ["id"],
+  verification: ["id"],
+  twoFactor: ["id"],
+  member: ["id"],
+  invitation: ["id"],
+  rateLimit: ["id"],
   clinic_profile: ["tenant_id"],
   member_profile: ["organization_id", "user_id"],
   tenant_settings: ["tenant_id"],
@@ -215,3 +353,12 @@ export type AuditLogRow = Selectable<AuditLogTable>;
 export type PartnerKeyRow = Selectable<PartnerKeysTable>;
 export type AccessRequestRow = Selectable<AccessRequestsTable>;
 export type NewAuditLogRow = Insertable<AuditLogTable>;
+export type AuthUserRow = Selectable<AuthUserTable>;
+export type AuthOrganizationRow = Selectable<AuthOrganizationTable>;
+export type AuthMemberRow = Selectable<AuthMemberTable>;
+export type AuthInvitationRow = Selectable<AuthInvitationTable>;
+
+/** Better Auth booleans as read through getDb(): 1/0 on SQLite/D1, true/false on Postgres. */
+export function authBool(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "t" || value === "true";
+}

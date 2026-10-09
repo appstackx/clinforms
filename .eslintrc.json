@@ -1060,7 +1060,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1155,7 +1162,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1250,7 +1264,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1345,7 +1366,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1440,7 +1468,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1535,7 +1570,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1630,7 +1672,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1725,7 +1774,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1820,7 +1876,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -1915,7 +1978,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2010,7 +2080,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2105,7 +2182,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2186,7 +2270,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2267,7 +2358,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2348,7 +2446,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2429,7 +2534,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2510,7 +2622,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2591,7 +2710,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2682,7 +2808,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2773,7 +2906,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2850,7 +2990,14 @@
                   "kysely/*",
                   "pg",
                   "@electric-sql/pglite",
-                  "@electric-sql/pglite/*"
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
                 ],
                 "message": "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
               }
@@ -2875,6 +3022,45 @@
                   "**/modules/*"
                 ],
                 "message": "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP."
+              },
+              {
+                "group": [
+                  "**/workers/*",
+                  "**/workers/**"
+                ],
+                "message": "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/middleware.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*",
+                  "@/modules/*",
+                  "@/sandbox/*",
+                  "server-only",
+                  "node:*",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "better-auth",
+                  "better-auth/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "src/middleware.ts runs on the Edge runtime and only does optimistic cookie checks: no server code, database or sign-in library here."
               },
               {
                 "group": [

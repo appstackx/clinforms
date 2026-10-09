@@ -6,7 +6,7 @@
  * verifier always knows which tenant to check (`partnerKeyTenant()`), and every lookup is tenant-scoped.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { assertId, assertTenantId, assertText, nowIso, optionalText, randomId, type RepoContext } from "./context";
+import { assertId, assertTenantId, assertText, nowIso, optionalText, randomId, type DbContext } from "./context";
 
 const PREFIX = "cfk_";
 const SECRET = /^[A-Za-z0-9_-]{43}$/;
@@ -43,7 +43,7 @@ export function partnerKeyTenant(key: string): string | null {
 }
 
 export async function createPartnerKey(
-  ctx: RepoContext,
+  ctx: DbContext,
   tenantId: string,
   input: { name: string; createdBy?: string | null },
 ): Promise<CreatedPartnerKey> {
@@ -76,7 +76,7 @@ export async function createPartnerKey(
   return { ...info, key };
 }
 
-export async function listPartnerKeys(ctx: RepoContext, tenantId: string): Promise<PartnerKeyInfo[]> {
+export async function listPartnerKeys(ctx: DbContext, tenantId: string): Promise<PartnerKeyInfo[]> {
   assertTenantId(tenantId);
   const rows = await ctx.db
     .selectFrom("partner_keys")
@@ -97,7 +97,7 @@ export async function listPartnerKeys(ctx: RepoContext, tenantId: string): Promi
 }
 
 /** Revokes a key of this tenant. Returns false when it does not exist or was already revoked. */
-export async function revokePartnerKey(ctx: RepoContext, tenantId: string, id: string): Promise<boolean> {
+export async function revokePartnerKey(ctx: DbContext, tenantId: string, id: string): Promise<boolean> {
   assertTenantId(tenantId);
   assertId(id, "Key id");
   const result = await ctx.db
@@ -112,7 +112,7 @@ export async function revokePartnerKey(ctx: RepoContext, tenantId: string, id: s
 
 /** Checks a presented key against the tenant's active keys. */
 export async function verifyPartnerKey(
-  ctx: RepoContext,
+  ctx: DbContext,
   tenantId: string,
   presentedKey: string,
 ): Promise<{ id: string; tenantId: string; name: string } | null> {
