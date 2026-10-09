@@ -30,7 +30,7 @@ import { deliverEmail, invitationEmail, passwordResetEmail, twoFactorEnabledEmai
 import { logAuthEvent } from "../email/log";
 import { appendAudit } from "../repos/audit";
 import { deleteMemberProfile } from "../repos/member-profile";
-import { appOrigin, betterAuthBaseURL, usesSecureCookies, type BaseUrlSetting } from "./config";
+import { appOrigin, betterAuthBaseURL, isPlatformAdmin, usesSecureCookies, type BaseUrlSetting } from "./config";
 import { inviteLink } from "./invite-token";
 import { AuthDateParsePlugin } from "./pg-dates";
 import { MEMBER_ROLES, accessControl, parseMemberRole, roles } from "./roles";
@@ -103,6 +103,14 @@ export interface CreateAuthInput {
   rateLimit?: boolean;
   /** Better Auth's start-up schema check. Default: on, except on D1 (see below). */
   validateSchema?: boolean;
+  /**
+   * Whether an address belongs to a platform administrator (/app/platform). Default: isPlatformAdmin() on
+   * CLINFORMS_PLATFORM_ADMINS. While email is off, a clinic administrator is shown the invitation links they
+   * create, so an invitation from a clinic could otherwise create an account for a platform administrator's
+   * address: such an account can only come from a platform invitation (createClinic), and clinics cannot invite
+   * the address while it has no account.
+   */
+  isPlatformAdminEmail?: (email: string) => boolean;
 }
 
 type AnyCtx = { path?: string; body?: Record<string, unknown> } | null | undefined;
@@ -116,6 +124,7 @@ function isoOf(value: unknown): string {
 export function createAuth(input: CreateAuthInput) {
   const { db, dialect } = input;
   const dbCtx = { db };
+  const platformAdminEmail = input.isPlatformAdminEmail ?? ((email: string) => isPlatformAdmin(email));
   const slugCache = new Map<string, string>();
   /** Endpoint contexts in which two-step verification was just turned on (user.update → session.create). */
   const enablingContexts = new WeakSet<object>();
@@ -227,14 +236,19 @@ export function createAuth(input: CreateAuthInput) {
             const now = new Date().toISOString();
             const open = await db
               .selectFrom("invitation")
-              .select("id")
+              .select(["id", "inviterId"])
               .where("email", "=", email)
               .where("status", "=", "pending")
               .where("expiresAt", ">", now)
-              .executeTakeFirst();
-            if (!open) {
+              .execute();
+            if (open.length === 0) {
               logAuthEvent("auth.sign_up_refused", { reason: "no_invitation" });
               throw new APIError("FORBIDDEN", { message: "An invitation is needed to create an account.", code: "INVITATION_REQUIRED" });
+            }
+            // A platform administrator's account only from platform invitations (none from a clinic still open).
+            if (platformAdminEmail(email) && open.some((inv) => inv.inviterId !== PLATFORM_USER_ID)) {
+              logAuthEvent("auth.sign_up_refused", { reason: "platform_admin_address" });
+              throw new APIError("FORBIDDEN", { message: "This address can only be set up from a ClinForms invitation.", code: "PLATFORM_INVITATION_REQUIRED" });
             }
             // The invitation link was sent to (or passed on for) this address.
             return { data: { ...user, email, emailVerified: true } };
@@ -380,6 +394,10 @@ export function createAuth(input: CreateAuthInput) {
           },
           async beforeCreateInvitation({ invitation }) {
             requireClinicRole(invitation.role);
+            const email = String(invitation.email ?? "").trim().toLowerCase();
+            if (platformAdminEmail(email) && !(await db.selectFrom("user").select("id").where("email", "=", email).executeTakeFirst())) {
+              throw new APIError("FORBIDDEN", { message: "This address cannot be invited from a clinic.", code: "PLATFORM_ADMIN_ADDRESS" });
+            }
           },
           async beforeUpdateMemberRole({ newRole }) {
             requireClinicRole(newRole);

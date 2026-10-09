@@ -20,6 +20,8 @@ export interface AccessRequest {
   phone: string | null;
   message: string | null;
   createdAt: string;
+  /** When ClinForms staff marked it as contacted (the platform page); null = not yet. */
+  contactedAt: string | null;
 }
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
@@ -35,6 +37,7 @@ export async function createAccessRequest(ctx: DbContext, input: AccessRequestIn
     phone: optionalText(input.phone?.trim(), "Phone", 40),
     message: optionalText(input.message?.trim(), "Message", 4000),
     createdAt: nowIso(ctx),
+    contactedAt: null,
   };
   await ctx.db
     .insertInto("access_requests")
@@ -62,7 +65,21 @@ export async function listAccessRequests(ctx: DbContext, options: { limit?: numb
     phone: r.phone,
     message: r.message,
     createdAt: r.created_at,
+    contactedAt: r.contacted_at ?? null,
   }));
+}
+
+/**
+ * Marks a request as contacted (now) or back to not contacted. Returns true when the row changed: marking an
+ * already-contacted request keeps its first date, and an unknown id changes nothing.
+ */
+export async function setAccessRequestContacted(ctx: DbContext, id: string, contacted: boolean): Promise<boolean> {
+  assertId(id, "Access request id");
+  const query = contacted
+    ? ctx.db.updateTable("access_requests").set({ contacted_at: nowIso(ctx) }).where("id", "=", id).where("contacted_at", "is", null)
+    : ctx.db.updateTable("access_requests").set({ contacted_at: null }).where("id", "=", id).where("contacted_at", "is not", null);
+  const result = await query.executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
 }
 
 export async function deleteAccessRequest(ctx: DbContext, id: string): Promise<boolean> {

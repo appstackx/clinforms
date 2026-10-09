@@ -120,7 +120,7 @@ re-encrypt in the background).
 - **Invite-only** [A]: clinics are created by the platform (`scripts/admin/create-clinic.ts` or a platform-admin
   page restricted to `CLINFORMS_PLATFORM_ADMINS` emails) after the DPA is signed; the owner gets an invite link.
   *Built:* the scripts (`create-clinic`, `list-clinics`, `offboard-clinic`, `reset-two-factor`, `provision-auth`,
-  `with-env`); no web admin page yet. Platform invitations name a system user `clinforms-platform`
+  `with-env`); *wave 2:* the platform page `/app/platform` (docs/auth.md §5). Platform invitations name a system user `clinforms-platform`
   (`platform@clinforms.invalid`, no password) as the inviter of record, because Better Auth requires one.
   The landing page has "Request access" (stored in `access_requests`).
 - **tenantId = organization slug** (`^[a-z0-9][a-z0-9-]*$`, immutable; `demo` reserved). *Built:* 3–63 characters, no
@@ -146,7 +146,7 @@ re-encrypt in the background).
 |---|---|---|
 | `/` `(marketing)` | public | Landing page; `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
 | `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex. *Integrated:* no cookie banner here (task pages for invited members – a fixed banner covered the form; a choice made on the public site still applies); the public site's header and footer link to `/login` |
-| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). Tenant Studio: wave 2 |
+| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). Tenant Studio: wave 2. *Wave 2:* `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` |
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only) |
