@@ -5,7 +5,7 @@ import { PRODUCT } from "@/modules/medreport/config.public";
 
 export const metadata: Metadata = { title: { absolute: `Page not found · ${PRODUCT.name}` } };
 
-/** Any URL outside /reports, /pms-sandbox and the APIs. */
+/** Any unknown URL: back to the home page. */
 export default function NotFound() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-slate-900">
@@ -16,10 +16,10 @@ export default function NotFound() {
         <h1 className="mt-3 text-lg font-semibold">Page not found</h1>
         <p className="mt-1 text-sm text-slate-600">There is nothing at this address.</p>
         <Link
-          href="/reports"
-          className="mt-5 inline-flex h-9 items-center rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+          href="/"
+          className="mt-5 inline-flex h-9 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
         >
-          Open {PRODUCT.name}
+          Go to the {PRODUCT.name} home page
         </Link>
       </div>
     </main>

@@ -69,6 +69,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -136,6 +143,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -209,6 +223,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -276,6 +297,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -349,6 +377,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -419,6 +454,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -486,6 +528,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -562,6 +611,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -642,6 +698,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -716,6 +779,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -796,6 +866,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -870,6 +947,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -950,6 +1034,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1022,6 +1113,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -1127,6 +1225,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1226,6 +1331,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -1331,6 +1443,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1430,6 +1549,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -1535,6 +1661,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1634,6 +1767,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -1739,6 +1879,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1838,6 +1985,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -1943,6 +2097,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2042,6 +2203,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -2147,6 +2315,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2249,6 +2424,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2334,6 +2516,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -2425,6 +2614,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2510,6 +2706,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -2601,6 +2804,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2689,6 +2899,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2770,6 +2987,13 @@
                   "@/server/*"
                 ],
                 "message": "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [
@@ -2871,6 +3095,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2969,6 +3200,13 @@
               },
               {
                 "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -3061,6 +3299,80 @@
                   "mailersend/*"
                 ],
                 "message": "src/middleware.ts runs on the Edge runtime and only does optimistic cookie checks: no server code, database or sign-in library here."
+              },
+              {
+                "group": [
+                  "**/workers/*",
+                  "**/workers/**"
+                ],
+                "message": "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/components/**/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*",
+                  "server-only",
+                  "node:*",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "src/components may run in the browser: no src/server, server-only, Node built-ins, database, sign-in server or email libraries here (call an API route or pass data from a server component)."
+              },
+              {
+                "group": [
+                  "**/workers/*",
+                  "**/workers/**"
+                ],
+                "message": "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/server/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
               },
               {
                 "group": [

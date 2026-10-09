@@ -6,7 +6,7 @@
 |---|---|
 | Product | ClinForms (vendor: AppStackX) |
 | Repository | [`appstackx/clinforms`](https://github.com/appstackx/clinforms) (private) |
-| Domains | `clinforms.co.uk` (primary, UK) and `clinforms.com` |
+| Domain | `clinforms.co.uk` (`www` redirects to the apex) |
 | Formerly | "AppStackX Reports" (renamed 09/10/2026; internal identifiers kept – see [Renaming the product](#renaming-the-product)) |
 
 ClinForms completes each referrer's **own** report form – medico-legal company (MLC), insurer, solicitor, case
@@ -44,7 +44,7 @@ The product name is set in exactly one place: `PRODUCT` in
 
 | URL | What it is |
 |---|---|
-| `/` | Redirects to `/reports` |
+| `/` | Public website: the landing page for UK physiotherapy clinics (with `/request-access`, `/security`, `/privacy`, `/cookies`, `/terms`) |
 | `/pms-sandbox` | The simulated clinic system: patient list (Megan Hart and Daniel Brooks have full episodes) |
 | `/pms-sandbox/patients/sim-pat-001` | A patient record (registration, notes, appointments, outcome measures, filed documents). **Complete referrer's report form** launches the Studio with this episode, through the Report API's partner launch |
 | `/reports` | Studio home: completed and in-progress forms, demo tools (import a case, reset) |
@@ -71,8 +71,14 @@ never name the drafting technology or vendor (`src/modules/medreport/core/wordin
 
 ```
 src/app/                    Next.js App Router – thin pages and route files only
-  layout.tsx page.tsx       root layout (metadata from PRODUCT, Inter via next/font); "/" → /reports
+  layout.tsx                root layout (metadata from PRODUCT, metadataBase, Inter via next/font,
+                            cookie banner + consent-gated analytics)
+  (marketing)/**            public website: landing page "/", /request-access, /security, /privacy,
+                            /cookies, /terms (indexable)
+  robots.ts sitemap.ts      robots.txt (demo, app, APIs and sign-in pages disallowed) and sitemap.xml
   not-found.tsx icon.svg
+  api/access-requests       POST: the "Request access" form (validation, honeypot, rate limit, storage,
+                            optional email notification – src/server/site/)
   reports/**                Studio pages (+ medreport-host.tsx: write-back into the sandbox record)
   pms-sandbox/**            simulated clinic system pages (+ actions.ts: server-to-server launch)
   api/reports/v1/**         Report API route files → module handlers
@@ -83,6 +89,11 @@ src/modules/medreport/      THE PRODUCT (core, connectors, auth, ai, forms, docg
 src/sandbox/tm3-sim/        the simulated TM3 clinic system (demo scaffolding, not the product)
 src/components/ui/*         generic UI primitives (button, card, dialog, …) – reached by the module
 src/lib/utils.ts            only through src/modules/medreport/ui/primitives.ts
+src/components/marketing/   public-site header, footer, legal page layout, hero illustration
+src/components/consent/     cookie banner + settings dialog; the `clinforms_consent` cookie (6 months)
+src/components/analytics/   consent-gated product analytics: allow-listed `track(event, props)`
+src/lib/site.ts             SITE_URL, COMPANY details (unknown ones stay unset and are not shown), public page list
+src/server/                 production data layer (db, crypto, repos – docs/database.md) and site/ (request access)
 scripts/medreport/          tests, recorders, sample builders, ESLint boundary generator, video/
 docs/plan.md                the product plan and its revision history
 ```
@@ -101,7 +112,7 @@ git clone git@github.com:appstackx/clinforms.git
 cd clinforms
 npm ci
 cp .env.example .env.local     # optional – leave everything empty for demo mode
-npm run dev                    # http://localhost:3000 → /reports
+npm run dev                    # http://localhost:3000 (landing page); the demo is at /reports
 ```
 
 With no environment variables the app runs in **demo mode**: no AI calls, prepared drafts and form
@@ -124,7 +135,8 @@ macOS/Linux install LibreOffice, or point `MEDREPORT_SOFFICE_PATH` at the binary
 
 ## Environment variables
 
-All are server-side (never `NEXT_PUBLIC_`). The annotated list is [`.env.example`](.env.example);
+All are server-side except the two `NEXT_PUBLIC_POSTHOG_*` analytics settings (public by design: they
+are inlined into the browser bundle at build time). The annotated list is [`.env.example`](.env.example);
 copy it to `.env.local` (gitignored – never commit real values).
 
 | Variable | Purpose |
@@ -140,6 +152,12 @@ copy it to `.env.local` (gitignored – never commit real values).
 | `TM3_SIM_TOKEN` | Bearer token for the simulated TM3 API |
 | `TM3_SIM_BASE_URL` | Optional base URL of the simulated TM3 API (default: this server's own origin) |
 | `MEDREPORT_SOFFICE_PATH` | Optional path to LibreOffice for Word → PDF |
+| `CLINFORMS_DB`, `CLINFORMS_*`, `DATABASE_*` | Database and encryption at rest – see [`docs/database.md`](docs/database.md). Locally the default is a SQLite file (`.data/clinforms.db`); the "Request access" form stores requests there |
+| `NEXT_PUBLIC_POSTHOG_KEY` | Product analytics project key (EU cloud). Unset = no analytics and no cookie banner. Analytics only ever starts after a visitor accepts it in the banner |
+| `NEXT_PUBLIC_POSTHOG_HOST` | Optional analytics API host. Default `/ingest` (proxied to the EU cloud by `next.config.mjs`, so the browser only talks to our domain) |
+| `NEXT_PUBLIC_POSTHOG_DEBUG` | `1` logs the analytics library's activity in the browser console (setup checks only, never in production) |
+| `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` | Email via MailerSend. With both set, each "Request access" submission also emails the team; without them requests are only stored |
+| `CLINFORMS_ACCESS_REQUEST_TO` | Optional recipient of those emails (default `khuram@appstackx.co.uk`) |
 
 In demo mode, unset secrets fall back to fixed public demo constants – except the launch and signing
 secrets on a **Vercel production** deployment (`VERCEL_ENV=production`), where they are derived from a
@@ -152,6 +170,7 @@ variables".
 npx tsc --noEmit          # or: npm run typecheck
 npm run lint              # includes the import-boundary rules
 npm run test:medreport    # node:test over src/modules/medreport/**/*.test.ts and scripts/medreport/**/*.test.ts
+npm run test:site         # public site: consent cookie, analytics allow-lists, request access (SQLite), wording file scan
 npm run build
 ```
 
@@ -178,10 +197,17 @@ unless noted):
 
 - **Project:** import `appstackx/clinforms` into Vercel (framework preset Next.js, default build
   command, Node 22). Production branch: `main`.
-- **Domains:** add `clinforms.co.uk` as the production domain (and `www.clinforms.co.uk`), and point
-  `clinforms.com` / `www.clinforms.com` at it as redirects, in the project's Domains settings; then set
-  the DNS records Vercel shows at the registrar. `/` redirects to `/reports`, so
-  `https://clinforms.co.uk` opens the Studio.
+- **Domains:** add `clinforms.co.uk` as the production domain and `www.clinforms.co.uk` as a redirect to it,
+  in the project's Domains settings; then set the DNS records Vercel shows at the registrar.
+  `https://clinforms.co.uk` is the public website (landing page, legal pages, request access); the public
+  demo stays at `/reports` and `/pms-sandbox`.
+- **Headers:** `next.config.mjs` sets HSTS, nosniff, Referrer-Policy, X-Frame-Options, Permissions-Policy,
+  COOP and a **report-only** Content Security Policy on every response, and `X-Robots-Tag: noindex` on the
+  APIs, the app, the demo and the sign-in pages. Switch the CSP to enforcing only after the Studio's review,
+  mapping and preview screens run clean (see the comment in `next.config.mjs`).
+- **Analytics:** set `NEXT_PUBLIC_POSTHOG_KEY` (EU project) to enable the cookie banner and consent-gated
+  analytics. In the PostHog project settings, turn on "Discard client IP data" and set data retention to
+  match the privacy policy (12 months).
 - **Region:** `vercel.json` pins functions to London (`"regions": ["lhr1"]`), so patient data is
   processed in the UK. Also choose a UK/EU region for anything else you attach.
 - **Environment variables:** set them for Production (and Preview) in the project settings. For

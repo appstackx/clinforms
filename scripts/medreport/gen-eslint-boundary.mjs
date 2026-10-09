@@ -75,8 +75,37 @@ const PDFJS_BROWSER_ENTRIES = {
   message: PDFJS_BROWSER_MESSAGE,
 };
 const PDFJS_BARE_PATH = { name: "pdfjs-dist", message: PDFJS_BROWSER_MESSAGE };
+// Product analytics (public site, wave 2 app events) is host code: consent-gated and allow-listed in
+// src/components/analytics. The module and server code never import the browser library directly.
+const POSTHOG = {
+  group: ["posthog-js", "posthog-js/*"],
+  message: "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library.",
+};
+// Host UI components (src/components: marketing site, consent banner, analytics, UI primitives) may run in
+// the browser: no server code, Node built-ins, database or email libraries.
+const HOST_UI_SERVER_ONLY = {
+  group: [
+    "@/server",
+    "@/server/*",
+    "server-only",
+    "node:*",
+    "kysely",
+    "kysely/*",
+    "pg",
+    "@electric-sql/pglite",
+    "@electric-sql/pglite/*",
+    "better-auth",
+    "better-auth/*",
+    "!better-auth/react",
+    "!better-auth/client",
+    "!better-auth/client/*",
+    "mailersend",
+    "mailersend/*",
+  ],
+  message: "src/components may run in the browser: no src/server, server-only, Node built-ins, database, sign-in server or email libraries here (call an API route or pass data from a server component).",
+};
 const rule = (patterns, paths) => ({ "no-restricted-imports": ["error", paths ? { paths, patterns } : { patterns }] });
-const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, escape(d)];
+const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, POSTHOG, escape(d)];
 const base = (d) => [...core(d), DOCX_PREVIEW, PDFJS];
 
 const overrides = [];
@@ -116,6 +145,7 @@ overrides.push({
     SANDBOX,
     APP,
     SERVER,
+    POSTHOG,
     escape(1),
     CLIENT_UNSAFE,
   ]),
@@ -158,6 +188,14 @@ overrides.push({
     WORKERS,
   ]),
 });
+
+// 7. Host UI components: browser-safe (no server code); server code: no browser analytics library.
+overrides.push({
+  files: [`src/components/**/*.${ext}`],
+  excludedFiles: ["**/*.test.ts", "**/*.test.tsx"],
+  rules: rule([HOST_UI_SERVER_ONLY, WORKERS]),
+});
+overrides.push({ files: [`src/server/**/*.${ext}`], rules: rule([POSTHOG, WORKERS]) });
 
 const current = JSON.parse(fs.readFileSync(".eslintrc.json", "utf8"));
 fs.writeFileSync(".eslintrc.json", JSON.stringify({ extends: current.extends ?? "next/core-web-vitals", overrides }, null, 2) + "\n");
