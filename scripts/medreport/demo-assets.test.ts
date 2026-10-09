@@ -342,7 +342,7 @@ test("pre-written answers: advertised in the bundle, replayed by POST /drafts, e
   assert.ok(pageText.includes("Megan Hart"));
 });
 
-test("GET /forms/samples lists the demonstration form as upload-only, in demo mode only; its file is never served", async () => {
+test("GET /forms/samples lists the demonstration form as upload-only, whatever the AI mode; its file is never served", async () => {
   const fx = await fixture();
   const list = async () => FormSamplesResponseSchema.parse(await (await route(handleFormSamples)(get("/api/reports/v1/forms/samples"), { params: {} })).json()).samples;
   const bundledCount = (await list()).length;
@@ -360,12 +360,17 @@ test("GET /forms/samples lists the demonstration form as upload-only, in demo mo
   const file = await route(handleFormSampleFile)(get(`/api/reports/v1/forms/samples/${SAMPLE_ID}/file`), { params: { id: SAMPLE_ID } });
   assert.equal(file.status, 404, "the insurer's file is never served");
 
-  // Live mode: not listed (an upload would be read live, not from the prepared map).
+  // A live-ready .env.local ("auto" with a key and a passcode): still listed – a request without the
+  // passcode is demo, so the upload gets the prepared map (an .env.local made for live work used to hide
+  // every demonstration form from npm run demo:red).
   env.MEDREPORT_AI_MODE = "auto";
   env.ANTHROPIC_API_KEY = "test-key-not-used";
   env.MEDREPORT_LIVE_PASSCODE = "test-passcode-not-used-1234";
   env.MEDREPORT_SIGNING_SECRET = "test-signing-secret-not-used-1234"; // live mode needs real secrets to attest the bundled maps
-  assert.equal((await list()).length, bundledCount);
+  assert.equal((await list()).length, bundledCount + 1);
+  const uploaded = await route(handleFormsAnalyse)(post("/api/reports/v1/forms/analyse", { fileBase64: Buffer.from(fx.pdf).toString("base64"), fileName: "insurer-form.pdf" }), { params: {} });
+  assert.equal(uploaded.status, 200);
+  assert.equal(FormsAnalyseResponseSchema.parse(await uploaded.json()).form.analysis.mode, "demo_prewritten", "no passcode: the prepared map, not a live reading");
 });
 
 test("npm run demo:check: passes a good folder, explains a broken one, and is quiet when there is none", async () => {

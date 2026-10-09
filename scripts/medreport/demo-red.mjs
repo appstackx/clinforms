@@ -10,11 +10,16 @@
  *
  * The environment is read the way Next reads it (@next/env loadEnvConfig: .env.production.local,
  * .env.local, .env.production, .env – the files `next start` loads), so a value set in .env.local (or in
- * the shell) wins over these defaults; an empty value counts as unset. E.g. MEDREPORT_AI_MODE=auto in
- * .env.local, with a key and a passcode, allows live drafting during the demo.
+ * the shell) wins over these defaults; an empty value counts as unset – EXCEPT MEDREPORT_AI_MODE, which
+ * is always "demo" unless --live is given. A .env.local made for live work (MEDREPORT_AI_MODE=auto with a
+ * key and a passcode) would otherwise turn the demo live: the Studio shows a passcode field, and once the
+ * passcode is typed an upload is analysed live instead of getting its checked prepared map, and drafts
+ * are live (longer than the prepared answers – they overflow the insurer forms' boxes). With --live the
+ * .env.local / shell value is used (e.g. auto: live drafting once the passcode is typed in the Studio).
  *
- *   npm run demo:red                    # build and start
+ *   npm run demo:red                    # build and start (demo mode)
  *   npm run demo:red -- --skip-build    # start the last build again
+ *   npm run demo:red -- --live          # let .env.local's MEDREPORT_AI_MODE (e.g. auto) allow live calls
  *   npm run demo:red -- --allow-no-maps # start although no map is prepared (layout rules only)
  *
  * It refuses to start when the demo-assets folder does not exist (no demonstration footer, no prepared
@@ -45,6 +50,8 @@ const DEFAULTS = {
 for (const [name, value] of Object.entries(DEFAULTS)) {
   if (!process.env[name] || process.env[name].trim() === "") process.env[name] = value;
 }
+// Demo mode unless asked otherwise: a live-ready .env.local must not change what the prepared demo shows.
+if (!process.argv.includes("--live")) process.env.MEDREPORT_AI_MODE = "demo";
 
 const assetsDir = path.resolve(cwd, process.env.MEDREPORT_DEMO_ASSETS_DIR);
 const isDir = (p) => existsSync(p) && statSync(p).isDirectory();
