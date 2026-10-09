@@ -19,6 +19,10 @@ import "server-only";
  * - Identifiers (name, date of birth, address, references) are always filled by code from the
  *   registration record, and opinion questions (prognosis, causation, fitness for work, restrictions,
  *   recommendations) are always "clinician_opinion" – whatever the model proposed (form-classify.ts).
+ * - Multi-party forms: every field gets `completedBy` – the label's own signer ("Policyholder's
+ *   signature"), else the section's party from the PDF outline (forms/pdf-sections.ts), else the
+ *   proposal's, else the section heading's wording. A part of the form for anyone but the clinic is
+ *   left blank, so the clinician's approval is never written into another party's signature box.
  * - Field IDs F-01, F-02… are assigned in document order of the anchors.
  *
  * Pure (no I/O). Owner: ai agent.
@@ -37,10 +41,13 @@ import type {
   PdfFieldAnchor,
   PdfOptionField,
   PdfOutlineField,
+  Party,
   SignoffPart,
 } from "../core/types";
 import { formAnchorPdfFieldNames } from "../core/forms";
+import { isNonClinicParty, partyLabel } from "../core/parties";
 import { FormFieldSchema } from "../core/schemas";
+import { pdfSectionAt, type SectionInfo } from "../forms/pdf-sections";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { snapOverlay } from "./form-boxes";
 import { classifyLabel } from "./form-classify";
@@ -495,10 +502,16 @@ const SIGNOFF_BY_TYPE: Partial<Record<AnswerType, SignoffPart>> = {
   date: "date",
 };
 
-function fillSourceOf(raw: AnalysisFieldOutput, label: string, section: string | undefined, answerType: AnswerType): { source: FillSource; notes: string[]; conf: FormFieldConfidence } {
+function fillSourceOf(
+  raw: AnalysisFieldOutput,
+  label: string,
+  section: string | undefined,
+  answerType: AnswerType,
+  party?: Party,
+): { source: FillSource; notes: string[]; conf: FormFieldConfidence; completedBy?: Party } {
   const notes: string[] = [];
   let conf: FormFieldConfidence = "high";
-  const cls = classifyLabel(label, section);
+  const cls = classifyLabel(label, section, party);
   let source: FillSource;
   switch (raw.fillSource) {
     case "registration":
@@ -554,7 +567,33 @@ function fillSourceOf(raw: AnalysisFieldOutput, label: string, section: string |
     conf = minConf(conf, "medium");
     notes.push("Opinion questions are answered only with an opinion a clinician recorded, otherwise by the clinician.");
   }
-  return { source, notes, conf };
+  // Someone else's part of the form: never the clinician's sign-off, never an answer from the record.
+  if (cls.completedBy && isNonClinicParty(cls.completedBy) && source.kind !== "leave_blank") {
+    notes.push(
+      source.kind === "signoff"
+        ? `This signature or date is for ${partyLabel(cls.completedBy)}, so the clinician's approval is not written there.`
+        : `This part of the form is for ${partyLabel(cls.completedBy)} to complete, so it is left blank.`,
+    );
+    source = { kind: "leave_blank" };
+    conf = minConf(conf, "medium");
+  }
+  return { source, notes, conf, ...(cls.completedBy && { completedBy: cls.completedBy }) };
+}
+
+/** Section and party the PDF outline gives the answer space (fields and boxes); none for Word. */
+function outlineSectionOf(anchor: FormAnchor, pdfIx: PdfIndex | null): SectionInfo {
+  if (!pdfIx) return {};
+  if (anchor.kind === "pdf_field" || anchor.kind === "pdf_char_fields" || anchor.kind === "pdf_table") {
+    // The first field the answer writes (a group of boxes or a table's first cell carries its section).
+    const name = formAnchorPdfFieldNames(anchor)[0] ?? (anchor.kind === "pdf_field" ? anchor.fieldName : "");
+    const f = pdfIx.byName.get(name);
+    return f ? { ...(f.section && { section: f.section }), ...(f.completedBy && { completedBy: f.completedBy }) } : {};
+  }
+  // A box's own label sits at (or just above) its bottom edge: the section in effect there.
+  if (anchor.kind === "pdf_overlay") return pdfSectionAt(pdfIx.pdf, anchor.page, anchor.y + 1);
+  if (anchor.kind === "pdf_overlay_ticks" && anchor.options.length) return pdfSectionAt(pdfIx.pdf, anchor.page, anchor.options[0].y + 1);
+  if (anchor.kind === "pdf_overlay_table" && anchor.rowTops.length) return pdfSectionAt(pdfIx.pdf, anchor.page, anchor.rowTops[0] + 1);
+  return {};
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -566,6 +605,33 @@ interface Candidate {
   order: number;
   seq: number;
   repaired: boolean;
+}
+
+/**
+ * A section whose questions are put to the patient ("Why did you go to the doctor?", "When did you first
+ * notice your symptoms?" – at least three, and most of its questions) is the patient's part of the form:
+ * its remaining questions are left blank too, unless one of them is marked for the clinic.
+ */
+function patientSections(candidates: Candidate[]): void {
+  const bySection = new Map<string, Candidate[]>();
+  for (const c of candidates) {
+    if (c.field.section) bySection.set(c.field.section, [...(bySection.get(c.field.section) ?? []), c]);
+  }
+  for (const group of Array.from(bySection.values())) {
+    const patient = group.filter((c) => c.field.completedBy === "patient").length;
+    if (patient < 3 || patient * 2 <= group.length || group.some((c) => c.field.completedBy === "clinic")) continue;
+    for (const c of group) {
+      if (c.field.completedBy) continue;
+      const note = "The questions in this part of the form are put to the patient, so it is left blank.";
+      c.field = {
+        ...c.field,
+        fillSource: { kind: "leave_blank" },
+        completedBy: "patient",
+        confidence: minConf(c.field.confidence, "medium"),
+        note: clean([c.field.note, note].filter(Boolean).join(" "), 500),
+      };
+    }
+  }
 }
 
 export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput[], opts: PostValidateOptions = {}): PostValidateResult {
@@ -584,7 +650,7 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       warnings.push("An answer space without a printed question was left out.");
       return;
     }
-    const section = clean(raw.section, 160) || undefined;
+    let section = clean(raw.section, 160) || undefined;
     let answerType: AnswerType = raw.answerType;
     let options = Array.from(new Set(raw.options.map((o) => clean(o, 120)).filter(Boolean)));
 
@@ -633,7 +699,11 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       notes.push("No options were found for this choice, so it will be answered as text.");
     }
 
-    const fill = fillSourceOf(raw, label, section, answerType);
+    // Who completes it: the outline's section first (from the form's own headings), else the proposal's.
+    const outlineAt = outlineSectionOf(outcome.anchor, pdfIx);
+    if (!section && outlineAt.section) section = clean(outlineAt.section, 160) || undefined;
+    const proposedParty = raw.completedBy && raw.completedBy !== "unknown" ? raw.completedBy : undefined;
+    const fill = fillSourceOf(raw, label, section, answerType, outlineAt.completedBy ?? proposedParty);
     notes.push(...fill.notes);
     conf = minConf(minConf(conf, fill.conf), cap);
     if (raw.note.trim()) notes.unshift(clean(raw.note, 200));
@@ -649,6 +719,7 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       required: Boolean(raw.required),
       confidence: conf,
       ...(notes.length > 0 && { note: clean(Array.from(new Set(notes)).join(" "), 500) }),
+      ...(fill.completedBy && { completedBy: fill.completedBy }),
     };
 
     let order = seq;
@@ -680,6 +751,7 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
 
   // Document order, then the model's order.
   candidates.sort((a, b) => a.order - b.order || a.seq - b.seq);
+  patientSections(candidates);
 
   // One answer space per question (repeated placeholders / controls in one block: one each, in order).
   const used = new Map<string, Candidate[]>();

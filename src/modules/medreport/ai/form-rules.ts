@@ -23,7 +23,9 @@ import "server-only";
  *
  * Owner: ai agent.
  */
-import type { AnswerType, OutlineBlock, PdfFormOutline } from "../core/types";
+import { completerParty, headingParty } from "../core/parties";
+import type { AnswerType, OutlineBlock, Party, PdfFormOutline } from "../core/types";
+import { pdfSectionAt } from "../forms/pdf-sections";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { flatBoxQuestions } from "./form-boxes";
 import { answerTypeFromLabel, classifyLabel } from "./form-classify";
@@ -56,8 +58,12 @@ function isHeading(b: OutlineBlock): boolean {
 /** An answer type the analysis output can carry (tables are found from the layout, never from a label). */
 const noTable = (t: AnswerType): AnalysisFieldOutput["answerType"] => (t === "table" ? "long_text" : t);
 
-function raw(label: string, section: string, rest: Partial<AnalysisFieldOutput>, context = ""): AnalysisFieldOutput {
-  const cls = classifyLabel(label, `${section} ${context}`.trim());
+/**
+ * `party`: who completes this part of the form, when the caller knows (PDF outline sections, a
+ * "to be completed by" line in a Word form); undefined = read from the section heading.
+ */
+function raw(label: string, section: string, rest: Partial<AnalysisFieldOutput>, context = "", party?: Party | null): AnalysisFieldOutput {
+  const cls = classifyLabel(label, `${section} ${context}`.trim(), party === undefined ? headingParty(section) : party);
   const layoutType = rest.answerType;
   const answerType = noTable(
     cls.answerType && (layoutType === undefined || layoutType === "short_text" || layoutType === "long_text")
@@ -85,12 +91,13 @@ function raw(label: string, section: string, rest: Partial<AnalysisFieldOutput>,
     required: fill.kind !== "leave_blank",
     confidence: "low",
     note: "",
+    ...(cls.completedBy && { completedBy: cls.completedBy }),
     ...rest,
     answerType,
   };
 }
 
-function glyphField(block: OutlineBlock, label: string, section: string): AnalysisFieldOutput | null {
+function glyphField(block: OutlineBlock, label: string, section: string, party?: Party | null): AnalysisFieldOutput | null {
   const options = glyphOptionsFromText(block.text);
   const n = block.checkboxGlyphs ?? 0;
   if (n === 0) return null;
@@ -102,7 +109,7 @@ function glyphField(block: OutlineBlock, label: string, section: string): Analys
     anchorTarget: "checkbox_glyph",
     anchorRef: block.id,
     optionAnchors: opts.map((option, i) => ({ option, ref: block.id, glyphIndex: i })),
-  });
+  }, "", party);
 }
 
 /** Fill-in placeholders in a line of text, with the label printed before each. */
@@ -161,13 +168,19 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
   const isCellParagraph = (b: OutlineBlock) => b.kind === "paragraph" && cellParas.has(cellOfParagraph(b.id) ?? "");
   const byId = new Map(blocks.map((b) => [b.id, b]));
   let section = "";
+  /** Who completes the current part: its heading, or a "to be completed by …" line under it. */
+  let party: Party | null = null;
   let pending: Pending | null = null;
   let lastText = "";
+  const setSection = (text: string) => {
+    section = text;
+    party = headingParty(text);
+  };
 
   const push = (label: string, rest: Partial<AnalysisFieldOutput>, guidance = "") => {
     const l = label.slice(0, 200);
     if (!l) return;
-    const field = raw(l, section, rest);
+    const field = raw(l, section, rest, "", party);
     if (guidance) field.guidance = guidance.slice(0, 300);
     out.push(field);
   };
@@ -201,7 +214,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
     if (b.kind === "paragraph" && isHeading(b)) {
       const text = b.text.replace(/\s+/g, " ").trim();
       if ((b.headingLevel ?? 1) <= 1 || /^(?:section|part)\b/i.test(text)) {
-        section = text;
+        setSection(text);
         pending = null;
       } else {
         pending = { label: cleanLabel(text), anchorId: b.id, guidance: "", answered: false };
@@ -221,7 +234,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
       pending = null;
       // A single short full-width cell is a sub-heading ("FOR OFFICE USE ONLY", "2  DIAGNOSIS").
       if (cells.length === 1 && !cells[0].isEmpty && !isDocxAnswerSpace(cells[0]) && !cellParas.has(cells[0].id) && cells[0].text.trim().length <= 80) {
-        section = cells[0].text.replace(/\s+/g, " ").trim();
+        setSection(cells[0].text.replace(/\s+/g, " ").trim());
         continue;
       }
       for (let c = 0; c < cells.length; c += 1) {
@@ -240,7 +253,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
           for (const p of paras) {
             if ((p.checkboxGlyphs ?? 0) > 0) {
               const before = cleanLabel(p.text.split(/[☐☒☑]/)[0] ?? "");
-              const f = glyphField(p, before.length > 2 ? before : question || lastText, section);
+              const f = glyphField(p, before.length > 2 ? before : question || lastText, section, party);
               if (f) out.push(f);
               answeredHere = true;
             } else if (p.hasPlaceholder || p.inContentControl) {
@@ -262,7 +275,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
         if ((cell.checkboxGlyphs ?? 0) > 0) {
           const before = cleanLabel(cell.text.split(/[☐☒☑]/)[0] ?? "");
           const label = before.length > 2 ? before : leftLabel || lastText;
-          const f = label ? glyphField(cell, label, section) : null;
+          const f = label ? glyphField(cell, label, section, party) : null;
           if (f) out.push(f);
           continue;
         }
@@ -293,7 +306,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
     if ((b.checkboxGlyphs ?? 0) > 0) {
       const before = cleanLabel(b.text.split(/[☐☒☑]/)[0] ?? "");
       const label = before.length > 2 ? before : pending?.label || lastText;
-      const f = label ? glyphField(b, label, section) : null;
+      const f = label ? glyphField(b, label, section, party) : null;
       if (f) {
         if (pending?.guidance) f.guidance = pending.guidance.slice(0, 300);
         out.push(f);
@@ -318,6 +331,13 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
         push(pending.label, { anchorTarget: "after_paragraph", anchorRef: pending.anchorId, answerType: noTable(answerTypeFromLabel(pending.label) ?? "long_text") }, pending.guidance);
         pending.answered = true;
       }
+      continue;
+    }
+    // "This section is to be completed by your GP": who completes the rest of this part.
+    const marker = text.length <= 200 && !isQuestionLike(text) ? completerParty(text) : null;
+    if (marker) {
+      party = marker;
+      lastText = cleanLabel(text);
       continue;
     }
     // Text: a new question, or guidance for the current one.
@@ -355,7 +375,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
       // One-character boxes: one question, a date when they are printed D D M M Y Y (Y Y) or labelled so.
       const label = (cleanLabel(charGroupLabel(f.nearbyText)) || prettifyName(f.name)).slice(0, 160);
       const isDate = charGroupFormat(space.length, f.nearbyText) !== "chars";
-      out.push(raw(label, "", { ...(isDate && { answerType: "date" as const }), anchorTarget: "pdf_field", anchorRef: f.name }, f.nearbyText));
+      out.push(raw(label, f.section ?? "", { ...(isDate && { answerType: "date" as const }), anchorTarget: "pdf_field", anchorRef: f.name }, f.nearbyText, f.completedBy ?? null));
       continue;
     }
     const group = groupOf.get(f.name);
@@ -368,7 +388,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
       out.push(
         raw(
           label,
-          "",
+          group.fields[0].section ?? "",
           {
             answerType: group.yesNo ? "yes_no" : "single_choice",
             options: ordered.map((e) => e.option),
@@ -377,6 +397,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
             optionAnchors: ordered.map((e) => ({ option: e.option, ref: e.ref, glyphIndex: 0 })),
           },
           group.label,
+          group.fields[0].completedBy ?? null,
         ),
       );
       continue;
@@ -404,7 +425,7 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
             ? "long_text"
             : undefined;
     const opts = yesNo ? yesFirst(options, (o) => o) : options;
-    out.push(raw(label, "", { ...(answerType && { answerType }), options: opts, anchorTarget: "pdf_field", anchorRef: f.name }, segments.join(" ")));
+    out.push(raw(label, f.section ?? "", { ...(answerType && { answerType }), options: opts, anchorTarget: "pdf_field", anchorRef: f.name }, segments.join(" "), f.completedBy ?? null));
   }
   return out;
 }
@@ -413,21 +434,30 @@ function pdfFlatRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
   // Printed answer boxes and tick boxes are the answer spaces (form-boxes.ts); post-validation snaps
   // each overlay onto its box (date slots, tick boxes).
   if (pdf.boxes?.length) {
-    return flatBoxQuestions(pdf).map((q) =>
-      raw(cleanLabel(q.label).slice(0, 200), "", {
-        ...(q.answerType && { answerType: q.answerType }),
-        options: q.options,
-        anchorTarget: "pdf_overlay",
-        overlay: q.overlay,
-      }),
-    );
+    return flatBoxQuestions(pdf).map((q) => {
+      // The section in effect at the box's own label (its bottom edge), as post-validation reads it.
+      const at = pdfSectionAt(pdf, q.overlay.page, q.overlay.y + 1);
+      return raw(
+        cleanLabel(q.label).slice(0, 200),
+        at.section ?? "",
+        {
+          ...(q.answerType && { answerType: q.answerType }),
+          options: q.options,
+          anchorTarget: "pdf_overlay",
+          overlay: q.overlay,
+        },
+        "",
+        at.completedBy ?? null,
+      );
+    });
   }
   return pdfFlatLabelCandidates(pdf).map((c) => {
     const x = Math.min(c.endX + 4, 480);
-    return raw(cleanLabel(c.text), "", {
+    const at = pdfSectionAt(pdf, c.page, c.y);
+    return raw(cleanLabel(c.text), at.section ?? "", {
       anchorTarget: "pdf_overlay",
       overlay: { page: c.page, x, y: Math.max(0, c.y - 3), width: Math.max(80, 560 - x), height: 14 },
-    });
+    }, "", at.completedBy ?? null);
   });
 }
 

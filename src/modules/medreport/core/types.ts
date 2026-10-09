@@ -109,6 +109,7 @@ export type PdfFieldType = z.infer<typeof S.PdfFieldTypeSchema>;
 export type RegistrationPath = z.infer<typeof S.RegistrationPathSchema>;
 export type ComputedFactFormat = z.infer<typeof S.ComputedFactFormatSchema>;
 export type SignoffPart = z.infer<typeof S.SignoffPartSchema>;
+export type Party = z.infer<typeof S.PartySchema>;
 export type FormAnswer = z.infer<typeof S.FormAnswerSchema>;
 export type ReportFormRef = z.infer<typeof S.ReportFormRefSchema>;
 export type FormFile = z.infer<typeof S.FormFileSchema>;

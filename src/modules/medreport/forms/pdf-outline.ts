@@ -35,6 +35,7 @@ import type { PdfBox, PdfFormOutline } from "../core/types";
 import { extractPageBoxes } from "./pdf-boxes";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
 import { charGroupNearbyText, detectCharGroups, widgetOptionLabels, type CharCellCandidate } from "./pdf-widgets";
+import { annotatePdfSections, outlineTextItem } from "./pdf-sections";
 
 export type PdfClassification = "acroform" | "flat";
 
@@ -243,6 +244,7 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   }
   // Reading order: page, then top to bottom, then left to right.
   fields.sort((a, b) => a.page - b.page || b.rect.y + b.rect.height - (a.rect.y + a.rect.height) || a.rect.x - b.rect.x);
+  annotatePdfSections(fields, pageText); // section headings and who completes each part (forms/pdf-sections.ts)
 
   if (signatures > 0) {
     warnings.push(
@@ -257,7 +259,7 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   return {
     pages: doc.getPageCount(),
     fields,
-    pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(({ str, x, y }) => ({ str, x, y })) })),
+    pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(outlineTextItem) })),
     ...(boxes && classification === "flat" && { boxes }),
     classification,
     warnings,

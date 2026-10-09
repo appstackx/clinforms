@@ -38,6 +38,7 @@ src/modules/medreport/
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
     forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
     form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
+    parties.ts            who completes which part of a form ("to be completed by the policyholder", "Therapist's declaration")
     voice.ts              first-person rewrite, note shorthand expansion, job-title casing (pure)
     computed-facts.ts     FACT-attendance / -age / -episode / -outcomes-*
     scope.ts              template scope: strip fields before drafting
@@ -68,6 +69,7 @@ src/modules/medreport/
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
     docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
+    pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
     pdf-fill.ts           fillPdf(buf, form, answers, opts) → Promise<Uint8Array> (shrink to fit, continuation sheet, flatten)
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)

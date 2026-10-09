@@ -16,6 +16,7 @@ import type { FormKind, OutlineBlock, PdfFormOutline, PdfOutlineField } from "..
 import { findPlaceholders } from "../forms/docx-dom";
 import { charGroupsOf, unionRect } from "./pdf-groups";
 import { flatBoxQuestions, renderPdfBoxes } from "./form-boxes";
+import { pdfSectionTitles } from "../forms/pdf-sections";
 import { neutraliseTags } from "./prompts";
 
 /** A parsed form, as handed to the analysis. */
@@ -255,7 +256,14 @@ function renderPdfField(f: PdfOutlineField): string {
       ? ` printed=${JSON.stringify(f.optionLabels.map((o) => neutraliseTags(o.trim())))}`
       : "";
   const near = f.nearbyText.trim() ? ` near=${quote(f.nearbyText)}` : "";
-  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${labels}${near}`;
+  return `field ${JSON.stringify(f.name)} ${f.type} page ${f.page} box x=${r(f.rect.x)} y=${r(f.rect.y)} w=${r(f.rect.width)} h=${r(f.rect.height)}${opts}${labels}${near}${sectionAttrs(f)}`;
+}
+
+/** ` section="…" completedBy=…` for a field (forms/pdf-sections.ts), or "". */
+function sectionAttrs(f: Pick<PdfOutlineField, "section" | "completedBy">): string {
+  const section = f.section ? ` section=${quote(f.section)}` : "";
+  const party = f.completedBy ? ` completedBy=${f.completedBy}` : "";
+  return `${section}${party}`;
 }
 
 /** A run of one-character boxes, rendered as ONE answer space named by its first box. */
@@ -263,7 +271,7 @@ function renderCharGroup(members: PdfOutlineField[]): string {
   const first = members[0];
   const box = unionRect(members);
   const near = first.nearbyText.trim() ? ` near=${quote(first.nearbyText)}` : "";
-  return `field ${JSON.stringify(first.name)} character-boxes=${members.length} (one character per box, ${JSON.stringify(first.name)} to ${JSON.stringify(members[members.length - 1].name)}: map as ONE question with this field name) page ${first.page} box x=${r(box.x)} y=${r(box.y)} w=${r(box.width)} h=${r(box.height)}${near}`;
+  return `field ${JSON.stringify(first.name)} character-boxes=${members.length} (one character per box, ${JSON.stringify(first.name)} to ${JSON.stringify(members[members.length - 1].name)}: map as ONE question with this field name) page ${first.page} box x=${r(box.x)} y=${r(box.y)} w=${r(box.width)} h=${r(box.height)}${near}${sectionAttrs(first)}`;
 }
 
 /**
@@ -287,13 +295,13 @@ export function pdfAnswerSpaces(pdf: PdfFormOutline): PdfOutlineField[][] {
 }
 
 /** Positioned page text grouped into lines (same page, y within 3 pt), top to bottom. */
-export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: number; items: Array<{ x: number; str: string }> }> {
+export function pdfTextLines(pdf: PdfFormOutline, page: number): Array<{ y: number; items: Array<{ x: number; str: string }>; section?: string; completedBy?: string }> {
   const items = (pdf.pageText.find((p) => p.page === page)?.items ?? []).filter((it) => it.str.trim() !== "");
-  const lines: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
+  const lines: Array<{ y: number; items: Array<{ x: number; str: string }>; section?: string; completedBy?: string }> = [];
   for (const it of items.slice().sort((a, b) => b.y - a.y || a.x - b.x)) {
     const line = lines.find((l) => Math.abs(l.y - it.y) <= 3);
     if (line) line.items.push({ x: it.x, str: it.str });
-    else lines.push({ y: it.y, items: [{ x: it.x, str: it.str }] });
+    else lines.push({ y: it.y, items: [{ x: it.x, str: it.str }], ...(it.section && { section: it.section }), ...(it.completedBy && { completedBy: it.completedBy }) });
   }
   lines.forEach((l) => l.items.sort((a, b) => a.x - b.x));
   return lines;
@@ -317,7 +325,13 @@ export function renderPdfOutline(pdf: PdfFormOutline, kind: "pdf_acroform" | "pd
   for (let page = 1; page <= pdf.pages; page += 1) {
     if (!wanted(page)) continue;
     lines.push(`page ${page}:`);
+    let section = "";
     for (const line of pdfTextLines(pdf, page)) {
+      // Where a new section of the form starts (forms/pdf-sections.ts), and who completes it.
+      if (line.section && line.section !== section) {
+        section = line.section;
+        lines.push(`  section ${quote(section)}${line.completedBy ? ` completedBy=${line.completedBy}` : ""}`);
+      }
       lines.push(`  y=${r(line.y)}: ${line.items.map((it) => `x=${r(it.x)} ${quote(it.str)}`).join("  ")}`);
     }
     lines.push(...renderPdfBoxes(pdf, page));
@@ -360,7 +374,7 @@ export function summariseParsedForm(form: ParsedForm): FormOutlineSummary {
     pages: form.pdf.pages,
     fillableFields: form.pdf.fields.length,
     answerSpaces: form.kind === "pdf_acroform" ? pdfAnswerSpaces(form.pdf).length : flatSpaces,
-    headings: [],
+    headings: pdfSectionTitles(form.pdf).slice(0, 40),
     warnings: form.warnings.slice(),
   };
 }
