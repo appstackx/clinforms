@@ -1,50 +1,55 @@
 # Next steps – prioritised backlog
 
-State at hand-off: **Fri 2026-10-09 ~16:00 UTC**. Repo `appstackx/clinforms` `main` = `e799c51` → `7f6fcf8` → `32499de` (e2e scripts + dev tools) → `cba79dc` (WIP memory, 16:16) → final memory commit. Nothing below has been started unless marked.
-Rule: Khuram wants **a short plan first, build after his OK** for anything big – but keep it brief when a deadline is close (RED call, Tue 13 Oct inferred).
+State: **Fri 2026-10-09 ~23:15 UTC** (desktop). RED demo pack + call pack DONE on `demo/red-physio` (not pushed – the orchestrator pushes); production line on `feat/production` (§1b). Original hand-off state (16:00 UTC): `main` = `e799c51` → `7f6fcf8` → `32499de` → `cba79dc` → `c6a2850` (memory pack).
+Rule: Khuram wants **a short plan first, build after his OK** for anything big – but keep it brief when a deadline is close (RED call, Tue 13 Oct, morning).
 Update this file at the end of every session (status, blockers, what changed).
 
 ## 0. First 15 minutes of a new session (checklist)
 1. Read `CLAUDE.md`, this file, `memory/README.md`; skim `memory/decisions.md` (top rows).
 2. `git fetch && git status && git log --oneline -5` (expect `32499de` → `cba79dc` (WIP memory) → final memory commit, or later); `nvm use` (Node 22); `npm ci`.
-3. Baseline: `npm run typecheck && npm run lint && npm run test:medreport && npm run build` → expect **243/243**. Sandbox tests: `node --import ./scripts/medreport/test-setup.mjs --import tsx --test "src/sandbox/**/*.test.ts"` → 26/26.
+3. Baseline: `npm run typecheck && npm run lint && npm run test:medreport && npm run build` → on `main` expect **243/243** (+ sandbox tests 26/26 run separately); on `demo/red-physio` `test:medreport` includes the sandbox tests: **448 tests, 445 pass, 3 skipped** (LibreOffice). On `demo/red-physio` also `npm run demo:check` → "Demo assets OK: 7 maps, 4 answer files, 6 form files".
 4. `npm run dev` → click `/pms-sandbox` → Megan Hart → **Complete referrer's report form** → Harrow & Pike → review → approve → download (demo mode, no env needed).
 5. Network check (desktop should be open): `curl -sI` the three insurer PDF URLs (`memory/context/insurer-forms.md`), `https://api.vercel.com`, `https://api.supabase.com`.
 6. Tooling check on the Mac: LibreOffice (`/Applications/LibreOffice.app/Contents/MacOS/soffice`), ffmpeg/poppler, Postgres or Docker, `vercel`/`supabase` CLIs (via `npx` is fine).
 7. Send Khuram **one message** with the questions in §A, then start §1 (most of it doesn't depend on the answers; live drafting does – see §1 Blockers). Offer once, in that message: "Shall I check your Gmail (read-only) to answer Q1 and Q5 myself?" If he agrees (and a Gmail connector is available), search threads for "Blue Heart" / "Dell" / "red-physiotherapy" / "RED Physiotherapy" from 06/10 onwards; record what was actually sent to Dell (draft 1/2, video v2, timeframe) and Daniel's booking (date/time/link) in `projects/*.md`, copying no personal data beyond names and business emails. Never send or draft email without an explicit ask.
 
 ### §A. Questions for Khuram (ask once, together)
-1. Confirm the RED call is **Tue 13 Oct** ("Tuesday" came only from the research text you pasted; the date is inferred), and what time; who attends; did Daniel say anything when booking?
-2. Vercel: which plan (Pro needed for commercial use)? Will you import `appstackx/clinforms` yourself, or set a `VERCEL_TOKEN` env var for me?
+1. *(Partly answered 09/10: Tue 13 Oct, morning – exact time still to check.)* Confirm the RED call is **Tue 13 Oct** ("Tuesday" came only from the research text you pasted; the date is inferred), and what time; who attends; did Daniel say anything when booking?
+2. *(Answered 09/10: Hobby for now; `clinforms.co.uk` is live.)* Vercel: which plan (Pro needed for commercial use)? Will you import `appstackx/clinforms` yourself, or set a `VERCEL_TOKEN` env var for me?
 3. Are `clinforms.co.uk` and `clinforms.com` registered? Which registrar (for DNS)?
 4. Has the Anthropic API key pasted in chat on 06/10 been **rotated**? Which keys exist in the Anthropic Console (a second key file was also in the cloud container)? Please revoke all but one fresh key and put it in `.env.local` yourself (don't paste it in chat), plus a new `MEDREPORT_LIVE_PASSCODE` and new `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN` (e.g. `openssl rand -base64 32` each). **Needed for the RED demo:** demo mode can't draft a new patient on the new insurer forms (`NO_DEMO_DRAFT`), so without these the narrative answers stay blank. After the live run: should the call avoid depending on the live API (e.g. a local-only recorded-draft path for the demo-assets forms, kept out of git), or do you want to demo live with the passcode?
 5. Did the voiced v2 video go to Dell? Did he reply or send forms? Which of our draft replies did you actually send him (the 06/10 ones)?
-6. "Cloudflare for demos and base account + Supabase scripts to create new db": do you still want Cloudflare given Vercel Pro has unlimited projects at no extra cost? Does "new db" mean a **new Supabase project per clinic** or **a new clinic (tenant) in one shared London database** (my recommendation, dedicated project as premium)?
+6. *(Answered 09/10 – D39: Cloudflare D1 now, Supabase London later.)* "Cloudflare for demos and base account + Supabase scripts to create new db": do you still want Cloudflare given Vercel Pro has unlimited projects at no extra cost? Does "new db" mean a **new Supabase project per clinic** or **a new clinic (tenant) in one shared London database** (my recommendation, dedicated project as premium)?
 7. If Daniel asks about price on Tuesday, what do we say? Default proposal (assistant, unconfirmed): same structure as Blue Heart – per clinic, not per seat; Practice £199/mo list; founding offer £149/mo fixed 12 months + £250 setup incl. 5 forms (e.g. Bupa, AXA, Aviva + 2), monthly, cancel any time, state VAT treatment – or simply "depends on volume, typically £99–£199/month; we'll confirm after a short pilot".
 
 ---
 
-## 1. RED Physiotherapy demo pack – **P0, deadline: the RED call (Tue 2026-10-13, inferred – confirm)**
+## 1. RED Physiotherapy demo pack – **P0, DONE / READY; deadline: the RED call (Tue 2026-10-13, morning)**
 - **Goal:** live demo answering Daniel's "Which insurers do you support?" – ClinForms completes **Bupa, AXA Global Healthcare, Aviva CM016** (real public forms) in their original layout from **one fictional PMI patient**, plus a support matrix and 10-minute call script.
-- **Why:** booked call; second prospect; proves real insurer forms (nothing real tested yet).
-- **Status (09/10 ~23:45 UTC): BUILT, reviewed, fixed and rehearsed** on branch `demo/red-physio` (worktree
-  `clinforms-wt/red-integrate`; wave 2 + fix commits NOT pushed – push when Khuram agrees). `npm run demo:red` (always
-  demo mode unless `--live`) with the gitignored `demo-assets/insurers/`: 6 insurer PDFs, 7 prepared maps (Bupa, AXA
-  Global Healthcare, Aviva CM016 + GEN030, Freedom, Allianz Care, and our own illustrative portal question set, seeded
-  into the library), 4 answer files (Bupa, AXA, Allianz, portal) recorded from the real drafting path for Rebecca Lane
-  (`sim-pat-006`). `npm run demo:check` must say "Demo assets OK". Finals/drafts of the rehearsal:
-  `demo-assets/outputs/`; screenshots `demo-assets/rehearsal/` (earlier wave-2 set in `_wave2-before/`).
-- **Before the call (Khuram):** rehearse once in his own Chrome (maps live in the browser: upload each insurer PDF from
-  the library's "Demonstration forms" entries, confirm, then complete for Rebecca Lane from the simulated TM3 tab);
-  share only the browser window; confirm RED's practice system (the home page no longer says "TM3"); check Anthropic
-  credit only if he wants to show live drafting (`npm run demo:red -- --live` + passcode).
-- **Call guidance:** `memory/projects/red-physiotherapy.md` §8 (flow, what not to show, honest answers).
-- **Still open after the fixes:** one fictional patient on four insurers' forms (a second patient whose record names
-  AXA Global Healthcare would make AXA approvable without typed numbers); the maps were hand-made (say so: "set up and
-  checked in advance; a new form takes ~15 s to read, then staff check it once"); no logins/roles (anyone can type a
-  clinician's name to approve); whether AXA accepts an electronic approval line in its signature box is unknown;
-  review time with real clinicians not measured; live drafting still writes longer answers than the boxes hold
-  (`forms-8` with box capacities); `Write in my own voice` is a deterministic rewrite – read each answer.
+- **Status (09/10 ~23:15 UTC): DONE – built, reviewed, fixed, rehearsed (headless, twice) and the CALL PACK is written:
+  `docs/demo-red-physio.md`** (support matrix; Monday-evening and Tuesday-morning checklist with exact commands; Chrome
+  set-up; what to pre-upload; 10-minute script with click path, what to say and rehearsal timings; labels to frame;
+  likely questions with honest answers; questions for Daniel; fallbacks). Branch `demo/red-physio` (worktree
+  `clinforms-wt/red-integrate`; the orchestrator pushes it). `npm run demo:red` (always demo mode unless `--live`) with
+  the gitignored `clinforms/demo-assets/insurers/`: 6 insurer PDFs, 7 prepared maps (incl. our own illustrative portal
+  question set, seeded into the library), 4 answer files (Bupa, AXA, Allianz, portal) for Rebecca Lane (`sim-pat-006`).
+  `npm run demo:check` → "Demo assets OK: 7 maps, 4 answer files, 6 form files". Finals of the rehearsal:
+  `demo-assets/outputs/`; screenshots `demo-assets/rehearsal/` (older sets in `_wave2-before/` – never show).
+- **What remains (Khuram):**
+  1. **Monday evening:** one rehearsal in his own Chrome, in a separate "ClinForms demo" profile, from the worktree
+     (call pack §2.2) – maps live in the browser that confirmed them; then Reset demo.
+  2. **Tuesday morning:** quit heavy processes/agent workflows, `npm run demo:red -- --skip-build`, pre-upload and
+     confirm AXA + Aviva CM016, leave Bupa to upload live, two tabs (call pack §2.3).
+  3. Check the call time in the invite; confirm RED's practice system if possible (if not TM3, avoid the home page).
+  4. Decide the price line (only if asked; proposals in `memory/context/pricing.md`).
+  5. Optional: Anthropic credit check only if he wants to show live drafting (not recommended).
+- **Still open after the call (product):** a second fictional patient whose record names AXA Global Healthcare (AXA
+  approvable without typed numbers); `forms-8` giving the drafting prompt each box's capacity (live answers overflow);
+  BESS/BOA and "cuff" in the glossary; generic upload dialog defaults to "Medico-legal company"; no logins/roles in the
+  demo; whether AXA accepts an electronic approval line is unknown; review time with real clinicians not measured.
+- **Call guidance:** `docs/demo-red-physio.md` (full) and `memory/projects/red-physiotherapy.md` §8 (short).
+- **Historical – the original task prompt (done; kept for reference):**
+
 - **Ready-to-paste prompt:**
 
 ```text
@@ -72,12 +77,30 @@ Use the product name ClinForms everywhere (not CareConnect, not AppStackX Report
 
 ---
 
-## 2. Vercel deploy readiness + deploy – **P1** (Khuram 15:39: "stick to vercel, push to vercel")
-- **Goal:** ClinForms live on Vercel Pro in London, demo mode by default, live mode behind the passcode; later on `clinforms.co.uk`.
-- **Why:** live demos and a link to send; decision made.
-- **Status:** NOT STARTED. `vercel.json` already pins `lhr1`; README has deploy notes.
-- **Blockers:** Khuram must import the repo (Pro team) or set `VERCEL_TOKEN` (+ team scope) as an env var; fresh secrets; rotated Anthropic key; domains (optional for first deploy).
-- **Needs from Khuram:** plan confirmation, import or token, entering secrets in the Vercel UI, DNS at registrar when domains exist.
+## 1b. Production track – `feat/production` (pointer)
+- **Branch** `feat/production` (worktree `clinforms-wt/p-integrate`, `ec76a0a` at 09/10 22:41 UTC; wave 1 + wave 2
+  integrated, includes the RED engine via `prod/w2-base`). **Contract:** `docs/production-architecture.md` on that branch
+  (plus `docs/auth.md`, `docs/database.md`). Wave branches `prod/w2-*` have their own worktrees under `clinforms-wt/`.
+- **Owner decisions it follows** (`decisions.md` D39–D41): Cloudflare D1 now (EU jurisdiction, via the authenticated
+  gateway Worker `clinforms-data`), Supabase Postgres London later (when a paying clinic signs); Better Auth (invite-only
+  clinics, required TOTP two-step); MailerSend for email; PostHog EU (org "ClinForms", project 300254), consent-gated;
+  Vercel Hobby for now; `clinforms.co.uk` live.
+- **Built there (not on `main`, not deployed):** Kysely data layer (D1 gateway / Postgres / SQLite), AES-GCM
+  encryption at rest, Better Auth identity + `/app` settings, public website + request access + legal pages, tenant
+  Studio at `/app/studio`, clinic storage API, admin/platform pages, retention cron.
+- **Next:** read the contract and that branch's own notes before touching it; merging to `main` = deploying to
+  `clinforms.co.uk` (production branch `main`) – only with Khuram's go.
+
+## 2. Vercel deploy readiness + deploy – **P1, PARTLY DONE**
+- **Goal:** ClinForms live on Vercel in London, demo mode by default, live mode behind the passcode, on `clinforms.co.uk`.
+- **Status (checked 09/10 22:53 UTC):** **`https://clinforms.co.uk` is live** on Vercel (project `clinforms`, team
+  `khuram99gmailcoms-projects`, `lhr1`; `www` → 308 apex; `/` → `/reports`). `/api/reports/v1/health` = product
+  "ClinForms", `aiMode` live, `liveAiAvailable` true, prompt `form-analysis-3` → a **pre-RED build** (as on `main`),
+  not `demo/red-physio` or `feat/production`. Plan: **Hobby for now** (Khuram; Hobby is non-commercial – revisit before a
+  paying clinic). Who deployed it and when is not recorded here.
+- **Remaining:** fresh secrets per environment (names in `~/.config/appstackx/clinforms.secrets.env`, values never in
+  git), rotated key (§7.1), and the production line (§1b) when Khuram says go. The old prompt below predates the
+  deployment – use only the parts still missing.
 - **Ready-to-paste prompt:**
 
 ```text
@@ -98,7 +121,7 @@ Never commit or echo secrets.
 ## 3. Clarify and build Supabase scripts (create DB / onboard / offboard clinic) – **P2**
 - **Goal:** scripts ready to provision the database and onboard/offboard a clinic, tested locally, so a pilot can start fast.
 - **Why:** Khuram 15:39 request #3; prerequisite for real tenancy.
-- **Status:** NOT STARTED; scope unclear (see §A Q6). App has no DB code.
+- **Status:** **SUPERSEDED by §1b** – `feat/production` has migrations for D1/SQLite and Supabase Postgres (parity-tested) and the admin scripts (`create-clinic`, `list-clinics`, `offboard-clinic`, `reset-two-factor`, `provision-auth`; see `docs/production-architecture.md` there). Supabase itself comes later (D39). The prompt below is historical.
 - **Blockers:** scope answer; Supabase org + personal access token (env var `SUPABASE_ACCESS_TOKEN`), London region; local Postgres/Docker for tests.
 - **Ready-to-paste prompt:**
 
@@ -120,7 +143,7 @@ Never commit tokens, passwords or connection strings.
 ## 4. Cloudflare-for-demos question – **P3 (decision needed)**
 - **Goal:** decide whether demos/base account run on Cloudflare; if yes, prove feasibility with evidence.
 - **Why:** Khuram asked (15:39) for cost reasons. Assistant view: Vercel Pro has unlimited projects, so demo/base cost nothing extra on Vercel; Cloudflare ≈ $5/mo + 1–2 days porting and 9 known blockers (`memory/context/hosting-and-infra.md`).
-- **Status:** OPEN – awaiting §A Q6. Do NOT start porting without his OK.
+- **Status:** **RESOLVED (D39)** – the app stays on Vercel; Cloudflare is used for the database (D1 + gateway Worker) only. No Workers port. Prompt below is historical.
 - **Ready-to-paste prompt (only if Khuram wants the spike):**
 
 ```text
@@ -153,7 +176,7 @@ Add remote Word→PDF conversion to ClinForms. Read memory/context/hosting-and-i
 ## 6. Production hardening (pilot-ready) – **P4, ~3–5 weeks once a clinic commits**
 - **Goal:** safe to process real patient data for one pilot clinic.
 - **Scope:** auth + 2FA/MFA + roles; tenancy on Supabase London (server-side reports, encryption at rest, append-only audit, retention jobs); per-clinic partner keys / OAuth client credentials; shared rate limiting (not in-memory); converter (§5); mapping Dell's real TM3 export (needs a sample); real `Tm3Connector` only if TM3 grants partner access; Stripe billing + usage metering; shared insurer-form library; streaming drafts + background batch queue; OpenAPI spec; gold-case regression set run on every prompt change; turn the ad hoc Playwright scripts in `scripts/e2e/` (commit `32499de`) into a maintained E2E suite (fix ports/selectors, add a runner); CSP. Compliance pack in parallel: DPA naming Anthropic as sub-processor, DPIA, ICO registration, Cyber Essentials, ZDR with Anthropic, legal review (Part 35 / MedCo), intended-purpose statement.
-- **Status:** NOT STARTED. Needs a committed pilot clinic + Khuram's go.
+- **Status:** **IN PROGRESS on `feat/production`** (§1b: auth + two-step, tenancy, encrypted storage, append-only audit, retention cron, shared rate limits). Still open: converter (§5), real TM3 export mapping, billing, compliance pack.
 - **Ready-to-paste prompt:**
 
 ```text

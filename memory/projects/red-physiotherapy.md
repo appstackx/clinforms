@@ -1,6 +1,6 @@
 # RED Physiotherapy deal (Daniel Vatamanu)
 
-**Status (2026-10-09 ~23:45 UTC):** Call **booked** (Khuram 09/10 14:08); day "Tuesday" from the research text he pasted, **date 13 Oct inferred – confirm day AND time with Khuram**. **Demo pack BUILT, reviewed, fixed and rehearsed** on branch `demo/red-physio` (`npm run demo:red`; assets in gitignored `demo-assets/insurers/`) – see `memory/next-steps.md` §1 and §8 below for the call.
+**Status (2026-10-09 ~23:15 UTC):** Call **booked** (Khuram 09/10 14:08) for **Tue 13 Oct 2026, morning** (per the 09/10 desktop brief; exact time not in our records – check the invite). **Demo pack BUILT, reviewed, fixed and rehearsed; CALL PACK written: `docs/demo-red-physio.md`** (support matrix, Monday/Tuesday checklist, 10-minute script with click path and timings, honest answers, fallbacks). Branch `demo/red-physio`, run `npm run demo:red` from the worktree `clinforms-wt/red-integrate`; assets in gitignored `clinforms/demo-assets/insurers/`. **Left for Khuram:** one rehearsal in his own Chrome (demo profile, Monday evening), confirm RED's practice system if he can, decide what to say on price.
 **Contact:** `memory/people/daniel-vatamanu.md`.
 
 ## 1. Company (from his email signature only – no research done yet)
@@ -43,22 +43,23 @@ Assistant's suggested reply (09/10 14:04 UTC, before Khuram said he'd replied �
 - Blue Heart vs RED: same core ("complete *their* form from *our* clinical records, clinician approves"); differences: senders (MLCs/case managers vs PMIs), form types (treatment/progress reports vs further-treatment requests, therapy plans, claim forms), system (TM3 vs unknown), arrival (Word/PDF vs some PDFs + portals). **One product, two sets of forms.**
 - Network effect: a Bupa or Aviva form mapped once works for every clinic – a library of ready-mapped insurer forms becomes the advantage.
 
-## 4. Insurer support matrix (draft – forms not yet downloaded or classified)
-Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs: `memory/context/insurer-forms.md`.
+## 4. Insurer support matrix (classified 09/10; full version with click-level detail: `docs/demo-red-physio.md` §1)
+PDFs downloaded 09/10 ~17:10 UTC into gitignored `clinforms/demo-assets/insurers/`; per-form detail in `memory/context/insurer-forms.md`.
 
-| Insurer | Form | Expected handling | Priority | Status |
-|---|---|---|---|---|
-| **Bupa** | Further Physiotherapy Treatment Request (therapies management form), 3 pp | Fillable PDF (26 fields) – fully supported; the clinic completes and signs it in the therapist's declaration | **Tuesday #1** ("best match") | Ready: prepared map + answers; lead with it |
-| **AXA Global Healthcare** | Therapy Treatment Plan, 4 pp (international – label separately from domestic AXA Health) | Fillable PDF (32); signature written in the printed box | **Tuesday #2** | Ready; membership/claim numbers blocked (Bupa's not copied) – show as the safety feature, don't approve on the call |
-| **Aviva** | CM016 PMI claim form, 8 pp | Flat PDF; the patient's/GP's form – only identification prefilled (address lines + postcode); approved as a prefill (`_PREFILLED`) | **Tuesday #3** (30 s) | Ready |
-| Aviva | GEN030 medical report request, 2 pp | Doctor-only – format example only, labelled | Optional | Map ready (patient details only) |
-| Freedom Health Insurance | Worldwide outpatient claim form, 4 pp | Policyholder's claim form; the clinic fills the expenses table only; prefill | Skip on the call | Ready |
-| Allianz Care | Pre-authorisation form FRM-PreAuth-EN-0825, 3 pp | Section 2 (medical provider) drafted; doctor-labelled name/signature/date left for a doctor → prefill | Skip on the call | Ready (answers file) |
-| Vitality | No public PDF (therapist hub) | Likely portal → copy-ready answers, no submission | List only | – |
-| WPA | No public PDF (provider hub) | Likely portal → copy-ready answers | List only | – |
-| AXA Health (domestic) | No public PDF (provider site) | Likely portal → copy-ready answers | List only | – |
+| Insurer | Form | Type | What ClinForms completes | On the call (13 Oct) | Status |
+|---|---|---|---|---|---|
+| **Bupa** | Therapies management form – further physiotherapy treatment request, 3 pp | Fillable PDF, 26 fields | The therapist's form fully: 8 registration, 3 calculated (every outcome measure; sessions), 7 drafted, 3 recorded opinions, sign-off only in the therapist's declaration | **#1 – end to end, upload live** | Ready: prepared map + answers (fit every box); final `_SIGNED` |
+| **AXA Global Healthcare** (international, not AXA Health UK) | Therapy treatment plan, 4 pp | Fillable PDF, 73 fields / 32 questions | The therapist's form; signature written in the printed box | **#2 – stop at the identifier block** (Bupa's numbers not copied; F-28 specialist-review gap). Don't type numbers or approve | Ready (draft only) |
+| **Aviva** | CM016 PMI claim form, 8 pp | Flat PDF (print-ready, trim size) | Patient's/GP's form: section 1 identity only (address lines + postcode); 49 boxes left; approved as a prefill (`_PREFILLED`) | **#4 – 30 s** "knows what not to fill" | Ready |
+| Aviva | GEN030 medical report request, 2 pp | Flat PDF | Doctor's report – patient details only (format example) | Only if asked | Map ready |
+| Freedom Health Insurance | Worldwide outpatient claim form, 4 pp | Fillable PDF, 73 fields / 35 questions | Policyholder's claim form – only the treatments-and-fees table; prefill | Skip unless asked | Ready |
+| Allianz Care | Pre-authorisation form, 3 pp | Fillable PDF, 80 fields / 55 questions | Medical-provider section (17 answers, 5 gaps); doctor's and patient's parts left; prefill | Skip unless asked | Ready (answers file) |
+| Vitality / WPA / AXA Health (domestic) | No public PDF (provider portals) | Portal | Copy-ready answers via a portal question set; no login, no submission | **#3 – "Example portal questions (illustrative)"** (our own questions; 7/8 drafted, prognosis gap) | Ready (seeded in the library) |
 
-## 5. Demo plan for Tuesday (Khuram's pasted research, endorsed by assistant 14:10 UTC)
+## 5. Demo plan
+**As built (09/10/2026):** one fictional Bupa-insured patient, **Mrs Rebecca Lane** (`sim-pat-006` / `sim-ep-1006`, right shoulder, open episode, membership `DEMO-POL-0001`, authorisation `DEMO-AUTH-0001`, treating physio Sarah Reid `PH-DEMO-01`, no recorded prognosis on purpose); 7 prepared maps (6 insurer PDFs + our own portal question set) and 4 answer files (Bupa, AXA, Allianz, portal) recorded through the real drafting path, hand edits listed in each file's note, all in gitignored `clinforms/demo-assets/insurers/` (`npm run demo:check`: "7 maps, 4 answer files, 6 form files"); demo footer on every output; `npm run demo:red` = build + start in demo mode (no key needed). Rehearsed twice in headless Chromium (finals in `demo-assets/outputs/`, screenshots in `demo-assets/rehearsal/`). Call order: Bupa (upload live) → AXA block → portal questions → Aviva 30 s → close with "send me 2–3 blank forms". Script: `docs/demo-red-physio.md` §3.
+
+**Original plan (Khuram's pasted research, endorsed by assistant 14:10 UTC):**
 - Complete **Bupa, AXA Global Healthcare and Aviva CM016** from **one fictional patient** – show three layouts filled from the same records, missing information flagged, declarations left for the right person, "without claiming these are Daniel's exact forms".
 - Label each "public form – used for demonstration only; not affiliated with or endorsed by [insurer]"; footer on outputs: "Public form used for demonstration only – not affiliated with or endorsed by <insurer>. Fictional patient data."; private demos only; never commit the PDFs (gitignored `/demo-assets/`).
 - Branch `demo/red-physio`; fictional PMI patient `sim-pat-006` (001–005 taken; episode `sim-ep-1006` suggested) with fictional policy/authorisation numbers (e.g. `DEMO-POL-0001`, `DEMO-AUTH-0001`); `PH-DEMO-03` is reserved for a clinician (the original task prompt's "e.g. PH-DEMO-03" is superseded); `docs/demo-red-physio.md` with support matrix, 10-minute call script, caveats, questions. Estimate 2–3 hours once PDFs are available.
@@ -73,13 +74,14 @@ Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs:
 6. (Later) pricing expectations – no RED price has been discussed.
 
 ## 7. Open items
-- Call day (Tue 13 Oct inferred) + time and attendees (ask Khuram, or check his Gmail read-only if he agrees – `next-steps.md` §0 step 7). Booking link used unknown.
-- Live drafting is needed: demo mode has no recorded drafts for a new patient on these forms (`NO_DEMO_DRAFT`) – see `next-steps.md` §1 Blockers and Call-day fallback.
-- Company research (Companies House 13547807, website) – quick check before Tuesday.
-- Deploy a live URL for the call? (Vercel not deployed yet – running locally on Khuram's Mac with `npm run dev` is the fallback; screen-share. The insurer PDFs are not in git, so a Vercel URL can't show them, and confirmed form maps live only in the browser that made them.)
-- After the call: record RED's answers here, update the support matrix, decide on a RED-specific video.
+- Call time and attendees (Tue 13 Oct morning – check the invite). Booking link used unknown.
+- ~~Live drafting is needed~~ – resolved: prepared answers replay in demo mode; live drafting is optional (`npm run demo:red -- --live` + passcode) and not recommended (live answers overflow the insurer boxes until `forms-8`).
+- Company research (Companies House 13547807, website, likely PMS) – still not done.
+- ~~Deploy a live URL for the call?~~ – resolved: present locally (insurer PDFs are not in git; maps live in the browser). `clinforms.co.uk` is live but runs an older, pre-RED build – don't send it to Daniel as "the demo".
+- After the call: record RED's answers here (insurers, volumes, portals, PMS, signers, what "support" means, next step), update the support matrix here and in `docs/demo-red-physio.md`, decide on a RED-specific video and a second fictional patient insured with AXA.
 
-## 8. Call guidance (from the prospect's-eye review, 09/10 ~21:50 UTC – honest answers, nothing invented)
+## 8. Call guidance (from the prospect's-eye review, 09/10 ~20:50 UTC – honest answers, nothing invented)
+**The full call pack is `docs/demo-red-physio.md`** (checklist, click path, timings, labels to frame, fallbacks); this section is the short version.
 **Flow (~10 min):** say up front "one fictional patient shown on several insurers' public layouts – not RED's own forms".
 1. Bupa end to end (rehearsed): simulated TM3 tab → Complete referrer's report form → Bupa → review (citations;
    "Write in my own voice" turns "Sarah Reid recorded…" into plain clinical wording) → preview → approve → final PDF →

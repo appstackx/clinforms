@@ -1,6 +1,8 @@
 # Hosting and infrastructure
 
 ## Decision
+**Update 09/10 (desktop, evening; see `decisions.md` D39–D41):** `https://clinforms.co.uk` is **live** on Vercel (project `clinforms`, team `khuram99gmailcoms-projects`, `lhr1`, **Hobby for now** – non-commercial, move to Pro before a paying clinic) with a pre-RED build. Database: **Cloudflare D1 now** (EU, via the gateway Worker `clinforms-data`), **Supabase Postgres London later**; Better Auth, MailerSend, PostHog EU (project 300254). Contract: `docs/production-architecture.md` on branch `feat/production`. The text below is the earlier (pre-deployment) state.
+
 **Vercel**, functions pinned to **London (`lhr1`)** – Khuram, 2026-10-09 15:39 UTC: "**1- stick to vercel, push to vercel**". Plan: **Pro** (Hobby is non-commercial only). **Not deployed yet** – the cloud container had no Vercel access; Khuram must import the repo (or provide a `VERCEL_TOKEN` + team scope as an env var). The Vercel plan he is on was asked 06/10 12:31 & 12:49 UTC and **never answered**.
 
 Recommended full stack (assistant 09/10 14:17 & 15:26 UTC):

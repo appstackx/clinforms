@@ -1,20 +1,19 @@
 # ClinForms – working memory (hot cache)
 
-Last updated: **Fri 2026-10-09 ~23:45 UTC** (branch `demo/red-physio`: RED demo pack built, reviewed and fixed;
-earlier hand-off from the cloud session at ~16:00 UTC). Deep memory lives in `memory/` (index: `memory/README.md`).
+Last updated: **Fri 2026-10-09 ~23:20 UTC** (branch `demo/red-physio`: RED demo pack built, reviewed, fixed and
+rehearsed; call pack `docs/demo-red-physio.md` written; earlier hand-off from the cloud session at ~16:00 UTC). Deep memory lives in `memory/` (index: `memory/README.md`).
 
 ## Start here (every new session)
 1. Read **`memory/next-steps.md`** (prioritised backlog, ready-to-paste prompts) and **`memory/README.md`**
    (index). Pull detail from `memory/projects/*`, `memory/context/*`, `memory/people/*` as needed.
-2. Check repo state: `git fetch && git log --oneline -5` (expect `7f6fcf8` → `32499de` → `cba79dc` (WIP memory,
-   pushed 16:16) → final memory commit, or later),
-   `git status`, Node 22 (`nvm use`), `npm ci`.
-3. **The RED Physiotherapy call is booked (Khuram 09/10 14:08: "a meeting is booked"); the demo pack is BUILT** on
-   branch `demo/red-physio` (waves 1–2 + review fixes, rehearsed in a browser 09/10 ~23:00 UTC): `npm run demo:red`
-   with the gitignored `demo-assets/insurers/` (6 insurer PDFs, 7 maps incl. a prepared portal question set, 4
-   answer files). What is left: Khuram rehearses once in his own Chrome and confirms RED's clinic system; call
-   guidance in `memory/projects/red-physiotherapy.md` §8. "Tuesday" comes only from the research text he pasted at
-   14:08; the date **Tue 13 Oct is inferred – confirm day AND time with Khuram.**
+2. Check repo state: `git fetch && git worktree list && git log --oneline -5`, `git status`, Node 22, `npm ci`.
+   Branches: `main` (`c6a2850`; clinforms.co.uk runs a pre-RED build like it), `demo/red-physio` (RED demo + call pack; worktree
+   `clinforms-wt/red-integrate`), `feat/production` (production line; worktree `clinforms-wt/p-integrate`).
+3. **The RED Physiotherapy call is Tue 13 Oct 2026, morning** (exact time: check the invite). **Demo pack and call
+   pack are DONE** on branch `demo/red-physio`: `npm run demo:red` from the worktree with the gitignored
+   `clinforms/demo-assets/insurers/` (6 insurer PDFs, 7 maps incl. our own portal question set, 4 answer files);
+   **call pack `docs/demo-red-physio.md`** (support matrix, Monday/Tuesday checklist, 10-minute script, honest
+   answers, fallbacks). Left for Khuram: one rehearsal in his own Chrome (Monday evening), the call itself.
    **Budget:** the Claude weekly usage limit last reset Fri 09/10 06:00 UTC; next reset probably Fri 16/10 06:00 UTC
    (unverified) – i.e. AFTER the RED call. Work lean until then (single session or small workflows, no multi-agent
    fan-outs or full video re-records); commit after each verified step so a limit hit loses nothing.
@@ -45,7 +44,7 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
   sub-processor**, and answer honestly if a customer asks.
 - **Fictional data only.** No real patient data until DPA + DPIA + UK hosting + safeguards exist.
   Organisations end "(fictional)"; HCPC-style numbers use the invalid `PH-DEMO-0N` format – **fictional clinicians
-  only, never a patient label** (patients are `sim-pat-00N`; next free `sim-pat-006`).
+  only, never a patient label** (patients are `sim-pat-00N`; next free `sim-pat-007`).
 - Simulated TM3 is always labelled **"Simulated TM3 sandbox – demo data, not affiliated with TM3"**
   (verbatim). No TM3 logo/colours; never imply a TM3 partnership; never claim a direct TM3 link.
 - **Never commit secrets** (`.env.local` is gitignored) **or third-party insurer PDFs** (gitignored
@@ -64,7 +63,7 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 | Who | Role |
 |---|---|
 | **Dell** | **Dell Baines** (Companies House: Dell David Henson-Baines), owner/director, **Blue Heart Clinics** (11 sites, uses **TM3**). Buyer, no longer treats patients. → `memory/people/dell-baines.md` |
-| **Daniel** | **Daniel Vatamanu**, co-founder, **RED Physiotherapy** (Milton Keynes, Towcester, Northampton). Asked "Which insurers do you support?". Call booked, **Tue 13 Oct (inferred – confirm)**. → `memory/people/daniel-vatamanu.md` |
+| **Daniel** | **Daniel Vatamanu**, co-founder, **RED Physiotherapy** (Milton Keynes, Towcester, Northampton). Asked "Which insurers do you support?". Call **Tue 13 Oct, morning**; call pack `docs/demo-red-physio.md`. → `memory/people/daniel-vatamanu.md` |
 | **Megan Hart** | FICTIONAL demo patient `sim-pat-001` (RTA whiplash, Harrow & Pike solicitor) |
 | **Daniel Brooks** | FICTIONAL demo patient `sim-pat-002` (warehouse back injury, employer) – not Daniel Vatamanu! |
 | **Sarah Reid / Tom Ellis** | FICTIONAL physios `PH-DEMO-01` / `PH-DEMO-02` |
@@ -94,38 +93,46 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 ## Projects
 | Name | What | Status |
 |---|---|---|
-| **ClinForms** | The product: completes each referrer's own form, original layout, from clinic notes | Demo-grade, verified; **not deployed** → `memory/projects/clinforms.md` |
+| **ClinForms** | The product: completes each referrer's own form, original layout, from clinic notes | Demo-grade; a pre-RED build live at **clinforms.co.uk** (Vercel); production line on `feat/production` → `memory/projects/clinforms.md` |
 | **Blue Heart deal** | Dell; MLC/case-manager forms; voiced 6:15 video made 09/10 | Waiting on Dell (video send unconfirmed) → `memory/projects/blue-heart-clinics.md` |
-| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct (inferred – confirm) | **Demo pack ready** (`npm run demo:red`), rehearse in Khuram's Chrome → `memory/projects/red-physiotherapy.md` |
+| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct, morning | **Demo + call pack ready** (`npm run demo:red`, `docs/demo-red-physio.md`); Khuram rehearses Monday → `memory/projects/red-physiotherapy.md` |
 | **careconnect-mk** | Origin repo (patient-portal portfolio demo); module first built on branch `claude/confident-noether-z6l7kr` @ `ff05fab` | Superseded; unmerged → `memory/projects/careconnect-mk.md` |
 
-## Status snapshot (2026-10-09 ~16:00 UTC)
-- **Repo:** `github.com/appstackx/clinforms` (private), `main`: `e799c51` (363-file app, 15:07 UTC) →
-  `7f6fcf8` (Dell video assets, 15:48) → `32499de` (Playwright e2e scripts + dev tools, 16:16) →
-  `cba79dc` (WIP memory, 16:16) → final memory commit. Verified: tsc, lint, **243/243** `test:medreport`,
-  sandbox tests 26/26, build, 42-step browser E2E (at extraction), ClinForms rebrand.
-  Branch `demo/red-physio` (RED wave 1 + wave 2 + review fixes, not pushed since wave 2): `test:medreport` (sandbox
-  included) **448 tests, 445 pass, 3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
-- **Built:** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
+## Status snapshot (2026-10-09 ~23:20 UTC)
+- **Repo:** `github.com/appstackx/clinforms` (private).
+  - `main` = `c6a2850` (memory pack; app `e799c51`): tsc, lint, **243/243** `test:medreport`, sandbox 26/26, build.
+    **Deployed (a pre-RED build, prompt as on `main`):** `https://clinforms.co.uk` (Vercel project `clinforms`, team `khuram99gmailcoms-projects`, `lhr1`,
+    **Hobby for now**; `www` → apex; health 22:53 UTC: ClinForms, prompt `form-analysis-3`, live drafting available
+    behind the passcode). Production branch = `main`.
+  - `demo/red-physio` (worktree `clinforms-wt/red-integrate`): RED waves 1–2 + review fixes + call pack; **448 tests,
+    445 pass, 3 skipped** (LibreOffice), typecheck, lint, build, `demo:check` OK. Not pushed since wave 2 (the
+    orchestrator pushes). Prompts `form-analysis-4` / `rules-2` (analysis), `forms-7` (drafting).
+  - `feat/production` (worktree `clinforms-wt/p-integrate`, `ec76a0a`): Better Auth (invite-only, TOTP two-step),
+    Kysely data layer, encrypted storage, public site, tenant Studio `/app/studio`, admin pages. Contract:
+    `docs/production-architecture.md` (+ `docs/auth.md`, `docs/database.md`) on that branch. Not merged, not deployed.
+- **Infra ids (no secrets):** Cloudflare account `appstackx-demos` (`a04ab546d0f1be2aa339bafebcdb3ffa`), D1 (EU)
+  `clinforms-prod` (`c1a631fe-9cf0-414d-ab2f-28f7291282e3`) / `clinforms-preview`
+  (`3a548cc6-45d9-4dc5-b308-23a75534dcc9`), gateway Workers `clinforms-data` / `clinforms-data-preview`; PostHog EU
+  org "ClinForms", project **300254**; email via MailerSend. Supabase Postgres London later (when a clinic pays).
+  Secret values: `.env.local` and `~/.config/appstackx/clinforms.secrets.env` (never in git).
+- **Built (demo):** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
   cited drafting (Claude **Sonnet 5.5**, `claude-sonnet-5-5`), validators, review + approval, Word/PDF in
-  original layout, file-back to simulated TM3, batch, Security & GDPR page. Reports stored in browser.
-- **Not built:** auth/2FA, database (Supabase), Word→PDF converter service, real TM3 connector, billing.
-- **Deployed:** nowhere. Decision (Khuram 15:39 UTC): **Vercel** (Pro, London `lhr1`).
+  original layout, file-back to simulated TM3, batch, Security & GDPR page, insurer PDFs (fillable/flat, tables,
+  parties, prefill-only forms), portal question sets with copy-ready answers. Reports stored in browser.
+- **Not built:** Word→PDF converter service, real TM3 connector, billing; auth/database only on `feat/production`.
 - **Dell video:** `assets/sales/blue-heart/AppStackX-Reports-demo-Blue-Heart-Clinics-voiceover-v2.mp4`
   (6:15, 17.7 MB). Whether Khuram emailed it to Dell is **unverified** – ask.
 
 ## Top next actions (detail + prompts in `memory/next-steps.md`)
-1. **RED call** (Tue 13 Oct, inferred) – the demo pack is ready on `demo/red-physio` (`npm run demo:red`, demo mode,
-   prepared maps and answers in the gitignored `demo-assets/insurers/`). Before the call: Khuram rehearses once in
-   his own Chrome (upload Bupa/AXA/Aviva from the library's demonstration entries, confirm, complete for Rebecca
-   Lane); confirm RED's practice system; push the branch when he agrees. On the call: lead with Bupa end to end;
-   show AXA's identifier block as the safety feature (do NOT type AXA numbers or approve AXA); portal questions
-   (seeded, demo answers, prognosis gap); Aviva 30 s ("prefilled for the patient to sign"); skip Freedom/Allianz.
-   Honest answers to Daniel's likely questions: `memory/projects/red-physiotherapy.md` §8.
-2. **Vercel deploy** – blocker: Khuram imports the repo (Pro) or provides a token; fresh secrets; rotated key.
-3. **Ask Khuram** (one message): RED call day (Tue 13 Oct?) + time; Vercel plan/access; domains reserved?; key rotated?;
-   Dell video sent/replied?; what "Cloudflare for demos + Supabase scripts" means exactly.
-4. **Supabase scripts** (create DB / onboard / offboard clinic) – blocker: scope clarification + Supabase token.
+1. **RED call** (Tue 13 Oct, morning) – everything is in **`docs/demo-red-physio.md`**: Monday-evening rehearsal in a
+   separate "ClinForms demo" Chrome profile from the worktree; Tuesday morning `npm run demo:red -- --skip-build`,
+   pre-upload AXA + Aviva CM016, Bupa uploaded live; Bupa end to end → AXA identifier block (never type AXA numbers
+   or approve AXA) → portal questions (prognosis gap) → Aviva 30 s (prefill) → ask for 2–3 blank forms. After the
+   call: record Daniel's answers in `memory/projects/red-physiotherapy.md` §7.
+2. **Production line** (`feat/production`) – review with Khuram before merging to `main` (= deploying to
+   clinforms.co.uk). Vercel Hobby is non-commercial: move to Pro before a paying clinic.
+3. **Ask Khuram** (one message): RED call time; key rotated?; Dell video sent/replied?; price line for RED (if asked).
+4. **Supabase** – later, when a paying clinic signs (D39); migrations and clinic scripts already on `feat/production`.
 5. **Rotate every Anthropic key** that was ever in the cloud container (the one pasted in chat 06/10 12:18 + a second
    key file the 09/10 build report mentions) and treat the old `careconnect-mk/.env.local` passcode, launch/signing/
    partner secrets and `TM3_SIM_TOKEN` as burned – new values only (Khuram action; `memory/context/compliance.md` §7).
@@ -160,8 +167,9 @@ ignores the `auto` and runs in demo mode unless `--live`.
 | `src/modules/medreport/config.public.ts` | `PRODUCT` name/tagline (rename here) |
 | `src/modules/medreport/config.server.ts` | AI mode, model allow-list, secrets |
 | `src/modules/medreport/forms/` | Word/PDF outline, fill, convert (LibreOffice) |
-| `src/sandbox/tm3-sim/fixtures/` | Fictional patients (add RED's PMI patient here) |
+| `src/sandbox/tm3-sim/fixtures/` | Fictional patients (`rebecca-lane.ts` = RED's PMI patient `sim-pat-006`) |
 | `docs/plan.md` | Original plan + Revision 2 (referrer forms) |
+| `docs/demo-red-physio.md` | RED call pack (internal): support matrix, checklist, script, answers, fallbacks |
 | `assets/sales/blue-heart/` | Dell's video, SRT, narration, voice-over scripts |
 | `scripts/e2e/`, `scripts/dev-tools/` | Ad hoc Playwright flows (port 3107-era) and dev tools (model probe, flag check) |
 | `memory/` | Deep memory (this pack) |
