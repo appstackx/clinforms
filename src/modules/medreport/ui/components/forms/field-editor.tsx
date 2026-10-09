@@ -29,6 +29,7 @@ import { Button, Input, cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import { FILL_SOURCE_SHORT, FieldLabel, Select, Textarea } from "../shared/ui-bits";
 import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription } from "./mapping";
+import { PdfAnchorFields } from "./pdf-anchor-fields";
 
 const FILL_KINDS: FillSource["kind"][] = ["registration", "computed_fact", "fixed", "notes_narrative", "clinician_opinion", "signoff", "leave_blank"];
 
@@ -257,6 +258,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                 </div>
               </>
             ) : null}
+            {a.kind === "pdf_field" || a.kind === "pdf_char_fields" ? <PdfAnchorFields anchor={a} idPrefix={id} onChange={setAnchor} /> : null}
             {a.kind === "pdf_overlay" ? (
               <>
                 {(["page", "x", "y", "width", "height"] as const).map((k) => (

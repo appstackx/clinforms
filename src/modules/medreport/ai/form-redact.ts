@@ -120,7 +120,10 @@ function redactPdf(pdf: PdfFormOutline, found: Set<string>): PdfFormOutline {
     ...pdf,
     fields: pdf.fields.map((f) => {
       const nearbyText = redactText(f.nearbyText, found);
-      return nearbyText === f.nearbyText ? f : { ...f, nearbyText };
+      // The labels printed beside tick boxes are page text too.
+      const optionLabels = f.optionLabels?.map((l) => redactText(l, found));
+      const labelsChanged = Boolean(optionLabels?.some((l, i) => l !== f.optionLabels?.[i]));
+      return nearbyText === f.nearbyText && !labelsChanged ? f : { ...f, nearbyText, ...(labelsChanged && { optionLabels }) };
     }),
     pageText: pdf.pageText.map((p) => ({
       ...p,
