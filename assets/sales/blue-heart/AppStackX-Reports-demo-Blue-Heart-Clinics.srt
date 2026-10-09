@@ -1,0 +1,303 @@
+1
+00:00:00,300 --> 00:00:04,700
+Completing your referrers' own report forms
+from TM3 notes – for Blue Heart Clinics.
+
+2
+00:00:05,300 --> 00:00:11,059
+You told us your MLCs and insurers send their own report forms,
+with different layouts, questions, headings and formats.
+
+3
+00:00:11,099 --> 00:00:17,099
+You need that specific form completed from the patient's
+registration details and physiotherapy notes – not a generic report.
+
+4
+00:00:17,139 --> 00:00:19,700
+This walkthrough answers your five questions in turn.
+
+5
+00:00:20,009 --> 00:00:23,962
+Your question 1 of 5 – You asked: “Whether the system
+can work from different MLC/insurer report templates.”
+
+6
+00:00:24,351 --> 00:00:32,291
+Three of your referrers' own forms, each in its own layout:
+two Word forms and a fillable PDF (fictional examples).
+
+7
+00:00:32,341 --> 00:00:39,756
+A new referrer sends a form you haven't seen before.
+Your staff upload it once, exactly as received.
+
+8
+00:00:39,806 --> 00:00:46,666
+The system reads the blank form and identifies each question and answer
+space – no patient data is involved. (sped up – real time about 23 s)
+
+9
+00:00:46,716 --> 00:00:54,064
+17 questions found in Meridian's form
+– 1 flagged for a person to check.
+
+10
+00:00:54,114 --> 00:01:03,592
+For each question it proposes the source – TM3 registration,
+the notes, the clinician's opinion or sign-off.
+
+11
+00:01:03,642 --> 00:01:12,332
+Your team confirms it once; it is then reused
+for every patient that referrer sends.
+
+12
+00:01:12,382 --> 00:01:18,890
+Yes – each referrer's form is set up once, confirmed
+by your team, then reused for every patient.
+
+13
+00:01:18,940 --> 00:01:24,393
+Your question 3 of 5 – You asked: “Whether it can use TM3 registration
+details and physiotherapy notes without us duplicating data manually.”
+
+14
+00:01:24,784 --> 00:01:30,591
+Your clinic system – here our Simulated TM3 sandbox:
+fictional demo data, not affiliated with TM3.
+
+15
+00:01:30,641 --> 00:01:37,300
+Megan's record: registration details, 11 appointments
+and 10 clinical notes. One click opens the form tool.
+
+16
+00:01:37,350 --> 00:01:41,421
+Imported automatically – 10 notes,
+11 appointments, 6 outcome scores.
+
+17
+00:01:41,461 --> 00:01:44,560
+Nothing is retyped, and every call to TM3 is logged.
+
+18
+00:01:44,610 --> 00:01:52,213
+Yes – imported from TM3, nothing retyped. Today via a TM3
+export; a direct link is subject to TM3 providing access.
+
+19
+00:01:52,866 --> 00:01:57,720
+Your question 2 of 5 – You asked: “Whether it can complete
+the report in the original format/layout sent to us.”
+
+20
+00:01:58,107 --> 00:02:05,320
+Choose the referrer's form – Harrow & Pike's medico-legal form
+is suggested, because Megan's referral came from Harrow & Pike.
+
+21
+00:02:05,370 --> 00:02:11,891
+Registration details are filled in by code; each clinical answer is drafted
+from Megan's notes, citing its note. (sped up – real time about 12 s)
+
+22
+00:02:11,941 --> 00:02:17,060
+16 questions: 8 filled from TM3
+records, 4 drafted from the notes,
+
+23
+00:02:17,100 --> 00:02:23,353
+4 left for the clinician – red “Blocked”
+marks a check to clear before approval.
+
+24
+00:02:23,403 --> 00:02:28,191
+Harrow & Pike's own Word form, filled
+in – their layout, headings and boxes.
+
+25
+00:02:28,231 --> 00:02:30,962
+Marked DRAFT until a clinician approves it.
+
+26
+00:02:31,012 --> 00:02:37,836
+Yes – answers are written into the referrer's
+own document; the layout is unchanged.
+
+27
+00:02:39,124 --> 00:02:44,277
+Your question 4 of 5 – You asked: “How clinician review, amendment
+and approval would work before the final report is issued.”
+
+28
+00:02:44,666 --> 00:02:50,477
+Every drafted answer cites its source. Click a
+citation to check it against the original note.
+
+29
+00:02:50,527 --> 00:02:56,695
+Suppose someone adds a statement the notes
+don't support – here, a recovery date…
+
+30
+00:02:56,745 --> 00:03:05,004
+…the checks flag it at once and block approval: the date isn't in
+the cited note, and the clinician never recorded that opinion.
+
+31
+00:03:05,054 --> 00:03:09,140
+Undo the edit and the flags clear.
+
+32
+00:03:09,190 --> 00:03:13,567
+Megan's notes record no prognosis,
+so it is left blank – not guessed
+
+33
+00:03:13,607 --> 00:03:19,063
+– and blocks approval until the treating
+physiotherapist writes it in her own words.
+
+34
+00:03:19,113 --> 00:03:26,406
+She answers the other opinion questions and resolves the
+remaining checks – every edit is logged with who and when.
+
+35
+00:03:26,456 --> 00:03:37,040
+16 of 16 answered and clear. Approval records her name, HCPC
+number (fictional), typed signature and four attestations.
+
+36
+00:03:39,438 --> 00:03:46,626
+Approved: final and read-only – download it as
+Word or PDF, or save it to the patient's record.
+
+37
+00:03:46,676 --> 00:03:50,994
+The final PDF as downloaded: their layout, TM3 details by code,
+
+38
+00:03:51,034 --> 00:03:55,945
+answers from the notes, her own
+prognosis and approval – no DRAFT mark.
+
+39
+00:03:55,995 --> 00:04:02,505
+Nothing is issued until the treating clinician has
+reviewed, amended and approved it – every change is logged.
+
+40
+00:04:02,555 --> 00:04:06,811
+Your question 1 of 5 – your example – You wrote: “…another may ask
+similar clinical questions in a completely different structure.”
+
+41
+00:04:07,199 --> 00:04:13,370
+Same patient, same notes – now Northfield Assurance's fillable
+PDF, with similar questions in a different structure.
+
+42
+00:04:13,420 --> 00:04:18,180
+The system drafts Megan's answers again – this time to
+Northfield's own questions. (sped up – real time about 9 s)
+
+43
+00:04:18,230 --> 00:04:24,739
+12 of 17 answered and clear after drafting. As before,
+she adds her opinions and Northfield's claim number…
+
+44
+00:04:24,789 --> 00:04:35,809
+…and answers what doesn't apply (“Not applicable”, 0 further
+sessions): all 17 answered and clear before she approves.
+
+45
+00:04:35,859 --> 00:04:42,217
+Your example: one referrer asks for prognosis, functional
+restrictions and treatment recommendations in one format;
+
+46
+00:04:42,257 --> 00:04:48,433
+another asks similar questions in a different structure.
+Same notes – each form completed in its own structure.
+
+47
+00:04:48,483 --> 00:04:54,649
+Yes – same notes, each referrer's form completed in
+its own structure, whether Word or fillable PDF.
+
+48
+00:04:54,699 --> 00:04:58,254
+Your question 3 of 5 – back into the patient's record
+– You asked: “…without us duplicating data manually.”
+
+49
+00:04:58,663 --> 00:05:06,921
+One click – “Save to clinic record” – files it back: in the
+simulated TM3, Megan's Documents tab now lists both completed forms.
+
+50
+00:05:06,971 --> 00:05:14,525
+Filed back to the record. With your real TM3 this needs
+TM3 access – until then, it's one download and attach.
+
+51
+00:05:14,575 --> 00:05:18,229
+Your question 5 of 5 – You asked: “Whether patient
+data would remain secure and GDPR compliant.”
+
+52
+00:05:20,141 --> 00:05:26,569
+You can see exactly what the drafting service
+receives: the name becomes [CLAIMANT];
+
+53
+00:05:26,609 --> 00:05:30,075
+no date of birth, address or contact details.
+
+54
+00:05:30,125 --> 00:05:38,783
+The Security & GDPR page sets out the rest – what this demo
+does today, and what is in place before real patient data.
+
+55
+00:05:39,567 --> 00:05:43,486
+Your question 5: what will be in place
+before any real patient data is used.
+
+56
+00:05:43,526 --> 00:05:47,602
+A Data Processing Agreement and DPIA, UK
+hosting, encryption, two-factor login.
+
+57
+00:05:47,642 --> 00:05:51,967
+Minimised data under contract, an audit
+trail, clinician approval, agreed deletion.
+
+58
+00:05:52,567 --> 00:05:56,834
+Your five questions, answered. Templates:
+yes, set up once. Original layout: yes.
+
+59
+00:05:56,874 --> 00:06:01,354
+TM3 data: yes, no retyping – today via TM3
+export; direct link subject to TM3 access.
+
+60
+00:06:01,394 --> 00:06:05,967
+Nothing issued before clinician approval.
+Security: in place before real patient data.
+
+61
+00:06:06,567 --> 00:06:11,156
+Your next step: send us an anonymised MLC report
+form and the matching anonymised clinical notes.
+
+62
+00:06:11,196 --> 00:06:14,967
+We'll run them through this process and
+send you the completed draft to review.
