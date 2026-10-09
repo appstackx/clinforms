@@ -1,0 +1,46 @@
+"use server";
+/** Two-step verification setup: confirm the password → scan the QR code → enter a code → backup codes. */
+import { redirect } from "next/navigation";
+import { ACCOUNT_ERRORS } from "@/lib/account-copy";
+import { getAuth } from "@/server/auth/auth";
+import { authErrorMessage } from "@/server/auth/errors";
+import { manualEntryKey, otpauthQrDataUri } from "@/server/auth/qr";
+import { getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/server/auth/session";
+
+export type SetupState =
+  | { status: "idle" }
+  | { status: "error"; error: string }
+  | { status: "scan"; qr: string; manualKey: string; backupCodes: string[] }
+  | { status: "done" };
+
+const WINDOW = 15 * 60_000;
+
+export async function startSetup(_prev: SetupState, form: FormData): Promise<SetupState> {
+  const session = await getServerSession({ fresh: true });
+  if (!session) redirect("/login?next=%2Fapp");
+  if (hasTwoFactor(session)) return { status: "done" };
+  const password = String(form.get("password") ?? "");
+  if (!(await throttle("two-factor-setup", session.user.id, 10, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };
+  try {
+    const result = await getAuth().api.enableTwoFactor({ body: { password }, headers: requestHeaders() });
+    if (result.method !== "totp" || !("totpURI" in result)) return { status: "error", error: ACCOUNT_ERRORS.generic };
+    return { status: "scan", qr: otpauthQrDataUri(result.totpURI), manualKey: manualEntryKey(result.totpURI), backupCodes: result.backupCodes };
+  } catch (err) {
+    return { status: "error", error: authErrorMessage(err, "two_factor_start") };
+  }
+}
+
+export async function confirmSetup(_prev: SetupState, form: FormData): Promise<SetupState> {
+  const session = await getServerSession({ fresh: true });
+  if (!session) redirect("/login?next=%2Fapp");
+  const code = String(form.get("code") ?? "").replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(code)) return { status: "error", error: ACCOUNT_ERRORS.invalidCode };
+  if (!(await throttle("two-factor-confirm", session.user.id, 10, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };
+  try {
+    // Turns two-step verification on, signs every other session out and issues a new session cookie.
+    await getAuth().api.verifyTOTP({ body: { code }, headers: requestHeaders() });
+  } catch (err) {
+    return { status: "error", error: authErrorMessage(err, "two_factor_confirm") };
+  }
+  return { status: "done" };
+}

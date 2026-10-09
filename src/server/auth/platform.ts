@@ -256,11 +256,20 @@ function writePrivate(file: string, content: string | Buffer): void {
   fs.writeFileSync(file, content, { mode: 0o600 });
 }
 
-export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher, input: OffboardInput): Promise<OffboardResult> {
+async function countRows(db: Kysely<Database>, table: "reports" | "forms" | "form_files" | "audit_log", tenantId: string): Promise<number> {
+  const row = await db
+    .selectFrom(table)
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .where("tenant_id", "=", tenantId)
+    .executeTakeFirst();
+  return Number(row?.n ?? 0);
+}
+
+/** `cipher` is needed only with confirm (the export decrypts); a dry run only counts. */
+export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | null, input: OffboardInput): Promise<OffboardResult> {
   const tenantId = String(input.slug ?? "").trim();
   const org = await db.selectFrom("organization").selectAll().where("slug", "=", tenantId).executeTakeFirst();
   if (!org) throw new RepoInputError(`No clinic with the id "${tenantId}".`);
-  const ctx = { db, cipher };
 
   const members = await db
     .selectFrom("member")
@@ -273,26 +282,28 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher, i
     ? await db.selectFrom("member").select("userId").where("userId", "in", memberUserIds).where("organizationId", "!=", org.id).execute()
     : [];
   const keep = new Set(otherMemberships.map((m) => m.userId));
-  const deleteUserIds = memberUserIds.filter((id) => !keep.has(id) && id !== "clinforms-platform");
+  const deleteUserIds = memberUserIds.filter((id) => !keep.has(id) && id !== PLATFORM_USER_ID);
   const invitations = await db.selectFrom("invitation").selectAll().where("organizationId", "=", org.id).execute();
-  const forms = await exportEncrypted(db, cipher, "forms", tenantId);
-  const reports = await exportEncrypted(db, cipher, "reports", tenantId);
-  const files = await listFormFiles(ctx, tenantId);
-  const keys = await listPartnerKeys(ctx, tenantId);
-  const audit = await exportAudit(db, tenantId);
-  const profiles = await listMemberProfiles(ctx, org.id);
+  const keys = await listPartnerKeys({ db }, tenantId);
+  const profiles = await listMemberProfiles({ db }, org.id);
   const counts = {
     members: members.length,
     invitations: invitations.length,
-    forms: forms.length,
-    reports: reports.length,
-    formFiles: files.length,
+    forms: await countRows(db, "forms", tenantId),
+    reports: await countRows(db, "reports", tenantId),
+    formFiles: await countRows(db, "form_files", tenantId),
     partnerKeys: keys.length,
     memberProfiles: profiles.length,
-    auditRows: audit.length,
+    auditRows: await countRows(db, "audit_log", tenantId),
   };
   const plan: OffboardPlan = { organizationId: org.id, tenantId, counts, usersToDelete: deleteUserIds.length, usersKept: keep.size };
   if (!input.confirm) return { ...plan, dryRun: true, exportDir: null, exportFiles: [] };
+  if (!cipher) throw new RepoInputError("The data keys (CLINFORMS_DATA_KEYS) are needed to export the clinic's data.");
+  const ctx = { db, cipher };
+  const forms = await exportEncrypted(db, cipher, "forms", tenantId);
+  const reports = await exportEncrypted(db, cipher, "reports", tenantId);
+  const files = await listFormFiles(ctx, tenantId);
+  const audit = await exportAudit(db, tenantId);
 
   // 1. Export (decrypted) and verify it before anything is deleted.
   if (!input.exportDir) throw new RepoInputError("--export-dir is required with --confirm.");
