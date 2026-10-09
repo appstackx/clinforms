@@ -15,6 +15,14 @@ import "server-only";
  *   tick box with a widget per option, or a radio group printed with other labels than its export
  *   values, keeps the printed labels (optionLabels); a run of one-character boxes is one question
  *   (pdf_char_fields, a date as DDMMYYYY / DDMMYY).
+ * - A tick-box group (separate boxes, one per printed option) proposed as one of its boxes alone is widened
+ *   to every box of the group; a second box of the same group then merges into it without a warning.
+ * - A list of treatments proposed as "appointments_table" on a table of fields becomes the table question
+ *   filled from the appointments (form-tables.ts); anywhere else it is drafted from the notes, flagged.
+ * - Figures: an outcome score in an "Initial" / "Current" box is the first / latest score, as the label
+ *   says; a computed figure never answers a choice (a 0–10 drop-down is picked from the notes); a count
+ *   in a treatment plan is the number planned, not attended; a number or name the clinic record does not
+ *   hold, and the "Other – please specify" box of a list, are left blank for staff.
  * - No two fields may share an answer space (the later one is dropped with a warning).
  * - Identifiers (name, date of birth, address, references) are always filled by code from the
  *   registration record, and opinion questions (prognosis, causation, fitness for work, restrictions,
@@ -50,8 +58,8 @@ import { FormFieldSchema } from "../core/schemas";
 import { pdfSectionAt, type SectionInfo } from "../forms/pdf-sections";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { snapOverlay } from "./form-boxes";
-import { classifyLabel } from "./form-classify";
-import { charGroupFormat, charGroupMembers, isYesNoOptions, printedOptions, yesFirst } from "./pdf-groups";
+import { classifyLabel, scoreFormat } from "./form-classify";
+import { charGroupFormat, charGroupMembers, detectOptionGroups, isYesNoOptions, printedOptions, yesFirst, type OptionGroup } from "./pdf-groups";
 import { pdfTableQuestions } from "./form-tables";
 import {
   docxOrder,
@@ -105,7 +113,17 @@ function quoteLabel(label: string): string {
  * ----------------------------------------------------------------------------------------------*/
 
 type AnchorOutcome =
-  | { ok: true; anchor: FormAnchor; conf: FormFieldConfidence; notes: string[]; repaired: boolean; options?: string[]; answerType?: AnswerType }
+  | {
+      ok: true;
+      anchor: FormAnchor;
+      conf: FormFieldConfidence;
+      notes: string[];
+      repaired: boolean;
+      options?: string[];
+      answerType?: AnswerType;
+      /** Set when one box of a tick-box group was widened to the whole group (its first box's name). */
+      groupKey?: string;
+    }
   | { ok: false; reason: string };
 
 /** An empty / placeholder / content-control cell, or a question-and-answer box (blank lines after the question). */
@@ -339,7 +357,27 @@ function charFieldsAnchor(ix: PdfIndex, field: PdfOutlineField, label: string, a
   };
 }
 
-function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, answerType: AnswerType, options: string[]): AnchorOutcome {
+/**
+ * A tick-box group (separate boxes, one per printed option – pdf-groups.ts detectOptionGroups) proposed as
+ * one of its boxes alone ("Therapist type: Physiotherapist" as a single tick box): the whole group, so the
+ * question can be answered with any of its options and never ticks a box beside the wrong word.
+ */
+function optionGroupAnchor(group: OptionGroup, conf: FormFieldConfidence): AnchorOutcome {
+  const entries = group.fields.map((f, i) => ({ option: group.options[i], fieldName: f.name }));
+  const ordered = group.yesNo ? yesFirst(entries, (e) => e.option) : entries;
+  return {
+    ok: true,
+    anchor: { kind: "pdf_field", fieldName: ordered[0].fieldName, fieldType: "checkbox", optionFields: ordered },
+    conf: minConf(conf, "medium"),
+    notes: ["Linked to every tick box of this question, one per printed option – check them."],
+    repaired: true,
+    answerType: group.yesNo ? "yes_no" : "single_choice",
+    options: ordered.map((e) => e.option),
+    groupKey: group.fields[0].name,
+  };
+}
+
+function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, answerType: AnswerType, options: string[], groups: ReadonlyMap<string, OptionGroup> = new Map()): AnchorOutcome {
   const names = [raw.anchorRef, ...raw.optionAnchors.map((o) => o.ref)].map((n) => n.trim()).filter(Boolean);
   let field = names.map((n) => ix.byName.get(n)).find((f) => f !== undefined);
   let conf: FormFieldConfidence = "high";
@@ -372,6 +410,8 @@ function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, a
       linked.push({ option, fieldName: box.name });
     }
     const distinctRefs = new Set(wanted.map((o) => o.ref.trim()));
+    const group = groups.get(field.name);
+    if (group && linked.length < 2 && !(field.options && field.options.length > 1)) return optionGroupAnchor(group, conf);
     if (linked.length >= 2) {
       const ordered = isYesNoOptions(linked.map((l) => l.option)) ? yesFirst(linked, (l) => l.option) : linked;
       const optionFieldsAnchor: PdfFieldAnchor = { kind: "pdf_field", fieldName: ordered[0].fieldName, fieldType: "checkbox", optionFields: ordered };
@@ -408,13 +448,15 @@ function pdfFieldAnchor(raw: AnalysisFieldOutput, ix: PdfIndex, label: string, a
     type = "checkbox";
     opts = [];
   } else if (field.type === "radio" || field.type === "dropdown") {
+    // A list's prompt ("Please select", "-- choose --") is not one of its answers.
+    if (field.type === "dropdown") opts = opts.filter((o) => !LIST_PROMPT.test(o));
     // Printed labels that differ from the export values ("Choice5" printed "Mrs"): kept on the anchor.
     const labels = (field.optionLabels ?? []).map((l) => l.trim());
     const exportValues = field.options ?? [];
     if (labels.length === exportValues.length && labels.some((l, i) => l && l.toLowerCase() !== exportValues[i].toLowerCase())) {
       anchor.optionLabels = labels;
     }
-    if (opts.length === 0 && exportValues.length) opts = anchor.optionLabels ? printedOptions(ix.pdf, field) : exportValues.slice();
+    if (opts.length === 0 && exportValues.length) opts = (anchor.optionLabels ? printedOptions(ix.pdf, field) : exportValues.slice()).filter((o) => field!.type !== "dropdown" || !LIST_PROMPT.test(o));
     if (type !== "yes_no" && type !== "single_choice") type = opts.length === 2 && /^y/i.test(opts[0]) && /^n/i.test(opts[1]) ? "yes_no" : "single_choice";
   }
   return { ok: true, anchor, conf, notes, repaired, answerType: type, options: opts };
@@ -494,6 +536,12 @@ function anchorSlots(anchor: FormAnchor, docx: DocxIndex | null): Array<{ key: s
  * Fill sources
  * ----------------------------------------------------------------------------------------------*/
 
+/** A drop-down list's prompt entry ("Please select", "-- choose --"), never an answer. */
+const LIST_PROMPT = /^(?:-+\s*)?(?:please\s+)?(?:select|choose|pick)\b|^-+$|^\s*$/i;
+
+/** "Other, please specify (below)", "Other (please state)": the free-text box of a list's "Other" option. */
+const OTHER_SPECIFY = /^other\b[\s,:–-]*\(?\s*(?:please\s+)?(?:specify|state|give details)\b/i;
+
 const SIGNOFF_BY_TYPE: Partial<Record<AnswerType, SignoffPart>> = {
   signature: "signature",
   clinician_name: "name",
@@ -508,12 +556,19 @@ function fillSourceOf(
   section: string | undefined,
   answerType: AnswerType,
   party?: Party,
-): { source: FillSource; notes: string[]; conf: FormFieldConfidence; completedBy?: Party } {
+): { source: FillSource; notes: string[]; conf: FormFieldConfidence; completedBy?: Party; wantsTable?: boolean } {
   const notes: string[] = [];
   let conf: FormFieldConfidence = "high";
   const cls = classifyLabel(label, section, party);
   let source: FillSource;
+  let wantsTable = false;
   switch (raw.fillSource) {
+    case "appointments_table":
+      // A list of treatments and fees: on a table of fields the table question below fills it from the
+      // attended appointments (form-tables.ts); anywhere else it is drafted from the notes.
+      source = { kind: "notes_narrative" };
+      wantsTable = true;
+      break;
     case "registration":
       if (raw.registrationPath !== "none") source = { kind: "registration", path: raw.registrationPath };
       else if (cls.fillSource.kind === "registration") source = cls.fillSource;
@@ -525,7 +580,16 @@ function fillSourceOf(
       break;
     case "computed_fact":
       if (raw.computedFact !== "none") {
-        const format = raw.computedFormat === "none" ? undefined : (raw.computedFormat as ComputedFactFormat);
+        let format = raw.computedFormat === "none" ? undefined : (raw.computedFormat as ComputedFactFormat);
+        // An outcome score in an "Initial score" / "Current score" box: the first or the latest score,
+        // as the form's own wording says.
+        if (raw.computedFact.startsWith("FACT-outcomes-")) {
+          const said = scoreFormat(label.toLowerCase(), (section ?? "").toLowerCase());
+          if (said !== "summary" && said !== format) {
+            if (format) notes.push(`The ${said === "first_score" ? "first" : "latest"} score is used, as the question asks.`);
+            format = said;
+          }
+        }
         source = { kind: "computed_fact", factId: raw.computedFact as FactId, ...(format && { format }) };
       } else if (cls.fillSource.kind === "computed_fact") source = cls.fillSource;
       else {
@@ -556,6 +620,31 @@ function fillSourceOf(
       break;
   }
 
+  // Numbers and names the clinic record does not hold (a scheme's number, a company policy's holder, a
+  // work telephone, the clinic's provider number): never a record value that only looks right.
+  if (cls.notHeld && source.kind === "registration") {
+    source = { kind: "leave_blank" };
+    conf = minConf(conf, "medium");
+    notes.push("The clinic record does not hold this, so it is left blank for staff to enter.");
+  }
+  // The box for "Other – please specify" beside a list of options: written only when "Other" is the answer.
+  if (OTHER_SPECIFY.test(label) && (source.kind === "registration" || source.kind === "computed_fact")) {
+    source = { kind: "leave_blank" };
+    conf = minConf(conf, "medium");
+    notes.push("Completed only when “Other” is the answer, so it is left blank for staff.");
+  }
+  // "Number of sessions" in a treatment plan is the number planned, not the sessions attended so far.
+  if (cls.plannedCount && source.kind === "computed_fact" && source.factId === "FACT-attendance") {
+    source = { kind: "notes_narrative" };
+    conf = minConf(conf, "medium");
+    notes.push("This asks for the sessions planned, not those attended, so it is taken from the notes.");
+  }
+  // A computed figure is text: a choice (a drop-down of 0–10, tick boxes) is picked from the notes instead.
+  if (source.kind === "computed_fact" && (answerType === "single_choice" || answerType === "yes_no" || answerType === "checkbox")) {
+    source = { kind: "notes_narrative" };
+    conf = minConf(conf, "medium");
+    notes.push("A choice is picked from the notes, not computed – check the option.");
+  }
   // Safety rules, whatever was proposed.
   if (cls.identifier && source.kind !== "registration" && source.kind !== "signoff" && source.kind !== "leave_blank") {
     source = cls.fillSource;
@@ -577,7 +666,7 @@ function fillSourceOf(
     source = { kind: "leave_blank" };
     conf = minConf(conf, "medium");
   }
-  return { source, notes, conf, ...(cls.completedBy && { completedBy: cls.completedBy }) };
+  return { source, notes, conf, ...(cls.completedBy && { completedBy: cls.completedBy }), ...(wantsTable && source.kind !== "leave_blank" && { wantsTable }) };
 }
 
 /** Section and party the PDF outline gives the answer space (fields and boxes); none for Word. */
@@ -605,6 +694,10 @@ interface Candidate {
   order: number;
   seq: number;
   repaired: boolean;
+  /** One box of a tick-box group widened to the group: a second proposal of the same group merges silently. */
+  groupKey?: string;
+  /** Proposed as a list of treatments and fees (appointments_table). */
+  wantsTable?: boolean;
 }
 
 /**
@@ -641,6 +734,9 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
   const docxIx = parsed.kind === "docx" ? indexDocx(parsed.blocks) : null;
   const pdfIx = parsed.kind !== "docx" ? indexPdf(parsed.pdf) : null;
   const cap = opts.confidenceCap ?? "high";
+  // Fillable PDFs: separate tick boxes that answer one question, by box name.
+  const optionGroups = new Map<string, OptionGroup>();
+  if (parsed.kind === "pdf_acroform") for (const g of detectOptionGroups(parsed.pdf)) g.fields.forEach((f) => optionGroups.set(f.name, g));
 
   const candidates: Candidate[] = [];
   raws.forEach((raw, seq) => {
@@ -658,11 +754,11 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     let outcome: AnchorOutcome;
     if (docxIx) outcome = docxAnchor(raw, docxIx, label, options);
     else if (pdfIx && parsed.kind === "pdf_acroform" && raw.anchorTarget !== "pdf_overlay") {
-      outcome = pdfFieldAnchor(raw, pdfIx, label, answerType, options);
+      outcome = pdfFieldAnchor(raw, pdfIx, label, answerType, options, optionGroups);
     } else if (pdfIx) {
       outcome =
         raw.anchorTarget === "pdf_field" && pdfIx.byName.has(raw.anchorRef.trim())
-          ? pdfFieldAnchor(raw, pdfIx, label, answerType, options)
+          ? pdfFieldAnchor(raw, pdfIx, label, answerType, options, optionGroups)
           : overlayAnchor(raw, pdfIx.pdf.pages, label);
     } else {
       outcome = { ok: false, reason: `The answer space for ${quoteLabel(label)} was not found.` };
@@ -676,7 +772,11 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     // separators, yes/no and choices as an X in the printed tick box.
     if (pdfIx && outcome.anchor.kind === "pdf_overlay") {
       const snapped = snapOverlay(outcome.anchor, pdfIx.pdf, answerType, options);
-      if (snapped) outcome = { ...outcome, anchor: snapped.anchor, notes: [snapped.note], ...(snapped.options && { options: snapped.options }) };
+      if (snapped) {
+        // On a fillable PDF the box is a printed box no field covers (a signature box), not a flat page.
+        const note = parsed.kind === "pdf_acroform" ? snapped.note.replace(/^Flat PDF:/, "Printed box with no fillable field:") : snapped.note;
+        outcome = { ...outcome, anchor: snapped.anchor, notes: [note], ...(snapped.options && { options: snapped.options }) };
+      }
     }
     if (outcome.options) options = outcome.options;
     if (outcome.answerType) answerType = outcome.answerType;
@@ -741,7 +841,7 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       }
     }
     if (outcome.repaired) repairedCount += 1;
-    candidates.push({ field, order, seq, repaired: outcome.repaired });
+    candidates.push({ field, order, seq, repaired: outcome.repaired, ...(outcome.groupKey && { groupKey: outcome.groupKey }), ...(fill.wantsTable && { wantsTable: true }) });
   });
 
   // Fillable PDFs: a table of fields (repeated rows) is one question, not one per cell (form-tables.ts).
@@ -754,6 +854,15 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       if (t.replaces.length > 1) warnings.push(`The ${t.table.rows.length}-row table “${t.field.label}” is one question (${t.replaces.length} cell questions were combined).`);
     }
     candidates.splice(0, candidates.length, ...kept);
+  }
+  // A list of treatments proposed where no table of fields was found: drafted from the notes, flagged.
+  for (const c of candidates) {
+    if (!c.wantsTable || c.field.answerType === "table") continue;
+    c.field = {
+      ...c.field,
+      confidence: minConf(c.field.confidence, "low"),
+      note: clean([c.field.note, "No table of fields was found for this list of treatments, so it will be drafted from the notes – check it."].filter(Boolean).join(" "), 500),
+    };
   }
 
   // Document order, then the model's order.
@@ -768,6 +877,8 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     const full = slots.find((slot) => (used.get(slot.key)?.length ?? 0) >= slot.capacity);
     if (full) {
       const clash = (used.get(full.key) ?? [])[0];
+      // Two boxes of one tick-box group proposed separately, both widened to the group: one question.
+      if (c.groupKey && clash?.groupKey === c.groupKey) continue;
       dropped += 1;
       warnings.push(
         `${quoteLabel(c.field.label)} pointed at the same answer space as ${quoteLabel(clash?.field.label ?? "another question")}, so it was left out. Add it in the mapping editor if it is a separate question.`,

@@ -247,6 +247,7 @@ answer space.
 | | Sonnet 5.5 · low / medium · `form-analysis-2` | 9.4–25.6 s | 3,588–7,172 | $0.09–0.13 | Kingsway 14–15 of 22 questions; duplicate-question warnings on Harrow & Pike and Meridian; low once 20 of 22 on Harrow & Pike |
 | | **Sonnet 5.5 · low · `form-analysis-3`** | **10.8–14.3 s** | **4,165–5,477** | **$0.08–0.14** | **2 runs: all pass** – every question found (22 / 23 / 22 / 17), in the same answer spaces as the Opus maps, nothing dropped; once mapped Northfield's diagnosis question as an opinion |
 | | Sonnet 5.5 · medium · `form-analysis-3` | 11.4–17.8 s | 4,222–5,554 | $0.08–0.14 | 2 runs: first (before office-use boxes were asked for) left out Harrow & Pike's two office-use boxes; then pass, with Northfield's diagnosis as an opinion and four warnings where the prompt allows three |
+| Form analysis, 6 insurer PDFs + 5 samples | **Sonnet 5.5 · low · `form-analysis-4` (S7 text, live, not recorded)** | 9.7–23.7 s | 3,657–16,418 | $0.10–0.64 | 4 rounds: Bupa and AXA every question, source and party right; no sign-off in another party's part on any form – see "Live form analysis on the RED engine (S7)" |
 
 **Chosen:** `DEFAULT_ANALYSIS_EFFORT` = `low` (`ai/form-analysis.ts`) and `DEFAULT_LIVE_EFFORT` = `medium`
 (`ai/draft-live.ts`). For drafting, low and medium cost the same within about 3 % and take the same
@@ -688,10 +689,9 @@ Additive contract changes for private medical insurance forms (Bupa, AXA, Aviva�
   staff ("Physiotherapist", "United Kingdom"); filled by code (`from_records`, no source IDs). A value that
   does not fit the question (an unprinted option, "maybe" for Yes/No) is left blank with a `-fixed` gap, and
   `checkFormDefinition` refuses to confirm a map with a missing or misfitting fixed answer. The live
-  analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` is unchanged).
-- **Not done here:** the form-analysis prompt TEXT still lists only the earlier paths (its output enum
-  already accepts the new ones; see "RED wave 1 integration" for the version bump and what a later prompt
-  change should add); the file-import format has no insurer fields or charges. The rules classifier now maps
+  analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` has no `fixed`).
+- **Live analysis:** the form-analysis prompt text lists the eight paths (see "Live form analysis on the RED
+  engine (S7)" below). **Not done here:** the file-import format has no insurer fields or charges. The rules classifier now maps
   membership / authorisation / phone / e-mail / title labels to the new paths (S3 + integration).
 
 ## Demo data
@@ -783,7 +783,12 @@ use an inline bundle, or a JSON snapshot it owns.
   yes/no and choices on tick boxes into `pdf_overlay_ticks` (an X in the chosen box,
   `forms/pdf-overlay-marks.ts`). `FormDefinition.uppercase` (set when a flat form asks for BLOCK CAPITALS)
   prints overlay text in capitals and is part of the attested map hash when set. The live outline lists the
-  boxes ("answer boxes: …", "tick boxes: …").
+  boxes ("answer boxes: …", "tick boxes: …"); on a fillable PDF it lists a table of fields (3+ rows) once
+  ("table of fields … rows=N columns=[…]") and a printed signature box no field covers (S7).
+- **Snapping (S7):** an overlay is snapped onto a printed box only when at least half of the smaller of the
+  two AND at least 40 % of the overlay lie on it – a region over unprinted lines that merely clips a box (Aviva
+  CM016's address over the e-mail line, GEN030's history table over the doctor's signature) stays where it
+  was proposed instead of taking another question's box.
 
 ## RED wave 1 integration (09/10/2026)
 
@@ -814,31 +819,78 @@ footer → S6 copy answers + portal questions. Every exhaustive switch now cover
 - The red DRAFT line and watermark are placed in the VISIBLE page (crop box and `/Rotate`), like the demo
   notice: on Aviva CM016 (media box larger than the crop box) the line used to fall outside the page.
 
-**Prompt versions (decision).** The live analysis request changed without a prompt-text change: the
-structured output gained a required `completedBy` (S3) and eight registration paths (S4), and the outline
-gained `printed=[…]` labels, `character-boxes=N` groups (S1), `answer boxes:` / `tick boxes:` lines (S2)
-and `section=… completedBy=…` markers (S3). `FORM_ANALYSIS_PROMPT_VERSION` is therefore bumped to
-**`form-analysis-4`** (the text itself is still the form-analysis-3 text), and the rules reader to
-**`rules-2`**. A bump breaks nothing recorded: the four recorded analyses keep their own
-`"form-analysis-3"` stamp and are stored `FormDefinition`s, matched by file SHA-256 and validated by
-`FormDefinitionSchema`, where every new member is optional (pinned by a test). `forms-7` (drafting) is
-unchanged – no slice changed what drafting sends.
+**Prompt versions (decision).** The live analysis request changed with the wave 1 engine (a required
+`completedBy`, eight registration paths, new outline markers), so `FORM_ANALYSIS_PROMPT_VERSION` was bumped
+to **`form-analysis-4`** and the rules reader to **`rules-2`**. The prompt text was then rewritten for it
+(S7, below) under the same label: `form-analysis-4` was never recorded with the earlier text. Nothing recorded
+breaks: the four recorded analyses keep their own `"form-analysis-3"` stamp and are stored
+`FormDefinition`s, matched by file SHA-256 and validated by `FormDefinitionSchema`, where every new member is
+optional (pinned by a test). `forms-7` (drafting) is unchanged.
 
-**What the live analysis can already produce** (post-validation builds the anchors from the outline,
-whatever proposed the map – pinned by the fake-client tests in `red-integration.test.ts`): `optionLabels`
-(from the outline's printed labels), `optionFields` (from `optionAnchors` on PDF tick boxes),
-`pdf_char_fields` (any box of a character group), `pdf_table` (per-cell questions of a detected table),
-`pdf_overlay_ticks` and `dateSlots` (overlays snapped onto printed boxes) and `completedBy` (live schema;
-the outline's party wins). `demoNotice`, `uppercase` and `fixed` are set by code or staff, not the model.
+**What post-validation builds whatever proposed the map** (pinned by the fake-client tests in
+`red-integration.test.ts` and `live-prompt.test.ts`): `optionLabels` (from the outline's printed labels),
+`optionFields` (from `optionAnchors` on PDF tick boxes – and from the whole tick-box group when only one of its
+boxes was proposed), `pdf_char_fields` (any box of a character group), `pdf_table` (any cell of a detected
+table), `pdf_overlay_ticks`, `dateSlots` and `ruledRows` (overlays snapped onto printed boxes) and
+`completedBy` (the outline's party wins over the proposal's). `demoNotice`, `uppercase` and `fixed` are set by
+code or staff, never by the model.
 
-**Left for a later live-prompt change** (needs the rotated key and a live sweep over the four sample forms
-and the RED insurer forms, then re-recording if the maps change – bump to `form-analysis-5`):
-describe the new outline markers in "## The input"; list the eight new registration paths under
-fillSource; explain `completedBy` and that another party's part is `leave_blank`; replace "Separate Yes/No
-tick-box fields: map the question to the 'Yes' box" with "one box per option: list every box in
-optionAnchors with its printed option"; flat PDFs: put the overlay inside the printed box, a tick row as one
-overlay over its boxes; tables: map the table once (code merges the cells). Also consider describing table
-questions for question sets in `forms-7` (S6) – a drafting prompt change.
+### Live form analysis on the RED engine (S7, 10/10/2026, branch `red/s7-live-prompt`)
+
+**Prompt text (`ai/form-analysis.ts`, still `form-analysis-4`).** "## The input" describes every outline
+marker: `printed=[…]` option labels, `character-boxes=N`, tick-box groups, tables of fields, printed boxes with
+no field (fillable PDFs), `answer boxes:` with `slots=` / `lines=` and `tick boxes:` (flat PDFs), `section=` /
+`completedBy=`. Under fillSource: the eight new registration paths, `first_score` / `latest_score` for
+"Initial" / "Current" score boxes (never a computed figure for a choice), `appointments_table` for a table that
+lists treatments and fees, and `signoff` only in the clinic's own declaration or signature block. A new
+section 5 says who completes each part (clinic / patient or policyholder / doctor / insurer) and that another
+party's part is ALWAYS `leave_blank` – never registration, notes, opinion or sign-off; a form the clinic does
+not complete (a patient's claim form, a GP's report) is all `leave_blank` except the treatments-and-fees table.
+One question per tick-box group with EVERY box in `optionAnchors` (replaces "map the question to the 'Yes'
+box"); flat overlays are the printed box itself, a tick row one rectangle over its boxes; a table mapped once
+at its first cell; BLOCK CAPITALS needs no question; the "Other – please specify" box, the clinic's provider
+number and a scheme's number are `leave_blank`; notes and warnings never mention other readers.
+
+**Outline (`ai/form-outline.ts` `pdfOutlineSpaces`).** A fillable PDF's tick-box group (`detectOptionGroups`)
+and table of fields (`detectPdfFieldTables`, 3+ rows) are ONE line each and never split across chunks (AXA's
+therapist type was split across two chunks and mapped box by box); printed signature boxes no field covers
+(`printedSignatureBoxesOf`, the same boxes rules mode maps) are listed in reading order and named in their
+chunk's instruction ("…and in the printed box with no field at page 4 box x=… y=…"). Freedom's outline shrank
+from 14.9k to 9.5k characters (6 chunks → 4).
+
+**Schema and post-validation.** `FILL_KINDS` gained `appointments_table` (a table of fields → the table
+question filled from the appointments; anywhere else drafted from the notes, low confidence, with a note).
+Post-validation also: widens a lone box of a tick-box group to the group (a second box of the same group merges
+silently); sets `first_score` / `latest_score` from an "Initial" / "Current" label; turns a computed figure on a
+choice into `notes_narrative` (AXA's 0–10 VAS drop-down); drops a drop-down's "Please select" from the options;
+leaves blank a planned count proposed as sessions attended ("Number of sessions" under "Treatment Plan"), the
+"Other – please specify" box and numbers the record does not hold (`LabelClass.notHeld` / `plannedCount` in
+`form-classify.ts`); says "Printed box with no fillable field" (not "Flat PDF") for a fillable form's box.
+Rules mode gives the same maps as before on all 11 forms (diffed).
+
+**Live sweep (`claude-sonnet-5-5`, effort low, 10/10/2026; scratch scripts, Case C fills rendered and read for
+Bupa, AXA, Freedom and Aviva CM016).** Before = the form-analysis-3 text on the wave 1 request; after = the
+final prompt (4 rounds). "Cold" prices every prompt token as a cache write. Wrong-party sign-off: **0 on every
+form in all 5 rounds**.
+
+| Form | Before | After | Wall time | Prompt / output tokens (cold cost) |
+|---|---|---|---|---|
+| Bupa further-treatment (26 answer spaces) | 26/26, every source and party right | 26/26, every source and party right, in all 4 rounds | 18.6 → 14.1 s | 40.9k / 6.0k ($0.16) → 47.1k / 6.0k ($0.18) |
+| AXA treatment plan (32) | 31/32 – signature box missing (no field); therapist type and contact method mapped box by box (2 extra questions, 1 dropped); ADL Yes/No as opinion | 32/32, every source and party right in the last 2 rounds (before: ADL Yes/No as an opinion; once "Other – specify" from the record and the plan's "Number of sessions" as attended – both now caught in code); signature written in the printed box; one question per tick-box group | 17.2 → 15.0 s | 65.1k / 8.7k ($0.25) → 72.6k / 8.1k ($0.26) |
+| Freedom claim form (35) | every space blank, the expenses table too (the policyholder's) | expenses table filled from the appointments (fees, paid circled); the rest blank (policyholder / patient); no sign-off | 17.9 → 15.8 s | 129.1k / 17.7k ($0.50) → 85.7k / 8.9k ($0.30) |
+| Aviva CM016 (flat, 8 pages) | 55, all blank (patient / GP parts) | 54–55, all blank in 3 of 4 rounds (once patient details as the clinic's); no sign-off | 24.8 → 23.7 s | 193.1k / 13.0k ($0.61) → 203.3k / 12.7k ($0.64) |
+| Aviva GEN030 (flat, GP report) | 15; the medical attendant's questions answered as the clinic's | 14–16; all blank (the doctor's form) in the last 2 rounds, before that the patient's identity at the top as the clinic's; no sign-off | 14.1 → 14.2 s | 22.1k / 3.7k ($0.09) → 26.2k / 3.9k ($0.10) |
+| Allianz Care pre-authorisation | 68; section 2 mixed clinic / doctor | 56–60; section 2 mostly the doctor's, a few boxes the clinic's; no sign-off | 18.1 → 16.4 s | 109.6k / 18.6k ($0.46) → 121.9k / 16.4k ($0.47) |
+| Harrow & Pike / Northfield / Kingsway / Meridian / Ashcroft (samples) | 22/22, 23/23, 21/22, 17/17, 15/16 same answer spaces as the pre-confirmed maps | 22/22, 23/23, 21/22, 17/17, 14–16/16 | 9.5–12.3 → 9.7–12.4 s | about +5k prompt tokens each, same output |
+
+Remaining differences on the samples are the known ones (Kingsway's functional capacity one dotted line lower,
+as in the recordings; Northfield's diagnosis or discharge tick as an opinion in some runs; office-use boxes now
+`completedBy: insurer`; Meridian's declaration cells sometimes as their content controls; Ashcroft's estimated
+overlays a few points off where no box is printed). **Gaps:** Allianz Care still needs a hand map (split
+Day / Month / Year and phone parts read as 2-row "tables", section 2's party inconsistent); Aviva CM016's
+address rows are not detected as printed boxes, so their overlay is estimated (it now no longer takes the
+e-mail box); who completes CM016's and GEN030's patient details varies between runs (hand maps decide);
+`forms-7` (drafting) still does not describe table questions for question sets (S6).
 
 **Real insurer PDFs (rules mode, scratch smoke run, Case C):** Bupa 26 questions (title Mrs, DOB and
 declaration date in the comb boxes, membership DEMO-POL-0001, sign-off only in the therapist's
