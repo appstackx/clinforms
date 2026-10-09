@@ -133,7 +133,7 @@ const SECURITY = [
   { icon: SearchCheck, title: "Every answer cites its source", body: "Each drafted answer links to the notes it came from." },
   { icon: KeyRound, title: "Two-factor sign-in", body: "Every user signs in with a password and a one-time code from an authenticator app." },
   { icon: Lock, title: "Encrypted, stored in the EU", body: "Clinic data is encrypted at rest with a key per clinic, and the database is stored in the EU." },
-  { icon: History, title: "Audit trail", body: "Approvals, final downloads and changes to users and access are recorded in a log that cannot be edited." },
+  { icon: History, title: "Audit trail", body: "Sign-ins and changes to users, roles and access are recorded in a log that cannot be edited." },
   { icon: EyeOff, title: "Data minimisation", body: "Names, dates of birth and contact details are removed before notes are used to draft answers." },
 ] as const;
 

@@ -19,7 +19,9 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
     <main className="flex min-h-screen items-start justify-center bg-slate-50 px-4 py-12 text-slate-900 sm:items-center">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
-          <BrandMark />
+          <Link href="/" className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" aria-label={`${PRODUCT_NAME} home`}>
+            <BrandMark />
+          </Link>
         </div>
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>

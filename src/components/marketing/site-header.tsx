@@ -2,12 +2,12 @@ import Link from "next/link";
 import { TrackedLink } from "../analytics/tracked-link";
 import { Logo } from "./logo";
 import { MobileNav } from "./mobile-nav";
-import { DEMO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, btn } from "./nav";
+import { DEMO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, SIGN_IN_HREF, btn } from "./nav";
 
 const navLink =
   "rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
 
-/** Public site header: logo, navigation, "Request access". */
+/** Public site header: logo, navigation, "Sign in", "Request access". */
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/75">
@@ -24,6 +24,9 @@ export function SiteHeader() {
           </TrackedLink>
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <Link href={SIGN_IN_HREF} prefetch={false} className={`${navLink} hidden sm:inline-flex`}>
+            Sign in
+          </Link>
           <Link href={REQUEST_ACCESS_HREF} className={`${btn.small} hidden sm:inline-flex`}>
             Request access
           </Link>

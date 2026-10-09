@@ -75,12 +75,8 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
         body: "Before treatment notes are used to draft answers, names, dates of birth, addresses and contact details are removed. The clinic can see exactly what is sent.",
       },
       {
-        title: "Automatic deletion",
-        body: "Completed reports are deleted automatically after the retention period the clinic sets.",
-      },
-      {
         title: "Audit trail",
-        body: "Approvals, final downloads, and changes to users, roles and access keys are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
+        body: "Sign-ins, two-factor changes, and changes to users, roles, clinic details and access keys are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
       },
     ],
   },
@@ -100,6 +96,11 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
 ];
 
 const PLANNED: Measure[] = [
+  {
+    title: "Automatic deletion",
+    body: "Completed reports deleted automatically after the retention period the clinic sets. Clinic administrators can already choose the period; automatic deletion follows with server-side report storage.",
+  },
+  { title: "Approvals and final downloads in the audit trail", body: "Recording each approval and final download in the same tamper-proof log." },
   { title: "Cyber Essentials certification", body: "We will publish the certificate here once it is awarded." },
   { title: "Independent penetration test", body: "Before wider availability; a summary will be available to customers on request." },
   { title: "Database hosting in the UK", body: "Moving the database to a UK (London) region." },

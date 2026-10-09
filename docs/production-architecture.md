@@ -140,7 +140,7 @@ re-encrypt in the background).
 | Path | Who | Notes |
 |---|---|---|
 | `/` `(marketing)` | public | Landing page; `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
-| `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex |
+| `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex. *Integrated:* no cookie banner here (task pages for invited members – a fixed banner covered the form; a choice made on the public site still applies); the public site's header and footer link to `/login` |
 | `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). Tenant Studio: wave 2 |
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` |
 | `/api/auth/[...all]` | – | Better Auth |

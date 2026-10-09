@@ -75,6 +75,11 @@ src/app/                    Next.js App Router – thin pages and route files on
                             cookie banner + consent-gated analytics)
   (marketing)/**            public website: landing page "/", /request-access, /security, /privacy,
                             /cookies, /terms (indexable)
+  (auth)/**                 sign-in pages: /login, /two-factor, /accept-invite, /reset-password (noindex,
+                            no cookie banner) – docs/auth.md
+  app/**                    the signed-in clinic area (/app): overview + settings (clinic, members,
+                            security, API keys); session, two-step and membership checked server-side
+  api/auth/[...all]         the sign-in library's HTTP API
   robots.ts sitemap.ts      robots.txt (demo, app, APIs and sign-in pages disallowed) and sitemap.xml
   not-found.tsx icon.svg
   api/access-requests       POST: the "Request access" form (validation, honeypot, rate limit, storage,
@@ -91,9 +96,15 @@ src/components/ui/*         generic UI primitives (button, card, dialog, …) �
 src/lib/utils.ts            only through src/modules/medreport/ui/primitives.ts
 src/components/marketing/   public-site header, footer, legal page layout, hero illustration
 src/components/consent/     cookie banner + settings dialog; the `clinforms_consent` cookie (6 months)
+src/components/account/     layout pieces for the sign-in pages and the clinic area
+src/middleware.ts           Edge: optimistic session-cookie redirect for /app only (real checks run in Node)
 src/components/analytics/   consent-gated product analytics: allow-listed `track(event, props)`
 src/lib/site.ts             SITE_URL, COMPANY details (unknown ones stay unset and are not shown), public page list
-src/server/                 production data layer (db, crypto, repos – docs/database.md) and site/ (request access)
+src/server/                 production data layer (db, crypto, repos – docs/database.md), auth/ and email/
+                            (identity, clinics, invitations – docs/auth.md) and site/ (request access)
+db/migrations/sqlite/       D1/SQLite migrations; supabase/migrations/ = the Postgres twins (parity-tested)
+workers/data-gateway/       the authenticated SQL gateway Worker in front of D1 (own package.json)
+scripts/db/ scripts/admin/  migrate, provision, self-test, copy-to-Postgres; create/list/offboard clinics
 scripts/medreport/          tests, recorders, sample builders, ESLint boundary generator, video/
 docs/plan.md                the product plan and its revision history
 ```

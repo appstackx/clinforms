@@ -15,6 +15,7 @@ const COLUMNS = [
       { href: "/security", label: "Security" },
       { href: "/reports", label: "Try the demo" },
       { href: "/request-access", label: "Request access" },
+      { href: "/login", label: "Sign in" },
     ],
   },
   {
@@ -55,7 +56,7 @@ export function SiteFooter() {
             <ul className="mt-3 space-y-2 text-sm">
               {column.links.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className={footerLink} prefetch={link.href === "/reports" ? false : undefined}>
+                  <Link href={link.href} className={footerLink} prefetch={link.href === "/reports" || link.href === "/login" ? false : undefined}>
                     {link.label}
                   </Link>
                 </li>

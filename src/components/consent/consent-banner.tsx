@@ -5,7 +5,8 @@
  *
  * - Shown only when this build has optional analytics (NEXT_PUBLIC_POSTHOG_KEY), the visitor has not
  *   chosen yet, the browser sends no Do Not Track / Global Privacy Control signal, and the page is not
- *   part of the app, the public demo or the APIs (those respect a choice made elsewhere but never ask).
+ *   part of the app, the sign-in pages, the public demo or the APIs (those respect a choice made elsewhere
+ *   but never ask).
  * - "Accept analytics" and "Reject" have equal weight; "Manage" opens the settings dialog, which the
  *   footer's "Cookie settings" link also opens from any page.
  * - Rendered after hydration only (no server markup), so cached pages never show a stale banner.
@@ -15,7 +16,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useState } from "react";
 import { Cookie } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { isAppAreaPath } from "@/lib/site";
+import { showsConsentBanner } from "@/lib/site";
 import {
   analyticsConfigured,
   browserPrivacySignals,
@@ -52,7 +53,7 @@ export function ConsentBanner() {
 
   if (!mounted) return null;
   const configured = analyticsConfigured();
-  const showBanner = configured && !choice && !signalled && !managing && !isAppAreaPath(pathname);
+  const showBanner = configured && !choice && !signalled && !managing && showsConsentBanner(pathname);
 
   return (
     <>

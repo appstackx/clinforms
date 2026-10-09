@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { TrackedLink } from "../analytics/tracked-link";
-import { DEMO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, btn } from "./nav";
+import { DEMO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, SIGN_IN_HREF, btn } from "./nav";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -53,6 +53,9 @@ export function MobileNav() {
           <TrackedLink href={DEMO_HREF} prefetch={false} className={item} event="demo_opened" eventProps={{ area: "marketing", cta: "mobile_nav" }}>
             Try the demo
           </TrackedLink>
+          <Link href={SIGN_IN_HREF} prefetch={false} className={item} onClick={() => setOpen(false)}>
+            Sign in
+          </Link>
           <Link href={REQUEST_ACCESS_HREF} className={`${btn.primary} mt-2 w-full`} onClick={() => setOpen(false)}>
             Request access
           </Link>

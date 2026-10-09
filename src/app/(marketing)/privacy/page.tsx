@@ -140,8 +140,8 @@ export default function PrivacyPage() {
           <Link href="/security">Security</Link>.
         </li>
         <li>
-          <strong>Retention:</strong> completed reports are deleted automatically after the retention period the clinic
-          sets, and all of the clinic&rsquo;s data is returned or deleted when its agreement ends, as the DPA sets out.
+          <strong>Retention:</strong> completed reports are kept only for the retention period the clinic sets and then
+          deleted, and all of the clinic&rsquo;s data is returned or deleted when its agreement ends, as the DPA sets out.
         </li>
       </ul>
 

@@ -13,6 +13,7 @@ import {
   serializeConsent,
   todayIso,
 } from "./consent";
+import { showsConsentBanner } from "../../lib/site";
 
 test("a choice round-trips through the cookie value", () => {
   for (const analytics of [true, false]) {
@@ -66,4 +67,25 @@ test("analytics runs only with an explicit yes and no opt-out signal", () => {
 
 test("todayIso is a UTC date", () => {
   assert.equal(todayIso(new Date("2026-10-09T23:30:00Z")), "2026-10-09");
+});
+
+test("the banner may ask only on public pages, never in the app, the demo, the APIs or the sign-in pages", () => {
+  for (const p of ["/", "/privacy", "/cookies", "/terms", "/security", "/request-access", "/does-not-exist"]) {
+    assert.equal(showsConsentBanner(p), true, p);
+  }
+  for (const p of [
+    "/app",
+    "/app/settings/members",
+    "/reports",
+    "/reports/rep_1",
+    "/pms-sandbox/patients/sim-pat-001",
+    "/api/access-requests",
+    "/login",
+    "/two-factor",
+    "/accept-invite",
+    "/reset-password",
+  ]) {
+    assert.equal(showsConsentBanner(p), false, p);
+  }
+  assert.equal(showsConsentBanner("/loginx"), true, "prefix match is per path segment");
 });

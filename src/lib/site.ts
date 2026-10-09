@@ -87,7 +87,11 @@ export const PUBLIC_PAGES = [
   { path: "/terms", changeFrequency: "yearly", priority: 0.3 },
 ] as const;
 
-/** Sign-in pages (noindex; contract §4). */
+/**
+ * Sign-in pages (noindex; contract §4). Like the app area they never show the cookie banner: they are task pages
+ * for invited clinic members (a fixed banner would cover the form), and a choice made on the public site still
+ * applies there.
+ */
 export const AUTH_PATHS = ["/login", "/two-factor", "/accept-invite", "/reset-password"] as const;
 
 /**
@@ -103,6 +107,15 @@ export function isUnder(pathname: string, prefix: string): boolean {
 
 export function isAppAreaPath(pathname: string): boolean {
   return APP_AREA_PREFIXES.some((prefix) => isUnder(pathname, prefix));
+}
+
+export function isAuthPath(pathname: string): boolean {
+  return AUTH_PATHS.some((prefix) => isUnder(pathname, prefix));
+}
+
+/** Pages that may ask for cookie choices: everything except the app area, the demo, the APIs and sign-in pages. */
+export function showsConsentBanner(pathname: string): boolean {
+  return !isAppAreaPath(pathname) && !isAuthPath(pathname);
 }
 
 export function isPublicPagePath(pathname: string): boolean {
