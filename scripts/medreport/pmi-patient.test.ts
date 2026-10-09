@@ -3,7 +3,8 @@
  * synthetic fillable "further treatment request" built with pdf-lib, mapped to the new record paths
  * (title, phone, insurer membership / authorisation numbers, clinic contact details), the "fixed" fill
  * source and computed facts → createFormReport → validateReport → buildFormAnswers → fillPdf, read back.
- * The same file mapped as ANOTHER insurer's form shows the insurer numbers withheld for staff.
+ * The same file mapped as ANOTHER insurer's form shows the insurer numbers withheld for staff, and drafted
+ * wording on it says "the insurer" instead of the insurer on record's name.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -228,4 +229,54 @@ test("Case C: insurer identifiers and contact details never reach the drafting s
   // The insurer and the GP referral are context the record states (no identifiers).
   assert.match(texts, /Instructing party: Bupa \(insurer\)/);
   assert.match(texts, /Kents Hill Medical Practice \(fictional\)/);
+});
+
+test("Case C drafted wording: the insurer on record is not named on another insurer's form; '(fictional)' kept; no repeated bracket", async () => {
+  // What live drafting wrote on AXA's and Allianz Care's forms (wave 2 recordings, fixed by hand there).
+  const { assembleDraft } = await import("../../src/modules/medreport/ai/assemble");
+  const bundle = getDemoBundle("rebecca-lane");
+  const computedFacts = computeFacts(bundle, { asOf: "2026-10-06" });
+  const planField: FormField = {
+    id: "F-01",
+    label: "Planned treatment",
+    guidance: "",
+    answerType: "long_text",
+    anchor: { kind: "pdf_field", fieldName: "plan", fieldType: "text" },
+    fillSource: { kind: "notes_narrative" },
+    required: true,
+    confidence: "high",
+  };
+  const formFrom = (referrer: FormDefinition["referrer"]): FormDefinition => ({ ...insurerForm(referrer), fields: [planField] });
+  const raw = {
+    sections: [
+      {
+        sectionKey: "F-01",
+        paragraphs: [
+          { text: "On 01/10/2026 I recorded a further treatment request to Bupa for 4 further sessions, fortnightly over 8 wks (8 weeks).", sourceIds: ["N-005"], basis: "record" as const },
+          { text: "Dr A Forsyth, GP, Kents Hill Medical Practice, referred [CLAIMANT] by letter dated 26/08/2026.", sourceIds: ["N-001"], basis: "record" as const },
+        ],
+      },
+    ],
+    gaps: [],
+  };
+  const draft = (form: FormDefinition) =>
+    assembleDraft({
+      template: formToTemplate(form),
+      bundle,
+      instructingParty: bundle.referral,
+      sectionKeys: ["F-01"],
+      computedFacts,
+      output: raw,
+      meta: { mode: "live", sectionKeys: ["F-01"], at: NOW.toISOString(), promptVersion: "forms-7" },
+      form,
+      idSeed: "c",
+    }).sections[0].paragraphs.map((p) => p.text);
+
+  assert.deepEqual(draft(formFrom({ name: "AXA Global Healthcare (fictional test)", type: "insurer" })), [
+    "On 01/10/2026 I recorded a further treatment request to the insurer for 4 further sessions, fortnightly over 8 weeks.",
+    "Dr A Forsyth, GP, Kents Hill Medical Practice (fictional), referred Mrs Lane by letter dated 26/08/2026.",
+  ]);
+  // The insurer on record's own form, and a form that is not an insurer's, keep the name.
+  assert.match(draft(formFrom({ name: "Bupa", type: "insurer" }))[0], /request to Bupa for 4 further sessions, fortnightly over 8 weeks\.$/);
+  assert.match(draft(formFrom({ name: "Northgate Medico-Legal (fictional)", type: "mlc" }))[0], /request to Bupa for/);
 });

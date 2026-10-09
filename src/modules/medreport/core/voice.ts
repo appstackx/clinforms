@@ -18,6 +18,10 @@
  * 3. describeSourceIds(): a record ID that slips into drafted text ("…every 30–45 minutes in N-010",
  *    "The final review (N-010) records…") is replaced by what a reader recognises: the note's date
  *    ("in the note of 22/09/2026", "(22/09/2026)"). The IDs stay in sourceIds / relatedNoteIds.
+ *
+ * 4. keepFictionalLabels(): a name the demonstration record labels "(fictional)" keeps the label in
+ *    drafted wording, and collapseRepeatedBrackets() drops a bracket that repeats the words before it
+ *    ("8 wks (8 weeks)" written out as "8 weeks (8 weeks)").
  */
 import { formatUkDate } from "./dates";
 import type { EpisodeBundle, Paragraph } from "./types";
@@ -199,11 +203,63 @@ export function expandClinicalAbbreviations(text: string): string {
   return s;
 }
 
+/**
+ * A bracket that only repeats the words just before it is dropped: "over 8 weeks (8 weeks)" → "over 8
+ * weeks". It appears when a draft gives note shorthand with its own expansion ("8 wks (8 weeks)") and the
+ * shorthand is then written out above, or when a name is replaced by the words already beside it ("the
+ * insurer (the insurer)"). Only a whole-word repeat counts ("18 weeks (8 weeks)" stays).
+ */
+export function collapseRepeatedBrackets(text: string): string {
+  if (text.indexOf("(") < 0) return text;
+  return text.replace(/\s*\(([^()]{1,80})\)/g, (m, inner: string, offset: number, whole: string) => {
+    const said = inner.trim().replace(/\s+/g, " ").toLowerCase();
+    if (!/[a-z0-9]/.test(said)) return m;
+    const before = whole.slice(0, offset).replace(/\s+/g, " ").toLowerCase();
+    if (!before.endsWith(said)) return m;
+    const prev = before.charAt(before.length - said.length - 1);
+    return prev === "" || /[^a-z0-9]/.test(prev) ? "" : m;
+  });
+}
+
 /** Expand note shorthand and clinical abbreviations into plain words; every number is kept as written. */
 export function expandNoteShorthand(text: string): string {
   let s = text;
   for (const [re, to] of SHORTHAND) s = typeof to === "string" ? s.replace(re, to) : s.replace(re, to as (...m: string[]) => string);
-  return expandClinicalAbbreviations(s);
+  return collapseRepeatedBrackets(expandClinicalAbbreviations(s));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * "(fictional)" labels of demonstration data
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Two or more capitalised words ("&" may join them) written just before "(fictional)". */
+const FICTIONAL_NAME = /(?<![\w'’.&-])([A-Z0-9][\w'’.-]*(?:\s+(?:[A-Z0-9][\w'’.-]*|&)){1,7})\s*\(fictional\)/g;
+
+/**
+ * Names the record itself labels "(fictional)" ("Kents Hill Medical Practice (fictional)", "Ashby Freight
+ * Ltd (fictional)"), longest first. Real records hold none, so for them nothing changes.
+ */
+export function fictionalNames(texts: Iterable<string>): string[] {
+  const names = new Set<string>();
+  for (const t of Array.from(texts)) {
+    for (const m of Array.from(t.matchAll(FICTIONAL_NAME))) names.add(m[1].replace(/\s+/g, " ").trim());
+  }
+  return Array.from(names).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Demonstration data keeps its "(fictional)" label in drafted wording: a name the record labels
+ * "(fictional)" that a draft wrote without it gets it back ("Dr A Forsyth, Kents Hill Medical Practice,
+ * referred…" → "…Kents Hill Medical Practice (fictional), referred…"). A possessive is left as written.
+ */
+export function keepFictionalLabels(text: string, names: readonly string[]): string {
+  let s = text;
+  for (const name of names) {
+    if (s.indexOf(name.split(" ")[0]) < 0) continue;
+    const re = new RegExp(`(?<![\\w&])${escapeRe(name).replace(/ /g, "\\s+")}(?![\\w'’-])(?!\\s*\\(fictional\\))`, "g");
+    s = s.replace(re, (m) => `${m} (fictional)`);
+  }
+  return s;
 }
 
 /** "Tom Ellis, physiotherapist" → "Tom Ellis, Physiotherapist" when the record gives that title. */

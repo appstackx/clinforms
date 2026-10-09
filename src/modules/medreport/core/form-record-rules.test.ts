@@ -14,10 +14,12 @@ import {
   isInsurerIdentifierWithheld,
   isReferralIdentifierPath,
   mayCopyReferralPartyReference,
+  otherInsurerOnForm,
   referralValueForPath,
   resolveFixedValue,
   showsReferrerReferenceNotice,
   withheldInsurerIdentifier,
+  withoutOtherInsurerName,
 } from "./form-record-rules";
 import { createFormReport } from "./report-factory";
 import { FillSourceSchema, FormDefinitionSchema, RegistrationPathSchema } from "./schemas";
@@ -272,4 +274,22 @@ test("referral reference on another organisation's form: same kind of organisati
   const r = report(form(otherInsurer, [field("Policy number", reg("referral.reference")), field("Instructing insurer's reference", reg("referral.reference"))]), b);
   assert.deepEqual(r.sections.map((s) => s.paragraphs[0]?.text ?? null), [null, "DEMO-AUTH-0042"]);
   assert.match(r.gaps[0]?.issue ?? "", /Northgate Assurance \(fictional\) uses its own reference/);
+});
+
+test("otherInsurerOnForm / withoutOtherInsurerName: the insurer on record is \"the insurer\" on another insurer's form", () => {
+  const bupa = { referral: { ...testBundle().referral, type: "insurer" as const, name: "Bupa", insurerName: "Bupa" } };
+  assert.equal(otherInsurerOnForm({ referrer: { name: "AXA Global Healthcare", type: "insurer" } }, bupa), "Bupa");
+  assert.equal(otherInsurerOnForm({ referrer: { name: "Bupa", type: "insurer" } }, bupa), null, "its own form");
+  assert.equal(otherInsurerOnForm({ referrer: { name: "Harrow & Pike Solicitors (fictional)", type: "solicitor" } }, bupa), null, "not between insurers");
+  assert.equal(otherInsurerOnForm({ referrer: { name: "AXA Global Healthcare", type: "insurer" } }, { referral: { ...testBundle().referral, insurerName: undefined } }), null, "no insurer on record");
+  assert.equal(
+    withoutOtherInsurerName(
+      "On 01/10/2026 I recorded a further treatment request to Bupa for 4 further sessions. Bupa pre-authorised 6 sessions; consent to share with the insurer (Bupa) was recorded. The Bupa authorisation covers it; BUPA's reply is awaited.",
+      "Bupa",
+    ),
+    "On 01/10/2026 I recorded a further treatment request to the insurer for 4 further sessions. The insurer pre-authorised 6 sessions; consent to share with the insurer was recorded. The insurer's authorisation covers it; the insurer's reply is awaited.",
+  );
+  assert.equal(withoutOtherInsurerName("Bupalike wording.", "Bupa"), "Bupalike wording.", "whole words only");
+  assert.equal(withoutOtherInsurerName("Northgate Assurance (fictional) approved it.", "Northgate Assurance (fictional)"), "The insurer approved it.");
+  assert.equal(withoutOtherInsurerName("No insurer named here.", "Bupa"), "No insurer named here.");
 });

@@ -10,6 +10,8 @@
  *   (referrerNamesMatch with insurerNameOnRecord); on any other organisation's form they are left blank
  *   for staff with a "-referrer" gap, and the review offers "Use the referral's reference" for the case
  *   where the form does belong to that insurer under another name.
+ * - The insurer on record's NAME on another insurer's form (otherInsurerOnForm / withoutOtherInsurerName):
+ *   drafted wording says "the insurer" instead (ai/assemble.ts), like the numbers above.
  * - The referral party's own reference or name on a form from ANOTHER organisation of the SAME kind
  *   (one insurer's reference on a different insurer's form): the generic words that point at the
  *   referral party ("policy", "insurer", "client"…) describe the form's own issuer just as well, so only
@@ -133,6 +135,56 @@ export function withheldInsurerIdentifier(input: {
       raisedBy: "system",
     },
   };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The insurer on record named on ANOTHER insurer's form
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * The patient's insurer on record when this form comes from a DIFFERENT insurer (null otherwise). Drafted
+ * wording on that form does not name it (withoutOtherInsurerName) – the notes say "Further treatment
+ * request to Bupa", which on AXA's form names a competitor – just as its membership and authorisation
+ * numbers are withheld. A question that asks for the patient's insurer is still answered by code
+ * (referral.insurerName). Only between insurers: a solicitor's or an MLC's form may say who funded it.
+ */
+export function otherInsurerOnForm(form: { referrer: Pick<ReferrerInfo, "name" | "type"> }, bundle: Pick<EpisodeBundle, "referral">): string | null {
+  if (form.referrer.type !== "insurer") return null;
+  const insurer = insurerNameOnRecord(bundle);
+  if (!insurer || referrerNamesMatch(form.referrer.name, insurer)) return null;
+  return insurer;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Nouns an insurer's name qualifies ("Bupa authorisation"): written "the insurer's authorisation". */
+const INSURER_NOUNS = "(?:pre-?authori[sz]ations?|authori[sz]ations?|approvals?|membership|policy|policies|cover|funding|forms?|references?|numbers?|claims?|schemes?)\\b";
+
+/**
+ * Drafted wording for another insurer's form, without the insurer on record's name (`insurer`, from
+ * otherInsurerOnForm): the notes say "Further treatment request to Bupa", and AXA's form must not name
+ * Bupa. A bracketed name is dropped ("with the insurer (Bupa)" → "with the insurer"); anywhere else the
+ * name becomes "the insurer" ("a further treatment request to the insurer for 4 sessions"). Nothing else
+ * in the text changes.
+ */
+export function withoutOtherInsurerName(text: string, insurer: string): string {
+  const name = insurer.trim().replace(/\s*\(fictional\)\s*$/i, "");
+  if (!name || text.toLowerCase().indexOf(name.toLowerCase().split(/\s+/)[0]) < 0) return text;
+  const N = `${escapeRe(name).replace(/\s+/g, "\\s+")}(?:\\s*\\(fictional\\))?`;
+  const atStart = (whole: string, offset: number) => /(?:^|[.!?:]\s+|\n\s*)$/.test(whole.slice(0, offset));
+  const insurerWords = (whole: string, offset: number, possessive: boolean) =>
+    `${atStart(whole, offset) ? "The" : "the"} insurer${possessive ? "'s" : ""}`;
+  return (
+    text
+      .replace(new RegExp(`\\s*\\(\\s*${N}\\s*\\)`, "gi"), "")
+      // "the Bupa authorisation" → "the insurer's authorisation"
+      .replace(new RegExp(`(?<![\\w&])(?:(?:the|an?)\\s+)?${N}(?=\\s+${INSURER_NOUNS})`, "gi"), (_m, offset: number, whole: string) => insurerWords(whole, offset, true))
+      .replace(new RegExp(`(?<![\\w&])(?:(?:the|an?)\\s+)?${N}(['’]s)?(?![\\w&])`, "gi"), (_m, s: string | undefined, offset: number, whole: string) =>
+        insurerWords(whole, offset, Boolean(s)),
+      )
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------

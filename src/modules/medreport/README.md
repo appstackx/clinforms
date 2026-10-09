@@ -835,7 +835,7 @@ table), `pdf_overlay_ticks`, `dateSlots` and `ruledRows` (overlays snapped onto 
 `completedBy` (the outline's party wins over the proposal's). `demoNotice`, `uppercase` and `fixed` are set by
 code or staff, never by the model.
 
-### Live form analysis on the RED engine (S7, 10/10/2026, branch `red/s7-live-prompt`)
+### Live form analysis on the RED engine (S7, 09/10/2026, branch `red/s7-live-prompt`)
 
 **Prompt text (`ai/form-analysis.ts`, still `form-analysis-4`).** "## The input" describes every outline
 marker: `printed=[…]` option labels, `character-boxes=N`, tick-box groups, tables of fields, printed boxes with
@@ -868,7 +868,7 @@ leaves blank a planned count proposed as sessions attended ("Number of sessions"
 `form-classify.ts`); says "Printed box with no fillable field" (not "Flat PDF") for a fillable form's box.
 Rules mode gives the same maps as before on all 11 forms (diffed).
 
-**Live sweep (`claude-sonnet-5-5`, effort low, 10/10/2026; scratch scripts, Case C fills rendered and read for
+**Live sweep (`claude-sonnet-5-5`, effort low, 09/10/2026; scratch scripts, Case C fills rendered and read for
 Bupa, AXA, Freedom and Aviva CM016).** Before = the form-analysis-3 text on the wave 1 request; after = the
 final prompt (4 rounds). "Cold" prices every prompt token as a cache write. Wrong-party sign-off: **0 on every
 form in all 5 rounds**.
@@ -901,3 +901,45 @@ Allianz Care 68, fills now, but its split Day / Month / Year boxes and phone par
 reads two of them as small leave-blank "tables") and most of its fields get no party in rules mode
 (section 1 is the patient's, section 2 the doctor's) – a hand map is needed before it is shown. Rules maps still need staff checking (or the hand-made demo maps) before the call.
 
+
+## RED wave 2 integration (09/10/2026)
+
+`red/s7-live-prompt` (live form analysis, above) merged into `demo/red-physio` (`--no-ff`, no conflicts). The
+demonstration answers for Case C were prepared in parallel, in the gitignored demo-assets folder only (never
+in git): maps for all six insurer PDFs (`maps/<sampleId>.json`, `demo_prewritten`), and answers
+(`drafts/sim-pat-006__form-<sampleId>.json`, `demo_recorded`, `forms-7`, medium effort, stamped) for the three
+forms the clinic drafts on – Bupa's further-treatment form (10 drafted answers, 5 shortened or reworded by
+hand), AXA's treatment plan (12, 6 by hand) and Allianz Care's pre-authorisation (10, 3 by hand; 5 left blank
+with a gap: the notes do not hold them). Every hand edit is listed in the file's `note`. Aviva CM016, Aviva
+GEN030 and Freedom's claim form need no answers file: their maps give `planDraftGroups` nothing to draft
+(record values, the appointments table, or another party's blanks). `npm run demo:check`: 6 maps, 3 answer
+files, 6 form files, no problems. Replayed through the real demo path, every DRAFT renders with 0 fill warnings.
+
+**Assembly fixes from the live recordings (`ai/assemble.ts`, each with a test; they change no prepared answer
+for the insurer forms – only Daniel Brooks's built-in fitness-for-work report now prints "Ashby Freight Ltd
+(fictional)"):**
+- **Another insurer's name** (`core/form-record-rules.ts` `otherInsurerOnForm`, `withoutOtherInsurerName`):
+  on a form from a DIFFERENT insurer than the one on record, drafted wording says "the insurer" instead of its
+  name – the notes' "Further treatment request to Bupa" came back as "…request to Bupa…" on AXA's and Allianz
+  Care's forms in every live run. A bracketed name is dropped ("with the insurer (Bupa)"). The insurer's own
+  form, and other referrer types (solicitor, MLC), keep the name; a question that asks for the patient's
+  insurer is still answered by code (`referral.insurerName`).
+- **"(fictional)" labels** (`core/voice.ts` `fictionalNames`, `keepFictionalLabels`): a name the record itself
+  labels "(fictional)" ("Kents Hill Medical Practice (fictional)") gets the label back when a draft drops it
+  (both live AXA and Allianz Care runs did). A real record holds no such label, so nothing changes for it.
+- **Repeated bracket** (`core/voice.ts` `collapseRepeatedBrackets`, inside `expandNoteShorthand`): "8 wks (8
+  weeks)" was written out as "8 weeks (8 weeks)"; a bracket that only repeats the words before it is dropped.
+- Checked on the saved RAW live output of all wave-2 recordings (26 groups, 97 answers and gaps), re-assembled
+  with the new code: no other insurer named, no "(fictional)" missing, no repeated bracket.
+
+**Known limits of LIVE drafting on the insurer forms (the prepared answers are not affected):**
+- **Box size:** `forms-7` allows a long answer up to about 200 words and is not told how big each box is, so
+  live answers overflow on Bupa (subjective / objective / treatment boxes, 3 of 3 runs), AXA (treatment plan,
+  daily-living details) and Allianz Care (two-line boxes) and continue on the continuation sheet (the fill
+  warns). For the call, draft these forms in demo mode. Fix later: give each answer space's capacity to the
+  drafting prompt (a `forms-8` change with a live sweep).
+- Not caught by code: an event's date taken from the note that records it ("carried bags on 24/09/2026" for
+  a flare recorded then), current medication listed under "other conditions", "cuff" for rotator cuff and
+  BESS/BOA left abbreviated (not in the glossary – adding it changes both prompts' versions).
+- Replayed answers are written in the person recorded: Bupa's in the third person (no signer sent), AXA's and
+  Allianz Care's in Sarah Reid's first person (she is the default signer).

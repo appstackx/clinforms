@@ -101,8 +101,8 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
   `7f6fcf8` (Dell video assets, 15:48) → `32499de` (Playwright e2e scripts + dev tools, 16:16) →
   `cba79dc` (WIP memory, 16:16) → final memory commit. Verified: tsc, lint, **243/243** `test:medreport`,
   sandbox tests 26/26, build, 42-step browser E2E (at extraction), ClinForms rebrand.
-  Branch `demo/red-physio` (RED wave 1 + fixes): `test:medreport` (sandbox included) **423 tests, 420 pass,
-  3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
+  Branch `demo/red-physio` (RED wave 1 + wave 2 + fixes): `test:medreport` (sandbox included) **437 tests, 434
+  pass, 3 skipped** (LibreOffice Word→PDF tests, no `soffice` installed).
 - **Built:** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
   cited drafting (Claude **Sonnet 5.5**, `claude-sonnet-5-5`), validators, review + approval, Word/PDF in
   original layout, file-back to simulated TM3, batch, Security & GDPR page. Reports stored in browser.

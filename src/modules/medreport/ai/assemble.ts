@@ -6,6 +6,8 @@ import "server-only";
  * - "[CLAIMANT]" replaced with the patient's name (e.g. "Ms Hart");
  * - note shorthand expanded into plain words, job titles cased as in the record and any record ID in the
  *   text replaced by the note's date (core/voice.ts) – in answers and in gap wording alike;
+ * - on another insurer's form, the insurer on record named as "the insurer" (core/form-record-rules.ts
+ *   withoutOtherInsurerName); names the demonstration record labels "(fictional)" keep the label;
  * - paragraphs with server-assigned IDs, origin "ai" and originalText (for "revert");
  * - cited IDs that are not sources of this record dropped, each with an UNKNOWN_SOURCE_ID flag;
  * - gaps with IDs (raisedBy "ai"), plus a system gap for any requested section left empty without one;
@@ -19,6 +21,7 @@ import "server-only";
  * Owner: ai agent.
  */
 import { DraftsResponseSchema, type DraftsResponse } from "../api/contract";
+import { otherInsurerOnForm, withoutOtherInsurerName } from "../core/form-record-rules";
 import { answerKindFor, parseFormAnswerValue } from "../core/forms";
 import { isNoteId } from "../core/ids";
 import { createFormReport, createReport } from "../core/report-factory";
@@ -42,7 +45,7 @@ import type {
 import { runValidators } from "../core/validation";
 import { makeFlag } from "../core/validation/context";
 import { buildSourceTexts } from "../core/validation/sources";
-import { describeSourceIds, expandNoteShorthand, normaliseJobTitles } from "../core/voice";
+import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles } from "../core/voice";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -75,6 +78,14 @@ function randomSeed(): string {
   const bytes = new Uint8Array(3);
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Every string value in a record (for the names it labels "(fictional)"). */
+function stringsOf(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) for (const v of value) stringsOf(v, out);
+  else if (value && typeof value === "object") for (const v of Object.values(value)) stringsOf(v, out);
+  return out;
 }
 
 /** Short label for gap wording: the template title without a trailing "(…)". */
@@ -135,8 +146,14 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   // Drafted wording a person reads (answers and gaps): the patient's name back in, record IDs as the
   // note's date, note shorthand in plain words ("2x/wk" → "2 times a week", ">15 kg" → "more than
   // 15 kg"), numbers kept, and job titles as the record writes them – for live and recorded output alike.
-  const readable = (raw: string) =>
-    normaliseJobTitles(expandNoteShorthand(describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts })), bundle);
+  // On another insurer's form the insurer on record is "the insurer"; "(fictional)" labels stay.
+  const otherInsurer = form ? otherInsurerOnForm(form, bundle) : null;
+  const fictional = fictionalNames(stringsOf([bundle, input.instructingParty]));
+  const readable = (raw: string) => {
+    let text = describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts });
+    if (otherInsurer) text = withoutOtherInsurerName(text, otherInsurer);
+    return keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional);
+  };
 
   const sections: ReportSection[] = [];
   const gaps: Gap[] = [];
