@@ -1037,7 +1037,10 @@ export const PdfFormOutlineSchema = z.object({
       ),
     }),
   ),
-  /** Flat PDFs: the empty answer boxes and tick boxes printed on the pages (S2, additive). */
+  /**
+   * Printed boxes (S2, additive). Flat PDFs: the empty answer boxes and tick boxes printed on the pages.
+   * Fillable PDFs: only the empty printed boxes no field covers (e.g. a "Signature" box), when any.
+   */
   boxes: z.array(PdfBoxSchema).optional(),
 });
 

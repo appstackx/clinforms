@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { analyseFormFile, RULES_PROMPT_VERSION } from "@/modules/medreport/ai/analyse-form";
 import type { ClaudeClient } from "@/modules/medreport/ai/claude";
 import { FORM_ANALYSIS_PROMPT_VERSION } from "@/modules/medreport/ai/form-analysis";
@@ -28,6 +28,7 @@ import { FormDefinitionSchema } from "@/modules/medreport/core/schemas";
 import type { FormDefinition, FormField, InstructingParty } from "@/modules/medreport/core/types";
 import { decodeFormFile } from "@/modules/medreport/forms/file";
 import { fillPdf } from "@/modules/medreport/forms/pdf-fill";
+import { readPdfForm } from "@/modules/medreport/forms/pdf-outline";
 import { flatBoxesPdf, tableFormPdf } from "@/modules/medreport/forms/pdf-s2-fixtures";
 import { SAMPLE_FORMS } from "@/modules/medreport/forms/samples/registry";
 import { anchorFromPick } from "@/modules/medreport/ui/components/forms/mapping";
@@ -280,6 +281,50 @@ test("computed facts on a form: plain words, no internal IDs; Initial / Current 
   assert.deepEqual(current.fillSource, { kind: "computed_fact", factId: "FACT-outcomes-PSFS", format: "latest_score" });
   assert.deepEqual(classifyLabel("NDI score").fillSource, { kind: "computed_fact", factId: "FACT-outcomes-NDI", format: "summary" });
   assert.equal(classifyLabel("Initial assessment", "Assessment Such as Visual Analogue Scale").fillSource.kind, "notes_narrative");
+});
+
+/** A fillable form whose signature box is printed, not a field (as AXA's), under the given declaration heading. */
+async function printedSignatureForm(heading: string): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  const form = doc.getForm();
+  page.drawText("Diagnosis", { x: 40, y: 760, size: 9, font });
+  form.createTextField("diagnosis").addToPage(page, { x: 40, y: 700, width: 500, height: 50, font });
+  page.drawText(heading, { x: 40, y: 640, size: 12, font });
+  page.drawText("Signature", { x: 40, y: 610, size: 9, font });
+  page.drawRectangle({ x: 40, y: 550, width: 220, height: 55, borderColor: rgb(0.1, 0.1, 0.5), borderWidth: 0.8 });
+  page.drawText("Please print name", { x: 300, y: 610, size: 9, font });
+  form.createTextField("printName").addToPage(page, { x: 300, y: 585, width: 220, height: 18, font });
+  page.drawText("Date", { x: 300, y: 570, size: 9, font });
+  form.createTextField("signedDate").addToPage(page, { x: 300, y: 548, width: 120, height: 18, font });
+  return doc.save();
+}
+
+test("fillable PDF with a printed signature box (no field): the approval signature is written in it; another party's is left blank", async () => {
+  const bytes = await printedSignatureForm("6 Your signature");
+  const outline = await readPdfForm(bytes);
+  assert.equal(outline.classification, "acroform");
+  assert.deepEqual(outline.boxes?.map((b) => [b.kind, Math.round(b.x), Math.round(b.y)]), [["box", 40, 550]], "only the box no field covers");
+
+  const { form } = await analyseFormFile({ file: decoded(bytes), fileName: "sig.pdf", mode: "demo", rulesOnly: true });
+  const sig = byLabel(form.fields, /^Signature$/);
+  assert.deepEqual(sig.fillSource, { kind: "signoff", part: "signature" });
+  assert.equal(sig.anchor.kind, "pdf_overlay");
+  // In reading order among the fields: after the diagnosis, beside the printed name and date.
+  assert.ok(form.fields.indexOf(sig) > form.fields.findIndex((f) => f.label === "Diagnosis"));
+  assert.deepEqual(checkFormDefinition({ ...form, status: "confirmed" }), []);
+
+  const answers = { [sig.id]: { text: "Sarah Reid – approved electronically on 09/10/2026" } };
+  const out = await fillPdf(bytes, form, answers, { draft: false, flatten: true });
+  const text = (await readPdfForm(out)).pageText[0].items;
+  const written = text.find((i) => i.str.startsWith("Sarah Reid"));
+  assert.ok(written && written.x > 40 && written.x < 60 && written.y > 550 && written.y < 605, "inside the printed box");
+
+  const theirs = await analyseFormFile({ file: decoded(await printedSignatureForm("Policyholder's declaration")), fileName: "sig2.pdf", mode: "demo", rulesOnly: true });
+  const other = byLabel(theirs.form.fields, /^Signature$/);
+  assert.deepEqual(other.fillSource, { kind: "leave_blank" });
+  assert.equal(other.completedBy, "policyholder");
 });
 
 /* ------------------------------------------------------------------------------------------------

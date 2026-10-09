@@ -142,7 +142,7 @@ function nearbyText(rect: Rect, items: TextItem[], type: FieldType, widgetRects:
     .slice(0, 240);
 }
 
-async function pageTextItems(buf: Uint8Array, warnings: string[], boxes?: PdfBox[]): Promise<{ page: number; items: TextItem[] }[]> {
+async function pageTextItems(buf: Uint8Array, warnings: string[], boxes: PdfBox[]): Promise<{ page: number; items: TextItem[] }[]> {
   try {
     const pdfjs = await loadPdfjs();
     const task = pdfjs.getDocument(pdfjsDocumentParams(buf));
@@ -159,8 +159,8 @@ async function pageTextItems(buf: Uint8Array, warnings: string[], boxes?: PdfBox
           items.push({ str: raw.str, x: round(e), y: round(f), w: round(raw.width), h: round(raw.height || Math.abs(d) || 8) });
         }
         pages.push({ page: n, items });
-        // Flat PDFs: the printed answer boxes and tick boxes (forms/pdf-boxes.ts).
-        if (boxes) boxes.push(...(await extractPageBoxes(page, n, pdfjs.OPS as unknown as Record<string, number>, items).catch(() => [])));
+        // The printed answer boxes and tick boxes (forms/pdf-boxes.ts).
+        boxes.push(...(await extractPageBoxes(page, n, pdfjs.OPS as unknown as Record<string, number>, items).catch(() => [])));
       }
       return pages;
     } finally {
@@ -179,8 +179,9 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   const form = doc.getForm();
   if (form.hasXFA()) warnings.push("This is an XFA (dynamic) form: only its standard fillable fields are used, and the dynamic layout is removed when it is filled.");
   const pageIndex = widgetPageIndex(doc);
-  // A form without fillable fields is flat: its printed boxes are read too (forms/pdf-boxes.ts).
-  const boxes: PdfBox[] | undefined = form.getFields().some((f) => pdfFieldType(f) !== null) ? undefined : [];
+  // Printed boxes (forms/pdf-boxes.ts): on a flat form they are the answer spaces; on a fillable form
+  // only the empty boxes no field covers are kept (a printed "Signature" box the form has no field for).
+  const boxes: PdfBox[] = [];
   const pageText = await pageTextItems(buf, warnings, boxes);
   const itemsByPage = new Map(pageText.map((p) => [p.page, p.items]));
 
@@ -256,12 +257,21 @@ export async function readPdfForm(buf: Uint8Array): Promise<PdfFormReadResult> {
   if (classification === "flat") {
     warnings.push("This PDF has no fillable fields. Answers are written at the positions chosen in the mapping (best effort); a Word or fillable version of the form gives the neatest result.");
   }
+  const uncovered = classification === "flat" ? boxes : boxes.filter((b) => b.kind === "box" && !fields.some((f) => f.page === b.page && covers(f.rect, b)));
   return {
     pages: doc.getPageCount(),
     fields,
     pageText: pageText.map((p) => ({ page: p.page, items: p.items.map(outlineTextItem) })),
-    ...(boxes && classification === "flat" && { boxes }),
+    ...((classification === "flat" || uncovered.length > 0) && { boxes: uncovered }),
     classification,
     warnings,
   };
+}
+
+/** A field's box over a printed box: they overlap by at least 30 % of the smaller one. */
+function covers(field: { x: number; y: number; width: number; height: number }, box: PdfBox): boolean {
+  const w = Math.min(field.x + field.width, box.x + box.width) - Math.max(field.x, box.x);
+  const h = Math.min(field.y + field.height, box.y + box.height) - Math.max(field.y, box.y);
+  if (w <= 0 || h <= 0) return false;
+  return w * h >= 0.3 * Math.min(field.width * field.height, box.width * box.height);
 }

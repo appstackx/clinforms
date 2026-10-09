@@ -54,7 +54,7 @@ export interface BoxTextItem {
 
 /** The parts of a pdf.js page proxy this module uses. */
 export interface OperatorListPage {
-  getOperatorList(): Promise<{ fnArray: ArrayLike<number>; argsArray: ArrayLike<unknown> }>;
+  getOperatorList(params?: { annotationMode?: number }): Promise<{ fnArray: ArrayLike<number>; argsArray: ArrayLike<unknown> }>;
   view?: number[];
 }
 
@@ -246,7 +246,9 @@ function mergeCombs(squares: Rect[]): { combs: Array<Rect & { slots: Array<{ x: 
  * (pdfjs.OPS); `items` the page's positioned text.
  */
 export async function extractPageBoxes(page: OperatorListPage, pageNumber: number, ops: Record<string, number>, items: readonly BoxTextItem[]): Promise<PdfBox[]> {
-  const list = await page.getOperatorList();
+  // The page's own drawing only: form-field appearances (pdf.js AnnotationMode.DISABLE = 0) are not
+  // printed boxes, and are drawn in their own coordinate space.
+  const list = await page.getOperatorList({ annotationMode: 0 });
   const painted = new Set(
     ["stroke", "closeStroke", "fill", "eoFill", "fillStroke", "eoFillStroke", "closeFillStroke", "closeEOFillStroke"].map((k) => ops[k]).filter((v) => v !== undefined),
   );

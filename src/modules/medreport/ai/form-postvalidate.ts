@@ -731,7 +731,14 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       order = orders.length ? Math.min(...orders) : seq;
     } else if (outcome.anchor.kind === "pdf_overlay" || outcome.anchor.kind === "pdf_overlay_ticks") {
       const at = outcome.anchor.kind === "pdf_overlay" ? outcome.anchor : { page: outcome.anchor.page, ...outcome.anchor.options[0] };
-      order = at.page * 100_000 + (2_000 - Math.round(at.y)) * 10 + Math.min(9, Math.round(at.x / 100));
+      const fields = pdfIx?.pdf.fields ?? [];
+      if (fields.length > 0) {
+        // A fillable PDF's printed box (e.g. a signature box no field covers): among the fields, by position.
+        const top = at.y + ("height" in at ? at.height : 0);
+        order = fields.filter((f) => f.page < at.page || (f.page === at.page && f.rect.y + f.rect.height > top)).length - 0.5;
+      } else {
+        order = at.page * 100_000 + (2_000 - Math.round(at.y)) * 10 + Math.min(9, Math.round(at.x / 100));
+      }
     }
     if (outcome.repaired) repairedCount += 1;
     candidates.push({ field, order, seq, repaired: outcome.repaired });

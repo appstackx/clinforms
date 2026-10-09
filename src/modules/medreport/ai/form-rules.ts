@@ -13,7 +13,8 @@ import "server-only";
  *   question (a date when printed D D M M Y Y Y Y), separate tick boxes printed with the options of one
  *   question are one choice (pdf-groups.ts detectOptionGroups), and radio groups / multi-widget tick
  *   boxes take the labels printed beside their widgets as options. Tables of fields become one question
- *   in post-validation (form-tables.ts).
+ *   in post-validation (form-tables.ts). A printed "Signature" box that no field covers is a signature
+ *   overlay.
  * - Flat PDFs with printed boxes: one question per answer box and per row of tick boxes, labelled by the
  *   text printed to the left (or above), written inside the box (form-boxes.ts). Without printed boxes:
  *   lines that end with ":" / "?" or a "____" blank, with an answer box to their right.
@@ -27,7 +28,7 @@ import { completerParty, headingParty } from "../core/parties";
 import type { AnswerType, OutlineBlock, Party, PdfFormOutline } from "../core/types";
 import { pdfSectionAt } from "../forms/pdf-sections";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
-import { flatBoxQuestions } from "./form-boxes";
+import { BOX_INSET, flatBoxQuestions, labelFor } from "./form-boxes";
 import { answerTypeFromLabel, classifyLabel } from "./form-classify";
 import { cellOfParagraph, isDocxAnswerSpace, pdfAnswerSpaces, pdfFlatLabelCandidates, rowKey, type ParsedForm } from "./form-outline";
 import { glyphOptionsFromText } from "./form-postvalidate";
@@ -432,7 +433,29 @@ function pdfFieldRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
     const opts = yesNo ? yesFirst(options, (o) => o) : options;
     out.push(raw(label, f.section ?? "", { ...(answerType && { answerType }), options: opts, anchorTarget: "pdf_field", anchorRef: f.name }, segments.join(" "), f.completedBy ?? null));
   }
+  out.push(...printedSignatureBoxes(pdf));
   return out;
+}
+
+/**
+ * A fillable PDF's printed signature box that no field covers (AXA's "Signature" beside the fields for
+ * the printed name and date): a signature overlay, so the approval is written there like the rest of
+ * the sign-off – or left blank when the box belongs to another party.
+ */
+function printedSignatureBoxes(pdf: PdfFormOutline): AnalysisFieldOutput[] {
+  const boxes = (pdf.boxes ?? []).filter((b) => b.kind === "box");
+  return boxes.flatMap((b) => {
+    const label = cleanLabel(labelFor(b, pdf, boxes));
+    if (!/\bsignature\b|^signed\b/i.test(label) || /\b(?:date|name|print)\b/i.test(label) || label.length > 80) return [];
+    const at = pdfSectionAt(pdf, b.page, b.y + b.height + 1);
+    return [
+      raw(label, at.section ?? "", {
+        answerType: "signature",
+        anchorTarget: "pdf_overlay",
+        overlay: { page: b.page, x: b.x + BOX_INSET, y: b.y + BOX_INSET, width: b.width - 2 * BOX_INSET, height: b.height - 2 * BOX_INSET },
+      }, "", at.completedBy ?? null),
+    ];
+  });
 }
 
 function pdfFlatRules(pdf: PdfFormOutline): AnalysisFieldOutput[] {
