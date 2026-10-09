@@ -88,7 +88,8 @@ function stripSslParams(connectionString: string): string {
   }
 }
 
-export function createPgPool(config: PostgresConfig): pg.Pool {
+/** Connection settings shared by the app's Pool and the migration / copy scripts' Client. */
+export function pgConnectionConfig(config: PostgresConfig): pg.ClientConfig {
   const mode: PgSslMode = config.ssl ?? (config.caCert ? "verify-full" : "require");
   const ssl =
     mode === "disable"
@@ -96,14 +97,16 @@ export function createPgPool(config: PostgresConfig): pg.Pool {
       : mode === "verify-full"
         ? { rejectUnauthorized: true, ...(config.caCert ? { ca: config.caCert } : {}) }
         : { rejectUnauthorized: false };
-  return new pg.Pool({
+  return {
     connectionString: stripSslParams(config.connectionString),
     ssl,
-    max: config.max ?? 3,
-    idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
     types: customTypes,
-  });
+  };
+}
+
+export function createPgPool(config: PostgresConfig): pg.Pool {
+  return new pg.Pool({ ...pgConnectionConfig(config), max: config.max ?? 3, idleTimeoutMillis: 10_000 });
 }
 
 export function postgresDialect(config: PostgresConfig): Dialect {
