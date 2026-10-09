@@ -5,6 +5,8 @@
  * product. Phrased honestly: what this demo does (fictional data, browser storage) and what is in place
  * BEFORE any real patient data is used (DPA, DPIA, UK hosting, MFA, server-side audit trail…). The
  * drafting-specific wording comes from core/wording.ts (WORDING.security).
+ * Tenant mode (a clinic's own Studio links to the public /security page instead) never shows the demo
+ * status table or the demo sentences, should a host render it there.
  *
  * Owner: studio-a agent.
  */
@@ -26,6 +28,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { PRODUCT } from "../../../config.public";
+import { useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
 import { WORDING } from "../../wording";
 import { StudioShell } from "../../components/shared/studio-shell";
 
@@ -70,14 +74,20 @@ const STATUS: Array<{ area: string; demo: string; live: string }> = [
 ];
 
 export function SecurityScreen() {
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   return (
     <StudioShell
       title="Security & data protection"
       description={
-        <>
-          How {PRODUCT.name} protects patient data, and what is in place before any real patient data is used. This demo runs on
-          fictional data only.
-        </>
+        tenant ? (
+          <>How {PRODUCT.name} protects patient data.</>
+        ) : (
+          <>
+            How {PRODUCT.name} protects patient data, and what is in place before any real patient data is used. This demo runs on
+            fictional data only.
+          </>
+        )
       }
     >
       <div className="grid gap-4 lg:grid-cols-2">
@@ -135,7 +145,7 @@ export function SecurityScreen() {
         <Section icon={History} title="Audit trail" id="audit">
           <Points
             items={[
-              <>Every draft, edit, gap resolution, approval and filing is recorded in the report&apos;s own audit trail, with who did it and when (in this demo, kept with the report in this browser).</>,
+              <>Every draft, edit, gap resolution, approval and filing is recorded in the report&apos;s own audit trail, with who did it and when{tenant ? "" : " (in this demo, kept with the report in this browser)"}.</>,
               <>Resolving a gap says who answered it; nobody can mark an opinion as answered without writing it.</>,
               <>{WORDING.security.draftsLabelled}</>,
             ]}
@@ -161,42 +171,44 @@ export function SecurityScreen() {
         </Section>
       </div>
 
-      <section aria-labelledby="status-h" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3">
-          <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden />
-          <h2 id="status-h" className="text-sm font-semibold text-slate-900">
-            This demo, and what is in place before real patient data
-          </h2>
-        </div>
-        <div className="divide-y divide-slate-100">
-          <div className="hidden grid-cols-[180px_1fr_1fr] gap-4 px-5 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:grid">
-            <span>Area</span>
-            <span className="inline-flex items-center gap-1">
-              <Eye className="h-3.5 w-3.5" aria-hidden /> In this demo
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Lock className="h-3.5 w-3.5" aria-hidden /> Before any real patient data
-            </span>
+      {tenant ? null : (
+        <section aria-labelledby="status-h" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3">
+            <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden />
+            <h2 id="status-h" className="text-sm font-semibold text-slate-900">
+              This demo, and what is in place before real patient data
+            </h2>
           </div>
-          {STATUS.map((row) => (
-            <div key={row.area} className="grid gap-1 px-5 py-3 text-sm md:grid-cols-[180px_1fr_1fr] md:gap-4">
-              <span className="font-medium text-slate-900">{row.area}</span>
-              <span className="text-slate-600">
-                <span className="font-medium text-slate-500 md:hidden">In this demo: </span>
-                {row.demo}
+          <div className="divide-y divide-slate-100">
+            <div className="hidden grid-cols-[180px_1fr_1fr] gap-4 px-5 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:grid">
+              <span>Area</span>
+              <span className="inline-flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" aria-hidden /> In this demo
               </span>
-              <span className="text-slate-800">
-                <span className="font-medium text-slate-500 md:hidden">Before real data: </span>
-                {row.live}
+              <span className="inline-flex items-center gap-1">
+                <Lock className="h-3.5 w-3.5" aria-hidden /> Before any real patient data
               </span>
             </div>
-          ))}
-        </div>
-      </section>
+            {STATUS.map((row) => (
+              <div key={row.area} className="grid gap-1 px-5 py-3 text-sm md:grid-cols-[180px_1fr_1fr] md:gap-4">
+                <span className="font-medium text-slate-900">{row.area}</span>
+                <span className="text-slate-600">
+                  <span className="font-medium text-slate-500 md:hidden">In this demo: </span>
+                  {row.demo}
+                </span>
+                <span className="text-slate-800">
+                  <span className="font-medium text-slate-500 md:hidden">Before real data: </span>
+                  {row.live}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <p className="mt-6 text-xs text-slate-500">
         Questions about data protection? Ask for the draft Data Processing Agreement and the DPIA template.{" "}
-        <Link href="/reports" className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
+        <Link href={paths.home} className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
           Back to reports
         </Link>
       </p>

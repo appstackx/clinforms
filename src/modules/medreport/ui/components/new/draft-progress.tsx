@@ -11,6 +11,8 @@ import { CheckCircle2, CircleDashed, UserRound, XCircle } from "lucide-react";
 import { cn } from "../../primitives";
 import { formatMs } from "../shared/format";
 import { Spinner } from "../shared/ui-bits";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 import { generationModeLabel, type DraftGroupProgress } from "./generate";
 
@@ -26,6 +28,7 @@ export function DraftProgress({
   noteCount?: number;
   className?: string;
 }) {
+  const tenant = useStudioMode() === "tenant";
   const done = groups.filter((g) => g.status === "done" || g.status === "failed").length;
   const pct = groups.length ? Math.round((done / groups.length) * 100) : 100;
   return (
@@ -96,7 +99,9 @@ export function DraftProgress({
               </p>
               {g.status === "failed" ? (
                 g.code === "NO_DEMO_DRAFT" ? (
-                  <p className="mt-0.5 text-xs text-amber-900">Left blank for the clinician – no prepared demo answers for this patient.</p>
+                  <p className="mt-0.5 text-xs text-amber-900">
+                    {tenant ? TENANT_COPY.progress.leftBlank : "Left blank for the clinician – no prepared demo answers for this patient."}
+                  </p>
                 ) : (
                   <p className="mt-0.5 text-xs text-red-800">{g.error} Left blank for the clinician.</p>
                 )

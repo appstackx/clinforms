@@ -25,5 +25,6 @@ These scripts were used during the build to drive the Studio UI and the simulate
 | `live.cjs`, `live2.cjs` | Live (real model) drafting runs |
 | `pdfcheck.mjs` | Inspects a filled PDF's fields |
 | `auth-flow.cjs` | Sign-in and clinic area: invitation → account → two-step set-up → settings pages → sign out/in with a code and a backup code. Needs `INVITE_LINK_FILE` (the output of `npm run admin:create-clinic`); see `docs/auth.md` §7 |
+| `tenant-studio.cjs` | A clinic's own Studio (`/app/studio`): guard (no session → `/login`, no two-step → `/two-factor`), no demo chrome or links, notes upload only, forms library without samples, batch notice, public security page, missing report, no analytics without consent, sign out from the account menu, the public demo unchanged. `FLOW=complete` also completes a built-in report from pasted fictional notes (needs the server store and API actor slices). Needs `INVITE_LINK_FILE` (+ optional `CLINIC_NAME`); preview or local only |
 
 They were written for the original host repo (on port 3107), and only their paths were adjusted when they were copied here, so expect to fix selectors or ports if they fail.

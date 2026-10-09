@@ -6,7 +6,7 @@ export const MARKETING_NAV = [
 
 export const DEMO_HREF = "/reports";
 export const REQUEST_ACCESS_HREF = "/request-access";
-/** Clinic members sign in here (invitation-only accounts, two-factor required). */
+/** Clinic members sign in here (invitation-only accounts, two-step verification required). */
 export const SIGN_IN_HREF = "/login";
 
 /** Shared button styles for the public site (teal-700 on white text passes WCAG AA contrast). */

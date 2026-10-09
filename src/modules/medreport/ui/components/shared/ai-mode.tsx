@@ -4,6 +4,8 @@
  * Drafting mode: GET /health (cached once per page load) and the header badge with the live passcode
  * field (customer-facing wording: core/wording.ts WORDING.mode). The passcode is kept in sessionStorage for this tab only (ui/store.ts setPasscode) and is
  * checked by the server on the first live call.
+ * Tenant mode (a clinic's own Studio): no badge and no passcode – drafting follows the clinic's setting
+ * (HostHooks.clinic.draftingEnabled) and the member's sign-in.
  *
  * Owner: studio-a agent.
  */
@@ -11,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlaskConical, KeyRound, Zap } from "lucide-react";
 import type { HealthResponse } from "../../../api/contract";
 import { api } from "../../api-client";
+import { useHostHooks } from "../../host-hooks";
 import { WORDING } from "../../wording";
 import { getPasscode, setPasscode, STORE_EVENT } from "../../store";
 import {
@@ -47,10 +50,18 @@ export interface AiModeState {
   hasPasscode: boolean;
   /** Live drafting and form reading will be used (server allows it and a passcode is stored). */
   expectLive: boolean;
+  /**
+   * Whether to ask for drafting where no prepared answers exist (read when the drafting starts): the demo
+   * needs a stored passcode; a clinic's Studio needs drafting switched on for the clinic.
+   */
+  livePossible(): boolean;
 }
 
 /** /health plus the stored passcode, kept in sync with the store. */
 export function useAiMode(): AiModeState {
+  const { mode, clinic } = useHostHooks();
+  const tenant = mode === "tenant";
+  const tenantDrafting = tenant && clinic?.draftingEnabled === true;
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [error, setError] = useState(false);
   const [hasPasscode, setHasPasscode] = useState(false);
@@ -70,7 +81,13 @@ export function useAiMode(): AiModeState {
     };
   }, []);
 
-  return { health, error, hasPasscode, expectLive: Boolean(health?.liveAiAvailable && hasPasscode) };
+  return {
+    health,
+    error,
+    hasPasscode,
+    expectLive: Boolean(health?.liveAiAvailable && (tenant ? tenantDrafting : hasPasscode)),
+    livePossible: () => (tenant ? tenantDrafting : Boolean(getPasscode())),
+  };
 }
 
 /** Header badge: drafting mode, with a dialog to enter or clear the live passcode. */

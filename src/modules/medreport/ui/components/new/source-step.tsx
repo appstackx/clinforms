@@ -4,6 +4,9 @@
  * Step 1 of "Complete a form": where the patient's record comes from – the Simulated TM3 patient picker
  * or an uploaded TM3 export (our documented JSON / CSV format, or pasted anonymised notes). The launch
  * from TM3 itself is handled by the screen (launch token) and skips this step.
+ * Tenant mode (a clinic's own Studio): the notes upload only – no Simulated TM3 picker, no sandbox link,
+ * no fictional samples to try – and the signed-in member's own sign-in authorises the upload (no demo
+ * session).
  *
  * Owner: studio-a agent.
  */
@@ -17,6 +20,7 @@ import { formatUkDate } from "../../../core/dates";
 import { INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeSummary, PatientSummary } from "../../../core/types";
 import { ApiError, api, saveBlob, toBase64 } from "../../api-client";
+import { useStudioMode } from "../../host-hooks";
 import { getSession, setSession } from "../../store";
 import { Button, Input, Skeleton, cn } from "../../primitives";
 import { FileDrop } from "../shared/file-drop";
@@ -39,7 +43,15 @@ export async function ensureDemoSession(connectorId: ConnectorId, purpose: "pick
 type Tab = "tm3" | "upload";
 
 export function SourceStep({ onLoaded }: { onLoaded(result: SourceResult): void }) {
+  const tenant = useStudioMode() === "tenant";
   const [tab, setTab] = useState<Tab>("tm3");
+  if (tenant) {
+    return (
+      <div className="space-y-4">
+        <ExportUpload onLoaded={onLoaded} tenant />
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
@@ -228,6 +240,16 @@ function PatientPicker({ onLoaded }: { onLoaded(result: SourceResult): void }) {
 
 type ImportFormat = "json" | "csv" | "text" | "pdf";
 
+/**
+ * The import guide's examples name the demo's fictional clinician; a clinic's Studio shows a neutral
+ * example instead (pinned by ui/tenant-mode.test.ts).
+ */
+export function tenantFormatDescription(description: string): string {
+  return description
+    .replace(/Sarah Reid \(PH-DEMO-\d+\)/g, "the clinician's name (HCPC number)")
+    .replace(/^Paste anonymised notes\./, "Paste the notes.");
+}
+
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
   const out = new Uint8Array(new ArrayBuffer(bin.length));
@@ -244,7 +266,7 @@ function formatFor(fileName: string): ImportFormat | null {
   return null;
 }
 
-function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
+function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceResult): void; tenant?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; issues: string[] } | null>(null);
   const [pasted, setPasted] = useState("");
@@ -253,7 +275,8 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
     setBusy(true);
     setError(null);
     try {
-      await ensureDemoSession("file-import", "upload");
+      // The public demo authorises the upload with a demo session; a clinic's Studio with the member's sign-in.
+      if (!tenant) await ensureDemoSession("file-import", "upload");
       const data = await api.fileImportBundle({ format, content, ...(fileName && { fileName }) });
       onLoaded({ data, sourceLabel: fileName ? `${format === "pdf" ? "Printed notes" : "Notes export"} (${fileName})` : "Pasted notes" });
     } catch (err) {
@@ -284,11 +307,15 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
           accept=".pdf,.json,.csv,.txt,application/pdf,application/json,text/csv,text/plain"
           onFile={(f) => void onFile(f)}
           title={busy ? "Reading the notes…" : "Drop the patient's notes here, or choose a file"}
-          hint="The notes printed or saved as a PDF from your clinic system, or JSON / CSV in our documented format · fictional data only"
+          hint={
+            tenant
+              ? "The notes printed or saved as a PDF from your clinic system, or JSON / CSV in our documented format"
+              : "The notes printed or saved as a PDF from your clinic system, or JSON / CSV in our documented format · fictional data only"
+          }
           disabled={busy}
         />
         <div>
-          <FieldLabel htmlFor="paste-notes" hint="(anonymised – no attendance record from pasted notes)">
+          <FieldLabel htmlFor="paste-notes" hint={tenant ? "(no attendance record from pasted notes)" : "(anonymised – no attendance record from pasted notes)"}>
             Or paste notes
           </FieldLabel>
           <Textarea
@@ -296,7 +323,11 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             rows={5}
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
-            placeholder={"Date of birth: 04/05/1988\nInstructing party: …\n\n18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)\nS: …"}
+            placeholder={
+              tenant
+                ? "Date of birth: …\nInstructing party: …\n\nDD/MM/YYYY – Initial assessment – clinician's name (HCPC number)\nS: …"
+                : "Date of birth: 04/05/1988\nInstructing party: …\n\n18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)\nS: …"
+            }
           />
           <Button className="mt-2" size="sm" disabled={busy || pasted.trim().length < 20} onClick={() => void submit("text", pasted)}>
             <Upload className="mr-1.5 h-4 w-4" aria-hidden />
@@ -323,7 +354,7 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
         <ul className="space-y-1.5 text-xs text-slate-600">
           {IMPORT_FORMAT_GUIDE.formats.map((f) => (
             <li key={f.id}>
-              <span className="font-medium text-slate-800">{f.label}:</span> {f.description}
+              <span className="font-medium text-slate-800">{f.label}:</span> {tenant ? tenantFormatDescription(f.description) : f.description}
             </li>
           ))}
         </ul>
@@ -346,7 +377,8 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             );
           })}
         </div>
-        <div className="flex flex-wrap gap-1">
+        {tenant ? null : (
+          <div className="flex flex-wrap gap-1">
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void submit("pdf", SAMPLE_PRINTED_NOTES_PDF.base64, SAMPLE_PRINTED_NOTES_PDF.fileName)}>
             Try the printed notes PDF (Priya Nair, fictional)
           </Button>
@@ -354,7 +386,8 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             Try the sample export (JSON)
           </Button>
         </div>
-        <p className="text-xs text-slate-500">{IMPORT_FORMAT_GUIDE.privacy}</p>
+        )}
+        {tenant ? null : <p className="text-xs text-slate-500">{IMPORT_FORMAT_GUIDE.privacy}</p>}
       </div>
     </div>
   );

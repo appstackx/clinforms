@@ -22,8 +22,8 @@ import { BANNED_TERM_PATTERNS } from "@/modules/medreport/core/wording";
 
 const ROOT = process.cwd();
 
-/** Folders whose strings are customer-facing (missing folders are skipped: (auth) and email arrive later). */
-const BANNED_TERM_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/components", "src/server/email", "src/server/site"];
+/** Folders whose strings are customer-facing (missing folders are skipped). src/app/app = the signed-in clinic area and its Studio. */
+const BANNED_TERM_ROOTS = ["src/app/(marketing)", "src/app/(auth)", "src/app/app", "src/components", "src/server/email", "src/server/site"];
 
 /**
  * Folders (or files) whose strings are visible copy, where infrastructure vendor names may not appear either.

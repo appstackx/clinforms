@@ -1,0 +1,66 @@
+/**
+ * Customer-facing copy that only a clinic's own Studio shows (tenant mode, /app/studio). The public demo
+ * keeps its own wording in the screens, NOTICES and core/wording.ts WORDING.
+ *
+ * Production copy: no "demo", "fictional", simulated-system or placeholder-clinician wording, and – like
+ * all customer-facing text – no technology or vendor names (checked against core/wording.ts
+ * BANNED_TERM_PATTERNS in studio-copy.test.ts). It states only what a clinic's Studio does today.
+ */
+export const TENANT_COPY = {
+  home: {
+    eyebrow: "Your clinic's Studio",
+    reportsIntro: "Your clinic's forms, waiting for review or approved –",
+    securityLink: "how patient data is protected",
+    emptyBody: "Upload the patient's notes (printed to PDF from your clinic system, or an export) and choose the referrer's form.",
+    uploadStepTitle: "Upload the notes",
+    uploadStepText: "The patient's notes printed to PDF from your clinic system, or an export.",
+    approveStepText: "The referrer's own Word or PDF, completed and ready to send.",
+    securityCardBlurb: "Clinician approval, two-step verification, encryption and data minimisation – what is in place today.",
+  },
+  wizard: {
+    description:
+      "Fill the referrer's own form from the patient's registration details and physiotherapy notes. Identifiers and figures are filled by code; answers from the notes are drafted with citations; anything not recorded is left blank and flagged for the clinician.",
+    draftingOffTitle: "The remaining questions are left for the clinician",
+    draftingOffBody: "Drafting from the notes is not switched on for your clinic, so these questions were not drafted. Open the form and answer them in review.",
+    draftingOffSuffix: " Drafting from the notes is not switched on for your clinic – answer them in review.",
+    saveFailedTitle: "The report could not be saved",
+    saveFailedBody: "Check your connection and try again.",
+    launchFailed: "Choose the patient's notes below instead.",
+  },
+  progress: {
+    leftBlank: "Left blank for the clinician to answer.",
+  },
+  review: {
+    notFoundTitle: "This report was not found",
+    notFoundBody: "It may have been deleted, or it belongs to another clinic. Reports are kept for your clinic's retention period.",
+    reviewDraftingOff: "Drafting from the notes is not switched on for your clinic, so these questions were not drafted. Answer them below.",
+    actorFallback: "Clinic staff",
+    approveSignerHint: "Your name and HCPC number come from your clinic profile.",
+    approveSavedFailed: "Approved, but the change could not be saved. Download the completed form now.",
+    activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
+    saved: "Saved",
+    saveFailed: "Could not save – check your connection",
+  },
+  forms: {
+    notFoundTitle: "This form is not in your clinic's library",
+    notFoundBody: "It may have been deleted. Upload the referrer's form again to map it.",
+    libraryIntro: "Upload the form an MLC or insurer sent you (.docx or PDF).",
+  },
+  batch: {
+    title: "Batch",
+    unavailableTitle: "Batch needs a connected clinic system",
+    unavailableBody:
+      "Batch completes several patients' forms at once from a connected clinic system. Your clinic adds patients by uploading their notes, so complete each form from “Complete a form”.",
+  },
+} as const;
+
+/** Every string in TENANT_COPY (for the wording tests). */
+export function tenantCopyStrings(): string[] {
+  const out: string[] = [];
+  const walk = (value: unknown) => {
+    if (typeof value === "string") out.push(value);
+    else if (value && typeof value === "object") Object.values(value).forEach(walk);
+  };
+  walk(TENANT_COPY);
+  return out;
+}

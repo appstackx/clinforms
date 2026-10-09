@@ -33,7 +33,7 @@ export const TOKEN_PROPS = {
   area: ["marketing", "demo", "app"],
   cta: ["header", "mobile_nav", "hero", "how_it_works", "security", "faq", "final", "footer", "not_found", "request_access"],
   source: ["clinic_system", "simulated_clinic_system", "export_upload", "notes_pdf"],
-  form_kind: ["docx", "pdf_fillable", "pdf_flat"],
+  form_kind: ["docx", "pdf_fillable", "pdf_flat", "questions"],
   format: ["docx", "pdf"],
   mode: ["demo", "live"],
   method: ["totp", "backup_code"],
@@ -92,6 +92,7 @@ const STATIC_SEGMENTS = new Set<string>([
   "reset-password",
   // Studio (demo and signed-in app)
   "app",
+  "studio",
   "reports",
   "new",
   "forms",

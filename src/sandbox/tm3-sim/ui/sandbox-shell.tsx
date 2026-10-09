@@ -1,7 +1,7 @@
 /**
  * Sandbox chrome: a permanent slate/blue "Simulated TM3 sandbox – demo data, not affiliated with TM3"
- * strip (slate and blue, never amber) and a neutral clinic-system header.
- * No TM3 logo, colours or copied screens.
+ * strip (slate and blue, never amber), a neutral clinic-system header and a footer with the public
+ * site's legal links. No TM3 logo, colours or copied screens.
  *
  * Owner: sandbox agent.
  */
@@ -10,6 +10,14 @@ import Link from "next/link";
 import { Building2, FlaskConical, UserRound } from "lucide-react";
 import { SANDBOX_LABEL } from "../config";
 import { SARAH_REID, SIM_CLINIC } from "../fixtures/clinic";
+
+/** The public website's legal and trust pages (fixed paths on the host site). */
+const LEGAL_LINKS = [
+  { href: "/privacy", label: "Privacy policy" },
+  { href: "/cookies", label: "Cookie policy" },
+  { href: "/terms", label: "Terms" },
+  { href: "/security", label: "Security" },
+] as const;
 
 export function SandboxShell({ children }: { children: ReactNode }) {
   return (
@@ -59,6 +67,23 @@ export function SandboxShell({ children }: { children: ReactNode }) {
       <main id="sandbox-main" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 focus:outline-none sm:px-6 lg:px-8">
         {children}
       </main>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p>{SANDBOX_LABEL}</p>
+          <nav aria-label="Legal" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {LEGAL_LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                prefetch={false}
+                className="rounded underline-offset-2 hover:text-slate-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

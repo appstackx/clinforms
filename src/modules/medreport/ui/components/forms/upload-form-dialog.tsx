@@ -3,6 +3,8 @@
 /**
  * "Upload a referrer form": pick or drop a .docx / .pdf, optionally name the referrer, analyse it
  * (POST /forms/analyse) with honest progress, then show what was found and go to the mapping review.
+ * A clinic's Studio (tenant mode) reports form_uploaded through HostHooks.track (counts and enumerated
+ * values only) and shows no demo wording.
  *
  * Owner: studio-a agent.
  */
@@ -24,6 +26,9 @@ import {
   DialogTitle,
   Input,
 } from "../../primitives";
+import { useHostHooks } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { formEventProps } from "../../studio-events";
 import { useAiMode } from "../shared/ai-mode";
 import { FileDrop } from "../shared/file-drop";
 import { errorMessage, formatBytes, formatMs, plural } from "../shared/format";
@@ -48,7 +53,12 @@ export interface UploadFormDialogProps {
 
 export function UploadFormDialog({ open, onOpenChange, initialFile, initialReferrer }: UploadFormDialogProps) {
   const router = useRouter();
-  const { expectLive } = useAiMode();
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = hooks.mode === "tenant";
+  const aiMode = useAiMode();
+  // A clinic's Studio never shows the demo's "prepared reading" wording.
+  const expectLive = aiMode.expectLive || tenant;
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [referrerName, setReferrerName] = useState("");
   const [referrerType, setReferrerType] = useState<ReferrerType>("mlc");
@@ -99,6 +109,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
         signal: controller.signal,
       });
       setPhase({ kind: "done", result });
+      hooks.track?.("form_uploaded", formEventProps(result.form));
     } catch (err) {
       if (controller.signal.aborted) setPhase({ kind: "ready", local, existing: findFormByFile(local.sha256) });
       else setPhase({ kind: "error", message: errorMessage(err), local });
@@ -147,7 +158,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
             {phase.existing ? (
               <Notice tone="info" title="This exact file is already in your forms library">
                 “{phase.existing.title}” from {phase.existing.referrer.name} was mapped from the same file.{" "}
-                <Link className="font-medium underline" href={`/reports/forms/${encodeURIComponent(phase.existing.id)}`} onClick={() => close(false)}>
+                <Link className="font-medium underline" href={paths.form(phase.existing.id)} onClick={() => close(false)}>
                   Open the existing mapping
                 </Link>{" "}
                 or analyse it again as a new entry.
@@ -162,7 +173,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
                   id="upload-referrer"
                   value={referrerName}
                   onChange={(e) => setReferrerName(e.target.value)}
-                  placeholder="e.g. Harrow & Pike Medico-Legal (fictional)"
+                  placeholder={tenant ? "e.g. the MLC or insurer's name" : "e.g. Harrow & Pike Medico-Legal (fictional)"}
                 />
               </div>
               <div>
@@ -216,7 +227,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
             <Button
               onClick={() => {
                 close(false);
-                router.push(`/reports/forms/${encodeURIComponent(phase.result.form.id)}`);
+                router.push(paths.form(phase.result.form.id));
               }}
             >
               <ListChecks className="mr-2 h-4 w-4" aria-hidden />

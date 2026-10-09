@@ -7,6 +7,8 @@
  */
 import { formatUkDateTime } from "../../../core/dates";
 import type { ActivityEntry } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { neutralLegacyText } from "../../wording";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -41,6 +43,7 @@ const ACTION_DOT: Record<string, string> = {
 
 export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
   const entries = [...activity].reverse();
+  const tenant = useStudioMode() === "tenant";
   return (
     <div className="space-y-3">
       <ol className="relative space-y-3 border-l border-slate-200 pl-4">
@@ -56,7 +59,11 @@ export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
           </li>
         ))}
       </ol>
-      <p className="text-[11px] text-slate-500">Demo-grade audit trail, kept with the report in this browser. In production it is stored server-side and cannot be edited.</p>
+      <p className="text-[11px] text-slate-500">
+        {tenant
+          ? TENANT_COPY.review.activityNote
+          : "Demo-grade audit trail, kept with the report in this browser. In production it is stored server-side and cannot be edited."}
+      </p>
     </div>
   );
 }

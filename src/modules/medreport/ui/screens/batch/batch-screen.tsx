@@ -5,6 +5,8 @@
  * background, at most BATCH_CONCURRENCY /drafts calls at once. Each item fetches the episode, creates
  * the form report (code-filled answers), drafts the remaining questions and is saved to this browser,
  * ready for clinician review. Nothing is approved or issued automatically.
+ * Batch reads episodes from a connected clinic system (the Simulated TM3 in the demo). A clinic's own
+ * Studio (tenant mode) has no connected system yet, so it explains that instead.
  *
  * Owner: studio-a agent.
  */
@@ -15,7 +17,10 @@ import { BATCH_CONCURRENCY } from "../../../config.public";
 import { formatUkDate } from "../../../core/dates";
 import type { EpisodeSummary, FormDefinition, PatientSummary } from "../../../core/types";
 import { api } from "../../api-client";
+import { useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
 import { getPasscode, saveReport, useForms } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
 import { Button, Skeleton, cn } from "../../primitives";
 import { generateReport } from "../../components/new/generate";
 import { getRememberedFormId, matchReferrerForm } from "../../components/new/referrer-match";
@@ -47,6 +52,31 @@ interface Row {
 }
 
 export function BatchScreen() {
+  return useStudioMode() === "tenant" ? <BatchNotConnected /> : <SimulatedBatchScreen />;
+}
+
+/** Tenant mode: no connected clinic system to read episodes from. */
+function BatchNotConnected() {
+  const paths = useStudioPaths();
+  return (
+    <StudioShell title={TENANT_COPY.batch.title}>
+      <EmptyState
+        icon={ListPlus}
+        title={TENANT_COPY.batch.unavailableTitle}
+        actions={
+          <Button asChild>
+            <Link href={paths.newReport}>Complete a form</Link>
+          </Button>
+        }
+      >
+        {TENANT_COPY.batch.unavailableBody}
+      </EmptyState>
+    </StudioShell>
+  );
+}
+
+function SimulatedBatchScreen() {
+  const paths = useStudioPaths();
   const { forms, ready: formsReady } = useForms();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -221,7 +251,7 @@ export function BatchScreen() {
         {formsReady && confirmed.length === 0 ? (
           <Notice tone="info">
             No confirmed referrer forms yet –{" "}
-            <Link href="/reports/forms" className="font-medium underline">
+            <Link href={paths.forms} className="font-medium underline">
               confirm a mapping
             </Link>{" "}
             first.
@@ -274,7 +304,7 @@ export function BatchScreen() {
                   <div className="flex items-center gap-1">
                     {item.status.kind === "done" ? (
                       <Button asChild size="sm" variant="outline">
-                        <Link href={`/reports/${encodeURIComponent(item.status.reportId)}`}>
+                        <Link href={paths.report(item.status.reportId)}>
                           Review
                           <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden />
                         </Link>

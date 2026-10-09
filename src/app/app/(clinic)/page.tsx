@@ -59,15 +59,20 @@ export default async function ClinicOverviewPage() {
 
       <Panel title="Completing forms" className="mt-6">
         <p className="text-sm text-slate-700">
-          Completing referrer forms for your clinic&apos;s own patients is not switched on in this account yet. Until it is, you can try the
-          whole workflow in the demo studio, which uses fictional patients and keeps its work in your browser only.
+          The Studio is where your clinic completes referrers&apos; own forms: upload the patient&apos;s notes, choose the referrer&apos;s
+          form, and the treating clinician reviews and approves every answer before the form is issued.
         </p>
-        <Link
-          href="/reports"
-          className="mt-4 inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
-        >
-          Open the demo studio
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Link
+            href="/app/studio"
+            className="inline-flex h-10 items-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
+          >
+            Open the Studio
+          </Link>
+          <Link href="/reports" className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
+            Try the demo with fictional patients
+          </Link>
+        </div>
       </Panel>
     </>
   );

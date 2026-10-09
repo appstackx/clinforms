@@ -16,12 +16,14 @@ import { INSTRUCTING_PARTY_LABELS, SECTION_KIND_LABELS } from "../../../core/lab
 import type { ReportTemplate } from "../../../core/types";
 import { api, saveBlob, toBase64 } from "../../api-client";
 import { Button, Card, Skeleton } from "../../primitives";
+import { useStudioPaths } from "../../routes";
 import { FileDrop } from "../../components/shared/file-drop";
 import { errorMessage, formatBytes, plural } from "../../components/shared/format";
 import { StudioShell } from "../../components/shared/studio-shell";
 import { EmptyState, Notice, Spinner } from "../../components/shared/ui-bits";
 
 export function TemplatesScreen() {
+  const paths = useStudioPaths();
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -55,7 +57,7 @@ export function TemplatesScreen() {
       description="Our own report layouts, used only when a referrer has not sent a form of their own. When they have, complete their form instead – in its original layout."
       actions={
         <Button asChild variant="outline">
-          <Link href="/reports/forms">
+          <Link href={paths.forms}>
             <Files className="mr-2 h-4 w-4" aria-hidden />
             Referrer forms
           </Link>
@@ -111,6 +113,7 @@ export function TemplatesScreen() {
 }
 
 function ValidateOwnTemplate() {
+  const paths = useStudioPaths();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ fileName: string; res: TemplatesValidateResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +148,7 @@ function ValidateOwnTemplate() {
         </h2>
         <p className="text-sm text-slate-600">
           Download a template above, restyle it in Word (keep the {"{tags}"}), and check it here. For a referrer&apos;s form, use{" "}
-          <Link href="/reports/forms" className="font-medium text-teal-700 underline">
+          <Link href={paths.forms} className="font-medium text-teal-700 underline">
             Referrer forms
           </Link>{" "}
           instead – no tags needed.

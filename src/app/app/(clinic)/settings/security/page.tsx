@@ -39,13 +39,16 @@ export default async function SecurityPage() {
           </p>
           <BackupCodesForm />
         </div>
-        <p className="mt-5 text-sm text-slate-600">
-          Lost your phone and your backup codes? Email ClinForms support at{" "}
-          <a href={`mailto:${COMPANY.contactEmail}`} className="font-medium text-teal-700 underline underline-offset-2">
+      </Panel>
+
+      <Panel title="Support" description="Lost your phone and your backup codes?" className="mb-6">
+        <p className="text-sm text-slate-600" data-support-contact="">
+          Email ClinForms support at{" "}
+          <a href={`mailto:${COMPANY.contactEmail}?subject=${encodeURIComponent("Two-step verification reset")}`} className="font-medium text-teal-700 underline underline-offset-2">
             {COMPANY.contactEmail}
           </a>{" "}
           from your work address. We check the request with your clinic&apos;s owner, reset two-step verification on your account, and you
-          set it up again at your next sign-in.
+          set it up again at your next sign-in. Never send us your password or a code.
         </p>
       </Panel>
 

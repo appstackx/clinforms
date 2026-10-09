@@ -10,6 +10,8 @@
  * A report ID that is not in this browser shows NOTICES.otherBrowser.
  * Form reports also offer "Copy answers" (per question, all, .txt – components/review/copy-answers.tsx);
  * for a portal question set (no file) that is the output, with a PDF summary for the record.
+ * Tenant mode (a clinic's own Studio): the signed-in member is the actor and the default signer, and
+ * no demo wording or prepared demo drafts are offered.
  *
  * Owner: studio-b agent.
  */
@@ -26,7 +28,9 @@ import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } fr
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
-import { useHostHooks } from "../../host-hooks";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import {
   Button,
   Dialog,
@@ -106,6 +110,28 @@ function ReviewSkeleton() {
 }
 
 function NotInThisBrowser({ reportId }: { reportId: string }) {
+  const paths = useStudioPaths();
+  if (useStudioMode() === "tenant") {
+    return (
+      <div className="mx-auto max-w-xl py-10">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
+          <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+            <FileQuestion className="h-6 w-6" aria-hidden />
+          </span>
+          <h1 className="text-lg font-semibold text-slate-900">{TENANT_COPY.review.notFoundTitle}</h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">{TENANT_COPY.review.notFoundBody}</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link href={paths.home}>Go to Reports</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={paths.newReport}>Complete a form</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
@@ -119,10 +145,10 @@ function NotInThisBrowser({ reportId }: { reportId: string }) {
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link href="/reports">Go to Reports</Link>
+            <Link href={paths.home}>Go to Reports</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/reports/new">Complete a form</Link>
+            <Link href={paths.newReport}>Complete a form</Link>
           </Button>
         </div>
         <p className="mt-6 text-xs text-slate-500">{NOTICES.browserStorage}</p>
@@ -190,6 +216,8 @@ function useFormFile(form: FormDefinition | null, needed: boolean): FormFileStat
 
 function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report }) {
   const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   const { push: toast } = useToast();
   const formInfo = initial.form ?? null;
   const { form: libraryForm, ready: formReady } = useForm(formInfo?.formId ?? "");
@@ -219,20 +247,26 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const isForm = Boolean(report.form);
   const bundle = report.bundleSnapshot;
 
-  // Who is acting, for the audit trail: the clinician the clinic system opened THIS report for, else
-  // the report's author (saved when it was started), never an anonymous "Reviewer".
+  // Who is acting, for the audit trail: in a clinic's Studio the signed-in member; in the demo the
+  // clinician the clinic system opened THIS report for, else the report's author (saved when it was
+  // started), never an anonymous "Reviewer".
+  const member = tenant ? hooks.member : undefined;
   const session = getSession();
   const sessionCoversReport =
     session?.claims.kind === "launch" && session.claims.patientId === initial.episodeRef.patientId && session.claims.episodeId === initial.episodeRef.episodeId;
-  const actor = (sessionCoversReport ? session?.claims.clinician?.name : undefined) ?? initial.author?.name ?? session?.claims.clinician?.name ?? "Clinic staff (demo session)";
+  const actor = tenant
+    ? member?.name ?? TENANT_COPY.review.actorFallback
+    : (sessionCoversReport ? session?.claims.clinician?.name : undefined) ?? initial.author?.name ?? session?.claims.clinician?.name ?? "Clinic staff (demo session)";
   const defaultSigner: Clinician | null = useMemo(() => {
+    // A clinic's signer is the signed-in member (their clinic profile), never someone from the notes.
+    if (tenant) return member ? { name: member.name, hcpc: member.hcpc ?? "", ...(member.jobTitle ? { role: member.jobTitle } : {}) } : null;
     const s = getSession();
     const claims = s?.claims;
     if (claims?.clinician && (claims.kind === "demo" || (claims.patientId === initial.episodeRef.patientId && claims.episodeId === initial.episodeRef.episodeId))) {
       return claims.clinician;
     }
     return primaryTreatingClinician(initial.bundleSnapshot);
-  }, [initial]);
+  }, [initial, tenant, member]);
 
   /* Derived ------------------------------------------------------------------------------------ */
 
@@ -284,15 +318,17 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       actor,
       detail: `Amended version ${amended.version} started (${id}). This approval is superseded once the amended version is approved.`,
     });
-    router.push(`/reports/${encodeURIComponent(id)}`);
-  }, [report, actor, toast, dispatch, router]);
+    router.push(paths.report(id));
+  }, [report, actor, toast, dispatch, router, paths]);
 
   const approveUnavailable: string | null = signed
     ? null
     : formProblem === "loading"
       ? "Loading the form map…"
       : formProblem === "missing"
-        ? "The form map is not in this browser's forms library."
+        ? tenant
+          ? "The form map is not in your clinic's forms library."
+          : "The form map is not in this browser's forms library."
         : formProblem === "mismatch"
           ? "The forms library holds a different version of this form."
           : form && form.status !== "confirmed"
@@ -465,7 +501,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       />
 
       {formProblem === "missing" && formInfo && (
-        <InlineAlert tone="warning" title={`The form map for “${formInfo.title}” is not in this browser`} action={<Link className="font-medium underline" href="/reports/forms">Open the forms library</Link>}>
+        <InlineAlert
+          tone="warning"
+          title={tenant ? `The form map for “${formInfo.title}” is not in your clinic's library` : `The form map for “${formInfo.title}” is not in this browser`}
+          action={<Link className="font-medium underline" href={paths.forms}>Open the forms library</Link>}
+        >
           You can read the answers, but previewing, checking and approving need {formInfo.referrer.name}&apos;s form map and file. Add the form to the forms
           library again (the same file), then reopen this report.
         </InlineAlert>
@@ -480,7 +520,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           tone="warning"
           title="The form's mapping has not been confirmed"
           action={
-            <Link className="font-medium underline" href={`/reports/forms/${encodeURIComponent(form.id)}`}>
+            <Link className="font-medium underline" href={paths.form(form.id)}>
               Review the mapping
             </Link>
           }
@@ -513,7 +553,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
       {!signed && (pendingKeys.length > 0 || actions.draftFailures.length > 0) && template && draftingUnavailable && actions.draftFailures.length === 0 && (
         <InlineAlert tone="info" title={`${pendingKeys.length} question${pendingKeys.length === 1 ? " is" : "s are"} for the clinician to answer`}>
-          {WORDING.drafting.reviewNoDemoAnswers}
+          {tenant ? TENANT_COPY.review.reviewDraftingOff : WORDING.drafting.reviewNoDemoAnswers}
         </InlineAlert>
       )}
 
@@ -537,7 +577,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                 <Button type="button" size="sm" className="h-8" onClick={() => void actions.draft(null)}>
                   <NotebookPen className="mr-1.5 h-3.5 w-3.5" aria-hidden /> {actions.draftFailures.length > 0 ? "Try again" : "Draft them now"}
                 </Button>
-                {actions.draftFailures.some((f) => f.code !== "NO_DEMO_DRAFT") && (
+                {!tenant && actions.draftFailures.some((f) => f.code !== "NO_DEMO_DRAFT") && (
                   <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => void actions.draft(null, "demo")}>
                     Use the prepared demo draft
                   </Button>
@@ -629,7 +669,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                       ? undefined
                       : template && !failuresByKey.has(q.key)
                         ? (key) => void actions.draft([key])
-                        : (key) => void actions.draft([key], "demo")
+                        : (key) => void actions.draft([key], tenant ? "auto" : "demo")
                   }
                 />
               ))}
