@@ -14,8 +14,8 @@
  *   9. no analytics request was made (no consent was given in this browser)
  *  10. sign out from the account menu → /login; /app/studio → /login again
  *  11. the public demo at /reports still has its demo tools and fictional-data footer
- *  FLOW=complete adds (needs the server store and the API actor slices): paste fictional notes → check the
- *  data → built-in report → review opens under /app/studio/<id> and says "Saved".
+ *  FLOW=complete adds: paste fictional notes → check the data → built-in report → review opens under
+ *  /app/studio/<id> and says "Saved" (with drafting off – a new clinic's default – via "Open for review").
  *
  * Run (app started against the preview database, e.g.
  *   npm run admin:with-env -- --env preview --port 3111 -- npx next start -p 3111):
@@ -227,13 +227,13 @@ async function assertTenantPage(page, where) {
             "Instructing party: Northfield Assurance (fictional)",
             "Instructing party type: insurer",
             "",
-            "01/09/2026 – Initial assessment – Zed Studio Selftest (PH-DEMO-02)",
+            "01/09/2026 – Initial assessment – Zed Studio Selftest (ZZ0002)",
             "S: Right shoulder pain after a fall at home two weeks ago.",
             "O: Flexion 120 degrees, pain at end of range.",
             "A: Rotator cuff strain.",
             "P: Exercises, review in two weeks.",
             "",
-            "15/09/2026 – Follow-up – Zed Studio Selftest (PH-DEMO-02)",
+            "15/09/2026 – Follow-up – Zed Studio Selftest (ZZ0002)",
             "S: Pain easing, sleeping better.",
             "O: Flexion 150 degrees.",
           ].join("\n"),
@@ -245,7 +245,15 @@ async function assertTenantPage(page, where) {
         await page.click("button:has-text('No form from the referrer? Use a built-in report')");
         await page.locator("button[role=radio]:has-text('Written for')").first().click();
         await page.click("button:has-text('Draft the built-in report')");
-        await page.waitForURL(/\/app\/studio\/rpt_/, { timeout: 90000 });
+        // With drafting from the notes switched off (a new clinic's default) nothing is drafted: the wizard says
+        // so and offers "Open for review" instead of opening the review by itself.
+        const opened = page.waitForURL(/\/app\/studio\/rpt_/, { timeout: 90000 }).then(() => "review");
+        const offered = page.waitForSelector("a:has-text('Open for review')", { timeout: 90000 }).then(() => "offer");
+        if ((await Promise.race([opened, offered])) === "offer" && !/\/app\/studio\/rpt_/.test(page.url())) {
+          await page.click("a:has-text('Open for review')");
+          await page.waitForURL(/\/app\/studio\/rpt_/, { timeout: 30000 });
+        }
+        await Promise.allSettled([opened, offered]);
         await page.waitForSelector("text=Saved", { timeout: 30000 });
         await assertTenantPage(page, "review");
         await shot("05-review");

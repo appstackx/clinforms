@@ -15,11 +15,13 @@ import { getDemoBundle } from "./dev-bundles";
 
 function fakeClient(opts: { failKey?: string } = {}) {
   const calls: string[][] = [];
+  const reportIds: Array<string | undefined> = [];
   let active = 0;
   let peak = 0;
   const client = {
     async drafts(body: DraftsRequest): Promise<DraftsResponse> {
       calls.push(body.sectionKeys);
+      reportIds.push(body.reportId);
       active += 1;
       peak = Math.max(peak, active);
       await new Promise((r) => setTimeout(r, 3));
@@ -46,13 +48,13 @@ function fakeClient(opts: { failKey?: string } = {}) {
       return { flags: [], canSign: false, blocking: [] };
     },
   };
-  return { client, calls, peak: () => peak };
+  return { client, calls, reportIds, peak: () => peak };
 }
 
 test("completes a referrer form: code-filled answers, grouped drafts (≤3 at once), merged and validated", async () => {
   const bundle = getDemoBundle("megan-hart");
   const computedFacts = computeFacts(bundle, { asOf: "2026-10-06" });
-  const { client, calls, peak } = fakeClient();
+  const { client, calls, reportIds, peak } = fakeClient();
   const saved: string[] = [];
   const result = await generateReport({
     client,
@@ -67,6 +69,8 @@ test("completes a referrer form: code-filled answers, grouped drafts (≤3 at on
   assert.deepEqual(report.instructingParty, instructingPartyOf(bundle));
   assert.ok(calls.length > 0 && calls.every((g) => g.length >= 1 && g.length <= MAX_FORM_FIELDS_PER_DRAFT));
   assert.ok(peak() <= 3);
+  // Every draft request names the report (a clinic's audit trail targets it; wave 2).
+  assert.ok(reportIds.length > 0 && reportIds.every((id) => id === report.id));
   assert.equal(result.failedGroups, 0);
   assert.ok(result.groups.every((g) => g.status === "done" && g.mode === "demo_recorded"));
   // Registration answers are filled by code, never sent for drafting.

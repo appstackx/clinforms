@@ -133,7 +133,12 @@ re-encrypt in the background).
   `ClinicProfile = {tenantId, displayName, legalName?, addressLines, postcode?, phone?, email?, retentionDays,
   draftingEnabled}`. Wave 2: new `auth/actor.ts`
   `requireActor(req, deps, opts)`. Demo actor = tenant `demo` via the existing demo/launch session tokens, only when
-  `CLINFORMS_PUBLIC_DEMO=1`.
+  `CLINFORMS_PUBLIC_DEMO=1`. *Built (wave 2, integrated):* the demo is **on unless `CLINFORMS_PUBLIC_DEMO=0`**; the glue
+  wires `authenticate` (Better Auth session read from the database, only when a sign-in cookie is present), and every
+  Report API endpoint – the `/store/**` ones included (`store-actor.ts` on top of `requireActor`, demo sessions
+  refused) – resolves its caller through `requireActor`. A demo session sent from the demo's own pages (`/reports`,
+  `/pms-sandbox`, same-origin Referer) is the demo even when the browser also holds a clinic sign-in. A clinic's
+  Studio never mints or sends a demo session. Detail: `src/modules/medreport/README.md` "Production wave 2".
 - Every endpoint that touches patient data or drafting requires an actor; tenant checks on every
   report/form/bundle (`tenantId === actor.tenantId`); signer = the signed-in clinician (HCPC from
   `member_profile`), not the request body. Audit rows for sign, confirm, final render, file-back, live
@@ -146,11 +151,14 @@ re-encrypt in the background).
 |---|---|---|
 | `/` `(marketing)` | public | Landing page; `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
 | `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex. *Integrated:* no cookie banner here (task pages for invited members – a fixed banner covered the form; a choice made on the public site still applies); the public site's header and footer link to `/login` |
-| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). Tenant Studio: wave 2. *Wave 2:* `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
-| `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` |
+| `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). *Wave 2:* the tenant Studio at `/app/studio/**`
+(`HostHooks` `basePath`/`mode: "tenant"`/`storage: "server"`; layout checks session, two-step and clinic on the server);
+Settings → Clinic has the owner/admin switch for drafting from the notes (`clinic_profile.drafting_enabled`, off for a
+new clinic); a clinic's launch link opens `/app/studio/new`; `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
+| `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` (*built:* on unless `CLINFORMS_PUBLIC_DEMO=0`) |
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only) |
-| `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows. *Built:* daily (vercel.json, 03:17 UTC); also deletes reports unchanged for their clinic's `retention_days` (read at run time) and access requests older than 24 months; refuses every call while `CRON_SECRET` is unset |
+| `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows. *Built:* daily (vercel.json, 03:17 UTC); also deletes reports unchanged for their clinic's `retention_days` (read at run time) and access requests older than 24 months; *wave 2:* also form-file uploads started over a day ago and never completed; refuses every call while `CRON_SECRET` is unset |
 
 Edge middleware (Next 14.2) only does optimistic cookie redirects for `/app` and the auth pages; real checks are
 in Node layouts and `route()`.

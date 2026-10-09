@@ -185,6 +185,8 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
         bundle: input.data.bundle,
         instructingParty: report.instructingParty,
         sectionKeys: group.keys,
+        // The report being drafted: a clinic's audit trail names it (ids only).
+        reportId: report.id,
         prefer: "auto" as const,
         ...(form && { form }),
         ...(form && report.author ? { author: report.author } : {}),

@@ -308,6 +308,7 @@ export function useReviewActions(opts: {
               bundle: current.bundleSnapshot,
               instructingParty: current.instructingParty,
               sectionKeys: group,
+              reportId: current.id,
               prefer,
               ...(form ? { form } : {}),
               ...(form && current.author ? { author: current.author } : {}),
