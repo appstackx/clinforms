@@ -1,6 +1,6 @@
 # RED Physiotherapy deal (Daniel Vatamanu)
 
-**Status (2026-10-09 ~16:00 UTC):** Call **booked for Tuesday 2026-10-13, time unknown**. Demo prep **NOT started** (cloud container could not download the insurer PDFs). Highest-priority work item. Ready-to-paste prompt: `memory/next-steps.md` §1 (base: `memory/sources/red-physio-demo-task.md`).
+**Status (2026-10-09 ~16:00 UTC):** Call **booked** (Khuram 09/10 14:08); day "Tuesday" from the research text he pasted, **date 13 Oct inferred – confirm day AND time with Khuram**. Demo prep **NOT started** (cloud container could not download the insurer PDFs). Highest-priority work item. Ready-to-paste prompt: `memory/next-steps.md` §1 (base: `memory/sources/red-physio-demo-task.md`).
 **Contact:** `memory/people/daniel-vatamanu.md`.
 
 ## 1. Company (from his email signature only – no research done yet)
@@ -61,7 +61,7 @@ Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs:
 ## 5. Demo plan for Tuesday (Khuram's pasted research, endorsed by assistant 14:10 UTC)
 - Complete **Bupa, AXA Global Healthcare and Aviva CM016** from **one fictional patient** – show three layouts filled from the same records, missing information flagged, declarations left for the right person, "without claiming these are Daniel's exact forms".
 - Label each "public form – used for demonstration only; not affiliated with or endorsed by [insurer]"; footer on outputs: "Public form used for demonstration only – not affiliated with or endorsed by <insurer>. Fictional patient data."; private demos only; never commit the PDFs (gitignored `/demo-assets/`).
-- Branch `demo/red-physio`; fictional PMI patient "PH-DEMO-03" (likely `sim-pat-006`); `docs/demo-red-physio.md` with support matrix, 10-minute call script, caveats, questions. Estimate 2–3 hours once PDFs are available.
+- Branch `demo/red-physio`; fictional PMI patient `sim-pat-006` (001–005 taken; episode `sim-ep-1006` suggested) with fictional policy/authorisation numbers (e.g. `DEMO-POL-0001`, `DEMO-AUTH-0001`); `PH-DEMO-03` is reserved for a clinician (the original task prompt's "e.g. PH-DEMO-03" is superseded); `docs/demo-red-physio.md` with support matrix, 10-minute call script, caveats, questions. Estimate 2–3 hours once PDFs are available.
 - Use neutral wording (no AI/Claude/model names) in anything Daniel sees.
 
 ## 6. Questions for Daniel on the call
@@ -73,7 +73,8 @@ Research pasted by Khuram 09/10 14:08 UTC (author not stated). Full list + URLs:
 6. (Later) pricing expectations – no RED price has been discussed.
 
 ## 7. Open items
-- Call time and attendees (ask Khuram). Booking link used unknown.
+- Call day (Tue 13 Oct inferred) + time and attendees (ask Khuram, or check his Gmail read-only if he agrees – `next-steps.md` §0 step 7). Booking link used unknown.
+- Live drafting is needed: demo mode has no recorded drafts for a new patient on these forms (`NO_DEMO_DRAFT`) – see `next-steps.md` §1 Blockers and Call-day fallback.
 - Company research (Companies House 13547807, website) – quick check before Tuesday.
-- Deploy a live URL for the call? (Vercel not deployed yet – running locally on Khuram's Mac with `npm run dev` is the fallback; screen-share.)
+- Deploy a live URL for the call? (Vercel not deployed yet – running locally on Khuram's Mac with `npm run dev` is the fallback; screen-share. The insurer PDFs are not in git, so a Vercel URL can't show them, and confirmed form maps live only in the browser that made them.)
 - After the call: record RED's answers here, update the support matrix, decide on a RED-specific video.

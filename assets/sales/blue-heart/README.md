@@ -1,6 +1,6 @@
-# Blue Heart Clinics demo video (sent to Dell Baines, 9 Oct 2026)
+# Blue Heart Clinics demo video (prepared for Dell Baines, 9 Oct 2026 – sending unconfirmed)
 
-This is the customer demo video for Dell Baines at Blue Heart Clinics. It was recorded before the product was renamed, so the screens and file names say "AppStackX Reports" rather than ClinForms.
+This is the customer demo video prepared for Dell Baines at Blue Heart Clinics. Whether it was emailed is unconfirmed (see memory/next-steps.md). It was recorded before the product was renamed, so the screens and file names say "AppStackX Reports" rather than ClinForms.
 
 | File | What it is |
 |---|---|

@@ -59,3 +59,4 @@ Each saved hour ≈ two half-hour appointments (~£90–120). Progress/discharge
 - Shared library of ready-mapped insurer forms (Bupa, Aviva…) as a selling point / moat.
 - Cross-sell idea: "For clinics" link on CareConnect's £299 Practice tier (idea only).
 - Pilot/hardening estimate: ~3–5 weeks of work once a clinic commits.
+- **RED (PROPOSED by the assistant at hand-off 09/10, not discussed with Khuram – `next-steps.md` §A Q7):** if Daniel asks the price on the call, same structure as Blue Heart – per clinic, not per seat; Practice £199/mo list; founding offer £149/mo fixed 12 months + £250 setup incl. 5 forms (e.g. Bupa, AXA, Aviva + 2), monthly, cancel any time, state VAT treatment – or simply "depends on volume, typically £99–£199/month; we'll confirm after a short pilot".

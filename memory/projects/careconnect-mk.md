@@ -30,4 +30,5 @@ The full module as "AppStackX Reports" (pre-rename), the sandbox, routes, script
 ## Cleanup plan (offered, not decided)
 - Options: (a) leave the branch as an archive (simplest; recommended until Khuram decides), (b) delete the branch, (c) nothing else – **do not merge it into careconnect-mk `main`**. The 09/10 13:52 offer to open a PR was not taken up.
 - Optional cross-sell: a "For clinics" link on CareConnect's landing page (e.g. within the £299 Practice tier) pointing to ClinForms – idea only (13:56 UTC).
+- **Possible public preview (unverified):** at 09/10 13:52 UTC the assistant told Khuram "if your Vercel project is connected to this repo, the branch already has a Preview deployment" – never checked. Ask Khuram to check Vercel for a careconnect-mk project with preview deployments of `claude/confident-noether-z6l7kr` ("AppStackX Reports" + `/pms-sandbox`). If one exists: enable Deployment Protection or delete those previews, and remove/rotate `ANTHROPIC_API_KEY` and passcode env vars there, so the old-name module is not publicly reachable or spending credit (`next-steps.md` 7.13).
 - Ask Khuram before touching this repo.

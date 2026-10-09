@@ -1,7 +1,7 @@
 # ClinForms – product and technical deep dive
 
 **Also called:** AppStackX Reports (old name, 06–09/10/2026), "the module", `medreport` (code).
-**Repo:** `github.com/appstackx/clinforms` (private), branch `main`. Head at hand-off: `7f6fcf8` (2026-10-09 15:48 UTC) on top of `e799c51` (15:07 UTC, 363 files).
+**Repo:** `github.com/appstackx/clinforms` (private), branch `main`: `e799c51` (2026-10-09 15:07 UTC, 363 files, the app) → `7f6fcf8` (15:48, Dell video assets) → `32499de` (16:16, e2e scripts + dev tools) → memory-pack commits. Product code unchanged since `e799c51`.
 **Status (2026-10-09):** demo-grade, fully verified, **not deployed**. Tagline: "Complete every referrer's own report form from your clinic notes".
 
 Authoritative technical references in the repo (don't duplicate – read them):
@@ -38,7 +38,7 @@ Node **22** (`.nvmrc`; pdfjs-dist 6 needs ≥22.13), next **14.2.35** (App Route
 **Gotcha:** never `workerSrc = new URL(…, import.meta.url)` for pdfjs (breaks Next 14 build); use the recipe in `ui/preview-libs.ts`.
 
 ## 5. Where state lives (demo-grade)
-Server is **stateless, no database**. Browser: reports `medreport.report.<id>` (localStorage), forms maps `medreport.forms`, form files in IndexedDB `medreport-forms`, passcode in sessionStorage, sandbox filed documents `tm3sim.documents` + IndexedDB. Single tenant `demo` (`tenantId` already in every type/token). In-memory per instance: live-call rate limiter (6/min), passcode-failure counters (5/client, 30/instance per 10 min), launch-token `jti`s.
+Server is **stateless, no database**. Browser: reports `medreport.report.<id>` (localStorage), forms maps `medreport.forms`, form files in IndexedDB `medreport-forms` (no export/import for form maps – only reports have `exportCase`/`importCase`; a map confirmed in one browser is not in another), passcode in sessionStorage, sandbox filed documents `tm3sim.documents` + IndexedDB. Single tenant `demo` (`tenantId` already in every type/token). In-memory per instance: live-call rate limiter (6/min), passcode-failure counters (5/client, 30/instance per 10 min), launch-token `jti`s.
 
 ## 6. AI configuration
 - Default model **`claude-sonnet-5-5`** (`DEFAULT_AI_MODEL`, `config.server.ts`); override `MEDREPORT_MODEL` from `AI_MODEL_ALLOW_LIST`: `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-opus-4-8`. Fable 5.1 excluded (30-day retention, ~5× price). Re-run the effort sweep before switching.
@@ -60,7 +60,7 @@ Server is **stateless, no database**. Browser: reports `medreport.report.<id>` (
 - Analysing a form + completing one ≈ 5 live calls → allow ~60 s before the next live form (6 calls/min/instance). The Studio auto-retries 429s (5 × 12 s); the review screen's "Draft them now" does not.
 - Kingsway Q4/Q5 are left blank → presenter ticks Q4 "No", Q5 "Yes, with the adjustments below".
 - Sonnet is stricter on opinion questions (Northfield ~10 items to resolve, H&P ~6).
-- Timings (Sonnet live): Meridian analysis ~12 s; Megan → H&P ~12 s click-to-review; demo mode whole form 2.6–3.6 s.
+- Timings (Sonnet live): Meridian analysis ~12 s in the 09/10 10:17 live test, but the Dell video run (12:29) labels the whole visible wait ~23 s – live times vary run to run, budget ~25 s; Megan → H&P ~12 s click-to-review; demo mode whole form 2.6–3.6 s.
 - A Word→PDF copy needs LibreOffice locally (`brew install --cask libreoffice` on Mac; path `/Applications/LibreOffice.app/Contents/MacOS/soffice` is already a candidate). On Vercel it returns 503 `PDF_CONVERSION_UNAVAILABLE` ("download Word").
 
 ## 9. Limits and caveats (state openly to prospects)
@@ -76,7 +76,7 @@ Size caps: `MAX_FORM_FILE_BYTES` = **2.5 MB** (module README says 3 MB – stale
 
 ## 10. Known code/doc gaps
 - Sandbox tests (26) are not in the `test:medreport` glob (run separately).
-- The 42-step Playwright E2E suite and the model/effort sweep script lived only in the cloud scratchpad – **not in git** (lost). Rebuild an E2E suite under `scripts/medreport/e2e/` when needed.
+- The Playwright E2E scripts were copied into git late on 09/10 (commit `32499de`): `scripts/e2e/*.cjs` (ad hoc, not part of `npm test`; written for port 3107 – expect to fix selectors/ports; outputs to gitignored `.e2e-out/`; `LIVE=1` reads the passcode from `.env.local`). `run-all.sh`/`rebuild.sh` were not copied. Dev tools in `scripts/dev-tools/` (`probe-models.ts`, `credit-poll.ts`, `diff-recorded.ts`, `flagcheck.ts`, `outline.ts`). The model/effort **sweep script (`sweep.ts`) was not preserved** – results are in the module README "Model and effort".
 - No CSP (needs nonces), passcode length not enforced, no Unicode font in PDF fills, no OCR.
 - Production-secret rule only recognises Vercel (`VERCEL_ENV=production`).
 - `LIVE_TIMEOUT_MS` 50 s assumes `maxDuration` 60.

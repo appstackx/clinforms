@@ -7,7 +7,7 @@ Last updated 2026-10-09. Search here when something is not in `CLAUDE.md`.
 
 | Term | Meaning |
 |---|---|
-| **ClinForms** | The product (since 09/10/2026 14:34 UTC, Khuram's choice). Spelling: capital C and F. "ClinForms by AppStackX" where the vendor matters. Repo `appstackx/clinforms`. Domains to reserve: `clinforms.co.uk` (primary), `clinforms.com`. |
+| **ClinForms** | The product (since 09/10/2026 14:34 UTC; suggested by the assistant at 14:10 as its top pick of 5, adopted by Khuram). Spelling: capital C and F. "ClinForms by AppStackX" where the vendor matters. Repo `appstackx/clinforms`. Domains to reserve: `clinforms.co.uk` (primary), `clinforms.com`. |
 | **AppStackX Reports** | Old product name (06/10 – 09/10/2026). Still visible in Dell's video, its file names, the careconnect-mk branch, internal IDs (`appstackx-reports.*`) and the bundled demo forms' hidden document properties. |
 | **medreport** | Internal module name: `src/modules/medreport`; storage prefix `medreport.`; HTTP headers `x-medreport-*`; env vars `MEDREPORT_*`. Never renamed. |
 | **"the module" / "Reports"** | How the product was referred to while it lived inside careconnect-mk. |
@@ -19,7 +19,7 @@ Last updated 2026-10-09. Search here when something is not in `CLAUDE.md`.
 | **v1 / v2 (video)** | Voiced v1 (13:37 UTC 09/10, buggy: missing line, early starts) vs v2 (13:51, final). |
 | **first cut** | 06/10 21:35 video that mentioned Claude – banned, superseded. Never use. |
 | **RED demo / RED pack** | Planned demo for RED Physiotherapy's call: Bupa + AXA Global Healthcare + Aviva CM016 completed from one fictional patient; branch `demo/red-physio`. |
-| **PH-DEMO-03** | Name given (in the RED task prompt) to the planned fictional private-medical-insurance patient. Ambiguous: `PH-DEMO-0N` is otherwise the fake HCPC-number format and patients are `sim-pat-00N` (001–005 taken), so the patient is probably `sim-pat-006` with label "PH-DEMO-03" (unverified intent). |
+| **PH-DEMO-03** | Appears in the original RED task prompt ("e.g. `PH-DEMO-03`") as a label for the planned fictional private-medical-insurance patient. **Superseded:** `PH-DEMO-0N` is reserved for fake HCPC numbers of fictional clinicians, so the patient is `sim-pat-006` (001–005 taken; episode `sim-ep-1006` suggested) with fictional policy/authorisation numbers (e.g. `DEMO-POL-0001`, `DEMO-AUTH-0001`). Use `PH-DEMO-03` only for a new fictional clinician. |
 | **ultracode** | Cloud-session mode where every substantive task ran as a multi-agent Workflow. |
 
 ## Acronyms – clinical, legal, insurance
@@ -81,7 +81,7 @@ Last updated 2026-10-09. Search here when something is not in `CLAUDE.md`.
 | **Gotenberg** | LibreOffice-in-a-container HTTP service; candidate Word→PDF converter |
 | **soffice** | LibreOffice binary used for Word→PDF (`MEDREPORT_SOFFICE_PATH`) |
 | **RLS** | Supabase/Postgres row-level security (planned per-clinic isolation) |
-| **E2E** | Playwright browser end-to-end suite (42 steps; lived only in the cloud scratchpad – not in git) |
+| **E2E** | Playwright browser end-to-end flows (42 steps in demo mode). The ad hoc scripts are in git at `scripts/e2e/*.cjs` (commit `32499de`, written for port 3107, outputs to gitignored `.e2e-out/`). The runner shell scripts `run-all.sh` and `rebuild.sh` were not preserved. |
 | **SRT** | Subtitle file for the Dell video (62 entries) |
 | **LUFS** | Loudness unit; narration normalised to −16 LUFS |
 | **Scribe** | ElevenLabs speech-to-text, used to QA the voice-over |

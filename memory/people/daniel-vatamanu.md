@@ -20,7 +20,7 @@
 2. **Daniel 09:23:** "Hello / Thank you for the email / Which insurers do you support?"
 3. **Khuram 09:54:** no fixed insurer list; completes whatever form an MLC/insurer sends, from TM3 or the existing clinic system; "usually covers… AXA, Aviva, Vitality, WPA and others"; offered a demo video or call. (Called the product "CareConnect" – wrong name; use **ClinForms** now.)
 4. **Daniel 11:05:** "Let's book a call, can you share a booking link?"
-5. Khuram replied (text not in our records) and a **meeting is booked for Tuesday 2026-10-13** (Khuram, 09/10 14:08 UTC: "i have replied and a meeting is booked"). **Time unknown.**
+5. Khuram replied (text not in our records) and a **meeting is booked** (Khuram, 09/10 14:08 UTC: "i have replied and a meeting is booked"). Day "Tuesday" comes from the research text Khuram pasted at 14:08; **date 13 Oct inferred – confirm day AND time with Khuram.**
 Verbatim emails in `memory/projects/red-physiotherapy.md`.
 
 ## What we know / don't know

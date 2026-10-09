@@ -40,6 +40,7 @@ Setup:
 4. **Add one fictional patient fixture** for private-medical-insurance therapy, e.g. `PH-DEMO-03`, in `src/sandbox/tm3-sim/fixtures/`. Model it on the existing fixtures:
    - Plausible MSK case, insurer policy/authorisation number fields, initial assessment, follow-ups, outcome measures, and a treatment plan with session counts.
    - Clearly fictional data only.
+   - *[Memory-pack annotation 09/10: superseded – see `memory/next-steps.md` §1: patient id `sim-pat-006`, not `PH-DEMO-03`; `PH-DEMO-0N` is reserved for fake clinician HCPC numbers.]*
 5. **Complete and approve all three forms** for that patient end to end. Save the final outputs to `demo-assets/outputs/` (gitignored).
    - Each demo output must carry this footer or watermark: "Public form used for demonstration only – not affiliated with or endorsed by <insurer>. Fictional patient data."
    - Keep the simulated TM3 labelled "Simulated TM3 sandbox – demo data, not affiliated with TM3".
@@ -51,7 +52,7 @@ Setup:
      - "Support" may mean billing/claims, which ClinForms does not do.
      - TM3 is simulated today; the real route is a TM3 export/upload until API access is agreed.
    - Questions to ask Daniel: which insurers matter most, volumes per month, current time per form, PMS used, who signs.
-   - Customer-facing wording must not mention AI, Claude or any model name. Use neutral wording consistent with `src/modules/medreport/ui/wording.ts`.
+   - Customer-facing wording must not mention AI, Claude or any model name. Use neutral wording consistent with `src/modules/medreport/ui/wording.ts`. *[Annotation: `ui/wording.ts` only re-exports `core/wording.ts`, the single source – edit core.]*
 7. **Run the checks** and fix anything red: `npm run typecheck`, `npm run lint`, `npm run test:medreport`, `npm run build`.
 8. **Commit and push** `demo/red-physio`, then summarise what works, what is best-effort, and the exact demo click path.
 

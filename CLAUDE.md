@@ -6,10 +6,15 @@ Claude desktop app. Deep memory lives in `memory/` (index: `memory/README.md`).
 ## Start here (every new session)
 1. Read **`memory/next-steps.md`** (prioritised backlog, ready-to-paste prompts) and **`memory/README.md`**
    (index). Pull detail from `memory/projects/*`, `memory/context/*`, `memory/people/*` as needed.
-2. Check repo state: `git fetch && git log --oneline -5` (expect `7f6fcf8` + the memory-pack commit or later),
+2. Check repo state: `git fetch && git log --oneline -5` (expect `7f6fcf8` → `32499de` → `cba79dc` (WIP memory,
+   pushed 16:16) → final memory commit, or later),
    `git status`, Node 22 (`nvm use`), `npm ci`.
-3. **The RED Physiotherapy call is Tue 2026-10-13 (time unknown) and its demo prep has NOT started** – it
-   is the most urgent item unless Khuram says otherwise.
+3. **The RED Physiotherapy call is booked (Khuram 09/10 14:08: "a meeting is booked") and its demo prep has NOT
+   started** – the most urgent item unless Khuram says otherwise. "Tuesday" comes only from the research text he
+   pasted at 14:08; the date **Tue 13 Oct is inferred – confirm day AND time with Khuram.**
+   **Budget:** the Claude weekly usage limit last reset Fri 09/10 06:00 UTC; next reset probably Fri 16/10 06:00 UTC
+   (unverified) – i.e. AFTER the RED call. Work lean until then (single session or small workflows, no multi-agent
+   fan-outs or full video re-records); commit after each verified step so a limit hit loses nothing.
 4. At the **end of every working session**: update `memory/next-steps.md`, add dated rows to
    `memory/decisions.md` (newest first) and `memory/history.md`, refresh the status snapshot below, commit.
 5. **Never put secrets in memory or git** (keys, passcodes, tokens, signing secrets, workspace codes).
@@ -31,11 +36,13 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 
 ## Hard rules
 - **No "AI", "Claude", model or vendor names in anything customer-facing** (screens, docs, emails, videos,
-  file names). Neutral wording lives in `src/modules/medreport/core/wording.ts`, guarded by
+  file names). Neutral wording lives in `src/modules/medreport/core/wording.ts` (single source; `ui/wording.ts`
+  only re-exports it – edit core, and switch `DISCLOSURE` there), guarded by
   `scripts/medreport/neutral-wording.test.ts`. Still disclose truthfully: the DPA names **Anthropic as
   sub-processor**, and answer honestly if a customer asks.
 - **Fictional data only.** No real patient data until DPA + DPIA + UK hosting + safeguards exist.
-  Organisations end "(fictional)"; HCPC-style numbers use the invalid `PH-DEMO-0N` format.
+  Organisations end "(fictional)"; HCPC-style numbers use the invalid `PH-DEMO-0N` format – **fictional clinicians
+  only, never a patient label** (patients are `sim-pat-00N`; next free `sim-pat-006`).
 - Simulated TM3 is always labelled **"Simulated TM3 sandbox – demo data, not affiliated with TM3"**
   (verbatim). No TM3 logo/colours; never imply a TM3 partnership; never claim a direct TM3 link.
 - **Never commit secrets** (`.env.local` is gitignored) **or third-party insurer PDFs** (gitignored
@@ -54,7 +61,7 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 | Who | Role |
 |---|---|
 | **Dell** | **Dell Baines** (Companies House: Dell David Henson-Baines), owner/director, **Blue Heart Clinics** (11 sites, uses **TM3**). Buyer, no longer treats patients. → `memory/people/dell-baines.md` |
-| **Daniel** | **Daniel Vatamanu**, co-founder, **RED Physiotherapy** (Milton Keynes, Towcester, Northampton). Asked "Which insurers do you support?". Call **Tue 13 Oct**. → `memory/people/daniel-vatamanu.md` |
+| **Daniel** | **Daniel Vatamanu**, co-founder, **RED Physiotherapy** (Milton Keynes, Towcester, Northampton). Asked "Which insurers do you support?". Call booked, **Tue 13 Oct (inferred – confirm)**. → `memory/people/daniel-vatamanu.md` |
 | **Megan Hart** | FICTIONAL demo patient `sim-pat-001` (RTA whiplash, Harrow & Pike solicitor) |
 | **Daniel Brooks** | FICTIONAL demo patient `sim-pat-002` (warehouse back injury, employer) – not Daniel Vatamanu! |
 | **Sarah Reid / Tom Ellis** | FICTIONAL physios `PH-DEMO-01` / `PH-DEMO-02` |
@@ -86,13 +93,14 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 |---|---|---|
 | **ClinForms** | The product: completes each referrer's own form, original layout, from clinic notes | Demo-grade, verified; **not deployed** → `memory/projects/clinforms.md` |
 | **Blue Heart deal** | Dell; MLC/case-manager forms; voiced 6:15 video made 09/10 | Waiting on Dell (video send unconfirmed) → `memory/projects/blue-heart-clinics.md` |
-| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct | **Demo prep not started** → `memory/projects/red-physiotherapy.md` |
+| **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct (inferred – confirm) | **Demo prep not started** → `memory/projects/red-physiotherapy.md` |
 | **careconnect-mk** | Origin repo (patient-portal portfolio demo); module first built on branch `claude/confident-noether-z6l7kr` @ `ff05fab` | Superseded; unmerged → `memory/projects/careconnect-mk.md` |
 
 ## Status snapshot (2026-10-09 ~16:00 UTC)
-- **Repo:** `github.com/appstackx/clinforms` (private), `main` = `7f6fcf8` (video assets) on top of
-  `e799c51` (363-file app). Verified: tsc, lint, **243/243** `test:medreport`, sandbox tests 26/26,
-  build, 42-step browser E2E (at extraction), ClinForms rebrand.
+- **Repo:** `github.com/appstackx/clinforms` (private), `main`: `e799c51` (363-file app, 15:07 UTC) →
+  `7f6fcf8` (Dell video assets, 15:48) → `32499de` (Playwright e2e scripts + dev tools, 16:16) →
+  `cba79dc` (WIP memory, 16:16) → final memory commit. Verified: tsc, lint, **243/243** `test:medreport`,
+  sandbox tests 26/26, build, 42-step browser E2E (at extraction), ClinForms rebrand.
 - **Built:** forms library + map confirm, completion from simulated TM3 / export upload / notes PDF,
   cited drafting (Claude **Sonnet 5.5**, `claude-sonnet-5-5`), validators, review + approval, Word/PDF in
   original layout, file-back to simulated TM3, batch, Security & GDPR page. Reports stored in browser.
@@ -103,12 +111,19 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 
 ## Top next actions (detail + prompts in `memory/next-steps.md`)
 1. **RED demo pack** (Bupa, AXA Global Healthcare, Aviva CM016 from one fictional PMI patient) on branch
-   `demo/red-physio` – deadline Tue 13 Oct. Blocker: none on desktop (insurer sites were blocked in cloud).
+   `demo/red-physio` – deadline: the call (Tue 13 Oct, inferred). **BLOCKER: live drafting needs a rotated
+   `ANTHROPIC_API_KEY` + `MEDREPORT_LIVE_PASSCODE` in `.env.local`** (plus `MEDREPORT_LAUNCH_SECRET`,
+   `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`, or live mode throws "… is not configured").
+   Khuram must create them; demo mode cannot draft a new patient on new insurer forms (`NO_DEMO_DRAFT`). Ask him for
+   the rotated key first. Form maps live only in the browser that confirmed them → the demo must be reproducible in
+   Khuram's own Chrome (preload/one-command run or rehearsal checklist – `memory/next-steps.md` §1).
 2. **Vercel deploy** – blocker: Khuram imports the repo (Pro) or provides a token; fresh secrets; rotated key.
-3. **Ask Khuram** (one message): RED call time; Vercel plan/access; domains reserved?; key rotated?;
+3. **Ask Khuram** (one message): RED call day (Tue 13 Oct?) + time; Vercel plan/access; domains reserved?; key rotated?;
    Dell video sent/replied?; what "Cloudflare for demos + Supabase scripts" means exactly.
 4. **Supabase scripts** (create DB / onboard / offboard clinic) – blocker: scope clarification + Supabase token.
-5. **Rotate the Anthropic key** pasted in chat on 06/10 (Khuram action).
+5. **Rotate every Anthropic key** that was ever in the cloud container (the one pasted in chat 06/10 12:18 + a second
+   key file the 09/10 build report mentions) and treat the old `careconnect-mk/.env.local` passcode, launch/signing/
+   partner secrets and `TM3_SIM_TOKEN` as burned – new values only (Khuram action; `memory/context/compliance.md` §7).
 
 ## Key commands
 ```bash
@@ -135,4 +150,5 @@ Empty `.env.local` = demo mode (fine for most work). No `.env.local` exists in t
 | `src/sandbox/tm3-sim/fixtures/` | Fictional patients (add RED's PMI patient here) |
 | `docs/plan.md` | Original plan + Revision 2 (referrer forms) |
 | `assets/sales/blue-heart/` | Dell's video, SRT, narration, voice-over scripts |
+| `scripts/e2e/`, `scripts/dev-tools/` | Ad hoc Playwright flows (port 3107-era) and dev tools (model probe, flag check) |
 | `memory/` | Deep memory (this pack) |

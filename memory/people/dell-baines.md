@@ -5,7 +5,7 @@
 **Signs emails:** "Kindest Regards, Dell Baines." (first email) – his email address is not in our records; Khuram's Gmail thread has it.
 
 ## Background (public sources, search snippets only)
-- BSc (Hons) Physiotherapy, University of Hertfordshire; HCPC-registered; full CSP member.
+- BSc (Hons), University of Hertfordshire; HCPC-registered; full CSP member.
 - Neuro, cardiorespiratory and neuromusculoskeletal experience; treated a Premier League referee; physio for The Killers at Wembley (22 June 2013) and "The Dream Boys" tours.
 - **No longer treats patients – runs the business only.** He is the **buyer, not the user**: pitch on clinician hours saved, consistent forms, getting paid faster, and nothing going out without a clinician's approval.
 

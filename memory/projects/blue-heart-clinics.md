@@ -144,6 +144,7 @@ Notes: Khuram must choose the "[7–10] days" commitment himself. This draft say
 |---|---|---|
 | "Not a generic … Blue Heart Clinics template" | We complete the referrer's own form; built-in templates only a fallback | 0:05 intro card ("You told us…") |
 | Q1 different templates | Uploaded once, questions/answer spaces identified, staff confirm once, reused | 0:20–1:18 (Meridian read live, 17 questions, 1 flagged; real time ~23 s, sped up & labelled) + 4:02–4:54 |
+| "Identify and complete the correct sections within the referrer's own document" | Each question's answer space is located and highlighted in the original layout, then confirmed once | 0:39–1:12 |
 | Q2 original layout | Word + fillable PDF yes; flat/scanned best effort | 1:52–2:37 (Harrow & Pike Word form, 16 questions: 8 from TM3 records, 4 drafted, 4 for clinician) |
 | Q3 TM3 without duplication | TM3 export + one upload today; direct link subject to TM3 access | 1:18–1:52 (simulated TM3: 10 notes, 11 appts, 6 scores) + 4:54–5:14 (filed back) |
 | Q4 review/amend/approve | Click-to-source; unsupported date flagged and blocks approval; prognosis left for the physio; name + HCPC + signature + attestations; DRAFT until approved; nothing issued automatically | 2:37–4:02 (final PDF at 3:46) |
