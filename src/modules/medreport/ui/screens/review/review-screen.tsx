@@ -22,6 +22,7 @@ import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
+import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { getTemplate } from "../../../templates/registry";
@@ -196,6 +197,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
   // The form map, only when it is the one this report was started from.
   const form: FormDefinition | null = formInfo && libraryForm && libraryForm.file.sha256 === formInfo.fileSha256 ? libraryForm : null;
+  // A form the clinic only prefills for others to sign (a patient's claim form): never "signed".
+  const prefillFor = useMemo(() => {
+    const signers = form ? prefillSigners(form) : null;
+    return signers ? prefillSignersText(signers) : null;
+  }, [form]);
   const formProblem: null | "loading" | "missing" | "mismatch" = !formInfo
     ? null
     : !formReady
@@ -462,6 +468,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         onDraftCopy={() => void actions.download(isForm ? "original" : "docx")}
         draftCopyUnavailable={isForm && (!form || (!questionSet && file.status !== "ready"))}
         downloading={actions.downloading}
+        prefillFor={prefillFor}
       />
 
       {formProblem === "missing" && formInfo && (
@@ -578,6 +585,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
           onAmend={startAmendment}
+          prefillFor={prefillFor}
         />
       )}
 

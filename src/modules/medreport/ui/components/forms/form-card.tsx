@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "../../primitives";
 import { FormThumbnail } from "../shared/original-form-preview";
-import { FormKindBadge, FormStatusBadge, SampleBadge, questionBreakdown } from "../shared/ui-bits";
+import { FormKindBadge, FormStatusBadge, SampleBadge, notAnsweredText, questionBreakdown } from "../shared/ui-bits";
 import { QuestionSetThumbnail } from "./question-set-preview";
 import { downloadStoredFile, useFormFile } from "./use-form-file";
 
@@ -107,11 +107,7 @@ export function FormCard({ form }: { form: FormDefinition }) {
             <dd className="text-sm font-semibold text-slate-900">{b.fromNotes}</dd>
           </div>
         </dl>
-        {b.onApproval || b.referrerUse ? (
-          <p className="-mt-1 text-[11px] text-slate-500">
-            {[b.onApproval ? `${b.onApproval} completed on approval` : "", b.referrerUse ? `${b.referrerUse} for the referrer's office` : ""].filter(Boolean).join(" · ")}
-          </p>
-        ) : null}
+        {notAnsweredText(b) ? <p className="-mt-1 text-[11px] text-slate-500">{notAnsweredText(b)}</p> : null}
         <p className="text-xs text-slate-500">
           {form.status === "confirmed" && form.confirmed
             ? `Confirmed by ${form.confirmed.by} on ${formatUkDate(form.confirmed.at.slice(0, 10))}`

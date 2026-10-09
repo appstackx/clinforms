@@ -27,7 +27,7 @@
 import { DEMO_CLINIC } from "../config.public";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
-import { isNonClinicParty, partyLabel } from "./parties";
+import { isNonClinicParty, partyLabel, prefillSigners, prefillSignersText } from "./parties";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
 import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
 import { isQuestionAnchor, isQuestionSet } from "./question-set";
@@ -122,6 +122,18 @@ export const QUESTION_SET_ATTESTATIONS = [
   FORM_ATTESTATIONS[1],
   FORM_ATTESTATIONS[2],
   "I have reviewed every answer and they are ready to be entered in the referrer's portal.",
+] as const;
+
+/**
+ * A form the clinic only PREFILLS for someone else to complete and sign (core/parties.ts prefillSigners –
+ * a patient's claim form, a GP's report): the clinician checks the prefilled answers, but nobody at the
+ * clinic signs or issues it. The first three statements are FORM_ATTESTATIONS'.
+ */
+export const PREFILL_ATTESTATIONS = [
+  FORM_ATTESTATIONS[0],
+  FORM_ATTESTATIONS[1],
+  FORM_ATTESTATIONS[2],
+  "I have reviewed the prefilled form in the referrer's original layout. It is for the people named on it to complete and sign; the clinic does not sign it.",
 ] as const;
 
 const NO_SCOPE: TemplateScope = { excludeFields: [], excludeTerms: [] };
@@ -295,6 +307,7 @@ export function fieldGuidance(field: FormField): string {
  */
 export function formToTemplate(form: FormDefinition): ReportTemplate {
   const sections: TemplateSection[] = [];
+  const signers = prefillSigners(form);
   for (const field of answerableFields(form)) {
     const kind = sectionKindForFillSource(field.fillSource);
     if (!kind) continue;
@@ -314,8 +327,10 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
     declarationText: "",
     declarationNote: isQuestionSet(form)
       ? "The referrer's portal holds its own declaration; approval is recorded in the server-signed receipt."
-      : "The referrer's own declaration wording is part of the form and is completed in place on approval.",
-    attestations: isQuestionSet(form) ? [...QUESTION_SET_ATTESTATIONS] : [...FORM_ATTESTATIONS],
+      : signers
+        ? `Nobody at the clinic signs this form: it is prefilled for ${prefillSignersText(signers)} to check, complete and sign. The clinician's check is recorded in the server-signed receipt.`
+        : "The referrer's own declaration wording is part of the form and is completed in place on approval.",
+    attestations: isQuestionSet(form) ? [...QUESTION_SET_ATTESTATIONS] : signers ? [...PREFILL_ATTESTATIONS] : [...FORM_ATTESTATIONS],
     docxTemplateId: formTemplateId(form.id),
   };
 }

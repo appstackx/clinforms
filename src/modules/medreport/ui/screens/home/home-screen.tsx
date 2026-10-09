@@ -8,7 +8,7 @@
  * Owner: studio-a agent.
  */
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import type { ConnectorInfo, Report } from "../../../core/types";
 import { formatUkDateTime } from "../../../core/dates";
+import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { api, saveBlob } from "../../api-client";
 import { useHostHooks } from "../../host-hooks";
 import {
@@ -68,6 +69,15 @@ export function HomeScreen() {
   const importRef = useRef<HTMLInputElement>(null);
 
   const confirmedForms = forms.filter((f) => f.status === "confirmed").length;
+  // Forms the clinic only prefills for others to sign (a patient's claim form): approved, never "signed".
+  const prefillFor = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const f of forms) {
+      const signers = prefillSigners(f);
+      if (signers) out.set(f.id, prefillSignersText(signers));
+    }
+    return out;
+  }, [forms]);
   const referrers = new Set(forms.map((f) => f.referrer.name)).size;
 
   const onImport = async (file: File) => {
@@ -173,7 +183,7 @@ export function HomeScreen() {
               Open a patient in the Simulated TM3 sandbox and click the report button – or start here and choose the patient.
             </EmptyState>
           ) : (
-            <ReportsTable reports={reports} />
+            <ReportsTable reports={reports} prefillFor={prefillFor} />
           )}
         </section>
       </div>
@@ -216,16 +226,16 @@ export function HomeScreen() {
 
 function Hero() {
   const steps = [
-    { icon: Files, title: "Their form, once", text: "Upload each MLC or insurer form; staff confirm where every answer comes from." },
-    { icon: MonitorSmartphone, title: "Launch from TM3", text: "Registration details and notes come straight from the patient's record." },
+    { icon: Files, title: "Their form, once", text: "Upload each insurer or medico-legal form; staff confirm where every answer comes from." },
+    { icon: MonitorSmartphone, title: "From the patient's record", text: "Registration details and notes from your clinic system, or an upload of the notes." },
     { icon: Stethoscope, title: "Clinician reviews", text: "Every answer cites its note; gaps and unrecorded opinions are left for you." },
     { icon: ClipboardCheck, title: "Approve and file", text: "The referrer's own Word or PDF, completed and saved back to the record." },
   ];
   return (
     <section className="overflow-hidden rounded-3xl border border-teal-100 bg-gradient-to-br from-white via-white to-teal-50 p-6 sm:p-8">
-      <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">For physiotherapy clinics using TM3</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">For physiotherapy clinics</p>
       <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-        Complete MLC &amp; insurer report forms from TM3 notes
+        Complete insurer &amp; medico-legal report forms from your clinic notes
       </h1>
       <p className="mt-3 max-w-2xl text-base text-slate-600">
         Each referrer&apos;s own form, in its original layout – filled from the patient&apos;s registration details and
@@ -400,7 +410,7 @@ function flagSummary(report: Report): { blocking: number; warnings: number; gaps
   };
 }
 
-function ReportsTable({ reports }: { reports: Report[] }) {
+function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: ReadonlyMap<string, string> }) {
   const [confirmDelete, setConfirmDelete] = useState<Report | null>(null);
   const download = (r: Report) => {
     const blob = exportCase(r.id);
@@ -438,7 +448,7 @@ function ReportsTable({ reports }: { reports: Report[] }) {
                   <ReportStatusBadge status={r.status} />
                 </td>
                 <td className="px-4 py-3">
-                  <FlagCell report={r} />
+                  <FlagCell report={r} prefillFor={r.form ? (prefillFor.get(r.form.formId) ?? null) : null} />
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{formatUkDateTime(r.updatedAt)}</td>
                 <td className="px-4 py-3">
@@ -462,7 +472,7 @@ function ReportsTable({ reports }: { reports: Report[] }) {
               <FormCell report={r} />
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <FlagCell report={r} />
+              <FlagCell report={r} prefillFor={r.form ? (prefillFor.get(r.form.formId) ?? null) : null} />
               <span className="text-xs text-slate-500">{formatUkDateTime(r.updatedAt)}</span>
             </div>
             <div className="mt-2 border-t border-slate-100 pt-2">
@@ -522,8 +532,9 @@ function FormCell({ report }: { report: Report }) {
   );
 }
 
-function FlagCell({ report }: { report: Report }) {
+function FlagCell({ report, prefillFor }: { report: Report; prefillFor: string | null }) {
   const { blocking, warnings, gaps } = flagSummary(report);
+  if (report.status === "signed" && prefillFor) return <span className="text-xs text-emerald-700">Prefill checked – for {prefillFor} to complete and sign</span>;
   if (report.status === "signed") return <span className="text-xs text-emerald-700">Approved – signed receipt</span>;
   if (!blocking && !warnings && !gaps) return <span className="text-xs text-slate-500">None open</span>;
   return (

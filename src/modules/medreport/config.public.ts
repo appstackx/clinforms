@@ -25,7 +25,7 @@ export const DEMO_CLINIC = {
   name: "Riverside Physiotherapy (fictional)",
   town: "Milton Keynes",
   addressLines: ["Unit 4, Riverside Court (fictional)", "Milton Keynes", "MK9 0ZZ"],
-  phone: "01908 000000",
+  phone: "01632 960 418", // Ofcom drama range: never a real number
   email: "reports@riverside-physio.example",
 } as const;
 

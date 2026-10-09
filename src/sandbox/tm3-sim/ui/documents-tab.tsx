@@ -66,8 +66,11 @@ function DocumentRow({ doc }: { doc: SimStoredDocument }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900">{doc.title}</p>
-        <p className="mt-0.5 break-all text-xs text-slate-600">
-          {doc.fileName} · {isPdf ? "PDF" : "Word"} · {formatBytes(doc.sizeBytes)}
+        <p className="mt-0.5 text-xs text-slate-600">
+          <span className="break-all">{doc.fileName}</span>{" "}
+          <span className="whitespace-nowrap">
+            · {isPdf ? "PDF" : "Word"} · {formatBytes(doc.sizeBytes)}
+          </span>
         </p>
         <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-slate-600 sm:grid-cols-2">
           <div>
@@ -75,12 +78,15 @@ function DocumentRow({ doc }: { doc: SimStoredDocument }) {
             <dd className="inline text-slate-800">{formatDateTime(doc.receivedAt)}</dd>
           </div>
           <div>
-            <dt className="inline text-slate-500">Signed by: </dt>
+            <dt className="inline text-slate-500">Approved by: </dt>
             <dd className="inline text-slate-800">
               {doc.signedBy} ({doc.signerHcpc}), {formatDateTime(doc.signedAt)}
             </dd>
           </div>
-          <div className="sm:col-span-2">
+        </dl>
+        <details className="mt-1.5 text-xs text-slate-600">
+          <summary className="cursor-pointer text-slate-500 hover:text-slate-700">Technical details</summary>
+          <dl className="mt-1">
             <dt className="inline text-slate-500">File SHA-256: </dt>
             <dd className="inline break-all font-mono text-[11px] text-slate-700" title={doc.sha256}>
               {doc.sha256.slice(0, 16)}…
@@ -88,8 +94,8 @@ function DocumentRow({ doc }: { doc: SimStoredDocument }) {
             <span className="text-slate-400"> · </span>
             <dt className="inline text-slate-500">Document ID: </dt>
             <dd className="inline font-mono text-[11px] text-slate-700">{doc.externalDocumentId}</dd>
-          </div>
-        </dl>
+          </dl>
+        </details>
         {state === "missing" && (
           <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
             The file is no longer stored in this browser (site data may have been cleared).

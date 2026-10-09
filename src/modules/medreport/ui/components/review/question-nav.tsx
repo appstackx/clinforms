@@ -18,9 +18,12 @@ export function ProgressSummary({ counts, className }: { counts: StatusCounts; c
     <div className={cn("space-y-2", className)}>
       <div className="flex items-baseline justify-between text-xs text-slate-600">
         <span>
-          <span className="font-semibold text-slate-900">{done}</span> of {answerable} answered and clear
+          <span className="font-semibold text-slate-900">{done}</span> of {answerable} answered and clear{" "}
         </span>
-        <span className="tabular-nums">{pct}%</span>
+        <span className="tabular-nums">
+          <span className="sr-only">(</span>
+          {pct}%<span className="sr-only">)</span>
+        </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-slate-200" aria-hidden>
         <div className="h-full rounded-full bg-[#0D9488] transition-[width] duration-500" style={{ width: `${pct}%` }} />

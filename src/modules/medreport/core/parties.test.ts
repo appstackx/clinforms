@@ -5,8 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkFormDefinition } from "./forms";
-import { completerParty, headingParty, isNonClinicParty, partyLabel, partyOfWho, signerParty } from "./parties";
+import { FORM_ATTESTATIONS, PREFILL_ATTESTATIONS, checkFormDefinition, formToTemplate } from "./forms";
+import { blankFor, blankForCounts, blankForSummary, blankForWording, completerParty, headingParty, isNonClinicParty, partyLabel, partyOfWho, prefillSigners, prefillSignersText, signerParty } from "./parties";
 import type { FormDefinition, FormField } from "./types";
 
 test("completer phrases: who a part of the form is for", () => {
@@ -117,4 +117,50 @@ test("confirmation refuses the clinician's sign-off in another party's answer sp
   assert.match(problems[1], /^F-06 .*the patient's doctor/);
   assert.match(problems[2], /^F-07 .*the patient/);
   assert.ok(problems.every((p) => /Leave blank/.test(p)));
+});
+
+test("boxes left blank say whose they are, and the card counts them by party", () => {
+  assert.equal(blankFor({ completedBy: "patient", label: "Symptoms in your own words" }), "patient");
+  assert.equal(blankFor({ completedBy: "policyholder", label: "Bank sort code" }), "policyholder");
+  assert.equal(blankFor({ completedBy: "doctor", label: "Doctor's signature" }), "doctor");
+  assert.equal(blankFor({ completedBy: "insurer", label: "Claim received" }), "insurer");
+  assert.equal(blankFor({ label: "Date received", section: "For office use only" }), "insurer", "office-use wording without a party");
+  assert.equal(blankFor({ completedBy: "clinic", label: "Other – please give details" }), "not_needed");
+  assert.equal(blankFor({ label: "Fax number" }), "not_needed");
+  assert.equal(blankForWording("patient").chip, "For the patient to complete");
+  assert.equal(blankForWording("doctor").chip, "For the patient's GP or doctor");
+  assert.equal(blankForWording("insurer", "Example Health (fictional)").sentence, "Left blank on the form – this box is for Example Health (fictional)'s office.");
+  assert.doesNotMatch(blankForWording("policyholder", "Example Health (fictional)").sentence, /own use|referrer/);
+
+  const fields = [
+    { completedBy: "patient" as const, fillSource: { kind: "leave_blank" } },
+    { completedBy: "patient" as const, fillSource: { kind: "leave_blank" } },
+    { completedBy: "doctor" as const, fillSource: { kind: "leave_blank" } },
+    { label: "Office ref", section: "Office use only", fillSource: { kind: "leave_blank" } },
+    { completedBy: "clinic" as const, fillSource: { kind: "leave_blank" } },
+    { completedBy: "patient" as const, fillSource: { kind: "registration" } },
+  ];
+  assert.deepEqual(blankForSummary(blankForCounts(fields), "Example Health (fictional)"), ["3 for the patient or their GP", "1 for Example Health (fictional)'s office", "1 not needed"]);
+});
+
+test("a form the clinic only prefills for others to sign is never the clinic's signed form", () => {
+  const claim = form([
+    field("F-01", "Member's full name", { fillSource: { kind: "registration", path: "patient.fullName" } }),
+    field("F-02", "Member's signature", { fillSource: { kind: "leave_blank" }, answerType: "signature", completedBy: "policyholder" }),
+    field("F-03", "Patient signature (if not the member)", { fillSource: { kind: "leave_blank" }, answerType: "signature", completedBy: "patient" }),
+  ]);
+  assert.deepEqual(prefillSigners(claim), ["patient", "policyholder"]);
+  assert.equal(prefillSignersText(["patient", "policyholder"]), "the patient and the policyholder");
+  assert.equal(prefillSignersText(["patient", "doctor"]), "the patient and their GP or doctor");
+  const t = formToTemplate(claim);
+  assert.deepEqual(t.attestations, [...PREFILL_ATTESTATIONS]);
+  assert.match(t.declarationNote ?? "", /Nobody at the clinic signs this form/);
+
+  // The clinic signs its own declaration: an ordinary form.
+  const own = form([...claim.fields, field("F-04", "Therapist's signature", { fillSource: { kind: "signoff", part: "signature" }, answerType: "signature", completedBy: "clinic" })]);
+  assert.equal(prefillSigners(own), null);
+  assert.deepEqual(formToTemplate(own).attestations, [...FORM_ATTESTATIONS]);
+  // No signature box at all (or only the insurer's): not a prefill either.
+  assert.equal(prefillSigners(form([claim.fields[0]])), null);
+  assert.equal(prefillSigners({ ...claim, kind: "questions" }), null);
 });

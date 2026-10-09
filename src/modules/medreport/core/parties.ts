@@ -146,3 +146,95 @@ export function headingParty(title: string): Party | null {
   if (OFFICE_USE.test(t)) return "insurer";
   return null;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Boxes left blank: whose they are (shown to staff instead of a single "referrer's use")
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Who a box the clinic leaves blank belongs to; "not_needed" = the clinic's own box, not needed here. */
+export type BlankFor = "patient" | "policyholder" | "doctor" | "insurer" | "not_needed";
+
+/**
+ * Whose part a box left blank is: the party the form names for it (patient, policyholder, the patient's
+ * doctor, the insurer's office), else "office use" wording, else the clinic's own box that is not needed
+ * for this patient (an "Other – please specify" box, the sender's checklist, a fax number).
+ */
+export function blankFor(field: { completedBy?: Party; label?: string; section?: string }): BlankFor {
+  const party = field.completedBy;
+  if (party === "patient" || party === "policyholder" || party === "doctor" || party === "insurer") return party;
+  if (OFFICE_USE.test(normPartyText(`${field.section ?? ""} ${field.label ?? ""}`))) return "insurer";
+  return "not_needed";
+}
+
+/** Status chip and card sentence for a box left blank ("For the patient to complete"). */
+export function blankForWording(kind: BlankFor, referrerName?: string | null): { chip: string; sentence: string } {
+  const office = referrerName ? `${referrerName}'s office` : "the referrer's office";
+  switch (kind) {
+    case "patient":
+      return { chip: "For the patient to complete", sentence: "Left blank on the form – this part is for the patient to complete." };
+    case "policyholder":
+      return { chip: "For the policyholder to complete", sentence: "Left blank on the form – this part is for the policyholder to complete." };
+    case "doctor":
+      return { chip: "For the patient's GP or doctor", sentence: "Left blank on the form – this part is for the patient's GP or doctor to complete." };
+    case "insurer":
+      return { chip: `For ${office}`, sentence: `Left blank on the form – this box is for ${office}.` };
+    default:
+      return { chip: "Left blank – not needed", sentence: "Left blank on the form – the clinic does not need to fill it in for this patient." };
+  }
+}
+
+/** How many boxes are left blank for each party. */
+export function blankForCounts(fields: ReadonlyArray<{ completedBy?: Party; label?: string; section?: string; fillSource: { kind: string } }>): Record<BlankFor, number> {
+  const out: Record<BlankFor, number> = { patient: 0, policyholder: 0, doctor: 0, insurer: 0, not_needed: 0 };
+  for (const f of fields) if (f.fillSource.kind === "leave_blank") out[blankFor(f)] += 1;
+  return out;
+}
+
+/** "50 for the patient or their GP · 2 for Aviva's office · 3 not needed" (empty parts left out). */
+export function blankForSummary(counts: Record<BlankFor, number>, referrerName?: string | null): string[] {
+  const people: string[] = [];
+  if (counts.patient) people.push("the patient");
+  if (counts.policyholder) people.push("the policyholder");
+  if (counts.doctor) people.push("their GP");
+  const peopleN = counts.patient + counts.policyholder + counts.doctor;
+  const parts: string[] = [];
+  if (peopleN) parts.push(`${peopleN} for ${people.length > 1 ? `${people.slice(0, -1).join(", ")} or ${people[people.length - 1]}` : people[0]}`);
+  if (counts.insurer) parts.push(`${counts.insurer} for ${referrerName ? `${referrerName}'s` : "the referrer's"} office`);
+  if (counts.not_needed) parts.push(`${counts.not_needed} not needed`);
+  return parts;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Forms the clinic only prefills (a patient's claim form, a GP's report): someone else signs them
+ * ----------------------------------------------------------------------------------------------*/
+
+const SIGNER_ORDER: Party[] = ["patient", "policyholder", "doctor"];
+
+/**
+ * Who signs a form the clinic only PREFILLS: the form has no sign-off box of the clinic's own, and
+ * another party's signature box is left blank (Freedom's claim form: the policyholder and the patient;
+ * Aviva CM016: the patient and their GP). Null when the clinic signs the form, or for portal questions.
+ * Such a form is checked by a clinician but not signed by the clinic: files are named "_PREFILLED",
+ * never "_SIGNED", and the approval wording says "checked for the patient to complete and sign".
+ */
+export function prefillSigners(form: {
+  kind?: string;
+  fields: ReadonlyArray<{ answerType?: string; label?: string; completedBy?: Party; fillSource: { kind: string } }>;
+}): Party[] | null {
+  if (form.kind === "questions") return null;
+  if (form.fields.some((f) => f.fillSource.kind === "signoff")) return null;
+  const found = new Set<Party>();
+  for (const f of form.fields) {
+    if (f.fillSource.kind !== "leave_blank" || !f.completedBy) continue;
+    const signature = f.answerType === "signature" || /\bsignature\b/i.test(f.label ?? "");
+    if (signature && SIGNER_ORDER.indexOf(f.completedBy) >= 0) found.add(f.completedBy);
+  }
+  const out = SIGNER_ORDER.filter((p) => found.has(p));
+  return out.length ? out : null;
+}
+
+/** "the patient", "the policyholder and the patient", "the patient and their GP". */
+export function prefillSignersText(parties: readonly Party[]): string {
+  const names = parties.map((p) => (p === "doctor" ? "their GP or doctor" : `the ${p}`));
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] ?? "the patient";
+}

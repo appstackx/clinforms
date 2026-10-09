@@ -10,6 +10,7 @@ import type { ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "re
 import { forwardRef } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, type LucideIcon } from "lucide-react";
 import { FORM_KIND_LABELS } from "../../../core/labels";
+import { blankForCounts, blankForSummary } from "../../../core/parties";
 import type { FillSource, FormDefinition, FormKind, FormStatus, Report } from "../../../core/types";
 import { cn } from "../../primitives";
 
@@ -84,20 +85,34 @@ export interface QuestionBreakdown {
   fromNotes: number;
   onApproval: number;
   referrerUse: number;
+  /** Boxes left blank, by whose part they are ("50 for the patient or their GP", "2 not needed"). */
+  leftBlank: string[];
 }
 
-export function questionBreakdown(form: Pick<FormDefinition, "fields">): QuestionBreakdown {
+export function questionBreakdown(form: Pick<FormDefinition, "fields"> & { referrer?: { name: string } }): QuestionBreakdown {
   const c = fillSourceCounts(form);
   const fromRecords = c.registration + c.computed_fact + c.fixed + c.appointments_table;
   const fromNotes = c.notes_narrative + c.clinician_opinion;
-  return { toAnswer: fromRecords + fromNotes, fromRecords, fromNotes, onApproval: c.signoff, referrerUse: c.leave_blank };
+  return {
+    toAnswer: fromRecords + fromNotes,
+    fromRecords,
+    fromNotes,
+    onApproval: c.signoff,
+    referrerUse: c.leave_blank,
+    leftBlank: blankForSummary(blankForCounts(form.fields), form.referrer?.name),
+  };
 }
 
-/** "16 to answer (8 from records · 8 from notes/clinician) · 4 completed on approval · 2 for the referrer's office" */
+/** "6 completed on approval · 50 for the patient or their GP · 2 not needed" – the boxes the clinic does not answer. */
+export function notAnsweredText(b: QuestionBreakdown): string {
+  return [b.onApproval ? `${b.onApproval} completed on approval` : "", ...b.leftBlank].filter(Boolean).join(" · ");
+}
+
+/** "16 to answer (8 from records · 8 from notes/clinician) · 4 completed on approval · 2 for Harrow & Pike's office" */
 export function breakdownText(b: QuestionBreakdown): string {
   const parts = [`${b.toAnswer} to answer (${b.fromRecords} from records · ${b.fromNotes} from notes/clinician)`];
-  if (b.onApproval) parts.push(`${b.onApproval} completed on approval`);
-  if (b.referrerUse) parts.push(`${b.referrerUse} for the referrer's office`);
+  const rest = notAnsweredText(b);
+  if (rest) parts.push(rest);
   return parts.join(" · ");
 }
 

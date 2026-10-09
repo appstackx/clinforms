@@ -165,7 +165,7 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   blocked: { label: "Blocked – check required", short: "Blocked", dot: "bg-red-600", text: "text-red-700" },
   pending: { label: "Not drafted yet", short: "Not drafted", dot: "border-2 border-slate-400 bg-white", text: "text-slate-600" },
   signoff: { label: "Filled on approval", short: "On approval", dot: "bg-slate-400", text: "text-slate-600" },
-  blank: { label: "Left blank – referrer's use", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
+  blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
 };
 
 /** Legend order. */
@@ -331,9 +331,19 @@ export function sourceKind(id: string): SourceKind {
 
 /** Chip text: "N-003 · 21/03", "FACT-attendance", "REG". */
 export function citationLabel(id: string, bundle: Pick<EpisodeBundle, "notes">): string {
-  if (sourceKind(id) === "note") {
+  const kind = sourceKind(id);
+  if (kind === "note") {
     const note = bundle.notes.find((n) => n.id === id);
     return note ? `${id} · ${formatUkDayMonth(note.date)}` : id;
+  }
+  // Plain words for the record's other sources (the internal ID stays in the chip's accessible name).
+  if (kind === "registration") return "Registration";
+  if (kind === "fact") {
+    if (id === "FACT-attendance") return "Attendance record";
+    if (id === "FACT-age") return "Age";
+    if (id === "FACT-episode") return "Episode dates";
+    const instrument = /^FACT-outcomes-(.+)$/.exec(id)?.[1];
+    if (instrument) return `${instrument} scores`;
   }
   return id;
 }
@@ -610,6 +620,27 @@ export function resolveGap(
   );
 }
 
+/**
+ * A value entered after its gap was acknowledged as "left blank" supersedes the acknowledgement: the gap
+ * becomes resolved by the answer ("Answered on the form by …"), so the card no longer says "Left blank
+ * for the office to add…" beside the value. Only gaps of `key` that were acknowledged (not resolved),
+ * and only when the section now holds a person's own answer.
+ */
+export function supersedeAcknowledgedGaps(report: Report, key: string, actor: string, now?: Date): Report {
+  const section = report.sections.find((s) => s.key === key);
+  if (!section) return report;
+  const personAnswered =
+    section.paragraphs.some((p) => (p.origin === "clinician" || p.origin === "edited") && p.text.trim() !== "") ||
+    (section.answer !== undefined && section.answer.kind !== "text" && section.answer.value !== null && section.answer.value !== "");
+  if (!personAnswered) return report;
+  const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged");
+  if (stale.length === 0) return report;
+  const at = nowIso(now);
+  const text = `Answered on the form by ${actor} (replaces “${stale[0].resolution?.text ?? ""}”).`;
+  const gaps = report.gaps.map((g) => (stale.indexOf(g) >= 0 ? { ...g, resolution: { kind: "resolved" as const, text, at } } : g));
+  return appendActivity({ ...report, gaps, updatedAt: at }, { actor, action: "gap_resolved", detail: `${key}: a value was entered, so the earlier “left blank” acknowledgement no longer applies.` }, now);
+}
+
 /** Undo a gap's resolution. */
 export function reopenGap(report: Report, gapId: string, actor: string, now?: Date): Report {
   const gap = report.gaps.find((g) => g.id === gapId);
@@ -643,7 +674,7 @@ export function acknowledgeFlag(report: Report, flagId: string, reason: string, 
   }
   return appendActivity(
     { ...report, flags, sections, updatedAt: at },
-    { actor, action: "flag_acknowledged", detail: `${flag.sectionKey ? `${flag.sectionKey}: ` : ""}acknowledged “${flag.message}” – ${clean}` },
+    { actor, action: "flag_acknowledged", detail: `${flag.sectionKey ? `${flag.sectionKey}: ` : ""}acknowledged the check: ${flag.message.trim().replace(/[.\s]+$/, "")}. Reason: ${clean}` },
     now,
   );
 }
@@ -653,7 +684,7 @@ export function markApproved(
   sent: Report,
   receipt: SignReceipt,
   flags: ReportFlag[],
-  opts: { isForm: boolean; now?: Date },
+  opts: { isForm: boolean; now?: Date; prefill?: boolean },
 ): Report {
   const at = nowIso(opts.now);
   return appendActivity(
@@ -661,7 +692,7 @@ export function markApproved(
     {
       actor: receipt.signer.name,
       action: opts.isForm ? "approved" : "signed",
-      detail: `${opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`,
+      detail: `${opts.prefill ? "Prefill checked and approved (nobody at the clinic signs this form)" : opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`,
     },
     opts.now,
   );

@@ -99,9 +99,11 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {match
+          {match && (choice?.kind !== "form" || choice.formId === match.form.id)
             ? `“${match.form.title}” is selected: ${matchReasonLabel(match.reason).toLowerCase()}.`
-            : "No form in the library is linked to this referrer yet. Choose the form they sent – it will be remembered for them."}
+            : match && choice?.kind === "form"
+              ? `“${confirmed.find((f) => f.id === choice.formId)?.title ?? "Another form"}” is selected – not ${party.name}'s own form (theirs is “${match.form.title}”).`
+              : "No form in the library is linked to this referrer yet. Choose the form they sent – it will be remembered for them."}
         </p>
       </div>
 

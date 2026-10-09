@@ -461,7 +461,7 @@ test("map helpers: table cells are the table's answer space; a fixed answer on a
   assert.deepEqual(checkFormDefinition(fixedTable), ["F-01 (“Details of the treatment you are claiming for”): a table is filled from the appointment record, or left blank."]);
 
   // A table filled from the appointments counts as answered from the records.
-  assert.deepEqual(questionBreakdown(form), { toAnswer: 1, fromRecords: 1, fromNotes: 0, onApproval: 0, referrerUse: 0 });
+  assert.deepEqual(questionBreakdown(form), { toAnswer: 1, fromRecords: 1, fromNotes: 0, onApproval: 0, referrerUse: 0, leftBlank: [] });
 });
 
 test("portal question sets use the PMI record values for membership and authorisation numbers", () => {

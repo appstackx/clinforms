@@ -103,9 +103,12 @@ export function ReviewHeader({
   onDraftCopy,
   draftCopyUnavailable,
   downloading,
+  prefillFor = null,
 }: {
   report: Report;
   template: ReportTemplate | null;
+  /** A form the clinic only prefills: who completes and signs it ("the patient and their GP or doctor"). */
+  prefillFor?: string | null;
   generation: GenerationSummary | null;
   saveState: SaveState;
   savedAt: string | null;
@@ -146,7 +149,7 @@ export function ReviewHeader({
               )}
             >
               {signed ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> : <PenLine className="h-3.5 w-3.5" aria-hidden />}
-              {signed ? (form ? "Approved" : "Signed") : "Draft"}
+              {signed ? (prefillFor ? "Approved prefill" : form ? "Approved" : "Signed") : "Draft"}
             </span>
             {report.version && report.version > 1 ? (
               <span className="inline-flex h-6 items-center rounded-full bg-violet-100 px-2.5 text-xs font-semibold text-violet-900 ring-1 ring-violet-200">
@@ -262,9 +265,11 @@ export const ApprovedBanner = forwardRef<
     onAmend?: () => void;
     /** A portal question set: its PDF is the summary of the questions and answers. */
     questionSet?: boolean;
+    /** A form the clinic only prefills: who completes and signs it. */
+    prefillFor?: string | null;
   }
 >(function ApprovedBanner(props, ref) {
-  const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet } = props;
+  const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet, prefillFor } = props;
   const receipt = report.receipt;
   if (!receipt) return null;
   const isForm = Boolean(report.form);
@@ -279,11 +284,17 @@ export const ApprovedBanner = forwardRef<
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="text-base font-semibold text-teal-950">
-            {questionSet ? WORDING.questionSet.approvedTitle : isForm ? "Approved – the completed form is final" : "Signed – the report is final"}
+            {questionSet
+              ? WORDING.questionSet.approvedTitle
+              : prefillFor
+                ? `Prefill approved – ready for ${prefillFor} to complete and sign`
+                : isForm
+                  ? "Approved – the completed form is final"
+                  : "Signed – the report is final"}
           </h2>
           <p className="text-[13px] text-teal-900">
-            {isForm ? "Approved" : "Signed"} by <span className="font-medium">{receipt.signer.name}</span> (HCPC {receipt.signer.hcpc}) on{" "}
-            {formatUkDateTime(receipt.signedAt)}. Read-only from now on.
+            {prefillFor ? "Checked and approved" : isForm ? "Approved" : "Signed"} by <span className="font-medium">{receipt.signer.name}</span> (HCPC{" "}
+            {receipt.signer.hcpc}) on {formatUkDateTime(receipt.signedAt)}.{prefillFor ? " Nobody at the clinic signs this form." : ""} Read-only from now on.
           </p>
           <p className="text-[12px] text-teal-900/80">
             Content fingerprint <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> · server-signed

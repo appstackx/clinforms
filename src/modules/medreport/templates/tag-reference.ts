@@ -69,7 +69,7 @@ export const TEMPLATE_TAG_REFERENCE: readonly TemplateTagInfo[] = [
   // Clinic
   T("clinic.name", "field", "Clinic", "Clinic name.", "Riverside Physiotherapy (fictional)"),
   T("clinic.addressText", "field", "Clinic", "Clinic address on one line.", "Unit 4, Riverside Court (fictional), Milton Keynes, MK9 0ZZ"),
-  T("clinic.phone", "field", "Clinic", "Clinic telephone.", "01908 000000"),
+  T("clinic.phone", "field", "Clinic", "Clinic telephone.", "01632 960 418"),
   T("clinic.email", "field", "Clinic", "Clinic email.", "reports@riverside-physio.example"),
 
   // Patient

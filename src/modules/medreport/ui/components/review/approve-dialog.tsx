@@ -12,6 +12,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { Loader2, PenLine, ShieldCheck } from "lucide-react";
 import { signoffValuesFromReceipt } from "../../../core/forms";
 import { SIGNOFF_PART_LABELS } from "../../../core/labels";
+import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, cn } from "../../primitives";
 import { InlineAlert } from "./review-ui";
@@ -91,6 +92,11 @@ export function ApproveDialog({
     setSucceeded(false);
   }, [open]);
 
+  // A form the clinic only prefills (a patient's claim form): checked by the clinician, signed by others.
+  const prefillFor = useMemo(() => {
+    const signers = form ? prefillSigners(form) : null;
+    return signers ? prefillSignersText(signers) : null;
+  }, [form]);
   const signoffFields = useMemo(
     () => (form ? form.fields.filter((f) => f.fillSource.kind === "signoff") : []),
     [form],
@@ -137,7 +143,7 @@ export function ApproveDialog({
         <DialogHeader className="border-b border-slate-200 px-5 py-4 text-left sm:px-6">
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="h-5 w-5 text-[#0D9488]" aria-hidden />
-            {isForm ? "Approve the completed form" : "Sign the report"}
+            {prefillFor ? "Approve the prefilled form" : isForm ? "Approve the completed form" : "Sign the report"}
           </DialogTitle>
           <DialogDescription>
             {report.patientLabel} · {isForm ? `${referrer}'s “${report.form?.title}”` : template.name}. Nothing is issued until you approve it.
@@ -180,14 +186,17 @@ export function ApproveDialog({
                   </div>
                 ) : (
                   <p className="text-[13px] text-slate-600">
-                    {questionSet ? "These portal questions have" : "This form has"} no sign-off fields. Your approval is recorded in the server-signed receipt
-                    and the activity log.
+                    {prefillFor
+                      ? `Nobody at the clinic signs this form: it is prefilled for ${prefillFor} to check, complete and sign. Your check is recorded in the server-signed receipt and the activity log; the file is marked PREFILLED, not signed.`
+                      : `${questionSet ? "These portal questions have" : "This form has"} no sign-off fields. Your approval is recorded in the server-signed receipt and the activity log.`}
                   </p>
                 )}
                 <Check id={`${ids}-statement`} checked={statement} onChange={setStatement}>
                   {questionSet
                     ? `I confirm that these answers are accurate to the best of my knowledge and belief, and I approve them for entry in ${referrer}'s portal.`
-                    : `I confirm that the answers on this completed form are accurate to the best of my knowledge and belief, and I approve it for issue to ${referrer}.`}
+                    : prefillFor
+                      ? `I confirm that the details the clinic has prefilled on this form are accurate to the best of my knowledge and belief, and that the form is ready for ${prefillFor} to complete and sign.`
+                      : `I confirm that the answers on this completed form are accurate to the best of my knowledge and belief, and I approve it for issue to ${referrer}.`}
                 </Check>
               </>
             ) : (
@@ -295,7 +304,7 @@ export function ApproveDialog({
           </Button>
           <Button type="submit" form={`${ids}-form`} disabled={!canSubmit}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />}
-            {isForm ? "Approve and sign" : "Sign report"}
+            {prefillFor ? "Approve the prefill" : isForm ? "Approve and sign" : "Sign report"}
           </Button>
         </DialogFooter>
       </DialogContent>

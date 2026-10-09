@@ -24,6 +24,7 @@ import {
   resolveGap,
   revertParagraph,
   setStructuredAnswer,
+  supersedeAcknowledgedGaps,
   writeInOwnVoice,
 } from "./review-model";
 import { setRowsAnswer } from "./table-answer-model";
@@ -78,10 +79,11 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
     }
     case "logEdit": {
       const section = report.sections.find((s) => s.key === action.key);
-      return appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      const logged = appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      return supersedeAcknowledgedGaps(logged, action.key, action.actor);
     }
     case "setAnswer":
-      return setStructuredAnswer(report, action.key, action.value, action.actor);
+      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor), action.key, action.actor);
     case "setRows":
       return setRowsAnswer(report, action.key, action.rows, action.actor);
     case "resolveGap":

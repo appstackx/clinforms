@@ -16,7 +16,7 @@ import { fillDocx } from "./docx-fill";
 import type { DecodedFormFile } from "./file";
 import { fillPdf } from "./pdf-fill";
 import { loadPdfjs, pdfjsDocumentParams } from "./pdfjs";
-import { renderFormFile } from "./render-form";
+import { formFileBaseName, renderFormFile } from "./render-form";
 
 const NOTICE = demoFormNotice("Example Health Insurance (fictional)");
 const PDF_MIME = "application/pdf" as const;
@@ -349,4 +349,17 @@ test("PDF DRAFT: the red line moves above a printed page number; continuation sh
   assert.deepEqual([Math.round(sheet.getWidth()), Math.round(sheet.getHeight())], [607, 853]);
   const crop = sheet.getCropBox();
   assert.deepEqual([Math.round(crop.width), Math.round(crop.height)], [607, 853]);
+});
+
+test("an approved form the clinic only prefills is named _PREFILLED, never _SIGNED", () => {
+  const report = { bundleSnapshot: { registration: { firstName: "Rebecca", lastName: "Lane" } }, version: 1 } as unknown as Parameters<typeof formFileBaseName>[0];
+  const claim = form("pdf_acroform", [
+    field("F-01", "Member's name", { kind: "pdf_field", fieldName: "name", fieldType: "text" }, { fillSource: { kind: "registration", path: "patient.fullName" } }),
+    field("F-02", "Member's signature", { kind: "pdf_field", fieldName: "sig", fieldType: "text" }, { fillSource: { kind: "leave_blank" }, answerType: "signature", completedBy: "policyholder" }),
+  ]);
+  assert.equal(formFileBaseName(report, claim, { signed: true, dateIso: "2026-10-09" }), "Lane_R_Therapy-update_2026-10-09_PREFILLED");
+  assert.equal(formFileBaseName(report, claim, { signed: false, dateIso: "2026-10-09" }), "Lane_R_Therapy-update_2026-10-09_DRAFT");
+  assert.equal(formFileBaseName({ ...report, version: 2 }, claim, { signed: true, dateIso: "2026-10-09" }), "Lane_R_Therapy-update_2026-10-09_AMENDED-v2_PREFILLED");
+  const own = form("pdf_acroform", [...claim.fields, field("F-03", "Therapist's signature", { kind: "pdf_field", fieldName: "tsig", fieldType: "text" }, { fillSource: { kind: "signoff", part: "signature" }, answerType: "signature" })]);
+  assert.equal(formFileBaseName(report, own, { signed: true, dateIso: "2026-10-09" }), "Lane_R_Therapy-update_2026-10-09_SIGNED");
 });

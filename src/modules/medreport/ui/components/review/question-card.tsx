@@ -10,6 +10,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
+import { blankFor, blankForWording } from "../../../core/parties";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, FILL_SOURCE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
@@ -352,6 +353,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const meta = QUESTION_STATUS_META[status];
   const headingId = `q-${q.key}-label`;
   const field = q.field;
+  // A box left blank says whose it is ("For the patient to complete"), not just "referrer's use".
+  const blankWording = !section && field ? blankForWording(blankFor(field), props.referrerName) : null;
+  // A value the record lacks (a withheld insurer number), typed in by staff: say so, not "by the clinician".
+  const staffEntered =
+    section?.kind === "from_records" && section.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "") && !section.paragraphs.some((p) => p.origin === "from_records");
+  const statusLabel = status === "blank" && blankWording ? blankWording.chip : staffEntered && status === "clinician" ? "Entered by staff" : meta.label;
   const answered = section ? isSectionAnswered(section) : false;
 
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
@@ -360,7 +367,17 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const sectionFlags = flags.filter((f) => !f.paragraphId && !(showsNeedsClinician && f.code === "MISSING_PLACEHOLDER" && f.evidence === "empty section"));
   const paragraphFlags = (pid: string) => flags.filter((f) => f.paragraphId === pid);
 
-  const fillSourceText = field ? FILL_SOURCE_LABELS[field.fillSource.kind] : section ? (section.kind === "from_records" ? "From records – filled by code" : section.kind === "declaration" ? "Declaration – fixed wording" : WORDING.labels.fillSourceNotesNarrative) : "";
+  const fillSourceText = staffEntered
+    ? "Typed in by staff – not from the clinic record (see the Activity tab)"
+    : field
+      ? FILL_SOURCE_LABELS[field.fillSource.kind]
+      : section
+        ? section.kind === "from_records"
+          ? "From records – filled by code"
+          : section.kind === "declaration"
+            ? "Declaration – fixed wording"
+            : WORDING.labels.fillSourceNotesNarrative
+        : "";
 
   const structuredKind = section?.answer && section.answer.kind !== "text" ? section.answer.kind : null;
   const isRecords = section?.kind === "from_records";
@@ -441,7 +458,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   if (!section) {
     body = (
       <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600">
-        Left blank on the form – this box is for {props.referrerName ?? "the referrer"}&apos;s own use.
+        {blankWording ? blankWording.sentence : "Left blank on the form."}
       </p>
     );
   } else if (section.kind === "declaration" && section.fieldId && field?.fillSource.kind === "signoff") {
@@ -615,7 +632,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}
           <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2 text-[11px] font-medium", meta.text)}>
             <StatusDot status={status} />
-            {meta.label}
+            {statusLabel}
           </span>
         </span>
       </header>
