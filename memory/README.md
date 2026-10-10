@@ -1,29 +1,29 @@
 # Memory index
 
-Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache auto-loaded every session; this folder holds the detail). Written 2026-10-09 at the hand-off from the cloud session to the Claude desktop app. **No secrets are stored here** – values live in `.env.local` (not in git).
+Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache auto-loaded every session; this folder holds the detail). Written 2026-10-09 at the hand-off from the cloud session to the Claude desktop app; updated 2026-10-10 ~19:00 UTC after the production go-live (clinforms.co.uk LIVE since 17:13 UTC). **No secrets are stored here** – values live in `.env.local` (not in git).
 
 **Read first:** `next-steps.md` (what to do now, ready-to-paste prompts) → `decisions.md` (top rows) → the project file for the task at hand.
 **Update at the end of every session:** `next-steps.md`, `decisions.md` (new rows on top), `history.md` (append), the status snapshot in `../CLAUDE.md`, and any project/context file that changed.
 
 | File | One line |
 |---|---|
-| `next-steps.md` | Prioritised backlog (RED demo P0 → Vercel → Supabase → Cloudflare question → converter → hardening), questions for Khuram, ready-to-paste prompts |
+| `next-steps.md` | Prioritised backlog (RED call P0 → go-live loose ends → post-launch backlog → converter), questions for Khuram, prompts (old ones archived at the end) |
 | `decisions.md` | Dated decision log, newest first, with who/why/status (incl. open questions) |
-| `history.md` | Timeline 06–09/10/2026 (UTC), workflow runs, lessons learned and gotchas |
+| `history.md` | Timeline 06–10/10/2026 (UTC) incl. the 10/10 go-live, workflow runs, lessons learned and gotchas |
 | `assets.md` | Every deliverable and where it lives; what was NOT preserved from the cloud container |
 | `glossary.md` | Decoder ring: acronyms, internal terms, old names (AppStackX Reports, medreport, CareConnect), people, fictional demo entities |
 | `people/khuram-masood.md` | The user: role, accounts, working style, verbatim decisions, open questions |
 | `people/dell-baines.md` | Blue Heart Clinics owner: aliases, background, his asks, what he's seen, questions to ask |
 | `people/daniel-vatamanu.md` | RED Physiotherapy co-founder: contact details, thread summary, unknowns |
-| `projects/clinforms.md` | Product + technical deep dive (flow, stack, AI config, demo data, live-demo gotchas, limits, roadmap); links to repo docs |
+| `projects/clinforms.md` | Product + technical deep dive (live production summary, flow, stack, AI config, demo data, live-demo gotchas, limits, roadmap); links to repo docs |
 | `projects/blue-heart-clinics.md` | Deal file: company research, all emails verbatim, answers to Dell's 5 questions, pricing, commitments, status |
 | `projects/red-physiotherapy.md` | Deal file: emails verbatim, assessment, insurer support matrix, demo as built, call guidance (full call pack: `../docs/demo-red-physio.md`) |
 | `projects/careconnect-mk.md` | Origin repo: branch, commit history, what remains, cleanup options |
 | `context/company.md` | AppStackX facts, tools/connectors/accounts (GitHub, Anthropic, ElevenLabs, Vercel…), market and name checks |
 | `context/pricing.md` | All price tiers, founding offer, reasoning, ROI model, our cost base |
-| `context/hosting-and-infra.md` | Vercel decision, Cloudflare blockers, Supabase architecture + API notes, converter, regions, environment lessons |
+| `context/hosting-and-infra.md` | **Current live architecture + ids** (Vercel Hobby lhr1, D1 EU + gateway Worker, R2 media, Better Auth, PostHog EU, cron, secrets), then the hosting-decision history, Supabase (later), converter, regions |
 | `context/insurer-forms.md` | Every insurer/referrer form with URL, public PDF vs portal, classification (09/10), handling and priority |
-| `context/compliance.md` | GDPR/DPA commitments, disclosure rule, data minimisation, security built vs promised |
+| `context/compliance.md` | GDPR/DPA commitments, disclosure rule, data minimisation, security built (live since 10/10) vs documents still promised |
 | `sources/blue-heart-briefing.md` | Verbatim: Blue Heart research briefing (06/10) |
 | `sources/report-builder-plan.md` | Verbatim: the original approved plan (06/10 12:31 UTC, pre-pivot) |
 | `sources/red-physio-demo-task.md` | Verbatim: the RED demo task prompt handed over 09/10 15:26 UTC, plus two marked memory-pack annotations (enriched, corrected version in `next-steps.md` §1) |
@@ -38,6 +38,6 @@ Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache 
 
 The six build reports are historical (careconnect-mk era, pre-Sonnet, pre-rename); the module README supersedes them.
 
-Related repo docs (authoritative for code): `../docs/demo-red-physio.md` (RED call pack, internal), `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
+Related repo docs (authoritative for code): `../docs/go-live.md` (runbook + 10/10 run log), `../docs/production-architecture.md`, `../docs/auth.md`, `../docs/database.md`, `../docs/demo-red-physio.md` (RED call pack, internal), `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
 
 Conventions: times are UTC unless marked (UK = BST, UTC+1, in October 2026); **(unverified)** = not confirmed by Khuram or a source; [C] public source, [I] inference, [U] unknown (research files).

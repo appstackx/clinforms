@@ -1,56 +1,154 @@
 # Next steps – prioritised backlog
 
-State: **Fri 2026-10-09 ~23:15 UTC** (desktop). RED demo pack + call pack DONE on `demo/red-physio` (not pushed – the orchestrator pushes); production line on `feat/production` (§1b). Original hand-off state (16:00 UTC): `main` = `e799c51` → `7f6fcf8` → `32499de` → `cba79dc` → `c6a2850` (memory pack).
-Rule: Khuram wants **a short plan first, build after his OK** for anything big – but keep it brief when a deadline is close (RED call, Tue 13 Oct, morning).
+State: **Sat 2026-10-10 ~19:00 UTC** (desktop). **ClinForms is LIVE on https://clinforms.co.uk** since 17:13 UTC
+(`main` `02ddfb5` → `04c18d0` passcode server check → `8def25b` polish, all deployed; `feat/production` == `main`).
+The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/clinforms-demo` for the call on
+**Tue 13 Oct, morning**. Snapshot of what is live: `CLAUDE.md`; run log: `docs/go-live.md`.
+Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
 ## 0. First 15 minutes of a new session (checklist)
 1. Read `CLAUDE.md`, this file, `memory/README.md`; skim `memory/decisions.md` (top rows).
-2. `git fetch && git status && git log --oneline -5` (expect `32499de` → `cba79dc` (WIP memory) → final memory commit, or later); `nvm use` (Node 22); `npm ci`.
-3. Baseline: `npm run typecheck && npm run lint && npm run test:medreport && npm run build` → on `main` expect **243/243** (+ sandbox tests 26/26 run separately); on `demo/red-physio` `test:medreport` includes the sandbox tests: **448 tests, 445 pass, 3 skipped** (LibreOffice). On `demo/red-physio` also `npm run demo:check` → "Demo assets OK: 7 maps, 4 answer files, 6 form files".
-4. `npm run dev` → click `/pms-sandbox` → Megan Hart → **Complete referrer's report form** → Harrow & Pike → review → approve → download (demo mode, no env needed).
-5. Network check (desktop should be open): `curl -sI` the three insurer PDF URLs (`memory/context/insurer-forms.md`), `https://api.vercel.com`, `https://api.supabase.com`.
-6. Tooling check on the Mac: LibreOffice (`/Applications/LibreOffice.app/Contents/MacOS/soffice`), ffmpeg/poppler, Postgres or Docker, `vercel`/`supabase` CLIs (via `npx` is fine).
-7. Send Khuram **one message** with the questions in §A, then start §1 (most of it doesn't depend on the answers; live drafting does – see §1 Blockers). Offer once, in that message: "Shall I check your Gmail (read-only) to answer Q1 and Q5 myself?" If he agrees (and a Gmail connector is available), search threads for "Blue Heart" / "Dell" / "red-physiotherapy" / "RED Physiotherapy" from 06/10 onwards; record what was actually sent to Dell (draft 1/2, video v2, timeframe) and Daniel's booking (date/time/link) in `projects/*.md`, copying no personal data beyond names and business emails. Never send or draft email without an explicit ask.
+2. `git fetch && git status && git worktree list && git log --oneline -5` (expect `main` = `8def25b` or later);
+   `nvm use` (Node 22); `npm ci` (+ `(cd workers/data-gateway && npm ci)`).
+3. Production health (read-only): `curl -s https://clinforms.co.uk/api/reports/v1/health` →
+   `{"product":"ClinForms",…,"model":"drafting-service","promptVersion":"","pdfFromWord":false}`;
+   `curl -s https://clinforms-data.appstackx-demos.workers.dev/v1/health` → `{"ok":true}`;
+   `npx --yes vercel@63.1.0 ls clinforms --environment production --limit 3`; errors:
+   `npx --yes vercel@63.1.0 logs --environment production --since 24h --level error`. Look at `/app/platform` →
+   Access requests (email is off: nobody is notified of a new request) – or ask Khuram to.
+4. Baseline before any change: the full check chain (`CLAUDE.md` → Key commands). **Pushing `main` deploys.**
+5. Never touch `~/Projects/Appstackx/clinforms-demo`, tag `red-demo-2026-10-13` or branch `demo/red-physio`
+   (at least until after the RED call).
+6. Send Khuram **one message** with the open questions in §A.
 
 ### §A. Questions for Khuram (ask once, together)
-1. *(Partly answered 09/10: Tue 13 Oct, morning – exact time still to check.)* Confirm the RED call is **Tue 13 Oct** ("Tuesday" came only from the research text you pasted; the date is inferred), and what time; who attends; did Daniel say anything when booking?
-2. *(Answered 09/10: Hobby for now; `clinforms.co.uk` is live.)* Vercel: which plan (Pro needed for commercial use)? Will you import `appstackx/clinforms` yourself, or set a `VERCEL_TOKEN` env var for me?
-3. Are `clinforms.co.uk` and `clinforms.com` registered? Which registrar (for DNS)?
-4. Has the Anthropic API key pasted in chat on 06/10 been **rotated**? Which keys exist in the Anthropic Console (a second key file was also in the cloud container)? Please revoke all but one fresh key and put it in `.env.local` yourself (don't paste it in chat), plus a new `MEDREPORT_LIVE_PASSCODE` and new `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN` (e.g. `openssl rand -base64 32` each). **Needed for the RED demo:** demo mode can't draft a new patient on the new insurer forms (`NO_DEMO_DRAFT`), so without these the narrative answers stay blank. After the live run: should the call avoid depending on the live API (e.g. a local-only recorded-draft path for the demo-assets forms, kept out of git), or do you want to demo live with the passcode?
-5. Did the voiced v2 video go to Dell? Did he reply or send forms? Which of our draft replies did you actually send him (the 06/10 ones)?
-6. *(Answered 09/10 – D39: Cloudflare D1 now, Supabase London later.)* "Cloudflare for demos and base account + Supabase scripts to create new db": do you still want Cloudflare given Vercel Pro has unlimited projects at no extra cost? Does "new db" mean a **new Supabase project per clinic** or **a new clinic (tenant) in one shared London database** (my recommendation, dedicated project as premium)?
-7. If Daniel asks about price on Tuesday, what do we say? Default proposal (assistant, unconfirmed): same structure as Blue Heart – per clinic, not per seat; Practice £199/mo list; founding offer £149/mo fixed 12 months + £250 setup incl. 5 forms (e.g. Bupa, AXA, Aviva + 2), monthly, cancel any time, state VAT treatment – or simply "depends on volume, typically £99–£199/month; we'll confirm after a short pilot".
+1. RED call: exact time on Tue 13 Oct; who attends? (Day confirmed 09/10 – D45.)
+2. **Anthropic key:** is the production `ANTHROPIC_API_KEY` the new key, and have the older keys (the 06/10 chat key
+   and the second cloud key file) been deleted in the Console? (Asked at go-live; he asked why – told: keep the new
+   key, delete older ones; not a launch blocker. **Confirmation still unanswered.**)
+3. Did the voiced v2 video go to Dell? Did he reply or send forms? Which of our 06/10 draft replies did you send?
+4. If Daniel asks about price on Tuesday, what do we say? (Proposal: `memory/context/pricing.md`; same structure as
+   Blue Heart – per clinic; Practice £199/mo list; founding £149/mo × 12 + £250 setup incl. 5 forms – or "depends on
+   volume, typically £99–£199/month; confirmed after a short pilot".)
+5. "Organise these notes" (assisted structuring of messy notes, would send notes to the drafting service) – build it
+   or not? (§2 item 2.10.)
+6. Company number, registered office and ICO registration for the site footer/legal pages; who reviews the legal
+   pages (§2 item 2.6)?
+7. Is `clinforms.com` registered (redirect to `.co.uk`)? UK IPO trademark search "ClinForms" (classes 9, 42)?
+8. Outreach: start sending the video (link `clinforms.co.uk/demo`) – to whom, from which mailbox, when?
 
 ---
 
-## 1. RED Physiotherapy demo pack – **P0, DONE / READY; deadline: the RED call (Tue 2026-10-13, morning)**
-- **Goal:** live demo answering Daniel's "Which insurers do you support?" – ClinForms completes **Bupa, AXA Global Healthcare, Aviva CM016** (real public forms) in their original layout from **one fictional PMI patient**, plus a support matrix and 10-minute call script.
-- **Status (09/10 ~23:15 UTC): DONE – built, reviewed, fixed, rehearsed (headless, twice) and the CALL PACK is written:
-  `docs/demo-red-physio.md`** (support matrix; Monday-evening and Tuesday-morning checklist with exact commands; Chrome
-  set-up; what to pre-upload; 10-minute script with click path, what to say and rehearsal timings; labels to frame;
-  likely questions with honest answers; questions for Daniel; fallbacks). Branch `demo/red-physio` (worktree
-  `clinforms-wt/red-integrate`; the orchestrator pushes it). `npm run demo:red` (always demo mode unless `--live`) with
-  the gitignored `clinforms/demo-assets/insurers/`: 6 insurer PDFs, 7 prepared maps (incl. our own illustrative portal
-  question set, seeded into the library), 4 answer files (Bupa, AXA, Allianz, portal) for Rebecca Lane (`sim-pat-006`).
-  `npm run demo:check` → "Demo assets OK: 7 maps, 4 answer files, 6 form files". Finals of the rehearsal:
-  `demo-assets/outputs/`; screenshots `demo-assets/rehearsal/` (older sets in `_wave2-before/` – never show).
-- **What remains (Khuram):**
-  1. **Monday evening:** one rehearsal in his own Chrome, in a separate "ClinForms demo" profile, from the frozen folder `~/Projects/Appstackx/clinforms-demo`
-     (tag `red-demo-2026-10-13`; call pack §2.2) – maps live in the browser that confirmed them; then Reset demo.
+## 1. RED Physiotherapy call – **P0, Tue 2026-10-13, morning (exact time: the invite)**
+- **Everything is in the call pack `docs/demo-red-physio.md`** (support matrix, Monday/Tuesday checklist with exact
+  commands, Chrome set-up, what to pre-upload, 10-minute script with click path and rehearsal timings, labels to
+  frame, honest answers, questions for Daniel, fallbacks). Short version: `memory/projects/red-physiotherapy.md` §8.
+- **Frozen demo:** `~/Projects/Appstackx/clinforms-demo` (detached at tag `red-demo-2026-10-13` = `3521401`, own
+  `node_modules`, `.next`, `.env.local` with an absolute `MEDREPORT_DEMO_ASSETS_DIR` → gitignored
+  `clinforms/demo-assets/insurers/`: 6 insurer PDFs, 7 maps, 4 answer files). `npm run demo:check` → "Demo assets OK:
+  7 maps, 4 answer files, 6 form files". Do not pull, rebuild from `main` or move the tag.
+- **Khuram:**
+  1. **Monday evening:** one rehearsal in his own Chrome, separate "ClinForms demo" profile, from the frozen folder
+     (call pack §2.2) – maps live in the browser that confirmed them; then Reset demo.
   2. **Tuesday morning:** quit heavy processes/agent workflows, `npm run demo:red -- --skip-build`, pre-upload and
-     confirm AXA + Aviva CM016, leave Bupa to upload live, two tabs (call pack §2.3).
-  3. Check the call time in the invite; confirm RED's practice system if possible (if not TM3, avoid the home page).
-  4. Decide the price line (only if asked; proposals in `memory/context/pricing.md`).
-  5. Optional: Anthropic credit check only if he wants to show live drafting (not recommended).
-- **Still open after the call (product):** a second fictional patient whose record names AXA Global Healthcare (AXA
-  approvable without typed numbers); `forms-8` giving the drafting prompt each box's capacity (live answers overflow);
-  BESS/BOA and "cuff" in the glossary; generic upload dialog defaults to "Medico-legal company"; no logins/roles in the
-  demo; whether AXA accepts an electronic approval line is unknown; review time with real clinicians not measured.
-- **Call guidance:** `docs/demo-red-physio.md` (full) and `memory/projects/red-physiotherapy.md` §8 (short).
-- **Historical – the original task prompt (done; kept for reference):**
+     confirm AXA + Aviva CM016, leave Bupa to upload live, two tabs (call pack §2.3). Order: Bupa end to end → AXA
+     identifier block (never type AXA numbers or approve AXA) → portal questions (prognosis gap) → Aviva 30 s
+     (prefill) → ask for 2–3 blank forms.
+  3. Confirm RED's practice system if possible (if not TM3, avoid the home page); decide the price line (§A Q4).
+  4. Don't send Daniel clinforms.co.uk as "the demo" (call pack); whether to follow up with the `/demo` video is Khuram's call.
+- **After the call:** record Daniel's answers in `memory/projects/red-physiotherapy.md` §7 + `decisions.md`; then the
+  freeze ends (the folder/tag can stay as an archive).
+- **Still open (product):** a second fictional patient whose record names AXA Global Healthcare; `forms-8` giving the
+  drafting prompt each box's capacity; BESS/BOA and "cuff" in the glossary; generic upload dialog defaults to
+  "Medico-legal company"; whether AXA accepts an electronic approval line; review time with real clinicians.
 
+## 1b. Production – **LIVE since 10/10 17:13 UTC** (go-live loose ends)
+What is live, infra ids and env var names: `CLAUDE.md` status snapshot; architecture: `memory/context/hosting-and-infra.md`;
+runbook + run log + known limits: `docs/go-live.md` (§8).
+| # | Item | Status | Needs |
+|---|---|---|---|
+| G1 | **§7.6 – the offline key really decrypts production data.** No encrypted row exists yet (0 reports / 0 form files at 18:58 UTC; Khuram declined a test upload). Alternative in progress: a `CRON_SECRET`-protected `/api/ops/key-fingerprint` endpoint (branch `ops/key-fingerprint`, worktree `clinforms-wt/key-fp`, workflow `wf_c9f57175-279`) to compare the key's fingerprint with the secrets file's, without data | IN PROGRESS (not on `main` at 19:00) | Merge + deploy after review; or run §7.6 after the first encrypted write |
+| G2 | First scheduled retention run: `cron.retention.done` in the Vercel logs on 11/10 (Hobby runs it within the 03:00 UTC hour); then update the security/privacy pages' "automatic deletion is planned" wording (go-live §8) | Waiting | Check logs 11/10 |
+| G3 | Delete the fictional smoke-test access request (`go-live-check@example.com`, still the only row at 18:58 UTC): `wr d1 execute clinforms-prod --remote --command "DELETE FROM access_requests WHERE email = 'go-live-check@example.com'"` (go-live §7.2) | PENDING | A write on production – Khuram's OK |
+| G4 | Anthropic key confirmation (§A Q2) | UNANSWERED | Khuram |
+| G5 | Retire `feat/production` (== `main`) and the merged wave worktrees under `clinforms-wt/` (`p2-*`, `p3-notes`, `w2-*`, `w3-e2e`, `red-*`, `passcode-fix`, `polish-1`, `demo-page`) – all merged into `main`; keep `clinforms-demo`, `red-integrate` (= the tag) and `video` | Optional | Khuram's OK (after the RED call) |
+| G6 | Optional: tag the release `go-live-2026-10-10` on `02ddfb5` (go-live "After go-live") | Optional | – |
+| G7 | Re-make the offline secrets backup (encrypted dmg in iCloud Drive) after ANY change to `~/.config/appstackx/clinforms.secrets.env` (e.g. a `CRON_SECRET` or key rotation) | Rule | Khuram |
+
+## 2. Post-launch backlog (before / for the first paying clinic)
+| # | Item | Priority | Status | Needs |
+|---|---|---|---|---|
+| 2.1 | **Vercel Pro** before a paying clinic (Hobby = non-commercial; also: rollback only to the previous deployment, cron timing within the hour) | P1 (before payment) | Hobby now (D41) | Khuram pays |
+| 2.2 | **Cloudflare Workers Paid** ($5/mo: more CPU per gateway request, 10 GB D1, 30-day Time Travel) before real patient data; check `wrangler d1 info clinforms-prod` | P1 (before real data) | Free (per runbook §8 – verify) | Khuram pays |
+| 2.3 | **MailerSend** when ready: `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` (verified sender on clinforms.co.uk), `CLINFORMS_EMAIL_PROVIDER=mailersend`, optional `CLINFORMS_ACCESS_REQUEST_TO`; until then invite/reset links go by hand and access requests notify nobody | P1 | Chosen (D40), not set up | Khuram: MailerSend domain + key |
+| 2.4 | **Word → PDF converter** (UK Gotenberg/LibreOffice service; prompt §4 below) – a Word form downloads as Word only today (`pdfFromWord: false`) | P2 (before clinics needing PDF copies of Word forms) | Not started | Host choice |
+| 2.5 | **Real PMS connectors** (TM3 export mapping from a real sample; TM3 API only if TM3 grants partner access; Cliniko…). Today clinics upload notes; a launch from a clinic system → 503 `CONNECTOR_NOT_CONFIGURED` | P2 | Not started | A clinic's system + terms |
+| 2.6 | **Legal pages owner review** (privacy, cookies, terms, security – drafts dated 9 Oct 2026), ideally with legal advice; **company number, registered office, ICO registration** into `src/lib/site.ts` `COMPANY` (lines hidden until set); ICO fee before real patient data | P1 | Drafts live | Khuram (§A Q6) |
+| 2.7 | **DPA + DPIA templates**, sub-processor list (Anthropic named), intended-purpose statement – before the first clinic with real data | P1 | Not started | Khuram + legal |
+| 2.8 | **Supabase Postgres London** when a clinic pays (D39); switch runbook `docs/database.md` §8; `db:provision-supabase`, `db:copy-to-postgres` exist | P3 | Ready in code | A paying clinic |
+| 2.9 | **CSP:** add a same-origin report endpoint (no query strings logged – reset/invite links carry tokens), watch Report-Only, then enforce | P2 | Report-Only, no reporting | – |
+| 2.10 | **"Organise these notes"** – assisted structuring of notes the reader can't structure (sends notes to the drafting service) | P3 | Not built (follow-up noted in wave 3) | **Khuram's decision** |
+| 2.11 | **Outreach with the video:** `~/Projects/Appstackx/marketing/clinforms/outreach-video-v1/` (master, 7 MB email MP4, teaser GIF, poster, SRT; usage notes in its README); link **`https://clinforms.co.uk/demo`** with campaign-level UTM only (`utm_source/medium/campaign`; never a clinic or person); first email: link the poster/GIF, don't attach | P1 (sales) | Video final; no sends recorded | Khuram (§A Q8) |
+| 2.12 | Media host: **Always Use HTTPS** on zone `clinforms.co.uk` | – | **DONE 10/10 ~18:50 UTC** (Khuram OK; `http://media.clinforms.co.uk` → 301 https) | – |
+| 2.13 | Scheduled off-site backup: weekly `wrangler d1 export` to encrypted storage once real data exists (`docs/database.md` §7) | P2 (before real data) | Manual only (Time Travel) | – |
+| 2.14 | Billing (Stripe: new account per product, see the Appstackx CLAUDE.md), usage metering | P3 | Not started | A paying clinic |
+| 2.15 | `sales/outreach-video` branch (recorder scripts) – merge to `main` or leave as is | P4 | Not merged | Khuram |
+
+---
+
+## 3. Production hardening – status
+**Built and live** (10/10): invite-only accounts with required TOTP two-step and roles (owner/admin/clinician/staff);
+per-clinic tenancy; AES-256-GCM encryption at rest per clinic; append-only audit log (`/app/settings/activity`);
+retention cron; shared (database) rate limits; partner keys (created, unused); public site + legal drafts;
+consent-gated analytics; security headers (CSP Report-Only). **Still open:** §2 above (converter, PMS mapping,
+billing, email, CSP enforcement, compliance pack: DPA naming Anthropic, DPIA, ICO, Cyber Essentials, Anthropic ZDR,
+legal review of Part 35 / MedCo, intended-purpose statement), E2E suite as a maintained runner, gold-case prompt
+regression set.
+
+## 4. Word → PDF converter service – **P2 (before clinics that need PDF copies of Word forms)**
+- **Status:** NOT STARTED; `forms/convert.ts` only spawns a local `soffice`; no `MEDREPORT_CONVERTER_URL` exists.
+- **Blockers:** choice of host (Fly.io London / Railway / ~£5 UK VPS) and account.
 - **Ready-to-paste prompt:**
+
+```text
+Add remote Word→PDF conversion to ClinForms. Read memory/context/hosting-and-infra.md (converter section) and src/modules/medreport/forms/convert.ts first. Plan first, then build on branch feat/converter.
+1. In forms/convert.ts add a remote path: when MEDREPORT_CONVERTER_URL is set, POST the .docx to a Gotenberg-compatible endpoint (/forms/libreoffice/convert) with a shared-secret header (MEDREPORT_CONVERTER_TOKEN), timeout ~30 s, size cap, and return the PDF bytes; keep the local soffice path and the Vercel "unavailable" behaviour as fallbacks. Update pdfConversionAvailable(), .env.example, README and the module README env table. Tests with a mocked fetch.
+2. Add deploy/converter/: Dockerfile (pinned gotenberg/gotenberg image), fly.toml for region lhr (or Railway notes), basic auth/secret check, no outbound network (document how per host), healthcheck, auto-update/patching note.
+3. Document cost and setup in docs/converter.md (what I must click/pay). Do not deploy without my OK.
+4. Checks green, commit, push; update memory files.
+```
+
+## 5. Hardening plan prompt (only if Khuram wants a written plan for the rest of §3)
+
+```text
+Plan (do not build yet) production hardening of ClinForms for a first pilot clinic with real patient data. Read CLAUDE.md, memory/projects/clinforms.md (§9–11), memory/context/compliance.md, memory/context/hosting-and-infra.md and memory/next-steps.md §6. Produce docs/hardening-plan.md: workstreams (auth/2FA/roles; Supabase London tenancy with RLS, server-side reports, encryption at rest, append-only audit, retention; partner keys/OAuth; shared rate limits; converter; TM3 export mapping; Stripe + metering; E2E suite (from scripts/e2e/); CSP; gold-case prompt regression), each with tasks, estimate in days, dependencies, what's needed from me, and a test/verification plan; plus the compliance checklist (DPA with Anthropic as sub-processor, DPIA, ICO, Cyber Essentials, Anthropic ZDR, legal review, intended-purpose statement) marking which are mine vs code. Keep the import boundaries and neutral customer wording rules. Then wait for my approval before any build.
+```
+
+---
+
+## 7. Smaller items / follow-ups
+| # | Item | Status | Needs |
+|---|---|---|---|
+| 7.1 | **Keys:** production `MEDREPORT_*` / `TM3_SIM_TOKEN` values are fresh (generated 09/10 for Vercel, in the secrets file); production data key rotated k1 → k2 on 10/10 (k1 shown in a screenshot, no data existed). **Anthropic:** Khuram to confirm the new key is in production and older keys (06/10 chat key + the second cloud key file) are deleted; spend-limited workspace + alerts | PARTLY DONE | Khuram (§A Q2) |
+| 7.2 | Dell follow-up: confirm v2 sent; introduce "ClinForms"; chase anonymised forms + notes; fix the "[7–10] days" commitment; the `/demo` video could go to him too | PENDING | Khuram answers §A Q3 |
+| 7.3 | `clinforms.co.uk` registered and live (DNS on Cloudflare); `clinforms.com` unknown; UK IPO trademark search "ClinForms" (classes 9, 42) | PARTLY DONE | Khuram (§A Q7) |
+| 7.4 | RED company check (Companies House 13547807, website, likely PMS) before Tuesday | Not done | Web access |
+| 7.5 | RED-specific or other video after the call. Generic outreach video DONE 10/10 (`marketing/clinforms/outreach-video-v1/`, recorder on `sales/outreach-video`) | – | Khuram's OK |
+| 7.6 | careconnect-mk branch: leave as archive (default) or delete; **never merge** | Undecided | Khuram |
+| 7.7 | Pricing: confirm the price list to quote (Practice £199, founding £149 × 12 + £250 setup, 5 forms, extra-form cap, VAT stance); RED price not discussed (§A Q4) | PROPOSED | Khuram |
+| 7.8 | Haiku cost test (re-run an effort sweep; `sweep.ts` was not preserved – rebuild; `scripts/dev-tools/probe-models.ts` exists) | Offered | Only if asked |
+| 7.9 | Doc fix: module README says `MAX_FORM_FILE_BYTES` 3 MB (code 2.5 MB) | Small | – |
+| 7.10 | App nits: "Draft them now" doesn't auto-retry on 429; live Meridian analysis names referrer "Meridian" | Known | – |
+| 7.11 | The Dell video's 1080p masters, clip MP3s and the sweep script were **not preserved in git** (see `memory/assets.md`) | – | – |
+| 7.12 | Gmail: save reply drafts to Dell/Daniel via the Gmail connector – only if Khuram asks | – | – |
+| 7.13 | Ask Khuram to check Vercel for an old careconnect-mk project with preview deployments of branch `claude/confident-noether-z6l7kr` ("AppStackX Reports" + `/pms-sandbox`); if one exists: protect or delete those previews and remove its `ANTHROPIC_API_KEY`/passcode env vars | Unverified | Khuram |
+| 7.14 | `assets/sales/blue-heart/README.md` heading says "(sent to Dell Baines, 9 Oct 2026)" – unconfirmed; change to "(prepared for … – sending unconfirmed)" unless Khuram confirms; then update `memory/assets.md` | Small | §A Q3 |
+
+---
+
+## Archive – done or superseded prompts (kept for reference)
+- **RED demo task** (DONE 09/10; enriched version of `memory/sources/red-physio-demo-task.md`):
 
 ```text
 Prepare the RED Physiotherapy insurer-forms demo in ClinForms (this repo, appstackx/clinforms). Read CLAUDE.md, memory/next-steps.md §1, memory/projects/red-physiotherapy.md, memory/context/insurer-forms.md and memory/sources/red-physio-demo-task.md first. The call with Daniel Vatamanu (co-founder, RED Physiotherapy, Milton Keynes/Towcester/Northampton) is booked for Tuesday (13 Oct inferred – I'll confirm the time); he asked "Which insurers do you support?".
@@ -75,33 +173,7 @@ Work on a new branch demo/red-physio from main. Push it when done; no PR.
 Use the product name ClinForms everywhere (not CareConnect, not AppStackX Reports).
 ```
 
----
-
-## 1b. Production track – `feat/production` (pointer)
-- **Branch** `feat/production` (worktree `clinforms-wt/p-integrate`, `ec76a0a` at 09/10 22:41 UTC; wave 1 + wave 2
-  integrated, includes the RED engine via `prod/w2-base`). **Contract:** `docs/production-architecture.md` on that branch
-  (plus `docs/auth.md`, `docs/database.md`). Wave branches `prod/w2-*` have their own worktrees under `clinforms-wt/`.
-- **Owner decisions it follows** (`decisions.md` D39–D41): Cloudflare D1 now (EU jurisdiction, via the authenticated
-  gateway Worker `clinforms-data`), Supabase Postgres London later (when a paying clinic signs); Better Auth (invite-only
-  clinics, required TOTP two-step); MailerSend for email; PostHog EU (org "ClinForms", project 300254), consent-gated;
-  Vercel Hobby for now; `clinforms.co.uk` live.
-- **Built there (not on `main`, not deployed):** Kysely data layer (D1 gateway / Postgres / SQLite), AES-GCM
-  encryption at rest, Better Auth identity + `/app` settings, public website + request access + legal pages, tenant
-  Studio at `/app/studio`, clinic storage API, admin/platform pages, retention cron.
-- **Next:** read the contract and that branch's own notes before touching it; merging to `main` = deploying to
-  `clinforms.co.uk` (production branch `main`) – only with Khuram's go.
-
-## 2. Vercel deploy readiness + deploy – **P1, PARTLY DONE**
-- **Goal:** ClinForms live on Vercel in London, demo mode by default, live mode behind the passcode, on `clinforms.co.uk`.
-- **Status (checked 09/10 22:53 UTC):** **`https://clinforms.co.uk` is live** on Vercel (project `clinforms`, team
-  `khuram99gmailcoms-projects`, `lhr1`; `www` → 308 apex; `/` → `/reports`). `/api/reports/v1/health` = product
-  "ClinForms", `aiMode` live, `liveAiAvailable` true, prompt `form-analysis-3` → a **pre-RED build** (as on `main`),
-  not `demo/red-physio` or `feat/production`. Plan: **Hobby for now** (Khuram; Hobby is non-commercial – revisit before a
-  paying clinic). Who deployed it and when is not recorded here.
-- **Remaining:** fresh secrets per environment (names in `~/.config/appstackx/clinforms.secrets.env`, values never in
-  git), rotated key (§7.1), and the production line (§1b) when Khuram says go. The old prompt below predates the
-  deployment – use only the parts still missing.
-- **Ready-to-paste prompt:**
+- **Vercel deploy readiness** (SUPERSEDED: clinforms.co.uk live on Vercel Hobby since 09/10; production line since 10/10):
 
 ```text
 Make ClinForms (this repo) deploy-ready for Vercel and help me deploy it. Read CLAUDE.md, memory/context/hosting-and-infra.md and the root README "Deploying" section first. Decision already made: Vercel Pro, functions in London (vercel.json lhr1). Plan first (short), then go.
@@ -116,14 +188,7 @@ Make ClinForms (this repo) deploy-ready for Vercel and help me deploy it. Read C
 Never commit or echo secrets.
 ```
 
----
-
-## 3. Clarify and build Supabase scripts (create DB / onboard / offboard clinic) – **P2**
-- **Goal:** scripts ready to provision the database and onboard/offboard a clinic, tested locally, so a pilot can start fast.
-- **Why:** Khuram 15:39 request #3; prerequisite for real tenancy.
-- **Status:** **SUPERSEDED by §1b** – `feat/production` has migrations for D1/SQLite and Supabase Postgres (parity-tested) and the admin scripts (`create-clinic`, `list-clinics`, `offboard-clinic`, `reset-two-factor`, `provision-auth`; see `docs/production-architecture.md` there). Supabase itself comes later (D39). The prompt below is historical.
-- **Blockers:** scope answer; Supabase org + personal access token (env var `SUPABASE_ACCESS_TOKEN`), London region; local Postgres/Docker for tests.
-- **Ready-to-paste prompt:**
+- **Supabase scripts** (SUPERSEDED: migrations, parity tests and admin scripts built and live on D1; Supabase later – D39):
 
 ```text
 Build Supabase provisioning and clinic onboarding scripts for ClinForms. Read CLAUDE.md, memory/context/hosting-and-infra.md (Supabase section), memory/context/compliance.md and memory/projects/clinforms.md first. Architecture (recommended, confirm with me): ONE Supabase project in London (eu-west-2), pooled multi-tenant, row-level security keyed by clinic; a dedicated project per clinic only as a premium option. The app currently has NO database code – this task is scripts + schema only, not wiring the app.
@@ -138,13 +203,7 @@ Plan first (tables, RLS model, script interfaces, test approach), wait for my OK
 Never commit tokens, passwords or connection strings.
 ```
 
----
-
-## 4. Cloudflare-for-demos question – **P3 (decision needed)**
-- **Goal:** decide whether demos/base account run on Cloudflare; if yes, prove feasibility with evidence.
-- **Why:** Khuram asked (15:39) for cost reasons. Assistant view: Vercel Pro has unlimited projects, so demo/base cost nothing extra on Vercel; Cloudflare ≈ $5/mo + 1–2 days porting and 9 known blockers (`memory/context/hosting-and-infra.md`).
-- **Status:** **RESOLVED (D39)** – the app stays on Vercel; Cloudflare is used for the database (D1 + gateway Worker) only. No Workers port. Prompt below is historical.
-- **Ready-to-paste prompt (only if Khuram wants the spike):**
+- **Cloudflare Workers spike** (RESOLVED – D39: the app stays on Vercel; Cloudflare only for D1 + gateway Worker + R2 media):
 
 ```text
 Run a time-boxed (max 3 hours) Cloudflare Workers feasibility spike for ClinForms on branch spike/cloudflare. Read memory/context/hosting-and-infra.md (Cloudflare section) and the README "Cloudflare" section first. Do not change production behaviour on main.
@@ -154,51 +213,3 @@ Run a time-boxed (max 3 hours) Cloudflare Workers feasibility spike for ClinForm
 4. Note data-location implications (Workers run globally) vs Vercel lhr1.
 5. Write docs/cloudflare-spike.md: works / breaks / effort to fix each / monthly cost comparison with sources / recommendation. Do not deploy anything without my OK. Update memory/context/hosting-and-infra.md and memory/decisions.md.
 ```
-
----
-
-## 5. Word → PDF converter service – **P3 (before real clinic use)**
-- **Goal:** PDF copies of completed Word forms in production (Vercel/Cloudflare can't run LibreOffice).
-- **Status:** NOT STARTED; `forms/convert.ts` only spawns a local `soffice`; no `MEDREPORT_CONVERTER_URL` exists.
-- **Blockers:** choice of host (Fly.io London / Railway / ~£5 UK VPS) and account.
-- **Ready-to-paste prompt:**
-
-```text
-Add remote Word→PDF conversion to ClinForms. Read memory/context/hosting-and-infra.md (converter section) and src/modules/medreport/forms/convert.ts first. Plan first, then build on branch feat/converter.
-1. In forms/convert.ts add a remote path: when MEDREPORT_CONVERTER_URL is set, POST the .docx to a Gotenberg-compatible endpoint (/forms/libreoffice/convert) with a shared-secret header (MEDREPORT_CONVERTER_TOKEN), timeout ~30 s, size cap, and return the PDF bytes; keep the local soffice path and the Vercel "unavailable" behaviour as fallbacks. Update pdfConversionAvailable(), .env.example, README and the module README env table. Tests with a mocked fetch.
-2. Add deploy/converter/: Dockerfile (pinned gotenberg/gotenberg image), fly.toml for region lhr (or Railway notes), basic auth/secret check, no outbound network (document how per host), healthcheck, auto-update/patching note.
-3. Document cost and setup in docs/converter.md (what I must click/pay). Do not deploy without my OK.
-4. Checks green, commit, push; update memory files.
-```
-
----
-
-## 6. Production hardening (pilot-ready) – **P4, ~3–5 weeks once a clinic commits**
-- **Goal:** safe to process real patient data for one pilot clinic.
-- **Scope:** auth + 2FA/MFA + roles; tenancy on Supabase London (server-side reports, encryption at rest, append-only audit, retention jobs); per-clinic partner keys / OAuth client credentials; shared rate limiting (not in-memory); converter (§5); mapping Dell's real TM3 export (needs a sample); real `Tm3Connector` only if TM3 grants partner access; Stripe billing + usage metering; shared insurer-form library; streaming drafts + background batch queue; OpenAPI spec; gold-case regression set run on every prompt change; turn the ad hoc Playwright scripts in `scripts/e2e/` (commit `32499de`) into a maintained E2E suite (fix ports/selectors, add a runner); CSP. Compliance pack in parallel: DPA naming Anthropic as sub-processor, DPIA, ICO registration, Cyber Essentials, ZDR with Anthropic, legal review (Part 35 / MedCo), intended-purpose statement.
-- **Status:** **IN PROGRESS on `feat/production`** (§1b: auth + two-step, tenancy, encrypted storage, append-only audit, retention cron, shared rate limits). Still open: converter (§5), real TM3 export mapping, billing, compliance pack.
-- **Ready-to-paste prompt:**
-
-```text
-Plan (do not build yet) production hardening of ClinForms for a first pilot clinic with real patient data. Read CLAUDE.md, memory/projects/clinforms.md (§9–11), memory/context/compliance.md, memory/context/hosting-and-infra.md and memory/next-steps.md §6. Produce docs/hardening-plan.md: workstreams (auth/2FA/roles; Supabase London tenancy with RLS, server-side reports, encryption at rest, append-only audit, retention; partner keys/OAuth; shared rate limits; converter; TM3 export mapping; Stripe + metering; E2E suite (from scripts/e2e/); CSP; gold-case prompt regression), each with tasks, estimate in days, dependencies, what's needed from me, and a test/verification plan; plus the compliance checklist (DPA with Anthropic as sub-processor, DPIA, ICO, Cyber Essentials, Anthropic ZDR, legal review, intended-purpose statement) marking which are mine vs code. Keep the import boundaries and neutral customer wording rules. Then wait for my approval before any build.
-```
-
----
-
-## 7. Smaller items / follow-ups
-| # | Item | Status | Needs |
-|---|---|---|---|
-| 7.1 | **Rotate every Anthropic key** that was in the cloud container (pasted 06/10 12:18 + a second key file the 09/10 build report mentions; check the Anthropic Console, revoke all but one fresh key); treat the old `careconnect-mk/.env.local` `MEDREPORT_LIVE_PASSCODE`, `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN` as burned – generate new values; new key only in `.env.local` + Vercel; spend-limited workspace + alerts | PENDING | Khuram |
-| 7.2 | Dell follow-up: confirm v2 sent; introduce "ClinForms"; chase anonymised forms + notes; fix the "[7–10] days" commitment | PENDING | Khuram answers §A Q5 |
-| 7.3 | Register `clinforms.co.uk` + `clinforms.com`; UK IPO trademark search "ClinForms" (classes 9, 42) | PENDING (unverified) | Khuram |
-| 7.4 | RED company check (Companies House 13547807, website, likely PMS) before Tuesday | Not done | Web access |
-| 7.5 | Generic video ("for UK physiotherapy clinics", ClinForms-branded, no Dell quotes) or RED-specific video after the call. Recorder: `scripts/medreport/video/record-demo.mjs` (needs running server `MEDREPORT_AI_MODE=auto PORT=3110 npm run start`, Playwright via `NODE_PATH=$(npm root -g)`, ffmpeg, poppler; ~10 min, ~8 live calls). Re-dub with ElevenLabs Beth on a new flow; QA timings against the SRT, add 10–20 ms fades | Offered, not requested | Khuram's OK |
-| 7.6 | careconnect-mk branch: leave as archive (default) or delete; **never merge** | Undecided | Khuram |
-| 7.7 | Pricing: confirm the price list to quote (Practice £199, founding £149 × 12 + £250 setup, 5 forms, extra-form cap, VAT stance); RED price not discussed (see §A Q7) | PROPOSED | Khuram |
-| 7.8 | Haiku cost test (re-run an effort sweep; `sweep.ts` was not preserved – rebuild; `scripts/dev-tools/probe-models.ts` exists) | Offered | Only if asked |
-| 7.9 | Doc fixes: module README says `MAX_FORM_FILE_BYTES` 3 MB (code 2.5 MB); add sandbox tests to a test script | Small | – |
-| 7.10 | App nits: "Draft them now" doesn't auto-retry on 429; live Meridian analysis names referrer "Meridian" | Known | – |
-| 7.11 | The Dell video's 1080p masters, clip MP3s and the sweep script were **not preserved in git** (cloud scratchpad only – assume gone; see `memory/assets.md`). The E2E `.cjs` scripts and dev tools ARE in git (`scripts/e2e/`, `scripts/dev-tools/`, commit `32499de`) – may need port/selector fixes (written for :3107) | – | – |
-| 7.12 | Gmail: save reply drafts to Dell/Daniel via the Gmail connector – only if Khuram asks | – | – |
-| 7.13 | Ask Khuram to check Vercel for a careconnect-mk project with preview deployments of branch `claude/confident-noether-z6l7kr` ("AppStackX Reports" + `/pms-sandbox`). If one exists: enable Deployment Protection or delete those previews, and remove/rotate `ANTHROPIC_API_KEY` and passcode env vars there, so the old-name module is not publicly reachable or spending credit | Unverified (13:52 UTC 09/10 remark, never checked) | Khuram |
-| 7.14 | `assets/sales/blue-heart/README.md` heading says "(sent to Dell Baines, 9 Oct 2026)" – unconfirmed. Change to "(prepared for Dell Baines, 9 Oct 2026 – sending unconfirmed)" unless Khuram confirms it was sent; then update `memory/assets.md` | Small | §A Q5 |
