@@ -514,7 +514,8 @@ Do **not** type the live passcode (prepared drafts only, no spend). `https://cli
 (`sim-pat-001`) → **Complete referrer's report form** → the new tab shows "Imported from Simulated TM3" → **Choose the
 referrer form** → Harrow & Pike → **Complete this form** → prepared draft → Flags tab: resolve the flags, add a paragraph
 in your own words → Preview (DRAFT) → **Approve** → dialog prefilled Sarah Reid / PH-DEMO-01 → **Approve and sign** →
-**Completed form (Word)** downloads (the PDF copy of a Word form says up front it is not available yet – §8) → **Save to
+**Completed form (Word)** downloads (in the public demo, **Completed form (PDF)** answers that a PDF copy of a Word form
+is not available yet – a 503 in the network log is expected; a clinic's Studio says so up front – §8) → **Save to
 clinic record** → "Filed to the Simulated TM3 record". The label "Simulated TM3 sandbox – demo data, not affiliated with
 TM3" is visible. Repeat the start of the flow in the browser signed in to `appstackx`: the demo still works there.
 

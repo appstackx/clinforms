@@ -21,6 +21,7 @@
  *   RUN_ID=<n> INVITE_A_FILE=<create-clinic output for clinic A> INVITE_B_FILE=<… clinic B> BASE=http://localhost:3111 \
  *     NODE_PATH=<node_modules with playwright> node scripts/e2e/tenant-full-flow.cjs
  * Clinic A: id zz-w2-e2e-<RUN_ID>, owner zz-w2-owner-a-<RUN_ID>@example.com; clinic B: owner zz-w2-owner-b-<RUN_ID>@example.com.
+ * Any clinic names work: setup reads clinic A's name from its settings page (CLINIC_A_NAME overrides it).
  * PHASE=setup|flow|isolation runs one part (state in E2E_OUT/state.json, chmod 600: the fictional test accounts'
  * passwords and authenticator keys – never printed). Screenshots and results go to E2E_OUT (default
  * .e2e-out/tenant-full-flow/, gitignored). Offboard both clinics afterwards (admin:offboard-clinic).
@@ -306,6 +307,10 @@ async function storageReport(page) {
       });
       await step("owner A: clinic details + drafting from the notes switched on", async () => {
         await owner.goto(`${BASE}/app/settings/clinic`);
+        // The name the clinic was created with (admin:create-clinic --name …): the Studio header must show it.
+        state.clinicAName = (await owner.inputValue("input[name=displayName]")).trim();
+        save();
+        assert(state.clinicAName, "the clinic has a name");
         await owner.fill("#f-address", "1 Fictional Street\nTestville");
         await owner.fill("input[name=postcode]", "MK9 2FZ");
         await owner.fill("input[name=phone]", "01234 567890");
@@ -376,7 +381,9 @@ async function storageReport(page) {
         await app.goto(`${BASE}/app/studio`);
         await app.waitForSelector("text=Completed and in-progress forms", { timeout: 30000 });
         const head = await app.locator("header").first().innerText();
-        assert(/ZZ W2 E2E Clinic A/.test(head), "clinic name in header");
+        const clinicName = process.env.CLINIC_A_NAME || state.clinicAName;
+        assert(clinicName, "clinic A's name is unknown: run PHASE=setup first or set CLINIC_A_NAME");
+        assert(head.includes(clinicName), `clinic name "${clinicName}" in header`);
         await shot(app, "04-studio-home");
       });
 
