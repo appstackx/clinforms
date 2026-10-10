@@ -123,6 +123,26 @@ describe("StudioShell", () => {
     assert.match(html, /aria-current="page"[^>]*>Reports</);
     assertTenantClean(html);
   });
+
+  it("the compact navigation (phones, tablets) wraps rather than scrolling sideways, with every page link in it", () => {
+    for (const [hooks, pathname, sections] of [
+      [{}, "/reports/batch", ["/reports", "/reports/new", "/reports/forms", "/reports/batch"]],
+      [TENANT, "/app/studio", ["/app/studio", "/app/studio/new", "/app/studio/forms"]],
+    ] as const) {
+      const html = shell(hooks, pathname);
+      const nav = html.match(/<nav aria-label="Studio \(compact\)"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? "";
+      assert.ok(nav, "the compact navigation");
+      // Nothing can be cut off: no sideways scroll, no fixed-width row; the row wraps.
+      assert.doesNotMatch(nav, /overflow-x-(auto|scroll)|\bw-max\b/);
+      assert.match(nav, /class="flex flex-wrap /);
+      const links = hrefs(nav);
+      const security = hooks === TENANT ? "/security" : "/reports/security";
+      const templates = hooks === TENANT ? "/app/studio/templates" : "/reports/templates";
+      assert.deepEqual(links, [...sections, security, templates], pathname);
+    }
+    // The current page is marked in the compact row too.
+    assert.match(shell({}, "/reports/security").match(/<nav aria-label="Studio \(compact\)"[\s\S]*?<\/nav>/)?.[0] ?? "", /aria-current="page"[^>]*>.*Security &amp; GDPR/);
+  });
 });
 
 describe("HomeScreen", () => {

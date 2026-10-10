@@ -231,6 +231,26 @@ test("at the end the picture goes back to the end card and a panel offers the ca
   assert.match(PLAYER, /focusEndPanel\.current = document\.activeElement === video;/);
 });
 
+test("no caption shows behind the end panel, and captions come back as the viewer had them when it goes", () => {
+  // Why: the end card is held inside the last line's cue (the narration's last words run past endCardAt), so a
+  // showing track would draw that line behind the panel.
+  const last = CUES[CUES.length - 1];
+  assert.ok(last.start <= DEMO_VIDEO.endCardAt && last.end > DEMO_VIDEO.endCardAt, "the end card is held inside the last cue");
+  assert.match(PLAYER, /<track ref=\{trackRef\} kind="captions"/);
+  // Hidden before the seek back to the end card (so the cue is never drawn), and only if they were showing.
+  assert.match(
+    PLAYER,
+    /const captions = trackRef\.current\?\.track;\s*if \(captions\?\.mode === "showing"\) \{\s*captions\.mode = "hidden";\s*captionsHiddenForEnd\.current = true;\s*\}\s*video\.currentTime = DEMO_VIDEO\.endCardAt;/,
+  );
+  // Shown again whenever the panel goes ("Watch again", a chapter, any play: they all clear `ended`), and only if
+  // the panel hid them: captions the viewer turned off stay off.
+  assert.match(
+    PLAYER,
+    /if \(!ended && captionsHiddenForEnd\.current\) \{\s*captionsHiddenForEnd\.current = false;\s*const captions = trackRef\.current\?\.track;\s*if \(captions\) captions\.mode = "showing";\s*\}\s*\}, \[ended\]\);/,
+  );
+  assert.equal(PLAYER.match(/\.mode = /g)?.length, 2, "the player changes the captions in these two places only");
+});
+
 /* ------------------------------------------------------------------------------------------- chapters */
 
 test("chapters start at zero, run in order and end inside the video", () => {
