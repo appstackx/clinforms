@@ -121,6 +121,7 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | ~18:50 | **Always Use HTTPS** on for zone `clinforms.co.uk` (Khuram OK). Khuram declined a test upload → key-fingerprint endpoint workflow `wf_c9f57175-279` (branch `ops/key-fingerprint`, in progress). Anthropic key: told to keep the new key and delete older ones (not a blocker). |
 | 18:58 | Read-only check: prod D1 has 1 clinic, 0 reports, 0 form files, 1 (fictional) access request; health OK. |
 | ~19:00 | End-of-session memory update (CLAUDE.md, `memory/`, `docs/go-live.md` run log). |
+| ~20:30–22:00 | Price list agreed (D64, `e5cd283`). **Live-site backup of the RED demo** (D65): branch `ops/red-live-backup` (worktree `clinforms-wt/red-backup`) – `admin:seed-demo-clinic` + `src/server/admin/demo-clinic.ts`, documented JSON import gains insurer numbers + charges; tests (SQLite/PGlite; seeded answers = the local demo's for all 4 forms); full check chain green; local E2E (Playwright, local SQLite, test owner "Sarah Reid") green. Read-only production checks: seed dry run (signing secret MATCH, nothing written), `ops:key-fingerprint` MATCH (k2). Not merged; production seed not run. |
 
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
