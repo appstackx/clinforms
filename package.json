@@ -11,7 +11,7 @@
     "test:medreport": "node --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/modules/medreport/**/*.test.ts\" \"scripts/medreport/**/*.test.ts\" \"src/sandbox/**/*.test.ts\"",
     "test:db": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"db/**/*.test.ts\" \"src/server/**/*.test.ts\" \"scripts/db/**/*.test.ts\"",
     "test:gateway": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"workers/data-gateway/test/**/*.test.ts\"",
-    "test:site": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/components/**/*.test.ts\" \"src/server/site/**/*.test.ts\" \"scripts/medreport/neutral-wording-files.test.ts\"",
+    "test:site": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/components/**/*.test.ts\" \"src/server/site/**/*.test.ts\" \"src/lib/**/*.test.ts\" \"scripts/medreport/neutral-wording-files.test.ts\"",
     "medreport:templates": "tsx scripts/medreport/build-templates.mjs",
     "medreport:forms": "node scripts/medreport/build-demo-forms.mjs",
     "medreport:eslint-boundary": "node scripts/medreport/gen-eslint-boundary.mjs",

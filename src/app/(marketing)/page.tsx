@@ -24,11 +24,13 @@ import {
   Users,
   EyeOff,
   CircleAlert,
+  Play,
 } from "lucide-react";
 import { TrackedLink } from "@/components/analytics/tracked-link";
 import { HeroIllustration } from "@/components/marketing/hero-illustration";
-import { DEMO_HREF, REQUEST_ACCESS_HREF, btn } from "@/components/marketing/nav";
+import { DEMO_HREF, DEMO_VIDEO_HREF, REQUEST_ACCESS_HREF, btn } from "@/components/marketing/nav";
 import { COMPANY, SITE_URL } from "@/lib/site";
+import { DEMO_VIDEO, formatChapterTime } from "@/lib/site/demo-video";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
 const TITLE = `${PRODUCT.name} – complete every referrer's own report form from your clinic notes`;
@@ -265,11 +267,19 @@ export default function LandingPage() {
                 Request access
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
-              <TrackedLink href={DEMO_HREF} prefetch={false} className={btn.secondary} event="demo_opened" eventProps={{ area: "marketing", cta: "hero" }}>
-                Try the demo
-              </TrackedLink>
+              <Link href={DEMO_VIDEO_HREF} className={btn.secondary}>
+                <Play className="h-4 w-4 fill-current text-teal-700" aria-hidden />
+                Watch the demo
+                <span className="font-normal tabular-nums text-slate-600">{formatChapterTime(DEMO_VIDEO.durationSeconds)}</span>
+              </Link>
             </div>
-            <p className="mt-4 text-sm text-slate-600">The demo uses fictional patients only. No sign-up needed.</p>
+            <p className="mt-4 text-sm text-slate-600">
+              Or{" "}
+              <TrackedLink href={DEMO_HREF} prefetch={false} className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900" event="demo_opened" eventProps={{ area: "marketing", cta: "hero" }}>
+                try the interactive demo
+              </TrackedLink>{" "}
+              with fictional patients. No sign-up needed.
+            </p>
           </div>
           <HeroIllustration />
         </div>

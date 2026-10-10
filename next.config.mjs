@@ -8,10 +8,15 @@
  *   injected styles and data: fonts/images, pdf.js's module worker ('self') and blob: downloads/previews.
  * - Analytics goes through /ingest on our own domain (rewrites below), so connect-src stays 'self'.
  *   A custom NEXT_PUBLIC_POSTHOG_HOST (absolute URL) is added to script-src/connect-src.
+ * - media-src: the product demo video at /demo plays from MEDIA_ORIGIN (src/lib/site/demo-video.ts, which a test
+ *   holds to this value); its captions track and poster are on our own domain ('self').
  * - skipTrailingSlashRedirect: the analytics API paths end in "/" and must not be redirected.
  */
 
 const isDev = process.env.NODE_ENV !== "production";
+
+/** Where the demo video's MP4s are served from (DEMO_VIDEO_MEDIA_ORIGIN in src/lib/site/demo-video.ts). */
+const MEDIA_ORIGIN = "https://media.clinforms.co.uk";
 
 function analyticsOrigin() {
   const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
@@ -30,6 +35,7 @@ function contentSecurityPolicy() {
     "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...(extra ? [extra] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:"],
+    "media-src": ["'self'", MEDIA_ORIGIN],
     "font-src": ["'self'", "data:"],
     "worker-src": ["'self'", "blob:"],
     "connect-src": ["'self'", ...(extra ? [extra] : [])],
@@ -80,10 +86,6 @@ const nextConfig = {
       { source: "/:path*", headers: securityHeaders },
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
     ];
-  },
-  async redirects() {
-    // A short, shareable link to the public demo (the bare domain is now the website, not the Studio).
-    return [{ source: "/demo", destination: "/reports", permanent: false }];
   },
   async rewrites() {
     return [

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage, LegalTable } from "@/components/marketing/legal-page";
-import { COMPANY, LEGAL_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
+import { COMPANY, PRIVACY_LAST_UPDATED, companyRegistrationLine } from "@/lib/site";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
 const DESCRIPTION = `How ${COMPANY.legalName} handles personal data for the ${PRODUCT.name} website, clinic user accounts and the patient information clinics process with ${PRODUCT.name}.`;
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy policy"
-      lastUpdated={LEGAL_LAST_UPDATED}
+      lastUpdated={PRIVACY_LAST_UPDATED}
       intro={
         <p>
           This policy explains how {COMPANY.legalName} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) uses personal data in connection
@@ -83,6 +83,15 @@ export default function PrivacyPage() {
           ],
           [
             <>
+              <strong>Demo video plays</strong> (only if you press play on our{" "}
+              <Link href="/demo">product demo</Link>): your IP address, browser details, the time and the file requested
+            </>,
+            "To deliver the demo video to you, keep it available and count how often it is played",
+            "Legitimate interests (showing our product to people who choose to watch it)",
+            "We keep no copy. Our media delivery provider keeps its own records of requests; its dashboard shows us about the last month of them",
+          ],
+          [
+            <>
               <strong>Access requests:</strong> clinic name, your name, work email, phone number (optional), number of sites
               and your message
             </>,
@@ -117,6 +126,22 @@ export default function PrivacyPage() {
       <p>
         We do not sell personal data, we do not use it for advertising, and we do not make decisions about anyone based
         solely on automated processing that have legal or similarly significant effects.
+      </p>
+
+      <h3 id="demo-video">The demo video</h3>
+      <p>
+        Our <Link href="/demo">product demo</Link> is stored in the EU by our media delivery provider and played from
+        media.clinforms.co.uk. Opening the page loads nothing from that provider: the poster image and the captions come
+        from this website, and the video is fetched only when you press play. That request, like any request for a web
+        page, carries your IP address and the details your browser sends with it, such as its type and language. It
+        carries no cookies, the video sets none, and we do not ask who you are.
+      </p>
+      <p>
+        The provider keeps a record of each request: the IP address, the time, the file, the browser type and the
+        country it came from. Its dashboard shows us a sample of these records for about the last month. We use them only
+        to keep the video available and to count how often it is played, and we do not try to work out who watched. If
+        you allow analytics, we also count that the video was played and played to the end, with nothing that identifies
+        you. Our lawful basis is our legitimate interest in showing our product to people who choose to watch it.
       </p>
 
       <h2 id="patient-data">4. Patient information we process for clinics</h2>
@@ -169,6 +194,10 @@ export default function PrivacyPage() {
         <li>
           <strong>Product analytics</strong> – only for visitors and users who allow analytics (EU).
         </li>
+        <li>
+          <strong>Media delivery</strong> – stores our product demo video in the EU and delivers it when a visitor presses
+          play on the demo page. It receives no clinic data and no account data.
+        </li>
       </ul>
       <p>
         The full list of sub-processors, with their locations and the safeguards that apply, is part of our DPA and is
@@ -182,6 +211,12 @@ export default function PrivacyPage() {
         adequate protection. Where a service provider processes personal data outside the UK, we make sure the transfer is
         protected as the UK GDPR requires – for example by UK adequacy regulations, the UK International Data Transfer
         Agreement or the UK Addendum to the EU Standard Contractual Clauses – and we describe these transfers in the DPA.
+      </p>
+      <p>
+        The demo video is stored in the EU. When you play it, it is delivered from our media delivery provider&rsquo;s
+        global network, usually from a data centre near you, which may be outside the UK and the EU. The provider is
+        based in the United States, and its records of requests may be kept there; as with our other providers, that
+        transfer is protected as described above.
       </p>
 
       <h2 id="rights">7. Your rights</h2>
