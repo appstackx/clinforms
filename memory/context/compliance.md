@@ -1,6 +1,7 @@
 # Compliance, GDPR and security – built vs promised
 
-**Bottom line (09/10/2026):** the demo uses **fictional data only** and stores reports in the browser. The GDPR measures Dell was shown are **commitments to put in place before any real patient data**, not built or certified. Never describe them as already in place.
+**Bottom line (10/10/2026, go-live):** the **technical** safeguards are now **built and live** on clinforms.co.uk (§5b) – but still **no real patient data**: the documents (DPA, DPIA, ICO registration, Cyber Essentials, ZDR) are **not done**, and only the internal clinic `appstackx` exists (fictional data). Describe the technical measures as built; never describe the documents/certifications as in place. Clinic data is stored in the **EU** (Cloudflare D1, EU jurisdiction), the app runs in London – the privacy policy says exactly that; don't claim UK-only storage.
+*(09/10 wording, for the record: the demo used fictional data only and stored reports in the browser; the GDPR measures Dell was shown were commitments.)*
 
 ## 1. Roles and documents (promised, not done)
 - **DPA:** clinic = **controller**, AppStackX = **processor**. Must list sub-processors, including **Anthropic** (drafting/form analysis) – required by UK GDPR even though customer materials never name AI.
@@ -42,11 +43,23 @@ DPA (clinic controller / us processor) + DPIA; UK hosting; encryption in transit
 - Neutral-wording guard test.
 - Deliberately **not** done: CSP (needs nonces), passcode-length enforcement, Unicode font in PDF fills, OCR, converter host patching/egress (operational).
 
+## 5b. BUILT and LIVE at go-live (10/10/2026)
+Invite-only accounts (Better Auth) with **required TOTP two-step** and roles (owner/admin/clinician/staff); per-clinic
+tenancy; **AES-256-GCM encryption at rest per clinic** (reports, form maps, files; key id `k2`, offline backup);
+**append-only audit log** (database triggers) visible to clinics at `/app/settings/activity`; **retention cron** (daily,
+per-clinic `retention_days`); shared (database) rate limits; drafting from notes **off for a new clinic** until its
+owner switches it on after the DPA; staff check imported notes before a record is built; consent-gated analytics
+(PostHog EU; "discard client IP" setting = Khuram's pre-flight item, not verified here); security headers (HSTS, CSP Report-Only); public demo passcode verified by the server.
+
 ## 6. NOT built yet (needed before real patient data)
-User accounts with **2FA/MFA** and roles; per-clinic tenancy in a **UK database** (Supabase London) with **encryption at rest** (+ field-level); **append-only audit log** server-side; **retention/auto-deletion** jobs; shared (non-memory) rate limits; per-clinic partner keys / OAuth client credentials; UK converter service; mapping of real TM3 exports; all documents in §1.
+UK database (Supabase London – later, D39; today D1 EU); UK converter service; mapping of real TM3 exports; email
+sending (MailerSend); CSP enforcement + report endpoint; scheduled off-site backups; Workers Paid / Vercel Pro; all
+documents in §1 (DPA, DPIA, ICO, Cyber Essentials, ZDR, legal review, intended-purpose statement); legal pages' owner
+review, company number and ICO line on the site.
 
 ## 7. Handling rules for the team (us)
 - Never commit secrets or `.env.local`; scan staged diffs (`sk-ant-` etc.) before every commit.
+- **(10/10)** Production `MEDREPORT_*`/`TM3_SIM_TOKEN` are fresh values; the production data key was rotated k1 → k2 after k1 appeared in a screenshot (no data existed). The Anthropic key confirmation is still open (keep the new key, delete older ones).
 - **Rotate EVERY Anthropic key that was ever in the cloud container:** the one pasted in chat 06/10 12:18 UTC, plus a second key file the 09/10 build report mentions ("The different key file in the scratchpad was not used"). Ask Khuram which keys exist in the Anthropic Console and revoke all but one fresh key; use a spend-limited workspace + alerts.
 - Treat `MEDREPORT_LIVE_PASSCODE`, `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY` and `TM3_SIM_TOKEN` from the cloud `careconnect-mk/.env.local` as **burned** (the passcode also appeared in chat); generate new values (e.g. `openssl rand -base64 32` each, a 24-char passcode) – Khuram does this himself, never pasted in chat. Values were never copied into memory.
 - Prospect-supplied files (Dell's anonymised forms/notes) and third-party insurer PDFs stay out of git (`/demo-assets/`). Screenshots of real emails are personal data – don't store them in the repo.

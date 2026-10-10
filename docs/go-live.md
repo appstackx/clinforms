@@ -1,13 +1,14 @@
 # ClinForms – go-live runbook (`feat/production` → clinforms.co.uk)
 
-Status: **written 10/10/2026, not executed.** Nothing in this file has been run against production. The orchestrator
-runs it after review, step by step, in order. Steps marked **[Khuram]** need the owner himself (his passwords, his
+Status: **EXECUTED on Sat 10/10/2026 – clinforms.co.uk has run the production line since 17:13 UTC** (merge `02ddfb5`,
+deployment `d4drhu49m`). See the **run log** at the end; §7.6 is still pending. The steps stay valid as the reference for
+re-checks, rollback, and the next environment. Steps marked **[Khuram]** need the owner himself (his passwords, his
 authenticator, his offline media) – an agent never types them.
 
 Read first: [`production-architecture.md`](production-architecture.md) (contract), [`database.md`](database.md) (D1,
 gateway, keys, backups), [`auth.md`](auth.md) (sign-in, clinics, admin scripts).
 
-State when this was written (re-check on the day, §1):
+State when this was written (before go-live – kept for the record; the run log has what happened):
 
 | Thing | State on 10/10/2026 |
 |---|---|
@@ -299,7 +300,7 @@ cd "$REPO" && npm run -s admin:list-clinics -- --env production                 
 | `CLINFORMS_D1_GATEWAY_URL` | `https://clinforms-data.appstackx-demos.workers.dev` | §3.2 | – |
 | `CLINFORMS_D1_GATEWAY_SECRET` (sensitive) | = the Worker's `GATEWAY_SECRET`, 48 random bytes base64url | §3.2: generated, file first, then `wrangler secret put` + Vercel | rotate: `npm run db:provision-gateway -- --env production --yes --rotate-gateway-secret`, redeploy |
 | `CLINFORMS_DATA_KEYS` (sensitive) | `{"k1":"<base64 32 bytes>"}` – **fresh** | §3.2: generated once, file first, then Vercel. **Backed up offline in §4.3** | **every report, form map and file becomes unreadable for good** |
-| `CLINFORMS_DATA_KEY_ID` (sensitive) | `k1` | §3.2 | – |
+| `CLINFORMS_DATA_KEY_ID` (sensitive) | `k1` – **`k2` in production since the 10/10 rotation** (run log) | §3.2 | – |
 | `BETTER_AUTH_SECRET` (sensitive) | 48 random bytes base64url – fresh | §4.2 `admin:provision-auth` (file first) | everyone signed out, two-step set up again, open invitations void |
 | `BETTER_AUTH_URL` | `https://clinforms.co.uk` | §4.2 `admin:provision-auth` (production only) | – |
 | `CLINFORMS_EMAIL_PROVIDER` | `none` | §4.2 `admin:provision-auth` (until a MailerSend key exists) | – |
@@ -636,20 +637,21 @@ wr d1 info clinforms-prod                                                      #
 
 ---
 
-## Run log (fill in on the day)
+## Run log – Sat 10/10/2026 (times UTC)
 
 | Item | Value |
 |---|---|
-| Date / operator | |
-| Khuram's go-ahead (time) | |
-| Release SHA (`$RUN/release.sha`) | |
-| Previous production deployment (`$RUN/previous-production.txt`) | |
-| Preview E2E run id / result | |
-| §2 migrations applied (21 tables / 3 triggers) | |
-| §3 self-test result | |
-| §4.3 offline copies confirmed by Khuram | |
-| Merge commit on `main` | |
-| Production deployment URL (`$RUN/production-deployment.txt`) | |
-| §6 platform page OK | |
-| §7 smoke tests (7.1–7.7) | |
-| Issues seen / follow-ups | |
+| Date / operator | Sat 10/10/2026. Orchestrator workflows on Khuram's Mac: go-live part 1 `wf_ef34aabc-f59` (§1–§4, incl. NEL off `29c0b39`), part 2 `wf_355748bd-515` (§5–§7); Khuram for §4.3 and §6 |
+| Khuram's go-ahead (time) | "Go live today", by 16:53 (with: no generated-voice label on `/demo`, "TM3" in the sandbox label OK, NEL off, CTA "Book a 15-minute call" OK). The runbook had suggested a quiet evening after the RED call; Khuram chose 10/10 |
+| Release SHA (`$RUN/release.sha`) | `29c0b39` (`feat/production`, 16:53); preview `clinforms-ay3kyh8cr-khuram99gmailcoms-projects.vercel.app` |
+| Previous production deployment (`$RUN/previous-production.txt`) | `https://clinforms-b8guhpqyz-khuram99gmailcoms-projects.vercel.app` (`main` `26cd447`, recorded 13:26) |
+| Preview E2E run id / result | `10101439` (13:39) on `8992d04` – passed; pre-flight **GO** on `8992d04`. The release adds the `/demo` page (`858bdfd`, `ef3ecc1`) and the NEL wording (`29c0b39`) on top |
+| §2 migrations applied (21 tables / 3 triggers) | `0001`–`0005` applied; **21 tables / 3 triggers** (re-checked read-only 18:58) |
+| §3 self-test result | Passed (16:57:32 – its `selftest.run` row under `zz-selftest` is the first production audit entry, by design); gateway `/v1/health` `{"ok":true}` |
+| §4 production env | The expected **19 names** (16:58). Data key generated as `k1`, then **rotated to `k2` at ~17:02** because `k1` was visible in a screenshot; no encrypted data existed (the self-test cleans up). The secrets file and Vercel hold only `k2` |
+| §4.3 offline copies confirmed by Khuram | Khuram's variant (decision D59): encrypted disk image `ClinForms-keys-backup-20261010.dmg` in iCloud Drive (17:08), passphrase in Apple Passwords. No USB copy. Re-make it after any change to the secrets file |
+| Merge commit on `main` | `02ddfb5` (17:10), check chain green, pushed |
+| Production deployment URL (`$RUN/production-deployment.txt`) | `https://clinforms-d4drhu49m-khuram99gmailcoms-projects.vercel.app` (created 17:13, ~3 min build) – **LIVE** |
+| §6 platform page OK | Clinic `appstackx` "AppStackX (internal)" created 17:17:46 (30-day retention); Khuram Masood joined 17:30:46, two-step on 17:32:14; `/app/platform` OK; invite file deleted |
+| §7 smoke tests (7.1–7.7) | Passed per the part-2 report (per-step output not kept in the repo). 7.2 left one fictional access request (`go-live-check@example.com`) – **delete it**. 7.5 not done: Khuram declined a test upload. **7.6 PENDING** until a clinic writes encrypted data (0 reports / 0 form files at 18:58); alternative in progress: `CRON_SECRET`-protected `/api/ops/key-fingerprint` (branch `ops/key-fingerprint`). 7.7: first scheduled retention run due 11/10 (`cron.retention.done`) |
+| Issues seen / follow-ups | Follow-up deploys: passcode verified by the server `04c18d0` (deployment `c3lbxtxy3`, 17:45; prod check: no/wrong passcode 401, cross-site 403); polish `8def25b` (`kg5bz9ny7`, 18:43: no caption behind the `/demo` end panel, Studio tabs wrap at 375 px). Always Use HTTPS on for zone `clinforms.co.uk` (~18:50, Khuram OK; media host http → 301). Open: §7.6, delete the smoke-test access request, Anthropic key confirmation (keep the new key, delete older ones), first cron run. Rollback now: Hobby rolls back only to the previous production deployment (`c3lbxtxy3` after the polish deploy); otherwise revert on `main` (§5.3) |

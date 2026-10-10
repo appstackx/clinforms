@@ -1,5 +1,11 @@
 # Assets – every deliverable and where it lives
 
+## 0. Outreach video v1 (10/10/2026) – outside git
+| Path | What | Notes |
+|---|---|---|
+| `~/Projects/Appstackx/marketing/clinforms/outreach-video-v1/` | **ClinForms 1:30 demo** for cold outreach: `ClinForms-demo.mp4` (master, 12.1 MB), `ClinForms-demo-email.mp4` (7.05 MB), `ClinForms-demo.srt`, `ClinForms-demo-poster.png`, `ClinForms-teaser.gif` (2.97 MB) / `.mp4`, `README.md` (internal usage notes – don't forward) | Fictional patient Megan Hart on the fictional Harrow & Pike form; voice Beth; ends "Book a 15-minute call · clinforms.co.uk · khuram@appstackx.co.uk". Working files in `../outreach-video-v1-src/` (`README-internal.md`). Recorder/mixer scripts on branch `sales/outreach-video` (not merged) |
+| `https://clinforms.co.uk/demo` | The same cut on the public site (no burned-in captions; WebVTT track, chapters, transcript) | MP4s in R2 `clinforms-media` at `media.clinforms.co.uk/demo/2026-10-10/` (never overwritten – a new cut gets a new dated folder); page source `src/lib/site/demo-video.ts` |
+
 ## 1. In git (`appstackx/clinforms` `main`)
 | Path | What | Notes |
 |---|---|---|

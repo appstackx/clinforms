@@ -1,6 +1,6 @@
 # History – dated timeline and lessons learned
 
-All times **UTC** (UK BST = UTC+1). Cloud session ran Tue 06/10 – Fri 09/10/2026; Thu 08/10 had no activity. From 09/10 ~16:00 the work moves to the Claude desktop app.
+All times **UTC** (UK BST = UTC+1). Cloud session ran Tue 06/10 – Fri 09/10/2026; Thu 08/10 had no activity. From 09/10 ~16:00 the work moves to the Claude desktop app; production go-live Sat 10/10 17:13.
 Add new dated entries at the bottom of §1 (chronological) as work continues.
 
 ## 1. Timeline
@@ -92,6 +92,36 @@ Times corrected to UTC from the commits (an earlier write-up of this section use
 | 22:53 | Checked: `https://clinforms.co.uk` live on Vercel with a pre-RED build (health: ClinForms, `form-analysis-3`, live available). |
 | ~22:55–23:20 | **Call pack** `docs/demo-red-physio.md` (support matrix, Monday/Tuesday checklist, 10-minute script with click path and rehearsal timings, labels to frame, honest answers, questions for Daniel, fallbacks) + memory update (D39–D46, insurer classification, production pointer). `demo:check` OK (7 maps, 4 answer files, 6 form files). |
 
+### Sat 2026-10-10 (desktop – production line, outreach video, go-live)
+Times UTC from commits, file times, the production audit log and Vercel. Workflow ids are desktop workflow runs.
+| Time | Event |
+|---|---|
+| 23:36 (09/10) | `demo/red-physio` merged into the wave-2 line (`62b8fba`, `342cd7e`) – demo regression check. |
+| 08:09–10:03 | **Wave 2b fixes** on `feat/production` (workflow `production-wave2b`, `wf_d7a62c19-583`): clinic records stay with their clinic and member, approved records protected, signer's own voice (`f6ee008`); first run, wording, phone set-up (`1743971`); neutral file names, work-queue home, truthful PDF copy, **drafting opt-in** (`9ed9460` 09:46); gap wording (`3bc73d9`); work-queue copy (`7ca20f3`). |
+| 09:29 | `26cd447` on `main` (deployed as `b8guhpqyz`): the RED call runs from the **frozen folder** `~/Projects/Appstackx/clinforms-demo` (tag `red-demo-2026-10-13` = `3521401`). |
+| ~09:45 | Claude restarted; session resumed from memory. |
+| ~09:55 | **Outreach video** workflow started (`wf_93c356a2-a97`, worktree `clinforms-wt/video`, branch `sales/outreach-video`). |
+| 10:43–10:47 | **Wave 3 – notes import** merged (`ecf1f74`, `a33804e`, `05c5b31`): notes in any layout, staff check before the record is built. |
+| 12:45–12:57 | Fix wave 3 (`15dba09`, `7cf6f24`): notes reader on realistic clinic exports, linear time and upload limits, consent for uploads, store growth counted. |
+| 13:23 | `b475e25` **go-live runbook** `docs/go-live.md`. 13:26 pre-go-live production recorded (`b8guhpqyz`). |
+| 13:37–13:39 | `8992d04` pre-flight fix; tenant E2E on the **preview** database (run id `10101439`) → **pre-flight GO on `8992d04`**. |
+| before 14:52 | R2 bucket `clinforms-media` (EU) + custom domain `media.clinforms.co.uk` set up (CORS from the apex/www only). |
+| 14:52 | **`/demo` page** merged (`4745fc0`, `858bdfd`; workflow `wf_f696f1e7-947`). |
+| ~15:40 | **Outreach video FINAL** (1:30; first cut superseded – it implied a TM3 link) in `marketing/clinforms/outreach-video-v1/`. |
+| 15:45 | `ef3ecc1` `/demo` review fixes (end panel over the end card, stall fallback, focus, privacy wording, host-only cookies, no analytics batching). |
+| ≤16:53 | **Khuram: go live today**; no generated-voice label; "TM3" in the sandbox label OK in the video; NEL off; CTA "Book a 15-minute call" OK (D53–D57). |
+| 16:53 | `29c0b39` NEL off + privacy wording = **release SHA**; preview `ay3kyh8cr`. |
+| ≤16:58 | **Go-live part 1** (`wf_ef34aabc-f59`; also made `29c0b39`): §2 prod D1 migrations (21 tables / 3 triggers), §3 gateway `clinforms-data` deployed + secrets, **self-test passed 16:57:32**, §4 Vercel production env (the expected 19 names, 16:58). Stopped at the §4.3 backup gate. |
+| ~17:02 | Data key **k1 seen in a screenshot → rotated to k2** (no encrypted data existed). 17:08 encrypted backup `ClinForms-keys-backup-20261010.dmg` in iCloud Drive (passphrase in Apple Passwords). |
+| 17:10 | **Go-live part 2** (`wf_355748bd-515`): merge `02ddfb5` (= `feat/production` `29c0b39`), check chain, push `main`. |
+| **17:13** | **Production deployment `d4drhu49m` → clinforms.co.uk LIVE** (public site, sign-in, clinic Studio, database). Rollback target `b8guhpqyz`. |
+| 17:17–17:32 | Internal clinic **`appstackx`** created (17:17:46, 30-day retention); Khuram accepted the invitation (17:30:46) and set up two-step (17:32:14); `/app/platform` works; invite file deleted. Smoke tests passed; a fictional request-access row stored (go-live §7.2). |
+| 17:15–17:43 | **Passcode server check** (`wf_c2984ddf-5d2`, branch `fix/passcode-check`): `a09c556`, review fixes `b31f15d`, merge `04c18d0`; deployment `c3lbxtxy3` 17:45; verified on prod later (no/wrong passcode 401, cross-site 403). |
+| 18:38–18:43 | **Polish** (`wf_f9fab229-eb3`, branch `fix/polish-1`): no caption behind the `/demo` end panel, Studio tabs wrap at 375 px (`e93c287`, merge `8def25b`); deployment `kg5bz9ny7` 18:43. |
+| ~18:50 | **Always Use HTTPS** on for zone `clinforms.co.uk` (Khuram OK). Khuram declined a test upload → key-fingerprint endpoint workflow `wf_c9f57175-279` (branch `ops/key-fingerprint`, in progress). Anthropic key: told to keep the new key and delete older ones (not a blocker). |
+| 18:58 | Read-only check: prod D1 has 1 clinic, 0 reports, 0 form files, 1 (fictional) access request; health OK. |
+| ~19:00 | End-of-session memory update (CLAUDE.md, `memory/`, `docs/go-live.md` run log). |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
@@ -107,6 +137,11 @@ Times corrected to UTC from the commits (an earlier write-up of this section use
 | `wwgng3om1` | 09/10 13:21–13:48 | Voice-over | v1; QA fail; v2 by hand |
 | `wumy1kkzg` | 09/10 14:16–14:54 | Extract standalone app | Verified |
 | `wk7ledeyk` | 09/10 14:55–15:07 | Rebrand to ClinForms | `e799c51` |
+
+Desktop workflow runs, 10/10 (journals in the desktop app, not in git): `wf_d7a62c19-583` production wave 2b + wave 3 +
+runbook; `wf_93c356a2-a97` outreach video; `wf_f696f1e7-947` `/demo` page; `wf_ef34aabc-f59` go-live part 1 (§1–§4);
+`wf_355748bd-515` go-live part 2 (§5–§7); `wf_c2984ddf-5d2` passcode check; `wf_c9f57175-279` key fingerprint;
+`wf_f9fab229-eb3` polish + this memory update.
 
 ## 3. Lessons learned / gotchas
 1. **Re-read the prospect's exact words and stop early when the requirement changes.** Dell's second email made the generic-report build wrong; pausing immediately (and keeping the reusable slices) saved hours.
@@ -126,3 +161,11 @@ Times corrected to UTC from the commits (an earlier write-up of this section use
 15. Recording artefacts to avoid (rules in `scripts/medreport/video/README.md`): tooltips over content, Chrome "Debugger paused" infobar on new tabs (hard-cut from the click), toasts under captions, "Preview unavailable" in background tabs.
 16. Proxy-blocked research = search snippets only; mark such facts [C]/[I]/unverified and re-check at source before quoting to customers.
 17. `tsconfig` has no `target` → `Array.from` instead of spreading Sets/Maps. pdfjs worker: use the `ui/preview-libs.ts` recipe.
+18. **Screenshots leak secrets.** A data key appeared in a screenshot on go-live day → rotated before any data used it.
+    Never show a secret value in a terminal or browser (pipe values on stdin, `pbcopy` without printing, list names only).
+19. **Push to `main` = production deploy** since 10/10. Run the full check chain on the merge first; Vercel Hobby rolls
+    back only to the immediately previous production deployment.
+20. The `/demo` media are CORS-limited to the apex/www, so the video does not play on preview or local origins – test
+    with `scripts/e2e/demo-video.cjs` `REAL_MEDIA=1`.
+21. Freeze a sales demo as a tag + its own worktree (`clinforms-demo`) before shipping risky changes to `main`; the
+    go-live then could not disturb the RED call.

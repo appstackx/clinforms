@@ -1,8 +1,18 @@
 # ClinForms – product and technical deep dive
 
 **Also called:** AppStackX Reports (old name, 06–09/10/2026), "the module", `medreport` (code).
-**Repo:** `github.com/appstackx/clinforms` (private), branch `main`: `e799c51` (2026-10-09 15:07 UTC, 363 files, the app) → `7f6fcf8` (15:48, Dell video assets) → `32499de` (16:16, e2e scripts + dev tools) → memory-pack commits. Product code unchanged since `e799c51`.
-**Status (2026-10-09):** demo-grade, fully verified, **not deployed**. Tagline: "Complete every referrer's own report form from your clinic notes".
+**Repo:** `github.com/appstackx/clinforms` (private). `main` = production: `e799c51` (09/10 15:07, the extracted app) → RED engine (`26cd447`, 10/10 09:29) → **go-live merge `02ddfb5`** (10/10 17:10; `feat/production` `29c0b39`) → `04c18d0` (passcode server check) → `8def25b` (polish, 18:39).
+**Status (2026-10-10 ~19:00 UTC):** **LIVE on https://clinforms.co.uk since 17:13 UTC** – public site, invite-only clinic sign-in, clinic Studio with encrypted storage, plus the public demo. No customer clinic yet (internal clinic `appstackx` only), no real patient data. Tagline: "Complete every referrer's own report form from your clinic notes".
+
+## 0. Live production (10/10) – summary
+Detail: `CLAUDE.md` status snapshot, `memory/context/hosting-and-infra.md`, `docs/production-architecture.md`, `docs/go-live.md`.
+- **Public:** `/` landing; `/demo` (1:30 video, R2 `media.clinforms.co.uk`, chapters, captions, transcript; CTA "Book a 15-minute call" → `/request-access`); `/privacy` `/cookies` `/terms` `/security` (drafts); `/request-access` (stored in D1, no notification); consent banner, PostHog EU 300254 after consent only.
+- **Sign-in:** `/login`, `/two-factor`, `/accept-invite`, `/reset-password` – Better Auth, invite-only, TOTP required; email off (links by hand).
+- **Clinic area `/app`:** overview + set-up checklist; settings clinic / members (signing details: name, HCPC, may sign) / security / api-keys; activity log (CSV, ids only); **Studio `/app/studio`** – forms library, notes import (any layout, staff-checked), drafting (OFF until the owner switches it on), review, approval, final files; server storage encrypted per clinic (D1 via gateway `clinforms-data`).
+- **Platform:** `/app/platform` (Khuram only): clinics, platform actions, access requests. Clinic admin is script-based (`admin:create-clinic`, `admin:offboard-clinic`, `admin:reset-two-factor`, `admin:list-clinics`).
+- **Public demo:** `/reports`, `/pms-sandbox` unchanged in spirit (browser storage, fictional data, recorded drafts); live drafting only after `POST /api/reports/v1/passcode/check` accepts the passcode.
+- **Ops:** retention cron daily 03:17 UTC; health `/api/reports/v1/health` (anonymous: `model: "drafting-service"`, empty `promptVersion`, `pdfFromWord: false`).
+- **Known limits at go-live:** `docs/go-live.md` §8 (no Word→PDF converter, no PMS connector, email off, Hobby, Workers Free, legal drafts, no company number/ICO line, CSP Report-Only, no "Organise these notes").
 
 Authoritative technical references in the repo (don't duplicate – read them):
 - `src/modules/medreport/README.md` – folder map, import rules, conventions/gotchas, env vars, "Model and effort" sweep tables, Report API, sim API, connector interface, Revision 2 (forms), Revision 3 (security/product fixes), demo data.
@@ -37,13 +47,13 @@ Node **22** (`.nvmrc`; pdfjs-dist 6 needs ≥22.13), next **14.2.35** (App Route
 **Gotcha:** `tsconfig.json` has no `target` → never spread / `for…of` a Set/Map/typed array (TS2802); use `Array.from`.
 **Gotcha:** never `workerSrc = new URL(…, import.meta.url)` for pdfjs (breaks Next 14 build); use the recipe in `ui/preview-libs.ts`.
 
-## 5. Where state lives (demo-grade)
-Server is **stateless, no database**. Browser: reports `medreport.report.<id>` (localStorage), forms maps `medreport.forms`, form files in IndexedDB `medreport-forms` (no export/import for form maps – only reports have `exportCase`/`importCase`; a map confirmed in one browser is not in another), passcode in sessionStorage, sandbox filed documents `tm3sim.documents` + IndexedDB. Single tenant `demo` (`tenantId` already in every type/token). In-memory per instance: live-call rate limiter (6/min), passcode-failure counters (5/client, 30/instance per 10 min), launch-token `jti`s.
+## 5. Where state lives
+**Clinics (`/app/studio`, since 10/10):** server storage – D1 `clinforms-prod` via the gateway, reports/maps/files AES-256-GCM per clinic, append-only audit log, retention per clinic. **Public demo (`/reports`) – as below (demo-grade):** server is stateless for the demo. Browser: reports `medreport.report.<id>` (localStorage), forms maps `medreport.forms`, form files in IndexedDB `medreport-forms` (no export/import for form maps – only reports have `exportCase`/`importCase`; a map confirmed in one browser is not in another), passcode in sessionStorage, sandbox filed documents `tm3sim.documents` + IndexedDB. Single tenant `demo` (`tenantId` already in every type/token). In-memory per instance: live-call rate limiter (6/min), passcode-failure counters (5/client, 30/instance per 10 min), launch-token `jti`s.
 
 ## 6. AI configuration
 - Default model **`claude-sonnet-5-5`** (`DEFAULT_AI_MODEL`, `config.server.ts`); override `MEDREPORT_MODEL` from `AI_MODEL_ALLOW_LIST`: `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-opus-4-8`. Fable 5.1 excluded (30-day retention, ~5× price). Re-run the effort sweep before switching.
 - Effort: analysis **low** (`DEFAULT_ANALYSIS_EFFORT`), drafting **medium** (`DEFAULT_LIVE_EFFORT`) – always explicit (Sonnet 5.5 API default is high).
-- Prompt versions (code is authoritative): drafting forms **`forms-7`**, form analysis **`form-analysis-3`**, built-in templates **`"2"`**, rules analysis `rules-1`. (The in-chat summary said forms-6 – stale.) Bump the version on any prompt/input change, then re-record demo data.
+- Prompt versions (code is authoritative; checked 10/10): drafting forms **`forms-7`**, form analysis **`form-analysis-4`** (since the RED engine; recorded analyses keep `form-analysis-3`), built-in templates **`"2"`**, rules analysis **`rules-2`**. Bump the version on any prompt/input change, then re-record demo data.
 - Request: `client.beta.messages.parse` + `betaZodOutputFormat`; `betas: ["server-side-fallback-2026-07-01"]`, `fallbacks: "default"`; `max_tokens` 16000; **no `thinking` param**, no temperature, no prefill, no API Citations (our own `sourceIds` instead); `cache_control` on system / episode / outline blocks; SDK timeout 50 s (`LIVE_TIMEOUT_MS`), routes `maxDuration = 60`; `maxRetries: 0`. `ai/claude.ts` is the only file that calls Claude.
 - Cost measured 09/10: completed form **$0.10–0.12** on Sonnet (Opus was $0.23–0.26), ~2× faster; reading a new form **$0.08–0.14** once; ~**$15/month** at 125 forms. Testing spend ~$6 reported (closer to ~$10 on 09/10 – unverified).
 - Customer-visible engine name is `publicEngineName()` = `"drafting-service"`; real model only in server logs.
@@ -67,21 +77,21 @@ Server is **stateless, no database**. Browser: reports `medreport.report.<id>` (
 1. Forms are fictional look-alikes; no real MLC/insurer form tested yet.
 2. Flat/scanned PDFs are best effort; scanned forms are the biggest risk; scanned notes PDFs are refused (no OCR).
 3. TM3 is simulated; "no duplication" today = TM3 export + one upload. A direct link depends on TM3 granting partner access to clinical notes (unconfirmed).
-4. GDPR measures are commitments, not built (see `memory/context/compliance.md`).
-5. No login; single `demo` tenant; audit trail in the browser.
+4. GDPR: technical measures now built (2FA, tenancy, encryption at rest, audit, retention – 10/10); the documents (DPA, DPIA, ICO, Cyber Essentials) are still commitments (see `memory/context/compliance.md`).
+5. *(Public demo only)* no login, single `demo` tenant, audit trail in the browser. Clinics sign in at `/login`.
 6. Word→PDF needs a converter service in production.
 7. Portal-based insurers (Vitality, WPA, domestic AXA Health likely) – ClinForms fills documents; it does not submit into portals (offer copy-ready answers).
 8. PDF fills use standard Helvetica (WinAnsi) – characters like "→", "≥" are reported, not printed (`@pdf-lib/fontkit` not installed).
 Size caps: `MAX_FORM_FILE_BYTES` = **2.5 MB** (module README says 3 MB – stale), `MAX_FORM_REQUEST_BYTES` 4,400,000, `MAX_TEMPLATE_DOCX_BYTES` 3 MB.
 
 ## 10. Known code/doc gaps
-- Sandbox tests (26) are not in the `test:medreport` glob (run separately).
+- *(Fixed since `demo/red-physio`)* the sandbox tests now run inside `test:medreport`; production adds `test:db`, `test:auth`, `test:site`, `test:gateway`.
 - The Playwright E2E scripts were copied into git late on 09/10 (commit `32499de`): `scripts/e2e/*.cjs` (ad hoc, not part of `npm test`; written for port 3107 – expect to fix selectors/ports; outputs to gitignored `.e2e-out/`; `LIVE=1` reads the passcode from `.env.local`). `run-all.sh`/`rebuild.sh` were not copied. Dev tools in `scripts/dev-tools/` (`probe-models.ts`, `credit-poll.ts`, `diff-recorded.ts`, `flagcheck.ts`, `outline.ts`). The model/effort **sweep script (`sweep.ts`) was not preserved** – results are in the module README "Model and effort".
-- No CSP (needs nonces), passcode length not enforced, no Unicode font in PDF fills, no OCR.
+- CSP is Report-Only with no report endpoint yet; passcode minimum 16 characters enforced since `04c18d0`; no Unicode font in PDF fills, no OCR.
 - Production-secret rule only recognises Vercel (`VERCEL_ENV=production`).
 - `LIVE_TIMEOUT_MS` 50 s assumes `maxDuration` 60.
 - No remote converter support (`MEDREPORT_CONVERTER_URL` does not exist yet).
 - Video recorder (`scripts/medreport/video/record-demo.mjs`) now outputs ClinForms branding but has not been re-run since the rename.
 
-## 11. Roadmap (agreed direction, not started)
-Hosting on Vercel Pro London; Supabase London pooled multi-tenant with RLS; auth + 2FA + roles; Word→PDF converter (Gotenberg/LibreOffice, UK); shared library of ready-mapped insurer forms ("a Bupa or Aviva form mapped once works for every clinic" – the moat); Stripe billing + usage metering; mapping Dell's real TM3 export; real TM3 connector only if TM3 allows; other PMS (Cliniko); OpenAPI spec; gold-case regression set on every prompt change; compliance pack. Estimate: **~3–5 weeks** to pilot-ready once a clinic commits (assistant, 09/10 13:52). Prompts in `memory/next-steps.md`.
+## 11. Roadmap
+*Done 10/10:* auth + 2FA + roles, tenancy, encryption at rest, audit, retention, public site (on D1 EU, Vercel Hobby). *Next (`memory/next-steps.md` §2):* Vercel Pro; Supabase London when a clinic pays; Word→PDF converter (Gotenberg/LibreOffice, UK); shared library of ready-mapped insurer forms ("a Bupa or Aviva form mapped once works for every clinic" – the moat); Stripe billing + usage metering; mapping Dell's real TM3 export; real TM3 connector only if TM3 allows; other PMS (Cliniko); OpenAPI spec; gold-case regression set on every prompt change; compliance pack. Estimate: **~3–5 weeks** to pilot-ready once a clinic commits (assistant, 09/10 13:52). Prompts in `memory/next-steps.md`.
