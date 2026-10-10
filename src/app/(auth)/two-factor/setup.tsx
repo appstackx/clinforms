@@ -47,6 +47,13 @@ export function TwoFactorSetup({ email, enabled }: { email: string; enabled: boo
             </code>
             <CopyButton value={start.manualKey.replace(/\s+/g, "")} label="Copy key" />
           </div>
+          {/* On the phone itself (fix wave 2): the authenticator app opens the set-up link; no second device needed. */}
+          <a
+            href={start.uri}
+            className="flex h-10 w-full items-center justify-center rounded-lg border border-teal-700 px-4 text-sm font-semibold text-teal-800 hover:bg-teal-50 sm:hidden"
+          >
+            Open in the authenticator app on this phone
+          </a>
         </section>
 
         <section className="space-y-2">

@@ -24,6 +24,7 @@ import "server-only";
 import type { FormAnalysisStep, FormOutlineSummary } from "../api/contract";
 import { DEMO_TENANT_ID } from "../config.public";
 import { createId } from "../core/ids";
+import { REFERRER_TO_BE_CONFIRMED } from "../core/labels";
 import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
 import { buildDocxOutline } from "../forms/docx-outline";
@@ -107,7 +108,7 @@ function referrerOf(input: AnalyseFormFileInput, output: Pick<AnalysisOutput, "r
   if (input.referrer) return input.referrer;
   const name = output?.referrerName.trim();
   const type: ReferrerType = output?.referrerType ?? "other";
-  return { name: name || "Referrer to be confirmed", type };
+  return { name: name || REFERRER_TO_BE_CONFIRMED, type };
 }
 
 function newForm(input: AnalyseFormFileInput, parsed: ParsedForm, fields: FormField[], analysis: FormAnalysis, meta: { title: string; referrer: ReferrerInfo; versionLabel?: string; sampleId?: string }): FormDefinition {
@@ -153,6 +154,8 @@ function asProposal(input: AnalyseFormFileInput, stored: FormDefinition, analysi
 
 export async function analyseFormFile(input: AnalyseFormFileInput): Promise<AnalyseFormFileResult> {
   const at = (input.now ?? new Date()).toISOString();
+  // A clinic's own upload (fix wave 2): production wording, never "demo" (core/wording.ts analysis.clinic*).
+  const clinic = Boolean(input.tenantId) && input.tenantId !== DEMO_TENANT_ID;
   const trace: FormAnalysisStep[] = [];
 
   let t = Date.now();
@@ -187,8 +190,11 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       // A stored map keeps its own mode: a pre-written map (e.g. of a local demonstration form) is never
       // labelled as a recorded reading.
       const prewritten = recorded.mode === "demo_prewritten";
+      const recordedOn = recorded.recordedAt.slice(0, 10).split("-").reverse().join("/");
       const detail = !prewritten
-        ? WORDING.server.analysis.recordedDetail(recorded.recordedAt.slice(0, 10).split("-").reverse().join("/"), recorded.model)
+        ? clinic
+          ? WORDING.server.analysis.clinicRecordedDetail(recordedOn)
+          : WORDING.server.analysis.recordedDetail(recordedOn, recorded.model)
         : (await findSampleBySha256(input.file.sha256))
           ? WORDING.server.analysis.prewrittenDetail
           : WORDING.server.analysis.uploadedPrewrittenDetail;
@@ -269,7 +275,9 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
         label: "Proposed the form map",
         status: live.lenient ? "warning" : "ok",
         ms: Date.now() - t,
-        detail: WORDING.server.analysis.liveDetail({ model: live.model, chunks: live.chunks, effort: live.effort, questions: live.output.fields.length }),
+        detail: clinic
+          ? WORDING.server.analysis.clinicLiveDetail(live.output.fields.length)
+          : WORDING.server.analysis.liveDetail({ model: live.model, chunks: live.chunks, effort: live.effort, questions: live.output.fields.length }),
       });
     } catch (err) {
       if (!(err instanceof DraftGenerationError) || err.code === "LIVE_AI_UNAVAILABLE") throw err;
@@ -290,7 +298,7 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
     detail: `${checked.fields.length} questions kept${checked.repaired ? `, ${checked.repaired} corrected` : ""}${checked.dropped ? `, ${checked.dropped} left out` : ""}`,
   });
   if (!live && !liveError) {
-    trace.splice(1, 0, { label: "Proposed the form map", status: "ok", ms: 0, detail: WORDING.server.analysis.rulesOnlyTrace });
+    trace.splice(1, 0, { label: "Proposed the form map", status: "ok", ms: 0, detail: clinic ? WORDING.server.analysis.clinicRulesOnlyTrace : WORDING.server.analysis.rulesOnlyTrace });
   }
 
   const warnings = [

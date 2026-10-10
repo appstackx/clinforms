@@ -114,6 +114,8 @@ export interface HostHooks {
   accountHref?: string;
   /** Tenant mode: sign the member out (the host redirects). */
   onSignOut?(): Promise<void> | void;
+  /** Tenant mode (fix wave 2): where a clinic asks for help (e.g. setting up its practice system's notes layout). */
+  supportEmail?: string;
 }
 
 const HostHooksContext = createContext<HostHooks>({});

@@ -72,7 +72,7 @@ function hrefs(html: string): string[] {
 }
 
 /** Demo-only wording a clinic's Studio must never show. */
-const DEMO_ONLY = /\bdemo\b|demonstration|fictional|simulated|sandbox|PH-DEMO|Sarah Reid|Priya Nair|In this demo|passcode/i;
+const DEMO_ONLY = /\bdemo\b|demonstration|fictional|simulated|sandbox|PH-DEMO|Sarah Reid|Priya Nair|In this demo|passcode|\bTM3\b/i;
 
 function assertTenantClean(html: string): void {
   const visible = text(html);
@@ -233,5 +233,60 @@ describe("TENANT_COPY", () => {
       assert.doesNotMatch(s, DEMO_ONLY, s);
       for (const re of BANNED_TERM_PATTERNS) assert.ok(!re.test(s), `${re} in "${s}"`);
     }
+  });
+});
+
+describe("fix wave 2: a clinic's Studio names no practice system it is not linked to", () => {
+  it("field editor and source chips: 'From the patient record' / 'Record value' in tenant mode, TM3 in the demo", async () => {
+    const { FieldEditor } = await import("./components/forms/field-editor");
+    const { FillSourceChip } = await import("./components/shared/ui-bits");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const field = HARROW_PIKE_FORM.fields.find((f) => f.fillSource.kind === "registration");
+    assert.ok(field);
+    const editor = () =>
+      createElement("div", null, [
+        createElement(FieldEditor, { key: "e", field, formKind: HARROW_PIKE_FORM.kind, onChange: () => {}, onRemove: () => {}, picking: false, onTogglePick: () => {} }),
+        createElement(FillSourceChip, { key: "c", kind: "registration" }),
+      ]);
+    const tenant = render(editor(), TENANT, "/app/studio/forms/frm_1");
+    assertTenantClean(tenant);
+    assert.match(text(tenant), /From the patient record/);
+    assert.match(text(tenant), /Record value/);
+    const demo = text(render(editor(), {}, "/reports/forms/frm_1"));
+    assert.match(demo, /From TM3 registration/);
+    assert.match(demo, /TM3 value/);
+  });
+
+  it("the home page shows no practice-system tile in tenant mode", () => {
+    assertTenantClean(render(createElement(HomeScreen), TENANT, "/app/studio"));
+  });
+});
+
+describe("fix wave 2: the voice of a clinic's drafts", () => {
+  it("tenantAuthor: the member who can sign, else nobody (third-person drafts)", async () => {
+    const { tenantAuthor } = await import("./screens/new/new-report-screen");
+    assert.deepEqual(tenantAuthor({ name: "Sam Patel", hcpc: "PH123456", canSign: true, role: "clinician", jobTitle: "Physiotherapist" }), {
+      name: "Sam Patel",
+      hcpc: "PH123456",
+      role: "Physiotherapist",
+    });
+    assert.equal(tenantAuthor({ name: "Jo Reception", role: "staff", canSign: false }), null);
+    assert.equal(tenantAuthor({ name: "Olivia Owner", role: "owner", canSign: true }), null, "no HCPC number");
+    assert.equal(tenantAuthor({ name: "Nia Lane", role: "clinician", hcpc: "PH9", canSign: false }), null, "may not sign");
+    assert.equal(tenantAuthor(undefined), null);
+  });
+
+  it("generateReport: author null drafts with no author (third person), the clinician still fills clinician fields", async () => {
+    const { createTargetReport } = await import("./components/new/generate");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { getDemoBundle } = await import("../../../../scripts/medreport/dev-bundles");
+    const bundle = getDemoBundle("megan-hart");
+    const data = { bundle, computedFacts: [] };
+    const none = createTargetReport({ data, target: { kind: "form", form: HARROW_PIKE_FORM }, author: null });
+    assert.equal(none.author, undefined);
+    const sam = { name: "Sam Patel", hcpc: "PH123456" };
+    assert.deepEqual(createTargetReport({ data, target: { kind: "form", form: HARROW_PIKE_FORM }, author: sam }).author, sam);
+    // Default (the demo): the treating clinician is the author, as before.
+    assert.equal(createTargetReport({ data, target: { kind: "form", form: HARROW_PIKE_FORM } }).author?.name, "Sarah Reid");
   });
 });

@@ -14,6 +14,7 @@
  */
 import { useMemo, type ReactNode } from "react";
 import { track } from "@/components/analytics";
+import { COMPANY } from "@/lib/site";
 import { HostHooksProvider, type HostHooks, type StudioClinic, type StudioMember } from "@/modules/medreport/ui/host-hooks";
 import { signOutAndReload } from "../session-forms";
 
@@ -28,6 +29,7 @@ export function tenantHooks(clinic: StudioClinic, member: StudioMember, options:
     clinic,
     member,
     accountHref: "/app",
+    supportEmail: COMPANY.contactEmail,
     track: (event, props) => track(event, { ...props, area: "app" }),
     ...(options.onSignOut ? { onSignOut: options.onSignOut } : {}),
   };

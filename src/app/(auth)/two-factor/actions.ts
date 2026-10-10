@@ -14,7 +14,7 @@ import { getServerSession, hasTwoFactor, requestHeaders, throttle } from "@/serv
 export type SetupState =
   | { status: "idle" }
   | { status: "error"; error: string }
-  | { status: "scan"; qr: string; manualKey: string; backupCodes: string[] }
+  | { status: "scan"; qr: string; manualKey: string; backupCodes: string[]; /** otpauth:// link (a phone opens it in its authenticator app). */ uri: string }
   | { status: "done" };
 
 export type ConfirmState = { status: "idle" } | { status: "error"; error: string };
@@ -30,7 +30,7 @@ export async function startSetup(_prev: SetupState, form: FormData): Promise<Set
   try {
     const result = await getAuth().api.enableTwoFactor({ body: { password }, headers: requestHeaders() });
     if (result.method !== "totp" || !("totpURI" in result)) return { status: "error", error: ACCOUNT_ERRORS.generic };
-    return { status: "scan", qr: otpauthQrDataUri(result.totpURI), manualKey: manualEntryKey(result.totpURI), backupCodes: result.backupCodes };
+    return { status: "scan", qr: otpauthQrDataUri(result.totpURI), manualKey: manualEntryKey(result.totpURI), backupCodes: result.backupCodes, uri: result.totpURI };
   } catch (err) {
     return { status: "error", error: authErrorMessage(err, "two_factor_start") };
   }

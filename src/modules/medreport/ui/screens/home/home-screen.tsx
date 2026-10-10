@@ -176,6 +176,7 @@ export function HomeScreen() {
             )}
           </div>
           {importMsg ? <Notice tone={importMsg.tone}>{importMsg.text}</Notice> : null}
+          {tenant && hooks.clinic?.draftingEnabled === false ? <Notice tone="info">{TENANT_COPY.home.draftingOff}</Notice> : null}
           {!ready ? (
             <Skeleton className="h-48 rounded-2xl" />
           ) : reports.length === 0 && tenant ? (

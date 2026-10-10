@@ -205,6 +205,10 @@ export interface Wording {
       liveDetail(info: { model: string; chunks: number; effort: string; questions: number }): string;
       liveFailedRules(code: string): string;
       rulesOnlyTrace: string;
+      /** Fix wave 2: the same for a clinic's own upload – production wording, never "demo". */
+      clinicRulesOnlyTrace: string;
+      clinicRecordedDetail(date: string): string;
+      clinicLiveDetail(questions: number): string;
       liveErrorWarning(message: string): string;
       rulesOnlyWarning: string;
       prefilledRemoved: string;
@@ -595,6 +599,10 @@ const NEUTRAL: Wording = {
         `Read live: ${plural(questions, "question")} proposed (${plural(chunks, "parallel request")})`,
       liveFailedRules: () => "Live form reading could not finish; the map was proposed by layout rules instead",
       rulesOnlyTrace: "Layout rules only (demo mode). Every question is marked for review.",
+      clinicRulesOnlyTrace:
+        "Found from the form's layout only: reading the form's wording needs drafting from the notes, which your clinic switches on in Settings → Clinic. Check every question.",
+      clinicRecordedDetail: (date) => `Stored reading of this exact form (${date})`,
+      clinicLiveDetail: (questions) => `Read from the form: ${plural(questions, "question")} proposed`,
       liveErrorWarning: (message) => `Live form reading could not be completed (${message}) The questions below were found by layout rules – check each one.`,
       rulesOnlyWarning: "Mapped by layout rules only: check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the form was read.",
@@ -778,6 +786,10 @@ const AI_ASSISTED: Wording = {
         `Claude (${model}), ${chunks} parallel call${chunks === 1 ? "" : "s"}, ${effort} effort, ${questions} questions proposed`,
       liveFailedRules: (code) => `Claude could not finish (${code}); the map was proposed by rules instead`,
       rulesOnlyTrace: "Rules only – no AI call (demo mode). Every question is marked for review.",
+      clinicRulesOnlyTrace:
+        "Found from the form's layout only: reading the form's wording needs drafting from the notes, which your clinic switches on in Settings → Clinic. Check every question.",
+      clinicRecordedDetail: (date) => `Stored reading of this exact form (${date})`,
+      clinicLiveDetail: (questions) => `Read from the form: ${plural(questions, "question")} proposed`,
       liveErrorWarning: (message) => `Claude could not complete the analysis (${message}) The questions below were found by rules – check each one.`,
       rulesOnlyWarning: "Mapped by rules only (no AI call): check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the AI saw the form.",

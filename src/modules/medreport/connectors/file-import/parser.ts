@@ -656,7 +656,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
 
   if (drafts.length === 0) {
     return {
-      issues: [{ where: "text", message: 'No dated notes found. Start each note on a new line beginning with its date, e.g. "18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)".' }],
+      issues: [{ where: "text", message: 'No dated notes found. Start each note on a new line beginning with its date, e.g. "18/03/2026 – Initial assessment – <clinician name> (<HCPC number>)".' }],
     };
   }
   if (drafts.length > MAX_IMPORT_NOTES) return { issues: [{ where: "text", message: `Too many notes (maximum ${MAX_IMPORT_NOTES}).` }] };
@@ -668,7 +668,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
   if (!dob) {
     issues.push({
       where: hWhere("dob"),
-      message: h("dob") ? `"${h("dob")}" is not a valid date of birth (use DD/MM/YYYY).` : 'Add a line "Date of birth: DD/MM/YYYY" above the first note (a fictional date is fine).',
+      message: h("dob") ? `"${h("dob")}" is not a valid date of birth (use DD/MM/YYYY).` : 'Add a line "Date of birth: DD/MM/YYYY" above the first note.',
     });
   }
   const partyName = h("party");

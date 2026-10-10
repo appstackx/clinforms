@@ -293,6 +293,8 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
 
     it("a backup code signs in once", async () => {
       const code = ownerBackupCodes[0];
+      // Fix wave 2: capitals and digits without look-alikes (no 0/O, 1/I/L).
+      assert.ok(ownerBackupCodes.every((c) => /^[A-HJKMNP-Z2-9]{5}-[A-HJKMNP-Z2-9]{5}$/.test(c)), ownerBackupCodes.join(" "));
       const jar = new CookieJar();
       jar.absorb((await auth.api.signInEmail({ body: { email: "owner@riverside.example", password: PASSWORD }, returnHeaders: true })).headers);
       const ok = await auth.api.verifyBackupCode({ body: { code }, headers: jar.headers(), returnHeaders: true });

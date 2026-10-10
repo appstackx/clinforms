@@ -18,7 +18,7 @@
  *   secure cookies on https, session cookie cache 5 minutes.
  * - Every membership / security change writes an audit_log row (ids only, never patient data).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
@@ -55,6 +55,16 @@ export const TWO_FACTOR_ISSUER = "ClinForms";
 /** The platform's own user: the inviter of record for clinics set up by the platform. It has no password. */
 export const PLATFORM_USER_ID = "clinforms-platform";
 export const PLATFORM_USER_EMAIL = "platform@clinforms.invalid";
+
+/**
+ * Backup codes (fix wave 2): capital letters and digits without look-alikes (no 0/O, 1/I/L), as "XXXXX-XXXXX"
+ * – about 49 bits each. The sign-in form accepts them typed in small letters too (login/actions.ts).
+ */
+export const BACKUP_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export function generateBackupCodes(amount = 10): string[] {
+  const part = () => Array.from({ length: 5 }, () => BACKUP_CODE_ALPHABET[randomInt(BACKUP_CODE_ALPHABET.length)]).join("");
+  return Array.from({ length: amount }, () => `${part()}-${part()}`);
+}
 
 /** HTTP paths of Better Auth endpoints that ClinForms does not offer (server code still calls some of them). */
 export const DISABLED_PATHS = [
@@ -354,7 +364,7 @@ export function createAuth(input: CreateAuthInput) {
       twoFactor({
         issuer: TWO_FACTOR_ISSUER,
         skipVerificationOnEnable: false,
-        backupCodeOptions: { amount: 10, length: 10 },
+        backupCodeOptions: { amount: 10, length: 10, customBackupCodesGenerate: () => generateBackupCodes(10) },
         twoFactorCookieMaxAge: 600,
         accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 },
       }),

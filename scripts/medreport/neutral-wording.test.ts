@@ -98,6 +98,8 @@ const CALLS: Record<string, unknown[][]> = {
   "server.access.role": [["confirm form mappings"]],
   "server.access.signAsYourself": [["Sarah Reid (fictional)"]],
   "server.access.clinicMinuteLimit": [[20]],
+  "server.analysis.clinicRecordedDetail": [["09/10/2026"]],
+  "server.analysis.clinicLiveDetail": [[1], [23]],
   "server.access.otherVoiceDetail": [["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07"]], ["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07", "F-08"]]],
   "server.access.storeLimitDetail": [[30]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],

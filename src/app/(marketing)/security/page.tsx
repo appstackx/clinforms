@@ -76,7 +76,7 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
       },
       {
         title: "Audit trail",
-        body: "Sign-ins, two-step verification changes, and changes to users, roles, clinic details and access keys are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
+        body: "Sign-ins, two-step verification changes, changes to users, roles, clinic details and access keys, and each approval and final download of a completed form are recorded in a log that cannot be edited or deleted. The log never contains patient information.",
       },
     ],
   },
@@ -98,9 +98,8 @@ const IN_PLACE: Array<{ heading: string; items: Measure[] }> = [
 const PLANNED: Measure[] = [
   {
     title: "Automatic deletion",
-    body: "Completed reports deleted automatically after the retention period the clinic sets. Clinic administrators can already choose the period; automatic deletion follows with server-side report storage.",
+    body: "Reports deleted automatically once they have not changed for the retention period the clinic sets. Clinic administrators can already choose the period; the daily deletion job is being switched on.",
   },
-  { title: "Approvals and final downloads in the audit trail", body: "Recording each approval and final download in the same tamper-proof log." },
   { title: "Cyber Essentials certification", body: "We will publish the certificate here once it is awarded." },
   { title: "Independent penetration test", body: "Before wider availability; a summary will be available to customers on request." },
   { title: "Database hosting in the UK", body: "Moving the database to a UK (London) region." },

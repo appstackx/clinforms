@@ -169,7 +169,7 @@ app's `{db, cipher}`.
 | `audit` | append-only insert + list (ULID ids, newest first; *wave 2:* optional `action`, `userId` filters and `afterId` for paging back); the database refuses UPDATE, DELETE and overwriting an id (SQLite/D1: triggers in 0001 + `audit_log_no_replace` in 0003; Postgres: revoke + trigger; the gateway also refuses REPLACE) |
 | `partner-keys` | `cfk_<tenant>_<43 chars>`, shown once; SHA-256 stored; `partnerKeyTenant()` + `verifyPartnerKey(tenant, key)`; revoke |
 | `launch-tokens` | `claimLaunchToken(jti, expiresAt)` – true exactly once (INSERT … ON CONFLICT DO NOTHING RETURNING) |
-| `rate-limits` | `hitRateLimit(key, windowMs)` – one atomic upsert, returns the window count; `peek`, `reset`, `purge` |
+| `rate-limits` | `hitRateLimit(key, windowMs, amount = 1)` – one atomic upsert, returns the window count (*fix wave 2:* `amount` counts e.g. kilobytes of new data per clinic per day); `peek`, `reset`, `purge` |
 | `access-requests` | landing-page requests (not tenant data); *wave 2:* `contactedAt` + `setAccessRequestContacted()` (platform page) |
 | `maintenance` | `runRetention()` for `/api/cron/retention` (the only cross-tenant functions): reports not changed for their clinic's `retention_days` (read at run time, so a changed setting applies to existing reports) or past an explicit `delete_after`; used launch tokens; rate-limit windows older than a day; access requests older than 24 months |
 

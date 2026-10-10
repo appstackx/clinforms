@@ -139,7 +139,7 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 
 ## Key commands
 ```bash
-npm ci && npm run dev                      # http://localhost:3000 → /reports (demo mode with empty env)
+npm ci && npm run dev                      # open http://localhost:3000/reports (demo mode with empty env; on feat/production "/" is the public site)
 npm run typecheck && npm run lint && npm run test:medreport && npm run test:db && npm run test:auth \
   && npm run test:site && npm run test:gateway && npm run build   # full check chain (production branches)
 # test:medreport includes the sandbox tests (src/sandbox/**/*.test.ts) since demo/red-physio – no separate run

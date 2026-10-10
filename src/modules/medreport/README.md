@@ -389,7 +389,15 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   renders: any role.
 - **Signer = the member** (name from the account, HCPC and job title from `member_profile`); a body `signer` with
   another HCPC is 403 `SIGNER_MISMATCH`. `approvedVia {kind "user", sid, userId, launchSid?}` (additive). The demo
-  keeps the body's fictional signer.
+  keeps the body's fictional signer. A member cannot rename their account (Better Auth `/update-user` is off).
+- **The signer's own voice (fix wave 2).** A clinic's new report is drafted in the first person of the member who
+  will sign it (`new-report-screen.tsx` `tenantAuthor`: owner/admin/clinician with an HCPC number and "may sign"), or
+  – when that member cannot sign – with no author, i.e. in the third person (`GenerateInput.author`,
+  `CreateFormReportInput.author`, `null` = nobody). `/sign` refuses unedited drafted answers that speak in another
+  clinician's "I" (`report.author` ≠ the signer by HCPC, else name): 409 `SIGNER_NOT_AUTHOR` naming the questions
+  (`core/voice.ts` `otherClinicianVoice`, `speaksInFirstPerson`); the review shows the same reason before the
+  click, and staff / members without signing details see why they cannot approve. "Write in my own voice" uses the
+  signed-in member in a clinic's Studio. The demo is unchanged.
 - **Clinic profile replaces DEMO_CLINIC** (`core/clinic.ts`): a clinic's bundle carries `bundle.clinic` (optional,
   from its profile); demo bundles carry none and keep DEMO_CLINIC; a clinic without a profile names no clinic.
 - **Connectors:** the simulated TM3 sandbox is `demoOnly` (403 `CONNECTOR_NOT_AVAILABLE` for a clinic); clinics use
@@ -399,14 +407,18 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
 - **Shared state** (`MedreportDeps.sharedState`, `auth/shared-limits.ts`): launch-token replay → `launch_token_uses`,
   the demo's live cap and passcode guesses → `rate_limits` (429 + `Retry-After` unchanged). The host provides it
   when `CLINFORMS_DB` is set; a single local process keeps its in-memory counters. Clinics draft live WITHOUT the
-  passcode while `clinic_profile.drafting_enabled` (no profile = on): prefer "live" with it off → 403
+  passcode while `clinic_profile.drafting_enabled` (fix wave 2: no profile, or a profile that cannot be read = OFF –
+  fail closed; the host's `loadClinicProfile` passes read errors on): prefer "live" with it off → 403
   `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
   `UNSUPPORTED_MEDIA_TYPE`.
 - **Audit** (`MedreportDeps.audit`, clinics only, ids and counts only): `form.confirm`, `form.analyse_live`,
   `report.draft_live`, `report.sign`, `report.render_final`, `report.file_back`, `launch.issue`
-  (`AUDIT_ACTIONS` also names `report.delete` / `report.export` for the server store).
+  (`AUDIT_ACTIONS` also names `report.delete` / `report.export` for the server store). `report.render_final` carries
+  `purpose` (`RenderRequest.purpose`, fix wave 2): `download` (default) and `file_back` are recorded; the review's
+  on-screen `preview` of an approved report is not, and carries no file token. A clinic's Studio offers no case
+  JSON download (an unrecorded copy of a patient's whole record).
 - **Studio:** the default `api` client gets a demo session before a call that needs a caller when none is stored
   (`ensureSessionToken`); a clinic's sign-in cookie takes precedence on the server.
 - Tests: `scripts/medreport/api-actor.test.ts` (per endpoint, two instances on one database) and
@@ -466,6 +478,27 @@ same `auth/actor.ts` `requireActor` as every other endpoint (`store-actor.ts` `r
 | POST | `/store/files/{sha256}/complete` | checks every chunk, size, SHA-256 (422 `UPLOAD_CORRUPT`, upload thrown away), form type (422 `FORM_INVALID`); 409 `UPLOAD_INCOMPLETE` `{missing}` |
 | GET | `/store/files/{sha256}` | the decrypted file |
 | GET / PUT | `/store/settings` | referrer → form links |
+
+**Fix wave 2 (security review).**
+- *Scope:* the server store's memory belongs to ONE clinic and member: `<HostHooksProvider>` passes
+  `{tenantId: clinic.tenantId, userId: member.userId}` to `ui/store/mode.ts` `setStoreScope`; another scope (a new
+  sign-in or clinic without a full page load) empties the cache and the write queue, and the Studio's screens
+  remount (keyed by scope). Every store request sends `x-clinforms-tenant` / `x-clinforms-member`
+  (`STORE_TENANT_HEADER` / `STORE_MEMBER_HEADER`); `requireTenantActor` refuses another sign-in's with 403
+  `TENANT_MISMATCH` / `SIGN_IN_CHANGED`, which the client never retries (and a hydrate refused that way empties the
+  cache). Focus reloads before retrying waiting writes. A PUT body naming another clinic (neither the member's nor
+  `demo`) is 403 `TENANT_MISMATCH` – never re-filed. Sign-out, clinic switch and sign-in load the next page in full
+  (`src/app/app/session-forms.tsx`, login `codeStep` → `{status: "done"}`).
+- *Protected records:* an approved report is deleted only by owner/admin (409 `REPORT_LOCKED`), so no other role can
+  delete and re-create it as a draft; a confirmed form map is turned back into a proposal or deleted only by a
+  confirming role (403 `ROLE_NOT_ALLOWED`). The Studio hides those controls accordingly.
+- *Limits:* writes per member (`STORE_WRITES_PER_MEMBER_PER_MINUTE` 120) and per clinic (`_PER_CLINIC_` 400) per
+  minute, and new data per clinic per day (`STORE_NEW_KB_PER_CLINIC_PER_DAY` 250 000 KB: new reports/maps and
+  uploaded chunks; updates do not count) → 429 `RATE_LIMITED` + `Retry-After` (shared `rate_limits` counters;
+  `SharedStateStore.hit(key, windowMs, amount?)`).
+- *No save on open:* the review stores a revision only after a change someone made (`use-review-state.ts`), so
+  opening a report writes no "Report saved" row and does not restart its retention clock; the activity page hides
+  routine saves (`report.update`, `form.update`) unless asked (`?saves=1`) and links rows to the Studio.
 
 `/render` and `/forms/fill-preview` read the clinic's stored copy of the form file by (tenant, SHA-256) and
 prefer it to `fileBase64`, which becomes optional for `/forms/fill-preview` (`api/handlers/store-form-file.ts`).
@@ -628,9 +661,10 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
 | `mode` | unset → `"demo"` | `"tenant"` |
 | `storage` | unset → `"browser"` | `"server"` (read by `ui/store.ts` – the server-store slice) |
 | `clinic` `{tenantId, name, draftingEnabled?}` | – | the active clinic (header; drafting switch) |
-| `member` `{name, email?, roleLabel?, hcpc?, jobTitle?, canSign?}` | – | the signed-in member: default signer, activity actor, "confirmed by" |
+| `member` `{name, userId?, role?, email?, roleLabel?, hcpc?, jobTitle?, canSign?}` | – | the signed-in member: default signer, activity actor, "confirmed by"; `userId` scopes the store (fix wave 2), `role` decides who may approve / delete |
 | `track(event, props)` | – | host analytics (`form_uploaded`, `form_confirmed`, `draft_completed`, `report_approved`, `report_downloaded`) |
 | `accountHref`, `onSignOut` | – | the clinic's pages (`/app`) and sign-out, in the header's account menu |
+| `supportEmail` (fix wave 2) | – | where a clinic asks for help (the notes-upload panel) |
 
 - **Paths:** no screen hard-codes `/reports`; links come from `ui/routes.ts` `useStudioPaths()` (pure
   `studioPaths(base, mode)` and `studioSection(pathname, base)` for the navigation, tested in `routes.test.ts`).
@@ -640,7 +674,13 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   sample and demonstration forms, PH-DEMO placeholders and hints, the Security page's "In this demo" table,
   "Use the prepared demo draft", and the batch screen (it reads a connected clinic system; tenant mode explains
   that instead and hides Batch from the navigation). The notes upload is the source. Production copy lives in
-  `ui/studio-copy.ts` `TENANT_COPY`. Drafting is attempted when the clinic has it switched on
+  `ui/studio-copy.ts` `TENANT_COPY`. Fix wave 2 (end-to-end review): no "TM3" anywhere in a clinic's Studio
+  (`useFillSourceLabels`, `TENANT_COPY.sources`, no practice-system tile – pinned by `ui/tenant-mode.test.ts`), no
+  "demo"/"live" analysis labels or request counts (`useAnalysisModeLabels`, `WORDING.server.analysis.clinic*` for a
+  clinic's upload), a map is confirmed only once its referrer is named, a document with no questions is discarded
+  rather than kept as a form, the notes-upload panel folds the format guide away and offers support instead of
+  fictional samples, a "drafting is switched off" notice, no case JSON download, and no permanently disabled "Save
+  to clinic record". Drafting is attempted when the clinic has it switched on
   (`clinic.draftingEnabled`), not by passcode (`useAiMode().livePossible()`).
 - **Analytics:** only in tenant mode, through `HostHooks.track`; `ui/studio-events.ts` builds the properties from
   enumerated values and counts only (no names, ids, file names or record text – pinned by `studio-events.test.ts`).

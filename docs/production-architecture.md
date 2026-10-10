@@ -179,6 +179,13 @@ localStorage/IndexedDB.
 held once every chunk is present and reads verify size and SHA-256. Extras also include `getStoreSyncState`,
 `retryStoreSync` and the referrer-link helpers; the 6 call sites plus portal question sets and case import use them.
 `/render` and `/forms/fill-preview` prefer the clinic's stored form file (`fileBase64` optional for the preview).
+*Fix wave 2 (security and end-to-end reviews):* the in-memory store is scoped to the page's clinic and member
+(`HostHooks.member.userId`; a new scope empties it), every store request names that scope and the server refuses
+another sign-in's (403 `TENANT_MISMATCH` / `SIGN_IN_CHANGED`); a body naming another clinic is refused, never
+re-filed; sign-out / clinic switch / sign-in are full page loads; approved reports are deleted only by owner/admin,
+confirmed maps un-confirmed or deleted only by confirming roles; store writes and new data per clinic are limited
+(429); opening a report saves nothing; a clinic's Studio offers no case JSON download. Detail:
+`src/modules/medreport/README.md` "Clinic storage".
 
 ## 6. Security headers
 `next.config.mjs` `headers()`: HSTS (2 years, includeSubDomains), nosniff, Referrer-Policy

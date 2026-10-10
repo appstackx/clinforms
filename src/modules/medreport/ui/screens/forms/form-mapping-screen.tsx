@@ -20,9 +20,9 @@ import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import {
   ANSWER_TYPE_LABELS,
-  FORM_ANALYSIS_MODE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
   FORM_KIND_LABELS,
+  REFERRER_TO_BE_CONFIRMED,
   REFERRER_TYPE_LABELS,
 } from "../../../core/labels";
 import { ReferrerTypeSchema } from "../../../core/schemas";
@@ -67,6 +67,7 @@ import {
   Notice,
   SampleBadge,
   Select,
+  useAnalysisModeLabels,
   useFillSourceLabels,
   type FillSourceKind,
 } from "../../components/shared/ui-bits";
@@ -117,6 +118,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const paths = useStudioPaths();
   const tenant = hooks.mode === "tenant";
   const sourceLabels = useFillSourceLabels();
+  const analysisLabels = useAnalysisModeLabels();
   const [draft, setDraft] = useState<FormDefinition>(saved);
   const [editing, setEditing] = useState(saved.status !== "confirmed");
   const [selected, setSelected] = useState<string | null>(saved.fields.find((f) => f.confidence !== "high")?.id ?? saved.fields[0]?.id ?? null);
@@ -130,7 +132,15 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const { file, loading, error } = useFormFile(questionSet ? null : saved);
 
   const dirty = !sameMapping(draft, saved) || draft.status !== saved.status;
-  const problems = useMemo(() => checkFormDefinition(draft), [draft]);
+  // A clinic's map names its referrer before it is confirmed (fix wave 2: never "completed for every patient
+  // Referrer to be confirmed refers").
+  const problems = useMemo(
+    () => [
+      ...checkFormDefinition(draft),
+      ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
+    ],
+    [draft, tenant],
+  );
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
   const toCheck = draft.fields.filter((f) => f.confidence !== "high").length;
@@ -290,7 +300,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               ? WORDING.questionSet.analysisLabel
               : a.mode === "demo_prewritten" && draft.demoNotice
                 ? WORDING.labels.prewrittenDemoFormMap
-                : FORM_ANALYSIS_MODE_LABELS[a.mode]
+                : analysisLabels[a.mode]
           }
           detail={[WORDING.formReading.showModel ? a.model : null, formatUkDateTime(a.at), a.durationMs ? formatMs(a.durationMs) : null].filter(Boolean).join(" · ")}
           small

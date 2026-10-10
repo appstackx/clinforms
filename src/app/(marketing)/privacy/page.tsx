@@ -141,9 +141,8 @@ export default function PrivacyPage() {
           <Link href="/security">Security</Link>.
         </li>
         <li>
-          <strong>Retention:</strong> the clinic sets how long completed reports are kept. Automatic deletion at the end
-          of that period is being introduced together with storing reports in the service (see{" "}
-          <Link href="/security">Security</Link>). All of the clinic&rsquo;s data is returned or deleted when its agreement
+          <strong>Retention:</strong> the clinic sets how long reports are kept. Automatic deletion of reports that have
+          not changed for that period is being switched on (see <Link href="/security">Security</Link>). All of the clinic&rsquo;s data is returned or deleted when its agreement
           ends, as the DPA sets out.
         </li>
       </ul>

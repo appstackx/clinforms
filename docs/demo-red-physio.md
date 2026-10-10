@@ -61,7 +61,7 @@ Use your normal checkout: **`~/Projects/Appstackx/clinforms`** on branch `main`.
 (The worktree `~/Projects/Appstackx/clinforms-wt/red-integrate` holds the same code and also works, but you don't
 need it.)
 
-Use the **same Chrome profile and the same address (`http://localhost:3000`)** on Monday and Tuesday – confirmed
+Use the **same Chrome profile and the same address (`http://localhost:3000`, start page `/reports`)** on Monday and Tuesday – confirmed
 form maps and reports live only in that browser's storage for that address.
 
 ### 2.2 Monday evening – rehearsal (about 60 min)

@@ -20,8 +20,9 @@ import { formatUkDate } from "../../../core/dates";
 import { INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeSummary, PatientSummary } from "../../../core/types";
 import { ApiError, api, saveBlob, toBase64 } from "../../api-client";
-import { useStudioMode } from "../../host-hooks";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { getSession, setSession } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
 import { Button, Input, Skeleton, cn } from "../../primitives";
 import { FileDrop } from "../shared/file-drop";
 import { errorMessage } from "../shared/format";
@@ -336,7 +337,7 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
         </div>
         {busy ? <Spinner label="Mapping the export to a patient record…" /> : null}
         {error ? (
-          <Notice tone="error" title="The export could not be read">
+          <Notice tone="error" title={tenant ? "The notes could not be read" : "The export could not be read"}>
             <p>{error.message}</p>
             {error.issues.length ? (
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -345,9 +346,53 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
                 ))}
               </ul>
             ) : null}
+            {tenant && error.issues.some((i) => /Add a line/.test(i)) ? <p className="mt-1">{TENANT_COPY.wizard.missingLineHint}</p> : null}
           </Notice>
         ) : null}
       </div>
+      {tenant ? <TenantFormatGuide /> : <DemoFormatGuide busy={busy} submit={submit} />}
+    </div>
+  );
+}
+
+/**
+ * A clinic's Studio (fix wave 2): the format guide folded away, no fictional sample downloads, and where to get
+ * help when the clinic's own printout is not read.
+ */
+function TenantFormatGuide() {
+  const hooks = useHostHooks();
+  return (
+    <div className="space-y-3 rounded-xl bg-slate-50 p-3 text-sm">
+      <p className="font-medium text-slate-900">{TENANT_COPY.wizard.notesHelpTitle}</p>
+      <p className="text-xs text-slate-600">
+        {TENANT_COPY.wizard.notesHelp}
+        {hooks.supportEmail ? (
+          <>
+            {" "}
+            <a href={`mailto:${hooks.supportEmail}`} className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              {hooks.supportEmail}
+            </a>
+          </>
+        ) : null}
+      </p>
+      <details className="text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-800">{TENANT_COPY.wizard.formatGuideSummary}</summary>
+        <p className="mt-2">{IMPORT_FORMAT_GUIDE.summary}</p>
+        <ul className="mt-1.5 space-y-1.5">
+          {IMPORT_FORMAT_GUIDE.formats.map((f) => (
+            <li key={f.id}>
+              <span className="font-medium text-slate-800">{f.label}:</span> {tenantFormatDescription(f.description)}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function DemoFormatGuide({ busy, submit }: { busy: boolean; submit(format: ImportFormat, content: string, fileName?: string): Promise<void> }) {
+  const tenant = false;
+  return (
       <div className="space-y-3 rounded-xl bg-slate-50 p-3 text-sm">
         <p className="font-medium text-slate-900">{IMPORT_FORMAT_GUIDE.title}</p>
         <p className="text-xs text-slate-600">{IMPORT_FORMAT_GUIDE.summary}</p>
@@ -389,6 +434,5 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
         )}
         {tenant ? null : <p className="text-xs text-slate-500">{IMPORT_FORMAT_GUIDE.privacy}</p>}
       </div>
-    </div>
   );
 }

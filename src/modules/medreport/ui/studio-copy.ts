@@ -11,7 +11,10 @@ export const TENANT_COPY = {
     eyebrow: "Your clinic's Studio",
     reportsIntro: "Your clinic's forms, waiting for review or approved –",
     securityLink: "how patient data is protected",
-    emptyBody: "Upload the patient's notes (printed to PDF from your clinic system, or an export) and choose the referrer's form.",
+    emptyBody:
+      "First add a referrer's blank form in Referrer forms and confirm its mapping once. Then complete a form: upload the patient's notes (printed to PDF from your clinic system, or an export) and choose that form.",
+    draftingOff:
+      "Drafting from the notes is switched off for your clinic: answers from the notes are left for the clinician to write. Your clinic's owner or an administrator can switch it on in Clinic details.",
     uploadStepTitle: "Upload the notes",
     uploadStepText: "The patient's notes printed to PDF from your clinic system, or an export.",
     approveStepText: "The referrer's own Word or PDF, completed and ready to send.",
@@ -28,6 +31,11 @@ export const TENANT_COPY = {
     saveFailedBody:
       "The connection to the clinic's records was interrupted. Keep this page open: the report is saved as soon as the connection is back.",
     launchFailed: "Choose the patient's notes below instead.",
+    formatGuideSummary: "What the notes need – the format guide",
+    notesHelpTitle: "Notes not read?",
+    notesHelp:
+      "A printed PDF cannot be edited: paste the notes as text instead and add the missing line, or send ClinForms support a sample printout from your clinic system (with made-up details) so its layout can be checked before you use it with patients.",
+    missingLineHint: "A PDF printout cannot be edited: paste the notes as text below and add the missing lines.",
   },
   progress: {
     leftBlank: "Left blank for the clinician to answer.",
@@ -39,6 +47,7 @@ export const TENANT_COPY = {
     actorFallback: "Clinic staff",
     approveSignerHint: "Your name and HCPC number come from your clinic profile.",
     approveSavedFailed: "Approved, but the change could not be saved. Download the completed form now.",
+    approvedToast: "Your approval is recorded with your name and HCPC number. The completed form is ready to download.",
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
@@ -56,11 +65,17 @@ export const TENANT_COPY = {
     fileMissingForPreview: "The referrer's original file is not in your clinic's storage. Add it again in the forms library to preview the completed form.",
     mapMissing: "The form map is not in your clinic's forms library.",
     fileMissing: "The referrer's original file is not in your clinic's storage.",
+    pdfUnavailable: "A PDF copy of a Word form is not available yet. Download the completed Word form and save it as PDF from Word.",
   },
   forms: {
     notFoundTitle: "This form is not in your clinic's library",
     notFoundBody: "It may have been deleted. Upload the referrer's form again to map it.",
     libraryIntro: "Upload the form an MLC or insurer sent you (.docx or PDF).",
+    referrerNeeded: "Enter the referrer's name in Details (the form's own sender – it could not be read off the form).",
+    analysisLive: "Read from the form",
+    analysisRecorded: "Stored reading of this form",
+    analysisPrewritten: "Pre-written map",
+    analysisRules: "Found from the layout – check every question",
   },
   /** Fix wave 2: where answers come from, in a clinic's Studio (its notes upload – never a practice-system link). */
   sources: {

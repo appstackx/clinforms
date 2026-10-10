@@ -34,8 +34,11 @@ export async function passwordStep(_prev: LoginState, form: FormData): Promise<L
 }
 
 export async function codeStep(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const code = String(form.get("code") ?? "").replace(/\s+/g, "").slice(0, 32);
+  const typed = String(form.get("code") ?? "").replace(/\s+/g, "").slice(0, 32);
   const method = form.get("method") === "backup" ? "backup" : "totp";
+  // Backup codes are capitals and digits (create-auth.ts generateBackupCodes): one typed in small letters is
+  // accepted too. Codes issued before that change are mixed-case and are used exactly as typed.
+  const code = method === "backup" && /^[a-z0-9-]+$/.test(typed) && /[a-z]/.test(typed) ? typed.toUpperCase() : typed;
   const next = safeNextPath(form.get("next"));
   if (!code) return { status: "error", error: method === "backup" ? ACCOUNT_ERRORS.invalidBackupCode : ACCOUNT_ERRORS.invalidCode };
   if (!(await throttle("second-factor-ip", clientIp(), 30, WINDOW))) return { status: "error", error: ACCOUNT_ERRORS.tooManyAttempts };

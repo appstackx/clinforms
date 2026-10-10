@@ -351,7 +351,8 @@ export const ApprovedBanner = forwardRef<
             <CheckCircle2 className="h-4 w-4 text-teal-600" aria-hidden />
             Filed {formatUkDateTime(lastFiled.at)}
           </span>
-        ) : (
+        ) : tenant && !canFile ? null : (
+          // A clinic's Studio has no clinic-system connection (fix wave 2): no permanently disabled button.
           <Button type="button" variant="outline" onClick={onSave} disabled={filing || !canFile || fileMissing} className="bg-white">
             {filing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Save className="mr-2 h-4 w-4" aria-hidden />}
             Save to clinic record
@@ -385,7 +386,9 @@ export const ApprovedBanner = forwardRef<
       {!canFile && (
         <p className="mt-2 text-[12px] text-slate-600">
           {report.episodeRef.connectorId === "file-import"
-            ? "Made from an uploaded export – download the completed form and attach it to the patient record."
+            ? tenant
+              ? "Made from the uploaded notes – download the completed form and attach it to the patient's record in your clinic system."
+              : "Made from an uploaded export – download the completed form and attach it to the patient record."
             : "Filing to TM3 needs the live TM3 connection (partner access)."}
         </p>
       )}

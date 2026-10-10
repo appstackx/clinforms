@@ -102,7 +102,9 @@ export function useReviewActions(opts: {
           tone: "success",
           title: form && prefillSigners(form) ? "Prefill approved" : isForm ? "Form approved" : "Report signed",
           detail: saved
-            ? "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
+            ? hooks.mode === "tenant"
+              ? TENANT_COPY.review.approvedToast
+              : "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
             : hooks.mode === "tenant"
               ? TENANT_COPY.review.approveSavedFailed
               : "Approved, but this browser could not save the change. Download the completed form now.",
@@ -174,9 +176,10 @@ export function useReviewActions(opts: {
         });
       } catch (err) {
         if (err instanceof ApiError && err.code === "PDF_CONVERSION_UNAVAILABLE") {
-          const message = err.problem.detail ?? NOTICES.pdfConversionUnavailable;
+          // A clinic's Studio (fix wave 2): say what to do, without demo-deployment wording.
+          const message = hooks.mode === "tenant" ? TENANT_COPY.files.pdfUnavailable : (err.problem.detail ?? NOTICES.pdfConversionUnavailable);
           setPdfUnavailable(message);
-          toast({ tone: "info", title: "PDF copy not available here", detail: message });
+          toast({ tone: "info", title: hooks.mode === "tenant" ? "PDF copy not available yet" : "PDF copy not available here", detail: message });
         } else {
           const p = err instanceof Error && !(err instanceof ApiError) ? { title: err.message } : problemText(err, "The download failed");
           toast({ tone: "error", title: p.title, detail: "detail" in p ? p.detail : undefined });

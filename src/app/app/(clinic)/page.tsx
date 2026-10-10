@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
 import { ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
+import { loadSetupChecklist } from "@/server/admin/setup-checklist";
 import { countMembers, listPendingInvitations } from "@/server/auth/membership";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
@@ -15,6 +16,21 @@ export default async function ClinicOverviewPage() {
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
+  const setup = await loadSetupChecklist(db, membership, { members, openInvitations: invitations.length });
+  // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
+  const steps = [
+    { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
+    {
+      done: setup.draftingEnabled,
+      href: "/app/settings/clinic",
+      label: "Drafting from the notes",
+      text: setup.draftingEnabled ? "Switched on." : "Switched off: answers from the notes are left for the clinician. Switch it on in Clinic details.",
+    },
+    { done: setup.team, href: "/app/settings/members", label: "Invite your clinicians", text: "Each member signs in with two-step verification." },
+    { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },
+    { done: setup.confirmedForm, href: "/app/studio/forms", label: "Your first referrer form", text: "Upload a referrer's blank form and confirm its mapping once." },
+  ];
+  const stepsLeft = steps.filter((s) => !s.done).length;
   const links = [
     { href: "/app/settings/clinic", label: "Clinic details", text: manager ? "Name, address and how long reports are kept." : "Your clinic's details." },
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
@@ -49,6 +65,37 @@ export default async function ClinicOverviewPage() {
         </Panel>
       </div>
 
+      {manager && stepsLeft > 0 ? (
+        <Panel title="Set up your clinic" className="mt-6">
+          <p className="text-sm text-slate-600">
+            {stepsLeft} of {steps.length} steps left before your first form.
+          </p>
+          <ol className="mt-3 space-y-2">
+            {steps.map((step) => (
+              <li key={step.label} className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className={
+                    step.done
+                      ? "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white"
+                      : "mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-slate-300"
+                  }
+                >
+                  {step.done ? "✓" : ""}
+                </span>
+                <span className="min-w-0 text-sm">
+                  <Link href={step.href} className="font-medium text-slate-900 underline-offset-4 hover:text-teal-800 hover:underline">
+                    {step.label}
+                  </Link>
+                  <span className="sr-only">{step.done ? " – done" : " – to do"}</span>
+                  <span className="block text-slate-600">{step.text}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Panel>
+      ) : null}
+
       <Panel title="Settings" className="mt-6">
         <ul className="grid gap-3 sm:grid-cols-2">
           {links.map((l) => (
@@ -67,6 +114,12 @@ export default async function ClinicOverviewPage() {
           The Studio is where your clinic completes referrers&apos; own forms: upload the patient&apos;s notes, choose the referrer&apos;s
           form, and the treating clinician reviews and approves every answer before the form is issued.
         </p>
+        {setup.draftingEnabled ? null : (
+          <p className="mt-2 text-sm text-amber-800">
+            Drafting from the notes is switched off for your clinic, so answers from the notes are left for the clinician to write.
+            {manager ? " You can switch it on in Clinic details." : " Your clinic's owner or an administrator can switch it on."}
+          </p>
+        )}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Link
             href="/app/studio"
