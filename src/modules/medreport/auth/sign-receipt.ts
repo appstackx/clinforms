@@ -52,8 +52,12 @@ export async function createReceipt(input: CreateReceiptInput): Promise<SignRece
   return { ...unsigned, mac: computeMac(unsigned, input.secret ?? signingKey("receipt")) };
 }
 
-/** Shape and MAC only (constant time) – for callers that do not hold the report (write-back). */
-export function verifyReceiptMac(receipt: SignReceipt, opts: { secret?: string } = {}): boolean {
+/**
+ * Shape and MAC only (constant time) – for callers that do not hold the report (write-back). With
+ * `tenantId` (wave 2: the caller's clinic) the receipt must also be that clinic's (the MAC covers tenantId).
+ */
+export function verifyReceiptMac(receipt: SignReceipt, opts: { secret?: string; tenantId?: string } = {}): boolean {
+  if (opts.tenantId !== undefined && receipt?.tenantId !== opts.tenantId) return false;
   const parsed = SignReceiptSchema.safeParse(receipt);
   if (!parsed.success) return false;
   const { mac, ...unsigned } = parsed.data;
@@ -62,14 +66,21 @@ export function verifyReceiptMac(receipt: SignReceipt, opts: { secret?: string }
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-/** Checks shape, MAC (constant time), report/tenant binding and the recomputed content hash. */
+/**
+ * Checks shape, MAC (constant time), report/tenant binding and the recomputed content hash. With `tenantId`
+ * (wave 2: the caller's clinic) the receipt and the report must both be that clinic's: a receipt issued to
+ * clinic A is TENANT_MISMATCH for clinic B even though its MAC verifies.
+ */
 export async function verifyReceipt(
   receipt: SignReceipt,
   report: Report,
-  opts: { secret?: string } = {},
+  opts: { secret?: string; tenantId?: string } = {},
 ): Promise<ReceiptVerification> {
   const parsed = SignReceiptSchema.safeParse(receipt);
   if (!parsed.success) return { ok: false, reason: "MALFORMED" };
+  if (opts.tenantId !== undefined && (parsed.data.tenantId !== opts.tenantId || report.tenantId !== opts.tenantId)) {
+    return { ok: false, reason: "TENANT_MISMATCH" };
+  }
   const { mac, ...unsigned } = parsed.data;
   const expected = Buffer.from(computeMac(unsigned, opts.secret ?? signingKey("receipt")), "utf8");
   const given = Buffer.from(mac, "utf8");

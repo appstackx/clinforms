@@ -12,6 +12,7 @@ import { NOTICES } from "../../../config.public";
 import { ageOn, formatUkDate, todayIso } from "../../../core/dates";
 import { DATA_CHECK_LABELS, INCIDENT_TYPE_LABELS, INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { DataCheck, EpisodeBundle } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import { formatMs, plural } from "../shared/format";
@@ -32,6 +33,8 @@ export function importedSummary(bundle: EpisodeBundle): string {
 
 export function DataStep({ data }: { data: BundleResponse }) {
   const { bundle, computedFacts, dataChecks, trace } = data;
+  // A clinic's Studio shows no integration log (fix wave 3: technical detail a clinic does not need).
+  const tenant = useStudioMode() === "tenant";
   const reg = bundle.registration;
   const c = bundleCounts(bundle);
   const age = ageOn(reg.dob, todayIso());
@@ -68,7 +71,9 @@ export function DataStep({ data }: { data: BundleResponse }) {
               {first ? `${formatUkDate(first)} – ${last ? formatUkDate(last) : ""}` : "–"} ·{" "}
               {bundle.episodeStatus === "discharged" ? "Discharged" : "Open"}
             </Item>
-            <Item label="Clinicians">{bundle.clinicians.map((cl) => `${cl.name} (${cl.hcpc})`).join(", ") || "–"}</Item>
+            <Item label="Clinicians">
+              {bundle.clinicians.map((cl) => (cl.hcpc && cl.hcpc !== "Not recorded" ? `${cl.name} (${cl.hcpc})` : `${cl.name} (HCPC number not recorded)`)).join(", ") || "–"}
+            </Item>
             <Item label="Disclosure consent">
               {bundle.consent.disclosureConsentRecorded
                 ? `Recorded${bundle.consent.date ? ` ${formatUkDate(bundle.consent.date)}` : ""}`
@@ -127,7 +132,8 @@ export function DataStep({ data }: { data: BundleResponse }) {
         </section>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="trace-heading">
+      {tenant ? null : (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="trace-heading">
         <h3 id="trace-heading" className="flex items-center gap-2 text-sm font-semibold text-slate-900">
           <Network className="h-4 w-4 text-slate-500" aria-hidden />
           Integration log
@@ -163,7 +169,8 @@ export function DataStep({ data }: { data: BundleResponse }) {
         ) : (
           <p className="mt-2 text-sm text-slate-500">No calls recorded.</p>
         )}
-      </section>
+        </section>
+      )}
 
       <AiPayloadPanel data={data} />
 

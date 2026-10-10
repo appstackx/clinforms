@@ -283,8 +283,14 @@ export const TEXT_HEADER_KEYS: ReadonlyArray<{ key: string; synonyms: string[]; 
 export const IMPORT_FORMAT_GUIDE = {
   title: `${PRODUCT.name} import format (v1)`,
   summary:
-    "Upload the patient's notes printed or saved as a PDF from your clinic system, a JSON or CSV file in our documented format, or paste notes. The exact layout of your system's notes printout is confirmed with a sample file during set-up.",
+    "Upload the patient's notes as your clinic system prints or exports them – a PDF printed or saved from the system, a Word document, a CSV export or a text file – or paste them. Notes in the documented layout below are used straight away; other layouts are read and shown to you to check (dates, clinicians, attendance, patient details) before they are used.",
   formats: [
+    {
+      id: "general" as const,
+      label: "Notes in any other layout",
+      description:
+        'Each note under a line that starts with its date ("18/03/2026", "18 March 2026", "2026-03-18", optionally with a time), patient details as "Label: value" lines at the top, a CSV or Word table with a date column. The clinician is taken from the heading or the signature; scores such as "NPRS 7/10" or "QuickDASH 52.3" become outcome measures. Scanned notes cannot be read.',
+    },
     {
       id: "pdf" as const,
       label: "Printed notes (PDF)",

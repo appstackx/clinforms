@@ -16,6 +16,11 @@ const LIB = { group: ["@/lib", "@/lib/*"], message: "The medreport module may no
 const COMPONENTS = { group: ["@/components", "@/components/*"], message: "Import host UI components only via src/modules/medreport/ui/primitives.ts." };
 const SANDBOX = { group: ["@/sandbox", "@/sandbox/*", "**/sandbox/*"], message: "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)." };
 const APP = { group: ["@/app", "@/app/*"], message: "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks." };
+// Production data layer (src/server: database, encryption, repositories) is host code: the module receives
+// what it needs through MedreportDeps / HostHooks (docs/production-architecture.md §0).
+const SERVER = { group: ["@/server", "@/server/*"], message: "The module may not import src/server (host code). Receive capabilities via MedreportDeps / HostHooks." };
+// The data gateway Worker (workers/) is deployed separately; the Next app never imports its code.
+const WORKERS = { group: ["**/workers/*", "**/workers/**"], message: "The Next app may not import the Worker code in workers/ (it is deployed separately; talk to it over HTTP)." };
 const escape = (d) => ({
   group: ["../".repeat(d + 1) + "*"],
   message: "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts).",
@@ -33,9 +38,22 @@ const CLIENT_UNSAFE = {
     "@react-pdf/*",
     "@xmldom/xmldom",
     "pdf-lib",
+    "kysely",
+    "kysely/*",
+    "pg",
+    "@electric-sql/pglite",
+    "@electric-sql/pglite/*",
+    // identity layer (src/server/auth, src/server/email): server-only. Better Auth's browser client stays allowed.
+    "better-auth",
+    "better-auth/*",
+    "!better-auth/react",
+    "!better-auth/client",
+    "!better-auth/client/*",
+    "mailersend",
+    "mailersend/*",
   ],
   message:
-    "core/, templates/, ui/, config.public.ts and api/contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
+    "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/).",
 };
 // Browser preview libraries (Revision 2): docx-preview and pdfjs-dist render the referrer's form in its
 // original layout in the Studio, so only ui/ may import them. forms/ may use pdfjs-dist's LEGACY build
@@ -57,11 +75,43 @@ const PDFJS_BROWSER_ENTRIES = {
   message: PDFJS_BROWSER_MESSAGE,
 };
 const PDFJS_BARE_PATH = { name: "pdfjs-dist", message: PDFJS_BROWSER_MESSAGE };
+// Product analytics (public site, wave 2 app events) is host code: consent-gated and allow-listed in
+// src/components/analytics. The module and server code never import the browser library directly.
+const POSTHOG = {
+  group: ["posthog-js", "posthog-js/*"],
+  message: "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library.",
+};
+// Host UI components (src/components: marketing site, consent banner, analytics, UI primitives) may run in
+// the browser: no server code, Node built-ins, database or email libraries.
+const HOST_UI_SERVER_ONLY = {
+  group: [
+    "@/server",
+    "@/server/*",
+    "server-only",
+    "node:*",
+    "kysely",
+    "kysely/*",
+    "pg",
+    "@electric-sql/pglite",
+    "@electric-sql/pglite/*",
+    "better-auth",
+    "better-auth/*",
+    "!better-auth/react",
+    "!better-auth/client",
+    "!better-auth/client/*",
+    "mailersend",
+    "mailersend/*",
+  ],
+  message: "src/components may run in the browser: no src/server, server-only, Node built-ins, database, sign-in server or email libraries here (call an API route or pass data from a server component).",
+};
 const rule = (patterns, paths) => ({ "no-restricted-imports": ["error", paths ? { paths, patterns } : { patterns }] });
-const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, escape(d)];
+const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, POSTHOG, escape(d)];
 const base = (d) => [...core(d), DOCX_PREVIEW, PDFJS];
 
 const overrides = [];
+// 0. All app code: no imports of the Worker. (Listed first: the module and sandbox overrides below replace
+//    this rule's options for their files and carry their own escape / WORKERS patterns.)
+overrides.push({ files: [`src/**/*.${ext}`], rules: rule([WORKERS]) });
 // 1. Every module file, by depth below src/modules/medreport.
 for (let d = 0; d <= MAX_DEPTH; d++) {
   overrides.push({ files: [`${M}/${"*/".repeat(d)}*.${ext}`], rules: rule(base(d)) });
@@ -86,6 +136,8 @@ for (const folder of ["core", "templates", "ui"]) {
 }
 overrides.push({ files: [`${M}/config.public.ts`], rules: rule([...base(0), CLIENT_UNSAFE]) });
 overrides.push({ files: [`${M}/api/contract.ts`], rules: rule([...base(1), CLIENT_UNSAFE]) });
+// The tenant-storage contract (wave 2) is shared by ui/store/server-api.ts and the store handlers: browser-safe too.
+overrides.push({ files: [`${M}/api/store-contract.ts`], rules: rule([...base(1), CLIENT_UNSAFE]) });
 // 4. The one bridge to the host design system.
 overrides.push({
   files: [`${M}/ui/primitives.ts`],
@@ -94,6 +146,8 @@ overrides.push({
     { group: ["@/components/*", "!@/components/ui"], message: "ui/primitives.ts may re-export only @/components/ui/*." },
     SANDBOX,
     APP,
+    SERVER,
+    POSTHOG,
     escape(1),
     CLIENT_UNSAFE,
   ]),
@@ -106,8 +160,44 @@ overrides.push({
       group: ["@/modules", "@/modules/*", "**/modules/*"],
       message: "The simulated TM3 sandbox may not import the medreport module; duplicate wire types in src/sandbox/tm3-sim/wire-types.ts and talk over HTTP.",
     },
+    WORKERS,
   ]),
 });
+
+// 6. Edge middleware (src/middleware.ts) only looks at cookies: no database, sign-in library, Node built-ins or
+//    host/module server code there (Next 14 middleware runs on the Edge runtime; real checks are in Node).
+overrides.push({
+  files: ["src/middleware.ts"],
+  rules: rule([
+    {
+      group: [
+        "@/server",
+        "@/server/*",
+        "@/modules/*",
+        "@/sandbox/*",
+        "server-only",
+        "node:*",
+        "kysely",
+        "kysely/*",
+        "pg",
+        "better-auth",
+        "better-auth/*",
+        "mailersend",
+        "mailersend/*",
+      ],
+      message: "src/middleware.ts runs on the Edge runtime and only does optimistic cookie checks: no server code, database or sign-in library here.",
+    },
+    WORKERS,
+  ]),
+});
+
+// 7. Host UI components: browser-safe (no server code); server code: no browser analytics library.
+overrides.push({
+  files: [`src/components/**/*.${ext}`],
+  excludedFiles: ["**/*.test.ts", "**/*.test.tsx"],
+  rules: rule([HOST_UI_SERVER_ONLY, WORKERS]),
+});
+overrides.push({ files: [`src/server/**/*.${ext}`], rules: rule([POSTHOG, WORKERS]) });
 
 const current = JSON.parse(fs.readFileSync(".eslintrc.json", "utf8"));
 fs.writeFileSync(".eslintrc.json", JSON.stringify({ extends: current.extends ?? "next/core-web-vitals", overrides }, null, 2) + "\n");

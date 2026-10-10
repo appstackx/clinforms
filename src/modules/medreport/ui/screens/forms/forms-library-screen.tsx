@@ -23,10 +23,14 @@ import { UploadFormDialog } from "../../components/forms/upload-form-dialog";
 import { errorMessage, plural } from "../../components/shared/format";
 import { StudioShell } from "../../components/shared/studio-shell";
 import { EmptyState, FormKindBadge, Notice } from "../../components/shared/ui-bits";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 
 export function FormsLibraryScreen() {
   const { forms, ready } = useForms();
+  // A clinic's Studio offers neither the fictional sample forms nor the local demonstration forms.
+  const tenant = useStudioMode() === "tenant";
   const [samples, setSamples] = useState<FormSample[] | null>(null);
   const [upload, setUpload] = useState<{ open: boolean; file?: { name: string; bytes: Uint8Array } | null; sample?: FormSample }>({
     open: false,
@@ -140,8 +144,11 @@ export function FormsLibraryScreen() {
             </Button>
           }
         >
-          Upload the form an MLC or insurer sent you (.docx or PDF). The sample forms reappear after “Reset demo” on the
-          Reports page.
+          {tenant ? (
+            TENANT_COPY.forms.libraryIntro
+          ) : (
+            <>Upload the form an MLC or insurer sent you (.docx or PDF). The sample forms reappear after “Reset demo” on the Reports page.</>
+          )}
         </EmptyState>
       ) : (
         <section aria-labelledby="library-heading" className="space-y-3">
@@ -162,7 +169,7 @@ export function FormsLibraryScreen() {
         </section>
       )}
 
-      {tryable.length ? (
+      {!tenant && tryable.length ? (
         <section aria-labelledby="try-heading" className="space-y-3">
           <div>
             <h2 id="try-heading" className="text-lg font-semibold text-slate-900">
@@ -215,7 +222,7 @@ export function FormsLibraryScreen() {
         </section>
       ) : null}
 
-      <DemoAssetForms samples={demoForms} onUpload={(sample) => setUpload({ open: true, file: null, sample })} />
+      {tenant ? null : <DemoAssetForms samples={demoForms} onUpload={(sample) => setUpload({ open: true, file: null, sample })} />}
 
       <PortalQuestionsDialog open={portalOpen} onOpenChange={setPortalOpen} />
       <UploadFormDialog

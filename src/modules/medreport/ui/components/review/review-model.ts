@@ -679,20 +679,47 @@ export function acknowledgeFlag(report: Report, flagId: string, reason: string, 
   );
 }
 
+/**
+ * Fix wave 3: record the patient's consent to share the report on a report built from UPLOADED notes (there is no
+ * clinic system inside ClinForms to record it in). The record's consent is set, with the date it was given (not in
+ * the future), and who recorded it stays in the report's activity. A report from a clinic system or an approved
+ * report is returned unchanged.
+ */
+export function recordConsent(report: Report, givenOn: string, actor: string, now?: Date): Report {
+  const at = nowIso(now);
+  if (report.status === "signed" || report.bundleSnapshot.source.connectorId !== "file-import") return report;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(givenOn) || givenOn > at.slice(0, 10) || !actor.trim()) return report;
+  const bundleSnapshot = { ...report.bundleSnapshot, consent: { disclosureConsentRecorded: true, date: givenOn } };
+  return appendActivity(
+    { ...report, bundleSnapshot, updatedAt: at },
+    { actor, action: "consent_recorded", detail: `Recorded the patient's consent to share the report, given on ${formatUkDate(givenOn)} (the uploaded notes did not record it).` },
+    now,
+  );
+}
+
+/** Whether a report may have its consent recorded in the Studio (built from uploaded notes, not approved, none recorded). */
+export function canRecordConsent(report: Report): boolean {
+  return report.status !== "signed" && report.bundleSnapshot.source.connectorId === "file-import" && !report.bundleSnapshot.consent.disclosureConsentRecorded;
+}
+
 /** The report after a successful POST /sign: locked, with its receipt and the server's flags. */
 export function markApproved(
   sent: Report,
   receipt: SignReceipt,
   flags: ReportFlag[],
-  opts: { isForm: boolean; now?: Date; prefill?: boolean },
+  opts: { isForm: boolean; now?: Date; prefill?: boolean; plain?: boolean },
 ): Report {
   const at = nowIso(opts.now);
+  // plain (a clinic's Studio, fix wave 2): the same facts without "server-signed receipt" / "fingerprint".
+  const proof = opts.plain
+    ? `Approval check code ${receipt.contentSha256.slice(0, 12)}…`
+    : `Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`;
   return appendActivity(
     { ...sent, flags, receipt, status: "signed", updatedAt: at },
     {
       actor: receipt.signer.name,
       action: opts.isForm ? "approved" : "signed",
-      detail: `${opts.prefill ? "Prefill checked and approved (nobody at the clinic signs this form)" : opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`,
+      detail: `${opts.prefill ? "Prefill checked and approved (nobody at the clinic signs this form)" : opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). ${proof}`,
     },
     opts.now,
   );

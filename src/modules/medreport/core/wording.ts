@@ -205,12 +205,127 @@ export interface Wording {
       liveDetail(info: { model: string; chunks: number; effort: string; questions: number }): string;
       liveFailedRules(code: string): string;
       rulesOnlyTrace: string;
+      /** Fix wave 2: the same for a clinic's own upload – production wording, never "demo". */
+      clinicRulesOnlyTrace: string;
+      clinicRecordedDetail(date: string): string;
+      clinicLiveDetail(questions: number): string;
       liveErrorWarning(message: string): string;
       rulesOnlyWarning: string;
       prefilledRemoved: string;
     };
+    /** Wave 2: who may call the Report API (sign-in, clinics, roles, limits). Names no technology. */
+    access: AccessWording;
   };
 }
+
+/** Problem titles and details for sign-in, clinic (tenant), role and limit refusals (api/handlers, auth/actor.ts). */
+export interface AccessWording {
+  signInTitle: string;
+  signInDetail: string;
+  clinicSignInDetail: string;
+  twoFactorTitle: string;
+  twoFactorDetail: string;
+  noClinicTitle: string;
+  noClinicDetail: string;
+  demoOffTitle: string;
+  demoOffDetail: string;
+  otherClinicTitle: string;
+  otherClinic(what: string): string;
+  roleTitle: string;
+  role(action: string): string;
+  cannotSignTitle: string;
+  cannotSignDetail: string;
+  signAsYourselfTitle: string;
+  signAsYourself(name: string): string;
+  draftingOffTitle: string;
+  draftingOffDetail: string;
+  clinicLimitTitle: string;
+  clinicMinuteLimit(seconds: number): string;
+  clinicDailyLimit: string;
+  liveNotAvailableForClinic: string;
+  originTitle: string;
+  originDetail: string;
+  jsonTitle: string;
+  jsonDetail: string;
+  demoConnectorTitle: string;
+  demoConnectorDetail(label: string): string;
+  partnerKeyTitle: string;
+  partnerKeyDetail: string;
+  launchStateUnavailable: string;
+  /** Fix wave 2: the Studio page was opened for another clinic or member than the sign-in now holds. */
+  signInChangedTitle: string;
+  signInChangedDetail: string;
+  /** Fix wave 2: an approved report or a confirmed form map is protected. */
+  approvedLockedTitle: string;
+  approvedDeleteDetail: string;
+  confirmedMapTitle: string;
+  confirmedMapDetail: string;
+  /** Fix wave 2: answers drafted in another clinician's voice ("I recorded…"). */
+  otherVoiceTitle: string;
+  otherVoiceDetail(author: string, signer: string, keys: string[]): string;
+  /** Fix wave 2: too many changes to the clinic's records in a short time. */
+  storeLimitTitle: string;
+  storeLimitDetail(seconds: number): string;
+  storeDailyLimitDetail: string;
+  /** Fix wave 3: too many notes uploads read in a short time (per sign-in or demo session, and per network address). */
+  importLimitTitle: string;
+  importLimitDetail(seconds: number): string;
+}
+
+/** The access wording is the same under every disclosure setting: it never names a technology. */
+const ACCESS: AccessWording = {
+  signInTitle: "Sign in required",
+  signInDetail: "Sign in to your clinic's account, or open the public demo.",
+  clinicSignInDetail: "This link belongs to a clinic's account. Sign in to that clinic first, then open the link again.",
+  twoFactorTitle: "Two-step verification required",
+  twoFactorDetail: "Set up two-step verification for your account before working with patient records.",
+  noClinicTitle: "Choose a clinic",
+  noClinicDetail: "Your account is not working in a clinic at the moment. Choose a clinic, then try again.",
+  demoOffTitle: "The public demo is switched off",
+  demoOffDetail: "The public demo is not available on this site. Sign in to your clinic's account.",
+  otherClinicTitle: "This belongs to another clinic",
+  otherClinic: (what) => `This ${what} belongs to another clinic. Open it from that clinic's own account.`,
+  roleTitle: "Not available for your role",
+  role: (action) => `Your role in this clinic cannot ${action}. Ask a clinician or an administrator of your clinic.`,
+  cannotSignTitle: "Approval needs a signing clinician",
+  cannotSignDetail:
+    "Only a clinician whose clinic profile has an HCPC number and permission to sign can approve. Ask an administrator of your clinic to update your profile.",
+  signAsYourselfTitle: "Approve as yourself",
+  signAsYourself: (name) => `You are signed in as ${name}. The approval is recorded under your own name and HCPC number.`,
+  draftingOffTitle: "Drafting is switched off",
+  draftingOffDetail: "Drafting from the notes is switched off for this clinic. Complete the answers yourself, or ask your clinic's administrator.",
+  clinicLimitTitle: "Your clinic's drafting limit is reached",
+  clinicMinuteLimit: (seconds) => `Your clinic has reached its drafting limit for this minute. Try again in ${seconds} s.`,
+  clinicDailyLimit: "Your clinic has reached its drafting limit for today. Try again tomorrow, or complete the answers yourself.",
+  liveNotAvailableForClinic: "Drafting from the notes is not available on this site at the moment. Complete the answers yourself, or try again later.",
+  originTitle: "Request refused",
+  originDetail: "This request did not come from this site, so it was refused.",
+  jsonTitle: "Unsupported request format",
+  jsonDetail: "Send the request body as JSON (content-type application/json).",
+  demoConnectorTitle: "Part of the public demo only",
+  demoConnectorDetail: (label) => `${label} is part of the public demo and is not available to clinics.`,
+  partnerKeyTitle: "Partner key required",
+  partnerKeyDetail: "POST /launch is called server-to-server by the clinic system with a valid partner key.",
+  launchStateUnavailable: "Launch links cannot be checked at the moment. Try again shortly.",
+  signInChangedTitle: "Your sign-in has changed",
+  signInChangedDetail:
+    "This page was opened for another clinic or another member than the one now signed in, so the change was not saved. Reload the page.",
+  approvedLockedTitle: "This report has been approved",
+  approvedDeleteDetail: "An approved report can only be deleted by the clinic's owner or an administrator. To correct it, start an amended version.",
+  confirmedMapTitle: "This form mapping has been confirmed",
+  confirmedMapDetail:
+    "Only a clinician, an administrator or the owner can change or delete a confirmed form mapping. Ask one of them.",
+  otherVoiceTitle: "Drafted in another clinician's voice",
+  otherVoiceDetail: (author, signer, keys) =>
+    `${keys.length === 1 ? "One answer speaks" : `${keys.length} answers speak`} as ${author} ("I …"): ${keys.join(", ")}. ` +
+    `You are approving as ${signer}. Edit ${keys.length === 1 ? "it" : "them"} so ${keys.length === 1 ? "it does" : "they do"} not speak as ${author}, or ask ${author} to approve.`,
+  storeLimitTitle: "Too many changes at once",
+  storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
+  storeDailyLimitDetail:
+    "Your clinic has added an unusually large amount of new data today, so new records are paused until tomorrow. Contact ClinForms support if you need more.",
+  importLimitTitle: "Too many uploads at once",
+  importLimitDetail: (seconds) => `Too many notes were uploaded or checked in a short time. Try again in ${seconds} s.`,
+};
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -489,10 +604,15 @@ const NEUTRAL: Wording = {
         `Read live: ${plural(questions, "question")} proposed (${plural(chunks, "parallel request")})`,
       liveFailedRules: () => "Live form reading could not finish; the map was proposed by layout rules instead",
       rulesOnlyTrace: "Layout rules only (demo mode). Every question is marked for review.",
+      clinicRulesOnlyTrace:
+        "Found from the form's layout only: reading the form's wording needs drafting from the notes, which your clinic switches on in Settings → Clinic. Check every question.",
+      clinicRecordedDetail: (date) => `Stored reading of this exact form (${date})`,
+      clinicLiveDetail: (questions) => `Read from the form: ${plural(questions, "question")} proposed`,
       liveErrorWarning: (message) => `Live form reading could not be completed (${message}) The questions below were found by layout rules – check each one.`,
       rulesOnlyWarning: "Mapped by layout rules only: check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the form was read.",
     },
+    access: ACCESS,
   },
 };
 
@@ -671,10 +791,15 @@ const AI_ASSISTED: Wording = {
         `Claude (${model}), ${chunks} parallel call${chunks === 1 ? "" : "s"}, ${effort} effort, ${questions} questions proposed`,
       liveFailedRules: (code) => `Claude could not finish (${code}); the map was proposed by rules instead`,
       rulesOnlyTrace: "Rules only – no AI call (demo mode). Every question is marked for review.",
+      clinicRulesOnlyTrace:
+        "Found from the form's layout only: reading the form's wording needs drafting from the notes, which your clinic switches on in Settings → Clinic. Check every question.",
+      clinicRecordedDetail: (date) => `Stored reading of this exact form (${date})`,
+      clinicLiveDetail: (questions) => `Read from the form: ${plural(questions, "question")} proposed`,
       liveErrorWarning: (message) => `Claude could not complete the analysis (${message}) The questions below were found by rules – check each one.`,
       rulesOnlyWarning: "Mapped by rules only (no AI call): check every question, its answer type and where its answer comes from.",
       prefilledRemoved: "They were removed before the AI saw the form.",
     },
+    access: ACCESS,
   },
 };
 

@@ -29,7 +29,10 @@ import { shortFingerprint } from "../../../core/fingerprint";
 import { referrerNamesMatch } from "../../../core/forms";
 import { FORM_KIND_LABELS, INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ActivityEntry, Report, ReportTemplate } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from "../../primitives";
+import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 import type { GenerationSummary } from "./review-model";
 import { Pill } from "./review-ui";
@@ -124,6 +127,8 @@ export function ReviewHeader({
   draftCopyUnavailable: boolean;
   downloading: DownloadKind | null;
 }) {
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   const signed = report.status === "signed";
   const form = report.form;
   const approveLabel = form ? "Approve…" : "Sign…";
@@ -133,7 +138,7 @@ export function ReviewHeader({
   return (
     <header className="space-y-3">
       <Link
-        href="/reports"
+        href={paths.home}
         className="inline-flex items-center gap-1 rounded text-sm text-slate-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden /> Reports
@@ -185,10 +190,11 @@ export function ReviewHeader({
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Saving…
                 </>
               ) : saveState === "failed" ? (
-                <span className="text-red-700">Could not save in this browser (storage full or blocked)</span>
+                <span className="text-red-700">{tenant ? TENANT_COPY.review.saveFailed : "Could not save in this browser (storage full or blocked)"}</span>
               ) : (
                 <>
-                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> Saved in this browser{savedAt ? ` · ${formatUkDateTime(savedAt).slice(11)}` : ""}
+                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> {tenant ? TENANT_COPY.review.saved : "Saved in this browser"}
+                  {savedAt ? ` · ${formatUkDateTime(savedAt).slice(11)}` : ""}
                 </>
               )}
             </span>
@@ -270,6 +276,7 @@ export const ApprovedBanner = forwardRef<
   }
 >(function ApprovedBanner(props, ref) {
   const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet, prefillFor } = props;
+  const tenant = useStudioMode() === "tenant";
   const receipt = report.receipt;
   if (!receipt) return null;
   const isForm = Boolean(report.form);
@@ -296,16 +303,25 @@ export const ApprovedBanner = forwardRef<
             {prefillFor ? "Checked and approved" : isForm ? "Approved" : "Signed"} by <span className="font-medium">{receipt.signer.name}</span> (HCPC{" "}
             {receipt.signer.hcpc}) on {formatUkDateTime(receipt.signedAt)}.{prefillFor ? " Nobody at the clinic signs this form." : ""} Read-only from now on.
           </p>
-          <p className="text-[12px] text-teal-900/80">
-            Content fingerprint <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> · server-signed
-            receipt
-          </p>
+          {tenant ? (
+            <p className="text-[12px] text-teal-900/80">
+              {TENANT_COPY.review.approvalCode} <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> –{" "}
+              {TENANT_COPY.review.approvalCodeHint}
+            </p>
+          ) : (
+            <p className="text-[12px] text-teal-900/80">
+              Content fingerprint <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> · server-signed
+              receipt
+            </p>
+          )}
         </div>
       </div>
 
       {fileMissing && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900 ring-1 ring-amber-200">
-          The referrer&apos;s original file is not stored in this browser, so the completed form cannot be produced here. Add the form again in the forms library.
+          {tenant
+            ? TENANT_COPY.files.missingForCompletion
+            : "The referrer's original file is not stored in this browser, so the completed form cannot be produced here. Add the form again in the forms library."}
         </p>
       )}
 
@@ -342,7 +358,8 @@ export const ApprovedBanner = forwardRef<
             <CheckCircle2 className="h-4 w-4 text-teal-600" aria-hidden />
             Filed {formatUkDateTime(lastFiled.at)}
           </span>
-        ) : (
+        ) : tenant && !canFile ? null : (
+          // A clinic's Studio has no clinic-system connection (fix wave 2): no permanently disabled button.
           <Button type="button" variant="outline" onClick={onSave} disabled={filing || !canFile || fileMissing} className="bg-white">
             {filing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Save className="mr-2 h-4 w-4" aria-hidden />}
             Save to clinic record
@@ -376,7 +393,9 @@ export const ApprovedBanner = forwardRef<
       {!canFile && (
         <p className="mt-2 text-[12px] text-slate-600">
           {report.episodeRef.connectorId === "file-import"
-            ? "Made from an uploaded export – download the completed form and attach it to the patient record."
+            ? tenant
+              ? "Made from the uploaded notes – download the completed form and attach it to the patient's record in your clinic system."
+              : "Made from an uploaded export – download the completed form and attach it to the patient record."
             : "Filing to TM3 needs the live TM3 connection (partner access)."}
         </p>
       )}

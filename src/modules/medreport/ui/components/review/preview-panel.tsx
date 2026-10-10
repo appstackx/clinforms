@@ -19,6 +19,8 @@ import { buildFormAnswers } from "../../../core/forms";
 import { isQuestionSet } from "../../../core/question-set";
 import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
 import { DemoNoticeBar } from "../shared/demo-notice";
@@ -220,6 +222,7 @@ export function PreviewPanel({
   // Portal questions: no file to fill – the summary PDF is rendered from the answers alone.
   const questionSet = isQuestionSet(report.form);
   const needsFile = isForm && !questionSet;
+  const tenant = useStudioMode() === "tenant";
   const signed = report.status === "signed" && Boolean(report.receipt);
   const [doc, setDoc] = useState<FileDownload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -240,9 +243,13 @@ export function PreviewPanel({
 
   const blocked: string | null = isForm
     ? !form
-      ? "The form map for this report is not in this browser's forms library, so the form cannot be previewed."
+      ? tenant
+        ? TENANT_COPY.files.mapMissingForPreview
+        : "The form map for this report is not in this browser's forms library, so the form cannot be previewed."
       : needsFile && file.status === "missing"
-        ? "The referrer's original file is not stored in this browser. Add it again in the forms library to preview the completed form."
+        ? tenant
+          ? TENANT_COPY.files.fileMissingForPreview
+          : "The referrer's original file is not stored in this browser. Add it again in the forms library to preview the completed form."
         : null
     : null;
 
@@ -260,19 +267,19 @@ export function PreviewPanel({
         if (!form) return;
         out = await api.render(
           "pdf",
-          signed && current.receipt ? { report: current, receipt: current.receipt, form, requireFinal: true } : { report: current, form },
+          signed && current.receipt ? { report: current, receipt: current.receipt, form, requireFinal: true, purpose: "preview" } : { report: current, form, purpose: "preview" },
           { signal: ctrl.signal },
         );
       } else if (isForm) {
         if (!form || file.status !== "ready") return;
         out =
           signed && current.receipt
-            ? await api.render("original", { report: current, receipt: current.receipt, form, fileBase64: file.base64, requireFinal: true }, { signal: ctrl.signal })
+            ? await api.render("original", { report: current, receipt: current.receipt, form, fileBase64: file.base64, requireFinal: true, purpose: "preview" }, { signal: ctrl.signal })
             : await api.fillPreview({ report: current, form, fileBase64: file.base64, mode: "draft" }, { signal: ctrl.signal });
       } else {
         out = await api.render(
           "pdf",
-          signed && current.receipt ? { report: current, receipt: current.receipt, requireFinal: true } : { report: current },
+          signed && current.receipt ? { report: current, receipt: current.receipt, requireFinal: true, purpose: "preview" } : { report: current, purpose: "preview" },
           { signal: ctrl.signal },
         );
       }

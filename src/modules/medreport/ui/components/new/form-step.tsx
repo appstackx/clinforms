@@ -15,6 +15,7 @@ import { answerableFields } from "../../../core/forms";
 import { INSTRUCTING_PARTY_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
 import type { FormDefinition, InstructingParty, ReportTemplate } from "../../../core/types";
 import { api } from "../../api-client";
+import { useStudioPaths } from "../../routes";
 import { Skeleton, cn } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
 import { breakdownText, FormKindBadge, Notice, questionBreakdown } from "../shared/ui-bits";
@@ -35,6 +36,7 @@ export interface FormStepProps {
 }
 
 export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId }: FormStepProps) {
+  const paths = useStudioPaths();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const proposed = useMemo(() => forms.filter((f) => f.status !== "confirmed"), [forms]);
   const match: FormMatch | null = useMemo(
@@ -112,7 +114,7 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
         {ordered.length === 0 ? (
           <Notice tone="info" title="No confirmed referrer forms yet">
             Upload the referrer&apos;s form and confirm its mapping in{" "}
-            <Link href="/reports/forms" className="font-medium underline">
+            <Link href={paths.forms} className="font-medium underline">
               Referrer forms
             </Link>
             , or use a built-in report below.
@@ -162,7 +164,7 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
             {proposed.map((f, i) => (
               <span key={f.id}>
                 {i > 0 ? ", " : ""}
-                <Link href={`/reports/forms/${encodeURIComponent(f.id)}`} className="underline hover:text-slate-800">
+                <Link href={paths.form(f.id)} className="underline hover:text-slate-800">
                   {f.title} ({f.referrer.name})
                 </Link>
               </span>
@@ -170,7 +172,7 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
             – confirm the mapping first.
           </p>
         ) : null}
-        <Link href="/reports/forms" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline">
+        <Link href={paths.forms} className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline">
           <Upload className="h-4 w-4" aria-hidden />
           The referrer sent a new form? Add it to the library
         </Link>

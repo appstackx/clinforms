@@ -5,6 +5,8 @@
  * product. Phrased honestly: what this demo does (fictional data, browser storage) and what is in place
  * BEFORE any real patient data is used (DPA, DPIA, UK hosting, MFA, server-side audit trail…). The
  * drafting-specific wording comes from core/wording.ts (WORDING.security).
+ * Tenant mode (a clinic's own Studio links to the public /security page instead) never shows the demo
+ * status table or the demo sentences, should a host render it there.
  *
  * Owner: studio-a agent.
  */
@@ -26,6 +28,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { PRODUCT } from "../../../config.public";
+import { useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
 import { WORDING } from "../../wording";
 import { StudioShell } from "../../components/shared/studio-shell";
 
@@ -62,22 +66,28 @@ function Points({ items }: { items: ReactNode[] }) {
 
 const STATUS: Array<{ area: string; demo: string; live: string }> = [
   { area: "Patient data", demo: "Fictional patients only", live: "Real data only after the Data Processing Agreement and the DPIA are signed off with the clinic" },
-  { area: "Where reports are kept", demo: "In this browser", live: "UK-hosted database, encrypted at rest (AES-256) and in transit (TLS 1.2+)" },
-  { area: "Sign-in", demo: "Demo sessions; launch from the simulated TM3", live: "Clinic accounts with multi-factor authentication and roles; launch from TM3 in the patient's context" },
+  { area: "Where reports are kept", demo: "In this browser", live: "Database encrypted at rest (AES-256, a key per clinic) and in transit (TLS 1.2+), hosted in the UK before real patient data is used" },
+  { area: "Sign-in", demo: "Demo sessions; launch from the simulated TM3", live: "Clinic accounts with two-step verification and roles; launch from TM3 in the patient's context" },
   { area: "Audit trail", demo: "Kept with each report in this browser", live: "Server-side and append-only: every draft, edit, resolution, approval and filing, with who and when" },
   WORDING.security.statusRow,
   { area: "TM3", demo: "Simulated TM3 sandbox (not affiliated with TM3)", live: "Notes export upload now; a direct connection subject to TM3 providing access" },
 ];
 
 export function SecurityScreen() {
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   return (
     <StudioShell
       title="Security & data protection"
       description={
-        <>
-          How {PRODUCT.name} protects patient data, and what is in place before any real patient data is used. This demo runs on
-          fictional data only.
-        </>
+        tenant ? (
+          <>How {PRODUCT.name} protects patient data.</>
+        ) : (
+          <>
+            How {PRODUCT.name} protects patient data, and what is in place before any real patient data is used. This demo runs on
+            fictional data only.
+          </>
+        )
       }
     >
       <div className="grid gap-4 lg:grid-cols-2">
@@ -115,7 +125,7 @@ export function SecurityScreen() {
         <Section icon={KeyRound} title="Who can see it" id="access">
           <Points
             items={[
-              <>Clinic accounts with multi-factor authentication and roles (clinician, practice manager, admin).</>,
+              <>Clinic accounts with two-step verification and roles (owner, administrator, clinician, staff).</>,
               <>Opened from TM3, a session covers that one patient&apos;s episode and expires after an hour; launch links work once.</>,
               <>Staff see the clinic&apos;s own reports and forms only.</>,
             ]}
@@ -125,7 +135,7 @@ export function SecurityScreen() {
         <Section icon={Server} title="Where the data lives" id="hosting">
           <Points
             items={[
-              <>UK hosting, encrypted at rest and in transit.</>,
+              <>Encrypted at rest and in transit. Before any real patient data is used, the database is hosted in the UK (see the public <Link href="/security" className="font-medium text-teal-800 underline underline-offset-2">security page</Link> for what is in place today).</>,
               <>The completed form is filed to the patient&apos;s record in TM3; working copies are kept only as long as the clinic&apos;s retention policy allows.</>,
               <>Uploaded forms and documents are processed with size limits and in an isolated converter without network access.</>,
             ]}
@@ -135,7 +145,7 @@ export function SecurityScreen() {
         <Section icon={History} title="Audit trail" id="audit">
           <Points
             items={[
-              <>Every draft, edit, gap resolution, approval and filing is recorded with who did it and when.</>,
+              <>Every draft, edit, gap resolution, approval and filing is recorded in the report&apos;s own audit trail, with who did it and when{tenant ? "" : " (in this demo, kept with the report in this browser)"}.</>,
               <>Resolving a gap says who answered it; nobody can mark an opinion as answered without writing it.</>,
               <>{WORDING.security.draftsLabelled}</>,
             ]}
@@ -161,42 +171,44 @@ export function SecurityScreen() {
         </Section>
       </div>
 
-      <section aria-labelledby="status-h" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3">
-          <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden />
-          <h2 id="status-h" className="text-sm font-semibold text-slate-900">
-            This demo, and what is in place before real patient data
-          </h2>
-        </div>
-        <div className="divide-y divide-slate-100">
-          <div className="hidden grid-cols-[180px_1fr_1fr] gap-4 px-5 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:grid">
-            <span>Area</span>
-            <span className="inline-flex items-center gap-1">
-              <Eye className="h-3.5 w-3.5" aria-hidden /> In this demo
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Lock className="h-3.5 w-3.5" aria-hidden /> Before any real patient data
-            </span>
+      {tenant ? null : (
+        <section aria-labelledby="status-h" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3">
+            <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden />
+            <h2 id="status-h" className="text-sm font-semibold text-slate-900">
+              This demo, and what is in place before real patient data
+            </h2>
           </div>
-          {STATUS.map((row) => (
-            <div key={row.area} className="grid gap-1 px-5 py-3 text-sm md:grid-cols-[180px_1fr_1fr] md:gap-4">
-              <span className="font-medium text-slate-900">{row.area}</span>
-              <span className="text-slate-600">
-                <span className="font-medium text-slate-500 md:hidden">In this demo: </span>
-                {row.demo}
+          <div className="divide-y divide-slate-100">
+            <div className="hidden grid-cols-[180px_1fr_1fr] gap-4 px-5 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:grid">
+              <span>Area</span>
+              <span className="inline-flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" aria-hidden /> In this demo
               </span>
-              <span className="text-slate-800">
-                <span className="font-medium text-slate-500 md:hidden">Before real data: </span>
-                {row.live}
+              <span className="inline-flex items-center gap-1">
+                <Lock className="h-3.5 w-3.5" aria-hidden /> Before any real patient data
               </span>
             </div>
-          ))}
-        </div>
-      </section>
+            {STATUS.map((row) => (
+              <div key={row.area} className="grid gap-1 px-5 py-3 text-sm md:grid-cols-[180px_1fr_1fr] md:gap-4">
+                <span className="font-medium text-slate-900">{row.area}</span>
+                <span className="text-slate-600">
+                  <span className="font-medium text-slate-500 md:hidden">In this demo: </span>
+                  {row.demo}
+                </span>
+                <span className="text-slate-800">
+                  <span className="font-medium text-slate-500 md:hidden">Before real data: </span>
+                  {row.live}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <p className="mt-6 text-xs text-slate-500">
         Questions about data protection? Ask for the draft Data Processing Agreement and the DPIA template.{" "}
-        <Link href="/reports" className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
+        <Link href={paths.home} className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
           Back to reports
         </Link>
       </p>

@@ -9,7 +9,9 @@
 import type { ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { forwardRef } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, type LucideIcon } from "lucide-react";
-import { FORM_KIND_LABELS } from "../../../core/labels";
+import { FILL_SOURCE_LABELS, FORM_ANALYSIS_MODE_LABELS, FORM_KIND_LABELS } from "../../../core/labels";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { blankForCounts, blankForSummary } from "../../../core/parties";
 import type { FillSource, FormDefinition, FormKind, FormStatus, Report } from "../../../core/types";
 import { cn } from "../../primitives";
@@ -44,7 +46,33 @@ const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
   appointments_table: "border-sky-200 bg-sky-50 text-sky-800",
 };
 
+/**
+ * Fill-source labels for this Studio (fix wave 2): a clinic's Studio fills "registration" answers from the
+ * uploaded notes' patient record – it has no practice-system link, so its labels never name one.
+ */
+export function useFillSourceLabels(): { short: Record<FillSourceKind, string>; long: Record<FillSourceKind, string> } {
+  const tenant = useStudioMode() === "tenant";
+  if (!tenant) return { short: FILL_SOURCE_SHORT, long: FILL_SOURCE_LABELS };
+  return {
+    short: { ...FILL_SOURCE_SHORT, registration: TENANT_COPY.sources.registrationShort },
+    long: { ...FILL_SOURCE_LABELS, registration: TENANT_COPY.sources.registrationLong },
+  };
+}
+
+/** How a form map was analysed, for this Studio (fix wave 2: a clinic's Studio never says "demo" or "live"). */
+export function useAnalysisModeLabels(): Record<keyof typeof FORM_ANALYSIS_MODE_LABELS, string> {
+  const tenant = useStudioMode() === "tenant";
+  if (!tenant) return FORM_ANALYSIS_MODE_LABELS;
+  return {
+    live: TENANT_COPY.forms.analysisLive,
+    demo_recorded: TENANT_COPY.forms.analysisRecorded,
+    demo_prewritten: TENANT_COPY.forms.analysisPrewritten,
+    rules: TENANT_COPY.forms.analysisRules,
+  };
+}
+
 export function FillSourceChip({ kind, className }: { kind: FillSourceKind; className?: string }) {
+  const labels = useFillSourceLabels();
   return (
     <span
       className={cn(
@@ -53,7 +81,7 @@ export function FillSourceChip({ kind, className }: { kind: FillSourceKind; clas
         className,
       )}
     >
-      {FILL_SOURCE_SHORT[kind]}
+      {labels.short[kind]}
     </span>
   );
 }

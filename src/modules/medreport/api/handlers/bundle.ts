@@ -3,8 +3,9 @@ import "server-only";
 /**
  * GET /api/reports/v1/connectors/[id]/patients/[pid]/episodes/[eid]/bundle
  *
- * Bearer session token; a "launch" session's claims must match the path (403 SESSION_MISMATCH); a
- * "demo" session may read any demo-tenant episode (of its connector, if it has one).
+ * An actor (auth/actor.ts); a launch-bound actor must match the path (403 SESSION_MISMATCH); a public-demo
+ * session may read any demo-tenant episode (of its connector, if it has one). The simulated TM3 sandbox
+ * serves the public demo only (403 CONNECTOR_NOT_AVAILABLE for a clinic).
  * → BundleResponse {bundle, computedFacts, dataChecks, trace}. Computed facts use today's date
  * (Europe/London) as the report date; the browser recomputes them for the report's own date.
  *
@@ -14,7 +15,7 @@ import "server-only";
  * Owner: integration agent.
  */
 import { demoDraftAvailability } from "../../ai/draft-demo";
-import { assertSessionConnector, assertSessionEpisode, requireSession } from "../../auth/session-token";
+import { assertActorEpisode, requireActor } from "../../auth/actor";
 import { callConnector, requireConnector } from "../../connectors/handler-support";
 import { computeFacts } from "../../core/computed-facts";
 import { EpisodeBundleSchema } from "../../core/schemas";
@@ -23,16 +24,15 @@ import type { BundleResponse } from "../contract";
 import { HttpError, json, logEvent, type MedreportHandler } from "../http";
 
 export const handleBundle: MedreportHandler = async (req, ctx, deps) => {
-  const claims = requireSession(req);
-  const connector = requireConnector(deps, ctx.params.id, { capability: "clinicalNotes", action: "reading episodes" });
-  assertSessionConnector(claims, connector.id);
+  const actor = await requireActor(req, deps);
+  const connector = requireConnector(deps, ctx.params.id, { capability: "clinicalNotes", action: "reading episodes", tenantId: actor.tenantId });
   const patientId = ctx.params.pid ?? "";
   const episodeId = ctx.params.eid ?? "";
   if (!patientId || !episodeId) throw new HttpError(400, "Patient and episode are required", { code: "BAD_REQUEST" });
-  assertSessionEpisode(claims, { tenantId: claims.tenantId, connectorId: connector.id, patientId, episodeId });
+  assertActorEpisode(actor, { connectorId: connector.id, patientId, episodeId });
 
   const started = Date.now();
-  const cctx = deps.createConnectorContext(req, connector.id, claims.tenantId);
+  const cctx = deps.createConnectorContext(req, connector.id, actor.tenantId);
   const raw = await callConnector(connector.id, () => connector.getEpisodeBundle(cctx, { patientId, episodeId }));
   const checked = EpisodeBundleSchema.safeParse(raw);
   if (!checked.success) {
@@ -43,6 +43,10 @@ export const handleBundle: MedreportHandler = async (req, ctx, deps) => {
     });
   }
   const bundle = checked.data;
+  if (bundle.tenantId !== actor.tenantId) {
+    logEvent("bundle_tenant_mismatch", { connectorId: connector.id });
+    throw new HttpError(502, "The clinic system returned unexpected data", { code: "CONNECTOR_ERROR", detail: "The episode belongs to another clinic." });
+  }
   const body: BundleResponse = {
     bundle,
     computedFacts: computeFacts(bundle),

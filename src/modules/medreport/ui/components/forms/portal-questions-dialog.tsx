@@ -6,6 +6,8 @@
  * hints) and see what was understood before adding it. The question set (FormKind "questions", no
  * file – core/question-set.ts) is saved as a PROPOSED form map and opened in the mapping review, where
  * it is checked and confirmed like any uploaded form.
+ * A clinic's Studio (tenant mode) reports it as form_uploaded (form_kind "questions") through
+ * HostHooks.track.
  *
  * Owner: studio-a agent.
  */
@@ -16,7 +18,10 @@ import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
 import { EXAMPLE_PORTAL_QUESTIONS, classifyPortalQuestion, createQuestionSet, parsePortalQuestions } from "../../../core/question-set";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { ReferrerType } from "../../../core/types";
-import { saveForm } from "../../store";
+import { useHostHooks } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { saveFormDurable } from "../../store";
+import { formEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
@@ -29,6 +34,8 @@ export interface PortalQuestionsDialogProps {
 
 export function PortalQuestionsDialog({ open, onOpenChange }: PortalQuestionsDialogProps) {
   const router = useRouter();
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
   const ids = useId();
   const w = WORDING.questionSet;
   const [referrerName, setReferrerName] = useState("");
@@ -66,14 +73,18 @@ export function PortalQuestionsDialog({ open, onOpenChange }: PortalQuestionsDia
     setError(null);
     try {
       const form = await createQuestionSet({
+        // A clinic's question set is the clinic's (the demo's default is the demo tenant).
+        ...(hooks.clinic?.tenantId ? { tenantId: hooks.clinic.tenantId } : {}),
         referrer: { name: referrerName.trim(), type: referrerType },
         title: title.trim() || undefined,
         questions: parsed.questions,
         warnings: parsed.warnings,
       });
-      if (!saveForm(form)) throw new Error("The question set could not be saved in this browser (storage is full or blocked).");
+      // Stored before its mapping screen opens (a clinic's Studio: on the server).
+      if (!(await saveFormDurable(form))) throw new Error("The question set could not be saved. Please try again.");
+      hooks.track?.("form_uploaded", formEventProps(form));
       onOpenChange(false);
-      router.push(`/reports/forms/${encodeURIComponent(form.id)}`);
+      router.push(paths.form(form.id));
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
@@ -104,7 +115,7 @@ export function PortalQuestionsDialog({ open, onOpenChange }: PortalQuestionsDia
                 id={`${ids}-referrer`}
                 value={referrerName}
                 onChange={(e) => setReferrerName(e.target.value)}
-                placeholder="e.g. Northbridge Health Insurance (fictional)"
+                placeholder={hooks.mode === "tenant" ? "e.g. the insurer's name" : "e.g. Northbridge Health Insurance (fictional)"}
                 aria-invalid={touched && nameMissing ? true : undefined}
                 aria-describedby={touched && nameMissing ? `${ids}-referrer-error` : undefined}
                 required

@@ -638,7 +638,9 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
         time = toTime(t[1]);
         rest = rest.slice(t[0].length);
       }
-      drafts.push({ line: i + 1, date: iso, time, headingRest: rest.replace(/\*+/g, "").trim(), body: [] });
+      // Whitespace collapsed (linear): the heading's text is only read for its type and author, and a separator
+      // split over long runs of spaces would take quadratic time (wave 3 security fix).
+      drafts.push({ line: i + 1, date: iso, time, headingRest: rest.replace(/\*+/g, "").replace(/\s+/g, " ").trim(), body: [] });
       continue;
     }
     if (drafts.length === 0) {
@@ -656,7 +658,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
 
   if (drafts.length === 0) {
     return {
-      issues: [{ where: "text", message: 'No dated notes found. Start each note on a new line beginning with its date, e.g. "18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)".' }],
+      issues: [{ where: "text", message: 'No dated notes found. Start each note on a new line beginning with its date, e.g. "18/03/2026 – Initial assessment – <clinician name> (<HCPC number>)".' }],
     };
   }
   if (drafts.length > MAX_IMPORT_NOTES) return { issues: [{ where: "text", message: `Too many notes (maximum ${MAX_IMPORT_NOTES}).` }] };
@@ -668,7 +670,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
   if (!dob) {
     issues.push({
       where: hWhere("dob"),
-      message: h("dob") ? `"${h("dob")}" is not a valid date of birth (use DD/MM/YYYY).` : 'Add a line "Date of birth: DD/MM/YYYY" above the first note (a fictional date is fine).',
+      message: h("dob") ? `"${h("dob")}" is not a valid date of birth (use DD/MM/YYYY).` : 'Add a line "Date of birth: DD/MM/YYYY" above the first note.',
     });
   }
   const partyName = h("party");
@@ -742,7 +744,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
         }
       }
     }
-    const join = (f: SoapField) => fields[f].join("\n").replace(/\n+$/, "").trim();
+    const join = (f: SoapField) => fields[f].join("\n").trim();
     if (!["subjective", "objective", "assessment", "plan", "free_text"].some((f) => join(f as SoapField))) {
       ctx.warnings.push({ where: `line ${d.line}`, message: "This note has no text." });
     }
@@ -836,7 +838,37 @@ export function extractScores(text: string): Array<{ instrument: Instrument; val
  * ImportDocument → wire data → mapper → EpisodeBundle
  * ----------------------------------------------------------------------------------------------*/
 
-function documentToBundle(doc: ImportDocument, ctx: BuildContext): { bundle: EpisodeBundle } | { issues: ImportIssue[] } {
+/**
+ * An ImportDocument built in code (wave 3: a reviewed general-notes upload, ./review-bundle.ts) → the bundle,
+ * exactly as an uploaded export would be mapped. `patch` adds what the import format has no field for (the
+ * insurer's identifiers, a medico-legal company as the instructing party) before the bundle is validated.
+ */
+export function bundleFromImportDocument(
+  doc: ImportDocument,
+  opts: { tenantId: TenantId; now?: Date; label: string; patch?: (bundle: EpisodeBundle) => EpisodeBundle },
+): ImportResult {
+  const ctx: BuildContext = { tenantId: opts.tenantId, now: opts.now ?? new Date(), label: opts.label, warnings: [] };
+  const result = documentToBundle(doc, ctx, opts.patch);
+  if ("issues" in result) return fail(result.issues);
+  const bundle = result.bundle;
+  return {
+    ok: true,
+    bundle,
+    warnings: ctx.warnings.slice(0, MAX_ISSUES),
+    stats: {
+      notes: bundle.notes.length,
+      appointments: bundle.appointments.length,
+      outcomeSeries: bundle.outcomeMeasures.length,
+      clinicians: bundle.clinicians.length,
+    },
+  };
+}
+
+function documentToBundle(
+  doc: ImportDocument,
+  ctx: BuildContext,
+  patch?: (bundle: EpisodeBundle) => EpisodeBundle,
+): { bundle: EpisodeBundle } | { issues: ImportIssue[] } {
   const issues: ImportIssue[] = [];
   const date = (value: string | null | undefined, where: string): string | null => {
     if (!value) return null;
@@ -992,7 +1024,7 @@ function documentToBundle(doc: ImportDocument, ctx: BuildContext): { bundle: Epi
     }
     throw err;
   }
-  return finishBundle(mapped, ctx, { patientId, episodeId });
+  return finishBundle(patch ? patch(mapped) : mapped, ctx, { patientId, episodeId });
 }
 
 function clinician(c: { name: string; hcpc: string; role?: string | null }): SimClinician {

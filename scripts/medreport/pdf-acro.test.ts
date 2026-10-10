@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream, type PDFCheckBox } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, StandardFonts, decodePDFRawStream, type PDFCheckBox } from "pdf-lib";
 import { postValidateFields } from "@/modules/medreport/ai/form-postvalidate";
 import { proposeFieldsByRules } from "@/modules/medreport/ai/form-rules";
 import { renderPdfOutline, chunkPdfFields, type ParsedForm } from "@/modules/medreport/ai/form-outline";
@@ -385,12 +385,23 @@ test("fill: a value too long for its box loses spaces first; anything still cut 
 test("fill: a single-line cell tall enough for two lines wraps; a cut answer keeps its leading words with a short marker", async () => {
   const two = await fill({ "F-09": ANSWERS["F-09"] });
   const cell = two.form.getTextField("Treatment Row1");
-  assert.equal(cell.getText(), "Physiotherapy – follow-up treatment session (30 min)");
+  // Fix wave 3: written with the line break where the fill wrapped it (never re-wrapped up to the border).
+  assert.equal(cell.getText(), "Physiotherapy – follow-up treatment session\n(30 min)");
   assert.equal(cell.isMultiline(), true, "written on two lines");
   assert.deepEqual(two.warnings, []);
+  // Every written line fits inside the box less its border and padding (so no viewer runs a word past the edge).
+  const widget = cell.acroField.getWidgets()[0];
+  const box = widget.getRectangle();
+  const bw = widget.getBorderStyle()?.getWidth() ?? 1;
+  const size = Number(/([\d.]+)\s+Tf/.exec(cell.acroField.getDefaultAppearance() ?? "")?.[1] ?? "0");
+  assert.ok(size >= 8, `font size ${size}`);
+  const helvetica = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+  for (const line of (cell.getText() ?? "").split("\n")) {
+    assert.ok(helvetica.widthOfTextAtSize(line, size) <= box.width - 2 * (bw + 2) - 2 + 0.01, `“${line}” fits with its padding`);
+  }
 
   const long = await fill({ "F-09": { text: "Physiotherapy – initial assessment and treatment session including an exercise programme, advice and a written home exercise plan" } });
-  const text = long.form.getTextField("Treatment Row1").getText() ?? "";
+  const text = (long.form.getTextField("Treatment Row1").getText() ?? "").replace(/\n/g, " ");
   assert.match(text, /^Physiotherapy – initial assessment .*… \(see continuation sheet\)$/);
   assert.ok(long.warnings.some((w) => /F-09 .*continuation sheet/.test(w)));
 

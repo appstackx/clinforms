@@ -4,6 +4,13 @@
  * Step 1 of "Complete a form": where the patient's record comes from – the Simulated TM3 patient picker
  * or an uploaded TM3 export (our documented JSON / CSV format, or pasted anonymised notes). The launch
  * from TM3 itself is handled by the screen (launch token) and skips this step.
+ * Tenant mode (a clinic's own Studio): the notes upload only – no Simulated TM3 picker, no sandbox link,
+ * no fictional samples to try – and the signed-in member's own sign-in authorises the upload (no demo
+ * session).
+ * Wave 3: uploads go to POST /connectors/file-import/read. Notes in the documented layout give the record
+ * straight away; ordinary clinic notes (a PDF, Word document, CSV export, text file or pasted text in any
+ * layout) come back as a NotesReview that staff check and confirm in ./notes-review.tsx before the record is
+ * built (POST /connectors/file-import/confirm).
  *
  * Owner: studio-a agent.
  */
@@ -16,12 +23,16 @@ import { SAMPLE_IMPORT_FILES, SAMPLE_PRINTED_NOTES_PDF } from "../../../connecto
 import { formatUkDate } from "../../../core/dates";
 import { INSTRUCTING_PARTY_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeSummary, PatientSummary } from "../../../core/types";
+import type { NotesReview } from "../../../connectors/file-import/review-contract";
 import { ApiError, api, saveBlob, toBase64 } from "../../api-client";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { getSession, setSession } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
 import { Button, Input, Skeleton, cn } from "../../primitives";
 import { FileDrop } from "../shared/file-drop";
 import { errorMessage } from "../shared/format";
 import { FieldLabel, Notice, Spinner, Textarea } from "../shared/ui-bits";
+import { NotesReviewStep } from "./notes-review";
 
 export interface SourceResult {
   data: BundleResponse;
@@ -39,12 +50,20 @@ export async function ensureDemoSession(connectorId: ConnectorId, purpose: "pick
 type Tab = "tm3" | "upload";
 
 export function SourceStep({ onLoaded }: { onLoaded(result: SourceResult): void }) {
+  const tenant = useStudioMode() === "tenant";
   const [tab, setTab] = useState<Tab>("tm3");
+  if (tenant) {
+    return (
+      <div className="space-y-4">
+        <ExportUpload onLoaded={onLoaded} tenant />
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <SourceTab active={tab === "tm3"} onClick={() => setTab("tm3")} icon={UserRound} title="Simulated TM3" detail="Choose a patient and episode" />
-        <SourceTab active={tab === "upload"} onClick={() => setTab("upload")} icon={FileUp} title="Upload the notes" detail="Available now – notes printed to PDF, or an export" />
+        <SourceTab active={tab === "upload"} onClick={() => setTab("upload")} icon={FileUp} title="Upload the notes" detail="Available now – notes as your clinic system prints them: PDF, Word, CSV or text" />
         <Link
           href="/pms-sandbox"
           className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
@@ -226,7 +245,17 @@ function PatientPicker({ onLoaded }: { onLoaded(result: SourceResult): void }) {
  * Notes upload: printed notes (PDF) or an export in our documented format
  * ----------------------------------------------------------------------------------------------*/
 
-type ImportFormat = "json" | "csv" | "text" | "pdf";
+type ImportFormat = "json" | "csv" | "text" | "pdf" | "docx";
+
+/**
+ * The import guide's examples name the demo's fictional clinician; a clinic's Studio shows a neutral
+ * example instead (pinned by ui/tenant-mode.test.ts).
+ */
+export function tenantFormatDescription(description: string): string {
+  return description
+    .replace(/Sarah Reid \(PH-DEMO-\d+\)/g, "the clinician's name (HCPC number)")
+    .replace(/^Paste anonymised notes\./, "Paste the notes.");
+}
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
@@ -238,27 +267,57 @@ function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 function formatFor(fileName: string): ImportFormat | null {
   const ext = fileName.toLowerCase().split(".").pop();
   if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
   if (ext === "json") return "json";
   if (ext === "csv") return "csv";
   if (ext === "txt" || ext === "text") return "text";
   return null;
 }
 
-function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
+const WORD_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceResult): void; tenant?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; issues: string[] } | null>(null);
   const [pasted, setPasted] = useState("");
+  // Wave 3: ordinary clinic notes come back to be checked before the record is built.
+  const [review, setReview] = useState<NotesReview | null>(null);
+  const [reviewError, setReviewError] = useState<{ message: string; issues: string[] } | null>(null);
+
+  const problemOf = (err: unknown) => {
+    const issues = err instanceof ApiError ? (err.problem.issues ?? []).map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)) : [];
+    return { message: err instanceof ApiError ? (err.problem.detail ?? err.problem.title) : errorMessage(err), issues };
+  };
 
   const submit = async (format: ImportFormat, content: string, fileName?: string) => {
     setBusy(true);
     setError(null);
     try {
-      await ensureDemoSession("file-import", "upload");
-      const data = await api.fileImportBundle({ format, content, ...(fileName && { fileName }) });
-      onLoaded({ data, sourceLabel: fileName ? `${format === "pdf" ? "Printed notes" : "Notes export"} (${fileName})` : "Pasted notes" });
+      // The public demo authorises the upload with a demo session; a clinic's Studio with the member's sign-in.
+      if (!tenant) await ensureDemoSession("file-import", "upload");
+      const read = await api.fileImportRead({ format, content, ...(fileName && { fileName }) });
+      if (read.result === "review") {
+        setReviewError(null);
+        setReview(read.review);
+        return;
+      }
+      onLoaded({ data: read.data, sourceLabel: fileName ? `${format === "pdf" ? "Printed notes" : "Notes export"} (${fileName})` : "Pasted notes" });
     } catch (err) {
-      const issues = err instanceof ApiError ? (err.problem.issues ?? []).map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)) : [];
-      setError({ message: err instanceof ApiError ? (err.problem.detail ?? err.problem.title) : errorMessage(err), issues });
+      setError(problemOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async (checked: NotesReview) => {
+    setBusy(true);
+    setReviewError(null);
+    try {
+      if (!tenant) await ensureDemoSession("file-import", "upload");
+      const data = await api.fileImportConfirm({ review: checked });
+      onLoaded({ data, sourceLabel: checked.fileName ? `Checked notes (${checked.fileName})` : "Pasted notes (checked)" });
+    } catch (err) {
+      setReviewError(problemOf(err));
     } finally {
       setBusy(false);
     }
@@ -267,28 +326,48 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
   const onFile = async (file: File) => {
     const format = formatFor(file.name);
     if (!format) {
-      setError({ message: `“${file.name}” is not a PDF, .json, .csv or .txt file.`, issues: [] });
+      setError({ message: `“${file.name}” is not a PDF, Word (.docx), .csv, .txt or .json file.`, issues: [] });
       return;
     }
     if (file.size > 2_000_000) {
       setError({ message: `“${file.name}” is larger than 2 MB.`, issues: [] });
       return;
     }
-    await submit(format, format === "pdf" ? await toBase64(file) : await file.text(), file.name);
+    await submit(format, format === "pdf" || format === "docx" ? await toBase64(file) : await file.text(), file.name);
   };
+
+  if (review) {
+    return (
+      <NotesReviewStep
+        review={review}
+        tenant={tenant}
+        busy={busy}
+        error={reviewError}
+        onConfirm={(checked) => void confirm(checked)}
+        onBack={() => {
+          setReview(null);
+          setReviewError(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
       <div className="space-y-3">
         <FileDrop
-          accept=".pdf,.json,.csv,.txt,application/pdf,application/json,text/csv,text/plain"
+          accept={`.pdf,.docx,.json,.csv,.txt,application/pdf,${WORD_MIME},application/json,text/csv,text/plain`}
           onFile={(f) => void onFile(f)}
           title={busy ? "Reading the notes…" : "Drop the patient's notes here, or choose a file"}
-          hint="The notes printed or saved as a PDF from your clinic system, or JSON / CSV in our documented format · fictional data only"
+          hint={
+            tenant
+              ? "The notes printed or saved as a PDF from your clinic system, a Word document, a CSV export or a text file – you check what was read before it is used"
+              : "The notes printed or saved as a PDF, a Word document, a CSV export or a text file – you check what was read before it is used · fictional data only"
+          }
           disabled={busy}
         />
         <div>
-          <FieldLabel htmlFor="paste-notes" hint="(anonymised – no attendance record from pasted notes)">
+          <FieldLabel htmlFor="paste-notes" hint={tenant ? "(you check what was read)" : "(anonymised – you check what was read)"}>
             Or paste notes
           </FieldLabel>
           <Textarea
@@ -296,16 +375,20 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             rows={5}
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
-            placeholder={"Date of birth: 04/05/1988\nInstructing party: …\n\n18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)\nS: …"}
+            placeholder={
+              tenant
+                ? "Patient: …   Date of birth: …\nInsurer or instructing party: …\n\nDD/MM/YYYY – Initial assessment – clinician's name\nThe note as written…"
+                : "Patient: …   Date of birth: 04/05/1988\nInsurer or instructing party: …\n\n18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)\nThe note as written…"
+            }
           />
           <Button className="mt-2" size="sm" disabled={busy || pasted.trim().length < 20} onClick={() => void submit("text", pasted)}>
             <Upload className="mr-1.5 h-4 w-4" aria-hidden />
             Use pasted notes
           </Button>
         </div>
-        {busy ? <Spinner label="Mapping the export to a patient record…" /> : null}
+        {busy ? <Spinner label="Reading the notes…" /> : null}
         {error ? (
-          <Notice tone="error" title="The export could not be read">
+          <Notice tone="error" title={tenant ? "The notes could not be read" : "The export could not be read"}>
             <p>{error.message}</p>
             {error.issues.length ? (
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -314,16 +397,60 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
                 ))}
               </ul>
             ) : null}
+            {tenant && error.issues.some((i) => /Add a line/.test(i)) ? <p className="mt-1">{TENANT_COPY.wizard.missingLineHint}</p> : null}
           </Notice>
         ) : null}
       </div>
+      {tenant ? <TenantFormatGuide /> : <DemoFormatGuide busy={busy} submit={submit} />}
+    </div>
+  );
+}
+
+/**
+ * A clinic's Studio (fix wave 2): the format guide folded away, no fictional sample downloads, and where to get
+ * help when the clinic's own printout is not read.
+ */
+function TenantFormatGuide() {
+  const hooks = useHostHooks();
+  return (
+    <div className="space-y-3 rounded-xl bg-slate-50 p-3 text-sm">
+      <p className="font-medium text-slate-900">{TENANT_COPY.wizard.notesHelpTitle}</p>
+      <p className="text-xs text-slate-600">
+        {TENANT_COPY.wizard.notesHelp}
+        {hooks.supportEmail ? (
+          <>
+            {" "}
+            <a href={`mailto:${hooks.supportEmail}`} className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              {hooks.supportEmail}
+            </a>
+          </>
+        ) : null}
+      </p>
+      <details className="text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-800">{TENANT_COPY.wizard.formatGuideSummary}</summary>
+        <p className="mt-2">{TENANT_COPY.wizard.formatSummary}</p>
+        <ul className="mt-1.5 space-y-1.5">
+          {IMPORT_FORMAT_GUIDE.formats.map((f) => (
+            <li key={f.id}>
+              <span className="font-medium text-slate-800">{f.label}:</span> {tenantFormatDescription(f.description)}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function DemoFormatGuide({ busy, submit }: { busy: boolean; submit(format: ImportFormat, content: string, fileName?: string): Promise<void> }) {
+  const tenant = false;
+  return (
       <div className="space-y-3 rounded-xl bg-slate-50 p-3 text-sm">
         <p className="font-medium text-slate-900">{IMPORT_FORMAT_GUIDE.title}</p>
         <p className="text-xs text-slate-600">{IMPORT_FORMAT_GUIDE.summary}</p>
         <ul className="space-y-1.5 text-xs text-slate-600">
           {IMPORT_FORMAT_GUIDE.formats.map((f) => (
             <li key={f.id}>
-              <span className="font-medium text-slate-800">{f.label}:</span> {f.description}
+              <span className="font-medium text-slate-800">{f.label}:</span> {tenant ? tenantFormatDescription(f.description) : f.description}
             </li>
           ))}
         </ul>
@@ -346,7 +473,8 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             );
           })}
         </div>
-        <div className="flex flex-wrap gap-1">
+        {tenant ? null : (
+          <div className="flex flex-wrap gap-1">
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void submit("pdf", SAMPLE_PRINTED_NOTES_PDF.base64, SAMPLE_PRINTED_NOTES_PDF.fileName)}>
             Try the printed notes PDF (Priya Nair, fictional)
           </Button>
@@ -354,8 +482,8 @@ function ExportUpload({ onLoaded }: { onLoaded(result: SourceResult): void }) {
             Try the sample export (JSON)
           </Button>
         </div>
-        <p className="text-xs text-slate-500">{IMPORT_FORMAT_GUIDE.privacy}</p>
+        )}
+        {tenant ? null : <p className="text-xs text-slate-500">{IMPORT_FORMAT_GUIDE.privacy}</p>}
       </div>
-    </div>
   );
 }

@@ -12,12 +12,13 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
 import type { FormAnswerRow, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
-import { saveReport } from "../../store";
+import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
   acknowledgeFlag,
   addClinicianParagraph,
   editParagraph,
   markApproved,
+  recordConsent,
   removeAbsenceSentences,
   removeParagraph,
   reopenGap,
@@ -41,6 +42,7 @@ export type ReviewAction =
   | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string; actor: string }
   | { type: "reopenGap"; gapId: string; actor: string }
   | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
+  | { type: "recordConsent"; givenOn: string; actor: string }
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
   | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
@@ -93,6 +95,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
       return reopenGap(report, action.gapId, action.actor);
     case "acknowledgeFlag":
       return acknowledgeFlag(report, action.flagId, action.reason, action.actor);
+    case "recordConsent":
+      return recordConsent(report, action.givenOn, action.actor);
     case "setFlags":
       return { ...report, flags: action.flags };
     case "applyDraft":
@@ -107,7 +111,8 @@ function validationKey(report: Report): string {
     .map((f) => f.id)
     .sort()
     .join("|");
-  return JSON.stringify([report.sections, report.gaps, acks]);
+  // The record's consent too (fix wave 3: recorded on the review screen for uploaded notes).
+  return JSON.stringify([report.sections, report.gaps, acks, report.bundleSnapshot.consent]);
 }
 
 function sameFlags(a: readonly ReportFlag[], b: readonly ReportFlag[]): boolean {
@@ -150,7 +155,13 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   const templateRef = useRef(template);
   templateRef.current = template;
 
-  const dispatch = useCallback((action: ReviewAction) => rawDispatch(action), []);
+  // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
+  // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.
+  const changedByUser = useRef(false);
+  const dispatch = useCallback((action: ReviewAction) => {
+    if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
+    rawDispatch(action);
+  }, []);
 
   // A newer copy saved elsewhere (another tab, background drafting) replaces the working copy.
   useEffect(() => {
@@ -165,6 +176,23 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   const save = useCallback(() => {
     const current = reportRef.current;
     if (current === lastSaved.current) return;
+    if (getStoreMode() === "server") {
+      if (!changedByUser.current) {
+        // Only refreshed flags since the report was opened: nothing to store (they are recomputed on every open).
+        lastSaved.current = current;
+        setSaveState("saved");
+        return;
+      }
+      // A clinic's Studio: the save is queued at once; the indicator follows the server's answer.
+      lastSaved.current = current;
+      setSaveState("saving");
+      void saveReportDurable(current).then((ok) => {
+        if (lastSaved.current !== current) return; // a newer save reports for itself
+        setSaveState(ok ? "saved" : "failed");
+        if (ok) setSavedAt(current.updatedAt);
+      });
+      return;
+    }
     const ok = saveReport(current);
     if (ok) {
       lastSaved.current = current;
@@ -184,10 +212,25 @@ export function useReviewState(initial: Report, stored: Report | null, template:
 
   // Save on leaving the page or the screen.
   useEffect(() => {
-    const onHide = () => save();
+    const onHide = () => {
+      save();
+      // A clinic's Studio: send what is still waiting now, with keepalive (the page may be closing).
+      void flushStore({ keepalive: true });
+    };
+    // A clinic's Studio: ask before closing the tab while changes are still on their way to the server.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (getStoreMode() !== "server") return;
+      save();
+      if (getStoreSyncState().pending > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       save();
     };
   }, [save]);

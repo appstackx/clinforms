@@ -7,6 +7,8 @@
  * with add/remove. Staff check it once and confirm; the confirmed map is saved against this exact
  * file and reused for every patient. A portal question set (no file) shows its questions on the left
  * instead of a file, and has no answer locations to pick.
+ * A clinic's Studio (tenant mode) reports form_confirmed through HostHooks.track (counts and enumerated
+ * values only) and prefills "confirmed by" with the signed-in member.
  *
  * Owner: studio-a agent.
  */
@@ -18,15 +20,19 @@ import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import {
   ANSWER_TYPE_LABELS,
-  FORM_ANALYSIS_MODE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
   FORM_KIND_LABELS,
+  REFERRER_TO_BE_CONFIRMED,
   REFERRER_TYPE_LABELS,
 } from "../../../core/labels";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { getSession, saveForm, useForm } from "../../store";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { getSession, saveForm, saveFormDurable, useForm } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
+import { formEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../../components/shared/session";
 import {
@@ -53,7 +59,6 @@ import {
   EmptyState,
   FieldLabel,
   FillSourceChip,
-  FILL_SOURCE_SHORT,
   fillSourceCounts,
   notAnsweredText,
   questionBreakdown,
@@ -62,6 +67,8 @@ import {
   Notice,
   SampleBadge,
   Select,
+  useAnalysisModeLabels,
+  useFillSourceLabels,
   type FillSourceKind,
 } from "../../components/shared/ui-bits";
 
@@ -69,10 +76,12 @@ type Filter = "all" | "check" | FillSourceKind;
 
 export function FormMappingScreen({ formId }: { formId: string }) {
   const { form, ready } = useForm(formId);
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
 
   if (!ready) {
     return (
-      <StudioShell back={{ href: "/reports/forms", label: "Referrer forms" }}>
+      <StudioShell back={{ href: paths.forms, label: "Referrer forms" }}>
         <div className="grid gap-6 lg:grid-cols-2">
           <Skeleton className="h-[70vh] rounded-xl" />
           <Skeleton className="h-[70vh] rounded-xl" />
@@ -82,17 +91,21 @@ export function FormMappingScreen({ formId }: { formId: string }) {
   }
   if (!form) {
     return (
-      <StudioShell back={{ href: "/reports/forms", label: "Referrer forms" }}>
+      <StudioShell back={{ href: paths.forms, label: "Referrer forms" }}>
         <EmptyState
           icon={FilePlus2}
-          title="This form is not in this browser"
+          title={tenant ? TENANT_COPY.forms.notFoundTitle : "This form is not in this browser"}
           actions={
             <Button asChild>
-              <Link href="/reports/forms">Go to the forms library</Link>
+              <Link href={paths.forms}>Go to the forms library</Link>
             </Button>
           }
         >
-          Form maps are stored in the browser where they were created (demo). Upload the referrer&apos;s form again to map it here.
+          {tenant ? (
+            TENANT_COPY.forms.notFoundBody
+          ) : (
+            <>Form maps are stored in the browser where they were created (demo). Upload the referrer&apos;s form again to map it here.</>
+          )}
         </EmptyState>
       </StudioShell>
     );
@@ -101,6 +114,11 @@ export function FormMappingScreen({ formId }: { formId: string }) {
 }
 
 function MappingEditor({ saved }: { saved: FormDefinition }) {
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = hooks.mode === "tenant";
+  const sourceLabels = useFillSourceLabels();
+  const analysisLabels = useAnalysisModeLabels();
   const [draft, setDraft] = useState<FormDefinition>(saved);
   const [editing, setEditing] = useState(saved.status !== "confirmed");
   const [selected, setSelected] = useState<string | null>(saved.fields.find((f) => f.confidence !== "high")?.id ?? saved.fields[0]?.id ?? null);
@@ -114,7 +132,15 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const { file, loading, error } = useFormFile(questionSet ? null : saved);
 
   const dirty = !sameMapping(draft, saved) || draft.status !== saved.status;
-  const problems = useMemo(() => checkFormDefinition(draft), [draft]);
+  // A clinic's map names its referrer before it is confirmed (fix wave 2: never "completed for every patient
+  // Referrer to be confirmed refers").
+  const problems = useMemo(
+    () => [
+      ...checkFormDefinition(draft),
+      ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
+    ],
+    [draft, tenant],
+  );
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
   const toCheck = draft.fields.filter((f) => f.confidence !== "high").length;
@@ -175,7 +201,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     try {
       const sessionToken = await sessionTokenFor({ tenantId: draft.tenantId });
       const { form: next } = await api.confirmForm({ form: { ...draft, status: "proposed" }, confirmedBy: by }, { sessionToken });
-      if (!saveForm(next)) return "This browser could not save the confirmed mapping (storage full or blocked).";
+      // The confirmed map must be stored before it is used for patients (a clinic's Studio: on the server).
+      if (!(await saveFormDurable(next))) return "The confirmed mapping could not be saved. Please try again.";
+      hooks.track?.("form_confirmed", formEventProps(next));
       setDraft(next);
       setEditing(false);
       setPicking(false);
@@ -203,7 +231,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
 
   return (
     <StudioShell
-      back={{ href: "/reports/forms", label: "Referrer forms" }}
+      back={{ href: paths.forms, label: "Referrer forms" }}
       title={draft.title}
       description={
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -228,7 +256,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                 Edit mapping
               </Button>
               <Button asChild size="sm">
-                <Link href={`/reports/new?form=${encodeURIComponent(saved.id)}`}>
+                <Link href={paths.newReportWithForm(saved.id)}>
                   <FilePlus2 className="mr-1.5 h-4 w-4" aria-hidden />
                   Use for a patient
                 </Link>
@@ -249,7 +277,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           {questionSet
             ? "Check each question's answer type and where its answer comes from. Questions marked “Check” or “Needs review” were matched from their wording."
             : "Click each question to see where its answer goes in the original form. Questions marked “Check” or “Needs review” were less certain."}{" "}
-          {WORDING.byCode.mappingIdentifiers}
+          {tenant ? TENANT_COPY.sources.mappingIdentifiers : WORDING.byCode.mappingIdentifiers}
         </Notice>
       )}
 
@@ -259,7 +287,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           value={String(breakdown.toAnswer)}
           detail={notAnsweredText(breakdown) || (questionSet ? "Every question" : "Every box on the form")}
         />
-        <Stat label="From records" value={String(breakdown.fromRecords)} detail="Filled by code: TM3 registration and calculated figures" />
+        <Stat
+          label="From records"
+          value={String(breakdown.fromRecords)}
+          detail={hooks.mode === "tenant" ? "Filled by code: registration details and calculated figures" : "Filled by code: TM3 registration and calculated figures"}
+        />
         <Stat label="From notes / clinician" value={String(breakdown.fromNotes)} detail={`${counts.clinician_opinion} need the clinician's own opinion`} />
         <Stat
           label="How it was analysed"
@@ -268,7 +300,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               ? WORDING.questionSet.analysisLabel
               : a.mode === "demo_prewritten" && draft.demoNotice
                 ? WORDING.labels.prewrittenDemoFormMap
-                : FORM_ANALYSIS_MODE_LABELS[a.mode]
+                : analysisLabels[a.mode]
           }
           detail={[WORDING.formReading.showModel ? a.model : null, formatUkDateTime(a.at), a.durationMs ? formatMs(a.durationMs) : null].filter(Boolean).join(" · ")}
           small
@@ -332,7 +364,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               .filter((k) => counts[k] > 0)
               .map((k) => (
                 <FilterChip key={k} active={filter === k} onClick={() => setFilter(k)}>
-                  {FILL_SOURCE_SHORT[k]} {counts[k]}
+                  {sourceLabels.short[k]} {counts[k]}
                 </FilterChip>
               ))}
           </div>
@@ -566,6 +598,7 @@ function ConfirmDialog({
   draft: FormDefinition;
   onConfirm(by: string): Promise<string | null>;
 }) {
+  const { member, mode } = useHostHooks();
   const [name, setName] = useState("");
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -574,8 +607,9 @@ function ConfirmDialog({
     if (!open) return;
     setChecked(false);
     setError(null);
-    setName((n) => n || getSession()?.claims.clinician?.name || "");
-  }, [open]);
+    // A clinic's Studio: the signed-in member confirms; the demo: the launched clinician, if any.
+    setName((n) => n || (mode === "tenant" ? member?.name : getSession()?.claims.clinician?.name) || "");
+  }, [open, member, mode]);
   const submit = async () => {
     if (!name.trim() || !checked || busy) return;
     setBusy(true);

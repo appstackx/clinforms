@@ -18,6 +18,8 @@
 # Cloudflare (OpenNext) build output, if that adapter is added later
 /.open-next/
 /.wrangler/
+/workers/*/.wrangler/
+/workers/*/node_modules/
 
 # misc
 .DS_Store
@@ -45,3 +47,6 @@ next-env.d.ts
 /demo-assets/
 
 /.e2e-out/
+
+# Local SQLite database (CLINFORMS_DB=sqlite, CLINFORMS_SQLITE_PATH)
+.data/

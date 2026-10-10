@@ -4,6 +4,8 @@
  * What the review screen does with the Report API: draft questions that are still pending, approve
  * (POST /sign), download the completed form (POST /render) and save it to the clinic record
  * (POST /connectors/{id}/documents, then the host keeps the browser copy for the simulated record).
+ * A clinic's Studio also reports report_approved / report_downloaded through HostHooks.track (counts and
+ * enumerated values only – ui/studio-events.ts).
  *
  * Owner: studio-b agent.
  */
@@ -15,7 +17,10 @@ import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, saveBlob, toBase64, type FileDownload } from "../../api-client";
+import { flushStore } from "../../store";
 import type { HostHooks } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
+import { downloadFormat, reportEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../shared/session";
 import type { ApproveInput, ApproveResult } from "./approve-dialog";
@@ -89,14 +94,20 @@ export function useReviewActions(opts: {
         const { connectorId, patientId, episodeId } = fresh.episodeRef;
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
-        const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)) });
-        const saved = commit(approved);
+        const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
+        // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
+        const saved = commit(approved) && (await flushStore());
+        hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",
           title: form && prefillSigners(form) ? "Prefill approved" : isForm ? "Form approved" : "Report signed",
           detail: saved
-            ? "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
-            : "Approved, but this browser could not save the change. Download the completed form now.",
+            ? hooks.mode === "tenant"
+              ? TENANT_COPY.review.approvedToast
+              : "The server signed a receipt over the approved content. The final completed document is ready to download and save to the record."
+            : hooks.mode === "tenant"
+              ? TENANT_COPY.review.approveSavedFailed
+              : "Approved, but this browser could not save the change. Download the completed form now.",
         });
         return { ok: true };
       } catch (err) {
@@ -112,32 +123,32 @@ export function useReviewActions(opts: {
         return { ok: false, title: "The approval could not be completed", detail: "Check your connection and try again." };
       }
     },
-    [validateNow, form, isForm, commit, toast],
+    [validateNow, form, isForm, commit, toast, hooks],
   );
 
   /* Render -------------------------------------------------------------------------------------- */
 
   const render = useCallback(
-    async (kind: DownloadKind, final: boolean): Promise<FileDownload> => {
+    async (kind: DownloadKind, final: boolean, purpose: "download" | "file_back" = "download"): Promise<FileDownload> => {
       const current = reportRef.current;
-      const body: RenderRequest = { report: current };
+      const body: RenderRequest = { report: current, purpose };
       if (final && current.receipt) {
         body.receipt = current.receipt;
         body.requireFinal = true;
       }
       if (isForm) {
-        if (!form) throw new Error("The form map is not in this browser.");
+        if (!form) throw new Error(hooks.mode === "tenant" ? TENANT_COPY.files.mapMissing : "The form map is not in this browser.");
         body.form = form;
         // A portal question set has no file: the server renders its summary PDF from the answers.
         if (form.kind !== "questions") {
-          if (file.status !== "ready") throw new Error("The referrer's original file is not in this browser.");
+          if (file.status !== "ready") throw new Error(hooks.mode === "tenant" ? TENANT_COPY.files.fileMissing : "The referrer's original file is not in this browser.");
           body.fileBase64 = file.base64;
         }
       }
       const format: RenderFormat = kind;
       return api.render(format, body);
     },
-    [isForm, form, file],
+    [isForm, form, file, hooks.mode],
   );
 
   const download = useCallback(
@@ -148,6 +159,10 @@ export function useReviewActions(opts: {
       try {
         const out = await render(kind, final);
         saveBlob(out.blob, out.fileName);
+        if (out.kind === "final") {
+          const { form_kind, referrer_type, source } = reportEventProps(current);
+          hooks.track?.("report_downloaded", { format: downloadFormat(out.contentType), form_kind, referrer_type, source });
+        }
         dispatch({
           type: "activity",
           action: "rendered",
@@ -161,9 +176,10 @@ export function useReviewActions(opts: {
         });
       } catch (err) {
         if (err instanceof ApiError && err.code === "PDF_CONVERSION_UNAVAILABLE") {
-          const message = err.problem.detail ?? NOTICES.pdfConversionUnavailable;
+          // A clinic's Studio (fix wave 2): say what to do, without demo-deployment wording.
+          const message = hooks.mode === "tenant" ? TENANT_COPY.files.pdfUnavailable : (err.problem.detail ?? NOTICES.pdfConversionUnavailable);
           setPdfUnavailable(message);
-          toast({ tone: "info", title: "PDF copy not available here", detail: message });
+          toast({ tone: "info", title: hooks.mode === "tenant" ? "PDF copy not available yet" : "PDF copy not available here", detail: message });
         } else {
           const p = err instanceof Error && !(err instanceof ApiError) ? { title: err.message } : problemText(err, "The download failed");
           toast({ tone: "error", title: p.title, detail: "detail" in p ? p.detail : undefined });
@@ -172,7 +188,7 @@ export function useReviewActions(opts: {
         setDownloading(null);
       }
     },
-    [render, dispatch, actor, toast],
+    [render, dispatch, actor, toast, hooks],
   );
 
   /* Save to clinic record --------------------------------------------------------------------- */
@@ -245,15 +261,15 @@ export function useReviewActions(opts: {
       // file where this deployment can convert it – clinics usually send the PDF to the referrer.
       const filedNames: string[] = [];
       const primaryKind: DownloadKind = isForm ? "original" : "docx";
-      filedNames.push(await fileOne(await render(primaryKind, true)));
+      filedNames.push(await fileOne(await render(primaryKind, true, "file_back")));
       const wantsPdfCopy = isForm ? current.form?.kind === "docx" : true;
       let pdfNote: string | null = null;
       if (wantsPdfCopy) {
         try {
-          filedNames.push(await fileOne(await render("pdf", true)));
+          filedNames.push(await fileOne(await render("pdf", true, "file_back")));
         } catch (err) {
           if (err instanceof ApiError && err.code === "PDF_CONVERSION_UNAVAILABLE") {
-            pdfNote = "The PDF copy is made on the production converter; the Word file was filed.";
+            pdfNote = "A PDF copy of a Word form is not available yet; the Word file was filed.";
             setPdfUnavailable(err.problem.detail ?? NOTICES.pdfConversionUnavailable);
           } else {
             throw err;
@@ -299,6 +315,7 @@ export function useReviewActions(opts: {
               bundle: current.bundleSnapshot,
               instructingParty: current.instructingParty,
               sectionKeys: group,
+              reportId: current.id,
               prefer,
               ...(form ? { form } : {}),
               ...(form && current.author ? { author: current.author } : {}),

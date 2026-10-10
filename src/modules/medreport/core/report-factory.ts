@@ -6,7 +6,8 @@
  * Owner: ai agent (content of the from-records paragraphs may be refined). Signatures are final.
  * Baseline implementation by the foundation.
  */
-import { DEMO_CLINIC, MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { bundleClinic } from "./clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
   answerKindFor,
@@ -240,6 +241,11 @@ export interface CreateFormReportInput {
   computedFacts: ComputedFact[];
   /** Treating clinician for clinician.* fields (default: the clinician who wrote most notes). */
   clinician?: Clinician;
+  /**
+   * Fix wave 2: the clinician who will sign – drafts speak in their first person about their own notes and name
+   * everyone else (report.author). Default: `clinician`. null = nobody named: drafts in the third person.
+   */
+  author?: Clinician | null;
   id?: string;
   now?: Date;
   actor?: string;
@@ -379,8 +385,12 @@ export function createFormReport(input: CreateFormReportInput): Report {
     createdAt: at,
     updatedAt: at,
     form: formRefOf(form),
-    ...(input.clinician ? { author: input.clinician } : {}),
+    ...(authorOf(input) ? { author: authorOf(input) as Clinician } : {}),
   };
+}
+
+function authorOf(input: Pick<CreateFormReportInput, "clinician" | "author">): Clinician | undefined {
+  return input.author === undefined ? input.clinician : (input.author ?? undefined);
 }
 
 /** Text shown for a structured from-records answer (the value as written on the form). */
@@ -405,13 +415,19 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
 }
 
 function missingValueGap(field: FormField, what: string, unmatched?: string): Gap {
+  // Fix wave 2: no internal source code ("FACT-attendance", "patient.postcode") in text a clinician reads – the
+  // registration record or the appointment figures, in words.
+  const where = what.startsWith("FACT-") ? "the appointment figures" : "the patient's registration details";
   return {
     id: `gap-${field.id}-record`,
     sectionKey: field.id,
     issue: unmatched
       ? `The record's value for “${field.label}” (“${unmatched}”) does not fit the form's answer options, so it has been left blank.`
-      : `The record does not hold a value for “${field.label}” (${what}), so it has been left blank.`,
-    suggestedQuestion: `What should be entered for “${field.label}”? Check the patient's registration details in the clinic system.`,
+      : `The record does not hold a value for “${field.label}” (${where}), so it has been left blank.`,
+    // Fix wave 3: the appointment figures are counted from the appointments, not looked up in registration details.
+    suggestedQuestion: what.startsWith("FACT-")
+      ? `What should be entered for “${field.label}”? Count the attended and missed appointments in the notes.`
+      : `What should be entered for “${field.label}”? Check the patient's registration details in the clinic system.`,
     relatedNoteIds: [],
     raisedBy: "system",
   };
@@ -460,6 +476,7 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
   const firstNote = notes[0];
   const lastNote = notes[notes.length - 1];
   const authors = Array.from(new Set(notes.map((n) => `${n.author.name} (HCPC ${n.author.hcpc})`)));
+  const clinicName = bundleClinic(bundle)?.name ?? "";
 
   switch (key) {
     case "introduction":
@@ -467,7 +484,7 @@ function fromRecordsTexts(key: string, input: CreateReportInput, now: Date): Lin
         {
           text:
             `This report has been prepared at the request of ${party.name} (${INSTRUCTING_PARTY_LABELS[party.type].toLowerCase()})${ref}. ` +
-            `It concerns ${reg.fullName}, who received physiotherapy at ${DEMO_CLINIC.name}` +
+            `It concerns ${reg.fullName}, who received physiotherapy ${clinicName ? `at ${clinicName}` : "at this clinic"}` +
             (bundle.incident?.date ? ` following an incident on ${formatUkDate(bundle.incident.date)}` : "") +
             ". It is based solely on the clinic's records of that episode of care, which are listed under Records reviewed.",
           sourceIds: ["REG", ...factIds(facts, "FACT-episode")],

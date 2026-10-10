@@ -20,6 +20,7 @@ import {
   type GenerateInput,
 } from "@/modules/medreport/ui/components/new/generate";
 import { getDemoBundle } from "./dev-bundles";
+import { demoBearer } from "./test-actors";
 
 const drafts = route(handleDrafts);
 
@@ -51,7 +52,7 @@ async function setup(limitedCalls: (key: string, attempt: number) => boolean) {
       const res = await drafts(
         new Request("http://127.0.0.1:9/api/reports/v1/drafts", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", authorization: demoBearer() },
           body: JSON.stringify({ ...body, prefer: "demo" }),
         }),
         { params: {} },

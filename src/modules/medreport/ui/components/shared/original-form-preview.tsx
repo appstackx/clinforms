@@ -309,17 +309,29 @@ function PdfPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewPr
     setState("loading");
     setDoc(null);
     setPages([]);
-    loadPdfjsBrowser()
-      .then((pdfjs) => {
+    // Fix wave 3: under heavy load the first load sometimes fails – try once more before showing the error, and say
+    // why in the console (no file content is logged).
+    const load = () =>
+      loadPdfjsBrowser().then((pdfjs) => {
         if (cancelled) return null;
         task = pdfjs.getDocument({ data: file.bytes.slice() });
         return task.promise;
+      });
+    load()
+      .catch((first: unknown) => {
+        if (cancelled) return null;
+        console.warn("Form preview: the PDF did not load; trying again.", first instanceof Error ? first.name : "error");
+        if (task) void (task as PdfLoadingTask).destroy();
+        task = null;
+        return load();
       })
       .then((d) => {
         if (d && !cancelled) setDoc(d);
       })
-      .catch(() => {
-        if (!cancelled) setState("error");
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("Form preview: the PDF could not be shown.", err instanceof Error ? err.name : "error");
+        setState("error");
       });
     return () => {
       cancelled = true;

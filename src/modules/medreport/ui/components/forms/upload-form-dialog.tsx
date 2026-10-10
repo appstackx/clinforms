@@ -3,6 +3,8 @@
 /**
  * "Upload a referrer form": pick or drop a .docx / .pdf, optionally name the referrer, analyse it
  * (POST /forms/analyse) with honest progress, then show what was found and go to the mapping review.
+ * A clinic's Studio (tenant mode) reports form_uploaded through HostHooks.track (counts and enumerated
+ * values only) and shows no demo wording.
  *
  * Owner: studio-a agent.
  */
@@ -11,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, CircleDashed, FileSearch, ListChecks, TriangleAlert } from "lucide-react";
 import { MAX_FORM_FILE_BYTES } from "../../../config.public";
-import { FORM_ANALYSIS_MODE_LABELS, FORM_KIND_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
+import { FORM_KIND_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, ReferrerType } from "../../../core/types";
 import {
@@ -24,10 +26,14 @@ import {
   DialogTitle,
   Input,
 } from "../../primitives";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { formEventProps } from "../../studio-events";
 import { useAiMode } from "../shared/ai-mode";
 import { FileDrop } from "../shared/file-drop";
 import { errorMessage, formatBytes, formatMs, plural } from "../shared/format";
-import { FieldLabel, Notice, Select, Spinner } from "../shared/ui-bits";
+import { FieldLabel, Notice, Select, Spinner, useAnalysisModeLabels } from "../shared/ui-bits";
+import { deleteForm } from "../../store";
 import { analyseAndStore, findFormByFile, FORM_ACCEPT, readFormFile, type AnalyseResult, type LocalFormFile } from "./analyse";
 import { WORDING } from "../../wording";
 
@@ -48,7 +54,12 @@ export interface UploadFormDialogProps {
 
 export function UploadFormDialog({ open, onOpenChange, initialFile, initialReferrer }: UploadFormDialogProps) {
   const router = useRouter();
-  const { expectLive } = useAiMode();
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = hooks.mode === "tenant";
+  const aiMode = useAiMode();
+  // A clinic's Studio never shows the demo's "prepared reading" wording.
+  const expectLive = aiMode.expectLive || tenant;
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [referrerName, setReferrerName] = useState("");
   const [referrerType, setReferrerType] = useState<ReferrerType>("mlc");
@@ -99,6 +110,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
         signal: controller.signal,
       });
       setPhase({ kind: "done", result });
+      hooks.track?.("form_uploaded", formEventProps(result.form));
     } catch (err) {
       if (controller.signal.aborted) setPhase({ kind: "ready", local, existing: findFormByFile(local.sha256) });
       else setPhase({ kind: "error", message: errorMessage(err), local });
@@ -147,7 +159,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
             {phase.existing ? (
               <Notice tone="info" title="This exact file is already in your forms library">
                 “{phase.existing.title}” from {phase.existing.referrer.name} was mapped from the same file.{" "}
-                <Link className="font-medium underline" href={`/reports/forms/${encodeURIComponent(phase.existing.id)}`} onClick={() => close(false)}>
+                <Link className="font-medium underline" href={paths.form(phase.existing.id)} onClick={() => close(false)}>
                   Open the existing mapping
                 </Link>{" "}
                 or analyse it again as a new entry.
@@ -162,7 +174,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
                   id="upload-referrer"
                   value={referrerName}
                   onChange={(e) => setReferrerName(e.target.value)}
-                  placeholder="e.g. Harrow & Pike Medico-Legal (fictional)"
+                  placeholder={tenant ? "e.g. the MLC or insurer's name" : "e.g. Harrow & Pike Medico-Legal (fictional)"}
                 />
               </div>
               <div>
@@ -212,11 +224,23 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
               Cancel
             </Button>
           ) : null}
-          {phase.kind === "done" ? (
+          {phase.kind === "done" && phase.result.form.fields.length === 0 ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                // Fix wave 2: a document with no questions (e.g. a patient's notes) is not kept in the library.
+                deleteForm(phase.result.form.id);
+                close(false);
+              }}
+            >
+              Discard this upload
+            </Button>
+          ) : null}
+          {phase.kind === "done" && phase.result.form.fields.length > 0 ? (
             <Button
               onClick={() => {
                 close(false);
-                router.push(`/reports/forms/${encodeURIComponent(phase.result.form.id)}`);
+                router.push(paths.form(phase.result.form.id));
               }}
             >
               <ListChecks className="mr-2 h-4 w-4" aria-hidden />
@@ -232,6 +256,8 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
 
 function FileSummary({ local }: { local: LocalFormFile }) {
   const word = local.mimeType !== "application/pdf";
+  // A clinic's Studio (fix wave 2): no internal fingerprint – the size and the kind of form are enough.
+  const tenant = useStudioMode() === "tenant";
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <span className={word ? "rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800" : "rounded-lg bg-rose-100 px-2 py-1 text-xs font-bold text-rose-800"}>
@@ -240,7 +266,7 @@ function FileSummary({ local }: { local: LocalFormFile }) {
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-slate-900">{local.fileName}</p>
         <p className="text-xs text-slate-500">
-          {formatBytes(local.bytes.byteLength)} · fingerprint {local.sha256.slice(0, 12)}…
+          {formatBytes(local.bytes.byteLength)} · {tenant ? (word ? "Word form" : "PDF form") : `fingerprint ${local.sha256.slice(0, 12)}…`}
         </p>
       </div>
     </div>
@@ -248,6 +274,7 @@ function FileSummary({ local }: { local: LocalFormFile }) {
 }
 
 function AnalysingPanel({ local, expectLive, elapsed }: { local: LocalFormFile; expectLive: boolean; elapsed: number }) {
+  const tenant = useStudioMode() === "tenant";
   const steps = [
     { label: `File checked and uploaded (${formatBytes(local.bytes.byteLength)})`, done: true },
     { label: "Reading the form layout… headings, tables, answer boxes, tick boxes and fields", done: false },
@@ -270,16 +297,24 @@ function AnalysingPanel({ local, expectLive, elapsed }: { local: LocalFormFile; 
           </li>
         ))}
       </ol>
-      <p className="text-xs text-slate-500">
-        Running on the server · {elapsed}s{expectLive ? " · a long form usually takes 20–60 s" : ""}. The steps above are what
-        happens; the exact timings are shown when it finishes.
-      </p>
+      {tenant ? (
+        <p className="text-xs text-slate-500">
+          Reading the form · {elapsed}s · a long form usually takes up to a minute.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500">
+          Running on the server · {elapsed}s{expectLive ? " · a long form usually takes 20–60 s" : ""}. The steps above are what
+          happens; the exact timings are shown when it finishes.
+        </p>
+      )}
     </div>
   );
 }
 
 function AnalysedPanel({ result }: { result: AnalyseResult }) {
   const { form, outlineSummary: o, trace } = result;
+  const tenant = useStudioMode() === "tenant";
+  const analysisLabels = useAnalysisModeLabels();
   const lowFields = form.fields.filter((f) => f.confidence !== "high");
   const low = lowFields.length;
   // The questions counted as "to check" are listed with the layout notes, so the count has its items.
@@ -295,10 +330,20 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
     plural(o.answerSpaces, "answer space"),
     o.headings.length ? plural(o.headings.length, "heading") : null,
   ].filter(Boolean);
+  if (form.fields.length === 0) {
+    return (
+      <div className="space-y-3" aria-live="polite">
+        <Notice tone="error" title="No questions found in this document">
+          It does not look like a referrer&apos;s form – it may be a patient&apos;s notes or a letter. Discard this upload, and upload the
+          referrer&apos;s blank form instead.
+        </Notice>
+      </div>
+    );
+  }
   return (
     <div className="space-y-3" aria-live="polite">
       <Notice tone="success" title={`${plural(form.fields.length, "question")} found in “${form.title}”`}>
-        {form.referrer.name} · {form.analysis.mode === "demo_prewritten" && form.demoNotice ? WORDING.labels.prewrittenDemoFormMap : FORM_ANALYSIS_MODE_LABELS[form.analysis.mode]}
+        {form.referrer.name} · {form.analysis.mode === "demo_prewritten" && form.demoNotice ? WORDING.labels.prewrittenDemoFormMap : analysisLabels[form.analysis.mode]}
         {WORDING.formReading.showModel && form.analysis.model ? ` · ${form.analysis.model}` : ""}
         {low ? ` · ${plural(low, "question")} to check` : ""}
       </Notice>
@@ -318,7 +363,8 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
                 {step.label}
                 {step.detail ? <span className="text-slate-500"> – {step.detail}</span> : null}
               </span>
-              <span className="shrink-0 tabular-nums text-slate-500">{formatMs(step.ms)}</span>
+              {/* A clinic's Studio (fix wave 2): what happened, without the developer timings. */}
+              {tenant ? null : <span className="shrink-0 tabular-nums text-slate-500">{formatMs(step.ms)}</span>}
             </li>
           ))}
         </ol>
@@ -333,8 +379,10 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
         </Notice>
       ) : null}
       {!result.fileStored ? (
-        <Notice tone="warning" title="File kept for this tab only">
-          This browser would not store the original file, so you will need to upload it again after closing the tab.
+        <Notice tone="warning" title={tenant ? "The form file was not stored" : "File kept for this tab only"}>
+          {tenant
+            ? "The form's original file could not be stored for your clinic yet. Keep this page open and try again, or upload the form again later."
+            : "This browser would not store the original file, so you will need to upload it again after closing the tab."}
         </Notice>
       ) : null}
       <p className="text-sm text-slate-600">Nothing is used for patients until a member of staff checks and confirms the mapping.</p>

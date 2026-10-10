@@ -15,11 +15,18 @@ import "server-only";
  * Wrong passcodes are counted too: 5 per client and 30 per instance in 10 minutes, then 429 – so the
  * passcode cannot be guessed at request speed. Use a long random passcode (16+ characters).
  *
+ * Wave 2: the handlers use the SHARED variants at the end of this file (checkLivePasscodeShared,
+ * takeDemoLiveCalls): the same limits counted in MedreportDeps.sharedState (database `rate_limits`), so
+ * they hold across every server instance – "per instance" becomes "per deployment". Without a shared
+ * store they are exactly the in-memory functions above.
+ *
  * Owner: integration agent.
  */
 import { getLivePasscode } from "../config.server";
 import { HEADERS } from "../api/contract";
+import type { MedreportDeps } from "../api/deps";
 import { timingSafeEqualString } from "../api/http";
+import { countHit, peekCount, resetKey, subjectKey, takeSlots } from "./shared-limits";
 
 export type PasscodeCheck =
   | { ok: true }
@@ -50,12 +57,12 @@ function recent(list: number[], now: number): number[] {
   return list;
 }
 
-function lockedFor(key: string, now: number): number {
+function lockedFor(key: string, now: number, which: "client" | "all" | "both" = "both"): number {
   const mine = recent(failuresByClient.get(key) ?? [], now);
   const all = recent(instanceFailures, now);
   const blockers: number[] = [];
-  if (mine.length >= PASSCODE_FAILURES_PER_CLIENT) blockers.push(mine[mine.length - PASSCODE_FAILURES_PER_CLIENT]);
-  if (all.length >= PASSCODE_FAILURES_PER_INSTANCE) blockers.push(all[all.length - PASSCODE_FAILURES_PER_INSTANCE]);
+  if (which !== "all" && mine.length >= PASSCODE_FAILURES_PER_CLIENT) blockers.push(mine[mine.length - PASSCODE_FAILURES_PER_CLIENT]);
+  if (which !== "client" && all.length >= PASSCODE_FAILURES_PER_INSTANCE) blockers.push(all[all.length - PASSCODE_FAILURES_PER_INSTANCE]);
   if (blockers.length === 0) return 0;
   return Math.max(1, Math.ceil((Math.max(...blockers) + PASSCODE_FAILURE_WINDOW_MS - now) / 1000));
 }
@@ -76,9 +83,14 @@ export function checkLivePasscode(req: Request, nowMs: number = Date.now()): Pas
   const given = req.headers.get(HEADERS.passcode);
   if (!given || !given.trim()) return { ok: false, reason: "missing" };
   const key = clientKey(req);
-  const wait = lockedFor(key, nowMs);
-  if (wait > 0) return { ok: false, reason: "locked", retryAfterSeconds: wait };
+  // This client's own wrong guesses lock it out, even for the right passcode (guessing gains nothing).
+  const mine = lockedFor(key, nowMs, "client");
+  if (mine > 0) return { ok: false, reason: "locked", retryAfterSeconds: mine };
+  // Fix wave 2: the instance-wide cap throttles wrong guesses only – other clients' guesses never lock out a
+  // presenter holding the right passcode.
   if (timingSafeEqualString(given.trim(), configured)) return { ok: true };
+  const all = lockedFor(key, nowMs, "all");
+  if (all > 0) return { ok: false, reason: "locked", retryAfterSeconds: all };
   recordFailure(key, nowMs);
   return { ok: false, reason: "invalid" };
 }
@@ -171,4 +183,58 @@ export function liveCallRetryAfterSeconds(nowMs: number = Date.now()): number {
 /** Tests only. */
 export function resetLiveCallLimiter(): void {
   liveLimiter.reset();
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Wave 2: shared across instances (MedreportDeps.sharedState → rate_limits)
+ * ----------------------------------------------------------------------------------------------*/
+
+const PASSCODE_FAIL_ALL_KEY = "demo:passcode-fail:all";
+const passcodeFailClientKey = (req: Request) => `demo:passcode-fail:client:${subjectKey(clientKey(req))}`;
+const DEMO_LIVE_KEY = "demo:live-calls";
+
+/**
+ * checkLivePasscode() with its wrong-guess counters shared by every instance (5 per client, 30 in all,
+ * per 10-minute window). In-memory (checkLivePasscode) when there is no shared store.
+ */
+export async function checkLivePasscodeShared(req: Request, deps: MedreportDeps, nowMs: number = Date.now()): Promise<PasscodeCheck> {
+  if (!deps.sharedState) return checkLivePasscode(req, nowMs);
+  const configured = getLivePasscode();
+  if (!configured) return { ok: false, reason: "not_configured" };
+  const given = req.headers.get(HEADERS.passcode);
+  if (!given || !given.trim()) return { ok: false, reason: "missing" };
+  const clientCounter = passcodeFailClientKey(req);
+  const [mine, all] = await Promise.all([
+    peekCount(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+    peekCount(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+  ]);
+  const lockedUntil = (w: { resetAtMs: number }): PasscodeCheck => ({ ok: false, reason: "locked", retryAfterSeconds: Math.max(1, Math.ceil((w.resetAtMs - nowMs) / 1000)) });
+  // This client's own wrong guesses lock it out, even for the right passcode (guessing gains nothing).
+  if (mine.count >= PASSCODE_FAILURES_PER_CLIENT) return lockedUntil(mine);
+  // Fix wave 2: the deployment-wide cap throttles wrong guesses only – other clients' guesses never lock out a
+  // presenter holding the right passcode (the passcode is 16+ random characters).
+  if (timingSafeEqualString(given.trim(), configured)) return { ok: true };
+  if (all.count >= PASSCODE_FAILURES_PER_INSTANCE) return lockedUntil(all);
+  await Promise.all([
+    countHit(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+    countHit(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
+  ]);
+  return { ok: false, reason: "invalid" };
+}
+
+/**
+ * The public demo's live cap (LIVE_CALLS_PER_MINUTE), shared by every instance: take `n` slots at once
+ * (a form analysis fans out into several calls). In-memory (takeLiveCalls) when there is no shared store.
+ */
+export async function takeDemoLiveCalls(deps: MedreportDeps, n = 1, nowMs: number = Date.now()): Promise<RateLimitResult> {
+  if (!deps.sharedState) return takeLiveCalls(n, nowMs);
+  const slot = await takeSlots(deps, DEMO_LIVE_KEY, LIVE_CALLS_PER_MINUTE, 60_000, n, nowMs);
+  return slot.ok ? { ok: true, remaining: slot.remaining } : { ok: false, retryAfterSeconds: slot.retryAfterSeconds };
+}
+
+/** Tests only: forget the shared demo counters of this deployment. */
+export async function resetSharedDemoCounters(deps: MedreportDeps, req?: Request): Promise<void> {
+  await resetKey(deps, DEMO_LIVE_KEY);
+  await resetKey(deps, PASSCODE_FAIL_ALL_KEY);
+  if (req) await resetKey(deps, passcodeFailClientKey(req));
 }

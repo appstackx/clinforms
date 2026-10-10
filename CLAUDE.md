@@ -139,8 +139,9 @@ transcript times in memory are UTC). Mac + Chrome + Gmail. He decides everything
 
 ## Key commands
 ```bash
-npm ci && npm run dev                      # http://localhost:3000 → /reports (demo mode with empty env)
-npm run typecheck && npm run lint && npm run test:medreport && npm run build   # full check chain
+npm ci && npm run dev                      # open http://localhost:3000/reports (demo mode with empty env; on feat/production "/" is the public site)
+npm run typecheck && npm run lint && npm run test:medreport && npm run test:db && npm run test:auth \
+  && npm run test:site && npm run test:gateway && npm run build   # full check chain (production branches)
 # test:medreport includes the sandbox tests (src/sandbox/**/*.test.ts) since demo/red-physio – no separate run
 PORT=3000 MEDREPORT_AI_MODE=demo npm run start   # prod build; PORT matters (self-calls sim API)
 npm run demo:check                         # check the local demo assets (maps, answers, insurer PDFs)
@@ -172,4 +173,5 @@ ignores the `auto` and runs in demo mode unless `--live`.
 | `docs/demo-red-physio.md` | RED call pack (internal): support matrix, checklist, script, answers, fallbacks |
 | `assets/sales/blue-heart/` | Dell's video, SRT, narration, voice-over scripts |
 | `scripts/e2e/`, `scripts/dev-tools/` | Ad hoc Playwright flows (port 3107-era) and dev tools (model probe, flag check) |
+| `src/lib/site/demo-video.ts` | `/demo` (feat/production, 10/10): the product video's single source – media URLs (R2 `clinforms-media`, EU, `media.clinforms.co.uk/demo/<date>/`, never overwritten), chapters, transcript, markup, end-card hold; tests `src/lib/site/demo-video.test.ts` + `scripts/e2e/demo-video.cjs`; see `docs/production-architecture.md` §4. **Outreach links to `/demo` (or anywhere on the site) use campaign-level UTM only** – never a clinic or person in any UTM value (analytics also drops `utm_content`/`utm_term`). Decided by Khuram 10/10 (go-live): NEL on the media zone switched OFF (privacy sentence removed), no generated-voice label on `/demo`, "TM3" inside the required sandbox label in the public video is OK, "Book a 15-minute call" → `/request-access` is OK |
 | `memory/` | Deep memory (this pack) |

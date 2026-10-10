@@ -67,6 +67,12 @@ export interface ClinicSystemConnector {
   capabilities: ConnectorCapabilities;
   /** Tile note, e.g. "TM3 export upload – available now". */
   note: string;
+  /**
+   * Wave 2: only the public demo (tenant "demo") may use this connector – the simulated TM3 sandbox holds
+   * fictional patients and is never a clinic's record system. Handlers refuse it to a clinic's member
+   * (403 CONNECTOR_NOT_AVAILABLE, connectors/handler-support.ts requireConnector).
+   */
+  demoOnly?: boolean;
   searchPatients?(ctx: ConnectorContext, q: { search?: string }): Promise<PatientSummary[]>;
   listEpisodes?(ctx: ConnectorContext, patientId: string): Promise<EpisodeSummary[]>;
   getEpisodeBundle(ctx: ConnectorContext, ref: ConnectorEpisodeRef | { upload: ImportPayload }): Promise<EpisodeBundle>;

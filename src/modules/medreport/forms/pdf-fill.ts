@@ -223,12 +223,14 @@ function cutToFit(text: string, fits: (candidate: string) => boolean, markers: r
   for (const marker of markers) {
     let lo = 0;
     let hi = words.length;
+    // The cut ends without its own punctuation before the ellipsis ("a week…", never "a week.…") – fix wave 3.
+    const lead = (n: number) => words.slice(0, n).join("").trimEnd().replace(/[\s.,;:–—-]+$/, "");
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (fits(`${words.slice(0, mid).join("").trimEnd()}…${marker}`)) lo = mid;
+      if (fits(`${lead(mid)}…${marker}`)) lo = mid;
       else hi = mid - 1;
     }
-    const cut = words.slice(0, lo).join("").trimEnd();
+    const cut = lead(lo);
     if (cut) return `${cut}…${marker}`;
   }
   let word = text.trim();
@@ -400,7 +402,11 @@ function fillTextField(ctx: Ctx, field: FormField, tf: PDFTextField, raw: string
     ctx.continuations.push({ field, text });
   }
   if (fit.lines === 2) tf.enableMultiline();
-  tf.setText(fit.text);
+  // Fix wave 3: a multi-line answer is written with its line breaks where WE wrapped it (the inner width less the
+  // padding), so the PDF library never re-wraps it up to the border, where a viewer's font can run a word past the
+  // right edge ("repeated extensio…").
+  const wrapWidth = rect.width - 2 * pad - 2;
+  tf.setText(multiline || fit.lines === 2 ? wrapText(fit.text, ctx.font, fit.size, wrapWidth).join("\n") : fit.text);
   tf.setFontSize(fit.size);
   if (multiline) (ctx.textBoxes ??= []).push({ tf, page: String(widget.P() ?? ""), y: rect.y, height: rect.height, size: fit.size });
 }
@@ -614,8 +620,11 @@ function addContinuationSheet(ctx: Ctx): void {
   const lh = lineHeight(ctx.font, size);
   let page: PDFPage | null = null;
   let y = 0;
+  const sheets: PDFPage[] = [];
+  const label = ctx.opts.continuationLabel?.trim() ? ctx.encode(ctx.opts.continuationLabel.trim()).slice(0, 160) : "";
   const newPage = () => {
     page = ctx.doc.addPage([W, H]);
+    sheets.push(page);
     page.drawText(ctx.encode("Continuation sheet"), { x: margin, y: H - margin, size: 13, font: ctx.bold, color: rgb(0.1, 0.12, 0.2) });
     page.drawText(ctx.encode("Answers that did not fit in their box on the form, in full."), {
       x: margin,
@@ -624,7 +633,9 @@ function addContinuationSheet(ctx: Ctx): void {
       font: ctx.font,
       color: rgb(0.38, 0.42, 0.48),
     });
-    y = H - margin - 40;
+    // Fix wave 3: who the sheet belongs to, on every page, so it can be matched to its form if separated.
+    if (label) page.drawText(label, { x: margin, y: H - margin - 28, size: 8.5, font: ctx.bold, color: rgb(0.2, 0.22, 0.28) });
+    y = H - margin - (label ? 52 : 40);
   };
   newPage();
   for (const c of ctx.continuations) {
@@ -653,6 +664,12 @@ function addContinuationSheet(ctx: Ctx): void {
     }
     y -= lh;
   }
+  // "Continuation sheet – page n of m" in the top right corner of every continuation page.
+  sheets.forEach((p, i) => {
+    const text = ctx.encode(`Continuation sheet – page ${i + 1} of ${sheets.length}`);
+    const width = ctx.font.widthOfTextAtSize(text, 8);
+    p.drawText(text, { x: W - margin - width, y: H - margin + 2, size: 8, font: ctx.font, color: rgb(0.38, 0.42, 0.48) });
+  });
 }
 
 /** A page's /Rotate as a quarter turn (0, 90, 180 or 270). */

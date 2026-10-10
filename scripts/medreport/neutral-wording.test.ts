@@ -43,6 +43,7 @@ import { buildCaseExport, importCase } from "@/modules/medreport/ui/store";
 import { reportFingerprint } from "@/modules/medreport/core/fingerprint";
 import { ReportSchema } from "@/modules/medreport/core/schemas";
 import { getDemoBundle } from "./dev-bundles";
+import { demoBearer } from "./test-actors";
 
 const MODEL = "claude-sonnet-5-5";
 const drafts = route(handleDrafts);
@@ -51,7 +52,7 @@ const payloadPreview = route(handleAiPayloadPreview);
 const health = route(handleHealth);
 
 function post(path: string, body: unknown): Request {
-  return new Request(`http://127.0.0.1:9${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return new Request(`http://127.0.0.1:9${path}`, { method: "POST", headers: { "content-type": "application/json", authorization: demoBearer() }, body: JSON.stringify(body) });
 }
 
 const SECONDS = (ms: number) => `${Math.round(ms / 1000)} s`;
@@ -93,6 +94,16 @@ const CALLS: Record<string, unknown[][]> = {
   "server.analysis.liveDetail": [[{ model: MODEL, chunks: 2, effort: "high", questions: 16 }]],
   "server.analysis.liveFailedRules": [["AI_TIMEOUT"]],
   "server.analysis.liveErrorWarning": [["The drafting service did not answer in time."]],
+  "server.access.otherClinic": [["form"], ["report"], ["launch link"]],
+  "server.access.role": [["confirm form mappings"]],
+  "server.access.signAsYourself": [["Sarah Reid (fictional)"]],
+  "server.access.clinicMinuteLimit": [[20]],
+  "server.analysis.clinicRecordedDetail": [["09/10/2026"]],
+  "server.analysis.clinicLiveDetail": [[1], [23]],
+  "server.access.otherVoiceDetail": [["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07"]], ["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07", "F-08"]]],
+  "server.access.storeLimitDetail": [[30]],
+  "server.access.importLimitDetail": [[30]],
+  "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
 };
 
 /** Every string a wording object can produce: plain strings, and each function called with CALLS. */

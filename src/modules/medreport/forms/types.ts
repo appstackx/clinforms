@@ -29,6 +29,11 @@ export interface FillOptions {
    * forms/render-form.ts lists them with the warnings on a draft and refuses to issue a final copy.
    */
   onError?: (message: string) => void;
+  /**
+   * PDF (fix wave 3): who and what the continuation sheet belongs to ("Claimant: … · Reference: …"), printed on
+   * every continuation page with "Page n of m", so a sheet separated from the form can be matched to it.
+   */
+  continuationLabel?: string;
 }
 
 export interface PdfFillOptions extends FillOptions {

@@ -92,6 +92,13 @@ export function createMinimiser(reg: EpisodeBundle["registration"]): (text: stri
   // Single names only when long enough not to be an ordinary word; case-sensitive (names are capitalised).
   if (last.length >= 3) nameForms.add(last);
   if (first.length >= 3) nameForms.add(first);
+  // Fix wave 3: a first name registered with a middle name ("Callum James") is written alone in notes and footers
+  // ("Callum Reeve", "Callum"): every part of it is masked, and the first part with the last name.
+  const givenParts = first.split(/\s+/).filter((p) => p.length >= 3);
+  if (givenParts.length > 1) {
+    givenParts.forEach((p) => nameForms.add(p));
+    if (last) nameForms.add(`${givenParts[0]} ${last}`);
+  }
   const names = Array.from(nameForms).sort((a, b) => b.length - a.length);
   const nameRes = names.map((n) => new RegExp(`\\b${escapeRegExp(n).replace(/\s+/g, "\\s+")}\\b(?:'s|’s)?`, "g"));
 
@@ -124,6 +131,10 @@ export function createMinimiser(reg: EpisodeBundle["registration"]): (text: stri
     s = s.replace(/(?:\+44\s?\(?0?\)?\s?[1-3]\d{1,4}|\b0[1-3]\d{1,4})[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "[CONTACT]");
     // NHS numbers (3-3-4 digits) and other long digit runs that identify a person.
     s = s.replace(/\b\d{3}[\s-]?\d{3}[\s-]?\d{4}\b/g, "[ID]");
+    // Fix wave 3: the clinic's patient number and other reference numbers ("Patient no.: LP-004127", "(LP-004127)",
+    // "NFA-88213407"): letters then four or more digits.
+    s = s.replace(/\b(?:patient|client|pt)\s*(?:no\.?|number|id|ref(?:erence)?)?\s*[:#]?\s*\(?\s*[A-Z]{0,4}[-/]?\d{4,}\b/gi, (m) => m.replace(/[A-Z]{0,4}[-/]?\d{4,}$/i, "[ID]"));
+    s = s.replace(/\b[A-Z]{1,5}[-/]?\d{4,}\b/g, "[ID]");
     s = s.replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b/g, "[POSTCODE]");
     return s;
   };

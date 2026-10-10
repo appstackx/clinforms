@@ -182,3 +182,32 @@ test("\"Write in my own voice\" gives plain clinical wording, including a paragr
   assert.equal(isOwnVoiceCandidate({ text: "On 01/10/2026 I recorded that X.", sourceIds: ["N-005"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), true, "a first-person draft");
   assert.equal(isOwnVoiceCandidate({ text: pronounOnly, sourceIds: ["N-009"], origin: "ai" }, bundle, "Sarah Reid", { pronouns: true }), false, "another clinician's note");
 });
+
+test("fix wave 2: speaksInFirstPerson – I / me / my outside quotations; numerals are not the first person", async () => {
+  const { speaksInFirstPerson } = await import("./voice");
+  assert.equal(speaksInFirstPerson("On 10/04/2026 I recorded that her neck had improved."), true);
+  assert.equal(speaksInFirstPerson("At my final review she was discharged."), true);
+  assert.equal(speaksInFirstPerson("She told me she was driving again."), true);
+  assert.equal(speaksInFirstPerson("Sarah Reid recorded a WAD I presentation and a Grade I strain."), false);
+  assert.equal(speaksInFirstPerson("She said “my neck is stiff in the mornings”."), false);
+  assert.equal(speaksInFirstPerson('She said "I cannot lift the kettle".'), false);
+  assert.equal(speaksInFirstPerson("Type I-II changes were not recorded."), false);
+});
+
+test("fix wave 2: otherClinicianVoice – only unedited drafted answers in the author's voice, only for another signer", async () => {
+  const { otherClinicianVoice, sameClinician } = await import("./voice");
+  const para = (text: string, origin: "ai" | "edited" | "from_records" = "ai") => ({ id: `p-${text.length}`, text, sourceIds: ["N-001"], origin });
+  const report = {
+    author: { name: "Sarah Reid", hcpc: "PH-DEMO-01" },
+    sections: [
+      { key: "F-07", paragraphs: [para("On 10/04/2026 I recorded that she was improving.")] },
+      { key: "F-08", paragraphs: [para("Tom Ellis recorded full movement.")] },
+      { key: "F-09", paragraphs: [para("I progressed her exercises.", "edited")] },
+    ],
+  } as unknown as Parameters<typeof otherClinicianVoice>[0];
+  assert.deepEqual(otherClinicianVoice(report, { name: "Sam Patel", hcpc: "PH123456" }), { author: "Sarah Reid", keys: ["F-07"] });
+  assert.equal(otherClinicianVoice(report, { name: "S. Reid", hcpc: "ph-demo-01" }), null, "same HCPC: the author");
+  assert.equal(otherClinicianVoice(report, { name: "sarah  reid" }), null, "no HCPC: same name");
+  assert.equal(otherClinicianVoice({ ...report, author: undefined } as typeof report, { name: "Sam Patel", hcpc: "PH123456" }), null, "third-person drafts");
+  assert.equal(sameClinician({ name: "A", hcpc: "X1" }, { name: "A", hcpc: "X2" }), false);
+});

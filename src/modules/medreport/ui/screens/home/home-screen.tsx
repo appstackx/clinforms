@@ -4,6 +4,9 @@
  * Studio home (/reports): what the product does, the clinic-system connections, the referrer forms
  * library at a glance, and every report in this browser (patient, referrer form, status, flags,
  * last updated) with export, import and "Reset demo".
+ * Tenant mode (a clinic's own Studio, /app/studio): a work queue (fix wave 2) – the clinic's forms first, in
+ * progress / approved / all with a search, who approved and which version; a first-run list (referrer form,
+ * then the notes) while there are none; no hero, demo tools, Simulated TM3 tiles or hints.
  *
  * Owner: studio-a agent.
  */
@@ -32,7 +35,9 @@ import type { ConnectorInfo, Report } from "../../../core/types";
 import { formatUkDateTime } from "../../../core/dates";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { api, saveBlob } from "../../api-client";
-import { useHostHooks } from "../../host-hooks";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import {
   caseExportFileName,
   deleteReport,
@@ -40,7 +45,7 @@ import {
   exportCase,
   importCase,
   resetDemo,
-  saveReport,
+  saveReportDurable,
   useForms,
   useReports,
 } from "../../store";
@@ -59,11 +64,14 @@ import { plural } from "../../components/shared/format";
 import { WORDING } from "../../wording";
 import { StudioShell } from "../../components/shared/studio-shell";
 import { EmptyState, FormKindBadge, Notice, ReportStatusBadge } from "../../components/shared/ui-bits";
+import { QUEUE_FILTERS, defaultQueueFilter, filterQueue, queueCounts, type QueueFilter } from "./work-queue";
 
 export function HomeScreen() {
   const { reports, ready } = useReports();
   const { forms, ready: formsReady } = useForms();
   const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   const [resetOpen, setResetOpen] = useState(false);
   const [importMsg, setImportMsg] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -80,14 +88,23 @@ export function HomeScreen() {
   }, [forms]);
   const referrers = new Set(forms.map((f) => f.referrer.name)).size;
 
+  if (tenant) {
+    return (
+      <StudioShell>
+        <TenantHome reports={reports} ready={ready} confirmedForms={confirmedForms} formsReady={formsReady} prefillFor={prefillFor} />
+      </StudioShell>
+    );
+  }
+
   const onImport = async (file: File) => {
     const result = importCase(await file.text());
     if (!result.ok) {
       setImportMsg({ tone: "error", text: result.error });
       return;
     }
-    if (saveReport(result.report)) setImportMsg({ tone: "success", text: `Imported the case for ${result.report.patientLabel}.` });
-    else setImportMsg({ tone: "error", text: "This browser could not store the case (storage full or blocked)." });
+    // Stored before it is reported as imported (a clinic's Studio: on the server).
+    if (await saveReportDurable(result.report)) setImportMsg({ tone: "success", text: `Imported the case for ${result.report.patientLabel}.` });
+    else setImportMsg({ tone: "error", text: "The case could not be stored. Please try again." });
   };
 
   return (
@@ -105,56 +122,56 @@ export function HomeScreen() {
               </h2>
               <p className="text-sm text-slate-600">
                 Fictional data only. This demo keeps reports in your browser –{" "}
-                <Link href="/reports/security" className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
+                <Link href={paths.security} className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
                   how real patient data is protected
                 </Link>
                 .
               </p>
             </div>
-            <details className="group relative">
-              <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 [&::-webkit-details-marker]:hidden">
-                <Wrench className="h-4 w-4 text-slate-500" aria-hidden />
-                Demo tools
-                <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
-              </summary>
-              <div className="absolute right-0 z-20 mt-1 w-56 space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                    importRef.current?.click();
+              <details className="group relative" data-demo-tools="">
+                <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 [&::-webkit-details-marker]:hidden">
+                  <Wrench className="h-4 w-4 text-slate-500" aria-hidden />
+                  Demo tools
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
+                </summary>
+                <div className="absolute right-0 z-20 mt-1 w-56 space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+                      importRef.current?.click();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+                  >
+                    <FileInput className="h-4 w-4 text-slate-500" aria-hidden />
+                    Import case JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+                      setResetOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+                  >
+                    <RotateCcw className="h-4 w-4 text-slate-500" aria-hidden />
+                    Reset demo
+                  </button>
+                </div>
+                <input
+                  ref={importRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void onImport(f);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-                >
-                  <FileInput className="h-4 w-4 text-slate-500" aria-hidden />
-                  Import case JSON
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                    setResetOpen(true);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-                >
-                  <RotateCcw className="h-4 w-4 text-slate-500" aria-hidden />
-                  Reset demo
-                </button>
-              </div>
-              <input
-                ref={importRef}
-                type="file"
-                accept="application/json,.json"
-                className="sr-only"
-                tabIndex={-1}
-                aria-hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void onImport(f);
-                }}
-              />
-            </details>
+                />
+              </details>
           </div>
           {importMsg ? <Notice tone={importMsg.tone}>{importMsg.text}</Notice> : null}
           {!ready ? (
@@ -172,10 +189,10 @@ export function HomeScreen() {
                     </Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href="/reports/new">Complete a form</Link>
+                    <Link href={paths.newReport}>Complete a form</Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href="/reports/forms">Referrer forms</Link>
+                    <Link href={paths.forms}>Referrer forms</Link>
                   </Button>
                 </>
               }
@@ -188,6 +205,7 @@ export function HomeScreen() {
         </section>
       </div>
 
+      {/* Demo tools (a clinic's Studio is TenantHome above: no "Reset demo"). */}
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -224,7 +242,160 @@ export function HomeScreen() {
   );
 }
 
+/**
+ * A clinic's Studio home (fix wave 2): the work queue. Exported for the render tests.
+ */
+export function TenantHome({
+  reports,
+  ready,
+  confirmedForms,
+  formsReady,
+  prefillFor,
+}: {
+  reports: Report[];
+  ready: boolean;
+  confirmedForms: number;
+  formsReady: boolean;
+  prefillFor: ReadonlyMap<string, string>;
+}) {
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const counts = queueCounts(reports);
+  const [chosen, setChosen] = useState<QueueFilter | null>(null);
+  const [query, setQuery] = useState("");
+  const filter = chosen ?? defaultQueueFilter(counts);
+  const shown = filterQueue(reports, filter, query);
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">{hooks.clinic?.name ?? TENANT_COPY.home.eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Completed and in-progress forms</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {TENANT_COPY.home.reportsIntro}{" "}
+            <Link href={paths.security} className="font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
+              {TENANT_COPY.home.securityLink}
+            </Link>
+            .
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button asChild>
+            <Link href={paths.newReport}>
+              <FileUp className="mr-2 h-4 w-4" aria-hidden />
+              Complete a form
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={paths.forms}>
+              <Files className="mr-2 h-4 w-4" aria-hidden />
+              Referrer forms{formsReady ? ` · ${confirmedForms} confirmed` : ""}
+            </Link>
+          </Button>
+        </div>
+      </header>
+
+      {hooks.clinic?.draftingEnabled === false ? <Notice tone="info">{TENANT_COPY.home.draftingOff}</Notice> : null}
+
+      {!ready ? (
+        <Skeleton className="h-48 rounded-2xl" />
+      ) : reports.length === 0 ? (
+        <FirstRun confirmedForms={confirmedForms} formsReady={formsReady} />
+      ) : (
+        <section aria-labelledby="queue-heading" className="space-y-3">
+          <h2 id="queue-heading" className="sr-only">
+            {TENANT_COPY.home.queueHeading}
+          </h2>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div role="group" aria-label={TENANT_COPY.home.filterLabel} className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto">
+              {QUEUE_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={filter === f.id}
+                  onClick={() => setChosen(f.id)}
+                  className={cn(
+                    "flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 sm:flex-none",
+                    filter === f.id ? "bg-teal-50 text-teal-900" : "text-slate-600 hover:bg-slate-100",
+                  )}
+                >
+                  {f.label} <span className="tabular-nums text-slate-500">{counts[f.id]}</span>
+                </button>
+              ))}
+            </div>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label={TENANT_COPY.home.searchLabel}
+              placeholder={TENANT_COPY.home.searchPlaceholder}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 sm:w-72"
+            />
+          </div>
+          {shown.length ? (
+            <ReportsTable reports={shown} prefillFor={prefillFor} />
+          ) : (
+            <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+              {query.trim() ? TENANT_COPY.home.noMatch : filter === "open" ? TENANT_COPY.home.noneOpen : TENANT_COPY.home.noneApproved}
+            </p>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** A new clinic's first steps in the Studio: a confirmed referrer form, then a patient's notes. */
+function FirstRun({ confirmedForms, formsReady }: { confirmedForms: number; formsReady: boolean }) {
+  const paths = useStudioPaths();
+  const formDone = formsReady && confirmedForms > 0;
+  const steps = [
+    { done: formDone, href: paths.forms, title: TENANT_COPY.home.firstFormTitle, text: TENANT_COPY.home.firstFormText, action: "Referrer forms" },
+    { done: false, href: paths.newReport, title: TENANT_COPY.home.firstReportTitle, text: TENANT_COPY.home.firstReportText, action: "Complete a form" },
+  ];
+  return (
+    <section aria-labelledby="first-run-heading" className="rounded-2xl border border-slate-200 bg-white p-5">
+      <h2 id="first-run-heading" className="text-base font-semibold text-slate-900">
+        {TENANT_COPY.home.firstRunTitle}
+      </h2>
+      <ol className="mt-3 space-y-3">
+        {steps.map((step, i) => {
+          const next = !step.done && steps.slice(0, i).every((s) => s.done);
+          return (
+            <li key={step.title} className="flex items-start gap-3">
+              <span
+                aria-hidden
+                className={cn(
+                  "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                  step.done ? "bg-teal-600 text-white" : next ? "bg-teal-50 text-teal-800 ring-1 ring-teal-300" : "bg-slate-100 text-slate-500",
+                )}
+              >
+                {step.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900">
+                  {step.title}
+                  <span className="sr-only">{step.done ? " – done" : " – to do"}</span>
+                </p>
+                <p className="text-sm text-slate-600">{step.text}</p>
+                {next ? (
+                  <Button asChild size="sm" className="mt-2">
+                    <Link href={step.href}>{step.action}</Link>
+                  </Button>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** The public demo's hero (a clinic's Studio leads with its work queue instead). */
 function Hero() {
+  const paths = useStudioPaths();
   const steps = [
     { icon: Files, title: "Their form, once", text: "Upload each insurer or medico-legal form; staff confirm where every answer comes from." },
     { icon: MonitorSmartphone, title: "From the patient's record", text: "Registration details and notes from your clinic system, or an upload of the notes." },
@@ -243,13 +414,13 @@ function Hero() {
       </p>
       <div className="mt-5 flex flex-wrap gap-2">
         <Button asChild size="lg">
-          <Link href="/reports/new">
+          <Link href={paths.newReport}>
             Complete a form
             <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
           </Link>
         </Button>
         <Button asChild size="lg" variant="outline">
-          <Link href="/reports/forms">Referrer forms library</Link>
+          <Link href={paths.forms}>Referrer forms library</Link>
         </Button>
       </div>
       <ol className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -274,7 +445,7 @@ function Hero() {
 
 const TILE_FALLBACK: Record<ConnectorInfo["id"], { title: string; status: string; note: string }> = {
   "tm3-sim": { title: "Simulated TM3", status: "Connected", note: "Simulated TM3 sandbox – demo data, not affiliated with TM3." },
-  "file-import": { title: "Notes upload", status: "Available now", note: "Upload the patient's notes printed or saved as a PDF from your clinic system, or an export (JSON / CSV)." },
+  "file-import": { title: "Notes upload", status: "Available now", note: "Upload the patient's notes as your clinic system prints or exports them – a PDF, a Word document, a CSV export or text – and check what was read before it is used." },
   tm3: { title: "Direct TM3 connection", status: "Subject to TM3", note: "A direct connection, subject to TM3 providing access." },
 };
 
@@ -289,6 +460,7 @@ function ConnectorTiles({
   confirmedForms: number;
   referrers: number;
 }) {
+  const paths = useStudioPaths();
   const [connectors, setConnectors] = useState<ConnectorInfo[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -302,9 +474,10 @@ function ConnectorTiles({
   }, []);
 
   const byId = (id: ConnectorInfo["id"]) => connectors?.find((c) => c.id === id);
+  // The public demo only: a clinic's Studio shows no connection tiles (its home is the work queue).
   const order: ConnectorInfo["id"][] = ["tm3-sim", "file-import", "tm3"];
   const icons = { "tm3-sim": PlugZap, "file-import": FileUp, tm3: Lock } as const;
-  const hrefs = { "tm3-sim": "/pms-sandbox", "file-import": "/reports/new", tm3: null } as const;
+  const hrefs = { "tm3-sim": "/pms-sandbox", "file-import": paths.newReport, tm3: null } as const;
 
   return (
     <section aria-labelledby="connections-heading" className="space-y-3">
@@ -367,7 +540,7 @@ function ConnectorTiles({
           );
         })}
         <Link
-          href="/reports/forms"
+          href={paths.forms}
           className="rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
         >
           <div className="flex items-center justify-between gap-2">
@@ -384,7 +557,7 @@ function ConnectorTiles({
           </p>
         </Link>
         <Link
-          href="/reports/security"
+          href={paths.security}
           className="rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
         >
           <div className="flex items-center justify-between gap-2">
@@ -411,6 +584,8 @@ function flagSummary(report: Report): { blocking: number; warnings: number; gaps
 }
 
 function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: ReadonlyMap<string, string> }) {
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
   const [confirmDelete, setConfirmDelete] = useState<Report | null>(null);
   const download = (r: Report) => {
     const blob = exportCase(r.id);
@@ -425,7 +600,8 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
               <th scope="col" className="px-4 py-2.5 font-medium">Patient</th>
               <th scope="col" className="px-4 py-2.5 font-medium">Referrer form</th>
               <th scope="col" className="px-4 py-2.5 font-medium">Status</th>
-              <th scope="col" className="px-4 py-2.5 font-medium">Flags</th>
+              <th scope="col" className="px-4 py-2.5 font-medium">{tenant ? "Next step" : "Flags"}</th>
+              {tenant ? <th scope="col" className="px-4 py-2.5 font-medium">Approved by</th> : null}
               <th scope="col" className="px-4 py-2.5 font-medium">Updated</th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
                 <span className="sr-only">Actions</span>
@@ -436,7 +612,7 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
             {reports.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50/60">
                 <td className="px-4 py-3">
-                  <Link href={`/reports/${encodeURIComponent(r.id)}`} className="font-medium text-slate-900 hover:text-teal-800 hover:underline">
+                  <Link href={paths.report(r.id)} className="font-medium text-slate-900 hover:text-teal-800 hover:underline">
                     {r.patientLabel}
                   </Link>
                   <p className="text-xs text-slate-500">{r.bundleSnapshot.source.simulated ? "Simulated TM3" : r.bundleSnapshot.source.label ?? r.episodeRef.connectorId}</p>
@@ -445,11 +621,12 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
                   <FormCell report={r} />
                 </td>
                 <td className="px-4 py-3">
-                  <ReportStatusBadge status={r.status} />
+                  <StatusCell report={r} />
                 </td>
                 <td className="px-4 py-3">
                   <FlagCell report={r} prefillFor={r.form ? (prefillFor.get(r.form.formId) ?? null) : null} />
                 </td>
+                {tenant ? <td className="px-4 py-3 text-xs text-slate-700">{r.receipt?.signer.name ?? "–"}</td> : null}
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{formatUkDateTime(r.updatedAt)}</td>
                 <td className="px-4 py-3">
                   <RowActions report={r} onExport={() => download(r)} onDelete={() => setConfirmDelete(r)} />
@@ -463,17 +640,20 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
         {reports.map((r) => (
           <li key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-start justify-between gap-2">
-              <Link href={`/reports/${encodeURIComponent(r.id)}`} className="font-medium text-slate-900 hover:underline">
+              <Link href={paths.report(r.id)} className="font-medium text-slate-900 hover:underline">
                 {r.patientLabel}
               </Link>
-              <ReportStatusBadge status={r.status} />
+              <StatusCell report={r} />
             </div>
             <div className="mt-2">
               <FormCell report={r} />
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <FlagCell report={r} prefillFor={r.form ? (prefillFor.get(r.form.formId) ?? null) : null} />
-              <span className="text-xs text-slate-500">{formatUkDateTime(r.updatedAt)}</span>
+              <span className="text-xs text-slate-500">
+                {tenant && r.receipt ? `${r.receipt.signer.name} · ` : ""}
+                {formatUkDateTime(r.updatedAt)}
+              </span>
             </div>
             <div className="mt-2 border-t border-slate-100 pt-2">
               <RowActions report={r} onExport={() => download(r)} onDelete={() => setConfirmDelete(r)} />
@@ -486,8 +666,10 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
           <DialogHeader>
             <DialogTitle>Delete this report?</DialogTitle>
             <DialogDescription>
-              {confirmDelete ? `The ${confirmDelete.form?.title ?? "report"} for ${confirmDelete.patientLabel} will be removed from this browser.` : ""} Export the
-              case JSON first if you want to keep it.
+              {confirmDelete
+                ? `The ${confirmDelete.form?.title ?? "report"} for ${confirmDelete.patientLabel} will be removed${tenant ? " from your clinic's records" : " from this browser"}.`
+                : ""}{" "}
+              {tenant ? TENANT_COPY.home.deleteNote : "Export the case JSON first if you want to keep it."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -532,11 +714,24 @@ function FormCell({ report }: { report: Report }) {
   );
 }
 
+/** Status, and which version an amended form is (an amended v2 must not look like the original). */
+function StatusCell({ report }: { report: Report }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <ReportStatusBadge status={report.status} />
+      {report.version && report.version > 1 ? (
+        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-200">Amended – v{report.version}</span>
+      ) : null}
+    </span>
+  );
+}
+
 function FlagCell({ report, prefillFor }: { report: Report; prefillFor: string | null }) {
+  const tenant = useStudioMode() === "tenant";
   const { blocking, warnings, gaps } = flagSummary(report);
   if (report.status === "signed" && prefillFor) return <span className="text-xs text-emerald-700">Prefill checked – for {prefillFor} to complete and sign</span>;
-  if (report.status === "signed") return <span className="text-xs text-emerald-700">Approved – signed receipt</span>;
-  if (!blocking && !warnings && !gaps) return <span className="text-xs text-slate-500">None open</span>;
+  if (report.status === "signed") return <span className="text-xs text-emerald-700">{tenant ? TENANT_COPY.review.listApproved : "Approved – signed receipt"}</span>;
+  if (!blocking && !warnings && !gaps) return <span className="text-xs text-slate-500">{tenant ? TENANT_COPY.home.readyForApproval : "None open"}</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {gaps ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">{plural(gaps, "gap")}</span> : null}
@@ -547,24 +742,35 @@ function FlagCell({ report, prefillFor }: { report: Report; prefillFor: string |
 }
 
 function RowActions({ report, onExport, onDelete }: { report: Report; onExport(): void; onDelete(): void }) {
+  const paths = useStudioPaths();
+  const hooks = useHostHooks();
+  const tenant = hooks.mode === "tenant";
+  // A clinic's Studio (fix wave 2): no case download from the browser (a patient's whole record, unrecorded);
+  // an approved report is deleted only by the clinic's owner or an administrator (the server enforces it too).
+  const role = hooks.member?.role;
+  const canDelete = !tenant || report.status !== "signed" || role === "owner" || role === "admin";
   return (
     <div className="flex items-center justify-end gap-1">
       <Button asChild size="sm" variant="ghost">
-        <Link href={`/reports/${encodeURIComponent(report.id)}`}>{report.status === "signed" ? "Open" : "Review"}</Link>
+        <Link href={paths.report(report.id)}>{report.status === "signed" ? "Open" : "Review"}</Link>
       </Button>
-      <Button size="sm" variant="ghost" onClick={onExport} title="Export case JSON" aria-label={`Export case JSON for ${report.patientLabel}`}>
-        <Download className="h-4 w-4" aria-hidden />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={onDelete}
-        title="Delete"
-        aria-label={`Delete the report for ${report.patientLabel}`}
-        className="text-slate-500 hover:text-red-700"
-      >
-        <Trash2 className="h-4 w-4" aria-hidden />
-      </Button>
+      {tenant ? null : (
+        <Button size="sm" variant="ghost" onClick={onExport} title="Export case JSON" aria-label={`Export case JSON for ${report.patientLabel}`}>
+          <Download className="h-4 w-4" aria-hidden />
+        </Button>
+      )}
+      {canDelete ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onDelete}
+          title="Delete"
+          aria-label={`Delete the report for ${report.patientLabel}`}
+          className="text-slate-500 hover:text-red-700"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden />
+        </Button>
+      ) : null}
     </div>
   );
 }

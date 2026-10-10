@@ -22,9 +22,14 @@
  * 4. keepFictionalLabels(): a name the demonstration record labels "(fictional)" keeps the label in
  *    drafted wording, and collapseRepeatedBrackets() drops a bracket that repeats the words before it
  *    ("8 wks (8 weeks)" written out as "8 weeks (8 weeks)").
+ *
+ * 5. otherClinicianVoice() (fix wave 2): drafted answers written in the report author's first person ("On
+ *    10/04/2026 I recorded…") may only be approved by that author. Another clinician approving them would put
+ *    the author's treatment and opinions in the approver's own first person on a medico-legal form; the sign
+ *    endpoint refuses that (409 SIGNER_NOT_AUTHOR) and the review says which answers to edit.
  */
 import { formatUkDate } from "./dates";
-import type { EpisodeBundle, Paragraph } from "./types";
+import type { Clinician, EpisodeBundle, Paragraph, Report } from "./types";
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -441,4 +446,55 @@ export function describeSourceIds(text: string, names: SourceIdNames): string {
     return `${pre}${(the && the !== "the") || atSentenceStart(whole, offset + pre.length) ? capitalise(out) : out}`;
   });
   return s;
+}
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Whose voice the drafted answers speak in (fix wave 2)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Words before a capital "I" that make it a numeral ("WAD I", "Grade I", "Type I"), not the first person. */
+const NUMERAL_BEFORE_I = /(?:WAD|grade|type|stage|class|phase|level|part|section|schedule|category|tier|zone)\s*$/i;
+
+/**
+ * Whether drafted text speaks in the first person ("I recorded…", "in my opinion", "told me") outside
+ * quotations from the notes ("…" / "…", where a patient's own words may say "my neck").
+ */
+export function speaksInFirstPerson(text: string): boolean {
+  const plain = text.replace(/\u201C[^\u201D]*\u201D/g, " ").replace(/"[^"]*"/g, " ");
+  const re = /\b(I|me|my|My|myself|Myself)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain))) {
+    if (m[1] === "I") {
+      if (NUMERAL_BEFORE_I.test(plain.slice(Math.max(0, m.index - 16), m.index))) continue;
+      if (/^[-\u2013/.]\w/.test(plain.slice(m.index + 1, m.index + 3))) continue; // "I-II", "I/II"
+    }
+    return true;
+  }
+  return false;
+}
+
+const normName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+const normHcpc = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
+
+/** The same clinician: the same HCPC number when both have one, else the same name. */
+export function sameClinician(a: Pick<Clinician, "name"> & { hcpc?: string | null }, b: Pick<Clinician, "name"> & { hcpc?: string | null }): boolean {
+  if (a.hcpc && b.hcpc) return normHcpc(a.hcpc) === normHcpc(b.hcpc);
+  return normName(a.name) === normName(b.name);
+}
+
+/**
+ * Drafted answers (origin "ai", unedited) that speak in the first person of the report's author when the
+ * approver is someone else: `{author, keys}` (the questions to edit), or null when there are none – no author
+ * (third-person drafts), the approver is the author, or no drafted answer says "I".
+ */
+export function otherClinicianVoice(
+  report: Pick<Report, "author" | "sections">,
+  signer: Pick<Clinician, "name"> & { hcpc?: string | null },
+): { author: string; keys: string[] } | null {
+  const author = report.author;
+  if (!author || !author.name.trim() || !signer.name.trim()) return null;
+  if (sameClinician(author, signer)) return null;
+  const keys = report.sections.filter((s) => s.paragraphs.some((p) => p.origin === "ai" && speaksInFirstPerson(p.text))).map((s) => s.key);
+  return keys.length > 0 ? { author: author.name, keys } : null;
 }

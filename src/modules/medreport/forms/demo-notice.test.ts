@@ -406,3 +406,22 @@ test("PDF: multi-line boxes get an inner margin, and boxes side by side in one r
   const rect = filled.getTextField("current").acroField.getWidgets()[0].getRectangle();
   assert.ok(rect.x > 300 && rect.width < 250, "inset from the printed cell");
 });
+
+test("PDF (fix wave 3): every continuation page names the claimant and the reference, with its page number", async () => {
+  const bytes = await twoPageForm();
+  const out = await renderFormFile({
+    form: form("pdf_acroform", PDF_FIELDS),
+    file: decoded(bytes, PDF_MIME),
+    answers: { "F-01": { text: "Alex Example" }, "F-02": { text: LONG } },
+    draft: false,
+    format: "original",
+    continuationLabel: "Claimant: Alex Example · Reference: NFA-00000001",
+  });
+  const pages = await pageItems(out.bytes);
+  const sheet = joined(pages[pages.length - 1]);
+  assert.match(sheet, /Continuation sheet/);
+  assert.match(sheet, /Claimant: Alex Example · Reference: NFA-00000001/);
+  assert.match(sheet, /Continuation sheet – page 1 of 1/);
+  // A cut answer never ends with its own punctuation before the ellipsis.
+  assert.doesNotMatch(pages.slice(0, -1).map(joined).join(" "), /[.,;:]…/);
+});

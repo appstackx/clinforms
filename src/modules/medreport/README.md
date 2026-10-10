@@ -17,10 +17,10 @@ remain as the fallback when a referrer sends no form. See "Revision 2 – referr
   private medical insurance demo patient's record (Bupa), named only so its public form can be filled,
   with fake numbers (see "Demo data"). HCPC numbers use the invalid demo format `PH-DEMO-01`. Reports are
   stored in the browser only (demo-grade).
-- **Standalone app.** This module, the sandbox and their thin `src/app` routes are the whole app
-  (`/` redirects to `/reports`). It was extracted from its original host repo (see the root
-  `README.md`); the host design system is only `src/components/ui/*` and `src/lib/utils.ts` (reached
-  through `ui/primitives.ts`).
+- **Standalone app.** This module, the sandbox and their thin `src/app` routes are the Studio and its
+  demo (`/` is now the public website in `src/app/(marketing)`; the Studio demo stays at `/reports`).
+  It was extracted from its original host repo (see the root `README.md`); the host design system is
+  only `src/components/ui/*` and `src/lib/utils.ts` (reached through `ui/primitives.ts`).
 
 The full plan is in [`docs/plan.md`](../../../docs/plan.md) (written while the module lived in its
 original host repo; its history notes are kept as they were).
@@ -51,6 +51,8 @@ src/modules/medreport/
     tm3-sim/              wire.ts (sim wire schemas), client.ts, mapper.ts, connector.ts
     file-import/          format.ts, parser.ts, connector.ts   (our documented JSON/CSV/text format)
                           pdf-notes.ts                          (printed notes PDF → the text format)
+                          general-notes.ts docx-notes.ts        (wave 3: ordinary clinic notes in any layout → NotesReview)
+                          review-contract.ts review-bundle.ts   (wave 3: the review staff check; checked review → bundle)
     tm3/connector.ts      real TM3 placeholder: not_configured
   auth/                   server-only: hmac-token, launch-token, session-token, sign-receipt, passcode,
                           attestations (form-map confirmations, filed-document tokens)
@@ -94,10 +96,15 @@ src/modules/medreport/
                           ashcroft.ts = the flat PDF's pre-written map (offered on upload, not seeded)
     samples/generated/    *.b64.ts files + manifest.ts (SHA-256 of each file), from build-demo-forms.mjs
   api/                    contract.ts (browser-safe), http.ts, deps.ts, resolve-template.ts, handlers/*.ts (server-only)
+                          store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
+                          store/* (browser backend, server cache + write queue + transport)
+                          routes.ts (useStudioPaths: every Studio link from HostHooks.basePath), studio-copy.ts (tenant-only
+                          production copy), studio-events.ts (non-identifying analytics properties for HostHooks.track)
 src/sandbox/tm3-sim/      config, wire-types (duplicated wire format), fixtures/, handlers, client-store, ui/
 src/app/api/_medreport-glue.ts      connector registry + in-process transport + route() binder
 src/app/reports/medreport-host.tsx  client-side HostHooks (write-back into the sandbox's browser record)
+src/app/app/studio/tenant-host.tsx  client-side HostHooks of a clinic's own Studio (tenant mode, wave 2)
 src/app/api/reports/v1/**/route.ts  thin: runtime="nodejs", dynamic="force-dynamic", export METHOD = route(handler)
 src/app/api/tm3-sim/v1/**/route.ts  thin: re-export the sandbox handler
 src/app/reports/**  src/app/pms-sandbox/**   thin pages; each layout.tsx has its own metadata
@@ -126,9 +133,10 @@ options rather than merging them, so the script writes one full pattern list per
   Dialog\*, Tooltip\*, Separator, Skeleton and Avatar\* from `@/components/ui/*`, and `cn` from
   `@/lib/utils`. It is the only file allowed to import them.
 - **The module may NOT import** `@/lib/*`, `@/components/*` (outside primitives), `@/sandbox/*`,
-  `@/app/*`, or any relative path that leaves `src/modules/medreport`.
-- **Browser-safe code** is everything in `core/`, `templates/` and `ui/`, plus `config.public.ts` and
-  `api/contract.ts`. It may NOT import `server-only`, `node:*`, the Anthropic SDK, docx,
+  `@/app/*`, `@/server/*`, `posthog-js` (product analytics is host code in `src/components/analytics`,
+  passed in through `HostHooks`), or any relative path that leaves `src/modules/medreport`.
+- **Browser-safe code** is everything in `core/`, `templates/` and `ui/`, plus `config.public.ts`,
+  `api/contract.ts` and (wave 2) `api/store-contract.ts`. It may NOT import `server-only`, `node:*`, the Anthropic SDK, docx,
   docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib.
 - **The sandbox may NOT import the module** (`@/modules/*`). It duplicates the wire types in
   `src/sandbox/tm3-sim/wire-types.ts`, and the two sides talk over HTTP.
@@ -321,29 +329,31 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 
 | Method | Path | Auth | Handler | Purpose |
 |---|---|---|---|---|
-| GET | `/health` | – | health.ts | `{product, version, aiMode, liveAiAvailable, model, promptVersion}` |
+| GET | `/health` | – | health.ts | `{product, version, aiMode, liveAiAvailable, model, promptVersion}`; anonymous callers get the neutral engine name and an empty `promptVersion` |
 | GET | `/connectors` | – | connectors-list.ts | Connector tiles |
-| POST | `/launch` | `x-partner-key` | launch.ts | `{connectorId, patientId, episodeId, clinician}` → `{launchUrl, expiresAt}` |
-| POST | `/launch/verify` | – | launch-verify.ts | `{token}` → `{claims, session}` |
+| POST | `/launch` | `x-partner-key` | launch.ts | `{connectorId, patientId, episodeId, clinician}` → `{launchUrl, expiresAt}`; the demo key → tenant `demo`, a clinic's key (partner_keys) → that clinic |
+| POST | `/launch/verify` | launch token (+ the clinic's member for a clinic launch) | launch-verify.ts | `{token}` → `{claims, session}` |
 | POST | `/sessions/demo` | – | sessions-demo.ts | Demo-tenant session for the picker, uploads and batch |
-| GET | `/connectors/{id}/patients?search=` | session | patients.ts | `{patients, trace}` |
-| GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | session (claims match path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
-| POST | `/connectors/file-import/bundle` | session | file-import-bundle.ts | Upload (ImportPayload) → bundle response |
+| GET | `/connectors/{id}/patients?search=` | actor | patients.ts | `{patients, trace}` |
+| GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | actor (launch scope matches path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
+| POST | `/connectors/file-import/bundle` | actor | file-import-bundle.ts | Upload (ImportPayload) → bundle response (a clinic's bundle carries `clinic`); documented format only |
+| POST | `/connectors/file-import/read` | actor | file-import-read.ts | Wave 3: upload (ImportPayload, `format` json\|csv\|text\|pdf\|docx) → `{result: "bundle", data}` (documented format) or `{result: "review", review: NotesReview, trace}` (ordinary clinic notes to check) |
+| POST | `/connectors/file-import/confirm` | actor | file-import-confirm.ts | Wave 3: `{review}` (checked by staff) → bundle response; 422 `IMPORT_INVALID` with plain-English issues |
 | GET | `/templates` | – | templates-list.ts | `{templates}` |
 | GET | `/templates/{id}` | – | template-get.ts | `{template}` |
 | GET | `/templates/{id}/docx` | – | template-docx.ts | Tagged .docx download |
-| POST | `/templates/validate` | – | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
-| POST | `/drafts` | passcode for live | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
-| POST | `/validate` | – | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
-| POST | `/sign` | session | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
-| POST | `/render?format=docx\|pdf\|original` | – | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
-| POST | `/connectors/{id}/documents` | session | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
-| POST | `/forms/analyse` | passcode for live | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
+| POST | `/templates/validate` | actor | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
+| POST | `/drafts` | actor (+ passcode for live in the demo) | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
+| POST | `/validate` | actor | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
+| POST | `/sign` | actor (signer = the member) | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
+| POST | `/render?format=docx\|pdf\|original` | actor | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
+| POST | `/connectors/{id}/documents` | actor | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
+| POST | `/forms/analyse` | actor (+ passcode for live in the demo) | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
 | GET | `/forms/samples` | – | forms-samples.ts | `{samples: FormSample[]}` – bundled fictional referrer forms, with pre-confirmed maps where recorded; with local demonstration forms on (any AI mode), also those as `uploadRequired` entries (no map, file not served), and a prepared portal question set as a seeded sample with its attested map |
 | GET | `/forms/samples/{id}/file` | – | forms-sample-file.ts | The sample's original .docx / .pdf |
-| POST | `/forms/confirm` | session | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
-| POST | `/ai/payload-preview` | – | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
-| POST | `/forms/fill-preview` | – | forms-fill-preview.ts | `{report, form, fileBase64, mode: "draft", reviewMarkers?}` → the original file filled, DRAFT; `x-medreport-fill-warnings`; `maxDuration = 60` |
+| POST | `/forms/confirm` | actor: owner/admin/clinician | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
+| POST | `/ai/payload-preview` | actor | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
+| POST | `/forms/fill-preview` | actor | forms-fill-preview.ts | `{report, form, fileBase64, mode: "draft", reviewMarkers?}` → the original file filled, DRAFT; `x-medreport-fill-warnings`; `maxDuration = 60` |
 
 **Stateless:** the bundle travels inside `report.bundleSnapshot`. `/validate`, `/sign` and `/render`
 take the report alone, not a separate bundle. Form maps and the referrers' files live in the browser
@@ -358,6 +368,155 @@ map/report), `FORM_NOT_CONFIRMED`, `NO_DEMO_ANALYSIS`, `PDF_CONVERSION_UNAVAILAB
 needs LibreOffice: "download Word" – `NOTICES.pdfConversionUnavailable`). **New headers:**
 `x-medreport-fill-warnings` (URI-encoded JSON array of plain-English warnings) and
 `x-medreport-form-kind`.
+
+## Production wave 2 – callers, clinics and hardening (API slice)
+
+`auth/actor.ts` `requireActor(req, deps, {roles?, scope?, connectorId?})` → `Actor {tenantId, userId?, sid, via,
+role, name?, clinician?, scope?, session?}` on every endpoint that touches patient data or drafting (table above:
+"actor"). Public: `/health`, `/connectors`, the template GETs, `/forms/samples` (+ file), `/sessions/demo`, `/launch`
+(partner key).
+
+- **Two kinds of caller.** A clinic's signed-in member (`via "user"`): the host resolves it
+  (`MedreportDeps.authenticate` → `src/server/auth/medreport-actor.ts`, Better Auth session read from the database,
+  active clinic, role, member profile); 403 `TWO_FACTOR_REQUIRED` without two-step verification, 403 `NO_CLINIC`
+  without an active clinic. A launch session of the same clinic sent alongside narrows it to that episode
+  (`"user+launch"`); other session tokens are ignored. The public demo (`via "demo"`, tenant `demo`): ONLY the demo /
+  launch session tokens, only while `CLINFORMS_PUBLIC_DEMO` is not `0` (403 `DEMO_DISABLED`). A request from the
+  demo's own pages (`/reports`, `/pms-sandbox`, same-origin Referer) carrying a demo session is the demo even when
+  the browser also holds a clinic sign-in; anywhere else a signed-in member is never the demo.
+- **Tenant checks:** every report, bundle, form map and receipt in a request must be the actor's clinic's (403
+  `TENANT_MISMATCH`). Form-map attestations and receipts already MAC the tenant; `verifyFormConfirmation(form,
+  {tenantId})`, `verifyReceipt(…, {tenantId})` and `verifyReceiptMac(…, {tenantId})` refuse another clinic's.
+  `/forms/analyse` and file import stamp the actor's tenant.
+- **Roles:** confirm a map – owner/admin/clinician (403 `ROLE_NOT_ALLOWED`); approve – owner/admin/clinician with an
+  HCPC number and "may sign" on the member profile (403 `SIGNER_NOT_ALLOWED`; staff never). Drafting, previews,
+  renders: any role.
+- **Signer = the member** (name from the account, HCPC and job title from `member_profile`); a body `signer` with
+  another HCPC is 403 `SIGNER_MISMATCH`. `approvedVia {kind "user", sid, userId, launchSid?}` (additive). The demo
+  keeps the body's fictional signer. A member cannot rename their account (Better Auth `/update-user` is off).
+- **The signer's own voice (fix wave 2).** A clinic's new report is drafted in the first person of the member who
+  will sign it (`new-report-screen.tsx` `tenantAuthor`: owner/admin/clinician with an HCPC number and "may sign"), or
+  – when that member cannot sign – with no author, i.e. in the third person (`GenerateInput.author`,
+  `CreateFormReportInput.author`, `null` = nobody). `/sign` refuses unedited drafted answers that speak in another
+  clinician's "I" (`report.author` ≠ the signer by HCPC, else name): 409 `SIGNER_NOT_AUTHOR` naming the questions
+  (`core/voice.ts` `otherClinicianVoice`, `speaksInFirstPerson`); the review shows the same reason before the
+  click, and staff / members without signing details see why they cannot approve. "Write in my own voice" uses the
+  signed-in member in a clinic's Studio. The demo is unchanged.
+- **Clinic profile replaces DEMO_CLINIC** (`core/clinic.ts`): a clinic's bundle carries `bundle.clinic` (optional,
+  from its profile); demo bundles carry none and keep DEMO_CLINIC; a clinic without a profile names no clinic.
+- **Connectors:** the simulated TM3 sandbox is `demoOnly` (403 `CONNECTOR_NOT_AVAILABLE` for a clinic); clinics use
+  file import; real TM3 stays not configured. `/launch` maps a clinic's own partner key (`partner_keys`, SHA-256) to
+  that clinic and builds `launchUrl` from `APP_ORIGIN` / `BETTER_AUTH_URL` (`config.server.ts appOrigin()`), never
+  the request's Host; a clinic's link opens `/app/studio/new` (the tenant Studio) and only that clinic's member can redeem it.
+- **Shared state** (`MedreportDeps.sharedState`, `auth/shared-limits.ts`): launch-token replay → `launch_token_uses`,
+  the demo's live cap and passcode guesses → `rate_limits` (429 + `Retry-After` unchanged). The host provides it
+  when `CLINFORMS_DB` is set; a single local process keeps its in-memory counters. Clinics draft live WITHOUT the
+  passcode while `clinic_profile.drafting_enabled` (fix wave 2: no profile, or a profile that cannot be read = OFF –
+  fail closed; the host's `loadClinicProfile` passes read errors on): prefer "live" with it off → 403
+  `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
+- **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
+  marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
+  `UNSUPPORTED_MEDIA_TYPE`.
+- **Audit** (`MedreportDeps.audit`, clinics only, ids and counts only): `form.confirm`, `form.analyse_live`,
+  `report.draft_live`, `report.sign`, `report.render_final`, `report.file_back`, `launch.issue`
+  (`AUDIT_ACTIONS` also names `report.delete` / `report.export` for the server store). `report.render_final` carries
+  `purpose` (`RenderRequest.purpose`, fix wave 2): `download` (default) and `file_back` are recorded; the review's
+  on-screen `preview` of an approved report is not, and carries no file token. A clinic's Studio offers no case
+  JSON download (an unrecorded copy of a patient's whole record).
+- **Studio:** the default `api` client gets a demo session before a call that needs a caller when none is stored
+  (`ensureSessionToken`); a clinic's sign-in cookie takes precedence on the server.
+- Tests: `scripts/medreport/api-actor.test.ts` (per endpoint, two instances on one database) and
+  `api-actor-auth.test.ts` (the glue's real Better Auth wiring).
+
+## Clinic storage (wave 2): `/api/reports/v1/store/**` and the Studio's two store backends
+
+A clinic's own Studio keeps its reports, form maps, form files and referrer links on the server
+(docs/production-architecture.md §5); the public demo at `/reports` keeps browser storage, unchanged.
+
+**Choosing the backend.** `HostHooks.storage?: "browser" | "server"` (default `"browser"`).
+`<HostHooksProvider>` applies it (`ui/store/mode.ts` `setStoreMode`) before its children render, so every
+store call of a screen uses the right backend. `ui/store.ts` keeps every export and signature:
+
+| Folder / file | What |
+|---|---|
+| `ui/store/browser-backend.ts` | the pre-wave-2 code, moved unchanged: `medreport.report.<id>`, `medreport.forms`, `medreport.forms.seeded` in localStorage, files in IndexedDB `medreport-forms` |
+| `ui/store/server-store.ts` | in-memory cache per clinic + hydration + cross-tab sync (BroadcastChannel `medreport-store`, refresh on focus/visibility, retry when back online) |
+| `ui/store/write-queue.ts` | per-record coalescing write queue: one request per record in flight, newer saves replace the pending one, `If-Match` revisions, back-off, 401/403 kept until sign-in |
+| `ui/store/server-api.ts` | same-origin fetches to `/store/**` (chunked, resumable file upload; downloads verified by SHA-256) |
+| `ui/store/{events,mode,samples,types}.ts` | `STORE_EVENT`, the mode, `fetchSampleForms`, `StoredFormFile` |
+
+Server mode: synchronous reads answer from the cache (the hooks report `ready` only after hydration: the
+snapshot and every form map; one report when it opens, all reports for the home list); saves update the cache
+and return `true` at once, then reach the server in order; a 409 loads the stored copy into the cache and
+notifies (`use-review-state` already swaps in a newer stored copy); a record refused and never stored is
+dropped from the cache. Nothing from a report or form map is written to localStorage or IndexedDB (pinned by
+`scripts/medreport/store-client.test.ts`). Fictional sample forms are not seeded into a clinic. `resetDemo()`
+never deletes a clinic's records (it clears this tab's session keys and the in-memory copies).
+
+**Async extras** (`ui/store.ts`; in browser mode they resolve to the synchronous result):
+`flushStore({keepalive})`, `saveReportDurable(report)`, `saveFormDurable(form)`, `useStoreSync()` /
+`getStoreSyncState()` → `{pending, failed, error?}`, `retryStoreSync()`, and for referrer links
+`getStoredReferrerLinks()` / `saveReferrerLinks()` (server mode; `ui/components/new/referrer-match.ts` uses
+them). Used where a change must be stored before moving on: amendment (`review-screen.tsx`), approval
+(`use-review-actions.ts`: `commit()` then `flushStore()`), form confirmation (`form-mapping-screen.tsx`),
+form upload (`analyse.ts`) and portal question sets (`portal-questions-dialog.tsx`), after generation before
+opening the review (`new-report-screen.tsx`), page hide (`use-review-state.ts`: `flushStore({keepalive})` plus a
+`beforeunload` prompt while changes are pending, server mode only) and case import (`home-screen.tsx`). The
+review's save indicator follows the server's answer in server mode.
+
+**API** (`api/store-contract.ts`, browser-safe; `STORE_API_ENDPOINTS` + route coverage test; handlers
+`api/handlers/store-*.ts`). Every endpoint: a signed-in clinic member with two-step verification, resolved by the
+same `auth/actor.ts` `requireActor` as every other endpoint (`store-actor.ts` `requireTenantActor`: 501 without
+`MedreportDeps.tenantStore`, 401, 403 `TWO_FACTOR_REQUIRED` / `NO_CLINIC`; a demo session is never accepted – 403
+`TENANT_ONLY`); the clinic always comes from the sign-in; writes need this app's `Origin` (`bindHandler`: 403
+`ORIGIN_NOT_ALLOWED`) and JSON (415; chunks may be `application/octet-stream`); every change writes an audit row
+(ids, revision, status – never patient data).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/store/snapshot` | `{tenantId, reports, forms, settings, limits}` – summaries only |
+| GET / PUT / DELETE | `/store/reports/{id}` | `{rev, updatedAt, report}`, `ETag: "<rev>"`; PUT without If-Match creates, with `If-Match: "<rev>"` updates; 409 `REV_CONFLICT` `{current}`; `signed` only with a receipt that verifies for this clinic and content (422 `RECEIPT_INVALID`); an approved report cannot become a draft (409 `REPORT_LOCKED`) |
+| GET / PUT / DELETE | `/store/forms/{id}` | as reports; an unattested (or another clinic's) confirmation is stored as `proposed` (`downgraded: true`); delete removes the file with its last map |
+| POST | `/store/files` | `{sha256, size, name, mime}` → `{complete, chunkCount, present}` (start / resume) |
+| PUT | `/store/files/{sha256}/chunks/{idx}` | one 512 KiB chunk (raw with `?size=`, or JSON `{size, dataBase64}`) |
+| POST | `/store/files/{sha256}/complete` | checks every chunk, size, SHA-256 (422 `UPLOAD_CORRUPT`, upload thrown away), form type (422 `FORM_INVALID`); 409 `UPLOAD_INCOMPLETE` `{missing}` |
+| GET | `/store/files/{sha256}` | the decrypted file |
+| GET / PUT | `/store/settings` | referrer → form links |
+
+**Fix wave 2 (security review).**
+- *Scope:* the server store's memory belongs to ONE clinic and member: `<HostHooksProvider>` passes
+  `{tenantId: clinic.tenantId, userId: member.userId}` to `ui/store/mode.ts` `setStoreScope`; another scope (a new
+  sign-in or clinic without a full page load) empties the cache and the write queue, and the Studio's screens
+  remount (keyed by scope). Every store request sends `x-clinforms-tenant` / `x-clinforms-member`
+  (`STORE_TENANT_HEADER` / `STORE_MEMBER_HEADER`); `requireTenantActor` refuses another sign-in's with 403
+  `TENANT_MISMATCH` / `SIGN_IN_CHANGED`, which the client never retries (and a hydrate refused that way empties the
+  cache). Focus reloads before retrying waiting writes. A PUT body naming another clinic (neither the member's nor
+  `demo`) is 403 `TENANT_MISMATCH` – never re-filed. Sign-out, clinic switch and sign-in load the next page in full
+  (`src/app/app/session-forms.tsx`, login `codeStep` → `{status: "done"}`).
+- *Protected records:* an approved report is deleted only by owner/admin (409 `REPORT_LOCKED`), so no other role can
+  delete and re-create it as a draft; a confirmed form map is turned back into a proposal or deleted only by a
+  confirming role (403 `ROLE_NOT_ALLOWED`). The Studio hides those controls accordingly.
+- *Limits:* writes per member (`STORE_WRITES_PER_MEMBER_PER_MINUTE` 120) and per clinic (`_PER_CLINIC_` 400) per
+  minute, and new data per clinic per day (`STORE_NEW_KB_PER_CLINIC_PER_DAY` 250 000 KB: new reports/maps and
+  uploaded chunks; updates do not count) → 429 `RATE_LIMITED` + `Retry-After` (shared `rate_limits` counters;
+  `SharedStateStore.hit(key, windowMs, amount?)`).
+- *No save on open:* the review stores a revision only after a change someone made (`use-review-state.ts`), so
+  opening a report writes no "Report saved" row and does not restart its retention clock; the activity page hides
+  routine saves (`report.update`, `form.update`) unless asked (`?saves=1`) and links rows to the Studio.
+- *Neutral file names:* `form_files.file_name` is plaintext, so `POST /store/files` never stores the `name` it is
+  sent: the record is `form.pdf` / `form.docx` (`storedFormFileName`), the client sends that too, and
+  `ui/store.ts loadFormFile` names a downloaded copy from the (encrypted) form map. A retried completion still writes
+  a second `file.upload` row (each completion is recorded).
+
+`/render` and `/forms/fill-preview` read the clinic's stored copy of the form file by (tenant, SHA-256) and
+prefer it to `fileBase64`, which becomes optional for `/forms/fill-preview` (`api/handlers/store-form-file.ts`).
+The host builds `tenantStore` in `src/server/store/tenant-store.ts` (repositories; uploads in
+`src/server/repos/form-file-uploads.ts`) and wires it in `src/app/api/_medreport-tenant.ts` (`authenticate` comes
+from the glue's `hostCapabilities()`).
+Tests: `scripts/medreport/store-api.test.ts` (handlers), `store-client.test.ts` (client against the real
+handlers), `ui/store/write-queue.test.ts`, `ui/store.browser.test.ts`; `src/server/store/*.test.ts` (real
+repositories on SQLite and PGlite, and behind a real Better Auth sign-in); the repository suite's upload cases
+also run on local D1 (`npm run test:gateway`). In-memory `TenantStore` for tests: `api/store-memory.ts`.
 
 ## Local demonstration forms (dev/demo only)
 
@@ -486,6 +645,9 @@ Each agent owns the following files (Revision 2 slices):
 - **[studio-b]**:
   - `ui/screens/review/**` and `ui/components/review/**`;
   - `src/app/reports/[id]/**`.
+- **[store]** (wave 2): `ui/store.ts` (exports unchanged) and `ui/store/**`, `api/store-contract.ts`,
+  `api/store-port.ts`, `api/store-memory.ts`, the handlers `store-*.ts`, `src/app/api/reports/v1/store/**`,
+  `src/app/api/_medreport-tenant.ts`, `src/server/store/**` and `src/server/repos/form-file-uploads.ts`.
 - **Finished slices (owned by the integrator stage from now on):** the simulated TM3 sandbox
   (`src/sandbox/**`, `src/app/pms-sandbox/**` except `layout.tsx`, `src/app/api/tm3-sim/**`,
   `connectors/tm3-sim/wire.ts`, `connectors/tm3-sim/mapper.ts`) and integration (`connectors/**`,
@@ -494,6 +656,54 @@ Each agent owns the following files (Revision 2 slices):
   `launch-verify.ts`, `sessions-demo.ts`, `connectors-list.ts`, `patients.ts`, `bundle.ts`,
   `file-import-bundle.ts`, `documents.ts`, `src/app/api/_medreport-glue.ts` and
   `src/app/reports/medreport-host.tsx`).
+
+## Two Studios: the public demo and a clinic's own (wave 2)
+
+The same screens serve the public demo at `/reports` (`src/app/reports/medreport-host.tsx`) and a signed-in
+clinic's Studio at `/app/studio` (`src/app/app/studio/layout.tsx` + `tenant-host.tsx`). The host decides through
+additive optional `HostHooks` members (`ui/host-hooks.tsx`):
+
+| Member | Demo (`/reports`) | Tenant (`/app/studio`) |
+|---|---|---|
+| `basePath` | unset → `/reports` | `/app/studio` |
+| `mode` | unset → `"demo"` | `"tenant"` |
+| `storage` | unset → `"browser"` | `"server"` (read by `ui/store.ts` – the server-store slice) |
+| `clinic` `{tenantId, name, draftingEnabled?}` | – | the active clinic (header; drafting switch) |
+| `member` `{name, userId?, role?, email?, roleLabel?, hcpc?, jobTitle?, canSign?}` | – | the signed-in member: default signer, activity actor, "confirmed by"; `userId` scopes the store (fix wave 2), `role` decides who may approve / delete |
+| `track(event, props)` | – | host analytics (`form_uploaded`, `form_confirmed`, `draft_completed`, `report_approved`, `report_downloaded`) |
+| `accountHref`, `onSignOut` | – | the clinic's pages (`/app`) and sign-out, in the header's account menu |
+| `supportEmail` (fix wave 2) | – | where a clinic asks for help (the notes-upload panel) |
+
+- **Paths:** no screen hard-codes `/reports`; links come from `ui/routes.ts` `useStudioPaths()` (pure
+  `studioPaths(base, mode)` and `studioSection(pathname, base)` for the navigation, tested in `routes.test.ts`).
+  `/pms-sandbox` links appear in demo-only branches. A clinic's Security link is the public `/security` page.
+- **Tenant mode hides demo-only UI:** the drafting-mode badge and passcode, Demo tools (import case JSON, reset),
+  Simulated TM3 tiles / source tab / sandbox launch hints, "Try the …" fictional samples, the forms library's
+  sample and demonstration forms, PH-DEMO placeholders and hints, the Security page's "In this demo" table,
+  "Use the prepared demo draft", and the batch screen (it reads a connected clinic system; tenant mode explains
+  that instead and hides Batch from the navigation). The notes upload is the source. Production copy lives in
+  `ui/studio-copy.ts` `TENANT_COPY`. Fix wave 2 (end-to-end review): no "TM3" anywhere in a clinic's Studio
+  (`useFillSourceLabels`, `TENANT_COPY.sources`, no practice-system tile – pinned by `ui/tenant-mode.test.ts`), no
+  "demo"/"live" analysis labels or request counts (`useAnalysisModeLabels`, `WORDING.server.analysis.clinic*` for a
+  clinic's upload), a map is confirmed only once its referrer is named, a document with no questions is discarded
+  rather than kept as a form, the notes-upload panel folds the format guide away and offers support instead of
+  fictional samples, a "drafting is switched off" notice, no case JSON download, and no permanently disabled "Save
+  to clinic record". Finish of fix wave 2: the **home is a work queue** (`screens/home/work-queue.ts` +
+  `TenantHome`): no hero, badges or tiles; the clinic's forms with In progress (first) / Approved / All, a search over
+  patient, referrer, form and approver, "Amended – vN", the next step and who approved; a new clinic sees a two-step
+  first run (a confirmed referrer form, then the notes). **Word → PDF:** `/health` carries `pdfFromWord` (LibreOffice
+  present – false on every hosted deployment), and the approved banner says up front "A PDF copy of a Word form is not
+  available yet – download the completed Word file" instead of failing on the click; `NOTICES.pdfConversionUnavailable`
+  is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
+  "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
+  (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a
+  clinic. The compact navigation fades at the edge that has more to show (`scroll-fade.ts`). Drafting is attempted when the clinic has it switched on
+  (`clinic.draftingEnabled`), not by passcode (`useAiMode().livePossible()`).
+- **Analytics:** only in tenant mode, through `HostHooks.track`; `ui/studio-events.ts` builds the properties from
+  enumerated values and counts only (no names, ids, file names or record text – pinned by `studio-events.test.ts`).
+- **Both modes:** the site's mark (`components/shared/brand-mark.tsx`, the same glyph as `src/app/icon.svg`) and
+  the legal links (privacy, cookies, terms, security) in the footer (`components/shared/legal-links.tsx`).
+- **Render tests:** `ui/tenant-mode.test.ts` renders the shell and screens in both modes with `react-dom/server`.
 
 ## Revision 2 – referrer forms
 
@@ -991,3 +1201,198 @@ crop marks.
 
 **Hygiene.** Prompt examples, test fixtures and comments use wording of our own – no insurer's question text
 in git. `demo:red` stays in demo mode unless `--live`; replayed drafts log the neutral engine name.
+
+## Production wave 3 – ordinary clinic notes (notes import, 10/10/2026, branch `prod/w3-notes`)
+
+A clinic can now upload the notes its own system prints, in whatever layout, and check what was read before the
+record is built. Before this, only our documented layout (JSON / CSV / text, or a PDF printed in that layout) was
+accepted and ordinary notes PDFs were refused (end-to-end review e2e#3).
+
+**Flow.** The Studio's source step (both Studios) posts the upload to `POST /connectors/file-import/read`
+(`api/handlers/file-import-read.ts` → `connectors/file-import/connector.ts` `readNotesUpload`):
+1. **Documented format first** – JSON, CSV, text, and a PDF or Word document whose text is in the documented layout
+   (`parser.ts`). If it parses and every note has an author, the bundle comes back straight away (as before). A CSV
+   whose header row names every documented column reports its mistakes as before; a Word document with a table of
+   three or more columns is never tried as the documented layout (a table row is not a heading).
+2. **Otherwise the general notes reader** (`general-notes.ts`) reads the upload as clinic notes and returns a
+   **NotesReview** (`review-contract.ts`, browser-safe zod): registration fields (editable), one entry per dated
+   block (date, time, clinician name / HCPC, type, attendance status, the heading lines and the note's text exactly
+   as written, where it was found, included or not), outcome scores, an attendance flag and plain-English warnings.
+   Nothing is built, stored or drafted.
+3. Staff check it in the **review panel** (`ui/components/new/notes-review.tsx`, state helpers in
+   `notes-review-model.ts`): registration table with "From the notes" / "Not found" / "Required" tags; entries with
+   editable date, time, clinician (known clinicians, "Someone else…", "Not recorded") and type, "Include" tick box,
+   the first lines and "Show the full text"; a bulk "Clinician for these entries → Apply"; live counts
+   ("4 entries · 1 clinician · 5 outcome scores") and blockers ("3 entries without a clinician – choose one", "no date
+   found for 1 block …", "enter the date of birth"). "Use these notes" stays disabled until nothing blocks.
+4. `POST /connectors/file-import/confirm` (`file-import-confirm.ts` → `review-bundle.ts` `bundleFromReview`) checks
+   everything again and builds the bundle **exactly as for any import**: the review becomes an ImportDocument and
+   goes through `parser.ts` `bundleFromImportDocument` → the sim mapper (N-001… in date and time order, A-001…,
+   OM-<instrument>, clinicians once each, computed facts, data checks). Labelled `S:`/`O:`/`A:`/`P:` (or the words,
+   `PMH:`, `SH:`) lines fill those fields; other text is the note's other text; an entry with no text keeps its
+   heading. With an attendance record each status is an appointment (attended → linked to its note; a missed or
+   cancelled appointment without text is an appointment only, with its reason). Added afterwards (no import-format
+   field): a medico-legal company / "other" as the instructing party's type, the insurer's membership and
+   authorisation numbers, `referral.referredBy` and `registration.gpPractice` (new optional bundle fields, never in
+   the drafting payload – `core/validation/sources.ts` `registrationLines` is a whitelist).
+
+**What the reader recognises** (all conservative – unclear values are left blank, with a warning where useful):
+- **Inputs** – PDF text layer (`pdf-notes.ts` `readPrintedNotes` / `pdfPagesToBlocks`: lines kept as printed; page
+  numbers and lines at the top or bottom of every page dropped, a repeated "Label: value" header line kept once;
+  scans refused: "scanned notes cannot be read"), Word (`docx-notes.ts`: paragraphs and tables through the forms
+  engine's Word helpers), text, CSV (header row found below title lines; `Key,value` rows above it are header
+  lines) and pasted text.
+- **Entries** – a line that starts with a date: `18/03/2026`, `8/3/26` (notes only; a two-digit year more than a
+  year ahead is not a date), `18 March 2026`, `18-Mar-2026`, `Mar 18 2026`, `March 18, 2026`, `2026-03-18`; after an
+  optional bullet, markdown, `Date:` / `Appointment:` / `Session date:` …, or a weekday; with an optional time
+  (`09:00`, `9.30am`, `2pm`, ranges). A date alone on a line with nothing under it is ignored (warning); a date line
+  followed by "Dear …" is a letter's date. Text before the first note that is not a registration or title line
+  becomes a block without a date (left out until staff date it). Tables with a date column and a notes, SOAP,
+  treatment or clinician column give one entry per row (date, time, clinician, HCPC, type, status, reason, NPRS /
+  ODI / NDI / PSFS / QuickDASH columns; patient, DOB, insurer, policy and claim columns used when every row agrees).
+- **Heading text** – type (initial assessment / IA / new patient, follow-up / FU / review / treatment, discharge,
+  telephone), clinician (`Name (HCPC)`, `Name, Physiotherapist, HCPC …`, or a bare name between separators,
+  checked against a list of clinical words), status (attended, DNA / did not attend, late cancellation, cancelled,
+  booked) and `Key: value` details on or under the heading (`Practitioner:`, `Time:`, `Type:`, `Status:`, `HCPC:`).
+  Any other heading text is part of the note. A clinician not in the heading comes from a signature at the end
+  (`Signed:`, `Seen by`, `— Name (HCPC)`, "Kind regards" + name, the HCPC number on the next line). The same name
+  with and without a number in different entries gets the number.
+- **Registration** – `Label: value` lines before the first note, several per line: patient / name / re (title,
+  first and last name, "Surname, First" too), first name, surname, title, date of birth / DOB / D.O.B. (also inline:
+  "Re: …, DOB 03/02/1979"; a two-digit year is never completed), sex, address (with continuation lines; a trailing
+  postcode is split off), postcode, phone / mobile, email, occupation, employer, insurer, membership / policy number,
+  authorisation number, their reference / claim number ("Our ref" ignored), instructing party / solicitor / case
+  manager / medico-legal company, referred by, GP practice, date of accident, how it happened, consent (yes / no and
+  its date). Identifiers must contain a digit; phones need 10–13 digits; emails a proper address. When no
+  instructing party is written, the insurer (or a "referred by" naming a solicitor, insurer, case manager or
+  medico-legal company) is offered as who the form is for, with "Taken from the insurer line – check it".
+- **Outcome scores** – `NPRS 7/10`, `QuickDASH 52.3`, `PSFS 2.7`, `ODI 48%`, `NDI 42%` (`NDI 21/50` → 42), with the
+  entry's date or a date written after the score; lists ("7/10 (18/03/2026), 3/10 (15/04/2026)"). Ranges
+  ("3-4/10"), a pain score as a percentage, and one instrument with two different undated values in one note
+  ("from 6/10 to 3/10") are left out with a warning.
+
+**Audit.** `notes.imported` (`AUDIT_ACTIONS.notesImported`, `api/handlers/file-import-response.ts`) for a clinic's
+member on every import that gives a bundle – `/bundle`, `/read` with the documented format, `/confirm` – detail
+`{format, layout: "documented"|"general", notes, appointments, outcomeScores, clinicians}` plus, on confirm,
+`entriesLeftOut`, `detailsFound`, `detailsFilled`. Never names, notes, file names or clinicians. Activity page label
+"Patient notes imported" (`src/lib/activity-copy.ts`), e.g. "4 notes, 4 appointments, 7 outcome scores · from a PDF ·
+checked before use". Reading the notes (a review) records nothing. Logs: `notes_read`, `notes_confirmed` (counts).
+
+**Copy.** Review copy lives in `review-contract.ts` `NOTES_REVIEW_COPY` / `NOTES_REVIEW_FIELD_LABELS` (neutral;
+`notesReviewCopyStrings()` is checked against the banned terms). The format guide, the clinic's notes help and the
+upload hints now say notes in any layout are read and checked before use.
+
+**Tests.** `scripts/medreport/notes-import.test.ts` (26) with FICTIONAL fixtures in `scripts/medreport/notes-fixtures.ts`:
+a practice-system printout (text, and a two-page PDF built with pdf-lib with a running header and page numbers), a
+letter-style Word document (letter date, Re: line, details table, undated opening paragraph, signature with the HCPC
+on the next line), a Word notes table, a CSV appointment export (DNA and cancelled rows, NPRS column), email-style
+pasted notes (weekday, 12-hour time, three date styles, sign-off), a diary with uncertain details, and the documented
+format (still read first: pasted text, the JSON / CSV / text samples and the Priya Nair PDF). Also the review → bundle
+build, both endpoints (401, demo, a clinic member's audit row holding counts only, 422 issues), the review model, a
+render of the panel in both Studios, and the wording.
+
+**Browser check.** `scripts/e2e/notes-import-check.cjs` (tenant mode, LOCAL SQLite only): owner invitation → account
+→ two-step; uploads the PDF, both Word documents, the CSV and the email text, pastes the printout, the uncertain
+notes (nothing guessed; confirm blocked until staff fill them in) and the documented layout (no review); browser
+storage holds nothing from the notes; the review fits 375 px; the activity lists the imports. Set-up:
+`node --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/write-notes-fixtures.ts <dir>`; an env
+file with `CLINFORMS_DB=sqlite`, `CLINFORMS_SQLITE_PATH`, test-only `BETTER_AUTH_SECRET`, `CLINFORMS_DATA_KEYS` /
+`CLINFORMS_DATA_KEY_ID`, `BETTER_AUTH_URL=http://localhost:3141`; `node --env-file=<env> … scripts/admin/create-clinic.ts
+… --app-url http://localhost:3141 > invite.txt`; `node --env-file=<env> node_modules/next/dist/bin/next start -p 3141`;
+then `INVITE_FILE=… INPUTS=… BASE=http://localhost:3141 RUN_ID=… NODE_PATH=<playwright> node scripts/e2e/notes-import-check.cjs`.
+
+**Not built – assisted structuring ("Organise these notes"), a scoped follow-up.** Deliberately left out of this
+wave rather than shipped half-done: it sends a patient's notes to the drafting service, which the clinic must have
+switched on (and, for a real clinic, a signed DPA covers). Design when it is built:
+- `POST /connectors/file-import/organise` (actor): the same upload body; allowed only when the clinic has drafting
+  on (`clinic_profile.drafting_enabled`) or, in the public demo, with the live passcode; counted with the drafting
+  limits (`ai/live-gate.ts`, shared counters).
+- Input: the upload's lines numbered (`L001: …`), minimised with `ai/prompts.ts` `createMinimiser` built from the
+  registration the reader found, every date of birth removed (labelled and inline, `dobPatterns`), phone numbers,
+  emails, postcodes and NHS-style numbers replaced as in drafting; registration lines are not sent at all.
+- Output: a strict JSON schema (structured output, as the drafting call) – entries as LINE RANGES with date, time,
+  clinician index, type and status; no text. The server maps the ranges back onto the original lines, so every
+  note's text stays verbatim; registration and scores still come from the reader's own patterns.
+- Shown in the same review step as "Organised structure – check it", never accepted automatically; staff confirm
+  as today. Audit `notes.organised` with counts only (lines sent, entries proposed); a neutral button label and no
+  vendor names. Tests with a stubbed client (schema, range validation, minimisation of every DOB form).
+
+
+## Fix wave 3 – notes import on real exports, linear time, consent for uploads (10/10/2026)
+
+From the wave 3 security and end-to-end reviews (a practice-system "Clinical Notes Report" PDF, a booking-system CSV
+and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-import-realistic.test.ts` (fixtures in
+`notes-fixtures.ts` §8) plus the updated `notes-import.test.ts`; browser check `scripts/e2e/notes-import-check.cjs`
+(now 15 steps, the three realistic exports included; local SQLite only).
+
+**Security.**
+- *Linear time.* Every reader step walks a line once: trailing runs are trimmed by `connectors/file-import/text-runs.ts`
+  (no `/\s+$/`-style regexes), heading separators are split in one pass (`splitHeadingSegments`), a heading is matched
+  on the first 300 characters of a line, "Label: value" lines and signatures only on lines up to
+  `STRUCTURE_LINE_CHARS` (1,000), scores with sticky patterns; the documented-format parser collapses a heading's
+  whitespace before splitting it, and the confirm-side section split (`review-bundle.ts splitNoteText`) is linear.
+  Regression: 200,000-character padded lines in every format and on confirm finish in well under 1.5 s.
+- *Limits.* `/connectors/file-import/read`, `/confirm` and `/bundle` take one slot of
+  `FILE_IMPORT_PER_ACTOR_PER_MINUTE` (30, per sign-in or demo session) and `FILE_IMPORT_PER_CLIENT_PER_MINUTE` (90, per
+  address) – `api/handlers/file-import-response.ts takeFileImportSlot`, shared `rate_limits` counters, keys are keyed
+  hashes → 429 `RATE_LIMITED` + `Retry-After` (wording `WORDING.server.access.importLimit*`).
+- *Store growth.* An update with If-Match that makes a report or form map larger counts the growth through
+  `takeNewData` (report: `StoredReportMeta.storedBytes` from `length(payload_enc)`; form map: the stored copy's size).
+
+**Reader (`general-notes.ts`).**
+- Numeric dates use ONE separator (`2-3/10` is a pain range, never 02/03/2010). A line that starts like a date with no
+  other note date within 400 days (and at least two others) is kept as text of the note above, with `DATE_OUTLIER`.
+- Headings: durations ("Follow Up (30 min)") come off before the type; "Name (Physiotherapist)" / "Name, Role" are
+  clinicians; "Admin Note", "Reception", SMS, e-mail, letter entries are left out by default (`ADMIN_LEFT_OUT`); a
+  status in brackets ("(attended)", "did not attend (unwell, …)" → DNA with that reason); commas inside brackets do not
+  split.
+- Signatures: "Electronically signed by Name MCSP, HCPC … on <date> <time>" (post-nominals and the date ignored); the
+  HCPC number from a signature completes the heading's clinician of the same name; a closing "Name, Physiotherapist" on
+  a note's last line. A LETTER (a date line above "Dear"/"Re:"/"Our ref") gives its signer to every entry that names
+  no clinician (`SIGNATURE_APPLIED`), offers its addressee (an insurer, solicitor…) as who the form is for, and returns
+  `letterDate` – the review offers "Use the letter's date" on undated blocks.
+- Attendance: statuses at the start of a note ("Status" heading line, "Did Not Attend. …", "Pt DNA"), in CSV words
+  ("Did not arrive", "Cancelled < 24 hrs" → LCN). `review-contract.ts reviewAttendance`: attendance is counted only
+  when EVERY included dated entry has a status and a time (server and Studio alike); a part-record is never counted.
+- Registration: "Funding:" / "Payer:" = insurer; "Policy:", "Auth:"; identifiers with a trailing note ("AUTH-55120 (6
+  sessions)"); policy / authorisation / claim numbers inside a "Re:" line; a two-column patient box whose address
+  carries on beside "Employer:"; a referrer line without the claims handler ("Org – J. Barker, Claims Handler");
+  unrecognised "Label: value" header lines come back as `otherDetails` ("other details in the notes (not used)").
+- Tables: date columns by more names ("Appointment start", "Date/Time", "Start date", "Patient DOB" is the date of birth)
+  and by content (most cells are dates); with no named notes column, the longest text column; a CSV with no dates is
+  refused in plain English naming its columns (never one undated block). A table whose header cells carry dates
+  ("Initial (01/07/2026) | Latest (12/08/2026)") gives one score per cell with its column's date (`SCORE_TABLE`), never
+  read again from the text. A bulleted entry (Word list paragraphs, "•" lines) ends with its list.
+- PDF (`pdf-notes.ts`): running header/footer lines are matched with page numbers normalised ("Page 1 of 3") and dropped
+  only at a page's edge; a repeated "Label: value" line is kept once only from page 1's HEADER – a footer naming the
+  patient and their number is never note text.
+
+**Review step and record.**
+- `notes-review.tsx`: an Attendance select on every entry, "Mark the others as attended", plain notices for partial
+  attendance and missing times (not blockers), consent tagged "Needed for approval" with one line of explanation, the
+  admin hint, other details, and the clinic's own clinicians (`HostHooks.clinic.clinicians`, from
+  `src/server/auth/studio-access.ts`: members other than staff, name + HCPC) in every clinician list; a member named in
+  the notes without a number gets the member's number (`withMemberNumbers`).
+- `review-bundle.ts`: a missed or cancelled appointment is an appointment with its reason (the entry's reason, else
+  its text without the "Status" line or the e-signature), not a clinical note (unless the text is too long for a
+  reason); bare section headings ("Subjective", "Objective", "Plan", "Clinical Impression"…) fill their fields, other
+  known headings go back to the other text; commuting ("cycling to work") is not a workplace injury; blocker wording
+  `missingFieldText` ("enter who the form is for", "choose what kind of organisation the form is for").
+- Consent: `CONSENT_NOT_RECORDED` for a `file-import` bundle says to record it on the report; the Flags tab offers
+  "Record consent" (date given, not in the future) to a member who may approve (anyone in the public demo) –
+  `review-model.ts recordConsent` sets `bundleSnapshot.consent` and adds a `consent_recorded` activity entry.
+- Figures: a cited note's short dates ("26/08", two-digit "07/10") support the drafted full date in the note's year
+  (`core/validation/text.ts addShortDatesToIndex`); pain scores ("7/10") and shorthand ("3/12", "6/52") never do.
+- Minimiser (`ai/prompts.ts`): every part of a multi-word first name and "First Last" are masked; patient numbers
+  ("Patient no.: AP-004127", "(AP-004127)") and letter+digit references become `[ID]`.
+- Copy: "Policy or membership number", "Their reference (claim or case number)"; the review offers the policy number
+  for a referrer's own reference when the record holds none; no integration log in a clinic's Studio; "HCPC number not
+  recorded"; the appointment-figures gap says "Count the attended and missed appointments in the notes"; upload copy
+  says "as your clinic system prints or exports them" instead of "any layout".
+- PDF fill: multi-line answers are written with the line breaks the fill chose (inside the box less border and
+  padding), so no viewer runs a word past the right edge; a cut never ends "word.…"; continuation pages print
+  "Claimant: … · Reference: …" and "Continuation sheet – page n of m" (`FillOptions.continuationLabel`, set by
+  `/render`). The form preview retries a failed load once and logs why; the Studio footer says "Security (website)".
+
+**Not changed (reviewed):** drafted-wording slips (a patient as the subject of "recommended", verbless sentences) are
+drafting variance – the existing validators and the clinician's review stand; a dedicated check is a follow-up.

@@ -12,6 +12,8 @@
  *    built-in report when the referrer sent no form.
  * 4. Complete: createFormReport() fills registration and calculated answers by code, then /drafts runs
  *    in groups (3 at a time) with honest per-group progress; the report opens for review.
+ * Tenant mode (a clinic's own Studio): the notes upload is the source, production wording, and the
+ * finished draft is reported to the host's analytics (draft_completed, counts only).
  *
  * Owner: studio-a agent.
  */
@@ -22,7 +24,11 @@ import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, FileCheck2, RotateCcw
 import type { BundleResponse } from "../../../api/contract";
 import type { Clinician, FormDefinition, ReportTemplate } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { getPasscode, saveReport, setSession, useForms } from "../../store";
+import { useHostHooks, useStudioMode, type StudioMember } from "../../host-hooks";
+import { useStudioPaths } from "../../routes";
+import { flushStore, saveReport, setSession, useForms } from "../../store";
+import { TENANT_COPY } from "../../studio-copy";
+import { durationSeconds, reportEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
 import { Button, Skeleton, cn } from "../../primitives";
 import { useAiMode } from "../../components/shared/ai-mode";
@@ -52,6 +58,15 @@ type LaunchState =
   | { status: "done" }
   | { status: "error"; message: string };
 
+/**
+ * The author of a clinic's new report (fix wave 2): the signed-in member when they can sign (owner, admin or
+ * clinician with an HCPC number and "may sign"), else nobody (null: third-person drafts).
+ */
+export function tenantAuthor(member: StudioMember | undefined): Clinician | null {
+  if (!member || member.role === "staff" || member.canSign === false || !member.hcpc || !member.name.trim()) return null;
+  return { name: member.name, hcpc: member.hcpc, ...(member.jobTitle ? { role: member.jobTitle } : {}) };
+}
+
 function launchErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "TOKEN_EXPIRED") return "This launch link has expired (links last 10 minutes). Launch again from the patient's record.";
@@ -72,7 +87,10 @@ interface GenerationState {
 
 export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: string; initialFormId?: string }) {
   const router = useRouter();
-  const { expectLive } = useAiMode();
+  const hooks = useHostHooks();
+  const paths = useStudioPaths();
+  const tenant = useStudioMode() === "tenant";
+  const { expectLive, livePossible } = useAiMode();
   const { forms, ready: formsReady } = useForms();
   const [step, setStep] = useState<Step>(1);
   const [launch, setLaunch] = useState<LaunchState>(launchToken ? { status: "verifying" } : { status: "none" });
@@ -149,6 +167,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
     abortRef.current = controller;
     setStep(4);
     setGen({ running: true, groups: [] });
+    const started = Date.now();
     let storageWarning = false;
     try {
       const result = await generateReport({
@@ -156,7 +175,10 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         data,
         target,
         clinician,
-        livePossible: Boolean(getPasscode()),
+        // A clinic's Studio (fix wave 2): drafts speak in the first person of the member who will sign them, or –
+        // when this member cannot sign – in the third person, so whichever clinician approves, "I" is theirs.
+        ...(tenant && !clinician ? { author: tenantAuthor(hooks.member) } : {}),
+        livePossible: livePossible(),
         concurrency: 3,
         signal: controller.signal,
         onReport: (report) => {
@@ -164,6 +186,8 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         },
         onProgress: (groups) => setGen((g) => ({ ...g, groups })),
       });
+      // Every save of the generated report must be stored before its review opens (a clinic's Studio: the server).
+      if (!(await flushStore())) storageWarning = true;
       const codeFilled = result.report.sections.filter((s) => s.kind === "from_records" && s.status === "complete").length;
       setGen({
         running: false,
@@ -173,8 +197,11 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         codeFilled,
         storageWarning,
       });
+      if (!controller.signal.aborted) {
+        hooks.track?.("draft_completed", { ...reportEventProps(result.report), duration_s: durationSeconds(started), batch: false });
+      }
       if (result.failedGroups === 0 && !storageWarning && !controller.signal.aborted) {
-        setTimeout(() => router.push(`/reports/${encodeURIComponent(result.report.id)}`), 900);
+        setTimeout(() => router.push(paths.report(result.report.id)), 900);
       }
     } catch (err) {
       setGen((g) => ({ ...g, running: false, error: errorMessage(err) }));
@@ -202,7 +229,11 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
   return (
     <StudioShell
       title="Complete a referrer form"
-      description="Fill the referrer's own form from the TM3 registration details and physiotherapy notes. Identifiers and figures are filled by code; answers from the notes are drafted with citations; anything not recorded is left blank and flagged for the clinician."
+      description={
+        tenant
+          ? TENANT_COPY.wizard.description
+          : "Fill the referrer's own form from the TM3 registration details and physiotherapy notes. Identifiers and figures are filled by code; answers from the notes are drafted with citations; anything not recorded is left blank and flagged for the clinician."
+      }
     >
       <Stepper step={step} />
 
@@ -228,10 +259,16 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
       {launch.status === "error" ? (
         <Notice tone="error" title="Could not open the patient from TM3">
           {launch.message}{" "}
-          <Link href="/pms-sandbox" className="font-medium underline">
-            Open the Simulated TM3 sandbox
-          </Link>{" "}
-          or choose the patient below.
+          {tenant ? (
+            TENANT_COPY.wizard.launchFailed
+          ) : (
+            <>
+              <Link href="/pms-sandbox" className="font-medium underline">
+                Open the Simulated TM3 sandbox
+              </Link>{" "}
+              or choose the patient below.
+            </>
+          )}
         </Notice>
       ) : null}
 
@@ -304,15 +341,17 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
             {gen.groups.length ? <DraftProgress groups={gen.groups} expectLive={expectLive} noteCount={data?.bundle.notes.length} /> : null}
             {!gen.running && gen.reportId ? (
               gen.failedGroups && gen.groups.every((g) => g.status !== "failed" || g.code === "NO_DEMO_DRAFT") ? (
-                <Notice tone="info" title="Demo mode: the remaining questions are left for the clinician">
+                <Notice tone="info" title={tenant ? TENANT_COPY.wizard.draftingOffTitle : "Demo mode: the remaining questions are left for the clinician"}>
                   {gen.codeFilled ? `${plural(gen.codeFilled, "answer")} filled by code from the record. ` : ""}
-                  {WORDING.drafting.noDemoAnswersNotice}
+                  {tenant ? TENANT_COPY.wizard.draftingOffBody : WORDING.drafting.noDemoAnswersNotice}
                 </Notice>
               ) : gen.failedGroups ? (
                 <Notice tone="warning" title={`${plural(gen.failedGroups, "group")} of questions could not be drafted`}>
                   Those questions are left blank and marked for the clinician to complete in review.
                   {gen.groups.some((g) => g.code === "NO_DEMO_DRAFT")
-                    ? WORDING.drafting.noDemoAnswersSuffix
+                    ? tenant
+                      ? TENANT_COPY.wizard.draftingOffSuffix
+                      : WORDING.drafting.noDemoAnswersSuffix
                     : ""}
                 </Notice>
               ) : (
@@ -322,9 +361,15 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
               )
             ) : null}
             {gen.storageWarning ? (
-              <Notice tone="warning" title="This browser could not save the report">
-                Storage is full or blocked. Export or reset the demo data from the Reports page and try again.
-              </Notice>
+              tenant ? (
+                <Notice tone="warning" title={TENANT_COPY.wizard.saveFailedTitle}>
+                  {TENANT_COPY.wizard.saveFailedBody}
+                </Notice>
+              ) : (
+                <Notice tone="warning" title="This browser could not save the report">
+                  Storage is full or blocked. Export or reset the demo data from the Reports page and try again.
+                </Notice>
+              )
             ) : null}
             {gen.error ? <Notice tone="error" title="Could not complete the form">{gen.error}</Notice> : null}
             <div className="flex flex-wrap gap-2">
@@ -335,7 +380,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
               ) : null}
               {!gen.running && gen.reportId ? (
                 <Button asChild>
-                  <Link href={`/reports/${encodeURIComponent(gen.reportId)}`}>
+                  <Link href={paths.report(gen.reportId)}>
                     Open for review
                     <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
                   </Link>

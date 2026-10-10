@@ -61,7 +61,11 @@ prepared answers in `~/Projects/Appstackx/clinforms/demo-assets/insurers`. Produ
 so **don't run the demo from `~/Projects/Appstackx/clinforms`** and **don't `git pull` in the demo folder** before
 the call.
 
-Use the **same Chrome profile and the same address (`http://localhost:3000`)** on Monday and Tuesday – confirmed
+On the production line (`feat/production`, and on `main` once it is merged) `http://localhost:3000/` is the public
+marketing page (with the cookie banner when analytics is configured); the demo always starts at **`/reports`** –
+open that address directly.
+
+Use the **same Chrome profile and the same address (`http://localhost:3000`, start page `/reports`)** on Monday and Tuesday – confirmed
 form maps and reports live only in that browser's storage for that address.
 
 ### 2.2 Monday evening – rehearsal (about 60 min)

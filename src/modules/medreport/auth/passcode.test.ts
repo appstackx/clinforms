@@ -78,11 +78,13 @@ test("wrong passcodes are counted: a client is locked out after 5, the instance 
     // …and the first client is let back in after the window.
     assert.deepEqual(checkLivePasscode(fromClient("a-long-random-passcode", "203.0.113.7"), t0 + PASSCODE_FAILURE_WINDOW_MS + 10), { ok: true });
 
-    // Forged X-Forwarded-For values cannot bypass the instance-wide cap.
+    // Forged X-Forwarded-For values cannot bypass the instance-wide cap on wrong guesses…
     resetPasscodeFailures();
     for (let i = 0; i < PASSCODE_FAILURES_PER_INSTANCE; i++) checkLivePasscode(fromClient("guess", `10.0.0.${i}`), t0 + i);
-    const all = checkLivePasscode(fromClient("a-long-random-passcode", "10.9.9.9"), t0 + 100);
+    const all = checkLivePasscode(fromClient("another-guess", "10.9.9.9"), t0 + 100);
     assert.equal(!all.ok && all.reason, "locked");
+    // …but other clients' guesses never lock out a presenter holding the right passcode (fix wave 2).
+    assert.deepEqual(checkLivePasscode(fromClient("a-long-random-passcode", "10.9.9.8"), t0 + 101), { ok: true });
   } finally {
     resetPasscodeFailures();
     if (saved === undefined) delete process.env.MEDREPORT_LIVE_PASSCODE;

@@ -6,13 +6,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MedreportDeps } from "../../src/modules/medreport/api/deps";
+import { handleHealth } from "../../src/modules/medreport/api/handlers/health";
 import { handleRender } from "../../src/modules/medreport/api/handlers/render";
 import { bindHandler } from "../../src/modules/medreport/api/http";
+import { HealthResponseSchema } from "../../src/modules/medreport/api/contract";
 import { NOTICES } from "../../src/modules/medreport/config.public";
 import { pdfConversionAvailable } from "../../src/modules/medreport/forms/convert";
 import { KINGSWAY_FORM } from "../../src/modules/medreport/forms/samples/maps/kingsway";
 import { getSampleForm } from "../../src/modules/medreport/forms/samples/registry";
 import { completedSampleReport } from "./form-sample-answers";
+import { demoBearer } from "./test-actors";
 
 test("no LibreOffice → 503 PDF_CONVERSION_UNAVAILABLE for a Word form's PDF copy; Word still works", async () => {
   process.env.VERCEL = "1";
@@ -24,7 +27,7 @@ test("no LibreOffice → 503 PDF_CONVERSION_UNAVAILABLE for a Word form's PDF co
     bindHandler(handleRender, () => ({}) as MedreportDeps)(
       new Request(`http://localhost/api/reports/v1/render?format=${format}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: demoBearer() },
         body: JSON.stringify({ report, form: KINGSWAY_FORM, fileBase64 }),
       }),
       { params: {} },
@@ -37,4 +40,11 @@ test("no LibreOffice → 503 PDF_CONVERSION_UNAVAILABLE for a Word form's PDF co
   const word = await call("original");
   assert.equal(word.status, 200);
   assert.equal(word.headers.get("x-medreport-render"), "draft");
+  // Fix wave 2: the notice is truthful (no converter exists on any hosted deployment yet), and /health says so,
+  // so a clinic's Studio tells the clinician before anyone clicks the PDF button.
+  assert.doesNotMatch(NOTICES.pdfConversionUnavailable, /production converter|demo deployment/);
+  const health = HealthResponseSchema.parse(
+    await (await bindHandler(handleHealth, () => ({}) as MedreportDeps)(new Request("http://localhost/api/reports/v1/health"), { params: {} })).json(),
+  );
+  assert.equal(health.pdfFromWord, false);
 });

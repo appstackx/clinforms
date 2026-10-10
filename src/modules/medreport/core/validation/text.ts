@@ -396,6 +396,39 @@ export function addToFigureIndex(index: FigureIndex, text: string): FigureIndex 
   return index;
 }
 
+/**
+ * Fix wave 3: a note's short dates ("SMS reminder sent 26/08", "keep appointment 17/09") stand for full dates in the
+ * note's own year (or the year before, when that would put them more than six months after the note), so a drafted
+ * "26/08/2026" is supported by the note of 27/08/2026. Pain scores and clinical shorthand are not dates: "7/10",
+ * "3/12" (months) and "6/52" (weeks) are skipped unless written with two digits on both sides ("07/10").
+ */
+export function addShortDatesToIndex(index: FigureIndex, text: string, noteIsoDate: string): FigureIndex {
+  const note = /^(\d{4})-(\d{2})-(\d{2})$/.exec(noteIsoDate);
+  if (!note) return index;
+  const year = Number(note[1]);
+  const re = /(^|[^\d/.])(\d{1,2})\/(\d{1,2})(?![\d/])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const dRaw = m[2];
+    const mRaw = m[3];
+    const d = Number(dRaw);
+    const mo = Number(mRaw);
+    if (mo === 52 || mo === 7) continue;
+    if ((mo === 10 || mo === 12) && !(dRaw.length === 2 && mRaw.length === 2)) continue;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    const sameYear = `${year}-${pad2(mo)}-${pad2(d)}`;
+    if (!isValidIsoDate(sameYear)) continue;
+    index.dates.add(sameYear);
+    index.dayMonths.add(sameYear.slice(5));
+    const sixMonthsAfter = new Date(Date.parse(`${noteIsoDate}T00:00:00Z`) + 183 * 86_400_000).toISOString().slice(0, 10);
+    if (sameYear > sixMonthsAfter) {
+      const before = `${year - 1}-${pad2(mo)}-${pad2(d)}`;
+      if (isValidIsoDate(before)) index.dates.add(before);
+    }
+  }
+  return index;
+}
+
 /** Whether a figure from a paragraph is supported by the indexed source text. */
 export function figureInIndex(f: Figure, index: FigureIndex): boolean {
   switch (f.kind) {

@@ -40,6 +40,7 @@ import { sha256Hex } from "@/modules/medreport/forms/file";
 import { loadPdfjs, pdfjsDocumentParams } from "@/modules/medreport/forms/pdfjs";
 import { checkDemoAssets } from "./demo-assets-check";
 import { getDemoBundle } from "./dev-bundles";
+import { demoBearer } from "./test-actors";
 
 const SAMPLE_ID = "ext-example-insurer-therapy";
 const INSURER = "Example Health Insurance (fictional)";
@@ -52,6 +53,7 @@ const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "MEDREPORT_LIVE_PASSCODE",
   "MEDREPORT_SIGNING_SECRET",
+  "MEDREPORT_LAUNCH_SECRET",
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 const env = process.env as Record<string, string | undefined>;
@@ -63,7 +65,8 @@ function restoreEnv(): void {
   }
 }
 
-const post = (p: string, body: unknown) => new Request(`http://127.0.0.1:9${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const post = (p: string, body: unknown) =>
+  new Request(`http://127.0.0.1:9${p}`, { method: "POST", headers: { "content-type": "application/json", authorization: demoBearer() }, body: JSON.stringify(body) });
 const get = (p: string) => new Request(`http://127.0.0.1:9${p}`);
 
 /* A synthetic "insurer" form, its pre-written map and pre-written answers for Megan Hart ------- */
@@ -368,6 +371,7 @@ test("GET /forms/samples lists the demonstration form as upload-only, whatever t
   env.ANTHROPIC_API_KEY = "test-key-not-used";
   env.MEDREPORT_LIVE_PASSCODE = "test-passcode-not-used-1234";
   env.MEDREPORT_SIGNING_SECRET = "test-signing-secret-not-used-1234"; // live mode needs real secrets to attest the bundled maps
+  env.MEDREPORT_LAUNCH_SECRET = "test-launch-secret-not-used-1234"; // live mode: the demo session the request carries needs one too
   assert.equal((await list()).length, bundledCount + 1);
   const uploaded = await route(handleFormsAnalyse)(post("/api/reports/v1/forms/analyse", { fileBase64: Buffer.from(fx.pdf).toString("base64"), fileName: "insurer-form.pdf" }), { params: {} });
   assert.equal(uploaded.status, 200);

@@ -83,3 +83,14 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/40;
 }
+
+/*
+ * Demo video captions (/demo): browsers size captions from the video's height, which on a phone-width player (about
+ * 190 px tall) gives text of about 9-10 px. Below the sm breakpoint they get a readable minimum instead.
+ */
+@media (max-width: 639px) {
+  video::cue {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+}

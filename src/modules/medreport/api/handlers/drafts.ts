@@ -20,6 +20,12 @@ import "server-only";
  * Live always needs a valid x-medreport-passcode (401 PASSCODE_REQUIRED / PASSCODE_INVALID) and a
  * free slot in the per-instance cap (429 RATE_LIMITED with retry-after).
  *
+ * Wave 2: an actor is required (auth/actor.ts; any role – staff prepare drafts). The bundle and the form
+ * map must be the actor's clinic's (403 TENANT_MISMATCH). The passcode and the shared demo cap apply to the
+ * public demo only; a clinic drafts live without a passcode while its profile allows it, within its own
+ * per-minute and per-day limits (ai/live-gate.ts chooseAiModeForActor). Each live drafting group of a
+ * clinic is written to its audit trail (ids and counts only).
+ *
  * Draft failures map to problem+json with `code` and `retryable` (the Studio offers Retry / Use demo
  * draft): AI_REFUSAL 502, AI_MAX_TOKENS 502, AI_ERROR 502, AI_TIMEOUT 504, LIVE_AI_UNAVAILABLE 503,
  * NO_DEMO_DRAFT 404.
@@ -31,7 +37,8 @@ import "server-only";
 import { assembleDraft } from "../../ai/assemble";
 import { hasDemoDraft } from "../../ai/draft-demo";
 import { DraftGenerationError, generateDraftGroup, type DraftErrorCode } from "../../ai/generate";
-import { chooseAiMode } from "../../ai/live-gate";
+import { chooseAiModeForActor } from "../../ai/live-gate";
+import { AUDIT_ACTIONS, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
 import { MAX_SECTIONS_PER_DRAFT } from "../../config.public";
 import { computeFacts } from "../../core/computed-facts";
 import { formIdFromTemplateId } from "../../core/forms";
@@ -64,10 +71,13 @@ const ERROR_TITLE: Record<DraftErrorCode, string> = {
   NO_DEMO_DRAFT: "No demo draft for this case",
 };
 
-export const handleDrafts: MedreportHandler = async (req) => {
+export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
+  const actor = await requireActor(req, deps);
   const parsed = await parseBody(req, DraftsRequestSchema, { maxBytes: MAX_DRAFT_BODY_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
+  assertActorTenant(actor, body.bundle.tenantId, "patient record");
+  if (body.form) assertActorTenant(actor, body.form.tenantId, "form");
 
   // Built-in template, or formToTemplate(form) for a report that completes a referrer's form.
   let template;
@@ -78,7 +88,7 @@ export const handleDrafts: MedreportHandler = async (req) => {
     template = resolved.template;
     form = resolved.form ?? undefined;
     // Confirmed AND attested by the server for exactly this map (never just the browser's claim).
-    const unconfirmed = form ? requireAttestedForm(form) : null;
+    const unconfirmed = form ? requireAttestedForm(form, actor.tenantId) : null;
     if (unconfirmed) return unconfirmed;
   } else {
     template = getTemplate(body.templateId);
@@ -101,7 +111,7 @@ export const handleDrafts: MedreportHandler = async (req) => {
   if (issues.length) return problem(422, "Request body is invalid", { code: "VALIDATION_FAILED", issues });
 
   // Choose the mode (passcode + rate cap for live).
-  const gate = chooseAiMode(req, body.prefer, {
+  const gate = await chooseAiModeForActor(req, actor, deps, body.prefer, {
     action: WORDING.server.gateActionDraft,
     alternative: form ? "use the demo answers" : "use the demo draft",
     rateTitle: "Too many live drafts",
@@ -170,6 +180,21 @@ export const handleDrafts: MedreportHandler = async (req) => {
       gaps: response.gaps.length,
       blocking: response.flags.filter((f) => f.severity === "blocking").length,
     });
+    if (result.meta.mode === "live") {
+      await auditActor(deps, actor, {
+        action: AUDIT_ACTIONS.draftLive,
+        targetType: body.reportId ? "report" : form ? "form" : "template",
+        targetId: body.reportId ?? (form ? form.id : template.id),
+        detail: {
+          ...(form ? { formId: form.id } : { templateId: template.id }),
+          sections: body.sectionKeys.length,
+          paragraphs: response.sections.reduce((n, s) => n + s.paragraphs.length, 0),
+          gaps: response.gaps.length,
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+        },
+      });
+    }
     // The Studio stores and shows generation meta (and a clinic can export it): the engine is named
     // neutrally (core/wording.ts); the real model id stays in the log line above.
     return json({ ...response, generation: { ...response.generation, model: publicEngineName(response.generation.model) } });

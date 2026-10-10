@@ -33,6 +33,8 @@ export function createTm3SimConnector(): ClinicSystemConnector {
       writeBackDocuments: true,
     },
     note: TM3_SIM_NOTICE,
+    // Fictional patients: the public demo only, never a clinic (wave 2).
+    demoOnly: true,
 
     async searchPatients(ctx, q) {
       const client = createTm3SimClient(ctx);

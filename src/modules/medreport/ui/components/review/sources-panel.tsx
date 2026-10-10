@@ -13,6 +13,7 @@ import { NOTICES } from "../../../config.public";
 import { compareIsoDateTime, formatUkDate } from "../../../core/dates";
 import { INSTRUCTING_PARTY_LABELS, NOTE_TYPE_LABELS } from "../../../core/labels";
 import type { ComputedFact, EpisodeBundle, Note, ReportTemplate } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import { Highlight } from "./review-ui";
@@ -71,6 +72,9 @@ export function SourcesPanel({
   onJump(key: string): void;
   questionLabel(key: string): string;
 }) {
+  // A clinic's Studio (fix wave 2): no internal source codes ("REG", "FACT-…") above the cards – the headings and
+  // the citation chips already name them in words.
+  const tenant = useStudioMode() === "tenant";
   const [query, setQuery] = useState("");
   const notes = useMemo(() => [...bundle.notes].sort(compareIsoDateTime), [bundle.notes]);
   const excluded = useMemo(
@@ -190,7 +194,7 @@ export function SourcesPanel({
           </h3>
           {facts.map((f) => (
             <article key={f.id} data-source-id={f.id} tabIndex={-1} aria-label={`${f.id}: ${f.label}`} className={cardClass(f.id)}>
-              <p className="font-mono text-[12px] text-teal-800">{f.id}</p>
+              {tenant ? null : <p className="font-mono text-[12px] text-teal-800">{f.id}</p>}
               <p className="text-[13px] font-medium text-slate-900">
                 {f.label}: {f.value}
               </p>
@@ -208,7 +212,7 @@ export function SourcesPanel({
           <Contact className="h-3.5 w-3.5" aria-hidden /> Registration and referral
         </h3>
         <article data-source-id="REG" tabIndex={-1} aria-label="REG: registration details" className={cardClass("REG")}>
-          <p className="font-mono text-[12px] text-teal-800">REG</p>
+          {tenant ? null : <p className="font-mono text-[12px] text-teal-800">REG</p>}
           <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[13px]">
             <dt className="text-slate-500">Name</dt>
             <dd className="text-slate-900">{reg.fullName}</dd>

@@ -225,6 +225,9 @@ test("a value missing from the record is left blank with a system gap (never gue
   assert.equal(report.gaps.length, 1);
   assert.equal(report.gaps[0].sectionKey, "F-10");
   assert.equal(report.gaps[0].raisedBy, "system");
+  // Fix wave 2: the clinician reads where the value would come from in words, never an internal source code.
+  assert.match(report.gaps[0].issue, /\(the patient's registration details\), so it has been left blank\.$/);
+  assert.doesNotMatch(report.gaps[0].issue, /patient\.|FACT-|\bREG\b/);
 });
 
 test("referrer names: same organisation or two distinctive words in common", () => {

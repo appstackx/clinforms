@@ -8,8 +8,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          "bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:from-teal-700 hover:to-teal-600",
+        // Primary: teal-700 on white text (WCAG AA), the same as the public site, sign-in pages and clinic settings.
+        default: "bg-teal-700 text-white shadow-sm shadow-teal-900/10 hover:bg-teal-800",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:

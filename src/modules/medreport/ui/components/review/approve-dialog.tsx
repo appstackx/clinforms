@@ -5,6 +5,8 @@
  * declaration), the clinician's name and HCPC number (prefilled from the launch), a typed signature and
  * the attestations. Approval goes to POST /sign, which re-runs every check and returns a server-signed
  * receipt over the exact content approved.
+ * Tenant mode (a clinic's own Studio): the signer is the signed-in member, from their clinic profile
+ * (name and HCPC number shown read-only when the profile has them); no demo hints.
  *
  * Owner: studio-b agent.
  */
@@ -14,7 +16,9 @@ import { signoffValuesFromReceipt } from "../../../core/forms";
 import { SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, cn } from "../../primitives";
+import { TENANT_COPY } from "../../studio-copy";
 import { InlineAlert } from "./review-ui";
 
 export interface ApproveInput {
@@ -66,6 +70,10 @@ export function ApproveDialog({
   onApproved(): void;
 }) {
   const ids = useId();
+  const tenant = useStudioMode() === "tenant";
+  // A clinic's signer is the signed-in member: their profile's name and HCPC number are never typed here (fix wave
+  // 2: read-only even when the profile lacks one – the review then says who can approve instead of opening this).
+  const signerLocked = tenant;
   const isForm = Boolean(report.form);
   // A portal question set: no file and no sign-off boxes – the answers are copied into the portal.
   const questionSet = report.form?.kind === "questions";
@@ -221,13 +229,28 @@ export function ApproveDialog({
                 <label htmlFor={`${ids}-name`} className="text-xs font-medium text-slate-700">
                   Full name
                 </label>
-                <Input id={`${ids}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" aria-invalid={!nameOk && name !== "" ? true : undefined} />
+                <Input
+                  id={`${ids}-name`}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  readOnly={signerLocked}
+                  className={signerLocked ? "bg-slate-50 text-slate-700" : undefined}
+                  autoComplete="name"
+                  aria-invalid={!nameOk && name !== "" ? true : undefined}
+                />
               </div>
               <div className="space-y-1">
                 <label htmlFor={`${ids}-hcpc`} className="text-xs font-medium text-slate-700">
                   HCPC registration number
                 </label>
-                <Input id={`${ids}-hcpc`} value={hcpc} onChange={(e) => setHcpc(e.target.value)} placeholder="e.g. PH-DEMO-01" />
+                <Input
+                  id={`${ids}-hcpc`}
+                  value={hcpc}
+                  onChange={(e) => setHcpc(e.target.value)}
+                  readOnly={signerLocked}
+                  className={signerLocked ? "bg-slate-50 text-slate-700" : undefined}
+                  placeholder={tenant ? "Your HCPC registration number" : "e.g. PH-DEMO-01"}
+                />
               </div>
             </div>
             <div className="space-y-1">
@@ -244,7 +267,11 @@ export function ApproveDialog({
                 aria-invalid={typed !== "" && !typedOk ? true : undefined}
               />
               <p id={`${ids}-typed-help`} className={cn("text-xs", typed !== "" && !typedOk ? "text-red-700" : "text-slate-500")}>
-                {typed !== "" && !typedOk ? "The typed signature must match the name above." : "Demo data only – use the fictional clinician, e.g. Sarah Reid, PH-DEMO-01."}
+                {typed !== "" && !typedOk
+                  ? "The typed signature must match the name above."
+                  : tenant
+                    ? TENANT_COPY.review.approveSignerHint
+                    : "Demo data only – use the fictional clinician, e.g. Sarah Reid, PH-DEMO-01."}
               </p>
             </div>
           </section>
@@ -268,7 +295,14 @@ export function ApproveDialog({
           <InlineAlert tone="info">
             <span className="inline-flex items-start gap-1.5">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              {questionSet
+              {tenant
+                ? // A clinic's Studio (fix wave 2): what happens, without the technical terms.
+                  questionSet
+                  ? TENANT_COPY.review.approveWhatHappensQuestions
+                  : prefillFor
+                    ? `${TENANT_COPY.review.approveWhatHappensPrefix} The form is then locked, and the final document is the referrer's original file with the prefilled answers written in – nothing in any signature box – ready for ${prefillFor}.`
+                    : `${TENANT_COPY.review.approveWhatHappensPrefix} ${TENANT_COPY.review.approveWhatHappensForm}`
+                : questionSet
                 ? "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record."
                 : prefillFor
                   ? `The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the prefilled answers written in – nothing in any signature box – ready for ${prefillFor}.`

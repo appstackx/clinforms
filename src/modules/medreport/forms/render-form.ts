@@ -36,6 +36,8 @@ export interface FormRenderInput {
   draft: boolean;
   reviewMarkers?: boolean;
   format: FormOutputFormat;
+  /** PDF: printed on every continuation page (fix wave 3), e.g. "Claimant: … · Reference: …". */
+  continuationLabel?: string;
 }
 
 export interface FormRenderOutput {
@@ -90,7 +92,14 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
   const onError = (m: string) => {
     if (!errors.includes(m)) errors.push(m);
   };
-  const filled = await fillPdf(file.bytes, form, answers, { draft, flatten: true, reviewMarkers: input.reviewMarkers, onWarning, onError });
+  const filled = await fillPdf(file.bytes, form, answers, {
+    draft,
+    flatten: true,
+    reviewMarkers: input.reviewMarkers,
+    onWarning,
+    onError,
+    ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+  });
   if (errors.length > 0 && !draft) {
     // Never issue a form with a value cut to fit (e.g. a date written "14/02/19").
     throw new HttpError(422, "An answer does not fit the form", {

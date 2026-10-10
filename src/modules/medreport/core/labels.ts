@@ -82,6 +82,9 @@ export const ANSWER_TYPE_LABELS: Record<AnswerType, string> = {
   table: "Table (rows)",
 };
 
+/** A referrer the form analysis could not read off the form: the map is not confirmed until someone names it. */
+export const REFERRER_TO_BE_CONFIRMED = "Referrer to be confirmed";
+
 export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   registration: "From TM3 registration – filled by code",
   computed_fact: "Computed from the record – filled by code",
