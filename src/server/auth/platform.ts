@@ -89,10 +89,16 @@ export interface CreatedClinic {
   email: DeliveryResult;
 }
 
-export async function createClinic(db: Kysely<Database>, input: CreateClinicInput): Promise<CreatedClinic> {
+/**
+ * The checks every new clinic passes (createClinic, createClinicForExistingOwner): a valid, unused clinic id that no
+ * earlier clinic's audit trail is kept under, a name, and a retention period in range.
+ */
+async function checkNewClinic(
+  db: Kysely<Database>,
+  input: { name: string; slug: string; retentionDays?: number },
+): Promise<{ slug: string; name: string; retentionDays: number }> {
   const slug = assertTenantSlug(String(input.slug ?? "").trim());
   const name = assertText(String(input.name ?? "").trim(), "Clinic name", 200);
-  const ownerEmail = normaliseEmail(input.ownerEmail);
   const retentionDays = input.retentionDays ?? 365;
   if (!Number.isInteger(retentionDays) || retentionDays < RETENTION_MIN_DAYS || retentionDays > RETENTION_MAX_DAYS) {
     throw new RepoInputError(`Retention must be ${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days.`);
@@ -102,6 +108,12 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   // An earlier clinic's audit trail stays under its id for good: a new clinic must not inherit it.
   const history = await db.selectFrom("audit_log").select("id").where("tenant_id", "=", slug).limit(1).executeTakeFirst();
   if (history) throw new RepoInputError(`The id "${slug}" was used by an earlier clinic (its audit trail is kept): choose another id.`);
+  return { slug, name, retentionDays };
+}
+
+export async function createClinic(db: Kysely<Database>, input: CreateClinicInput): Promise<CreatedClinic> {
+  const ownerEmail = normaliseEmail(input.ownerEmail);
+  const { slug, name, retentionDays } = await checkNewClinic(db, input);
 
   await ensurePlatformUser(db);
   const now = input.now ?? new Date();
@@ -148,6 +160,126 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
     detail: { invitation: invitationRef(invitationId), retentionDays, emailProvider: emailProviderName(), emailStatus: email.status },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A clinic whose owner already has an account (scripts/admin/seed-demo-clinic.ts – the demonstration clinic)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface ClinicProfileDetails {
+  legalName?: string | null;
+  address?: string[] | null;
+  postcode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  draftingEnabled?: boolean;
+}
+
+export interface CreateClinicForOwnerInput {
+  name: string;
+  slug: string;
+  /** An EXISTING account (never created here): it becomes the clinic's owner directly, without an invitation. */
+  ownerUserId: string;
+  retentionDays?: number;
+  profile?: ClinicProfileDetails;
+  /** Extra, non-identifying detail for the audit rows (e.g. {demonstration: true}). */
+  auditDetail?: Record<string, unknown>;
+  now?: Date;
+}
+
+export interface CreatedClinicForOwner {
+  organizationId: string;
+  tenantId: string;
+  memberId: string;
+}
+
+/**
+ * Creates a clinic (organization + clinic profile) with an existing account as its owner – one atomic batch, no
+ * invitation and no email. The same checks as createClinic (id rules, unused id, no earlier audit trail, retention).
+ * Audited under the clinic as "clinic.create" and "member.add" (ids only), by the platform's own user.
+ */
+export async function createClinicForExistingOwner(db: Kysely<Database>, input: CreateClinicForOwnerInput): Promise<CreatedClinicForOwner> {
+  const { slug, name, retentionDays } = await checkNewClinic(db, input);
+  const owner = await db.selectFrom("user").select("id").where("id", "=", String(input.ownerUserId ?? "")).executeTakeFirst();
+  if (!owner || owner.id === PLATFORM_USER_ID) throw new RepoInputError("The owner must be an existing account.");
+  const profile = input.profile ?? {};
+  if (profile.address && (!Array.isArray(profile.address) || profile.address.some((l) => typeof l !== "string" || l.length > 200))) {
+    throw new RepoInputError("address must be a list of lines (≤ 200 characters each).");
+  }
+  await ensurePlatformUser(db);
+  const at = (input.now ?? new Date()).toISOString();
+  const organizationId = authId();
+  const memberId = authId();
+  await runBatch(db, [
+    db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: null }),
+    db.insertInto("clinic_profile").values({
+      tenant_id: slug,
+      organization_id: organizationId,
+      display_name: name,
+      legal_name: profile.legalName ?? null,
+      address_json: profile.address ? JSON.stringify(profile.address) : null,
+      postcode: profile.postcode ?? null,
+      phone: profile.phone ?? null,
+      email: profile.email ?? null,
+      retention_days: retentionDays,
+      drafting_enabled: profile.draftingEnabled ? 1 : 0,
+      created_at: at,
+      updated_at: at,
+    }),
+    db.insertInto("member").values({ id: memberId, organizationId, userId: owner.id, role: "owner", createdAt: at }),
+  ]);
+  const detail = input.auditDetail ?? {};
+  await appendAudit({ db }, slug, {
+    userId: PLATFORM_USER_ID,
+    action: "clinic.create",
+    targetType: "organization",
+    targetId: organizationId,
+    detail: { ...detail, retentionDays, owner: "existing_account" },
+  });
+  await appendAudit({ db }, slug, {
+    userId: PLATFORM_USER_ID,
+    action: "member.add",
+    targetType: "user",
+    targetId: owner.id,
+    detail: { ...detail, role: "owner" },
+  });
+  return { organizationId, tenantId: slug, memberId };
+}
+
+/**
+ * Makes an existing account an owner of an existing clinic directly (no invitation). Idempotent: an owner stays an
+ * owner (null returned, nothing written); a member with another role is refused (change roles in the app). Audited
+ * under the clinic as "member.add".
+ */
+export async function addExistingOwner(
+  db: Kysely<Database>,
+  input: { organizationId: string; tenantId: string; userId: string; auditDetail?: Record<string, unknown>; now?: Date },
+): Promise<{ memberId: string } | null> {
+  const owner = await db.selectFrom("user").select("id").where("id", "=", String(input.userId ?? "")).executeTakeFirst();
+  if (!owner || owner.id === PLATFORM_USER_ID) throw new RepoInputError("The owner must be an existing account.");
+  const current = await db
+    .selectFrom("member")
+    .select(["id", "role"])
+    .where("organizationId", "=", input.organizationId)
+    .where("userId", "=", owner.id)
+    .executeTakeFirst();
+  if (current) {
+    if (current.role === "owner") return null;
+    throw new RepoInputError(`This account is already a member of the clinic (role ${current.role}): change the role in the clinic's settings.`);
+  }
+  const memberId = authId();
+  await db
+    .insertInto("member")
+    .values({ id: memberId, organizationId: input.organizationId, userId: owner.id, role: "owner", createdAt: (input.now ?? new Date()).toISOString() })
+    .execute();
+  await appendAudit({ db }, input.tenantId, {
+    userId: PLATFORM_USER_ID,
+    action: "member.add",
+    targetType: "user",
+    targetId: owner.id,
+    detail: { ...(input.auditDetail ?? {}), role: "owner" },
+  });
+  return { memberId };
 }
 
 export interface ClinicSummary {

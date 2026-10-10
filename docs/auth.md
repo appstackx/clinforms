@@ -131,6 +131,40 @@ signs in and accepts; everyone else creates their account from the link and sets
    `src/server/auth/platform-admin-identity.test.ts`. **Only list an address whose account you created this way** (an
    account that already existed under that address may have come from a clinic's invitation).
 
+### Demonstration clinic (`riverside-demo`) – a live-site backup of a sales demo
+`npm run admin:seed-demo-clinic` (`scripts/admin/seed-demo-clinic.ts`, logic `src/server/admin/demo-clinic.ts`) sets up
+**"Riverside Physiotherapy (fictional)"** (`riverside-demo`): fictional profile (Milton Keynes, Ofcom drama-range phone
+01632 960 418, `clinic@example.com`), 30-day retention, drafting from the notes ON; an **existing** account becomes its
+owner directly (no invitation; refused when the account does not exist – it never creates one); the prepared insurer maps
+from the gitignored `demo-assets/insurers/maps` with their files (matched by SHA-256, stored encrypted under the neutral
+name `form.pdf`) and the portal question set, confirmed by "ClinForms set-up (demonstration)" and attested in-process with
+**that environment's** `MEDREPORT_SIGNING_SECRET` (demonstration footer kept); and the fictional patient Rebecca Lane
+(`sim-pat-006`) imported from the documented JSON format with one **draft** report per form that has recorded answers
+(Bupa, AXA Global, Allianz, portal set), made by the Studio's own generate path. Idempotent; every change audited under the
+clinic and under `platform`.
+
+```bash
+A=~/Projects/Appstackx/clinforms/demo-assets/insurers
+npm run admin:seed-demo-clinic -- --env production --owner-email khuram@appstackx.co.uk --maps-dir $A/maps --pdf-dir $A   # dry run
+npm run admin:seed-demo-clinic -- --env production --owner-email khuram@appstackx.co.uk --maps-dir $A/maps --pdf-dir $A --confirm --yes
+#   --refresh-reports   delete Rebecca Lane's DRAFT reports on these forms and create them again (after a rehearsal)
+#   --write-notes FILE  also write her notes (documented JSON import format) for "Upload the notes"
+```
+
+- **Production writes are the owner's call.** Dry run first (reads only). `--env preview|production` load the secrets
+  file's values (never printed) and first check the signing secret against the app (public `GET /forms/samples`:
+  `MATCH` required; production defaults to `https://clinforms.co.uk`, preview needs `--app-url`). `--env local` = this
+  shell's environment on local SQLite only.
+- The owner then signs in, **switches to the clinic** and opens the Studio: four draft reports for Rebecca Lane, the
+  six insurer forms and the portal set in Referrer forms. Answers are in the third person ("Sarah Reid recorded…");
+  **"Write in my own voice" appears only for a member whose account name is the notes' author (Sarah Reid)** – any other
+  member sees the third-person answers (by design: never another clinician's voice).
+- The insurer PDFs are public forms (demonstration only) and live only in this clinic's encrypted library, visible to its
+  members. **Remove the clinic after the demo:** `npm run admin:offboard-clinic -- --env production --slug riverside-demo`
+  (dry run, then `--confirm --yes --export-dir <outside the repo>`). Offboarding deletes accounts that belong to no other
+  clinic – the owner's account stays as long as it is also in another clinic (e.g. `appstackx`). The id is then kept as a
+  tombstone: a later re-seed needs another id (`--slug riverside-demo-2`).
+
 ### List clinics
 `npm run admin:list-clinics -- --env production`
 

@@ -163,6 +163,35 @@ deliberately want to show live drafting (e.g. the portal questions):
 - **Never open `_wave2-before/`** in either folder: older, superseded output (`_SIGNED` on prefill forms; one file
   carries internal labels).
 
+### 2.7 Live backup on clinforms.co.uk (only if the laptop demo cannot run)
+
+A clearly fictional clinic on the live site holds the same demonstration: **"Riverside Physiotherapy (fictional)"**
+(`riverside-demo`), the six insurer forms + the portal set confirmed, and Rebecca Lane's four **draft** reports (Bupa
+22 of 22 answered, AXA with Bupa's numbers held back, Allianz, portal set) – the same answers as the laptop demo.
+
+**Set it up once, yourself** (production write = your call; not on Monday evening – do it before the rehearsal), from the
+branch `ops/red-live-backup` (worktree `~/Projects/Appstackx/clinforms-wt/red-backup`):
+```bash
+cd ~/Projects/Appstackx/clinforms-wt/red-backup && A=~/Projects/Appstackx/clinforms/demo-assets/insurers
+npm run admin:seed-demo-clinic -- --env production --owner-email khuram@appstackx.co.uk --maps-dir $A/maps --pdf-dir $A
+#   dry run (checked 10/10: signing secret MATCH, your account found, nothing written) – then write:
+npm run admin:seed-demo-clinic -- --env production --owner-email khuram@appstackx.co.uk --maps-dir $A/maps --pdf-dir $A --confirm --yes
+#   after a rehearsal, put the drafts back:  … --refresh-reports --confirm --yes
+```
+On the call: sign in at clinforms.co.uk (your own account and authenticator) → **Choose a clinic → Riverside
+Physiotherapy (fictional)** → Reports (4 drafts) / Referrer forms (7 confirmed). Use the **seeded drafts**; for "Upload
+the notes" the file is `~/Projects/Appstackx/marketing/clinforms/red-backup/rebecca-lane-notes.json` (fictional).
+
+Differences from the laptop demo – know them before you share:
+- You are signed in as yourself, so answers read "Sarah Reid recorded…" and **"Write in my own voice" does not
+  appear** (it is offered only to the clinician who wrote the notes).
+- **No approval**: your account has no HCPC number / "may sign" – show the preview (DRAFT watermark, demo footer), the
+  Flags and "Copy all answers" instead; the signed Bupa PDF is in the fallback folder (§2.6).
+- No simulated TM3 on the live site: the patient comes from the uploaded notes. A **new** report from an upload drafts
+  live (drafting is on for this clinic – real calls, credit needed, longer answers than the boxes): prefer the seeded drafts.
+- Afterwards: remove it with `npm run admin:offboard-clinic -- --env production --slug riverside-demo` (dry run first;
+  your account stays – it is also in `appstackx`), or keep it for the next demo (drafts untouched for 30 days are deleted).
+
 ---
 
 ## 3. The 10-minute call script

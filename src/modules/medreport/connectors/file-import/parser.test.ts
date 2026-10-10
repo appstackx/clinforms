@@ -175,3 +175,31 @@ test("helpers: dates, CSV records, score extraction", () => {
     { instrument: "ODI", value: 30 },
   ]);
 });
+
+test("JSON import: optional insurer identifiers and appointment charges reach the bundle (absent when not given)", () => {
+  const doc = JSON.parse(SAMPLE_IMPORT_FILES.json.content);
+  const plain = parseOk({ format: "json", content: JSON.stringify(doc) }).bundle;
+  assert.equal(plain.referral.membershipNumber, undefined);
+  assert.equal(plain.appointments.some((a) => a.charge), false);
+
+  doc.episode.referral = {
+    ...doc.episode.referral,
+    source_type: "insurer",
+    organisation_name: "Example Health Insurance (fictional)",
+    insurer_name: "Example Health Insurance (fictional)",
+    membership_number: "TEST-POL-0001",
+    authorisation_number: " TEST-AUTH-0001 ",
+  };
+  doc.appointments[0] = { ...doc.appointments[0], charge: { amount: 70, paid: true } };
+  doc.appointments[1] = { ...doc.appointments[1], charge: { amount: 55, currency: "GBP", paid: false } };
+  const insured = parseOk({ format: "json", content: JSON.stringify(doc) }).bundle;
+  assert.equal(insured.referral.insurerName, "Example Health Insurance (fictional)");
+  assert.equal(insured.referral.membershipNumber, "TEST-POL-0001");
+  assert.equal(insured.referral.authorisationNumber, "TEST-AUTH-0001");
+  assert.deepEqual(insured.appointments[0].charge, { amount: 70, currency: "GBP", paid: true });
+  assert.deepEqual(insured.appointments[1].charge, { amount: 55, currency: "GBP", paid: false });
+
+  doc.appointments[0] = { ...doc.appointments[0], charge: { amount: -1, paid: true } };
+  const refused = parseImport({ format: "json", content: JSON.stringify(doc) }, opts);
+  assert.equal(refused.ok, false);
+});

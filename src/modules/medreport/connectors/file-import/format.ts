@@ -16,7 +16,8 @@
  *                      occupation?, employer_name? },
  *        "episode":  { id?, title?, status, start_date?, end_date?,
  *                      referral: { source_type, organisation_name, reference?, contact_name?, address?,
- *                                  referral_date?, reason? },
+ *                                  referral_date?, reason?,
+ *                                  insurer_name?, membership_number?, authorisation_number? },
  *                      incident?: { date?, mechanism, incident_type },
  *                      consent:  { disclosure_consent_recorded, recorded_on? },
  *                      primary_clinician?: { name, hcpc, role? } },
@@ -24,13 +25,15 @@
  *                                subjective, objective, assessment, plan, free_text?,
  *                                past_medical_history?, social_history?, appointment_id? } ],
  *        "appointments":     [ { id?, date, start_time, duration_minutes?, status, status_reason?,
- *                                clinician?, note_id? } ],
+ *                                clinician?, note_id?, charge?: { amount, currency?: "GBP", paid } } ],
  *        "outcome_measures": [ { id?, instrument, unit?, higher_is_worse?,
  *                                scores: [ { date, value, note_id? } ] } ]
  *      }
  *
  *    Payloads copied from the simulated API (with `_simulated`, `episode_id`, paging fields) are
- *    accepted too: unknown fields are ignored.
+ *    accepted too: unknown fields are ignored. Private medical insurance (10/2026, optional): the referral's
+ *    `insurer_name`, `membership_number` and `authorisation_number`, and an appointment's `charge` (pounds,
+ *    `paid`), as in the simulated API – an insurer's numbers go only onto that insurer's own form.
  *
  * 2. CSV (`format: "csv"`) – one row per clinical note or appointment, with the patient, referral,
  *    incident and consent as `# key: value` lines above the header row (keys: CSV_METADATA_KEYS).
@@ -136,6 +139,10 @@ export const ImportEpisodeSchema = z.object({
     address: optionalText,
     referral_date: optionalDate,
     reason: optionalText,
+    /** Private medical insurance (optional, 10/2026): the patient's insurer, membership and pre-authorisation numbers. */
+    insurer_name: optionalText,
+    membership_number: optionalText,
+    authorisation_number: optionalText,
   }),
   incident: z
     .object({
@@ -179,6 +186,14 @@ export const ImportAppointmentSchema = z.object({
   status_reason: optionalText,
   clinician: ImportClinicianSchema.nullish(),
   note_id: optionalText,
+  /** Optional (10/2026): the session's charge in pounds (55 = £55.00) and whether it has been paid. */
+  charge: z
+    .object({
+      amount: z.number().nonnegative("A charge cannot be negative"),
+      currency: z.literal("GBP").nullish(),
+      paid: z.boolean(),
+    })
+    .nullish(),
 });
 
 export const ImportOutcomeMeasureSchema = z.object({
@@ -301,7 +316,7 @@ export const IMPORT_FORMAT_GUIDE = {
       id: "json" as const,
       label: "JSON",
       description:
-        "Patient, episode (referral, incident, consent), notes with authors, appointments with attendance and outcome scores, in one document.",
+        "Patient, episode (referral, incident, consent), notes with authors, appointments with attendance and outcome scores, in one document – for an insured patient also the insurer's membership and authorisation numbers and the session charges.",
     },
     {
       id: "csv" as const,

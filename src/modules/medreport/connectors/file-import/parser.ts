@@ -933,6 +933,7 @@ function documentToBundle(
       status_reason: blankToNull(a.status_reason),
       clinician: a.clinician ? clinician(a.clinician) : (primary ?? { name: "Not recorded", hcpc: "Not recorded", role: null }),
       note_id: noteId,
+      ...(a.charge ? { charge: { amount: a.charge.amount, currency: "GBP" as const, paid: a.charge.paid } } : {}),
       _simulated: true,
     };
   });
@@ -1005,6 +1006,10 @@ function documentToBundle(
       address: blankToNull(r.address),
       referral_date: referralDate,
       reason: blankToNull(r.reason),
+      // Private medical insurance (optional): the mapper copies them; an insurer's numbers go only onto its own form.
+      insurer_name: blankToNull(r.insurer_name),
+      membership_number: blankToNull(r.membership_number),
+      authorisation_number: blankToNull(r.authorisation_number),
     },
     incident: doc.episode.incident
       ? { date: incidentDate, mechanism: doc.episode.incident.mechanism, incident_type: doc.episode.incident.incident_type }

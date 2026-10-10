@@ -925,7 +925,9 @@ Additive contract changes for private medical insurance forms (Bupa, AXA, Avivaâ
   `checkFormDefinition` refuses to confirm a map with a missing or misfitting fixed answer. The live
   analysis never proposes it (`ai/form-analysis-schema.ts` `FILL_KINDS` has no `fixed`).
 - **Live analysis:** the form-analysis prompt text lists the eight paths (see "Live form analysis on the RED
-  engine (S7)" below). **Not done here:** the file-import format has no insurer fields or charges. The rules classifier now maps
+  engine (S7)" below). *Since 11/10/2026 (branch `ops/red-live-backup`):* the documented JSON import format
+  carries them too â€“ `episode.referral.insurer_name` / `membership_number` / `authorisation_number` and an
+  appointment's `charge {amount, currency?, paid}`, as in the simulated API (CSV and pasted notes do not). The rules classifier now maps
   membership / authorisation / phone / e-mail / title labels to the new paths (S3 + integration).
 
 ## Demo data

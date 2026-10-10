@@ -123,10 +123,23 @@ export async function draftDemo(input: GenerateDraftInput): Promise<GenerateDraf
         : WORDING.server.noDemoTemplateDraft,
     );
   }
+  return recordedDraftOutput(file, input);
+}
 
-  // Which recorded section answers each requested key. Forms: matched by answer space and answer
-  // type (formAnchorKeys), so a map of the same file with different field IDs still gets the right
-  // answers – and an answer whose space is not in this map is never used.
+/**
+ * The recorded answers of `file` for the requested keys, exactly as a demo drafting call returns them (before
+ * assembleDraft). Pure: the caller has already decided that `file` belongs to this record and form (draftDemo above
+ * does so by patient, notes fingerprint and file SHA-256; the demonstration-clinic seed –
+ * src/server/admin/demo-clinic.ts – replays a clinic import of the same fictional record).
+ *
+ * Forms: matched by answer space and answer type (formAnchorKeys), so a map of the same file with different field
+ * IDs still gets the right answers – and an answer whose space is not in this map is never used.
+ */
+export function recordedDraftOutput(
+  file: DemoDraftFile,
+  input: Pick<GenerateDraftInput, "sectionKeys"> & { form?: Pick<FormDefinition, "id" | "kind" | "fields" | "file"> },
+): GenerateDraftResult {
+  // Which recorded section answers each requested key.
   const recordedKeyFor = new Map<string, string>();
   if (input.form && file.fields) {
     const byAnchor = new Map(Object.entries(file.fields).map(([id, f]) => [f.anchor, { id, answerType: f.answerType }]));

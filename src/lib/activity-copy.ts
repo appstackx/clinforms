@@ -30,7 +30,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Members",
-    actions: ["member.invite", "member.invite_cancel", "member.join", "member.role_change", "member.profile_update", "member.remove"],
+    actions: ["member.invite", "member.invite_cancel", "member.join", "member.add", "member.role_change", "member.profile_update", "member.remove"],
   },
   {
     label: "Clinic account",
@@ -70,6 +70,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "member.invite": "Member invited",
   "member.invite_cancel": "Invitation cancelled",
   "member.join": "Invitation accepted",
+  "member.add": "Member added by ClinForms support",
   "member.role_change": "Role changed",
   "member.profile_update": "Signing details updated",
   "member.remove": "Member removed",
@@ -101,6 +102,10 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "launch.issue": "Opened from the clinic system",
   // The platform's own trail (/app/platform; pseudo-tenant "platform").
   "platform.clinic_create": "Clinic created",
+  "platform.clinic_update": "Clinic details updated",
+  "platform.member_add": "Owner added to a clinic",
+  "platform.demo_forms_seed": "Demonstration forms added to a clinic",
+  "platform.demo_reports_seed": "Demonstration reports added to a clinic",
   "platform.access_request_contacted": "Access request marked as contacted",
   "platform.access_request_reopened": "Access request marked as not contacted",
 };
