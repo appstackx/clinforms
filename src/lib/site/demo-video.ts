@@ -38,13 +38,28 @@ export const DEMO_VIDEO = {
   publishedOn: PUBLISHED_ON,
   uploadDate: `${PUBLISHED_ON}T15:40:00+01:00`,
   /**
-   * Two encodes of the same cut, without burned-in captions. Phones get the lighter one.
-   * full: 1920×1080, H.264 High 4.0, AAC 128 kb/s (9.2 MB); light: 1280×720, H.264 High 3.1, AAC 96 kb/s (4.6 MB).
+   * Two encodes of the same cut, without burned-in captions. Phones (`light.media`) get the lighter one, and the
+   * fallback panel's download link offers the file that suits the screen. `bytes` is each object's size in the
+   * bucket (the panel shows it rounded, "9 MB").
+   * full: 1920×1080, H.264 High 4.0, AAC 128 kb/s; light: 1280×720, H.264 High 3.1, AAC 96 kb/s.
    */
   sources: {
-    full: { src: `${DEMO_VIDEO_MEDIA_BASE}/clinforms-demo-1080p.mp4`, width: 1920, height: 1080 },
-    light: { src: `${DEMO_VIDEO_MEDIA_BASE}/clinforms-demo-720p.mp4`, width: 1280, height: 720 },
+    full: { src: `${DEMO_VIDEO_MEDIA_BASE}/clinforms-demo-1080p.mp4`, width: 1920, height: 1080, bytes: 9_213_832 },
+    light: {
+      src: `${DEMO_VIDEO_MEDIA_BASE}/clinforms-demo-720p.mp4`,
+      width: 1280,
+      height: 720,
+      bytes: 4_588_200,
+      media: "(max-width: 767px)",
+    },
   },
+  /**
+   * Where the player rests when the cut ends. The end card (“Book a 15-minute call”, the address, the email)
+   * is complete from 85.3 s (its call to action fades in at 84.83 s), and the cut fades it to black over its last
+   * half-second (from 89.43 s), so a player left on the last frame shows black. The player goes back to this point
+   * when playback ends (timeline: work/mix/picture-mixed.json, end card from 79.43 s).
+   */
+  endCardAt: 89,
   /** Captions (the narration word for word, at its times), as WebVTT. Same origin. */
   captions: "/demo/clinforms-demo.en-GB.vtt",
   /** The cut's own title card, 1920×1080. Same origin. */
@@ -104,7 +119,7 @@ export const DEMO_CHAPTERS: readonly DemoChapter[] = [
     ],
     onScreen: [
       "The patient, Megan Hart, is fictional, picked from a simulated clinic system that holds demo data only.",
-      "Her referral is from Harrow & Pike Solicitors (fictional), and ClinForms selects the form that matches it: Harrow & Pike Medico-Legal (fictional)’s Treating Physiotherapist Report, a Word form.",
+      "Her referral is from Harrow & Pike Solicitors (fictional), and ClinForms selects the form that matches it: the Treating Physiotherapist Report from Harrow & Pike Medico-Legal (fictional), a Word form.",
       "The completed draft is marked “DRAFT – awaiting clinician approval”.",
     ],
   },
@@ -176,6 +191,11 @@ export const TRANSCRIPT_DETAILS_ID = "demo-transcript-details";
 export function formatChapterTime(seconds: number): string {
   const whole = Math.floor(seconds);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** "9 MB" for a file of 9 213 832 bytes: whole megabytes (10^6), at least 1. */
+export function formatMegabytes(bytes: number): string {
+  return `${Math.max(1, Math.round(bytes / 1_000_000))} MB`;
 }
 
 /** "1 minute 30 seconds", for screen readers, which read "1:30" as digits. */

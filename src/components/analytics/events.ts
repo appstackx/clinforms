@@ -6,8 +6,8 @@
  *   small counts or booleans, so nothing can identify a patient, a clinician or a clinic;
  * - page views are sent for the public marketing pages only;
  * - every URL the analytics library attaches ($current_url, $pathname, $referrer, …) is reduced to the
- *   origin plus a path whose record ids are replaced by ":id", with no query string or fragment (UTM
- *   campaign parameters are kept on the public pages only).
+ *   origin plus a path whose record ids are replaced by ":id", with no query string or fragment (the
+ *   campaign-level UTM parameters utm_source / utm_medium / utm_campaign are kept on the public pages only).
  *
  * To add an event or a property for wave 2, extend ANALYTICS_EVENTS / TOKEN_PROPS / COUNT_PROPS /
  * BOOLEAN_PROPS here – never pass free text, names, emails, ids or file names.
@@ -35,7 +35,7 @@ export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[number];
 /** String properties and every value each may take. */
 export const TOKEN_PROPS = {
   area: ["marketing", "demo", "app"],
-  cta: ["header", "mobile_nav", "hero", "how_it_works", "security", "faq", "final", "footer", "not_found", "request_access", "demo_page"],
+  cta: ["header", "mobile_nav", "hero", "how_it_works", "security", "faq", "final", "footer", "not_found", "request_access", "demo_page", "demo_video_end"],
   source: ["clinic_system", "simulated_clinic_system", "export_upload", "notes_pdf"],
   form_kind: ["docx", "pdf_fillable", "pdf_flat", "questions"],
   format: ["docx", "pdf"],
@@ -119,7 +119,12 @@ export function sanitizePath(pathname: string): string {
   return "/" + segments.map((s) => (STATIC_SEGMENTS.has(s.toLowerCase()) ? s.toLowerCase() : ":id")).join("/");
 }
 
-const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+/**
+ * Campaign-level UTM parameters only. utm_content and utm_term are dropped: an outreach link that carried a
+ * per-recipient value there (utm_content=<clinic>) would make a visit, or a play of the demo video, attributable
+ * to a named clinic.
+ */
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign"];
 const UTM_VALUE = /^[A-Za-z0-9 _.+-]{1,64}$/;
 
 /**

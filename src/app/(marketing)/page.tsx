@@ -30,7 +30,7 @@ import { TrackedLink } from "@/components/analytics/tracked-link";
 import { HeroIllustration } from "@/components/marketing/hero-illustration";
 import { DEMO_HREF, DEMO_VIDEO_HREF, REQUEST_ACCESS_HREF, btn } from "@/components/marketing/nav";
 import { COMPANY, SITE_URL } from "@/lib/site";
-import { DEMO_VIDEO, formatChapterTime } from "@/lib/site/demo-video";
+import { DEMO_VIDEO, formatChapterTime, formatDurationWords } from "@/lib/site/demo-video";
 import { PRODUCT } from "@/modules/medreport/config.public";
 
 const TITLE = `${PRODUCT.name} – complete every referrer's own report form from your clinic notes`;
@@ -241,6 +241,16 @@ function SectionHeading({ eyebrow, title, intro, id }: { eyebrow: string; title:
   );
 }
 
+/** The demo video's length after "Watch the demo": "1:30" on screen, "1 minute 30 seconds" to a screen reader. */
+function DemoLength() {
+  return (
+    <span className="font-normal tabular-nums text-slate-600">
+      <span aria-hidden>{formatChapterTime(DEMO_VIDEO.durationSeconds)}</span>
+      <span className="sr-only">, {formatDurationWords(DEMO_VIDEO.durationSeconds)}</span>
+    </span>
+  );
+}
+
 export default function LandingPage() {
   return (
     <>
@@ -270,7 +280,7 @@ export default function LandingPage() {
               <Link href={DEMO_VIDEO_HREF} className={btn.secondary}>
                 <Play className="h-4 w-4 fill-current text-teal-700" aria-hidden />
                 Watch the demo
-                <span className="font-normal tabular-nums text-slate-600">{formatChapterTime(DEMO_VIDEO.durationSeconds)}</span>
+                <DemoLength />
               </Link>
             </div>
             <p className="mt-4 text-sm text-slate-600">
@@ -451,17 +461,26 @@ export default function LandingPage() {
             Spend clinic time on patients, not paperwork
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-slate-600">
-            Tell us which referrers&rsquo; forms your clinic receives most, or explore the demo with fictional patients first.
+            Tell us which referrers&rsquo; forms your clinic receives most, or see the demo first.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link href={REQUEST_ACCESS_HREF} className={btn.primary}>
               Request access
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-            <TrackedLink href={DEMO_HREF} prefetch={false} className={btn.secondary} event="demo_opened" eventProps={{ area: "marketing", cta: "final" }}>
-              Try the demo
-            </TrackedLink>
+            <Link href={DEMO_VIDEO_HREF} className={btn.secondary}>
+              <Play className="h-4 w-4 fill-current text-teal-700" aria-hidden />
+              Watch the demo
+              <DemoLength />
+            </Link>
           </div>
+          <p className="mt-4 text-sm text-slate-600">
+            Or{" "}
+            <TrackedLink href={DEMO_HREF} prefetch={false} className="font-medium text-teal-800 underline underline-offset-2 hover:text-teal-900" event="demo_opened" eventProps={{ area: "marketing", cta: "final" }}>
+              try the interactive demo
+            </TrackedLink>{" "}
+            with fictional patients. No sign-up needed.
+          </p>
         </div>
       </section>
     </>

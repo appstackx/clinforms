@@ -25,7 +25,8 @@ export function MobileNav() {
   }, [open]);
 
   const item =
-    "block rounded-lg px-3 py-2.5 text-base font-medium text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+    "block rounded-lg px-3 py-2.5 text-base font-medium text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 aria-[current=page]:bg-slate-100 aria-[current=page]:text-slate-900";
+  const current = (href: string) => (pathname === href ? ("page" as const) : undefined);
 
   return (
     <div className="lg:hidden">
@@ -46,15 +47,15 @@ export function MobileNav() {
       >
         <nav aria-label="Main (mobile)" className="space-y-1">
           {MARKETING_NAV.map((link) => (
-            <Link key={link.href} href={link.href} className={item} onClick={() => setOpen(false)}>
+            <Link key={link.href} href={link.href} className={item} aria-current={current(link.href)} onClick={() => setOpen(false)}>
               {link.label}
             </Link>
           ))}
-          <Link href={DEMO_VIDEO_HREF} className={item} onClick={() => setOpen(false)}>
-            Watch the demo
+          <Link href={DEMO_VIDEO_HREF} className={item} aria-current={current(DEMO_VIDEO_HREF)} onClick={() => setOpen(false)}>
+            Demo video
           </Link>
           <TrackedLink href={DEMO_HREF} prefetch={false} className={item} event="demo_opened" eventProps={{ area: "marketing", cta: "mobile_nav" }}>
-            Try the demo
+            Interactive demo
           </TrackedLink>
           <Link href={SIGN_IN_HREF} prefetch={false} className={item} onClick={() => setOpen(false)}>
             Sign in

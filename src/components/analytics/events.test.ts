@@ -1,6 +1,8 @@
 /** Analytics allow-lists: nothing identifying can leave the browser. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { filterOutgoingEvent, sanitizePath, sanitizeProps, sanitizeUrl, shouldCapturePageview } from "./events";
 
 const ORIGIN = "https://clinforms.co.uk";
@@ -33,6 +35,14 @@ test("URLs keep only the origin and a sanitised path; UTM tags only on public pa
   assert.equal(sanitizeUrl("javascript:alert(1)", ORIGIN), null);
   assert.equal(sanitizeUrl(42, ORIGIN), null);
   assert.equal(sanitizeUrl("https://clinforms.co.uk/?utm_source=<script>", ORIGIN), "https://clinforms.co.uk/");
+});
+
+test("only campaign-level UTM parameters are kept: utm_content and utm_term could name a recipient", () => {
+  assert.equal(
+    sanitizeUrl("https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=oct26&utm_content=red-physio&utm_term=daniel", ORIGIN),
+    "https://clinforms.co.uk/demo?utm_source=email&utm_medium=outreach&utm_campaign=oct26",
+  );
+  assert.equal(sanitizeUrl("https://clinforms.co.uk/?utm_content=blue-heart", ORIGIN), "https://clinforms.co.uk/");
 });
 
 test("only allow-listed properties with allowed values survive", () => {
@@ -115,4 +125,10 @@ test("the demo video's play and completed events leave with nothing but the area
   }
   const pageview = filterOutgoingEvent({ event: "$pageview", properties: { $pathname: "/demo", $current_url: "https://clinforms.co.uk/demo?t=45" } }, ORIGIN);
   assert.equal(pageview?.properties.$current_url, "https://clinforms.co.uk/demo");
+});
+
+test("analytics sends each event when it is captured, so nothing queued before a withdrawal leaves after it", () => {
+  // scripts/e2e/demo-video.cjs ANALYTICS=1 checks the same in a browser: accept, withdraw at once, nothing sent after.
+  const source = fs.readFileSync(path.join(process.cwd(), "src/components/analytics/posthog.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  assert.match(source, /posthog\.init\(key, \{[\s\S]*?\brequest_batching: false,[\s\S]*?\}\);/);
 });

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 const NEXT_STEPS = [
-  "We reply by email to arrange a short call.",
+  "We reply by email to arrange a 15-minute call.",
   "Together we look at the referrers' forms your clinic receives most.",
   "Your clinic is set up after the data processing agreement is signed, and your team is invited.",
 ];

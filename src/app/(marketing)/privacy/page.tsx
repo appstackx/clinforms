@@ -83,7 +83,7 @@ export default function PrivacyPage() {
           ],
           [
             <>
-              <strong>Demo video plays</strong> (only if you press play on our{" "}
+              <strong>Demo video plays</strong> (only if you play or download our{" "}
               <Link href="/demo">product demo</Link>): your IP address, browser details, the time and the file requested
             </>,
             "To deliver the demo video to you, keep it available and count how often it is played",
@@ -132,16 +132,20 @@ export default function PrivacyPage() {
       <p>
         Our <Link href="/demo">product demo</Link> is stored in the EU by our media delivery provider and played from
         media.clinforms.co.uk. Opening the page loads nothing from that provider: the poster image and the captions come
-        from this website, and the video is fetched only when you press play. That request, like any request for a web
-        page, carries your IP address and the details your browser sends with it, such as its type and language. It
-        carries no cookies, the video sets none, and we do not ask who you are.
+        from this website, and the video is fetched only when you press play or choose a chapter (or download the file).
+        That request, like any request for a web page, carries your IP address and the details your browser sends with
+        it, such as its type and language. It carries no cookies, the video sets none, and we do not ask who you are.
       </p>
       <p>
-        The provider keeps a record of each request: the IP address, the time, the file, the browser type and the
-        country it came from. Its dashboard shows us a sample of these records for about the last month. We use them only
-        to keep the video available and to count how often it is played, and we do not try to work out who watched. If
-        you allow analytics, we also count that the video was played and played to the end, with nothing that identifies
-        you. Our lawful basis is our legitimate interest in showing our product to people who choose to watch it.
+        The provider keeps a record of each request: for example the IP address, the time, the file, the browser type,
+        the site it was played from and the country it came from. Its dashboard shows us a sample of these records for
+        about the last month. The provider also asks browsers to report failed requests: after a play, some browsers
+        keep that instruction for up to a week, and if a later request for the video fails they send the provider a
+        short error report (the address requested, the kind of error, timings and the browser type), which reaches it
+        from your IP address. Successful requests are not reported. We use these records only to keep the video
+        available and to count how often it is played, and we do not try to work out who watched. If you allow
+        analytics, we also count that the video was played and played to the end, with nothing that identifies you. Our
+        lawful basis is our legitimate interest in showing our product to people who choose to watch it.
       </p>
 
       <h2 id="patient-data">4. Patient information we process for clinics</h2>
@@ -215,8 +219,8 @@ export default function PrivacyPage() {
       <p>
         The demo video is stored in the EU. When you play it, it is delivered from our media delivery provider&rsquo;s
         global network, usually from a data centre near you, which may be outside the UK and the EU. The provider is
-        based in the United States, and its records of requests may be kept there; as with our other providers, that
-        transfer is protected as described above.
+        based in the United States, and its records of requests (and any error reports) may be kept there; as with our
+        other providers, that transfer is protected as described above.
       </p>
 
       <h2 id="rights">7. Your rights</h2>

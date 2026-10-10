@@ -1,4 +1,10 @@
-/** TESTS ONLY: a minimal cookie jar for driving Better Auth's API in-process. */
+/**
+ * TESTS ONLY: a minimal cookie jar for driving Better Auth's API in-process.
+ *
+ * It also refuses any cookie with a Domain attribute, so every identity flow the suites run proves that the app's
+ * cookies are host-only. A Domain=.clinforms.co.uk cookie would also be sent to media.clinforms.co.uk by an
+ * ordinary request there (the demo video's download link), and the privacy policy says the video carries no cookies.
+ */
 
 export class CookieJar {
   private readonly cookies = new Map<string, string>();
@@ -15,6 +21,8 @@ export class CookieJar {
       if (eq <= 0) continue;
       const name = pair.slice(0, eq);
       const value = pair.slice(eq + 1);
+      const domain = attrs.find((attr) => /^domain\s*=/i.test(attr));
+      if (domain) throw new Error(`Set-Cookie "${name}" has "${domain}": the app's cookies must be host-only (no Domain attribute)`);
       const expired = attrs.some((a) => /^max-age=(0|-\d+)$/i.test(a)) || attrs.some((a) => /^expires=/i.test(a) && Date.parse(a.slice(8)) < Date.now()) || value === "";
       if (expired) this.cookies.delete(name);
       else this.cookies.set(name, value);

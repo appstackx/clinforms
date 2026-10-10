@@ -6,6 +6,8 @@
  * Settings: EU cloud through our own /ingest proxy (next.config.mjs rewrites), no autocapture, no session
  * recording, no heatmaps, no surveys, no remote configuration, no extra scripts, storage in localStorage
  * (no analytics cookies), and every event passes filterOutgoingEvent() (events.ts) before it is sent.
+ * No request batching: each allowed event is sent when it is captured, so nothing captured while consent was
+ * given is still queued (and sent on the next flush or on page unload) after the visitor withdraws it.
  *
  * Use `track(event, props)` for product events (allow-listed names and properties only).
  */
@@ -42,6 +44,8 @@ export function startAnalytics(): Promise<PostHog | null> {
       .then(({ default: posthog }) => {
         posthog.init(key, {
           api_host: apiHost(),
+          // Send each event at once: a batch queued before a withdrawal would otherwise leave after it.
+          request_batching: false,
           ui_host: "https://eu.posthog.com",
           persistence: "localStorage",
           person_profiles: "identified_only",

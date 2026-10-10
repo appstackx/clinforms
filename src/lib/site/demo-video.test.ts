@@ -26,6 +26,7 @@ import {
   demoVideoStructuredData,
   formatChapterTime,
   formatDurationWords,
+  formatMegabytes,
   startFromQuery,
 } from "./demo-video";
 
@@ -72,7 +73,8 @@ test("phones get the light encode, and a failure is caught on the last source", 
   const sources = Array.from(PLAYER.matchAll(/<source\b[\s\S]*?\/>/g), (m) => m[0]);
   assert.equal(sources.length, 2);
   assert.match(sources[0], /src=\{DEMO_VIDEO\.sources\.light\.src\}/);
-  assert.match(sources[0], /media="\(max-width: 767px\)"/);
+  assert.match(sources[0], /media=\{DEMO_VIDEO\.sources\.light\.media\}/);
+  assert.equal(DEMO_VIDEO.sources.light.media, "(max-width: 767px)");
   assert.match(sources[1], /src=\{DEMO_VIDEO\.sources\.full\.src\}/);
   assert.doesNotMatch(sources[1], /media=/);
   assert.match(sources[1], /onError=\{\(\) => setFailed\(true\)\}/);
@@ -106,6 +108,50 @@ test("a failure says where the video plays from and opens the transcript", () =>
   assert.match(PAGE, /id="transcript"/);
   assert.match(PAGE, /id=\{TRANSCRIPT_DETAILS_ID\}/);
   assert.equal(TRANSCRIPT_DETAILS_ID, "demo-transcript-details");
+});
+
+test("the panel offers the download for another network, sized for the screen, without a referrer", () => {
+  const player = prose(read("src/app/(marketing)/demo/demo-player.tsx"));
+  // The panel is for a network that blocks the media host, so the download (same host) is for another network.
+  assert.match(player, /covers everything the video says and shows\. On another network you can also\{" "\} <a href=\{download\.src\} rel="noreferrer"/);
+  assert.match(player, /download the video \(\{formatMegabytes\(download\.bytes\)\}\)/);
+  // Phones (the light source's own media query) get the lighter file.
+  assert.match(player, /window\.matchMedia\(DEMO_VIDEO\.sources\.light\.media\)\.matches \? DEMO_VIDEO\.sources\.light : DEMO_VIDEO\.sources\.full/);
+  assert.equal(formatMegabytes(DEMO_VIDEO.sources.full.bytes), "9 MB");
+  assert.equal(formatMegabytes(DEMO_VIDEO.sources.light.bytes), "5 MB");
+  assert.equal(formatMegabytes(400_000), "1 MB");
+  assert.ok(DEMO_VIDEO.sources.light.bytes < DEMO_VIDEO.sources.full.bytes);
+});
+
+test("a request that hangs (no error, no data) shows the same panel, which goes when the video starts", () => {
+  const stall = Number(PLAYER.match(/const STALL_MS = ([\d_]+);/)?.[1].replace(/_/g, ""));
+  assert.ok(stall >= 10_000 && stall <= 15_000, `STALL_MS ${stall}`);
+  // Armed on play while there is no frame yet; the panel shows only if there is still none.
+  assert.match(PLAYER, /if \(video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) watchForStall\(\);/);
+  assert.match(PLAYER, /if \(video && video\.readyState < HTMLMediaElement\.HAVE_CURRENT_DATA\) setFailed\(true\);/);
+  // Data or playback clears it; playback after all removes the panel (a slow network, not a blocked one).
+  assert.match(PLAYER, /onLoadedData=\{\(\) => window\.clearTimeout\(stallTimer\.current\)\}/);
+  assert.match(PLAYER, /onPlaying=\{\(\) => \{\s*window\.clearTimeout\(stallTimer\.current\);[\s\S]*?setFailed\(false\);/);
+  // Unmounting clears the timer.
+  assert.match(PLAYER, /return \(\) => window\.clearTimeout\(stallTimer\.current\);/);
+});
+
+test("focus: a control that goes away hands focus to the video, however it was pressed", () => {
+  // Not decided from the click's detail (a screen reader's double-tap is a real click).
+  assert.doesNotMatch(PLAYER, /\.detail\b/);
+  assert.match(PLAYER, /if \(!active \|\| active === document\.body\) videoRef\.current\?\.focus\(\);/);
+  assert.match(PLAYER, /\}, \[started, ended, failed\]\);/);
+});
+
+test("the play button keeps the poster readable on a phone and respects reduced motion", () => {
+  const button = PLAYER.match(/aria-label=\{`Play the demo, \$\{lengthInWords\}`\}\s*className="([^"]+)"/)?.[1] ?? "";
+  // Below sm it sits in the poster's empty lower band; from sm up, centred.
+  assert.match(button, /\bitems-end\b/);
+  assert.match(button, /\bsm:items-center\b/);
+  // No grey wash over the poster.
+  assert.doesNotMatch(button, /bg-slate-900\/10\b/);
+  assert.match(button, /motion-reduce:transition-none/);
+  assert.match(PLAYER, /motion-reduce:group-hover:scale-100/);
 });
 
 /* ------------------------------------------------------------------------------------------- captions */
@@ -162,6 +208,27 @@ test("each chapter opens just before its first line is spoken", () => {
     const lead = CUES[cue].start - chapter.at;
     assert.ok(lead >= 0 && lead <= 1, `${chapter.title}: line starts ${lead.toFixed(2)} s after the chapter`);
   }
+});
+
+/** The cut's real length (DEMO_VIDEO.durationSeconds is the rounded 1:30). */
+const CUT_SECONDS = 89.94;
+
+test("at the end the picture goes back to the end card and a panel offers the call, a replay and the interactive demo", () => {
+  const player = prose(read("src/app/(marketing)/demo/demo-player.tsx"));
+  assert.match(PLAYER, /video\.currentTime = DEMO_VIDEO\.endCardAt;\s*setCurrent\(DEMO_VIDEO\.endCardAt\);\s*setEnded\(true\);/);
+  // The end card is up (its last caption has started) and the fade to black (the last half-second) has not begun.
+  const last = CUES[CUES.length - 1];
+  assert.ok(DEMO_VIDEO.endCardAt >= last.start && DEMO_VIDEO.endCardAt <= CUT_SECONDS - 0.5, String(DEMO_VIDEO.endCardAt));
+  assert.ok(DEMO_VIDEO.endCardAt > DEMO_CHAPTERS[DEMO_CHAPTERS.length - 1].at);
+  assert.match(player, /\{ended && !failed && \(/);
+  assert.match(player, /<Link href=\{REQUEST_ACCESS_HREF\} className="[^"]*" > Book a 15-minute call <ArrowRight/);
+  assert.match(player, /<button type="button" onClick=\{watchAgain\}[^>]*> <RotateCcw[^>]*\/> Watch again <\/button>/);
+  assert.match(player, /<TrackedLink href=\{DEMO_HREF\}[^>]*eventProps=\{\{ area: "marketing", cta: "demo_video_end" \}\} > Try the interactive demo <\/TrackedLink>/);
+  // The native controls give way to the panel; any play (a chapter, "Watch again") removes it.
+  assert.match(PLAYER, /controls=\{started && !failed && !ended\}/);
+  assert.match(PLAYER, /onPlay=\{\(\) => \{\s*setStarted\(true\);\s*setEnded\(false\);/);
+  // Focus moves to the panel only if the video had it.
+  assert.match(PLAYER, /focusEndPanel\.current = document\.activeElement === video;/);
 });
 
 /* ------------------------------------------------------------------------------------------- chapters */
@@ -303,15 +370,39 @@ test("the page labels the video as fictional data", () => {
   assert.ok(PLAYER.indexOf("{note}") > PLAYER.indexOf("</video>") && PLAYER.indexOf("{note}") < PLAYER.indexOf("<nav"));
 });
 
-test("the header, the mobile menu, the hero and the footer link to the video", () => {
+test("the header, the mobile menu, the hero, the final call to action and the footer link to the video", () => {
   assert.match(read("src/components/marketing/nav.ts"), /DEMO_VIDEO_HREF = "\/demo"/);
-  for (const file of ["src/components/marketing/site-header.tsx", "src/components/marketing/mobile-nav.tsx"]) {
-    assert.match(prose(read(file)), /<Link href=\{DEMO_VIDEO_HREF\} className=\{(navLink|item)\}( onClick=\{\(\) => setOpen\(false\)\})?> Watch the demo <\/Link>/, file);
+  // Two different things, two clearly different names: the recorded video and the sandbox you click through.
+  const header = prose(read("src/components/marketing/site-header.tsx"));
+  assert.match(header, /<NavLink href=\{DEMO_VIDEO_HREF\} className=\{navLink\}> Demo video <\/NavLink>/);
+  assert.match(header, /<TrackedLink href=\{DEMO_HREF\}[^>]*> Interactive demo <\/TrackedLink>/);
+  const mobile = prose(read("src/components/marketing/mobile-nav.tsx"));
+  assert.match(mobile, /<Link href=\{DEMO_VIDEO_HREF\} className=\{item\} aria-current=\{current\(DEMO_VIDEO_HREF\)\} onClick=\{\(\) => setOpen\(false\)\}> Demo video <\/Link>/);
+  assert.match(mobile, /<TrackedLink href=\{DEMO_HREF\}[^>]*> Interactive demo <\/TrackedLink>/);
+  const footer = read("src/components/marketing/site-footer.tsx");
+  assert.match(footer, /\{ href: "\/demo", label: "Demo video" \}/);
+  assert.match(footer, /\{ href: "\/reports", label: "Interactive demo" \}/);
+  for (const file of ["src/components/marketing/site-header.tsx", "src/components/marketing/mobile-nav.tsx", "src/components/marketing/site-footer.tsx"]) {
+    assert.doesNotMatch(prose(read(file)), /> (Watch|Try) the demo </, file);
   }
-  assert.match(read("src/components/marketing/site-footer.tsx"), /\{ href: "\/demo", label: "Watch the demo" \}/);
-  // Hero: the secondary call to action right after "Request access".
+  // The header marks the page being shown.
+  assert.match(read("src/components/marketing/nav-link.tsx"), /aria-current=\{pathname === href \? "page" : undefined\}/);
+  // Hero and final call to action: the video right after "Request access", its length spoken in words.
   const landing = prose(read("src/app/(marketing)/page.tsx"));
-  assert.match(landing, /Request access <ArrowRight[^>]*\/> <\/Link> <Link href=\{DEMO_VIDEO_HREF\} className=\{btn\.secondary\}>/);
+  assert.equal(landing.match(/Request access <ArrowRight[^>]*\/> <\/Link> <Link href=\{DEMO_VIDEO_HREF\} className=\{btn\.secondary\}> <Play[^>]*\/> Watch the demo <DemoLength \/> <\/Link>/g)?.length, 2);
+  assert.match(landing, /<span aria-hidden>\{formatChapterTime\(DEMO_VIDEO\.durationSeconds\)\}<\/span> <span className="sr-only">, \{formatDurationWords\(DEMO_VIDEO\.durationSeconds\)\}<\/span>/);
+});
+
+test("the page says who it is for and what the problem is before the video, and books the call the video promises", () => {
+  const page = prose(read("src/app/(marketing)/demo/page.tsx"));
+  assert.match(page, /For UK physiotherapy clinics · <span aria-hidden>\{formatChapterTime\(DEMO_VIDEO\.durationSeconds\)\}<\/span> <span className="sr-only">\{formatDurationWords\(DEMO_VIDEO\.durationSeconds\)\}<\/span> demo/);
+  assert.match(page, /Insurers, medico-legal companies and case managers each send their own report form\./);
+  // The video ends with "Book a 15-minute call": the page's main button says the same and leads to the request form.
+  assert.match(page, /<Link href=\{REQUEST_ACCESS_HREF\} className=\{btn\.primary\}> Book a 15-minute call <ArrowRight/);
+  assert.equal(DEMO_CHAPTERS[DEMO_CHAPTERS.length - 1].transcript.at(-1), "Book a 15-minute call at clinforms.co.uk.");
+  assert.match(prose(read("src/app/(marketing)/request-access/page.tsx")), /We reply by email to arrange a 15-minute call\./);
+  // The transcript sits on the page's grid (left edge in line with the video), its lines kept short inside it.
+  assert.match(page, /<section id="transcript"[^>]*> (\{\} )?<div className="mx-auto max-w-6xl px-4 [^"]*"> <div className="max-w-3xl"> <h2 id="demo-transcript-title"/);
 });
 
 test("/demo is in the sitemap, dated by the cut, and open to crawlers", () => {
@@ -349,9 +440,13 @@ test("the privacy policy describes the player as it behaves, naming no vendor", 
   assert.equal(PRIVACY_LAST_UPDATED, "2026-10-10");
   assert.match(PRIVACY, /<h3 id="demo-video">The demo video<\/h3>/);
   assert.match(PRIVACY, /stored in the EU by our media delivery provider/);
-  assert.match(PRIVACY, /Opening the page loads nothing from that provider: the poster image and the captions come from this website, and the video is fetched only when you press play/);
+  assert.match(PRIVACY, /Opening the page loads nothing from that provider: the poster image and the captions come from this website, and the video is fetched only when you press play or choose a chapter \(or download the file\)\./);
   assert.match(PRIVACY, /It carries no cookies, the video sets none/);
-  assert.match(PRIVACY, /the IP address, the time, the file, the browser type and the country it came from/);
+  assert.match(PRIVACY, /The provider keeps a record of each request: for example the IP address, the time, the file, the browser type, the site it was played from and the country it came from\./);
+  // The media host sends a network error reporting policy: failed requests may be reported to the provider.
+  assert.match(PRIVACY, /The provider also asks browsers to report failed requests: after a play, some browsers keep that instruction for up to a week, and if a later request for the video fails they send the provider a short error report/);
+  assert.match(PRIVACY, /Successful requests are not reported\./);
+  assert.match(PRIVACY, /<strong>Demo video plays<\/strong> \(only if you play or download our\{" "\} <Link href="\/demo">product demo<\/Link>\)/);
   assert.match(PRIVACY, /Our lawful basis is our legitimate interest in showing our product to people who choose to watch it/);
   assert.match(PRIVACY, /<strong>Media delivery<\/strong> – stores our product demo video in the EU/);
   assert.match(PRIVACY, /We keep no copy\. Our media delivery provider keeps its own records of requests/);

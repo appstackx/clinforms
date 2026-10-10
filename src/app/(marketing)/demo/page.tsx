@@ -9,6 +9,7 @@ import {
   DEMO_VIDEO,
   demoVideoStructuredData,
   formatChapterTime,
+  formatDurationWords,
   TRANSCRIPT_DETAILS_ID,
 } from "@/lib/site/demo-video";
 import { PRODUCT } from "@/modules/medreport/config.public";
@@ -50,15 +51,17 @@ export default function DemoPage() {
         <div className="mx-auto max-w-6xl px-4 pb-12 pt-10 sm:px-6 sm:pt-14 lg:px-8">
           <div className="max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-wider text-teal-700">
-              Product demo · {formatChapterTime(DEMO_VIDEO.durationSeconds)}
+              For UK physiotherapy clinics · <span aria-hidden>{formatChapterTime(DEMO_VIDEO.durationSeconds)}</span>
+              <span className="sr-only">{formatDurationWords(DEMO_VIDEO.durationSeconds)}</span> demo
             </p>
             <h1 id="demo-title" className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
               Watch {PRODUCT.name} complete a referrer&rsquo;s own form
             </h1>
             <p className="mt-4 text-lg leading-8 text-slate-600">
-              One fictional patient, one fictional referrer&rsquo;s form: set up once, answers drafted from the notes into
-              the form&rsquo;s original layout, the source behind each answer, a gap flagged rather than guessed, and the
-              physiotherapist&rsquo;s approval before anything is issued.
+              Insurers, medico-legal companies and case managers each send their own report form. In this demo, one
+              fictional referrer&rsquo;s form is set up once, answers are drafted from a fictional patient&rsquo;s notes
+              into its original layout, each answer shows its source, a gap is flagged rather than guessed, and the
+              physiotherapist approves before anything is issued.
             </p>
           </div>
 
@@ -84,7 +87,7 @@ export default function DemoPage() {
                 See it with your referrers&rsquo; forms
               </h2>
               <p className="mt-2 text-[15px] leading-7 text-slate-600">
-                Request access and we&rsquo;ll reply by email to arrange a 15-minute call. Or write to{" "}
+                Tell us about your clinic and we&rsquo;ll reply by email to arrange a 15-minute call. Or write to{" "}
                 <a href={`mailto:${COMPANY.contactEmail}`} className="font-medium text-teal-800 underline underline-offset-2">
                   {COMPANY.contactEmail}
                 </a>
@@ -93,7 +96,7 @@ export default function DemoPage() {
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link href={REQUEST_ACCESS_HREF} className={btn.primary}>
-                Request access
+                Book a 15-minute call
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <TrackedLink href={DEMO_HREF} prefetch={false} className={btn.secondary} event="demo_opened" eventProps={{ area: "marketing", cta: "demo_page" }}>
@@ -105,34 +108,37 @@ export default function DemoPage() {
       </section>
 
       <section id="transcript" aria-labelledby="demo-transcript-title" className="scroll-mt-20 bg-white">
-        <div className="mx-auto max-w-3xl px-4 pb-20 pt-12 sm:px-6 lg:px-8">
-          <h2 id="demo-transcript-title" className="text-xl font-semibold tracking-tight text-slate-900">
-            Transcript
-          </h2>
-          <details id={TRANSCRIPT_DETAILS_ID} className="group mt-3 rounded-2xl border border-slate-200 bg-white">
-            <summary className="cursor-pointer select-none rounded-2xl px-5 py-4 text-sm font-medium text-slate-800 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">
-              Read what the video says and shows
-            </summary>
-            <div className="space-y-6 border-t border-slate-200 px-5 py-5">
-              {DEMO_CHAPTERS.map((chapter) => (
-                <div key={chapter.at}>
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    <span className="mr-2 font-mono text-xs text-slate-600">{formatChapterTime(chapter.at)}</span> {chapter.title}
-                  </h3>
-                  {chapter.transcript.map((line) => (
-                    <p key={line} className="mt-2 text-[15px] leading-7 text-slate-700">
-                      {line}
-                    </p>
-                  ))}
-                  {chapter.onScreen?.map((line) => (
-                    <p key={line} className="mt-2 text-sm leading-6 text-slate-600">
-                      <span className="font-medium text-slate-700">On screen:</span> {line}
-                    </p>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </details>
+        {/* The page's grid (as above), with the transcript's line length kept inside it. */}
+        <div className="mx-auto max-w-6xl px-4 pb-20 pt-12 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 id="demo-transcript-title" className="text-xl font-semibold tracking-tight text-slate-900">
+              Transcript
+            </h2>
+            <details id={TRANSCRIPT_DETAILS_ID} className="group mt-3 rounded-2xl border border-slate-200 bg-white">
+              <summary className="cursor-pointer select-none rounded-2xl px-5 py-4 text-sm font-medium text-slate-800 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">
+                Read what the video says and shows
+              </summary>
+              <div className="space-y-6 border-t border-slate-200 px-5 py-5">
+                {DEMO_CHAPTERS.map((chapter) => (
+                  <div key={chapter.at}>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      <span className="mr-2 font-mono text-xs text-slate-600">{formatChapterTime(chapter.at)}</span> {chapter.title}
+                    </h3>
+                    {chapter.transcript.map((line) => (
+                      <p key={line} className="mt-2 text-[15px] leading-7 text-slate-700">
+                        {line}
+                      </p>
+                    ))}
+                    {chapter.onScreen?.map((line) => (
+                      <p key={line} className="mt-2 text-sm leading-6 text-slate-600">
+                        <span className="font-medium text-slate-700">On screen:</span> {line}
+                      </p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
         </div>
       </section>
     </>
