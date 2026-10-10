@@ -19,6 +19,7 @@
     "db:selftest": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/selftest-gateway.ts",
     "db:provision-gateway": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/provision-gateway-secrets.ts",
     "db:provision-supabase": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/provision-supabase.ts",
+    "ops:key-fingerprint": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/key-fingerprint.ts",
     "db:copy-to-postgres": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/copy-d1-to-postgres.ts",
     "typecheck:gateway": "tsc -p workers/data-gateway/tsconfig.json && tsc -p workers/data-gateway/test/tsconfig.json",
     "db:gen-auth-migrations": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/db/gen-auth-migrations.ts",

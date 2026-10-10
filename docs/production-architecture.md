@@ -161,6 +161,7 @@ the switch and the overview's set-up checklist say so in plain words, `src/lib/a
 | `/api/auth/[...all]` | – | Better Auth |
 | `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only). *Wave 3:* `/connectors/file-import/read` and `/confirm` – notes as the clinic system prints or exports them, checked by staff before the record is built (§8); per-minute limits per sign-in or session and per address (fix wave 3) |
 | `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows. *Built:* daily (vercel.json, 03:17 UTC); also deletes reports unchanged for their clinic's `retention_days` (read at run time) and access requests older than 24 months; *wave 2:* also form-file uploads started over a day ago and never completed; refuses every call while `CRON_SECRET` is unset |
+| `/api/ops/key-fingerprint` | operator (`CRON_SECRET`) | *Added 10/10:* `{activeKid, keys: [{kid, fingerprint}]}` – first 16 hex of HMAC-SHA256(raw key, `clinforms:key-fingerprint:v1`) for each data key the deployment loads; never key bytes. Same auth helper as the retention cron (503 unset, 401 wrong). Compared with the secrets file by `npm run ops:key-fingerprint` (go-live.md §7.6, database.md §5) |
 
 Edge middleware (Next 14.2) only does optimistic cookie redirects for `/app` and the auth pages; real checks are
 in Node layouts and `route()`.

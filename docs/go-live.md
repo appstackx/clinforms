@@ -94,7 +94,7 @@ the new variables, so stopping half-way through §2–§4 is harmless.
 | `/app/**` | – | The clinic area: overview, settings, activity, the clinic's own Studio `/app/studio` (server storage, encrypted in D1). `/app/platform` for `CLINFORMS_PLATFORM_ADMINS` only (404 for everyone else) |
 | `/reports/**`, `/pms-sandbox/**` | Public demo (pre-production engine) | **Public demo stays** (`CLINFORMS_PUBLIC_DEMO=1`), browser storage, fictional data, now the production line's engine. No insurer PDFs (demo assets are never on a deployment) |
 | `/api/reports/v1/health` | shows prompt versions | anonymous callers get `model: "drafting-service"`, empty `promptVersion`, plus `pdfFromWord: false` |
-| New APIs | – | `/api/auth/*`, `/api/access-requests`, `/api/reports/v1/store/**`, `/api/reports/v1/connectors/file-import/{read,confirm}`, `/api/cron/retention` (daily 03:17 UTC, `vercel.json`) |
+| New APIs | – | `/api/auth/*`, `/api/access-requests`, `/api/reports/v1/store/**`, `/api/reports/v1/connectors/file-import/{read,confirm}`, `/api/cron/retention` (daily 03:17 UTC, `vercel.json`), `/api/ops/key-fingerprint` (`CRON_SECRET`; data key fingerprints, never keys – §7.6) |
 | Headers | – | HSTS 2 years **with includeSubDomains**, CSP **Report-Only**, `X-Frame-Options: DENY`, nosniff, COOP, Permissions-Policy; `X-Robots-Tag: noindex` on `/api`, `/app`, `/reports`, `/pms-sandbox`, sign-in pages; `robots.txt`, `sitemap.xml` |
 | Data | none | D1 `clinforms-prod` (EU) via Worker `clinforms-data`; reports, forms and files AES-256-GCM encrypted per clinic |
 
@@ -372,8 +372,8 @@ not start §5 until Khuram confirms both.
    hdiutil detach /Volumes/ClinFormsKeys
    ```
 
-Repeat the USB copy whenever the file changes (key rotation, new secrets). §7.6 later proves the file's key really
-decrypts what production wrote.
+Repeat the USB copy whenever the file changes (key rotation, new secrets). §7.6 proves the file holds exactly the data
+keys production uses (fingerprint compare – no key is printed).
 
 ---
 
@@ -478,6 +478,7 @@ curl -s -o /dev/null -w "/app           %{http_code} %{redirect_url}\n" https://
 curl -s -o /dev/null -w "/app/platform  %{http_code} %{redirect_url}\n" https://clinforms.co.uk/app/platform # 307 -> /login?next=…
 curl -s -o /dev/null -w "store snapshot %{http_code}\n" https://clinforms.co.uk/api/reports/v1/store/snapshot # 401
 curl -s -o /dev/null -w "cron, no auth  %{http_code}\n" https://clinforms.co.uk/api/cron/retention           # 401 (503 = CRON_SECRET missing)
+curl -s -o /dev/null -w "key fp, no auth %{http_code}\n" https://clinforms.co.uk/api/ops/key-fingerprint    # 401 (503 = CRON_SECRET missing, 404 = deployed before the endpoint)
 curl -s -o /dev/null -w "www            %{http_code} %{redirect_url}\n" https://www.clinforms.co.uk/          # 308 -> https://clinforms.co.uk/
 curl -sI https://clinforms.co.uk/ | grep -iE '^(strict-transport-security|x-frame-options|content-security-policy-report-only|referrer-policy|permissions-policy):'
 curl -sI https://clinforms.co.uk/reports | grep -i '^x-robots-tag'                    # noindex, nofollow
@@ -553,10 +554,67 @@ Signed in as Khuram (owner of `appstackx`):
 8. Afterwards: switch drafting off again unless more tests follow (it spends on the production key); the report goes by
    itself after 30 days (or delete it now – owners may delete approved reports).
 
-### 7.6 The offline key really decrypts production data
+### 7.6 The offline key is the key production uses (key fingerprints)
 
-After §7.5 (a report exists). Uses the **secrets-file** key against production through the gateway, reads the newest
-report, prints only OK / FAIL:
+**Replaces the "decrypt a production row" check while no clinic data exists.** That check needs a report stored in
+production – a form uploaded and a report approved there (§7.5) – just to have something to decrypt. The fingerprint
+compare needs no data, no sign-in and no upload, and can run at any time: after go-live, after every deploy that
+touches the data-key variables, after every key rotation step (database.md §5) and after every refresh of the offline
+copies (§4.3). It runs over https and prints key ids and fingerprints only – never a key, never the cron secret.
+
+```bash
+cd "$MAIN"     # any checkout with scripts/db/key-fingerprint.ts (main once ops/key-fingerprint is merged) + node_modules
+npm run -s ops:key-fingerprint -- --env production --compare https://clinforms.co.uk
+#   Data keys in the secrets file (PRODUCTION_CLINFORMS_DATA_KEYS, active PRODUCTION_CLINFORMS_DATA_KEY_ID):
+#     k2    <16 hex>  (active)
+#   Comparing with https://clinforms.co.uk/api/ops/key-fingerprint …
+#     MATCH     kid k2     file <16 hex>  deployment <16 hex>
+#     MATCH     activeKid  file k2                deployment k2
+#   MATCH: the secrets file holds exactly the data keys https://clinforms.co.uk uses (2/2 rows).
+```
+
+How it works:
+
+- **The endpoint** `GET /api/ops/key-fingerprint` (`src/server/ops/key-fingerprint.ts`) takes
+  `Authorization: Bearer $CRON_SECRET` – the same secret and the same constant-time check as the retention cron
+  (`src/server/cron/auth.ts`); 503 while `CRON_SECRET` is unset, 401 otherwise. It answers
+  `{"activeKid": "k2", "keys": [{"kid": "k2", "fingerprint": "<16 hex>"}]}`, uncached and noindex.
+- **Fingerprint** = the first 16 hex characters of HMAC-SHA256(raw 32 key bytes, `"clinforms:key-fingerprint:v1"`)
+  (`src/server/crypto/fingerprint.ts`). One-way and domain-separated from the data subkeys (HKDF, info
+  `clinforms:data:v1`), so a fingerprint is safe to print, paste in chat or keep in the run log.
+- The endpoint fingerprints the keyring the app itself loads for every encrypted read and write (`keyringFromEnv` →
+  `parseKeyring`): a malformed `CLINFORMS_DATA_KEYS` / `CLINFORMS_DATA_KEY_ID` on Vercel fails here exactly as it fails
+  for the Studio (500, `BAD_KEYRING`).
+- **The script** (`scripts/db/key-fingerprint.ts`) parses the `PRODUCTION_` lines of the secrets file with the same
+  `parseKeyring`, sends the file's `PRODUCTION_CRON_SECRET` from inside the process (https only – plain http only for
+  localhost; redirects are not followed, so the secret never reaches another host) and compares per kid and for the
+  active kid. Without `--compare` it only lists the file's kids and fingerprints (no network).
+- **Why MATCH is enough:** equal fingerprints = equal key bytes, and every ciphertext depends only on the key bytes,
+  the kid in its envelope and its tenant/table/row – so the file decrypts whatever production writes, and the offline
+  copies (§4.3, copies of the file) do too.
+
+| Output (exit code) | Meaning | Do |
+|---|---|---|
+| every row `MATCH` (0) | the file and Vercel hold the same keys and the same active kid | note the fingerprints in the run log |
+| `MISMATCH kid …` (1) – `different key bytes`, `only in the secrets file`, `only on the deployment` | the file is what gets piped into Vercel, so any difference means one copy is wrong | **stop**: onboard nobody, rotate nothing; find which side changed (the offline copies are copies of the file) |
+| `MISMATCH activeKid` (1) | Vercel writes new data with a different kid than the file says | **stop**; finish or undo the rotation step (database.md §5) |
+| `HTTP 401: the deployment refused PRODUCTION_CRON_SECRET` (2) | the file's cron secret differs from Vercel's `CRON_SECRET` | re-pipe it from the file (§4.2) and redeploy |
+| `HTTP 401 from something other than the endpoint` (2) | deployment protection answered, not the app (preview URLs) | compare against the production domain |
+| `HTTP 503` (2) | `CRON_SECRET` is not set on the deployment | §4.2 |
+| `HTTP 404` (2) | the deployment predates the endpoint | deploy (merge into `main`) first |
+| `HTTP 500 … (BAD_KEYRING)` (2) | Vercel's data-key variables are malformed – encrypted reads and writes fail there too | re-pipe them from the file (§4.2), redeploy |
+| `HTTP 308: redirected to …` (2) | e.g. `www.` → apex | use the URL it names |
+
+Tested on 10/10/2026 (branch `ops/key-fingerprint`): `npm run test:db` (known-answer vectors checked against
+`openssl`, domain separation, 503/401/200/500, the script against the real handler, no key material or secret in any
+response, log line or script output); locally, `next start` with the production keyring → `MATCH` on `k2`, the same
+fingerprint as an independent Python HMAC over the file; a server holding another `k2` → `MISMATCH … (different key
+bytes)`, exit 1; `https://www.clinforms.co.uk` → 308 refused without following; `https://clinforms.co.uk` → 404
+until this branch is deployed.
+
+**Once real reports exist** (optional, stronger – it decrypts an actual production row): after §7.5 (a report
+exists), use the **secrets-file** key against production through the gateway, read the newest report, print only
+OK / FAIL:
 
 ```bash
 cd "$REPO"
@@ -654,4 +712,5 @@ wr d1 info clinforms-prod                                                      #
 | Production deployment URL (`$RUN/production-deployment.txt`) | `https://clinforms-d4drhu49m-khuram99gmailcoms-projects.vercel.app` (created 17:13, ~3 min build) – **LIVE** |
 | §6 platform page OK | Clinic `appstackx` "AppStackX (internal)" created 17:17:46 (30-day retention); Khuram Masood joined 17:30:46, two-step on 17:32:14; `/app/platform` OK; invite file deleted |
 | §7 smoke tests (7.1–7.7) | Passed per the part-2 report (per-step output not kept in the repo). 7.2 left one fictional access request (`go-live-check@example.com`) – **delete it**. 7.5 not done: Khuram declined a test upload. **7.6 PENDING** until a clinic writes encrypted data (0 reports / 0 form files at 18:58); alternative in progress: `CRON_SECRET`-protected `/api/ops/key-fingerprint` (branch `ops/key-fingerprint`). 7.7: first scheduled retention run due 11/10 (`cron.retention.done`) |
+| §7.6 key fingerprints (`kid` → fingerprint, all MATCH?) | Pending the deploy of `ops/key-fingerprint` (production answered 404 at ~19:05). Before the deploy: the secrets file holds `k2` only, fingerprint `df0708eda2140ea1` (script and an independent Python HMAC agree); a local `next start` with that keyring → `MATCH` on `k2` and `activeKid`. After the deploy run §7.6 against `https://clinforms.co.uk` and note the result here |
 | Issues seen / follow-ups | Follow-up deploys: passcode verified by the server `04c18d0` (deployment `c3lbxtxy3`, 17:45; prod check: no/wrong passcode 401, cross-site 403); polish `8def25b` (`kg5bz9ny7`, 18:43: no caption behind the `/demo` end panel, Studio tabs wrap at 375 px). Always Use HTTPS on for zone `clinforms.co.uk` (~18:50, Khuram OK; media host http → 301). Open: §7.6, delete the smoke-test access request, Anthropic key confirmation (keep the new key, delete older ones), first cron run. Rollback now: Hobby rolls back only to the previous production deployment (`c3lbxtxy3` after the polish deploy); otherwise revert on `main` (§5.3) |

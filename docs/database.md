@@ -165,6 +165,29 @@ twice on purpose and the tests check both sides agree.
 `CLINFORMS_DATA_KEY_ID=k2`, deploy – new writes use k2, old rows still decrypt with k1; (3) re-encrypt in the
 background with `DataCipher.rotate()` (a job reading rows where `kidOf(ciphertext) !== activeKid`); (4) remove k1
 only when no row uses it. Losing a key = losing that data: the keys live in Vercel and the secrets file only.
+**After every rotation step that deploys (1, 2 and 4), run the fingerprint compare** and go on only when every row
+reads `MATCH`; then refresh the offline copies (go-live.md §4.3):
+
+```bash
+npm run -s ops:key-fingerprint -- --env production --compare https://clinforms.co.uk   # MATCH per kid + activeKid, exit 0
+```
+
+The secrets file is what gets piped into Vercel, so a kid on one side only is a `MISMATCH` too (step 1: both list k1
+and k2, active k1; step 2: active k2; step 4: k2 only on both sides).
+
+**Key fingerprints** (`src/server/crypto/fingerprint.ts`): fingerprint = the first 16 hex characters of
+HMAC-SHA256(raw 32 key bytes, `"clinforms:key-fingerprint:v1"`) – one-way, domain-separated from the HKDF subkeys
+(`clinforms:data:v1`), safe to print. `GET /api/ops/key-fingerprint` (`src/server/ops/key-fingerprint.ts`;
+`Authorization: Bearer $CRON_SECRET` with the retention cron's constant-time check in `src/server/cron/auth.ts` – 503
+while `CRON_SECRET` is unset, 401 otherwise) returns `{activeKid, keys: [{kid, fingerprint}]}` for the keyring the app
+loads (`keyringFromEnv`; a malformed keyring → 500 `BAD_KEYRING`, as for every encrypted read and write). It never
+returns or logs key bytes (logs: event, reason, error code, number of keys). `npm run ops:key-fingerprint -- --env
+production|preview [--compare <baseUrl>]` (`scripts/db/key-fingerprint.ts`) computes the same fingerprints from the
+secrets file and, with `--compare`, calls the endpoint with the file's `<ENV>_CRON_SECRET` (never printed; https only,
+http only for localhost; redirects not followed) and prints `MATCH` / `MISMATCH` per kid and for `activeKid` (exit 0 /
+1; 2 = could not check, with the reason). Preview has no `PREVIEW_CRON_SECRET` in the secrets file today, so
+`--env preview --compare` stops at "missing" until one is set on both sides. Runbook and every output explained:
+go-live.md §7.6 (it replaces the "decrypt a production row" check while no clinic data exists).
 
 ## 6. Repositories (`src/server/repos/`)
 
@@ -251,9 +274,10 @@ writes happened on Postgres – copy those back by hand).
 
 | Command | What |
 |---|---|
-| `npm run test:db` | migration parity (node:sqlite vs PGlite, RLS on every Postgres table, idempotent files); crypto (tamper, wrong tenant/row/table, unknown kid, rotation); dialect/driver units; the repository suite on SQLite and PGlite; the copy script (SQLite → PGlite) and Supabase helpers |
+| `npm run test:db` | migration parity (node:sqlite vs PGlite, RLS on every Postgres table, idempotent files); crypto (tamper, wrong tenant/row/table, unknown kid, rotation); key fingerprints (known answers, domain separation), `/api/ops/key-fingerprint` (503/401/200/500, no key material in responses or logs) and `ops:key-fingerprint` against the real handler (MATCH/MISMATCH, every refusal, nothing secret printed); dialect/driver units; the repository suite on SQLite and PGlite; the copy script (SQLite → PGlite) and Supabase helpers |
 | `npm run test:gateway` | Worker handler units (HMAC, window, limits, denylist, error mapping), the repository suite through the D1 dialect → in-process Worker → node:sqlite stand-in, and against **real local D1** (workerd via `getPlatformProxy`, migrations applied by `wrangler d1 migrations apply --local`). The last one needs `npm ci` in `workers/data-gateway` (skipped otherwise) |
 | `npm run db:selftest -- --env preview` | live checks against the deployed preview gateway |
+| `npm run ops:key-fingerprint -- --env production --compare https://clinforms.co.uk` | the secrets file and the deployment hold the same data keys (fingerprints only) |
 | `cd workers/data-gateway && npm run typecheck` / `npx tsc -p test/tsconfig.json` | Worker types |
 
 ## 10. Known limits and notes for the next slices
