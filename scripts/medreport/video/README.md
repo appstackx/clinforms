@@ -21,6 +21,7 @@ name ("AppStackX Reports") and the earlier file names. Re-running the recorder p
 | `record-outreach.mjs` | The generic 89 s outreach video for UK private physiotherapy clinics (see below) |
 | `outreach-captions.json` | Its lines (caption + voice-over, timed), shots (actions, locators), cards and teaser. Edit the wording and timings here |
 | `check-outreach-captions.mjs` | Self-check of `outreach-captions.json` (banned terms, caption length, narration fit, continuity) |
+| `mix-outreach.mjs` | Puts the narration clips under the outreach picture (holds/trims at still frames, small speed-ups, -16 LUFS) and builds the outreach deliverables (master, e-mail MP4, SRT, poster, teaser, README) |
 
 ## What it produces
 
@@ -185,3 +186,37 @@ Outputs (under `--out`, not in git): `work/picture.mp4` (silent master with capt
 `work/picture.srt`, `work/timeline.json` (recorded line, shot and punch-in times in `final`), `work/teaser-source.mp4`
 + `work/teaser-source.json` (caption-free T1–T5 cut, 19.2 s), `work/teaser.mp4` / `work/teaser.gif` /
 `work/teaser-poster.png` (the teaser with its big captions; GIF 800×450), `work/cards/`, `work/captions/`, `work/poster.png`.
+
+## Narration mix and outreach deliverables (`mix-outreach.mjs`)
+
+Runs after `record-outreach.mjs` and the narration step (one levelled clip per line in `voice/trimmed/`,
+described by `voice/lines.json`). It writes the files that are sent or hosted into `--out` itself:
+`ClinForms-demo.mp4` (master, 1920×1080, narration + burned-in captions), `ClinForms-demo-email.mp4` (≤ 18 MB, CRF 26
+`-tune stillimage`, AAC mono 96 kb/s; steps to CRF 28 / 1600×900 if it is too big), `ClinForms-demo.srt` (the narration
+word for word at its real times, ≤ 2 × 42 characters per cue), `ClinForms-demo-poster.png` (title card + play button +
+length, 1280×720), `ClinForms-teaser.gif` / `.mp4` (from the recorder's teaser) and `README.md` (files, outreach use,
+narration, checks; a reviewer's notes in `work/mix/review.md` are included verbatim).
+
+```bash
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-outreach.mjs \
+  --out ~/Projects/Appstackx/marketing/clinforms/outreach-video-v1 [--frames /tmp/check] [--plan-only] [--target 90] [--title 5.4]
+```
+
+- **Placement.** Each clip starts at its caption's recorded start (`work/timeline.json` → `final.lines`) and ends at
+  least 0.22 s before the next line (0.35 s before the call to action). An over-long line first gets a speed-up of at
+  most ×1.08. Any remaining overrun becomes a **picture hold**: a frame is repeated in the middle of the longest run of
+  identical frames inside that line's slot, which is found on `work/picture-clean.mp4`, so nothing visibly stops. On
+  the end card, the card simply stays up longer. Only a slot with no still run gets more speed, and never beyond ×1.15.
+- **Length.** If the result is over `--target` (default 90 s), still frames are taken out of the slots with the most
+  spare time. The title card is shortened to `--title` seconds.
+- **Picture.** Re-composed from the recorder's sources (title card, `work/clips/app-clean.mp4`, end card, caption PNGs
+  with their times moved by the edits) and encoded once at CRF 18. It is converted to limited-range BT.709, while the
+  recorder's own files are full-range BT.601. The master muxes this picture with `-c:v copy`.
+  `work/mix/picture-mixed.mp4` is reused when the edits have not changed.
+- **Sound.** Clips are placed with 12 ms fades in and 15 ms fades out. A static gain brings them to -16 LUFS, a
+  look-ahead limiter at -2.3 dBFS catches the few transients, and a two-pass loudnorm then runs in **linear** mode (the
+  script fails if loudnorm falls back to dynamic mode). The master's audio is AAC stereo 160 kb/s.
+- **Checks.** Silence detection confirms every line starts where it was planned. ffprobe confirms the streams and
+  sizes, and the metadata, SRT, poster and README are scanned for banned terms. Verification frames are written every
+  3 s and 0.35 s after each line starts, with 2×2 contact sheets, to `--frames` (default `work/mix/frames`). Read them.
+  Everything is recorded in `work/mix/plan.json`.
