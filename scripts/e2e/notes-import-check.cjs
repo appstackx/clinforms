@@ -6,13 +6,19 @@
  * verification, then in /app/studio/new uploads each FICTIONAL fixture (scripts/medreport/write-notes-fixtures.ts):
  *
  *   practice-printout.pdf        two-page printout → review (insurer offered as who the form is for) → confirm
- *   treatment-letter.docx        letter → review: 3 entries without a clinician → "Apply" one → confirm
+ *   treatment-letter.docx        letter → review: the letter's signature names its entries (warned) → confirm
  *   treatment-record-table.docx  Word notes table → review → confirm
  *   appointments-export.csv      one row per appointment → review with attendance → confirm
  *   email-notes.txt              email-style notes → review → choose the missing clinician → confirm
  *   pasted practice printout     review → confirm
  *   pasted uncertain notes       review: confirm blocked → fill date of birth, name, who the form is for, clinician → confirm
  *   pasted documented layout     → straight to "Check what was imported" (no review)
+ *   fix wave 3 – the exports a clinic actually has:
+ *   clinical-notes-report.pdf    practice-system report: footer dropped, admin note left out, DNA read, "Mark the
+ *                                others as attended", consent "Needed for approval", other details → confirm
+ *   booking-export.csv           "Appointment start" column, late cancellation → who the form is for typed → confirm
+ *   progress-letter.docx         addressee, bulleted attendance (no times: not counted), dated outcome table, the
+ *                                letter's date offered → confirm
  *
  * and checks each lands on "Check what was imported" with the expected counts, nothing about the notes is kept in
  * browser storage, the review fits a 375 px screen, and the clinic's activity lists "Patient notes imported".
@@ -148,16 +154,42 @@ async function main() {
   const confirmEnabled = async () => !(await page.locator("[data-testid=notes-review-confirm]").isDisabled());
 
   const uploadCases = [
-    { file: "practice-printout.pdf", summary: "4 entries · 2 clinicians · 7 outcome scores", imported: /4 notes · 4 appointments · 7 scores/, check: async () => {
+    { file: "practice-printout.pdf", summary: "4 entries · 2 clinicians · 7 outcome scores", imported: /3 notes · 4 appointments · 7 scores/, check: async () => {
       assert((await page.locator("#notes-reg-instructingPartyName").inputValue()) === "Northgate Health Insurance (fictional)", "insurer offered as who the form is for");
       assert(/insurer line – check it/.test(await page.locator("[data-field=instructingPartyName]").innerText()), "insurer hint shown");
       assert((await page.locator("#notes-reg-dob").inputValue()) === "1984-09-14", "date of birth found");
     } },
-    { file: "treatment-letter.docx", summary: "4 entries · 1 clinician · 5 outcome scores", imported: /4 notes · 0 appointments · 5 scores/, fix: async () => {
-      assert(/3 entries without a clinician – choose one/.test(await blockers()), "letter: clinician warning");
-      assert(!(await confirmEnabled()), "letter: confirm blocked");
-      await page.locator("[data-testid=notes-review-bulk-clinician] button:has-text('Apply')").click();
-      assert((await blockers()) === "", "letter: no blockers after Apply");
+    { file: "treatment-letter.docx", summary: "4 entries · 1 clinician · 5 outcome scores", imported: /4 notes · 0 appointments · 5 scores/, check: async () => {
+      assert(/The letter is signed by Sarah Reid, so the 3 entries that name no clinician have that clinician/.test(await page.locator("[data-testid=notes-review-warnings]").innerText()), "letter: signature applied, with a warning");
+      assert((await blockers()) === "", "letter: nothing blocks");
+      assert(/Use the letter's date \(09\/10\/2026\)/.test(await page.locator("[data-entry-key=E-1]").innerText()), "the letter's date is offered for its undated paragraph");
+    } },
+    { file: "clinical-notes-report.pdf", summary: "6 entries · 2 clinicians · 5 outcome scores", imported: /5 notes · 6 appointments · 5 scores/, check: async () => {
+      const text = await page.locator("[data-testid=notes-review]").innerText();
+      assert(!/CONFIDENTIAL|AP-004127|Page \d of \d/.test(text), "the running footer is in no note");
+      assert(/Attendance is set for 1 of 6 entries/.test(await page.locator("[data-testid=notes-review-attendance]").innerText()), "partial attendance said plainly");
+      assert(/Needed for approval/.test(await page.locator("[data-field=consent]").innerText()), "consent asked for");
+      assert(/Case: Lower back - injury at work/.test(await page.locator("[data-testid=notes-review-other-details]").innerText()), "other details shown");
+      assert((await page.locator("#notes-reg-membershipNumber").inputValue()) === "NFA-88213407", "policy number read");
+      assert((await page.locator("#notes-reg-postcode").inputValue()) === "ZZ3 9LT", "address continuation read");
+      assert(!(await page.locator("[data-entry-key=E-4] input[type=checkbox]").isChecked()), "the admin note is left out");
+    }, fix: async () => {
+      await page.getByRole("button", { name: "Mark the others as attended" }).click();
+      assert((await page.locator("[data-testid=notes-review-attendance]").count()) === 0, "attendance complete");
+      assert(/Attendance is taken from the status/.test(await page.locator("[data-testid=notes-review]").innerText()), "attendance counted");
+    } },
+    { file: "booking-export.csv", summary: "6 entries · 1 clinician · 5 outcome scores", imported: /4 notes · 6 appointments · 5 scores/, fix: async () => {
+      assert(/enter who the form is for/.test(await blockers()), "booking export: who the form is for asked for, in plain words");
+      await page.fill("#notes-reg-instructingPartyName", "Northfield Assurance (fictional)");
+      await page.selectOption("#notes-reg-instructingPartyType", "insurer");
+      assert((await page.locator("[data-entry-key=E-4] select[id$='-status']").inputValue()) === "LCN", "late cancellation read");
+    } },
+    { file: "progress-letter.docx", summary: "6 entries · 1 clinician · 4 outcome scores", imported: /6 notes · 0 appointments · 4 scores/, check: async () => {
+      assert(/6 appointments have no time/.test(await page.locator("[data-testid=notes-review-attendance]").innerText()), "no times: attendance not counted, said plainly");
+      assert((await page.locator("#notes-reg-instructingPartyName").inputValue()) === "Northfield Assurance (fictional)", "the letter's addressee offered");
+      assert((await page.locator("#notes-reg-authorisationNumber").inputValue()) === "AUTH-60412", "authorisation from the Re: line");
+      const scores = await page.locator("[data-testid=notes-review-scores]").innerText();
+      assert(/QuickDASH 22\.7 · 12\/08\/2026/.test(scores) && /QuickDASH 54\.5 · 01\/07\/2026/.test(scores), `dated table columns: ${scores}`);
     } },
     { file: "treatment-record-table.docx", summary: "3 entries · 1 clinician · 3 outcome scores", imported: /3 notes · 0 appointments · 3 scores/ },
     { file: "appointments-export.csv", summary: "5 entries · 1 clinician · 3 outcome scores", imported: /3 notes · 5 appointments · 3 scores/, check: async () => {
@@ -196,7 +228,7 @@ async function main() {
     assert(summary === "4 entries · 2 clinicians · 7 outcome scores", summary);
     await page.locator("[data-testid=notes-review-confirm]").click();
     const line = await imported();
-    assert(/Pasted notes \(checked\)/.test(line) && /4 notes · 4 appointments · 7 scores/.test(line), line);
+    assert(/Pasted notes \(checked\)/.test(line) && /3 notes · 4 appointments · 7 scores/.test(line), line);
     await restart();
     return line;
   });
@@ -245,7 +277,7 @@ async function main() {
       for (const s of [localStorage, sessionStorage]) for (let i = 0; i < s.length; i++) out.push(`${s.key(i)}=${s.getItem(s.key(i))}`);
       return out.join("\n");
     });
-    assert(!/Quill|Bramble|Fenwick|Pemberly|Hartley|Larch Avenue|NGH-4471/.test(stored), "notes content in storage");
+    assert(!/Quill|Bramble|Fenwick|Pemberly|Hartley|Larch Avenue|NGH-4471|Tate|Holloway|Dhaliwal|NFA-88213407/.test(stored), "notes content in storage");
     return `${stored.split("\n").filter(Boolean).length} storage entries, none with notes content`;
   });
 
@@ -266,7 +298,7 @@ async function main() {
     const body = await page.locator("main").innerText();
     const n = (body.match(/Patient notes imported/g) || []).length;
     await shot(page, "activity");
-    assert(n >= 8, `expected 8 imports, saw ${n}`);
+    assert(n >= 11, `expected 11 imports, saw ${n}`);
     assert(/checked before use/.test(body) && /from a PDF/.test(body) && /from a Word document/.test(body) && /from a CSV export/.test(body), "detail lines");
     assert(!/Quill|Bramble|Northgate|practice-printout/.test(body), "no patient details or file names in the activity");
     return `${n} imports listed`;

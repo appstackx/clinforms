@@ -1317,3 +1317,82 @@ switched on (and, for a real clinic, a signed DPA covers). Design when it is bui
   as today. Audit `notes.organised` with counts only (lines sent, entries proposed); a neutral button label and no
   vendor names. Tests with a stubbed client (schema, range validation, minimisation of every DOB form).
 
+
+## Fix wave 3 – notes import on real exports, linear time, consent for uploads (10/10/2026)
+
+From the wave 3 security and end-to-end reviews (a practice-system "Clinical Notes Report" PDF, a booking-system CSV
+and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-import-realistic.test.ts` (fixtures in
+`notes-fixtures.ts` §8) plus the updated `notes-import.test.ts`; browser check `scripts/e2e/notes-import-check.cjs`
+(now 15 steps, the three realistic exports included; local SQLite only).
+
+**Security.**
+- *Linear time.* Every reader step walks a line once: trailing runs are trimmed by `connectors/file-import/text-runs.ts`
+  (no `/\s+$/`-style regexes), heading separators are split in one pass (`splitHeadingSegments`), a heading is matched
+  on the first 300 characters of a line, "Label: value" lines and signatures only on lines up to
+  `STRUCTURE_LINE_CHARS` (1,000), scores with sticky patterns; the documented-format parser collapses a heading's
+  whitespace before splitting it, and the confirm-side section split (`review-bundle.ts splitNoteText`) is linear.
+  Regression: 200,000-character padded lines in every format and on confirm finish in well under 1.5 s.
+- *Limits.* `/connectors/file-import/read`, `/confirm` and `/bundle` take one slot of
+  `FILE_IMPORT_PER_ACTOR_PER_MINUTE` (30, per sign-in or demo session) and `FILE_IMPORT_PER_CLIENT_PER_MINUTE` (90, per
+  address) – `api/handlers/file-import-response.ts takeFileImportSlot`, shared `rate_limits` counters, keys are keyed
+  hashes → 429 `RATE_LIMITED` + `Retry-After` (wording `WORDING.server.access.importLimit*`).
+- *Store growth.* An update with If-Match that makes a report or form map larger counts the growth through
+  `takeNewData` (report: `StoredReportMeta.storedBytes` from `length(payload_enc)`; form map: the stored copy's size).
+
+**Reader (`general-notes.ts`).**
+- Numeric dates use ONE separator (`2-3/10` is a pain range, never 02/03/2010). A line that starts like a date with no
+  other note date within 400 days (and at least two others) is kept as text of the note above, with `DATE_OUTLIER`.
+- Headings: durations ("Follow Up (30 min)") come off before the type; "Name (Physiotherapist)" / "Name, Role" are
+  clinicians; "Admin Note", "Reception", SMS, e-mail, letter entries are left out by default (`ADMIN_LEFT_OUT`); a
+  status in brackets ("(attended)", "did not attend (unwell, …)" → DNA with that reason); commas inside brackets do not
+  split.
+- Signatures: "Electronically signed by Name MCSP, HCPC … on <date> <time>" (post-nominals and the date ignored); the
+  HCPC number from a signature completes the heading's clinician of the same name; a closing "Name, Physiotherapist" on
+  a note's last line. A LETTER (a date line above "Dear"/"Re:"/"Our ref") gives its signer to every entry that names
+  no clinician (`SIGNATURE_APPLIED`), offers its addressee (an insurer, solicitor…) as who the form is for, and returns
+  `letterDate` – the review offers "Use the letter's date" on undated blocks.
+- Attendance: statuses at the start of a note ("Status" heading line, "Did Not Attend. …", "Pt DNA"), in CSV words
+  ("Did not arrive", "Cancelled < 24 hrs" → LCN). `review-contract.ts reviewAttendance`: attendance is counted only
+  when EVERY included dated entry has a status and a time (server and Studio alike); a part-record is never counted.
+- Registration: "Funding:" / "Payer:" = insurer; "Policy:", "Auth:"; identifiers with a trailing note ("AUTH-55120 (6
+  sessions)"); policy / authorisation / claim numbers inside a "Re:" line; a two-column patient box whose address
+  carries on beside "Employer:"; a referrer line without the claims handler ("Org – J. Barker, Claims Handler");
+  unrecognised "Label: value" header lines come back as `otherDetails` ("other details in the notes (not used)").
+- Tables: date columns by more names ("Appointment start", "Date/Time", "Start date", "Patient DOB" is the date of birth)
+  and by content (most cells are dates); with no named notes column, the longest text column; a CSV with no dates is
+  refused in plain English naming its columns (never one undated block). A table whose header cells carry dates
+  ("Initial (01/07/2026) | Latest (12/08/2026)") gives one score per cell with its column's date (`SCORE_TABLE`), never
+  read again from the text. A bulleted entry (Word list paragraphs, "•" lines) ends with its list.
+- PDF (`pdf-notes.ts`): running header/footer lines are matched with page numbers normalised ("Page 1 of 3") and dropped
+  only at a page's edge; a repeated "Label: value" line is kept once only from page 1's HEADER – a footer naming the
+  patient and their number is never note text.
+
+**Review step and record.**
+- `notes-review.tsx`: an Attendance select on every entry, "Mark the others as attended", plain notices for partial
+  attendance and missing times (not blockers), consent tagged "Needed for approval" with one line of explanation, the
+  admin hint, other details, and the clinic's own clinicians (`HostHooks.clinic.clinicians`, from
+  `src/server/auth/studio-access.ts`: members other than staff, name + HCPC) in every clinician list; a member named in
+  the notes without a number gets the member's number (`withMemberNumbers`).
+- `review-bundle.ts`: a missed or cancelled appointment is an appointment with its reason (the entry's reason, else
+  its text without the "Status" line or the e-signature), not a clinical note (unless the text is too long for a
+  reason); bare section headings ("Subjective", "Objective", "Plan", "Clinical Impression"…) fill their fields, other
+  known headings go back to the other text; commuting ("cycling to work") is not a workplace injury; blocker wording
+  `missingFieldText` ("enter who the form is for", "choose what kind of organisation the form is for").
+- Consent: `CONSENT_NOT_RECORDED` for a `file-import` bundle says to record it on the report; the Flags tab offers
+  "Record consent" (date given, not in the future) to a member who may approve (anyone in the public demo) –
+  `review-model.ts recordConsent` sets `bundleSnapshot.consent` and adds a `consent_recorded` activity entry.
+- Figures: a cited note's short dates ("26/08", two-digit "07/10") support the drafted full date in the note's year
+  (`core/validation/text.ts addShortDatesToIndex`); pain scores ("7/10") and shorthand ("3/12", "6/52") never do.
+- Minimiser (`ai/prompts.ts`): every part of a multi-word first name and "First Last" are masked; patient numbers
+  ("Patient no.: AP-004127", "(AP-004127)") and letter+digit references become `[ID]`.
+- Copy: "Policy or membership number", "Their reference (claim or case number)"; the review offers the policy number
+  for a referrer's own reference when the record holds none; no integration log in a clinic's Studio; "HCPC number not
+  recorded"; the appointment-figures gap says "Count the attended and missed appointments in the notes"; upload copy
+  says "as your clinic system prints or exports them" instead of "any layout".
+- PDF fill: multi-line answers are written with the line breaks the fill chose (inside the box less border and
+  padding), so no viewer runs a word past the right edge; a cut never ends "word.…"; continuation pages print
+  "Claimant: … · Reference: …" and "Continuation sheet – page n of m" (`FillOptions.continuationLabel`, set by
+  `/render`). The form preview retries a failed load once and logs why; the Studio footer says "Security (website)".
+
+**Not changed (reviewed):** drafted-wording slips (a patient as the subject of "recommended", verbless sentences) are
+drafting variance – the existing validators and the clinician's review stand; a dedicated check is a follow-up.

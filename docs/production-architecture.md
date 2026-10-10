@@ -215,3 +215,12 @@ confirming; audit `notes.imported` holds format and counts only. Detail: `src/mo
 "Production wave 3". **Not built:** assisted structuring ("Organise these notes" through the drafting service) – a
 scoped follow-up described there; it needs drafting switched on for the clinic.
 
+*Fix wave 3 (from the wave 3 security and end-to-end reviews):* the readers take linear time on any input (padded
+lines no longer keep a server busy), and `/connectors/file-import/*` is limited per minute per sign-in or demo session
+and per address (shared `rate_limits`; 429 `RATE_LIMITED`). The reader handles the exports clinics actually have
+(practice-system PDF reports with running footers, booking CSVs with an "Appointment start" column, Word letters with
+bulleted attendance and dated outcome tables); attendance is set per entry and counted only when complete; a missed or
+cancelled appointment is an appointment with its reason; the clinic's own clinicians are offered; consent is asked for
+in the review and, for uploaded notes, can be recorded on the report by the approver (kept in its activity). The
+store's daily new-data allowance also counts the growth of updates. Detail: module README "Fix wave 3".
+

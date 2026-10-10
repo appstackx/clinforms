@@ -156,6 +156,10 @@ twice on purpose and the tests check both sides agree.
 - *Wave 3 (notes import):* uploaded notes and the review staff check are never stored – only the bundle built when
   they confirm, inside the report's encrypted payload (it may now carry `registration.gpPractice` and
   `referral.referredBy`). The `notes.imported` audit row holds the format and counts only. No migration.
+- *Fix wave 3:* `getReportMeta` also reads `length(payload_enc)` (no decryption) so the store can count the growth of
+  an update against the clinic's daily new-data allowance (estimated plain size ≈ ¾ of the ciphertext text). A report's
+  consent recorded in the Studio for uploaded notes lives in its encrypted payload (`bundleSnapshot.consent`, plus an
+  activity entry). Nothing new is stored; no migration.
 
 **Key rotation:** (1) add `"k2"` to `CLINFORMS_DATA_KEYS` everywhere (both keys present), deploy; (2) set
 `CLINFORMS_DATA_KEY_ID=k2`, deploy – new writes use k2, old rows still decrypt with k1; (3) re-encrypt in the

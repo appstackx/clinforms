@@ -23,6 +23,10 @@ async function main() {
     "paste-practice.txt": F.PRACTICE_PRINTOUT_TEXT,
     "paste-uncertain.txt": F.UNCERTAIN_NOTES,
     "paste-documented.txt": F.DOCUMENTED_TEXT,
+    // Fix wave 3: the exports a clinic actually has.
+    "clinical-notes-report.pdf": await F.buildClinicalNotesReportPdf(),
+    "booking-export.csv": F.bookingCsv(),
+    "progress-letter.docx": await F.buildProgressLetterDocx(),
   };
   for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), content);
   console.log(`Wrote ${Object.keys(files).length} fictional fixtures to ${dir}`);
