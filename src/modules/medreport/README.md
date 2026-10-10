@@ -499,6 +499,10 @@ same `auth/actor.ts` `requireActor` as every other endpoint (`store-actor.ts` `r
 - *No save on open:* the review stores a revision only after a change someone made (`use-review-state.ts`), so
   opening a report writes no "Report saved" row and does not restart its retention clock; the activity page hides
   routine saves (`report.update`, `form.update`) unless asked (`?saves=1`) and links rows to the Studio.
+- *Neutral file names:* `form_files.file_name` is plaintext, so `POST /store/files` never stores the `name` it is
+  sent: the record is `form.pdf` / `form.docx` (`storedFormFileName`), the client sends that too, and
+  `ui/store.ts loadFormFile` names a downloaded copy from the (encrypted) form map. A retried completion still writes
+  a second `file.upload` row (each completion is recorded).
 
 `/render` and `/forms/fill-preview` read the clinic's stored copy of the form file by (tenant, SHA-256) and
 prefer it to `fileBase64`, which becomes optional for `/forms/fill-preview` (`api/handlers/store-form-file.ts`).
@@ -680,7 +684,16 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   clinic's upload), a map is confirmed only once its referrer is named, a document with no questions is discarded
   rather than kept as a form, the notes-upload panel folds the format guide away and offers support instead of
   fictional samples, a "drafting is switched off" notice, no case JSON download, and no permanently disabled "Save
-  to clinic record". Drafting is attempted when the clinic has it switched on
+  to clinic record". Finish of fix wave 2: the **home is a work queue** (`screens/home/work-queue.ts` +
+  `TenantHome`): no hero, badges or tiles; the clinic's forms with In progress (first) / Approved / All, a search over
+  patient, referrer, form and approver, "Amended – vN", the next step and who approved; a new clinic sees a two-step
+  first run (a confirmed referrer form, then the notes). **Word → PDF:** `/health` carries `pdfFromWord` (LibreOffice
+  present – false on every hosted deployment), and the approved banner says up front "A PDF copy of a Word form is not
+  available yet – download the completed Word file" instead of failing on the click; `NOTICES.pdfConversionUnavailable`
+  is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
+  "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
+  (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a
+  clinic. The compact navigation fades at the edge that has more to show (`scroll-fade.ts`). Drafting is attempted when the clinic has it switched on
   (`clinic.draftingEnabled`), not by passcode (`useAiMode().livePossible()`).
 - **Analytics:** only in tenant mode, through `HostHooks.track`; `ui/studio-events.ts` builds the properties from
   enumerated values and counts only (no names, ids, file names or record text – pinned by `studio-events.test.ts`).

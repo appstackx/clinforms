@@ -65,3 +65,19 @@ export const ACCOUNT_ERRORS = {
 } as const;
 
 export type AccountErrorKey = keyof typeof ACCOUNT_ERRORS;
+
+/**
+ * Drafting from the notes (Settings → Clinic and the overview's set-up checklist). Owner decision: OFF for a
+ * new clinic – a clinic opts in to sending notes to the drafting service once it has signed the data
+ * processing agreement. Plain words, and only what is true today (data minimisation: core NOTICES).
+ */
+export const DRAFTING_COPY = {
+  label: "Draft answers from the notes",
+  whatItDoes:
+    "When this is on, the patient's notes – with the name, date of birth, address and contact details taken out – are sent to the drafting service listed in your data processing agreement. It drafts each answer with the note it came from, for a clinician to check and approve. Free text in the notes can still identify a patient.",
+  whenToSwitchOn:
+    "It is off until your clinic switches it on. Switch it on only once your clinic has signed the data processing agreement and is content for notes to be used this way. While it is off, nothing from the notes is sent and your clinicians write those answers themselves.",
+  checklistOff:
+    "Optional, and off until you switch it on. When on, the patient's notes (without name, date of birth, address or contact details) are sent to the drafting service in your data processing agreement to draft answers for the clinician to check. Switch it on in Clinic details once the agreement is signed; until then your clinicians write the answers.",
+  checklistOn: "Switched on: answers are drafted from the notes for the clinician to check and approve.",
+} as const;

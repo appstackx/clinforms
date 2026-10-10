@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
-import { ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
+import { DRAFTING_COPY, ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
 import { loadSetupChecklist } from "@/server/admin/setup-checklist";
 import { countMembers, listPendingInvitations } from "@/server/auth/membership";
 import { isManager } from "@/server/auth/roles";
@@ -18,19 +18,23 @@ export default async function ClinicOverviewPage() {
   const manager = isManager(membership.role);
   const setup = await loadSetupChecklist(db, membership, { members, openInvitations: invitations.length });
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
-  const steps = [
+  const steps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
     { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
+    // Optional (owner decision: off for a new clinic, switched on once the data processing agreement is signed),
+    // so it never counts as a step left.
     {
       done: setup.draftingEnabled,
+      optional: true,
       href: "/app/settings/clinic",
       label: "Drafting from the notes",
-      text: setup.draftingEnabled ? "Switched on." : "Switched off: answers from the notes are left for the clinician. Switch it on in Clinic details.",
+      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : DRAFTING_COPY.checklistOff,
     },
     { done: setup.team, href: "/app/settings/members", label: "Invite your clinicians", text: "Each member signs in with two-step verification." },
     { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },
     { done: setup.confirmedForm, href: "/app/studio/forms", label: "Your first referrer form", text: "Upload a referrer's blank form and confirm its mapping once." },
   ];
-  const stepsLeft = steps.filter((s) => !s.done).length;
+  const required = steps.filter((s) => !s.optional);
+  const stepsLeft = required.filter((s) => !s.done).length;
   const links = [
     { href: "/app/settings/clinic", label: "Clinic details", text: manager ? "Name, address and how long reports are kept." : "Your clinic's details." },
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
@@ -68,7 +72,7 @@ export default async function ClinicOverviewPage() {
       {manager && stepsLeft > 0 ? (
         <Panel title="Set up your clinic" className="mt-6">
           <p className="text-sm text-slate-600">
-            {stepsLeft} of {steps.length} steps left before your first form.
+            {stepsLeft} of {required.length} steps left before your first form.
           </p>
           <ol className="mt-3 space-y-2">
             {steps.map((step) => (
@@ -87,7 +91,8 @@ export default async function ClinicOverviewPage() {
                   <Link href={step.href} className="font-medium text-slate-900 underline-offset-4 hover:text-teal-800 hover:underline">
                     {step.label}
                   </Link>
-                  <span className="sr-only">{step.done ? " – done" : " – to do"}</span>
+                  {step.optional && !step.done ? <span className="ml-2 text-xs font-normal text-slate-500">Optional</span> : null}
+                  {step.optional && !step.done ? null : <span className="sr-only">{step.done ? " – done" : " – to do"}</span>}
                   <span className="block text-slate-600">{step.text}</span>
                 </span>
               </li>

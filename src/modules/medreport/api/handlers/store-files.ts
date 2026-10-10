@@ -4,7 +4,8 @@ import "server-only";
  * Form files in the clinic's storage (signed-in clinic member, two-step verified). Content-addressed by
  * SHA-256; the host keeps them encrypted in ≤ 512 KiB chunks (docs/production-architecture.md §1, §5).
  *
- * POST /store/files {sha256, size, name, mime}
+ * POST /store/files {sha256, size, name, mime} – `name` is accepted but never stored: the record keeps a neutral
+ *   name (store-contract.ts storedFormFileName); the real one is in the clinic's encrypted form map.
  *   → {sha256, complete, chunkBytes, chunkCount, present}. complete = the clinic already holds this exact
  *     file (nothing to upload); present = chunks already received (resume after a dropped connection).
  * PUT  /store/files/{sha256}/chunks/{idx}
@@ -35,6 +36,7 @@ import {
   StoreFileInitRequestSchema,
   storeChunkCount,
   storeChunkLength,
+  storedFormFileName,
   type StoreFileChunkResponse,
   type StoreFileCompleteResponse,
   type StoreFileInitResponse,
@@ -92,8 +94,9 @@ export const handleStoreFileInit: MedreportHandler = async (req, _ctx, deps) => 
   assertContentType(req);
   const parsed = await parseBody(req, StoreFileInitRequestSchema, { maxBytes: 4096 });
   if (!parsed.ok) return parsed.response;
-  const { sha256, size, name, mime } = parsed.data;
-  const input = { sha256, fileName: name, mimeType: mime, sizeBytes: size };
+  const { sha256, size, mime } = parsed.data;
+  // The request's `name` is never stored (fix wave 2): the record's name is plaintext (storedFormFileName).
+  const input = { sha256, fileName: storedFormFileName(mime), mimeType: mime, sizeBytes: size };
   let begun = await t.store.beginUpload(t.tenantId, input);
   if (begun.held === "all") {
     // Every chunk is held: the clinic holds this exact file if it verifies and is a form.

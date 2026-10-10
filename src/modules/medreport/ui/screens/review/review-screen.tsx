@@ -631,7 +631,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat" || questionSet}
           questionSet={questionSet}
           downloading={actions.downloading}
-          pdfUnavailable={actions.pdfUnavailable}
+          pdfUnavailable={
+            actions.pdfUnavailable ??
+            // Fix wave 2: a clinic's Studio says before anyone clicks that a Word form has no PDF copy here yet.
+            (tenant && report.form?.kind === "docx" && !questionSet && aiMode.health?.pdfFromWord === false ? TENANT_COPY.files.pdfUnavailable : null)
+          }
           filing={actions.filing}
           filed={filedEntries(report)}
           canFile={report.episodeRef.connectorId === "tm3-sim"}

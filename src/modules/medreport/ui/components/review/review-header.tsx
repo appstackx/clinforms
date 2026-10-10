@@ -303,10 +303,17 @@ export const ApprovedBanner = forwardRef<
             {prefillFor ? "Checked and approved" : isForm ? "Approved" : "Signed"} by <span className="font-medium">{receipt.signer.name}</span> (HCPC{" "}
             {receipt.signer.hcpc}) on {formatUkDateTime(receipt.signedAt)}.{prefillFor ? " Nobody at the clinic signs this form." : ""} Read-only from now on.
           </p>
-          <p className="text-[12px] text-teal-900/80">
-            Content fingerprint <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> · server-signed
-            receipt
-          </p>
+          {tenant ? (
+            <p className="text-[12px] text-teal-900/80">
+              {TENANT_COPY.review.approvalCode} <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> –{" "}
+              {TENANT_COPY.review.approvalCodeHint}
+            </p>
+          ) : (
+            <p className="text-[12px] text-teal-900/80">
+              Content fingerprint <span className="font-mono font-semibold tracking-wider">{shortFingerprint(receipt.contentSha256, 4)}</span> · server-signed
+              receipt
+            </p>
+          )}
         </div>
       </div>
 

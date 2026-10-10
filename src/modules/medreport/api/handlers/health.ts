@@ -1,7 +1,8 @@
 import "server-only";
 
 /**
- * GET /api/reports/v1/health → HealthResponse {product, version, aiMode, liveAiAvailable, model, promptVersion}.
+ * GET /api/reports/v1/health → HealthResponse {product, version, aiMode, liveAiAvailable, model, promptVersion,
+ * pdfFromWord} (pdfFromWord, fix wave 2: whether a Word form's PDF copy can be made here).
  * Drives the Studio's mode badge. Never reveals whether individual secrets are set beyond liveAiAvailable.
  * promptVersion lists the three frozen prompts: built-in templates · referrer-form answers · form analysis
  * (e.g. "2 · forms-7 · form-analysis-4").
@@ -23,6 +24,7 @@ import { FORM_ANALYSIS_PROMPT_VERSION } from "../../ai/form-analysis";
 import { FORM_DRAFT_PROMPT_VERSION } from "../../ai/form-prompts";
 import { PROMPT_VERSION } from "../../ai/prompts";
 import { NEUTRAL_ENGINE, publicEngineName } from "../../core/wording";
+import { pdfConversionAvailable } from "../../forms/convert";
 import type { HealthResponse } from "../contract";
 import { json, type MedreportHandler } from "../http";
 
@@ -39,6 +41,8 @@ export const handleHealth: MedreportHandler = async (req, _ctx, deps) => {
     // (MEDREPORT_MODEL) stays server-side.
     model: actor ? (publicEngineName(aiModel()) ?? aiModel()) : NEUTRAL_ENGINE,
     promptVersion: actor ? `${PROMPT_VERSION} · ${FORM_DRAFT_PROMPT_VERSION} · ${FORM_ANALYSIS_PROMPT_VERSION}` : "",
+    // Fix wave 2: a Word form's PDF copy needs LibreOffice (forms/convert.ts) – none on a hosted deployment yet.
+    pdfFromWord: pdfConversionAvailable(),
   };
   return json(body);
 };

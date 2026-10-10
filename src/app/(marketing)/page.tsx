@@ -91,7 +91,7 @@ const STEPS = [
   {
     icon: Download,
     title: "Download the referrer’s own form",
-    body: "Get the completed Word or PDF file in the referrer’s original layout, ready to send through your usual channel.",
+    body: "Get the completed form back in the referrer’s own format and original layout – a Word form as Word, a PDF form as PDF – ready to send through your usual channel.",
   },
 ] as const;
 
@@ -136,7 +136,7 @@ const SECURITY = [
   },
   { icon: SearchCheck, title: "Every answer cites its source", body: "Each drafted answer links to the notes it came from." },
   { icon: KeyRound, title: "Two-step verification", body: "Every user signs in with a password and a one-time code from an authenticator app." },
-  { icon: Lock, title: "Encrypted, stored in the EU", body: "Clinic data is encrypted at rest with a key per clinic, and the database is stored in the EU." },
+  { icon: Lock, title: "Encrypted, stored in the EU", body: "Patient information and form files are encrypted at rest with a key per clinic, and the database is stored in the EU." },
   { icon: History, title: "Audit trail", body: "Sign-ins and changes to users, roles and access are recorded in a log that cannot be edited." },
   { icon: EyeOff, title: "Data minimisation", body: "Names, dates of birth and contact details are removed before notes are used to draft answers." },
 ] as const;

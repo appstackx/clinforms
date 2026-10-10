@@ -19,6 +19,7 @@ import {
   revTag,
   storeApiPaths,
   storeChunkCount,
+  storedFormFileName,
   type ReferrerLinks,
   type StoreSnapshotResponse,
 } from "../../api/store-contract";
@@ -186,7 +187,9 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
 
   async function uploadOnce(file: StoredFormFile, signal?: AbortSignal): Promise<"stored" | "corrupt" | "failed"> {
     const size = file.bytes.byteLength;
-    const meta = { size, name: file.fileName.slice(0, 255) || "form", mime: file.mimeType };
+    // Fix wave 2: the real file name is never sent – the stored record's name is not encrypted, and an insurer's
+    // file is often named after the patient or the claim (the server stores a neutral name whatever it is sent).
+    const meta = { size, name: storedFormFileName(file.mimeType), mime: file.mimeType };
     const initRes = await call(storeApiPaths.files(), {
       method: "POST",
       headers: { "content-type": CONTENT_TYPES.json },

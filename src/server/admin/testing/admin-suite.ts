@@ -44,6 +44,9 @@ import {
   markAccessRequest,
   type PlatformAdmin,
 } from "../platform-console";
+import { loadSetupChecklist } from "../setup-checklist";
+import { upsertClinicProfile } from "../../repos/clinic-profile";
+import { upsertMemberProfile } from "../../repos/member-profile";
 
 export interface AdminSuiteDb {
   db: Kysely<Database>;
@@ -358,6 +361,36 @@ export function defineAdminSuite(name: string, setup: () => Promise<AdminSuiteDb
         /already exists/,
       );
       assert.equal(await countCreates(), creates, "failed attempts write nothing");
+    });
+
+    it("set-up checklist (fix wave 2): a new clinic's steps, read from its own rows only; drafting off until switched on", async () => {
+      const clinic = { tenantId: CLINIC, organizationId: ORG };
+      const at = new Date(clock).toISOString();
+      const form = (tenant: string, id: string, status: string) => ({
+        tenant_id: tenant, id, rev: 1, file_sha256: "c".repeat(64), status, title: "Progress report", referrer: null, kind: "docx", sample_id: null, payload_enc: "v1.k1.x.y", created_at: at, updated_at: at,
+      });
+      // Another clinic's confirmed form and signer count for nothing here.
+      await t.db.insertInto("forms").values(form(OTHER, "frm_other", "confirmed")).execute();
+      await upsertMemberProfile(ctx, "org-other", "u-other", { hcpcNumber: "PH111111", canSign: true });
+      const fresh = await loadSetupChecklist(t.db, clinic, { members: 1, openInvitations: 0 });
+      assert.deepEqual(fresh, { clinicDetails: false, draftingEnabled: false, team: false, signer: false, confirmedForm: false });
+
+      await upsertClinicProfile(ctx, CLINIC, { organizationId: ORG, displayName: "Activity Clinic (fictional)", address: ["1 High Street"], postcode: "MK9 1AA" });
+      await upsertMemberProfile(ctx, ORG, "u-clin", { hcpcNumber: "PH123456", canSign: false });
+      await t.db.insertInto("forms").values(form(CLINIC, "frm_proposed", "proposed")).execute();
+      const partly = await loadSetupChecklist(t.db, clinic, { members: 1, openInvitations: 1 });
+      assert.deepEqual(partly, { clinicDetails: true, draftingEnabled: false, team: true, signer: false, confirmedForm: false }, "a new profile's drafting is off");
+
+      await upsertClinicProfile(ctx, CLINIC, { organizationId: ORG, displayName: "Activity Clinic (fictional)", address: ["1 High Street"], postcode: "MK9 1AA", draftingEnabled: true });
+      await upsertMemberProfile(ctx, ORG, "u-clin", { hcpcNumber: "PH123456", canSign: true });
+      await t.db.insertInto("forms").values(form(CLINIC, "frm_confirmed", "confirmed")).execute();
+      assert.deepEqual(await loadSetupChecklist(t.db, clinic, { members: 4, openInvitations: 0 }), {
+        clinicDetails: true,
+        draftingEnabled: true,
+        team: true,
+        signer: true,
+        confirmedForm: true,
+      });
     });
 
     it("platform: clinics overview with members, open invitations and the last recorded activity", async () => {

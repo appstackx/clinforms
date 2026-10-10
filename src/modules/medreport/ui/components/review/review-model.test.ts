@@ -351,6 +351,12 @@ describe("approval", () => {
     assert.equal(approved.status, "signed");
     assert.equal(await reportFingerprint(approved), receipt.contentSha256);
     assert.equal(approved.activity[approved.activity.length - 1].action, "approved");
+    assert.match(approved.activity[approved.activity.length - 1].detail, /Server-signed receipt over content fingerprint/);
+    // A clinic's Studio (fix wave 2): the same entry in plain words.
+    const plain = markApproved(report, receipt, [], { isForm: true, now: NOW, plain: true });
+    const plainDetail = plain.activity[plain.activity.length - 1].detail;
+    assert.match(plainDetail, /^Approved by Sarah Reid \(HCPC PH-DEMO-01\)\. Approval check code [0-9a-f]{12}…$/);
+    assert.doesNotMatch(plainDetail, /server|receipt|fingerprint/i);
 
     // A signed report ignores content edits.
     assert.equal(reviewReducer(approved, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "changed" }), approved);

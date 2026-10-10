@@ -139,16 +139,61 @@ describe("HomeScreen", () => {
     assert.ok(hrefs(html).includes("/reports/new"));
   });
 
-  it("tenant hides demo tools and the simulated system, and leads with the notes upload", () => {
+  it("tenant is a work queue: no hero, tiles or demo tools – the clinic, its forms and the two actions", () => {
     const html = render(createElement(HomeScreen), TENANT, "/app/studio");
     const visible = text(html);
     assert.doesNotMatch(visible, /Demo tools|Import case JSON|Reset demo/);
     assert.doesNotMatch(html, /data-demo-tools/);
-    assert.match(visible, new RegExp(TENANT_COPY.home.eyebrow.replace(/'/g, "'")));
-    assert.match(visible, /Upload the notes/);
-    assert.match(visible, /Notes upload – available now/);
+    // Fix wave 2: no marketing hero, badges or connection tiles above the clinic's forms.
+    assert.doesNotMatch(visible, /Complete MLC|Complete insurer|Connections and forms|Available now|UK GDPR|Clinician reviews/);
+    assert.match(visible, /Riverside Physiotherapy/);
+    assert.match(visible, /Completed and in-progress forms/);
     assert.ok(hrefs(html).includes("/app/studio/new"));
     assert.ok(hrefs(html).includes("/app/studio/forms"));
+    assertTenantClean(html);
+  });
+
+  it("tenant, a new clinic: the first run starts with the referrer form, then the notes", async () => {
+    const { TenantHome } = await import("./screens/home/home-screen");
+    const home = (confirmedForms: number) =>
+      render(createElement(TenantHome, { reports: [], ready: true, confirmedForms, formsReady: true, prefillFor: new Map() }), TENANT, "/app/studio");
+    const empty = home(0);
+    assert.match(text(empty), new RegExp(`${TENANT_COPY.home.firstFormTitle} – to do`));
+    assert.match(empty, /href="\/app\/studio\/forms"[^>]*>Referrer forms</, "the next step is the referrer form");
+    assertTenantClean(empty);
+    const oneForm = home(1);
+    assert.match(text(oneForm), new RegExp(`${TENANT_COPY.home.firstFormTitle} – done`));
+    assert.match(text(oneForm), new RegExp(`${TENANT_COPY.home.firstReportTitle} – to do`));
+    assertTenantClean(oneForm);
+  });
+
+  it("tenant with forms: in progress first, counts, version, next step and who approved", async () => {
+    const { TenantHome } = await import("./screens/home/home-screen");
+    const base = {
+      instructingParty: { name: "Harbour Claims", type: "insurer" },
+      form: { formId: "frm_1", title: "Progress report", referrer: { name: "Northfield Rehab", type: "insurer" }, fileSha256: "a".repeat(64), kind: "docx" },
+      bundleSnapshot: { source: { simulated: false, label: "Notes upload" } },
+      episodeRef: { connectorId: "file-import", patientId: "p", episodeId: "e" },
+      flags: [],
+      gaps: [],
+      updatedAt: "2026-10-09T10:00:00.000Z",
+    };
+    const reports = [
+      { ...base, id: "r1", patientLabel: "Alex Brown", status: "draft", version: 2 },
+      { ...base, id: "r2", patientLabel: "Casey Doe", status: "signed", version: 2, receipt: { signer: { name: "Sam Patel", hcpc: "PH123456" } } },
+    ] as unknown as import("../core/types").Report[];
+    const html = render(createElement(TenantHome, { reports, ready: true, confirmedForms: 1, formsReady: true, prefillFor: new Map() }), TENANT, "/app/studio");
+    const visible = text(html);
+    assert.match(html, /aria-pressed="true"[^>]*>In progress <span[^>]*>1</);
+    assert.match(visible, /Approved 1/);
+    assert.match(visible, /All 2/);
+    assert.match(visible, /Alex Brown/);
+    assert.match(visible, /Amended – v2/, "an amended version is told apart from the original");
+    assert.doesNotMatch(visible, /Casey Doe/, "approved forms are one click away, not in the way");
+    assert.match(visible, /Next step/);
+    assert.match(visible, /Approved by/);
+    assert.match(visible, new RegExp(TENANT_COPY.home.readyForApproval));
+    assert.match(html, /aria-label="Search by patient, referrer, form or approver"/);
     assertTenantClean(html);
   });
 });

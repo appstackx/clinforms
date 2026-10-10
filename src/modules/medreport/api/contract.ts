@@ -290,6 +290,11 @@ export const HealthResponseSchema = z.object({
   liveAiAvailable: z.boolean(),
   model: z.string(),
   promptVersion: z.string(),
+  /**
+   * Fix wave 2: whether this deployment can make a PDF copy of a completed Word form (LibreOffice). False
+   * everywhere hosted today, so a clinic's Studio says so before anyone clicks. Optional (older servers).
+   */
+  pdfFromWord: z.boolean().optional(),
 });
 
 // GET /connectors

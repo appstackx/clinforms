@@ -72,9 +72,11 @@ export const NOTICES = {
   dataMinimisation:
     "Data minimisation, not anonymisation: the name, date of birth, address and contact details are removed before drafting, but free text in notes can still identify a patient.",
   prewrittenDraft: WORDING.labels.prewrittenDraft,
-  /** Word → PDF needs LibreOffice, which runs on the production converter but not on this deployment. */
-  pdfConversionUnavailable:
-    "PDF conversion runs on the production converter and is not available on this demo deployment. Download the completed Word form instead.",
+  /**
+   * Word → PDF needs LibreOffice, which no hosted deployment has yet (no converter service exists): say so
+   * truthfully (fix wave 2) – the Word file is the completed form.
+   */
+  pdfConversionUnavailable: "A PDF copy of a Word form is not available yet. Download the completed Word form instead.",
   /** Shown wherever a referrer's form is completed. */
   originalLayout: "Completed in the referrer's own form, in its original layout.",
 } as const;

@@ -684,15 +684,19 @@ export function markApproved(
   sent: Report,
   receipt: SignReceipt,
   flags: ReportFlag[],
-  opts: { isForm: boolean; now?: Date; prefill?: boolean },
+  opts: { isForm: boolean; now?: Date; prefill?: boolean; plain?: boolean },
 ): Report {
   const at = nowIso(opts.now);
+  // plain (a clinic's Studio, fix wave 2): the same facts without "server-signed receipt" / "fingerprint".
+  const proof = opts.plain
+    ? `Approval check code ${receipt.contentSha256.slice(0, 12)}…`
+    : `Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`;
   return appendActivity(
     { ...sent, flags, receipt, status: "signed", updatedAt: at },
     {
       actor: receipt.signer.name,
       action: opts.isForm ? "approved" : "signed",
-      detail: `${opts.prefill ? "Prefill checked and approved (nobody at the clinic signs this form)" : opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). Server-signed receipt over content fingerprint ${receipt.contentSha256.slice(0, 12)}…`,
+      detail: `${opts.prefill ? "Prefill checked and approved (nobody at the clinic signs this form)" : opts.isForm ? "Approved" : "Signed"} by ${receipt.signer.name} (HCPC ${receipt.signer.hcpc}). ${proof}`,
     },
     opts.now,
   );

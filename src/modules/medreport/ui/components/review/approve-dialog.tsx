@@ -71,8 +71,9 @@ export function ApproveDialog({
 }) {
   const ids = useId();
   const tenant = useStudioMode() === "tenant";
-  // A clinic's signer is the signed-in member: their profile's name and HCPC number are not retyped.
-  const signerLocked = tenant && Boolean(defaultSigner?.name && defaultSigner.hcpc);
+  // A clinic's signer is the signed-in member: their profile's name and HCPC number are never typed here (fix wave
+  // 2: read-only even when the profile lacks one – the review then says who can approve instead of opening this).
+  const signerLocked = tenant;
   const isForm = Boolean(report.form);
   // A portal question set: no file and no sign-off boxes – the answers are copied into the portal.
   const questionSet = report.form?.kind === "questions";
@@ -294,7 +295,14 @@ export function ApproveDialog({
           <InlineAlert tone="info">
             <span className="inline-flex items-start gap-1.5">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              {questionSet
+              {tenant
+                ? // A clinic's Studio (fix wave 2): what happens, without the technical terms.
+                  questionSet
+                  ? TENANT_COPY.review.approveWhatHappensQuestions
+                  : prefillFor
+                    ? `${TENANT_COPY.review.approveWhatHappensPrefix} The form is then locked, and the final document is the referrer's original file with the prefilled answers written in – nothing in any signature box – ready for ${prefillFor}.`
+                    : `${TENANT_COPY.review.approveWhatHappensPrefix} ${TENANT_COPY.review.approveWhatHappensForm}`
+                : questionSet
                 ? "The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record."
                 : prefillFor
                   ? `The server re-runs every check, then signs a receipt over the exact content you approve (its fingerprint). The form is then locked, and the final document is the referrer's original file with the prefilled answers written in – nothing in any signature box – ready for ${prefillFor}.`

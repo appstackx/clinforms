@@ -282,7 +282,8 @@ export async function clearFormFiles(): Promise<void> {
  */
 export async function loadFormFile(form: FormDefinition, init?: { signal?: AbortSignal }): Promise<StoredFormFile | null> {
   const stored = server() ? await srv().getFile(form.file.sha256, init?.signal) : await browser.getFormFile(form.file.sha256);
-  if (stored) return stored;
+  // A clinic's stored file has a neutral name (server-api.ts): the form map holds the real one.
+  if (stored) return server() ? { ...stored, fileName: form.file.fileName } : stored;
   if (!form.sampleId) return null;
   try {
     const res = await fetch(reportApiPaths.formSampleFile(form.sampleId), { cache: "no-store", signal: init?.signal });

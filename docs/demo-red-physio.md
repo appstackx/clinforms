@@ -61,6 +61,10 @@ Use your normal checkout: **`~/Projects/Appstackx/clinforms`** on branch `main`.
 (The worktree `~/Projects/Appstackx/clinforms-wt/red-integrate` holds the same code and also works, but you don't
 need it.)
 
+On the production line (`feat/production`, and on `main` once it is merged) `http://localhost:3000/` is the public
+marketing page (with the cookie banner when analytics is configured); the demo always starts at **`/reports`** –
+open that address directly.
+
 Use the **same Chrome profile and the same address (`http://localhost:3000`, start page `/reports`)** on Monday and Tuesday – confirmed
 form maps and reports live only in that browser's storage for that address.
 

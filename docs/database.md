@@ -27,7 +27,11 @@ Next.js on Vercel (lhr1)                         Cloudflare (account appstackx-d
   transaction on Postgres and SQLite). Put conditions in SQL (`WHERE rev = ?`, `ON CONFLICT …`), not in reads
   between statements.
 - **Files live in the database** (`form_files` + `form_file_chunks`): ≤ 512 KiB plaintext per chunk, each
-  chunk encrypted. R2 is not enabled on the account and D1 rows hold at most 2 MB.
+  chunk encrypted. R2 is not enabled on the account and D1 rows hold at most 2 MB. *Fix wave 2:* `form_files.file_name`
+  is not encrypted, so it always holds a neutral name (`form.pdf` / `form.docx`, `store-contract.ts`
+  `storedFormFileName`) whatever the upload sends – an insurer's file is often named after the patient or the claim;
+  the real name is inside the encrypted form map (`forms.payload_enc`). `forms.title` / `forms.referrer` stay plaintext
+  (the form's own title and the referrer's name, not patient data). Rows stored before this change keep their name.
 
 ## 2. Environment variables (names only – values in Vercel, `.env.local`, `~/.config/appstackx/*.env`)
 

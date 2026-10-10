@@ -29,6 +29,7 @@ import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } f
 import { AiModeBadge } from "./ai-mode";
 import { BrandMark } from "./brand-mark";
 import { StudioLegalLinks } from "./legal-links";
+import { useScrollFade } from "./scroll-fade";
 
 interface NavItem {
   href: string;
@@ -105,6 +106,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
   const hasPage = Boolean(page.title || page.actions || page.back);
   const onSecurity = section === "security";
   const onTemplates = section === "templates";
+  const compactNav = useScrollFade<HTMLElement>();
   return (
     <div className="flex min-h-screen flex-col">
       <a
@@ -159,7 +161,12 @@ function OuterShell({ children, ...page }: StudioShellProps) {
             {tenant ? <AccountMenu /> : <AiModeBadge />}
           </div>
         </div>
-        <nav aria-label="Studio (compact)" className="mx-auto max-w-7xl overflow-x-auto px-2 pb-2 pt-2 sm:px-4 lg:hidden">
+        <nav
+          ref={compactNav.ref}
+          style={compactNav.style}
+          aria-label="Studio (compact)"
+          className="mx-auto max-w-7xl overflow-x-auto px-2 pb-2 pt-2 sm:px-4 lg:hidden"
+        >
           <div className="flex w-max items-center gap-1 text-sm">
             <NavLinks items={items} section={section} />
             <Link

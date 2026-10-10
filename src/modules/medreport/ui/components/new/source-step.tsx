@@ -377,7 +377,7 @@ function TenantFormatGuide() {
       </p>
       <details className="text-xs text-slate-600">
         <summary className="cursor-pointer font-medium text-slate-800">{TENANT_COPY.wizard.formatGuideSummary}</summary>
-        <p className="mt-2">{IMPORT_FORMAT_GUIDE.summary}</p>
+        <p className="mt-2">{TENANT_COPY.wizard.formatSummary}</p>
         <ul className="mt-1.5 space-y-1.5">
           {IMPORT_FORMAT_GUIDE.formats.map((f) => (
             <li key={f.id}>

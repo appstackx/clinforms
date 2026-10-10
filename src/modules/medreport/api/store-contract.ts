@@ -211,6 +211,15 @@ export const StoreConflictSchema = ProblemSchema.extend({
 });
 
 // POST /store/files
+/**
+ * The name a clinic's stored form file is kept under (fix wave 2). The file record's name is not encrypted,
+ * and an insurer's file is often named after the patient or the claim, so the server never stores the name
+ * it is sent: the real name stays in the (encrypted) form map, and the Studio names downloads from the map.
+ */
+export function storedFormFileName(mime: string): string {
+  return mime === "application/pdf" ? "form.pdf" : "form.docx";
+}
+
 export const StoreFileInitRequestSchema = z.object({
   sha256: Sha256HexSchema,
   size: z.number().int().min(1).max(MAX_FORM_FILE_BYTES),

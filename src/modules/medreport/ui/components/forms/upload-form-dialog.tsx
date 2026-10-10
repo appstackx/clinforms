@@ -26,7 +26,7 @@ import {
   DialogTitle,
   Input,
 } from "../../primitives";
-import { useHostHooks } from "../../host-hooks";
+import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { formEventProps } from "../../studio-events";
 import { useAiMode } from "../shared/ai-mode";
@@ -256,6 +256,8 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
 
 function FileSummary({ local }: { local: LocalFormFile }) {
   const word = local.mimeType !== "application/pdf";
+  // A clinic's Studio (fix wave 2): no internal fingerprint – the size and the kind of form are enough.
+  const tenant = useStudioMode() === "tenant";
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <span className={word ? "rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800" : "rounded-lg bg-rose-100 px-2 py-1 text-xs font-bold text-rose-800"}>
@@ -264,7 +266,7 @@ function FileSummary({ local }: { local: LocalFormFile }) {
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-slate-900">{local.fileName}</p>
         <p className="text-xs text-slate-500">
-          {formatBytes(local.bytes.byteLength)} · fingerprint {local.sha256.slice(0, 12)}…
+          {formatBytes(local.bytes.byteLength)} · {tenant ? (word ? "Word form" : "PDF form") : `fingerprint ${local.sha256.slice(0, 12)}…`}
         </p>
       </div>
     </div>
@@ -272,6 +274,7 @@ function FileSummary({ local }: { local: LocalFormFile }) {
 }
 
 function AnalysingPanel({ local, expectLive, elapsed }: { local: LocalFormFile; expectLive: boolean; elapsed: number }) {
+  const tenant = useStudioMode() === "tenant";
   const steps = [
     { label: `File checked and uploaded (${formatBytes(local.bytes.byteLength)})`, done: true },
     { label: "Reading the form layout… headings, tables, answer boxes, tick boxes and fields", done: false },
@@ -294,16 +297,23 @@ function AnalysingPanel({ local, expectLive, elapsed }: { local: LocalFormFile; 
           </li>
         ))}
       </ol>
-      <p className="text-xs text-slate-500">
-        Running on the server · {elapsed}s{expectLive ? " · a long form usually takes 20–60 s" : ""}. The steps above are what
-        happens; the exact timings are shown when it finishes.
-      </p>
+      {tenant ? (
+        <p className="text-xs text-slate-500">
+          Reading the form · {elapsed}s · a long form usually takes up to a minute.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500">
+          Running on the server · {elapsed}s{expectLive ? " · a long form usually takes 20–60 s" : ""}. The steps above are what
+          happens; the exact timings are shown when it finishes.
+        </p>
+      )}
     </div>
   );
 }
 
 function AnalysedPanel({ result }: { result: AnalyseResult }) {
   const { form, outlineSummary: o, trace } = result;
+  const tenant = useStudioMode() === "tenant";
   const analysisLabels = useAnalysisModeLabels();
   const lowFields = form.fields.filter((f) => f.confidence !== "high");
   const low = lowFields.length;
@@ -353,7 +363,8 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
                 {step.label}
                 {step.detail ? <span className="text-slate-500"> – {step.detail}</span> : null}
               </span>
-              <span className="shrink-0 tabular-nums text-slate-500">{formatMs(step.ms)}</span>
+              {/* A clinic's Studio (fix wave 2): what happened, without the developer timings. */}
+              {tenant ? null : <span className="shrink-0 tabular-nums text-slate-500">{formatMs(step.ms)}</span>}
             </li>
           ))}
         </ol>
@@ -368,8 +379,10 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
         </Notice>
       ) : null}
       {!result.fileStored ? (
-        <Notice tone="warning" title="File kept for this tab only">
-          This browser would not store the original file, so you will need to upload it again after closing the tab.
+        <Notice tone="warning" title={tenant ? "The form file was not stored" : "File kept for this tab only"}>
+          {tenant
+            ? "The form's original file could not be stored for your clinic yet. Keep this page open and try again, or upload the form again later."
+            : "This browser would not store the original file, so you will need to upload it again after closing the tab."}
         </Notice>
       ) : null}
       <p className="text-sm text-slate-600">Nothing is used for patients until a member of staff checks and confirms the mapping.</p>

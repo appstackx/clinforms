@@ -2,7 +2,7 @@
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
-import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { DRAFTING_COPY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { saveClinicProfile } from "./actions";
 
@@ -68,11 +68,11 @@ export function ClinicProfileForm({ values, editable }: { values: ClinicFormValu
           />
           <div>
             <label htmlFor="f-drafting" className="block text-sm font-medium text-slate-800">
-              Draft answers from the notes
+              {DRAFTING_COPY.label}
             </label>
-            <p id="f-drafting-hint" className="text-xs text-slate-500">
-              When this is on, ClinForms drafts each answer from the patient&apos;s notes, with the source of every fact, for a
-              clinician to review and approve. When it is off, your clinicians complete the answers themselves.
+            <p id="f-drafting-hint" className="space-y-1 text-xs text-slate-500">
+              <span className="block">{DRAFTING_COPY.whatItDoes}</span>
+              <span className="block">{DRAFTING_COPY.whenToSwitchOn}</span>
             </p>
           </div>
         </div>

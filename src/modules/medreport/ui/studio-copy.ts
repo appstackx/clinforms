@@ -11,15 +11,23 @@ export const TENANT_COPY = {
     eyebrow: "Your clinic's Studio",
     reportsIntro: "Your clinic's forms, waiting for review or approved –",
     securityLink: "how patient data is protected",
-    emptyBody:
-      "First add a referrer's blank form in Referrer forms and confirm its mapping once. Then complete a form: upload the patient's notes (printed to PDF from your clinic system, or an export) and choose that form.",
     draftingOff:
       "Drafting from the notes is switched off for your clinic: answers from the notes are left for the clinician to write. Your clinic's owner or an administrator can switch it on in Clinic details.",
-    uploadStepTitle: "Upload the notes",
-    uploadStepText: "The patient's notes printed to PDF from your clinic system, or an export.",
-    approveStepText: "The referrer's own Word or PDF, completed and ready to send.",
-    securityCardBlurb: "Clinician approval, two-step verification, encryption and data minimisation – what is in place today.",
     deleteNote: "This cannot be undone. The deletion is recorded in your clinic's activity.",
+    // Fix wave 2: the home is a work queue (screens/home/work-queue.ts).
+    queueHeading: "Your clinic's forms",
+    filterLabel: "Show forms",
+    searchLabel: "Search by patient, referrer, form or approver",
+    searchPlaceholder: "Search patient, referrer or form",
+    noMatch: "No forms match your search.",
+    noneOpen: "Nothing in progress – every form is approved.",
+    noneApproved: "No approved forms yet.",
+    readyForApproval: "Ready for approval",
+    firstRunTitle: "Complete your clinic's first form",
+    firstFormTitle: "Add a referrer's form",
+    firstFormText: "Upload the blank form an insurer or medico-legal company sent you (Word or PDF) and confirm its mapping once. It is reused for every patient that referrer sends.",
+    firstReportTitle: "Upload the patient's notes",
+    firstReportText: "Print the notes to PDF from your clinic system, or use an export, then choose the referrer's form. The treating clinician reviews and approves every answer.",
   },
   wizard: {
     description:
@@ -32,6 +40,8 @@ export const TENANT_COPY = {
       "The connection to the clinic's records was interrupted. Keep this page open: the report is saved as soon as the connection is back.",
     launchFailed: "Choose the patient's notes below instead.",
     formatGuideSummary: "What the notes need – the format guide",
+    formatSummary:
+      "Upload the patient's notes printed or saved as a PDF from your clinic system, a JSON or CSV file in the documented format, or paste the notes.",
     notesHelpTitle: "Notes not read?",
     notesHelp:
       "A printed PDF cannot be edited: paste the notes as text instead and add the missing line, or send ClinForms support a sample printout from your clinic system (with made-up details) so its layout can be checked before you use it with patients.",
@@ -46,6 +56,13 @@ export const TENANT_COPY = {
     reviewDraftingOff: "Drafting from the notes is not switched on for your clinic, so these questions were not drafted. Answer them below.",
     actorFallback: "Clinic staff",
     approveSignerHint: "Your name and HCPC number come from your clinic profile.",
+    approveWhatHappensPrefix: "Every check runs again, then your approval is recorded against exactly the answers you approve.",
+    approveWhatHappensForm: "The form is then locked, and the final document is the referrer's original file with the answers and your sign-off written in.",
+    approveWhatHappensQuestions:
+      "Every check runs again, then your approval is recorded against exactly the answers you approve. The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record.",
+    approvalCode: "Approval check code",
+    approvalCodeHint: "identifies exactly what was approved",
+    listApproved: "Approved",
     approveSavedFailed: "Approved, but the change could not be saved. Download the completed form now.",
     approvedToast: "Your approval is recorded with your name and HCPC number. The completed form is ready to download.",
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
@@ -65,7 +82,7 @@ export const TENANT_COPY = {
     fileMissingForPreview: "The referrer's original file is not in your clinic's storage. Add it again in the forms library to preview the completed form.",
     mapMissing: "The form map is not in your clinic's forms library.",
     fileMissing: "The referrer's original file is not in your clinic's storage.",
-    pdfUnavailable: "A PDF copy of a Word form is not available yet. Download the completed Word form and save it as PDF from Word.",
+    pdfUnavailable: "A PDF copy of a Word form is not available yet – download the completed Word file (Word can save it as a PDF).",
   },
   forms: {
     notFoundTitle: "This form is not in your clinic's library",

@@ -94,7 +94,7 @@ export function useReviewActions(opts: {
         const { connectorId, patientId, episodeId } = fresh.episodeRef;
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
-        const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)) });
+        const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
         hooks.track?.("report_approved", reportEventProps(approved));
@@ -269,7 +269,7 @@ export function useReviewActions(opts: {
           filedNames.push(await fileOne(await render("pdf", true, "file_back")));
         } catch (err) {
           if (err instanceof ApiError && err.code === "PDF_CONVERSION_UNAVAILABLE") {
-            pdfNote = "The PDF copy is made on the production converter; the Word file was filed.";
+            pdfNote = "A PDF copy of a Word form is not available yet; the Word file was filed.";
             setPdfUnavailable(err.problem.detail ?? NOTICES.pdfConversionUnavailable);
           } else {
             throw err;

@@ -346,7 +346,10 @@ test("files: chunked upload, resume, idempotent completion, download, isolation"
 
   const done = await f(storeApiPaths.fileComplete(sha), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(meta) });
   assert.equal(done.status, 200, await done.clone().text());
-  assert.deepEqual(await done.json(), { sha256: sha, sizeBytes: size, mimeType: "application/pdf", fileName: "Insurer form.pdf" });
+  // Fix wave 2: the name sent ("Insurer form.pdf" – often a patient's or claim's name) is never stored: the record's
+  // name is plaintext, so it is always neutral; the real name lives in the encrypted form map.
+  assert.deepEqual(await done.json(), { sha256: sha, sizeBytes: size, mimeType: "application/pdf", fileName: "form.pdf" });
+  assert.equal((await store.getFileMeta(A, sha))?.fileName, "form.pdf");
   const twice = await f(storeApiPaths.fileComplete(sha), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(meta) });
   assert.equal(twice.status, 200, "idempotent");
   const after = StoreFileInitResponseSchema.parse(await (await f(storeApiPaths.files(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sha256: sha, ...meta }) })).json());
@@ -358,6 +361,7 @@ test("files: chunked upload, resume, idempotent completion, download, isolation"
   const got = await f(storeApiPaths.file(sha));
   assert.equal(got.status, 200);
   assert.equal(got.headers.get("content-type"), "application/pdf");
+  assert.doesNotMatch(got.headers.get("content-disposition") ?? "", /Insurer/);
   assert.deepEqual(new Uint8Array(await got.arrayBuffer()), bytes);
   assert.equal((await as("b")(storeApiPaths.file(sha))).status, 404, "another clinic does not hold it");
   // Each successful completion is audited (a retried completion too).

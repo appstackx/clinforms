@@ -253,13 +253,15 @@ test("form files: chunked upload of a multi-chunk file; another tab downloads an
     ],
   );
   assert.equal((await store.getFileMeta(A, sha256))?.chunkCount, 3);
+  // Fix wave 2: the stored record's (unencrypted) name is neutral – the real name stays in the encrypted map.
+  assert.equal((await store.getFileMeta(A, sha256))?.fileName, "form.pdf");
   // Uploading the same file again sends nothing but the check.
   assert.equal(await tab(deps).client.saveFile({ sha256, fileName: "Insurer.pdf", mimeType: "application/pdf", bytes }), true);
 
   const other = tab(deps);
   const got = await other.client.getFile(sha256);
   assert.deepEqual(got?.bytes, bytes);
-  assert.equal(got?.fileName, "Insurer.pdf");
+  assert.equal(got?.fileName, "form.pdf", "the server's copy has the neutral name (ui/store.ts loadFormFile names it from the map)");
   assert.equal(got?.mimeType, "application/pdf");
   assert.equal(await other.client.getFile("0".repeat(64)), null);
 });
