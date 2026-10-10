@@ -10,7 +10,7 @@ rehearsed; call pack `docs/demo-red-physio.md` written; earlier hand-off from th
    Branches: `main` (= `demo/red-physio` since 10/10: RED demo + call pack; deployed to clinforms.co.uk), `demo/red-physio` (worktree
    `clinforms-wt/red-integrate`), `feat/production` (production line; worktree `clinforms-wt/p-integrate`).
 3. **The RED Physiotherapy call is Tue 13 Oct 2026, morning** (exact time: check the invite). **Demo pack and call
-   pack are DONE** on `main` (merged from `demo/red-physio`): `npm run demo:red` from `~/Projects/Appstackx/clinforms` with the gitignored
+   pack are DONE** frozen at tag `red-demo-2026-10-13` (= main 3521401): `npm run demo:red` from the frozen worktree `~/Projects/Appstackx/clinforms-demo` (do not pull) with the gitignored
    `clinforms/demo-assets/insurers/` (6 insurer PDFs, 7 maps incl. our own portal question set, 4 answer files);
    **call pack `docs/demo-red-physio.md`** (support matrix, Monday/Tuesday checklist, 10-minute script, honest
    answers, fallbacks). Left for Khuram: one rehearsal in his own Chrome (Monday evening), the call itself.

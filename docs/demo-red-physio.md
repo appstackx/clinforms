@@ -55,11 +55,11 @@ Notes:
 
 ### 2.1 Where to run it
 
-Use your normal checkout: **`~/Projects/Appstackx/clinforms`** on branch `main`. The RED demo work was merged into
-`main` on 10/10, so `main` has everything; the insurer PDFs and prepared maps/answers sit in that folder's gitignored
-`demo-assets/insurers/` (the default path – nothing to configure).
-(The worktree `~/Projects/Appstackx/clinforms-wt/red-integrate` holds the same code and also works, but you don't
-need it.)
+Use the **frozen demo folder `~/Projects/Appstackx/clinforms-demo`**. It is pinned to the exact version that was
+rehearsed (git tag `red-demo-2026-10-13`), has `npm ci` done, and its `.env.local` points at the insurer PDFs and
+prepared answers in `~/Projects/Appstackx/clinforms/demo-assets/insurers`. Production work continues on `main`,
+so **don't run the demo from `~/Projects/Appstackx/clinforms`** and **don't `git pull` in the demo folder** before
+the call.
 
 Use the **same Chrome profile and the same address (`http://localhost:3000`)** on Monday and Tuesday – confirmed
 form maps and reports live only in that browser's storage for that address.
@@ -67,9 +67,8 @@ form maps and reports live only in that browser's storage for that address.
 ### 2.2 Monday evening – rehearsal (about 60 min)
 
 ```bash
-cd ~/Projects/Appstackx/clinforms
-git status -sb                      # "## main…", nothing modified except untracked local files
-git pull --ff-only
+cd ~/Projects/Appstackx/clinforms-demo
+git describe --tags                 # red-demo-2026-10-13 (frozen – do not pull)
 node -v                             # v22.x
 npm ci
 npm run demo:check                  # → "Demo assets OK: 7 maps, 4 answer files, 6 form files in …/clinforms/demo-assets/insurers."
@@ -97,7 +96,7 @@ Then, in the demo Chrome profile (§2.4):
    rehearsal ran at load ~60: a 0.3 s step took 8 s, one upload 160 s).
 2. Start the demo and minimise the terminal (it is never shared):
    ```bash
-   cd ~/Projects/Appstackx/clinforms
+   cd ~/Projects/Appstackx/clinforms-demo
    npm run demo:check
    lsof -nP -iTCP:3000 -sTCP:LISTEN
    npm run demo:red -- --skip-build    # Monday's build; leave out --skip-build if you pulled anything since
@@ -141,7 +140,7 @@ deliberately want to show live drafting (e.g. the portal questions):
 - **Check Anthropic credit first:** sign in at console.anthropic.com → Billing yourself; never paste keys anywhere.
 - Start with `npm run demo:red -- --live` (uses `.env.local`'s `MEDREPORT_AI_MODE=auto`).
 - **Passcode:** `MEDREPORT_LIVE_PASSCODE` in the checkout's `.env.local`
-  (`~/Projects/Appstackx/clinforms/.env.local`);
+  (`~/Projects/Appstackx/clinforms-demo/.env.local` – same value as `~/Projects/Appstackx/clinforms/.env.local`);
   the deployed environments' passcodes are in `~/.config/appstackx/clinforms.secrets.env`. Open the file yourself,
   off-screen, and type the passcode; never paste it into chat or a shared window.
 - Timings measured by script on 09/10: Bupa draft 5.7–6.9 s, portal questions 7.4 s, reading a new form 14–24 s.
@@ -313,7 +312,7 @@ inside Freedom's fees table; truncated text on a few stat tiles.
 | Symptom | Do this |
 |---|---|
 | `demo:red` won't start: port in use | `lsof -nP -iTCP:3000 -sTCP:LISTEN`, stop that process, then `npm run demo:red -- --skip-build` |
-| `demo:red` refuses: demo assets folder or maps missing | Run from `~/Projects/Appstackx/clinforms` (its `demo-assets/insurers/` holds the files); `npm run demo:check` names the problem |
+| `demo:red` refuses: demo assets folder or maps missing | Run from `~/Projects/Appstackx/clinforms-demo` (its `.env.local` points at the files); `npm run demo:check` names the problem |
 | Upload says the questions were found by layout rules (no prepared map) | Wrong file or folder: use the exact file from `clinforms/demo-assets/insurers/` via the card's **Upload this form**; otherwise switch to a pre-uploaded form |
 | Answers come back blank ("no prepared demo answers") | Use Rebecca Lane only, launched from her record; if it persists, switch to the fallback PDFs |
 | A passcode field or "live" wording appears | The server runs with `--live`: Ctrl+C, `npm run demo:red -- --skip-build` |
