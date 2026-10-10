@@ -46,6 +46,9 @@ const STALL_MS = 12_000;
  *
  * When the video ends, a panel offers the call (the end card's own call to action), "Watch again" and the
  * interactive demo, and the picture goes back to the end card: the cut fades to black over its last half-second.
+ * The end card is held inside the last caption's cue (the narration's last words run past `endCardAt`), so captions
+ * that were showing are hidden while the panel is up, or the browser would draw that line behind it; they come back
+ * as soon as the panel goes (any play, "Watch again", a chapter). Captions the viewer turned off stay off.
  *
  * Focus: a control that disappears hands focus to the video when focus would otherwise fall back to the page (the
  * play button, "Watch again", the panel when the video starts after all); a panel that covers the video takes focus
@@ -58,6 +61,7 @@ const STALL_MS = 12_000;
  */
 export function DemoPlayer({ note }: { note?: ReactNode }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<HTMLTrackElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const endPanelRef = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState(0);
@@ -70,6 +74,8 @@ export function DemoPlayer({ note }: { note?: ReactNode }) {
   const focusEndPanel = useRef(false);
   const stallTimer = useRef<number | undefined>(undefined);
   const counted = useRef({ played: false, completed: false });
+  // The captions were showing when the video ended, and are hidden while the end panel is up.
+  const captionsHiddenForEnd = useRef(false);
 
   useEffect(() => {
     const start = startFromQuery(new URLSearchParams(window.location.search).get("t"));
@@ -98,6 +104,12 @@ export function DemoPlayer({ note }: { note?: ReactNode }) {
     if (ended && focusEndPanel.current) {
       focusEndPanel.current = false;
       endPanelRef.current?.focus({ preventScroll: true });
+    }
+    // The end panel has gone: the captions it hid come back.
+    if (!ended && captionsHiddenForEnd.current) {
+      captionsHiddenForEnd.current = false;
+      const captions = trackRef.current?.track;
+      if (captions) captions.mode = "showing";
     }
   }, [ended]);
 
@@ -192,6 +204,12 @@ export function DemoPlayer({ note }: { note?: ReactNode }) {
             onEnded={(e) => {
               const video = e.currentTarget;
               focusEndPanel.current = document.activeElement === video;
+              // Hide showing captions before going back: the end card is held inside the last line's cue.
+              const captions = trackRef.current?.track;
+              if (captions?.mode === "showing") {
+                captions.mode = "hidden";
+                captionsHiddenForEnd.current = true;
+              }
               // Back to the end card: the last frames are black.
               video.currentTime = DEMO_VIDEO.endCardAt;
               setCurrent(DEMO_VIDEO.endCardAt);
@@ -203,7 +221,7 @@ export function DemoPlayer({ note }: { note?: ReactNode }) {
           >
             <source src={DEMO_VIDEO.sources.light.src} type="video/mp4" media={DEMO_VIDEO.sources.light.media} />
             <source src={DEMO_VIDEO.sources.full.src} type="video/mp4" onError={() => setFailed(true)} />
-            <track kind="captions" src={DEMO_VIDEO.captions} srcLang="en-GB" label="English" default />
+            <track ref={trackRef} kind="captions" src={DEMO_VIDEO.captions} srcLang="en-GB" label="English" default />
           </video>
 
           {!started && !failed && (

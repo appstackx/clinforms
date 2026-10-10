@@ -17,6 +17,10 @@
  * The header is sticky at the top of the viewport (top-0); the review and form-mapping screens' sticky
  * side panels sit just below it.
  *
+ * Below lg the navigation is a second header row that wraps instead of scrolling sideways, so every page link is
+ * on screen at any width: on a phone the sections fit one line from 360 px (tighter padding and type), and the page links
+ * the header row shows from sm/md up (Security & GDPR, Built-in templates) get a line of their own.
+ *
  * Owner: studio-a agent.
  */
 import Link from "next/link";
@@ -30,7 +34,6 @@ import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } f
 import { AiModeBadge, PasscodeNotice } from "./ai-mode";
 import { BrandMark } from "./brand-mark";
 import { StudioLegalLinks } from "./legal-links";
-import { useScrollFade } from "./scroll-fade";
 
 interface NavItem {
   href: string;
@@ -107,7 +110,6 @@ function OuterShell({ children, ...page }: StudioShellProps) {
   const hasPage = Boolean(page.title || page.actions || page.back);
   const onSecurity = section === "security";
   const onTemplates = section === "templates";
-  const compactNav = useScrollFade<HTMLElement>();
   return (
     <div className="flex min-h-screen flex-col">
       <a
@@ -162,25 +164,26 @@ function OuterShell({ children, ...page }: StudioShellProps) {
             {tenant ? <AccountMenu /> : <AiModeBadge />}
           </div>
         </div>
-        <nav
-          ref={compactNav.ref}
-          style={compactNav.style}
-          aria-label="Studio (compact)"
-          className="mx-auto max-w-7xl overflow-x-auto px-2 pb-2 pt-2 sm:px-4 lg:hidden"
-        >
-          <div className="flex w-max items-center gap-1 text-sm">
-            <NavLinks items={items} section={section} />
-            <Link
-              href={paths.templates}
-              className={cn("rounded-md px-3 py-1.5 text-slate-500 hover:bg-slate-100 md:hidden", onTemplates && "bg-teal-50 font-medium text-teal-800")}
-            >
-              Built-in templates
-            </Link>
+        <nav aria-label="Studio (compact)" className="mx-auto max-w-7xl px-2 pb-2 pt-2 sm:px-4 lg:hidden">
+          <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-[13px] sm:gap-1 sm:text-sm">
+            <NavLinks items={items} section={section} compact />
+            {/* On a phone the page links start their own line (from sm up they follow the sections). */}
+            <span className="basis-full sm:hidden" aria-hidden />
             <Link
               href={paths.security}
-              className={cn("rounded-md px-3 py-1.5 text-slate-500 hover:bg-slate-100 sm:hidden", onSecurity && "bg-teal-50 font-medium text-teal-800")}
+              className={cn(compactPageLink, "sm:hidden", onSecurity && "bg-teal-50 font-medium text-teal-800")}
+              aria-current={onSecurity ? "page" : undefined}
             >
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
               Security &amp; GDPR
+            </Link>
+            <Link
+              href={paths.templates}
+              className={cn(compactPageLink, "md:hidden", onTemplates && "bg-teal-50 font-medium text-teal-800")}
+              aria-current={onTemplates ? "page" : undefined}
+            >
+              <LayoutTemplate className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Built-in templates
             </Link>
           </div>
         </nav>
@@ -270,7 +273,11 @@ function AccountMenu() {
   );
 }
 
-function NavLinks({ items, section }: { items: NavItem[]; section: StudioSection | null }) {
+/** The compact navigation's page links (Security & GDPR, Built-in templates): quieter than the sections. */
+const compactPageLink =
+  "inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 sm:px-3 sm:py-1.5 sm:text-sm";
+
+function NavLinks({ items, section, compact = false }: { items: NavItem[]; section: StudioSection | null; compact?: boolean }) {
   return (
     <>
       {items.map((item) => {
@@ -281,7 +288,9 @@ function NavLinks({ items, section }: { items: NavItem[]; section: StudioSection
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "whitespace-nowrap rounded-md px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600",
+              "whitespace-nowrap rounded-md py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600",
+              // The compact row fits the four sections on one line at 360 px.
+              compact ? "px-1.5 sm:px-3" : "px-3",
               active ? "bg-teal-50 font-medium text-teal-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
             )}
           >

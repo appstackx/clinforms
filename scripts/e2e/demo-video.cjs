@@ -7,14 +7,15 @@
  * Every request to media.clinforms.co.uk is intercepted and answered with a 404 (or, for the "hang" case, never
  * answered), so these checks never reach the media host and do not depend on it. The 404 also stands in for a clinic
  * whose network blocks the address, which is the case the player's "The video plays from media.clinforms.co.uk"
- * panel is for; the hang stands in for a network that drops the request silently. The end-of-video panel is checked
- * by sending the video's "ended" event (Playwright's Chromium cannot decode the H.264 files).
+ * panel is for; the hang stands in for a network that drops the request silently. The end-of-video panel (and the
+ * captions it hides while it is up) is checked by sending the video's "ended" event (Playwright's Chromium cannot
+ * decode the H.264 files).
  *
  * REAL_MEDIA=1 adds checks against the real media host, in Google Chrome (Playwright's Chromium has no H.264):
  * the page is served as https://clinforms.co.uk/demo (proxied to BASE, so the media host's CORS policy applies as in
- * production), the 1080p file plays, the captions track loads, the end panel appears over the end card, and a
- * response held back past the stall time shows the panel, which goes when the video starts. Read-only: it uploads
- * nothing.
+ * production), the 1080p file plays, the captions track loads, the end panel appears over the end card (with the
+ * last caption's cue active but not drawn), and a response held back past the stall time shows the panel, which goes
+ * when the video starts. Read-only: it uploads nothing.
  *
  * ANALYTICS=1 (needs a build with NEXT_PUBLIC_POSTHOG_KEY set to a dummy key; /ingest is answered locally, nothing
  * reaches the analytics provider): no event before consent; after consent the play and completed events carry
@@ -136,6 +137,8 @@ function ingestEvents(request) {
 /** The video's "ended" event, as a browser sends it when playback reaches the end. */
 const sendEnded = (page) => page.locator("video").evaluate((v) => v.dispatchEvent(new Event("ended")));
 const videoTime = (page) => page.locator("video").evaluate((v) => v.currentTime);
+/** The captions track's mode ("showing", "hidden" or "disabled"). */
+const captionsMode = (page) => page.locator("video").evaluate((v) => v.textTracks[0] && v.textTracks[0].mode);
 const settle = async (page) => {
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(800);
@@ -305,10 +308,13 @@ const settle = async (page) => {
     await page.goto(`${BASE}/demo`);
     await playButton(page).waitFor({ state: "visible" });
     await settle(page);
+    assert.equal(await captionsMode(page), "showing", "captions on by default");
     await sendEnded(page);
     await endPanel(page).waitFor({ state: "visible" });
     // Back to the end card (the cut fades to black over its last half-second).
     assert.equal(await videoTime(page), 89);
+    // The end card is held inside the last caption's cue: the captions are hidden while the panel is up.
+    assert.equal(await captionsMode(page), "hidden", "no caption behind the end panel");
     assert.equal(await page.locator("video").evaluate((v) => v.controls), false);
     const book = endPanel(page).getByRole("link", { name: "Book a 15-minute call" });
     assert.equal(await book.getAttribute("href"), "/request-access");
@@ -322,8 +328,34 @@ const settle = async (page) => {
     await poll(() => media.length > 0);
     assert.ok(media.length > 0, "Watch again plays");
     assert.equal(await videoTime(page), 0);
+    assert.equal(await captionsMode(page), "showing", "captions back with Watch again");
     await failPanel(page).waitFor({ state: "visible" }); // the stubbed 404
     await context.close();
+
+    // Ended again, then a chapter instead of "Watch again": the captions come back too.
+    const chapter = await open(browser);
+    await chapter.page.goto(`${BASE}/demo`);
+    await playButton(chapter.page).waitFor({ state: "visible" });
+    await sendEnded(chapter.page);
+    await endPanel(chapter.page).waitFor({ state: "visible" });
+    assert.equal(await captionsMode(chapter.page), "hidden");
+    await chapter.page.getByRole("button", { name: new RegExp(`${CHAPTERS[2].title}$`) }).click();
+    await endPanel(chapter.page).waitFor({ state: "hidden" });
+    assert.equal(await captionsMode(chapter.page), "showing", "captions back with a chapter");
+    await chapter.context.close();
+
+    // A viewer who turned the captions off keeps them off: the end panel does not switch them back on.
+    const off = await open(browser);
+    await off.page.goto(`${BASE}/demo`);
+    await playButton(off.page).waitFor({ state: "visible" });
+    await off.page.locator("video").evaluate((v) => (v.textTracks[0].mode = "disabled"));
+    await sendEnded(off.page);
+    await endPanel(off.page).waitFor({ state: "visible" });
+    assert.equal(await captionsMode(off.page), "disabled");
+    await endPanel(off.page).getByRole("button", { name: "Watch again" }).click();
+    await endPanel(off.page).waitFor({ state: "hidden" });
+    assert.equal(await captionsMode(off.page), "disabled", "captions the viewer turned off stay off");
+    await off.context.close();
 
     // At 375 px the panel fits inside the player.
     const phone = await open(browser, { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -455,6 +487,13 @@ const settle = async (page) => {
       await endPanel(page).waitFor({ state: "visible", timeout: 15000 });
       const rest = await poll(() => page.locator("video").evaluate((v) => (v.seeking ? null : { t: v.currentTime, paused: v.paused, ended: v.ended })));
       assert.deepEqual(rest, { t: 89, paused: true, ended: false });
+      // The last line's cue is still active at the end card, but the track is hidden, so it is not drawn.
+      const captions = await page.locator("video").evaluate((v) => {
+        const t = v.textTracks[0];
+        return { mode: t.mode, active: Array.from(t.activeCues || [], (c) => c.text) };
+      });
+      assert.equal(captions.mode, "hidden");
+      assert.deepEqual(captions.active, ["Book a 15-minute call at clinforms.co.uk."]);
       // The frame behind the panel is the end card, not black: sample the picture.
       const brightness = await page.locator("video").evaluate((v) => {
         const c = document.createElement("canvas");
@@ -473,6 +512,7 @@ const settle = async (page) => {
       const again = await poll(() => page.locator("video").evaluate((v) => (!v.paused && v.currentTime > 0.3 && v.currentTime < 5 ? v.currentTime : null)), { timeout: 10000 });
       assert.ok(again, "Watch again plays from the start");
       assert.equal(await page.evaluate(() => document.activeElement?.tagName), "VIDEO");
+      assert.equal(await captionsMode(page), "showing", "captions back with Watch again");
       await chrome.close();
     });
 

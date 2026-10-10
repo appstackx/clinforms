@@ -714,7 +714,7 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
   "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
   (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a
-  clinic. The compact navigation fades at the edge that has more to show (`scroll-fade.ts`). Drafting is attempted when the clinic has it switched on
+  clinic. The compact navigation (below lg) wraps instead of scrolling sideways (polish 10/10: at 375 px "Batch" was cut off), so every page link is on screen; on a phone the four sections fit one line and Security & GDPR / Built-in templates get a line of their own. Drafting is attempted when the clinic has it switched on
   (`clinic.draftingEnabled`), not by passcode (`useAiMode().livePossible()`).
 - **Analytics:** only in tenant mode, through `HostHooks.track`; `ui/studio-events.ts` builds the properties from
   enumerated values and counts only (no names, ids, file names or record text – pinned by `studio-events.test.ts`).
