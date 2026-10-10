@@ -43,6 +43,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   {
     label: "Reports",
     actions: [
+      "notes.imported",
       "report.create",
       "report.update",
       "report.draft_live",
@@ -87,6 +88,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "form.store_confirmed": "Confirmed form mapping saved",
   "form.delete": "Form removed from the library",
   "settings.update": "Referrer form links updated",
+  "notes.imported": "Patient notes imported",
   "report.create": "Report started",
   "report.update": "Report saved",
   "report.draft_live": "Answers drafted from the notes",
@@ -115,6 +117,15 @@ const NOUNS: Readonly<Record<string, string>> = {
   settings: "Settings",
   launch: "Clinic system",
   platform: "Platform",
+  notes: "Notes",
+};
+
+const NOTES_FORMATS: Readonly<Record<string, string>> = {
+  pdf: "from a PDF",
+  docx: "from a Word document",
+  csv: "from a CSV export",
+  text: "from text or pasted notes",
+  json: "from an export",
 };
 
 /** The plain-English name of an action code; codes without a label get a readable name made from the code. */
@@ -194,6 +205,13 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "form.analyse_live":
     case "form.confirm":
       return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"}` : null;
+    case "notes.imported": {
+      const n = (key: string, one: string, many: string) => (typeof detail[key] === "number" ? `${detail[key]} ${detail[key] === 1 ? one : many}` : null);
+      const counts = [n("notes", "note", "notes"), n("appointments", "appointment", "appointments"), n("outcomeScores", "outcome score", "outcome scores")].filter(Boolean);
+      const from = NOTES_FORMATS[String(detail.format)];
+      const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
+      return parts.length ? parts.join(" · ") : null;
+    }
     case "report.render_final":
       return detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
     case "report.update":

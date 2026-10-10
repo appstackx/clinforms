@@ -11,6 +11,7 @@
  * Shared contract (orchestrator-owned): additive optional fields only.
  */
 import { z } from "zod";
+import { NotesReviewSchema } from "../connectors/file-import/review-contract";
 import {
   AiEffortSchema,
   AiModeSchema,
@@ -102,6 +103,9 @@ export const reportApiPaths = {
   bundle: (connectorId: string, patientId: string, episodeId: string) =>
     `${REPORT_API_BASE}/connectors/${e(connectorId)}/patients/${e(patientId)}/episodes/${e(episodeId)}/bundle`,
   fileImportBundle: () => `${REPORT_API_BASE}/connectors/file-import/bundle`,
+  // Wave 3: ordinary clinic notes – read (documented format → bundle, otherwise a review), then confirm.
+  fileImportRead: () => `${REPORT_API_BASE}/connectors/file-import/read`,
+  fileImportConfirm: () => `${REPORT_API_BASE}/connectors/file-import/confirm`,
   templates: () => `${REPORT_API_BASE}/templates`,
   template: (id: string) => `${REPORT_API_BASE}/templates/${e(id)}`,
   templateDocx: (id: string) => `${REPORT_API_BASE}/templates/${e(id)}/docx`,
@@ -165,6 +169,8 @@ export const REPORT_API_ENDPOINTS: readonly EndpointSpec[] = [
   { name: "patients", method: "GET", path: "/api/reports/v1/connectors/[id]/patients", auth: "actor", handler: "patients.ts", summary: "Search patients (with episode summaries) via a connector" },
   { name: "bundle", method: "GET", path: "/api/reports/v1/connectors/[id]/patients/[pid]/episodes/[eid]/bundle", auth: "actor", handler: "bundle.ts", summary: "EpisodeBundle + computed facts + data checks + integration trace; claims must match the path" },
   { name: "fileImportBundle", method: "POST", path: "/api/reports/v1/connectors/file-import/bundle", auth: "actor", handler: "file-import-bundle.ts", summary: "Map an uploaded export (JSON/CSV) or pasted notes to an EpisodeBundle" },
+  { name: "fileImportRead", method: "POST", path: "/api/reports/v1/connectors/file-import/read", auth: "actor", handler: "file-import-read.ts", summary: "Read uploaded notes: the documented format gives the bundle; ordinary clinic notes (PDF, Word, CSV, text) give a NotesReview to check" },
+  { name: "fileImportConfirm", method: "POST", path: "/api/reports/v1/connectors/file-import/confirm", auth: "actor", handler: "file-import-confirm.ts", summary: "Build the EpisodeBundle from a NotesReview that staff checked and confirmed" },
   { name: "templatesList", method: "GET", path: "/api/reports/v1/templates", auth: "none", handler: "templates-list.ts", summary: "Report templates" },
   { name: "templateGet", method: "GET", path: "/api/reports/v1/templates/[id]", auth: "none", handler: "template-get.ts", summary: "One template's section spec" },
   { name: "templateDocx", method: "GET", path: "/api/reports/v1/templates/[id]/docx", auth: "none", handler: "template-docx.ts", summary: "Download the tagged Word template" },
@@ -355,6 +361,13 @@ export const BundleResponseSchema = z.object({
   demoDrafts: DemoDraftAvailabilitySchema.optional(),
 });
 export const FileImportBundleRequestSchema = ImportPayloadSchema;
+// POST /connectors/file-import/read (wave 3): same body as /bundle.
+export const FileImportReadResponseSchema = z.discriminatedUnion("result", [
+  z.object({ result: z.literal("bundle"), data: BundleResponseSchema }),
+  z.object({ result: z.literal("review"), review: NotesReviewSchema, trace: z.array(TraceEntrySchema) }),
+]);
+// POST /connectors/file-import/confirm (wave 3) → BundleResponse.
+export const FileImportConfirmRequestSchema = z.object({ review: NotesReviewSchema });
 
 // GET /templates, /templates/{id}
 export const TemplatesListResponseSchema = z.object({ templates: z.array(ReportTemplateSchema) });
@@ -657,6 +670,8 @@ export type PatientsQuery = z.infer<typeof PatientsQuerySchema>;
 export type PatientsResponse = z.infer<typeof PatientsResponseSchema>;
 export type BundleResponse = z.infer<typeof BundleResponseSchema>;
 export type FileImportBundleRequest = z.infer<typeof FileImportBundleRequestSchema>;
+export type FileImportReadResponse = z.infer<typeof FileImportReadResponseSchema>;
+export type FileImportConfirmRequest = z.infer<typeof FileImportConfirmRequestSchema>;
 export type TemplatesListResponse = z.infer<typeof TemplatesListResponseSchema>;
 export type TemplateGetResponse = z.infer<typeof TemplateGetResponseSchema>;
 export type TemplatesValidateRequest = z.infer<typeof TemplatesValidateRequestSchema>;

@@ -145,7 +145,9 @@ export function mapSimEpisodeToBundle(
   const clinicians: Clinician[] = [];
   const seen = new Set<string>();
   const addClinician = (c: SimClinician) => {
-    const key = c.hcpc.trim().toUpperCase() || c.name.trim().toLowerCase();
+    // Clinicians without a registration number (uploaded notes: "Not recorded") are told apart by name.
+    const hcpc = c.hcpc.trim().toUpperCase();
+    const key = hcpc && hcpc !== "NOT RECORDED" ? hcpc : `name:${c.name.trim().toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
     clinicians.push(mapClinician(c));

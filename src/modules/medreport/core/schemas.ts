@@ -314,6 +314,8 @@ export const PatientRegistrationSchema = z.object({
       email: z.string().optional(),
     })
     .optional(),
+  /** The patient's GP practice as the uploaded notes state it (additive, wave 3). Never sent to the drafting service. */
+  gpPractice: z.string().optional(),
 });
 
 /** Who instructed the report. Strings may be empty ("") but are always present. */
@@ -336,6 +338,8 @@ export const ReferralSchema = InstructingPartySchema.extend({
   insurerName: z.string().optional(),
   membershipNumber: z.string().optional(),
   authorisationNumber: z.string().optional(),
+  /** Who referred the patient (a GP, consultant or other clinician), as the uploaded notes state it (additive, wave 3). */
+  referredBy: z.string().optional(),
 });
 
 /** The referrer (MLC, insurer, solicitor, case manager, employer…) whose own form is being completed. */
@@ -1185,8 +1189,11 @@ export const AttachReceiptSchema = z.object({
 
 /** An uploaded export (our documented import format) or pasted anonymised notes. */
 export const ImportPayloadSchema = z.object({
-  /** "pdf": printed / saved clinical notes as a PDF; `content` is then the file as base64. */
-  format: z.enum(["json", "csv", "text", "pdf"]),
+  /**
+   * "pdf": printed / saved clinical notes as a PDF; "docx" (wave 3): notes in a Word document – `content` is
+   * then the file as base64.
+   */
+  format: z.enum(["json", "csv", "text", "pdf", "docx"]),
   content: z.string().min(1),
   fileName: z.string().optional(),
 });

@@ -836,7 +836,37 @@ export function extractScores(text: string): Array<{ instrument: Instrument; val
  * ImportDocument → wire data → mapper → EpisodeBundle
  * ----------------------------------------------------------------------------------------------*/
 
-function documentToBundle(doc: ImportDocument, ctx: BuildContext): { bundle: EpisodeBundle } | { issues: ImportIssue[] } {
+/**
+ * An ImportDocument built in code (wave 3: a reviewed general-notes upload, ./review-bundle.ts) → the bundle,
+ * exactly as an uploaded export would be mapped. `patch` adds what the import format has no field for (the
+ * insurer's identifiers, a medico-legal company as the instructing party) before the bundle is validated.
+ */
+export function bundleFromImportDocument(
+  doc: ImportDocument,
+  opts: { tenantId: TenantId; now?: Date; label: string; patch?: (bundle: EpisodeBundle) => EpisodeBundle },
+): ImportResult {
+  const ctx: BuildContext = { tenantId: opts.tenantId, now: opts.now ?? new Date(), label: opts.label, warnings: [] };
+  const result = documentToBundle(doc, ctx, opts.patch);
+  if ("issues" in result) return fail(result.issues);
+  const bundle = result.bundle;
+  return {
+    ok: true,
+    bundle,
+    warnings: ctx.warnings.slice(0, MAX_ISSUES),
+    stats: {
+      notes: bundle.notes.length,
+      appointments: bundle.appointments.length,
+      outcomeSeries: bundle.outcomeMeasures.length,
+      clinicians: bundle.clinicians.length,
+    },
+  };
+}
+
+function documentToBundle(
+  doc: ImportDocument,
+  ctx: BuildContext,
+  patch?: (bundle: EpisodeBundle) => EpisodeBundle,
+): { bundle: EpisodeBundle } | { issues: ImportIssue[] } {
   const issues: ImportIssue[] = [];
   const date = (value: string | null | undefined, where: string): string | null => {
     if (!value) return null;
@@ -992,7 +1022,7 @@ function documentToBundle(doc: ImportDocument, ctx: BuildContext): { bundle: Epi
     }
     throw err;
   }
-  return finishBundle(mapped, ctx, { patientId, episodeId });
+  return finishBundle(patch ? patch(mapped) : mapped, ctx, { patientId, episodeId });
 }
 
 function clinician(c: { name: string; hcpc: string; role?: string | null }): SimClinician {
