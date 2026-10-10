@@ -424,7 +424,10 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
     issue: unmatched
       ? `The record's value for “${field.label}” (“${unmatched}”) does not fit the form's answer options, so it has been left blank.`
       : `The record does not hold a value for “${field.label}” (${where}), so it has been left blank.`,
-    suggestedQuestion: `What should be entered for “${field.label}”? Check the patient's registration details in the clinic system.`,
+    // Fix wave 3: the appointment figures are counted from the appointments, not looked up in registration details.
+    suggestedQuestion: what.startsWith("FACT-")
+      ? `What should be entered for “${field.label}”? Count the attended and missed appointments in the notes.`
+      : `What should be entered for “${field.label}”? Check the patient's registration details in the clinic system.`,
     relatedNoteIds: [],
     raisedBy: "system",
   };

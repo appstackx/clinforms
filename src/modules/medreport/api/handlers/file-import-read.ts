@@ -11,7 +11,8 @@ import "server-only";
  *     scores found, for staff to check in the Studio. Nothing is built or stored until they confirm
  *     (POST /connectors/file-import/confirm).
  *
- * Errors: 401, 403, 413, 422 VALIDATION_FAILED, 422 IMPORT_INVALID with plain-English `issues` (a scanned PDF,
+ * Errors: 401, 403, 429 RATE_LIMITED (fix wave 3: per-minute limits per sign-in or session and per address),
+ * 413, 422 VALIDATION_FAILED, 422 IMPORT_INVALID with plain-English `issues` (a scanned PDF,
  * a file with no dated notes, a documented-format CSV with mistakes).
  *
  * Owner: integration agent.
@@ -22,12 +23,13 @@ import { MAX_IMPORT_CHARS } from "../../connectors/file-import/format";
 import { callConnector, requireConnector } from "../../connectors/handler-support";
 import { FileImportBundleRequestSchema, type FileImportReadResponse } from "../contract";
 import { json, logEvent, parseBody, type MedreportHandler } from "../http";
-import { auditNotesImported, bundleResponseFor } from "./file-import-response";
+import { auditNotesImported, bundleResponseFor, takeFileImportSlot } from "./file-import-response";
 
 export const handleFileImportRead: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
   const connector = requireConnector(deps, "file-import", { tenantId: actor.tenantId });
   assertActorConnector(actor, connector.id);
+  await takeFileImportSlot(req, deps, actor);
   const parsed = await parseBody(req, FileImportBundleRequestSchema, { maxBytes: MAX_IMPORT_CHARS * 2 + 10_000 });
   if (!parsed.ok) return parsed.response;
 

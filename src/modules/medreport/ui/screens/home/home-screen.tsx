@@ -445,7 +445,7 @@ function Hero() {
 
 const TILE_FALLBACK: Record<ConnectorInfo["id"], { title: string; status: string; note: string }> = {
   "tm3-sim": { title: "Simulated TM3", status: "Connected", note: "Simulated TM3 sandbox – demo data, not affiliated with TM3." },
-  "file-import": { title: "Notes upload", status: "Available now", note: "Upload the patient's notes in any layout – a PDF printed from your clinic system, a Word document, a CSV export or text – and check what was read before it is used." },
+  "file-import": { title: "Notes upload", status: "Available now", note: "Upload the patient's notes as your clinic system prints or exports them – a PDF, a Word document, a CSV export or text – and check what was read before it is used." },
   tm3: { title: "Direct TM3 connection", status: "Subject to TM3", note: "A direct connection, subject to TM3 providing access." },
 };
 

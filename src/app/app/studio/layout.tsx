@@ -26,7 +26,7 @@ export default async function TenantStudioLayout({ children }: { children: React
   const { context } = access;
   return (
     <TenantHost
-      clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled }}
+      clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}
       member={{
         name: context.member.name,
         userId: context.member.userId,

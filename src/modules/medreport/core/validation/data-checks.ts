@@ -55,8 +55,12 @@ export function runDataChecks(bundle: EpisodeBundle): DataCheck[] {
     checks.push({
       code: "CONSENT_NOT_RECORDED",
       severity: "blocking",
+      // Fix wave 3: uploaded notes have no clinic system inside ClinForms – the consent is recorded on the report
+      // (review screen: "Record consent"), by a member who may approve.
       message:
-        "The record does not show the patient's consent to disclose their records to the instructing party. Record consent in the clinic system before the report is released.",
+        bundle.source.connectorId === "file-import"
+          ? "The uploaded notes do not show the patient's consent to share their records with the instructing party. Once the patient has consented, record it here (Record consent) before the report is approved."
+          : "The record does not show the patient's consent to disclose their records to the instructing party. Record consent in the clinic system before the report is released.",
       relatedIds: [],
     });
   }

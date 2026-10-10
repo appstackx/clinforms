@@ -272,7 +272,15 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     assertFormFileMatches(file, expectedSha256);
     let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
     if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
-    const out = await renderFormFile({ form: formDef, file, answers, draft: !final, reviewMarkers: reviewCopy, format: format === "pdf" ? "pdf" : "original" });
+    const out = await renderFormFile({
+      form: formDef,
+      file,
+      answers,
+      draft: !final,
+      reviewMarkers: reviewCopy,
+      format: format === "pdf" ? "pdf" : "original",
+      continuationLabel: continuationLabelFor(report),
+    });
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
     if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose);
@@ -293,3 +301,9 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     headers: { ...baseHeaders, ...fillWarningsHeader(out.warnings), ...fileTokenHeader(out.bytes) },
   });
 };
+
+/** "Claimant: <name> · Reference: <their reference, else the policy number>" for a PDF form's continuation sheet (fix wave 3). */
+function continuationLabelFor(report: Report): string {
+  const reference = report.instructingParty.reference?.trim() || report.bundleSnapshot.referral.membershipNumber?.trim() || "";
+  return [`Claimant: ${report.patientLabel}`, reference ? `Reference: ${reference}` : ""].filter(Boolean).join(" · ");
+}

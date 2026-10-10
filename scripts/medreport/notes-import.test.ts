@@ -232,13 +232,16 @@ describe("letter-style Word document", () => {
     assert.match(entry(r, "E-1").body, /^Thank you for your instruction\./);
     assert.deepEqual(r.entries.slice(1).map((e) => e.type), ["initial_assessment", "follow_up", "telephone", "discharge"]);
     assert.equal(entry(r, "E-2").body, "Initial assessment. Neck pain and stiffness since the collision, worse turning to the left. NDI 42%. NPRS 6/10. Advised on pacing and gentle range of movement exercises.");
-    // The sign-off names the clinician of the last note only; the others are for staff to choose.
+    // The sign-off names the clinician of the last note; fix wave 3: a LETTER's signature names the clinician of its
+    // entries that name none – staff are told, and can change any of them.
     assert.deepEqual([entry(r, "E-5").clinicianName, entry(r, "E-5").clinicianHcpc], ["Sarah Reid", "PH-DEMO-01"]);
-    assert.deepEqual(r.entries.slice(1, 4).map((e) => e.clinicianName), ["", "", ""]);
-    const codes = r.warnings.map((w) => w.code);
-    assert.ok(codes.includes("NO_CLINICIAN") && codes.includes("NO_DATE"));
-    assert.equal(r.warnings.find((w) => w.code === "NO_CLINICIAN")?.message, "3 entries without a clinician – choose one");
+    assert.deepEqual(r.entries.slice(1, 4).map((e) => `${e.clinicianName} ${e.clinicianHcpc}`), ["Sarah Reid PH-DEMO-01", "Sarah Reid PH-DEMO-01", "Sarah Reid PH-DEMO-01"]);
+    const signed = r.warnings.find((w) => w.code === "SIGNATURE_APPLIED");
+    assert.equal(signed?.message, "The letter is signed by Sarah Reid, so the 3 entries that name no clinician have that clinician – check them.");
+    assert.deepEqual(signed?.entryKeys, ["E-2", "E-3", "E-4"]);
+    assert.ok(!r.warnings.some((w) => w.code === "NO_CLINICIAN"));
     assert.equal(r.warnings.find((w) => w.code === "NO_DATE")?.message, "no date found for 1 block – give it a date to include it, or leave it out");
+    assert.equal(r.letterDate, "2026-10-09", "the letter's own date is offered for its undated paragraphs, never a note");
     assert.deepEqual(scores(r), ["NDI 12 2026-09-01", "NDI 30 2026-08-04", "NDI 42 2026-07-21", "NPRS 1 2026-09-01", "NPRS 6 2026-07-21"]);
   });
 
@@ -374,24 +377,23 @@ describe("bundle from a checked review", () => {
     assert.equal(b.source.connectorId, "file-import");
     assert.equal(b.source.simulated, false);
     assert.equal(b.source.label, "printout.txt");
+    // Fix wave 3: the missed appointment's text is its reason – an appointment, not a clinical note.
     assert.deepEqual(b.notes.map((n) => [n.id, n.date, n.type, n.author.name]), [
       ["N-001", "2026-09-01", "initial_assessment", "Sarah Reid"],
       ["N-002", "2026-09-08", "follow_up", "Sarah Reid"],
-      ["N-003", "2026-09-15", "follow_up", "Tom Ellis"],
-      ["N-004", "2026-09-22", "discharge", "Tom Ellis"],
+      ["N-003", "2026-09-22", "discharge", "Tom Ellis"],
     ]);
     // Labelled sections kept: the subjective carries on until the next label, word for word.
     assert.equal(b.notes[0].subjective, "Right shoulder pain for 6 weeks after lifting a heavy box at home. Pain worse reaching overhead.\nNPRS 7/10 at worst. QuickDASH 52.3. PSFS 2.7.");
     assert.equal(b.notes[0].plan, "Education, isometric loading programme, review in 1 week.");
-    assert.equal(b.notes[2].freeText, "Patient did not attend. Text reminder sent; no reply.");
-    assert.deepEqual(b.appointments.map((a) => [a.id, a.status, a.noteId ?? null]), [
-      ["A-001", "ATT", "N-001"],
-      ["A-002", "ATT", "N-002"],
-      ["A-003", "DNA", null],
-      ["A-004", "ATT", "N-004"],
+    assert.deepEqual(b.appointments.map((a) => [a.id, a.status, a.noteId ?? null, a.reason ?? null]), [
+      ["A-001", "ATT", "N-001", null],
+      ["A-002", "ATT", "N-002", null],
+      ["A-003", "DNA", null, "Patient did not attend. Text reminder sent; no reply."],
+      ["A-004", "ATT", "N-003", null],
     ]);
     assert.deepEqual(b.clinicians.map((c) => `${c.name} ${c.hcpc}`), ["Sarah Reid PH-DEMO-01", "Tom Ellis PH-DEMO-02"]);
-    assert.deepEqual(b.outcomeMeasures.find((m) => m.instrument === "QuickDASH")?.points.map((p) => [p.value, p.noteId]), [[52.3, "N-001"], [18.2, "N-004"]]);
+    assert.deepEqual(b.outcomeMeasures.find((m) => m.instrument === "QuickDASH")?.points.map((p) => [p.value, p.noteId]), [[52.3, "N-001"], [18.2, "N-003"]]);
     assert.equal(b.episodeStatus, "discharged");
     assert.deepEqual(
       [b.referral.type, b.referral.name, b.referral.insurerName, b.referral.membershipNumber, b.referral.authorisationNumber, b.referral.referredBy],
@@ -404,11 +406,14 @@ describe("bundle from a checked review", () => {
     const facts = computeFacts(b, { asOf: "2026-10-10" });
     assert.match(facts.find((f) => f.id === "FACT-attendance")?.value ?? "", /^3 of 4 appointments attended \(1 DNA\)/);
     assert.match(facts.find((f) => f.id === "FACT-outcomes-QuickDASH")?.value ?? "", /52\.3\/100 → 18\.2\/100/);
-    assert.deepEqual(built.counts, { notes: 4, appointments: 4, outcomeSeries: 3, clinicians: 2, scores: 7, leftOut: 0, detectedFields: 14, filledFields: 16 });
+    assert.deepEqual(built.counts, { notes: 3, appointments: 4, outcomeSeries: 3, clinicians: 2, scores: 7, leftOut: 0, detectedFields: 14, filledFields: 16 });
   });
 
   test("the letter: blocked until each note has a clinician; the undated opening stays out; a CSV DNA row is an appointment only", async () => {
+    // The letter's signature names every entry's clinician; with three of them cleared, confirming is blocked.
     let r = await review({ format: "docx", content: b64(await F.buildLetterDocx()), fileName: "letter.docx" });
+    assert.deepEqual(reviewBlockers(r), []);
+    for (const key of ["E-2", "E-3", "E-4"]) r = updateEntry(r, key, { clinicianName: "", clinicianHcpc: "" });
     const refused = bundleFromReview(r, { tenantId: "demo", now: NOW });
     assert.equal(refused.ok, false);
     if (!refused.ok) assert.deepEqual(refused.issues.map((i) => `${i.where}: ${i.message}`), [
@@ -447,7 +452,7 @@ describe("bundle from a checked review", () => {
     if (!refused.ok) {
       const text = refused.issues.map((i) => `${i.where}: ${i.message}`);
       assert.ok(text.includes("Date of birth: Enter the date of birth."));
-      assert.ok(text.includes("Type: Enter the type of who the form is for."));
+      assert.ok(text.includes("Type: Choose what kind of organisation the form is for."));
       assert.ok(text.includes("E-1 (line 6): Give this entry a date, or leave it out."));
     }
     // A medico-legal company is kept as the instructing party's type; two clinicians without numbers stay two.
@@ -533,9 +538,9 @@ describe("POST /connectors/file-import/read and /confirm", () => {
     assert.equal(res.status, 200, await res.clone().text());
     const data = BundleResponseSchema.parse(await res.json());
     assert.equal(data.bundle.tenantId, "demo");
-    assert.equal(data.bundle.notes.length, 4);
+    assert.equal(data.bundle.notes.length, 3, "the missed appointment is an appointment with its reason, not a note");
     assert.ok(data.computedFacts.some((f) => f.id === "FACT-attendance"));
-    assert.match(data.trace[0].note ?? "", /^checked and confirmed by staff · 4 notes · 4 appointments · 7 outcome scores$/);
+    assert.match(data.trace[0].note ?? "", /^checked and confirmed by staff · 3 notes · 4 appointments · 7 outcome scores$/);
 
     const documented = FileImportReadResponseSchema.parse(await (await call(handleFileImportRead, "/connectors/file-import/read", { format: "json", content: SAMPLE_IMPORT_FILES.json.content }, "demo")).json());
     assert.equal(documented.result, "bundle");
@@ -554,10 +559,10 @@ describe("POST /connectors/file-import/read and /confirm", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].action, "notes.imported");
     assert.equal(rows[0].userId, MEMBER.userId);
-    assert.deepEqual(rows[0].detail, { format: "pdf", layout: "general", notes: 4, appointments: 4, outcomeScores: 7, clinicians: 2, entriesLeftOut: 0, detailsFound: 14, detailsFilled: 16 });
+    assert.deepEqual(rows[0].detail, { format: "pdf", layout: "general", notes: 3, appointments: 4, outcomeScores: 7, clinicians: 2, entriesLeftOut: 0, detailsFound: 14, detailsFilled: 16 });
     assert.doesNotMatch(JSON.stringify(rows[0]), /Quill|Harriet|Northgate|quill-printout|07700|PH-DEMO/, "no patient details, file names or clinicians");
     assert.equal(activityLabel("notes.imported"), "Patient notes imported");
-    assert.equal(describeActivityDetail("notes.imported", rows[0].detail), "4 notes, 4 appointments, 7 outcome scores · from a PDF · checked before use");
+    assert.equal(describeActivityDetail("notes.imported", rows[0].detail), "3 notes, 4 appointments, 7 outcome scores · from a PDF · checked before use");
 
     // The documented format through /read is recorded too.
     await call(handleFileImportRead, "/connectors/file-import/read", { format: "csv", content: SAMPLE_IMPORT_FILES.csv.content }, "staff");
@@ -589,7 +594,8 @@ describe("the review step in the Studio", () => {
   const visible = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ");
 
   test("a clinic's Studio: neutral wording, live counts and warnings, confirm blocked until fixed", async () => {
-    const r = await review({ format: "docx", content: b64(await F.buildLetterDocx()), fileName: "letter.docx" });
+    let r = await review({ format: "docx", content: b64(await F.buildLetterDocx()), fileName: "letter.docx" });
+    for (const key of ["E-2", "E-3", "E-4"]) r = updateEntry(r, key, { clinicianName: "", clinicianHcpc: "" });
     const html = renderToStaticMarkup(createElement(NotesReviewStep, { review: r, tenant: true, busy: false, error: null, onConfirm: () => undefined, onBack: () => undefined }));
     const text = visible(html);
     assert.match(text, /Check the notes before they are used/);

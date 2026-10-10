@@ -9,7 +9,8 @@ import "server-only";
  * (connectors/file-import/review-bundle.ts) → BundleResponse, with one PARSE trace entry (counts only). For a
  * clinic, a "notes.imported" row records the format and counts (never names, notes or file names).
  *
- * Errors: 401, 403, 413, 422 VALIDATION_FAILED (body shape), 422 IMPORT_INVALID with plain-English `issues`
+ * Errors: 401, 403, 429 RATE_LIMITED (fix wave 3: per-minute limits per sign-in or session and per address),
+ * 413, 422 VALIDATION_FAILED (body shape), 422 IMPORT_INVALID with plain-English `issues`
  * (a required detail missing, an included entry without a date or clinician).
  *
  * Owner: integration agent.
@@ -22,7 +23,7 @@ import { requireConnector, toConnectorHttpError } from "../../connectors/handler
 import type { TraceEntry } from "../../core/types";
 import { FileImportConfirmRequestSchema } from "../contract";
 import { json, logEvent, parseBody, type MedreportHandler } from "../http";
-import { auditNotesImported, bundleResponseFor } from "./file-import-response";
+import { auditNotesImported, bundleResponseFor, takeFileImportSlot } from "./file-import-response";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -30,6 +31,7 @@ export const handleFileImportConfirm: MedreportHandler = async (req, _ctx, deps)
   const actor = await requireActor(req, deps);
   const connector = requireConnector(deps, "file-import", { tenantId: actor.tenantId });
   assertActorConnector(actor, connector.id);
+  await takeFileImportSlot(req, deps, actor);
   // The review carries the notes' text back (JSON escaping can double it).
   const parsed = await parseBody(req, FileImportConfirmRequestSchema, { maxBytes: MAX_IMPORT_CHARS * 2 + 200_000 });
   if (!parsed.ok) return parsed.response;

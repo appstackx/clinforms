@@ -66,7 +66,7 @@ export function createMemoryTenantStore(opts: { now?: () => Date } = {}): Memory
     },
     async getReportMeta(tenantId, id) {
       const row = reports.get(k(tenantId, id));
-      return row ? { ...row.meta } : null;
+      return row ? { ...row.meta, storedBytes: Buffer.byteLength(row.payload, "utf8") } : null;
     },
     async getReport(tenantId, id) {
       const row = reports.get(k(tenantId, id));

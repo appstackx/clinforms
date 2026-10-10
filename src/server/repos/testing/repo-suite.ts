@@ -456,6 +456,11 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       await createReport(ctx, A, { id: "meta-1", status: "signed", templateId: "solicitor", payload: { x: 1 } });
       const meta = await getReportMeta(ctx, A, "meta-1");
       assert.deepEqual(meta && [meta.id, meta.rev, meta.status, meta.templateId], ["meta-1", 1, "signed", "solicitor"]);
+      // Fix wave 3: the stored (encrypted) size, for the store's growth allowance – larger for a larger payload.
+      assert.ok(meta && typeof meta.storedChars === "number" && meta.storedChars > 0);
+      await updateReport(ctx, A, { id: "meta-1", status: "signed", templateId: "solicitor", payload: { x: "y".repeat(3000) } }, 1);
+      const grown = await getReportMeta(ctx, A, "meta-1");
+      assert.ok(grown && meta && (grown.storedChars ?? 0) > (meta.storedChars ?? 0) + 3000);
       assert.equal(await getReportMeta(ctx, B, "meta-1"), null);
       assert.equal(await getReportMeta(ctx, A, "nope"), null);
       await deleteReport(ctx, A, "meta-1");

@@ -11,8 +11,10 @@ import "server-only";
  * - A note's text is the entry's body exactly as written. Lines labelled S:/O:/A:/P: (or Subjective: …
  *   Plan:, PMH:, SH:) fill those fields, carrying on until the next label; text before the first label is
  *   kept as the note's other text. An entry with no text under its heading keeps the heading as its text.
- * - With an attendance record, an entry's status becomes an appointment (an attended one is linked to its
- *   note); a missed or cancelled appointment without text is an appointment only.
+ * - With an attendance record – every included dated entry has a status and a time (review-contract.ts
+ *   reviewAttendance, worked out again here) – an entry's status becomes an appointment (an attended one is linked
+ *   to its note). A missed or cancelled appointment is an appointment with its reason (the entry's reason, else its
+ *   text), not a clinical note – unless its text is too long for a reason (fix wave 3).
  * - Outcome scores keep their date (or their entry's date) and are linked to the entry's note on that date.
  * - What the import format has no field for is added afterwards: a medico-legal company or "other" as the
  *   instructing party, the insurer's membership and authorisation numbers, who referred the patient and the
@@ -26,9 +28,12 @@ import { bundleFromImportDocument, type ImportIssue, type ImportStats } from "./
 import {
   NOTES_REVIEW_FIELD_LABELS,
   NOTES_REVIEW_REQUIRED,
+  missingFieldText,
+  reviewAttendance,
   type NotesReview,
   type NotesReviewEntry,
 } from "./review-contract";
+import { STRUCTURE_LINE_CHARS, collapseSpaces, trimNewlines } from "./text-runs";
 
 export interface ReviewBundleCounts extends ImportStats {
   /** Outcome scores in the bundle. */
@@ -46,9 +51,43 @@ export type ReviewBundleResult =
 
 type SoapField = "subjective" | "objective" | "assessment" | "plan" | "past_medical_history" | "social_history" | "free_text";
 
-/** One-letter labels need a colon ("S: …"); words take a colon or a spaced dash ("Plan – …"). */
+/** One-letter labels need a colon ("S: …"); words take a colon or a spaced dash ("Plan – …"). Linear on long runs of spaces. */
 const SOAP_LABEL =
-  /^\s*(?:\*\*)?(?:(S|O|A|P)\s*:|(Subjective|Objective|Assessment|Plan|PMH|Past medical history|SH|Social history)\s*(?:\*\*)?\s*(?::|\s[-–]\s))(?:\*\*)?[ \t]?(.*)$/i;
+  /^\s*(?:\*\*)?(?:(S|O|A|P)\s*:|(Subjective|Objective|Assessment|Plan|PMH|Past medical history|SH|Social history)\s*(?:\*\*\s*)?(?::|\s[-–]\s))(?:\*\*)?[ \t]?(.*)$/i;
+/**
+ * A section heading printed alone on its line (practice-system printouts): the SOAP words start their field; other
+ * known headings ("Treatment", "Red Flags", "Outcome Measures"…) go back to the note's other text, where the heading
+ * line is kept.
+ */
+const BARE_HEADING = /^\s*(?:\*\*)?([A-Za-z][A-Za-z ]{0,40}?)(?:\*\*)?\s*:?\s*$/;
+const BARE_SECTION: Record<string, SoapField> = {
+  subjective: "subjective",
+  "presenting condition": "subjective",
+  "history of presenting condition": "subjective",
+  hpc: "subjective",
+  objective: "objective",
+  "objective examination": "objective",
+  examination: "objective",
+  assessment: "assessment",
+  "clinical impression": "assessment",
+  impression: "assessment",
+  diagnosis: "assessment",
+  plan: "plan",
+  pmh: "past_medical_history",
+  "past medical history": "past_medical_history",
+  sh: "social_history",
+  "social history": "social_history",
+  treatment: "free_text",
+  "treatment given": "free_text",
+  "outcome measures": "free_text",
+  outcomes: "free_text",
+  "red flags": "free_text",
+  "special questions": "free_text",
+  goals: "free_text",
+  advice: "free_text",
+  notes: "free_text",
+  status: "free_text",
+};
 
 function soapField(label: string): SoapField {
   const l = label.toLowerCase();
@@ -73,15 +112,24 @@ export function splitNoteText(body: string): Record<SoapField, string> {
   };
   let current: SoapField = "free_text";
   for (const line of body.replace(/\r\n?/g, "\n").split("\n")) {
-    const m = SOAP_LABEL.exec(line);
+    const short = line.length <= STRUCTURE_LINE_CHARS;
+    const m = short ? SOAP_LABEL.exec(line) : null;
     if (m) {
       current = soapField(m[1] ?? m[2]);
-      if (m[3].trim()) fields[current].push(m[3].replace(/\s+$/, ""));
+      if (m[3].trim()) fields[current].push(m[3].trimEnd());
       continue;
     }
-    if (line.trim() || fields[current].length) fields[current].push(line.replace(/\s+$/, ""));
+    const bare = short && line.length <= 50 ? BARE_HEADING.exec(line) : null;
+    const section = bare ? BARE_SECTION[collapseSpaces(bare[1]).trim().toLowerCase()] : undefined;
+    if (section) {
+      current = section;
+      // A heading that goes back to the other text stays there as written; a SOAP word is the field itself.
+      if (section === "free_text") fields.free_text.push(line.trimEnd());
+      continue;
+    }
+    if (line.trim() || fields[current].length) fields[current].push(line.trimEnd());
   }
-  const join = (f: SoapField) => fields[f].join("\n").replace(/^\n+|\n+$/g, "");
+  const join = (f: SoapField) => trimNewlines(fields[f].join("\n"));
   return {
     subjective: join("subjective"),
     objective: join("objective"),
@@ -94,9 +142,10 @@ export function splitNoteText(body: string): Record<SoapField, string> {
 }
 
 function incidentType(text: string): NonNullable<ImportDocument["episode"]["incident"]>["incident_type"] {
-  const s = text.toLowerCase();
+  // Travelling to or from work is not an injury at work (fix wave 3: "fell off her bike cycling to work").
+  const s = text.toLowerCase().slice(0, 500).replace(/\b(?:cycling|walking|driving|travelling|traveling|commuting|on (?:the|my|his|her|their) way)\s+(?:to|from)\s+work\b|\b(?:to|from)\s+work\b|\bcommut\w*/g, " ");
   if (/road|rta|traffic|collision|vehicle|car\b/.test(s)) return "road_traffic_accident";
-  if (/work/.test(s)) return "workplace";
+  if (/\bat work\b|\bworkplace\b|\bwhile working\b|\bon shift\b|\bwork(?:ing)? accident\b|\binjury at work\b|\baccident book\b|\bemployer\b|\bwork\b/.test(s)) return "workplace";
   if (/slip|trip|fall/.test(s)) return "slip_trip_fall";
   if (/sport/.test(s)) return "sport";
   return "other";
@@ -113,13 +162,24 @@ const WIRE_REFERRAL_TYPE: Record<InstructingPartyType, ImportDocument["episode"]
 };
 
 const NOT_RECORDED = "Not recorded";
+const REASON_MAX = 300;
+
+/** A missed appointment's note as its reason: one line, without a "Status" heading or the e-signature line. */
+function reasonFromText(body: string): string {
+  const lines = body
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !/^(?:status|attendance|notes?)\s*:?$/i.test(l) && !/^(?:electronically\s+|digitally\s+|e-?)?signed\b/i.test(l));
+  return collapseSpaces(lines.join(" ")).trim().slice(0, 2 * REASON_MAX);
+}
 
 export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId; now?: Date }): ReviewBundleResult {
   const reg = review.registration;
   const issues: ImportIssue[] = [];
   for (const field of NOTES_REVIEW_REQUIRED) {
     if (!String(reg[field]).trim()) {
-      issues.push({ where: NOTES_REVIEW_FIELD_LABELS[field], message: `Enter the ${field === "instructingPartyType" ? "type of who the form is for" : NOTES_REVIEW_FIELD_LABELS[field].toLowerCase()}.` });
+      const ask = missingFieldText(field);
+      issues.push({ where: NOTES_REVIEW_FIELD_LABELS[field], message: `${ask.charAt(0).toUpperCase()}${ask.slice(1)}.` });
     }
   }
   const included = review.entries.filter((e) => e.include);
@@ -127,8 +187,9 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
     const where = `${e.key} (${e.where})`;
     if (!e.date) issues.push({ where, message: "Give this entry a date, or leave it out." });
     if (!e.clinicianName.trim()) issues.push({ where, message: "Choose the clinician for this entry." });
-    if (review.attendance && e.status && !e.time) issues.push({ where, message: "Add the time of this appointment." });
   }
+  // Attendance is counted only when every included dated entry has a status and a time (never a part-record).
+  const attendance = reviewAttendance(review).on;
   if (!included.length) issues.push({ where: "Notes", message: "Include at least one dated note." });
   if (issues.length) return { ok: false, issues };
 
@@ -139,9 +200,11 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
   const author = (e: NotesReviewEntry) => ({ name: e.clinicianName.trim(), hcpc: e.clinicianHcpc.trim() || NOT_RECORDED, role: null });
 
   for (const e of used) {
-    const status = review.attendance && e.status ? e.status : null;
+    const status = attendance && e.status ? e.status : null;
     const hasText = e.body.trim() !== "";
-    const makeNote = hasText || !status;
+    // A missed or cancelled appointment: its text is the reason (not a clinical note), unless it is too long for one.
+    const reason = status && status !== "ATT" ? (e.reason.trim() || (hasText ? reasonFromText(e.body) : "")) : "";
+    const makeNote = status && status !== "ATT" ? hasText && reasonFromText(e.body).length >= REASON_MAX : hasText || !status;
     const noteId = `note-${e.key}`;
     if (makeNote) {
       const text = splitNoteText(hasText ? e.body : e.heading);
@@ -169,7 +232,7 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
         start_time: e.time,
         duration_minutes: null,
         status,
-        status_reason: status !== "ATT" && e.reason.trim() ? e.reason.trim() : null,
+        status_reason: reason ? reason.slice(0, REASON_MAX) : null,
         clinician: author(e),
         note_id: status === "ATT" && makeNote ? noteId : null,
       });

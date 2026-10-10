@@ -638,7 +638,9 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
         time = toTime(t[1]);
         rest = rest.slice(t[0].length);
       }
-      drafts.push({ line: i + 1, date: iso, time, headingRest: rest.replace(/\*+/g, "").trim(), body: [] });
+      // Whitespace collapsed (linear): the heading's text is only read for its type and author, and a separator
+      // split over long runs of spaces would take quadratic time (wave 3 security fix).
+      drafts.push({ line: i + 1, date: iso, time, headingRest: rest.replace(/\*+/g, "").replace(/\s+/g, " ").trim(), body: [] });
       continue;
     }
     if (drafts.length === 0) {
@@ -742,7 +744,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
         }
       }
     }
-    const join = (f: SoapField) => fields[f].join("\n").replace(/\n+$/, "").trim();
+    const join = (f: SoapField) => fields[f].join("\n").trim();
     if (!["subjective", "objective", "assessment", "plan", "free_text"].some((f) => join(f as SoapField))) {
       ctx.warnings.push({ where: `line ${d.line}`, message: "This note has no text." });
     }

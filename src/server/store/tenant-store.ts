@@ -29,8 +29,25 @@ import type { SaveResult } from "../repos/versioned";
 /** Most reports listed in a snapshot (metadata only; the repository's own cap). */
 const SNAPSHOT_REPORT_LIMIT = 1000;
 
+/**
+ * The stored payload's size as JSON, estimated from its encrypted text (base64 of the ciphertext: about 4 characters
+ * per 3 bytes, plus the nonce, tag and header) – for the clinic's daily new-data allowance (fix wave 3).
+ */
+export function estimatePlainBytes(storedChars: number): number {
+  return Math.max(0, Math.floor((storedChars * 3) / 4) - 64);
+}
+
 function reportMeta(m: ReportMeta): StoredReportMeta {
-  return { id: m.id, rev: m.rev, status: m.status, templateId: m.templateId, formId: m.formId, createdAt: m.createdAt, updatedAt: m.updatedAt };
+  return {
+    id: m.id,
+    rev: m.rev,
+    status: m.status,
+    templateId: m.templateId,
+    formId: m.formId,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+    ...(m.storedChars !== undefined ? { storedBytes: estimatePlainBytes(m.storedChars) } : {}),
+  };
 }
 
 function fileMeta(m: FormFileMeta): StoredFileMeta {

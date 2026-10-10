@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<string, string> = {
   exported: "Exported",
   answer_set: "Answer changed",
   previewed: "Previewed",
+  consent_recorded: "Consent recorded",
 };
 
 const ACTION_DOT: Record<string, string> = {
@@ -39,6 +40,7 @@ const ACTION_DOT: Record<string, string> = {
   gap_resolved: "bg-amber-500",
   gap_acknowledged: "bg-amber-500",
   flag_acknowledged: "bg-amber-500",
+  consent_recorded: "bg-teal-600",
 };
 
 export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {

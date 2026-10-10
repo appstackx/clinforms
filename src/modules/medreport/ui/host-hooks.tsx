@@ -46,6 +46,11 @@ export interface StudioClinic {
   name: string;
   /** Drafting from the notes is switched on for this clinic (clinic_profile.drafting_enabled). */
   draftingEnabled?: boolean;
+  /**
+   * Fix wave 3: the clinic's clinicians (members other than staff, with their HCPC numbers from their profiles),
+   * offered when staff choose who wrote an uploaded note.
+   */
+  clinicians?: Array<{ name: string; hcpc?: string }>;
 }
 
 /** The signed-in member (tenant mode). Their signing details are the default signer on approvals. */

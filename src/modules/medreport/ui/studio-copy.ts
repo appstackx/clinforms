@@ -41,7 +41,7 @@ export const TENANT_COPY = {
     launchFailed: "Choose the patient's notes below instead.",
     formatGuideSummary: "What the notes need – the format guide",
     formatSummary:
-      "Notes in any layout are read and shown to you to check before they are used: a PDF printed or saved from your clinic system (not a scan), a Word document, a CSV export, a text file or pasted notes. Notes in the documented layout below are used straight away.",
+      "Notes as your clinic system prints or exports them are read and shown to you to check before they are used: a PDF printed or saved from your clinic system (not a scan), a Word document, a CSV export, a text file or pasted notes. Notes in the documented layout below are used straight away.",
     notesHelpTitle: "Notes not read well?",
     notesHelp:
       "Scanned notes cannot be read: print or save the notes as a PDF from your clinic system, or paste them as text. If your system's printout is read poorly, send ClinForms support a sample printout (with made-up details) so its layout can be checked.",

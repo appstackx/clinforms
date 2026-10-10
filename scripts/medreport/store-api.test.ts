@@ -578,4 +578,16 @@ test("fix wave 2: store writes are limited per member and per clinic (429 with R
   assert.match((await big.json()).detail, /tomorrow/);
   // …while editing an existing record still works (it does not grow the database).
   assert.equal((await f(storeApiPaths.report(report.id), json({ report: { ...report, patientLabel: "edited" } }, { "if-match": '"1"' }))).status, 200);
+  // Fix wave 3: an update that GROWS a record counts its growth – a record created small and saved again at full
+  // size is refused once the day's allowance is used up, and counted before that.
+  const grown = { ...report, patientLabel: "edited", activity: [...report.activity, { at: "2026-10-10T09:00:00.000Z", actor: "Sarah Reid", action: "edited", detail: "x".repeat(400_000) }] };
+  const refused = await f(storeApiPaths.report(report.id), json({ report: grown }, { "if-match": '"2"' }));
+  assert.equal(refused.status, 429, "the allowance is used up: a growing update is refused");
+  counts.set(dayKey, 0);
+  const allowed = await f(storeApiPaths.report(report.id), json({ report: grown }, { "if-match": '"2"' }));
+  assert.equal(allowed.status, 200);
+  assert.ok((counts.get(dayKey) ?? 0) >= 390, `the update counted its growth (${counts.get(dayKey)} KB)`);
+  const before = counts.get(dayKey);
+  assert.equal((await f(storeApiPaths.report(report.id), json({ report: { ...grown, patientLabel: "edited again" } }, { "if-match": '"3"' }))).status, 200);
+  assert.equal(counts.get(dayKey), before, "an update that does not grow the record counts nothing");
 });

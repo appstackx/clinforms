@@ -490,6 +490,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             onOpenSource={onOpenSource}
             canAcknowledge={canAck}
             questionLabel={labelOf}
+            consentRecorder={!tenant || Boolean(member && member.role !== "staff" && member.canSign !== false && member.hcpc)}
           />
         </TabsContent>
         <TabsContent value="preview" className="mt-0" forceMount hidden={tab !== "preview"}>
@@ -683,6 +684,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   answerEdited={editedAnswers.has(q.key)}
                   answeredByPerson={personAnswered.has(q.key)}
                   referralValue={q.field?.fillSource.kind === "registration" ? referralValueForPath(q.field.fillSource.path, report) : null}
+                  referralFallback={
+                    q.field?.fillSource.kind === "registration" && q.field.fillSource.path === "referral.reference" ? (report.bundleSnapshot.referral.membershipNumber?.trim() || null) : null
+                  }
                   receipt={report.receipt}
                   activeSourceId={activeSourceId}
                   drafting={actions.draftingKeys.has(q.key)}

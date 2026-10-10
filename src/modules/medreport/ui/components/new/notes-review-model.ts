@@ -7,8 +7,9 @@
  */
 import {
   NOTES_REVIEW_COPY,
-  NOTES_REVIEW_FIELD_LABELS,
   NOTES_REVIEW_REQUIRED,
+  missingFieldText,
+  reviewAttendance,
   type NotesReview,
   type NotesReviewEntry,
   type NotesReviewRegistration,
@@ -19,15 +20,42 @@ export interface ReviewClinician {
   hcpc: string;
 }
 
-/** The clinicians named in the entries (once each, in order of first appearance). */
-export function reviewClinicians(review: NotesReview): ReviewClinician[] {
+const nameKey = (s: string) => s.toLowerCase().replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
+
+/**
+ * The clinicians named in the entries (once each, in order of first appearance), then – fix wave 3 – the clinic's own
+ * members (a clinic's Studio: names and HCPC numbers from their profiles) that the notes do not already name.
+ */
+export function reviewClinicians(review: NotesReview, members: readonly ReviewClinician[] = []): ReviewClinician[] {
   const out: ReviewClinician[] = [];
   for (const e of review.entries) {
     const name = e.clinicianName.trim();
     if (!name || name === NOTES_REVIEW_COPY.clinicianNotRecorded) continue;
     if (!out.some((c) => c.name === name && c.hcpc === e.clinicianHcpc.trim())) out.push({ name, hcpc: e.clinicianHcpc.trim() });
   }
+  for (const m of members) {
+    const name = m.name.trim();
+    if (!name) continue;
+    if (!out.some((c) => nameKey(c.name) === nameKey(name) && (!c.hcpc || !m.hcpc || c.hcpc === m.hcpc.trim()))) out.push({ name, hcpc: m.hcpc.trim() });
+  }
   return out;
+}
+
+/**
+ * Fix wave 3: an entry that names a clinic member without an HCPC number gets the member's number (exactly one
+ * member of that name, with a number). Nothing else changes.
+ */
+export function withMemberNumbers(review: NotesReview, members: readonly ReviewClinician[]): NotesReview {
+  if (!members.length) return review;
+  let changed = false;
+  const entries = review.entries.map((e) => {
+    if (!e.clinicianName.trim() || e.clinicianHcpc.trim()) return e;
+    const same = members.filter((m) => nameKey(m.name) === nameKey(e.clinicianName) && m.hcpc.trim());
+    if (same.length !== 1) return e;
+    changed = true;
+    return { ...e, clinicianHcpc: same[0].hcpc.trim() };
+  });
+  return changed ? { ...review, entries } : review;
 }
 
 export function clinicianKey(c: ReviewClinician): string {
@@ -38,8 +66,35 @@ export function clinicianLabel(c: ReviewClinician): string {
   return c.hcpc ? `${c.name} (${c.hcpc})` : c.name;
 }
 
+/** The review with its attendance flag worked out again (every included dated entry has a status and a time). */
+function withAttendance(review: NotesReview): NotesReview {
+  const on = reviewAttendance(review).on;
+  return on === review.attendance ? review : { ...review, attendance: on };
+}
+
 export function updateEntry(review: NotesReview, key: string, patch: Partial<NotesReviewEntry>): NotesReview {
-  return { ...review, entries: review.entries.map((e) => (e.key === key ? { ...e, ...patch } : e)) };
+  return withAttendance({ ...review, entries: review.entries.map((e) => (e.key === key ? { ...e, ...patch } : e)) });
+}
+
+/** Fix wave 3: every included dated entry without an attendance status is marked as attended. */
+export function markOthersAttended(review: NotesReview): NotesReview {
+  return withAttendance({ ...review, entries: review.entries.map((e) => (e.include && e.date && !e.status ? { ...e, status: "ATT" as const } : e)) });
+}
+
+/**
+ * What the attendance needs, in plain English (null when there is nothing to say): set for some entries only, or
+ * appointments without a time. Not a blocker – the notes can be used without an attendance record.
+ */
+export function attendanceNotice(review: NotesReview): { text: string; canMarkOthers: boolean } | null {
+  const a = reviewAttendance(review);
+  if (a.on || a.withStatus === 0) return null;
+  if (a.withStatus < a.dated) return { text: NOTES_REVIEW_COPY.attendancePartial(a.withStatus, a.dated), canMarkOthers: true };
+  return a.statusNoTime ? { text: NOTES_REVIEW_COPY.attendanceNoTime(a.statusNoTime), canMarkOthers: false } : null;
+}
+
+/** Fix wave 3: the report cannot be approved without the patient's consent to share it – say so before drafting. */
+export function consentMissing(review: NotesReview): boolean {
+  return review.registration.consent !== "yes";
 }
 
 export function updateRegistration<K extends keyof NotesReviewRegistration>(review: NotesReview, field: K, value: NotesReviewRegistration[K]): NotesReview {
@@ -48,10 +103,10 @@ export function updateRegistration<K extends keyof NotesReviewRegistration>(revi
 
 /** Set one clinician on every listed entry. */
 export function applyClinician(review: NotesReview, keys: readonly string[], clinician: ReviewClinician): NotesReview {
-  return {
+  return withAttendance({
     ...review,
     entries: review.entries.map((e) => (keys.indexOf(e.key) >= 0 ? { ...e, clinicianName: clinician.name, clinicianHcpc: clinician.hcpc } : e)),
-  };
+  });
 }
 
 export interface ReviewCounts {
@@ -83,18 +138,12 @@ export function reviewCounts(review: NotesReview): ReviewCounts {
 export function reviewBlockers(review: NotesReview): string[] {
   const out: string[] = [];
   for (const field of NOTES_REVIEW_REQUIRED) {
-    if (!String(review.registration[field]).trim()) {
-      out.push(NOTES_REVIEW_COPY.missingField(field === "instructingPartyType" ? "type of who the form is for" : NOTES_REVIEW_FIELD_LABELS[field]));
-    }
+    if (!String(review.registration[field]).trim()) out.push(missingFieldText(field));
   }
   const c = reviewCounts(review);
   if (c.includedNoDate.length) out.push(NOTES_REVIEW_COPY.includedNoDate(c.includedNoDate.length));
   if (c.noClinician.length) out.push(NOTES_REVIEW_COPY.noClinician(c.noClinician.length));
   if (!review.entries.some((e) => e.include && e.date)) out.push(NOTES_REVIEW_COPY.nothingIncluded);
-  if (review.attendance) {
-    const noTime = review.entries.filter((e) => e.include && e.status && !e.time).length;
-    if (noTime) out.push(`add the time of ${noTime === 1 ? "1 appointment" : `${noTime} appointments`}`);
-  }
   return out;
 }
 

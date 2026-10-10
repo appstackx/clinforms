@@ -147,7 +147,11 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
   }
 
   const row = { id, status: report.status, templateId: report.templateId, formId: report.form?.formId ?? null, payload: report };
-  if (ifMatch === null) await takeNewData(deps, t, new TextEncoder().encode(JSON.stringify(report)).byteLength);
+  // The clinic's daily new-data allowance counts a new report in full and (fix wave 3) the growth of an update – a
+  // record created small and saved again at full size is counted too.
+  const bytes = new TextEncoder().encode(JSON.stringify(report)).byteLength;
+  if (ifMatch === null) await takeNewData(deps, t, bytes);
+  else if (before?.storedBytes !== undefined && bytes - before.storedBytes > 1024) await takeNewData(deps, t, bytes - before.storedBytes);
   const result = ifMatch === null ? await t.store.createReport(t.tenantId, row) : await t.store.updateReport(t.tenantId, row, ifMatch);
   if (!result.ok) {
     switch (result.reason) {

@@ -63,7 +63,7 @@ export function SourceStep({ onLoaded }: { onLoaded(result: SourceResult): void 
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <SourceTab active={tab === "tm3"} onClick={() => setTab("tm3")} icon={UserRound} title="Simulated TM3" detail="Choose a patient and episode" />
-        <SourceTab active={tab === "upload"} onClick={() => setTab("upload")} icon={FileUp} title="Upload the notes" detail="Available now – notes in any layout: PDF, Word, CSV or text" />
+        <SourceTab active={tab === "upload"} onClick={() => setTab("upload")} icon={FileUp} title="Upload the notes" detail="Available now – notes as your clinic system prints them: PDF, Word, CSV or text" />
         <Link
           href="/pms-sandbox"
           className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
@@ -361,13 +361,13 @@ function ExportUpload({ onLoaded, tenant = false }: { onLoaded(result: SourceRes
           title={busy ? "Reading the notes…" : "Drop the patient's notes here, or choose a file"}
           hint={
             tenant
-              ? "The notes printed or saved as a PDF from your clinic system, a Word document, a CSV export or a text file – any layout; you check what was read before it is used"
-              : "The notes printed or saved as a PDF, a Word document, a CSV export or a text file – any layout; you check what was read before it is used · fictional data only"
+              ? "The notes printed or saved as a PDF from your clinic system, a Word document, a CSV export or a text file – you check what was read before it is used"
+              : "The notes printed or saved as a PDF, a Word document, a CSV export or a text file – you check what was read before it is used · fictional data only"
           }
           disabled={busy}
         />
         <div>
-          <FieldLabel htmlFor="paste-notes" hint={tenant ? "(any layout – you check what was read)" : "(anonymised – any layout; you check what was read)"}>
+          <FieldLabel htmlFor="paste-notes" hint={tenant ? "(you check what was read)" : "(anonymised – you check what was read)"}>
             Or paste notes
           </FieldLabel>
           <Textarea

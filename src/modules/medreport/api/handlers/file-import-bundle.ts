@@ -14,7 +14,8 @@ import "server-only";
  * DEMO_CLINIC in its forms and letters. The public demo's bundles are unchanged.
  * Wave 3: a clinic's import is recorded in its activity ("notes.imported": format and counts only).
  *
- * Errors: 401, 403 SESSION_MISMATCH (a launch session for another connector), 413, 422
+ * Errors: 401, 403 SESSION_MISMATCH (a launch session for another connector), 429 RATE_LIMITED (fix wave 3:
+ * per-minute limits per sign-in or session and per address), 413, 422
  * VALIDATION_FAILED (body shape), 422 IMPORT_INVALID with plain-English `issues` ({path: where,
  * message}, e.g. {path: "line 7, column 'time'", message: "\"9.3\" is not a 24-hour time like 09:30."}).
  *
@@ -25,12 +26,13 @@ import { callConnector, requireConnector } from "../../connectors/handler-suppor
 import { MAX_IMPORT_CHARS } from "../../connectors/file-import/format";
 import { FileImportBundleRequestSchema } from "../contract";
 import { json, logEvent, parseBody, type MedreportHandler } from "../http";
-import { auditNotesImported, bundleResponseFor } from "./file-import-response";
+import { auditNotesImported, bundleResponseFor, takeFileImportSlot } from "./file-import-response";
 
 export const handleFileImportBundle: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
   const connector = requireConnector(deps, "file-import", { tenantId: actor.tenantId });
   assertActorConnector(actor, connector.id);
+  await takeFileImportSlot(req, deps, actor);
   const parsed = await parseBody(req, FileImportBundleRequestSchema, { maxBytes: MAX_IMPORT_CHARS * 2 + 10_000 });
   if (!parsed.ok) return parsed.response;
 

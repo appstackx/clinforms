@@ -12,7 +12,7 @@ import "server-only";
  */
 import { HttpError } from "../../api/http";
 import { MAX_FORM_FILE_BYTES } from "../../config.public";
-import { childElements, firstW, isW, loadDocxDom, paragraphText, wChildren, type XmlElement } from "../../forms/docx-dom";
+import { childElements, firstW, isW, loadDocxDom, paragraphText, wAttr, wChildren, type XmlElement } from "../../forms/docx-dom";
 import type { NotesBlock } from "./general-notes";
 import { ImportError } from "./parser";
 
@@ -30,6 +30,15 @@ function blockChildren(container: XmlElement): XmlElement[] {
     } else if (child.localName === "customXml" || child.localName === "ins") out.push(...blockChildren(child));
   }
   return out;
+}
+
+/** A list item: a numbered or bulleted paragraph (w:numPr, directly or through a "List …" paragraph style). */
+function isListParagraph(p: XmlElement): boolean {
+  const pPr = firstW(p, "pPr");
+  if (!pPr) return false;
+  if (firstW(pPr, "numPr")) return true;
+  const style = wAttr(firstW(pPr, "pStyle"), "val") ?? "";
+  return /^list/i.test(style) && !/^listtable/i.test(style);
 }
 
 function rowsOf(tbl: XmlElement): XmlElement[] {
@@ -78,9 +87,11 @@ export function docxNotesToBlocks(base64: string): { blocks: NotesBlock[]; text:
     if (isW(el, "p")) {
       p += 1;
       const lines = paragraphText(el).replace(/ /g, " ").split(/\r?\n|\u000b/);
+      const bullet = isListParagraph(el);
       for (const line of lines) {
-        blocks.push({ kind: "line", text: line.replace(/\s+$/, ""), where: `paragraph ${p}` });
-        text.push(line.replace(/\s+$/, ""));
+        const lineText = line.trimEnd();
+        blocks.push(bullet ? { kind: "line", text: lineText, where: `paragraph ${p}`, bullet: true } : { kind: "line", text: lineText, where: `paragraph ${p}` });
+        text.push(lineText);
       }
     } else {
       t += 1;

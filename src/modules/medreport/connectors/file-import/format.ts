@@ -283,7 +283,7 @@ export const TEXT_HEADER_KEYS: ReadonlyArray<{ key: string; synonyms: string[]; 
 export const IMPORT_FORMAT_GUIDE = {
   title: `${PRODUCT.name} import format (v1)`,
   summary:
-    "Upload the patient's notes in any layout – printed or saved as a PDF from your clinic system, a Word document, a CSV export or a text file – or paste them. Notes in the documented layout below are used straight away; any other layout is read and shown to you to check (dates, clinicians, patient details) before it is used.",
+    "Upload the patient's notes as your clinic system prints or exports them – a PDF printed or saved from the system, a Word document, a CSV export or a text file – or paste them. Notes in the documented layout below are used straight away; other layouts are read and shown to you to check (dates, clinicians, attendance, patient details) before they are used.",
   formats: [
     {
       id: "general" as const,

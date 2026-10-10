@@ -28,6 +28,11 @@ export interface StoredReportMeta {
   createdAt: string;
   /** When the server last stored it. */
   updatedAt: string;
+  /**
+   * getReportMeta (fix wave 3): the stored report's size as JSON in bytes (may be estimated from its encrypted form) –
+   * an update that makes a report larger counts the growth against the clinic's daily new-data allowance.
+   */
+  storedBytes?: number;
 }
 
 export interface StoredFormMeta {

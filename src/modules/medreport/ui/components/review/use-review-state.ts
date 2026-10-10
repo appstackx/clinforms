@@ -18,6 +18,7 @@ import {
   addClinicianParagraph,
   editParagraph,
   markApproved,
+  recordConsent,
   removeAbsenceSentences,
   removeParagraph,
   reopenGap,
@@ -41,6 +42,7 @@ export type ReviewAction =
   | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string; actor: string }
   | { type: "reopenGap"; gapId: string; actor: string }
   | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
+  | { type: "recordConsent"; givenOn: string; actor: string }
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
   | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
@@ -93,6 +95,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
       return reopenGap(report, action.gapId, action.actor);
     case "acknowledgeFlag":
       return acknowledgeFlag(report, action.flagId, action.reason, action.actor);
+    case "recordConsent":
+      return recordConsent(report, action.givenOn, action.actor);
     case "setFlags":
       return { ...report, flags: action.flags };
     case "applyDraft":
@@ -107,7 +111,8 @@ function validationKey(report: Report): string {
     .map((f) => f.id)
     .sort()
     .join("|");
-  return JSON.stringify([report.sections, report.gaps, acks]);
+  // The record's consent too (fix wave 3: recorded on the review screen for uploaded notes).
+  return JSON.stringify([report.sections, report.gaps, acks, report.bundleSnapshot.consent]);
 }
 
 function sameFlags(a: readonly ReportFlag[], b: readonly ReportFlag[]): boolean {

@@ -3,7 +3,7 @@
  * `UPDATE … SET rev = rev + 1 … WHERE tenant_id = ? AND id = ? AND rev = ?`; a stale revision returns
  * {reason: "conflict", currentRev} (the API maps it to 409 and the Studio refetches).
  */
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 import { isUniqueViolation } from "../db/errors";
 import type { ReportsTable } from "../db/schema";
 import {
@@ -30,6 +30,8 @@ export interface ReportMeta {
   createdAt: string;
   updatedAt: string;
   deleteAfter: string | null;
+  /** getReportMeta only (fix wave 3): characters of the stored (encrypted) payload, for the store's growth allowance. */
+  storedChars?: number;
 }
 
 export interface ReportRecord<P = unknown> extends ReportMeta {
@@ -191,11 +193,11 @@ export async function getReportMeta(ctx: RepoContext, tenantId: string, id: stri
   assertId(id, "Report id");
   const row = await ctx.db
     .selectFrom("reports")
-    .select([...META_COLUMNS])
+    .select([...META_COLUMNS, sql<number>`length(payload_enc)`.as("payload_len")])
     .where("tenant_id", "=", tenantId)
     .where("id", "=", id)
     .executeTakeFirst();
-  return row ? toMeta(row) : null;
+  return row ? { ...toMeta(row), storedChars: Number(row.payload_len) || 0 } : null;
 }
 
 export interface ListReportsOptions {

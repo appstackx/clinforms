@@ -292,3 +292,248 @@ export const DOCUMENTED_TEXT = [
   "S: Much better.",
   "Outcome measures: NDI 10%",
 ].join("\n");
+
+/* ------------------------------------------------------------------------------------------------
+ * 8. Fix wave 3 – the exports a clinic actually has (from the wave 3 end-to-end review), FICTIONAL
+ * ----------------------------------------------------------------------------------------------*/
+
+/** One note of the practice-system "Clinical Notes Report" (newest first, section headings on their own lines). */
+interface ReportEntry {
+  head: string;
+  body: Array<[string, string]>;
+  sig: string;
+}
+
+export const REPORT_ENTRIES: ReportEntry[] = [
+  {
+    head: "17/09/2026  10:30  Follow Up (30 min)  -  Amara Okafor (Physiotherapist)",
+    body: [
+      // "\n": the printout wraps here, so a line starts with the pain range "2-3/10".
+      ["Subjective", "Back to work on modified duties since 07/09/2026 (no lifting over 15 kg). Pain mostly\n2-3/10, flares to 5/10 after a full shift on his feet. Sleeping through. Wants to get back to full duties."],
+      ["Objective", "Lumbar flexion fingertips to mid-shin, extension full. SLR 80 degrees bilaterally. Lifting 15 kg floor to waist with good technique."],
+      ["Outcome Measures", "ODI 22%. NPRS 3/10."],
+      ["Clinical Impression", "Resolving mechanical low back pain. Good progress."],
+      ["Plan", "2 further sessions over 4 weeks. Fit for modified duties now; phased return to full duties from 05/10/2026 if progress continues."],
+    ],
+    sig: "Electronically signed by Amara Okafor MCSP, HCPC PH-DEMO-03 on 17/09/2026 11:12",
+  },
+  {
+    head: "10/09/2026  14:00  Telephone Review  -  Amara Okafor (Physiotherapist)",
+    body: [["Notes", "Called pt as planned. Started modified duties 07/09. Managing well. Keep appointment 17/09."]],
+    sig: "Electronically signed by Amara Okafor MCSP, HCPC PH-DEMO-03 on 10/09/2026 14:18",
+  },
+  {
+    head: "03/09/2026  09:45  Follow Up (30 min)  -  Daniel Kerr (Physiotherapist)",
+    body: [
+      ["Subjective", "Seen by DK covering AO annual leave. Pain 4/10 at worst, 1-2/10 at rest. Walking 30 min without increase."],
+      ["Plan", "Return to modified duties as offered. Telephone review in 1 week (AO)."],
+    ],
+    sig: "Electronically signed by Daniel Kerr HCPC PH-DEMO-04 on 03/09/2026 10:20",
+  },
+  {
+    head: "02/09/2026  16:05  Admin Note  -  Reception",
+    body: [["", "Pt called to rebook missed appt from 27/08. Booked 03/09 with DK."]],
+    sig: "",
+  },
+  {
+    head: "27/08/2026  10:30  Follow Up (30 min)  -  Amara Okafor (Physiotherapist)",
+    body: [["Status", "Did Not Attend. No contact from patient. SMS reminder had been sent 26/08."]],
+    sig: "Electronically signed by Amara Okafor MCSP, HCPC PH-DEMO-03 on 27/08/2026 11:05",
+  },
+  {
+    head: "20/08/2026  10:30  Follow Up (30 min)  -  Amara Okafor (Physiotherapist)",
+    body: [
+      ["Subjective", "Better than last week. Pain now 5/10 at worst, mainly mornings."],
+      ["Outcome Measures", "NPRS 5/10."],
+      ["Plan", "Continue. Review 1/52."],
+    ],
+    sig: "Electronically signed by Amara Okafor MCSP, HCPC PH-DEMO-03 on 20/08/2026 11:01",
+  },
+  {
+    head: "13/08/2026  10:15  Initial Assessment (45 min)  -  Amara Okafor (Physiotherapist)",
+    body: [
+      ["Presenting Condition", "R sided low back pain following lifting a 25 kg box from a pallet at work on 02/08/2026. Reported via employer accident book."],
+      ["Past Medical History", "Nil significant."],
+      ["Outcome Measures", "NPRS 7/10 at worst, 4/10 at rest. ODI 46%."],
+      ["Plan", "Weekly for 4-6 sessions. Goal: return to full duties in 6-8 weeks."],
+    ],
+    sig: "Electronically signed by Amara Okafor MCSP, HCPC PH-DEMO-03 on 13/08/2026 11:32",
+  },
+];
+
+/**
+ * A practice system's "Clinical Notes Report" printed to PDF: a running header (clinic name and address) and a
+ * running FOOTER that names the patient and their clinic number and numbers the pages ("Page 1 of 3"); a two-column
+ * patient box (the address carries on to the next line beside "Employer:"); a funding line with the policy and
+ * authorisation numbers; a referrer line naming a claims handler; a case line; notes newest first with the type, a
+ * duration and "Name (Physiotherapist)" in the heading, section headings on their own lines, wrapped lines (one
+ * starts "2-3/10"), an admin note, a missed appointment and e-signatures with the HCPC number.
+ */
+export async function buildClinicalNotesReportPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setCreationDate(new Date("2026-10-09T15:42:00Z"));
+  doc.setModificationDate(new Date("2026-10-09T15:42:00Z"));
+  const reg = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const W = 595.28;
+  const H = 841.89;
+  const M = 42;
+  const pages: PDFPage[] = [];
+  let page: PDFPage = doc.addPage([W, H]);
+  let y = 0;
+  const header = (p: PDFPage) => {
+    p.drawText("ASHGROVE PHYSIOTHERAPY (fictional)", { x: M, y: H - 40, size: 11, font: bold });
+    p.drawText("Clinical Notes Report", { x: W - M - bold.widthOfTextAtSize("Clinical Notes Report", 11), y: H - 40, size: 11, font: bold });
+    p.drawText("Unit 4, Mill Lane, Testford ZZ3 7PQ - Tel 01632 960118", { x: M, y: H - 54, size: 7.5, font: reg, color: rgb(0.35, 0.35, 0.35) });
+  };
+  pages.push(page);
+  header(page);
+  y = H - 80;
+  const newPage = () => {
+    page = doc.addPage([W, H]);
+    pages.push(page);
+    header(page);
+    y = H - 80;
+  };
+  const text = (t: string, opts: { font?: PDFFont; size?: number; x?: number } = {}) => {
+    const font = opts.font ?? reg;
+    const size = opts.size ?? 9.5;
+    const x = opts.x ?? M;
+    for (const l of t.split("\n").flatMap((part) => wrap(winAnsi(part), font, size, W - x - M))) {
+      if (y < 80) newPage();
+      page.drawText(l, { x, y, size, font });
+      y -= size + 3;
+    }
+  };
+  const box: Array<[string, string, string, string]> = [
+    ["Name:", "Mr Rowan Lewis Tate", "Patient no.:", "AP-004127"],
+    ["Date of birth:", "22/11/1983 (42 yrs)", "Sex:", "Male"],
+    ["Address:", "14 Ashdown Close", "Occupation:", "Warehouse supervisor"],
+    ["", "Testford, Kent ZZ3 9LT", "Employer:", "Brightwater Logistics (fictional)"],
+    ["Mobile:", "07700 900314", "GP:", "Dr R. Malik, Riverside Medical Centre (fictional)"],
+    ["Email:", "r.tate@example.com", "", ""],
+  ];
+  for (const [l1, v1, l2, v2] of box) {
+    if (l1) page.drawText(l1, { x: M + 6, y, size: 9, font: bold });
+    page.drawText(v1, { x: M + 78, y, size: 9, font: reg });
+    if (l2) page.drawText(l2, { x: M + 270, y, size: 9, font: bold });
+    if (v2) page.drawText(v2, { x: M + 335, y, size: 9, font: reg });
+    y -= 15;
+  }
+  y -= 10;
+  text("Case: Lower back - injury at work (opened 13/08/2026)", { font: bold, size: 10 });
+  text("Funding: Northfield Assurance (fictional)   Policy no.: NFA-88213407   Authorisation: AUTH-55120 (6 sessions)");
+  text("Date of injury: 02/08/2026");
+  text("Referrer: Northfield Assurance (fictional) - J. Barker, Claims Handler");
+  y -= 6;
+  for (const e of REPORT_ENTRIES) {
+    if (y < 140) newPage();
+    text(e.head, { font: bold, size: 10 });
+    y -= 4;
+    for (const [h, b] of e.body) {
+      if (h) text(h, { font: bold });
+      text(b, { x: M + 10 });
+      y -= 3;
+    }
+    if (e.sig) text(e.sig, { size: 8 });
+    y -= 10;
+  }
+  pages.forEach((p, i) => {
+    p.drawText("Patient: Rowan Tate (AP-004127)   CONFIDENTIAL - contains patient identifiable information", { x: M, y: 38, size: 7.5, font: reg });
+    const r = `Printed 09/10/2026 16:42 by Amara Okafor   Page ${i + 1} of ${pages.length}`;
+    p.drawText(r, { x: W - M - reg.widthOfTextAtSize(r, 7.5), y: 26, size: 7.5, font: reg });
+  });
+  return doc.save({ useObjectStreams: false });
+}
+
+/** A booking system's CSV export: BOM, CRLF, a combined date-time "Appointment start", "Patient DOB", an attendance column. */
+export const BOOKING_HEADER = ["Patient", "Patient DOB", "Appointment start", "Practitioner", "Appointment type", "Attendance", "Treatment note"];
+export const BOOKING_ROWS: string[][] = [
+  ["Jenna Holloway", "07/03/1991", "28/07/2026 08:30", "Ben Ferraro", "Initial Consultation (45 min)", "Arrived", "Subjective:\nL shoulder pain 5 weeks. Fell off bike (cycling to work) on 21/06/2026.\nAssessment:\nQuickDASH 56.8. NPRS 6/10.\nPlan:\nIsometrics. 1/52."],
+  ["Jenna Holloway", "07/03/1991", "04/08/2026 08:30", "Ben Ferraro", "Follow up (30 min)", "Arrived", "S: Isometrics done 2x day. Pain 5/10.\nP: review 1 week"],
+  ["Jenna Holloway", "07/03/1991", "11/08/2026 08:30", "Ben Ferraro", "Follow up (30 min)", "Did not arrive", ""],
+  ["Jenna Holloway", "07/03/1991", "13/08/2026 17:15", "Ben Ferraro", "Follow up (30 min)", "Cancelled < 24 hrs", "Pt cancelled by phone - childcare issue. Rebooked."],
+  ["Jenna Holloway", "07/03/1991", "18/08/2026 08:30", "Ben Ferraro", "Follow up (30 min)", "Arrived", "S: Much better. NPRS 3/10.\nP: 2 more sessions."],
+  ["Jenna Holloway", "07/03/1991", "01/09/2026 08:30", "Ben Ferraro", "Review (30 min)", "Arrived", "S: Back to normal at work.\nQuickDASH 15.9. NPRS 1/10.\nA: Goals met.\nP: Discharge with HEP."],
+];
+
+/** The booking CSV with another header for the date column (or the default "Appointment start"). */
+export function bookingCsv(dateHeader = "Appointment start"): string {
+  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const header = BOOKING_HEADER.map((h) => (h === "Appointment start" ? dateHeader : h));
+  return `﻿${[header, ...BOOKING_ROWS].map((r) => r.map(q).join(",")).join("\r\n")}\r\n`;
+}
+
+/**
+ * A progress letter to the insurer as a Word document: a letterhead in the page header, the letter's date, the
+ * addressee (the insurer), "Our ref / Your ref", a "Re:" line with the date of birth, the policy and the
+ * authorisation, narrative paragraphs, a BULLETED attendance list ("(attended)", "did not attend (reason)"), an
+ * outcome table whose columns carry their dates, closing paragraphs (recommendation, prognosis) and a signature with
+ * the HCPC number on its own line.
+ */
+export async function buildProgressLetterDocx(): Promise<Uint8Array> {
+  const { Document, Header, Packer, Paragraph, Table, TableCell, TableRow, TextRun } = await import("docx");
+  const p = (t: string) => new Paragraph({ children: [new TextRun(t)] });
+  const bullet = (t: string) => new Paragraph({ children: [new TextRun(t)], bullet: { level: 0 } });
+  const cell = (t: string) => new TableCell({ children: [p(t)] });
+  const table = new Table({
+    rows: [
+      ["Measure", "Initial (01/07/2026)", "Latest (12/08/2026)"],
+      ["QuickDASH", "54.5", "22.7"],
+      ["NPRS (worst)", "6/10", "2/10"],
+      ["Grip strength R (kg)", "14", "26"],
+    ].map((r) => new TableRow({ children: r.map(cell) })),
+  });
+  const doc = new Document({
+    creator: "ClinForms tests (fictional)",
+    sections: [
+      {
+        headers: { default: new Header({ children: [p("Ashgrove Physiotherapy (fictional)"), p("Unit 4, Mill Lane, Testford ZZ3 7PQ | 01632 960118")] }) },
+        children: [
+          p("9 October 2026"),
+          p("Claims Team"),
+          p("Northfield Assurance (fictional)"),
+          p("PO Box 0000, Testford ZZ1 2AB"),
+          p("Our ref: AP-003958        Your ref: NFA-77310288"),
+          p("Dear Claims Team,"),
+          p("Re: Mrs Priya Dhaliwal, DOB 15/04/1972 – Policy NFA-77310288 – Authorisation AUTH-60412"),
+          p("Thank you for referring Mrs Dhaliwal, who sustained a fracture of the right distal radius when she slipped on a wet floor in a supermarket on 19 May 2026."),
+          p("I first assessed Mrs Dhaliwal on 1 July 2026. Her QuickDASH score was 54.5 and pain was 6/10 at worst. Attendance to date:"),
+          bullet("01/07/2026 – initial assessment (attended)"),
+          bullet("08/07/2026 – treatment session (attended)"),
+          bullet("15/07/2026 – treatment session (attended)"),
+          bullet("22/07/2026 – did not attend (unwell, telephoned on the day)"),
+          bullet("29/07/2026 – treatment session (attended)"),
+          bullet("12/08/2026 – review (attended)"),
+          p("Outcome measures:"),
+          table,
+          p("At review on 12 August 2026 wrist extension had improved from 35 to 60 degrees. She is driving again and has returned to full duties at work."),
+          p("Recommendation: I recommend four further sessions over six weeks. I would anticipate a full functional recovery within three months of the date of this letter. She is fit for her normal work."),
+          p("Yours sincerely,"),
+          p("Sophie Lang"),
+          p("Clinical Lead Physiotherapist, MCSP"),
+          p("HCPC: PH-DEMO-05"),
+        ],
+      },
+    ],
+  });
+  return new Uint8Array(await Packer.toBuffer(doc));
+}
+
+/** Notes with a pain range wrapped onto the start of a line ("2-3/10", "1-2/10") and one "2/3/10" written like a date. */
+export const WRAPPED_RANGES_NOTES = [
+  "Name: Mr Owen Pell",
+  "Date of birth: 02/02/1980",
+  "",
+  "13/08/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)",
+  "Low back pain after lifting at home. Pain at rest",
+  "1-2/10, worse bending. NPRS 6/10.",
+  "",
+  "03/09/2026 – Follow-up – Sarah Reid (PH-DEMO-01)",
+  "Improving. Pain mostly",
+  "2-3/10, flares after long shifts.",
+  "",
+  "17/09/2026 – Follow-up – Sarah Reid (PH-DEMO-01)",
+  "Pain on lifting",
+  "2/3/10 days this week, otherwise settled. NPRS 2/10.",
+].join("\n");

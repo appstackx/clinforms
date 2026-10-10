@@ -120,7 +120,14 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
     sampleId: form.sampleId ?? null,
     payload: form,
   };
-  if (ifMatch === null) await takeNewData(deps, t, new TextEncoder().encode(JSON.stringify(form)).byteLength);
+  // The daily new-data allowance: a new form map in full, and (fix wave 3) the growth of an update.
+  const bytes = new TextEncoder().encode(JSON.stringify(form)).byteLength;
+  if (ifMatch === null) await takeNewData(deps, t, bytes);
+  else {
+    const previous = await t.store.getForm(t.tenantId, id);
+    const previousBytes = previous ? new TextEncoder().encode(JSON.stringify(previous.payload)).byteLength : 0;
+    if (bytes - previousBytes > 1024) await takeNewData(deps, t, bytes - previousBytes);
+  }
   const result = ifMatch === null ? await t.store.createForm(t.tenantId, row) : await t.store.updateForm(t.tenantId, row, ifMatch);
   if (!result.ok) {
     switch (result.reason) {

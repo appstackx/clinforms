@@ -13,6 +13,7 @@
  * Owner: studio-a agent.
  */
 import { useMemo, useState } from "react";
+import { useHostHooks } from "../../host-hooks";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, FileText, ListChecks } from "lucide-react";
 import {
   NOTES_REVIEW_COPY as COPY,
@@ -25,19 +26,23 @@ import {
 } from "../../../connectors/file-import/review-contract";
 import { formatUkDate } from "../../../core/dates";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, NOTE_TYPE_LABELS } from "../../../core/labels";
-import type { InstructingPartyType, NoteType } from "../../../core/types";
+import type { AppointmentStatus, InstructingPartyType, NoteType } from "../../../core/types";
 import { Button, Input, cn } from "../../primitives";
 import { FieldLabel, Notice, Select, Spinner } from "../shared/ui-bits";
 import {
   applyClinician,
+  attendanceNotice,
   clinicianKey,
   clinicianLabel,
+  consentMissing,
   firstLines,
+  markOthersAttended,
   reviewBlockers,
   reviewClinicians,
   reviewCounts,
   updateEntry,
   updateRegistration,
+  withMemberNumbers,
   type ReviewClinician,
 } from "./notes-review-model";
 
@@ -52,6 +57,8 @@ const DATE_FIELDS: NotesReviewField[] = ["dob", "incidentDate", "consentDate"];
 const WIDE_FIELDS: NotesReviewField[] = ["address", "instructingPartyName", "incidentMechanism", "referredBy", "gpPractice", "insurerName"];
 const OTHER = "__other__";
 const NOT_RECORDED = "__not_recorded__";
+/** Attendance statuses staff can set on an entry (fix wave 3). */
+const ATTENDANCE_CHOICES: AppointmentStatus[] = ["ATT", "DNA", "LCN", "CNC"];
 
 export interface NotesReviewStepProps {
   review: NotesReview;
@@ -65,12 +72,17 @@ export interface NotesReviewStepProps {
 }
 
 export function NotesReviewStep({ review: initial, tenant, busy, error, onConfirm, onBack }: NotesReviewStepProps) {
-  const [review, setReview] = useState<NotesReview>(initial);
-  const clinicians = useMemo(() => reviewClinicians(initial), [initial]);
+  // A clinic's Studio offers its own clinicians (names and HCPC numbers from their profiles) – fix wave 3.
+  const memberList = useHostHooks().clinic?.clinicians;
+  const members = useMemo<ReviewClinician[]>(() => (memberList ?? []).map((m) => ({ name: m.name, hcpc: m.hcpc ?? "" })), [memberList]);
+  const [review, setReview] = useState<NotesReview>(() => withMemberNumbers(initial, members));
+  const clinicians = useMemo(() => reviewClinicians(withMemberNumbers(initial, members), members), [initial, members]);
   const counts = reviewCounts(review);
   const blockers = reviewBlockers(review);
+  const attendanceTodo = attendanceNotice(review);
   const detected = new Set(review.detected);
   const serverWarnings = review.warnings.filter((w) => w.code !== "NO_CLINICIAN" && w.code !== "NO_DATE");
+  const adminKeys = new Set(review.warnings.filter((w) => w.code === "ADMIN_LEFT_OUT").flatMap((w) => w.entryKeys ?? []));
   const scoresShown = review.outcomes.filter((o) => review.entries.some((e) => e.key === o.entryKey && e.include && e.date));
 
   return (
@@ -114,6 +126,17 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
         </Notice>
       )}
 
+      {attendanceTodo ? (
+        <Notice tone="info" title={COPY.attendanceLabel}>
+          <p data-testid="notes-review-attendance">{attendanceTodo.text}</p>
+          {attendanceTodo.canMarkOthers ? (
+            <Button size="sm" variant="outline" className="mt-2 bg-white" onClick={() => setReview((r) => markOthersAttended(r))}>
+              {COPY.markOthersAttended}
+            </Button>
+          ) : null}
+        </Notice>
+      ) : null}
+
       {serverWarnings.length ? (
         <Notice tone="info" title="Also check">
           <ul className="list-disc space-y-0.5 pl-4" data-testid="notes-review-warnings">
@@ -140,7 +163,7 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
                     field={field}
                     value={review.registration[field]}
                     found={detected.has(field)}
-                    note={review.fieldNotes?.[field]}
+                    note={review.fieldNotes?.[field] ?? (field === "consent" && consentMissing(review) ? COPY.consentHint : undefined)}
                     onChange={(value) => setReview((r) => updateRegistration(r, field, value as NotesReviewRegistration[typeof field]))}
                   />
                 ))}
@@ -148,6 +171,19 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
             </fieldset>
           ))}
         </div>
+        {review.otherDetails?.length ? (
+          <div className="mt-4 rounded-lg bg-slate-50 p-3" data-testid="notes-review-other-details">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{COPY.otherDetailsHeading}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{COPY.otherDetailsHint}</p>
+            <ul className="mt-1.5 space-y-0.5 text-[13px] text-slate-700">
+              {review.otherDetails.map((line, i) => (
+                <li key={`${i}-${line}`} className="break-words">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="notes-review-entries">
@@ -161,7 +197,8 @@ export function NotesReviewStep({ review: initial, tenant, busy, error, onConfir
               key={entry.key}
               entry={entry}
               clinicians={clinicians}
-              attendance={review.attendance}
+              letterDate={review.letterDate}
+              admin={adminKeys.has(entry.key)}
               onChange={(patch) => setReview((r) => updateEntry(r, entry.key, patch))}
             />
           ))}
@@ -274,7 +311,9 @@ function RegistrationField({
   const id = `notes-reg-${field}`;
   const required = NOTES_REVIEW_REQUIRED.indexOf(field) >= 0;
   const missing = required && !value.trim();
-  const tag = found ? COPY.foundTag : missing ? COPY.requiredTag : value ? null : COPY.notFoundTag;
+  // Consent is not needed to build the record, but the report cannot be approved without it (fix wave 3).
+  const consentNeeded = field === "consent" && value !== "yes";
+  const tag = consentNeeded ? COPY.consentTag : found ? COPY.foundTag : missing ? COPY.requiredTag : value ? null : COPY.notFoundTag;
   const control =
     field === "sex" ? (
       <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
@@ -312,7 +351,11 @@ function RegistrationField({
     <div className={cn(WIDE_FIELDS.indexOf(field) >= 0 && "sm:col-span-2")} data-field={field}>
       <FieldLabel
         htmlFor={id}
-        hint={tag ? <span className={cn("rounded px-1 py-0.5 text-[10px] font-medium", found ? "bg-teal-50 text-teal-800" : missing ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600")}>{tag}</span> : undefined}
+        hint={
+          tag ? (
+            <span className={cn("rounded px-1 py-0.5 text-[10px] font-medium", consentNeeded || missing ? "bg-amber-100 text-amber-900" : found ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-600")}>{tag}</span>
+          ) : undefined
+        }
       >
         {LABELS[field]}
       </FieldLabel>
@@ -325,12 +368,16 @@ function RegistrationField({
 function EntryRow({
   entry,
   clinicians,
-  attendance,
+  letterDate,
+  admin,
   onChange,
 }: {
   entry: NotesReviewEntry;
   clinicians: ReviewClinician[];
-  attendance: boolean;
+  /** A letter's own date, offered for its paragraphs without a date (fix wave 3). */
+  letterDate?: string;
+  /** An admin or message entry left out by default (fix wave 3). */
+  admin: boolean;
   onChange(patch: Partial<NotesReviewEntry>): void;
 }) {
   const [open, setOpen] = useState(false);
@@ -412,11 +459,23 @@ function EntryRow({
             ))}
           </Select>
         </div>
-        {attendance && entry.status ? (
-          <span className={cn("mb-2 rounded-full px-2 py-0.5 text-xs font-medium", entry.status === "ATT" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900")}>
-            {APPOINTMENT_STATUS_LABELS[entry.status]}
-          </span>
-        ) : null}
+        <div>
+          <FieldLabel htmlFor={`${entry.key}-status`}>{COPY.attendanceLabel}</FieldLabel>
+          <Select
+            id={`${entry.key}-status`}
+            className="h-10 w-44"
+            value={entry.status}
+            onChange={(e) => onChange({ status: e.target.value as NotesReviewEntry["status"] })}
+            aria-invalid={(entry.include && Boolean(entry.status) && !entry.time) || undefined}
+          >
+            <option value="">{COPY.attendanceNone}</option>
+            {ATTENDANCE_CHOICES.concat(entry.status && ATTENDANCE_CHOICES.indexOf(entry.status) < 0 ? [entry.status] : []).map((s) => (
+              <option key={s} value={s}>
+                {APPOINTMENT_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </Select>
+        </div>
         <span className="mb-2 ml-auto text-[11px] text-slate-400">{entry.where}</span>
       </div>
       {needs ? (
@@ -425,6 +484,12 @@ function EntryRow({
           {!entry.date ? "Give this entry a date, or untick it to leave it out." : "Choose the clinician who wrote this note."}
         </p>
       ) : null}
+      {!entry.date && letterDate ? (
+        <Button size="sm" variant="outline" className="mt-1.5 h-8" onClick={() => onChange({ date: letterDate as NotesReviewEntry["date"] })}>
+          {COPY.letterDateButton(formatUkDate(letterDate))}
+        </Button>
+      ) : null}
+      {admin && !entry.include ? <p className="mt-1.5 text-xs text-slate-500">{COPY.adminHint}</p> : null}
       <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700" aria-label={`Note of ${label}, first lines`}>
         {firstLines(text) || COPY.noText}
       </p>

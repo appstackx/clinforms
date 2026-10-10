@@ -107,7 +107,9 @@ test("fitText: a single-line box tall enough wraps to two lines at 8 pt or more 
   // Without two lines allowed (or too low a box) the leading words stay, with the short marker.
   const one = fitText(text, font, cell, 10, false);
   assert.ok(one.overflow);
-  assert.match(one.text, /^Physiotherapy –.*… \(see continuation sheet\)$/);
+  assert.match(one.text, /^Physiotherapy.*… \(see continuation sheet\)$/);
+  // Fix wave 3: the cut never ends with its own punctuation or dash before the ellipsis ("Physiotherapy –…").
+  assert.doesNotMatch(one.text, /[–.,;:]…/);
   const low = fitText(text, font, { width: 176, height: 12 }, 10, false, { allowTwoLines: true, lineHeightFactor: 1.2 });
   assert.equal(low.lines, undefined);
   assert.match(low.text, /… \(see continuation sheet\)$/);

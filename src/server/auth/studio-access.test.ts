@@ -103,6 +103,8 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
       tenantId: "studio-test",
       clinicName: "Studio Test Physio (fictional)",
       draftingEnabled: false,
+      // Fix wave 3: the clinic's clinicians (name and HCPC number only), offered when staff check uploaded notes.
+      clinicians: [{ name: "Olivia Owner" }],
       // userId (fix wave 2) scopes the Studio's in-memory records to this member.
       member: { name: "Olivia Owner", userId, email: "owner@studio-test.example", role: "owner", roleLabel: "Owner", canSign: false },
     });
@@ -117,6 +119,7 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     assert.equal(second.kind, "ok");
     if (second.kind !== "ok") return;
     assert.equal(second.context.draftingEnabled, true);
+    assert.deepEqual(second.context.clinicians, [{ name: "Olivia Owner", hcpc: "PH123456" }]);
     assert.deepEqual(second.context.member, {
       name: "Olivia Owner",
       userId,

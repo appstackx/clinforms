@@ -9,7 +9,8 @@ export const STUDIO_LEGAL_LINKS = [
   { href: "/privacy", label: "Privacy policy" },
   { href: "/cookies", label: "Cookie policy" },
   { href: "/terms", label: "Terms" },
-  { href: "/security", label: "Security" },
+  // "(website)": the Studio's own "Security & GDPR" page is a different page (fix wave 3, demo review).
+  { href: "/security", label: "Security (website)" },
 ] as const;
 
 export function StudioLegalLinks({ className }: { className?: string }) {

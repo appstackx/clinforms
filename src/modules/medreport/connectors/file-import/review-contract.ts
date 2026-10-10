@@ -35,6 +35,9 @@ export const NOTES_REVIEW_LIMITS = {
   totalChars: 2_000_000,
   outcomes: 1_000,
   warnings: 60,
+  /** Lines of the notes' header that were not used ("other details found"), and characters of each. */
+  otherDetails: 40,
+  otherDetailChars: 300,
 } as const;
 
 /** Where staff can type a value; empty = not found in the notes (or not known). */
@@ -177,6 +180,14 @@ export const NotesReviewWarningCodeSchema = z.enum([
   "VALUE_UNCLEAR",
   "NOT_CONSTANT",
   "TRUNCATED",
+  /** Fix wave 3: a line that starts like a date far from every other note's date was kept as note text. */
+  "DATE_OUTLIER",
+  /** Fix wave 3: a letter's signature was used for its entries that name no clinician. */
+  "SIGNATURE_APPLIED",
+  /** Fix wave 3: admin, reception, SMS, e-mail or letter entries were left out by default. */
+  "ADMIN_LEFT_OUT",
+  /** Fix wave 3: outcome scores read from a table whose columns carry their dates. */
+  "SCORE_TABLE",
 ]);
 export type NotesReviewWarningCode = z.infer<typeof NotesReviewWarningCodeSchema>;
 
@@ -206,6 +217,13 @@ export const NotesReviewSchema = z
     /** The entries' statuses form an attendance record (each status becomes an appointment on confirm). */
     attendance: z.boolean(),
     warnings: z.array(NotesReviewWarningSchema).max(NOTES_REVIEW_LIMITS.warnings),
+    /**
+     * Fix wave 3: lines of the notes' header that were not used (an unknown "Label: value" line, a case title) –
+     * shown to staff as "other details found" so nothing is dropped silently. Never part of the record.
+     */
+    otherDetails: z.array(text(NOTES_REVIEW_LIMITS.otherDetailChars)).max(NOTES_REVIEW_LIMITS.otherDetails).optional(),
+    /** Fix wave 3: the date a letter is written on (offered for its paragraphs that carry no date of their own). */
+    letterDate: IsoDateSchema.optional(),
   })
   .superRefine((review, ctx) => {
     const total = review.entries.reduce((n, e) => n + e.heading.length + e.body.length, 0);
@@ -242,9 +260,9 @@ export const NOTES_REVIEW_FIELD_LABELS: Record<NotesReviewField, string> = {
   employer: "Employer",
   instructingPartyName: "Who the form is for",
   instructingPartyType: "Type",
-  reference: "Their reference",
+  reference: "Their reference (claim or case number)",
   insurerName: "Insurer",
-  membershipNumber: "Membership or policy number",
+  membershipNumber: "Policy or membership number",
   authorisationNumber: "Authorisation number",
   referredBy: "Referred by",
   gpPractice: "GP practice",
@@ -256,6 +274,31 @@ export const NOTES_REVIEW_FIELD_LABELS: Record<NotesReviewField, string> = {
 
 /** Fields the record cannot be built without. */
 export const NOTES_REVIEW_REQUIRED: readonly NotesReviewField[] = ["firstName", "lastName", "dob", "instructingPartyName", "instructingPartyType"];
+
+/** What staff are asked to do when a required field is empty (fix wave 3: plain grammar for every field). */
+export const NOTES_REVIEW_MISSING: Partial<Record<NotesReviewField, string>> = {
+  firstName: "enter the patient's first name",
+  lastName: "enter the patient's last name",
+  dob: "enter the date of birth",
+  instructingPartyName: "enter who the form is for",
+  instructingPartyType: "choose what kind of organisation the form is for",
+};
+
+export function missingFieldText(field: NotesReviewField): string {
+  return NOTES_REVIEW_MISSING[field] ?? `enter the ${NOTES_REVIEW_FIELD_LABELS[field].toLowerCase()}`;
+}
+
+/**
+ * Whether the checked entries form an attendance record (fix wave 3, used by the Studio and by the server on
+ * confirm): every included dated entry has a status AND a time – each then becomes an appointment. Partial
+ * attendance is never counted (a part-record would give wrong totals on an insurer's form).
+ */
+export function reviewAttendance(review: Pick<NotesReview, "entries">): { on: boolean; withStatus: number; dated: number; statusNoTime: number } {
+  const dated = review.entries.filter((e) => e.include && e.date);
+  const withStatus = dated.filter((e) => e.status);
+  const statusNoTime = withStatus.filter((e) => !e.time).length;
+  return { on: dated.length > 0 && withStatus.length === dated.length && statusNoTime === 0, withStatus: withStatus.length, dated: dated.length, statusNoTime };
+}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -292,12 +335,27 @@ export const NOTES_REVIEW_COPY = {
   back: "Choose another file",
   blockedPrefix: "Before you continue:",
   missingField: (label: string) => `enter the ${label.toLowerCase()}`,
+  consentTag: "Needed for approval",
+  consentHint:
+    "The report cannot be approved until the patient's consent to share it is recorded. If the patient has consented, choose Recorded and enter the date.",
+  attendanceLabel: "Attendance",
+  attendanceNone: "Not stated",
+  attendancePartial: (set: number, of: number) =>
+    `Attendance is set for ${set} of ${of} ${of === 1 ? "entry" : "entries"}. Set it for every entry to count the appointments – until then none are counted.`,
+  attendanceNoTime: (n: number) =>
+    `${plural(n, "appointment")} ${n === 1 ? "has" : "have"} no time. Add the ${n === 1 ? "time" : "times"} to count the appointments – until then none are counted.`,
+  markOthersAttended: "Mark the others as attended",
+  letterDateButton: (ukDate: string) => `Use the letter's date (${ukDate})`,
+  otherDetailsHeading: "Other details in the notes (not used)",
+  otherDetailsHint: "Lines from the top of the notes that are not patient or referral details. Copy anything you need into the fields above.",
+  adminHint: "An admin or message entry – left out unless you tick Include.",
   noClinician: (n: number) => `${plural(n, "entry", "entries")} without a clinician – choose one`,
   noDate: (n: number) => `no date found for ${plural(n, "block")} – give ${n === 1 ? "it" : "them"} a date to include ${n === 1 ? "it" : "them"}, or leave ${n === 1 ? "it" : "them"} out`,
   includedNoDate: (n: number) => `${plural(n, "included entry", "included entries")} without a date – give ${n === 1 ? "it" : "them"} a date or untick ${n === 1 ? "it" : "them"}`,
   nothingIncluded: "include at least one dated note",
   fromInsurer: "Taken from the insurer line – check it",
   fromReferrer: "Taken from the referral line – check it",
+  fromAddressee: "Taken from the letter's address – check it",
 } as const;
 
 /** Every fixed string and a sample of every function's output, for the wording guard. */
@@ -316,6 +374,11 @@ export function notesReviewCopyStrings(): string[] {
     NOTES_REVIEW_COPY.noDate(2),
     NOTES_REVIEW_COPY.includedNoDate(1),
     NOTES_REVIEW_COPY.includedNoDate(4),
+    NOTES_REVIEW_COPY.attendancePartial(1, 8),
+    NOTES_REVIEW_COPY.attendanceNoTime(1),
+    NOTES_REVIEW_COPY.attendanceNoTime(6),
+    NOTES_REVIEW_COPY.letterDateButton("09/10/2026"),
+    ...NOTES_REVIEW_FIELDS.map(missingFieldText),
     ...Object.values(NOTES_REVIEW_FIELD_LABELS),
   );
   return out;

@@ -6,10 +6,14 @@
  *
  * Owner: studio-b agent.
  */
+import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { todayIso } from "../../../core/dates";
 import type { EpisodeBundle, Gap, Report, ReportFlag } from "../../../core/types";
+import { Button, Input } from "../../primitives";
+import { FieldLabel } from "../shared/ui-bits";
 import { FlagItem, GapItem } from "./issues";
-import { gapResolutionOptions, isOpenBlocking } from "./review-model";
+import { canRecordConsent, gapResolutionOptions, isOpenBlocking } from "./review-model";
 import type { ReviewAction } from "./use-review-state";
 
 export function FlagsPanel({
@@ -24,7 +28,13 @@ export function FlagsPanel({
   onOpenSource,
   canAcknowledge,
   questionLabel,
+  consentRecorder = true,
 }: {
+  /**
+   * Fix wave 3: whether the person on this screen may record the patient's consent for a report built from uploaded
+   * notes (a clinic's member who may approve; anyone in the public demo).
+   */
+  consentRecorder?: boolean;
   report: Report;
   bundle: EpisodeBundle;
   blockingCount: number;
@@ -60,15 +70,18 @@ export function FlagsPanel({
       {...jumpProps(g.sectionKey)}
     />
   );
+  const consentFlag = (f: ReportFlag) => f.code === "DATA_CHECK" && f.evidence === "CONSENT_NOT_RECORDED" && !readOnly && consentRecorder && canRecordConsent(report);
   const flagItem = (f: ReportFlag) => (
-    <FlagItem
-      key={f.id}
-      flag={f}
-      readOnly={readOnly}
-      canAck={canAcknowledge(f)}
-      onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
-      {...jumpProps(f.sectionKey)}
-    />
+    <div key={f.id} className="space-y-1.5">
+      <FlagItem
+        flag={f}
+        readOnly={readOnly}
+        canAck={canAcknowledge(f)}
+        onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
+        {...jumpProps(f.sectionKey)}
+      />
+      {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
+    </div>
   );
 
   return (
@@ -139,6 +152,25 @@ export function FlagsPanel({
         out-of-scope history and unanswered questions. They cannot catch a paraphrase error that cites a valid note – check each
         answer against its source.
       </p>
+    </div>
+  );
+}
+
+/** Fix wave 3: record the patient's consent (and the date it was given) on a report built from uploaded notes. */
+function RecordConsent({ onRecord }: { onRecord(givenOn: string): void }) {
+  const today = todayIso();
+  const [givenOn, setGivenOn] = useState(today);
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(givenOn) && givenOn <= today;
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2" data-testid="record-consent">
+      <div>
+        <FieldLabel htmlFor="consent-given-on">Consent given on</FieldLabel>
+        <Input id="consent-given-on" type="date" className="h-9 w-40" max={today} value={givenOn} onChange={(e) => setGivenOn(e.target.value)} />
+      </div>
+      <Button size="sm" className="h-9" disabled={!valid} onClick={() => valid && onRecord(givenOn)}>
+        Record consent
+      </Button>
+      <p className="w-full text-xs text-slate-500">Only if the patient has consented to sharing the report. It is kept in this report&apos;s activity.</p>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { applyScope } from "../scope";
 import type { FlagSeverity, Paragraph, ReportFlag, ReportFlagCode, ReportSection, TemplateSection } from "../types";
 import type { ValidatorInput } from "./index";
 import { buildSourceTexts } from "./sources";
-import { addToFigureIndex, emptyFigureIndex, normaliseForMatch, type FigureIndex } from "./text";
+import { addShortDatesToIndex, addToFigureIndex, emptyFigureIndex, normaliseForMatch, type FigureIndex } from "./text";
 
 /** Origins whose text must be backed by citations and is checked for figures and opinion wording. */
 export const CHECKED_ORIGINS: ReadonlyArray<Paragraph["origin"]> = ["ai", "edited"];
@@ -52,10 +52,14 @@ export function getValidationContext(input: ValidatorInput): ValidationContext {
   const sourceTexts = buildSourceTexts(scoped, input.computedFacts ?? [], input.report.instructingParty);
   const figureCache = new Map<string, FigureIndex>();
   const normCache = new Map<string, string>();
+  const noteDates = new Map(scoped.notes.map((n) => [n.id, n.date] as const));
   const figuresOf = (id: string): FigureIndex => {
     let idx = figureCache.get(id);
     if (!idx) {
       idx = addToFigureIndex(emptyFigureIndex(), sourceTexts.get(id) ?? "");
+      // A note's short dates ("26/08") stand for dates in the note's own year (fix wave 3).
+      const noteDate = noteDates.get(id);
+      if (noteDate) addShortDatesToIndex(idx, sourceTexts.get(id) ?? "", noteDate);
       figureCache.set(id, idx);
     }
     return idx;

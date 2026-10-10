@@ -56,6 +56,11 @@ export interface QuestionCardProps {
    * own value, offered as "Use …" when the referrer asked for it.
    */
   referralValue?: string | null;
+  /**
+   * Fix wave 3: when the referral holds no reference, the policy or membership number the record does hold (an
+   * insurer's "Policy / claim no." usually asks for it), offered as "Use the policy number …".
+   */
+  referralFallback?: string | null;
   receipt: SignReceipt | undefined;
   activeSourceId: string | null;
   drafting: boolean;
@@ -598,8 +603,10 @@ function QuestionCardImpl(props: QuestionCardProps) {
         {isRecords && !answered && !readOnly && (referrerGap || referrerField) ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
-              {props.referrerName ?? "The referrer"} uses its own reference here, so the referral&apos;s reference has not been copied in. Enter{" "}
-              {props.referrerName ? `${props.referrerName}'s` : "their"} reference from their instruction letter – it is marked as entered by staff.
+              {props.referralValue
+                ? `${props.referrerName ?? "The referrer"} uses its own reference here, so the referral's reference has not been copied in. `
+                : `${props.referrerName ?? "The referrer"} asks for its own reference here, and the record holds none. `}
+              Enter {props.referrerName ? `${props.referrerName}'s` : "their"} reference from their instruction letter – it is marked as entered by staff.
               {!q.required && " This box is optional – leave it blank if you do not have it."}
             </p>
             {props.referralValue && referrerGap && (
@@ -614,6 +621,20 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 }}
               >
                 Use the referral&apos;s reference “{props.referralValue}”
+              </Button>
+            )}
+            {!props.referralValue && props.referralFallback && referrerGap && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 bg-white"
+                onClick={() => {
+                  startClinicianText(props.referralFallback ?? "");
+                  dispatch({ type: "resolveGap", gapId: referrerGap.id, kind: "resolved", text: `Confirmed by ${actor}: the policy or membership number is the reference asked for.`, actor });
+                }}
+              >
+                Use the policy or membership number “{props.referralFallback}”
               </Button>
             )}
           </div>
