@@ -17,6 +17,10 @@ import { isAppAreaPath, isPublicPagePath } from "@/lib/site";
 export const ANALYTICS_EVENTS = [
   "request_access_submitted",
   "demo_opened",
+  // The product demo video at /demo (src/app/(marketing)/demo/demo-player.tsx): playback started, and played to
+  // the end – once each per page view, with area "marketing" only.
+  "demo_video_played",
+  "demo_video_completed",
   "login_succeeded",
   "two_factor_enabled",
   "form_uploaded",
@@ -31,7 +35,7 @@ export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[number];
 /** String properties and every value each may take. */
 export const TOKEN_PROPS = {
   area: ["marketing", "demo", "app"],
-  cta: ["header", "mobile_nav", "hero", "how_it_works", "security", "faq", "final", "footer", "not_found", "request_access"],
+  cta: ["header", "mobile_nav", "hero", "how_it_works", "security", "faq", "final", "footer", "not_found", "request_access", "demo_page"],
   source: ["clinic_system", "simulated_clinic_system", "export_upload", "notes_pdf"],
   form_kind: ["docx", "pdf_fillable", "pdf_flat", "questions"],
   format: ["docx", "pdf"],
@@ -80,6 +84,7 @@ export function sanitizeProps(props: unknown): Record<string, string | number | 
  */
 const STATIC_SEGMENTS = new Set<string>([
   // public site
+  "demo",
   "request-access",
   "security",
   "privacy",

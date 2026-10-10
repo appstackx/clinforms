@@ -149,7 +149,8 @@ re-encrypt in the background).
 ## 4. Areas and routes
 | Path | Who | Notes |
 |---|---|---|
-| `/` `(marketing)` | public | Landing page; `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
+| `/` `(marketing)` | public | Landing page; `/demo` (product demo video, below), `/privacy`, `/cookies`, `/terms`, `/security` (public trust page), `/request-access` |
+| `/demo` `(marketing)` | public | *Added 10/10:* the 1:30 product demo video (outreach video v1 without its burned-in captions; a WebVTT track instead), chapters with `?t=` deep links, a transcript with the material on-screen-only facts, VideoObject/Clip markup, its own share image; linked from the header ("Watch the demo"), the hero (next to "Request access") and the footer; in the sitemap. Everything about the cut lives in `src/lib/site/demo-video.ts`. The MP4s are in Cloudflare R2, bucket `clinforms-media` (EU jurisdiction, appstackx-demos), served from `media.clinforms.co.uk` (CORS GET/HEAD from the apex and www only – so the video does NOT play on preview or local origins; `scripts/e2e/demo-video.cjs` `REAL_MEDIA=1` serves the page as the apex to check it). Each cut has its own dated folder (`demo/2026-10-10/`), never overwritten (immutable, a year's cache): a new cut = new folder + new `publishedOn`. Privacy promises, pinned by `src/lib/site/demo-video.test.ts` and the e2e script: `preload="none"` with a same-origin poster and captions (nothing reaches the media host until play), `crossOrigin="anonymous"` (no cookies), `?t=` sets the start without fetching; privacy policy §3 "The demo video", §5 and §6 (categories only). Analytics after consent: `demo_video_played` / `demo_video_completed` (`area` only). The old `/demo` → `/reports` redirect is gone |
 | `/login`, `/two-factor`, `/accept-invite`, `/reset-password` `(auth)` | public | noindex. *Integrated:* no cookie banner here (task pages for invited members – a fixed banner covered the form; a choice made on the public site still applies); the public site's header and footer link to `/login` |
 | `/app/**` | signed-in member with 2FA | The Studio in tenant mode (server storage) + `/app/settings/{clinic,members,security,api-keys}`. *Built:* overview + the four settings pages (route group `(clinic)`), `/app/select-clinic` (several clinics / none / open invitations). *Wave 2:* the tenant Studio at `/app/studio/**`
 (`HostHooks` `basePath`/`mode: "tenant"`/`storage: "server"`; layout checks session, two-step and clinic on the server);
@@ -192,7 +193,8 @@ confirmed maps un-confirmed or deleted only by confirming roles; store writes an
 ## 6. Security headers
 `next.config.mjs` `headers()`: HSTS (2 years, includeSubDomains), nosniff, Referrer-Policy
 strict-origin-when-cross-origin, X-Frame-Options DENY, Permissions-Policy (camera/mic/geo/payment/usb off),
-COOP same-origin, **CSP Report-Only** first (enforce after the review/mapping/preview screens run clean),
+COOP same-origin, **CSP Report-Only** first (enforce after the review/mapping/preview screens run clean;
+`media-src 'self' https://media.clinforms.co.uk` for the demo video since 10/10),
 `X-Robots-Tag: noindex` on `/api`, `/app`, `/reports`, `/pms-sandbox`.
 
 ## 7. Env vars (names only; values in Vercel / `.env.local` / `~/.config/appstackx/clinforms.secrets.env`)

@@ -21,6 +21,7 @@ test("record ids in paths are replaced by :id", () => {
   assert.equal(sanitizePath("/app/studio/rpt_9f3a2b"), "/app/studio/:id");
   assert.equal(sanitizePath("/app/studio/forms/form_1"), "/app/studio/forms/:id");
   assert.equal(sanitizePath("/megan-hart"), "/:id");
+  assert.equal(sanitizePath("/demo"), "/demo");
 });
 
 test("URLs keep only the origin and a sanitised path; UTM tags only on public pages", () => {
@@ -59,7 +60,7 @@ test("only allow-listed properties with allowed values survive", () => {
 });
 
 test("page views are sent for the public pages only", () => {
-  for (const p of ["/", "/privacy", "/cookies", "/terms", "/security", "/request-access"]) assert.equal(shouldCapturePageview(p), true, p);
+  for (const p of ["/", "/demo", "/privacy", "/cookies", "/terms", "/security", "/request-access"]) assert.equal(shouldCapturePageview(p), true, p);
   for (const p of ["/reports", "/reports/rep_1", "/pms-sandbox", "/app", "/app/settings/clinic", "/login", "/api/access-requests", "/nope"]) {
     assert.equal(shouldCapturePageview(p), false, p);
   }
@@ -98,4 +99,20 @@ test("the outgoing filter drops unknown events and app page views, and scrubs UR
   assert.ok(pageview);
   assert.equal(pageview.properties.$current_url, "https://clinforms.co.uk/?utm_campaign=autumn");
   assert.equal("title" in pageview.properties, false);
+});
+
+test("the demo video's play and completed events leave with nothing but the area", () => {
+  for (const name of ["demo_video_played", "demo_video_completed"]) {
+    const out = filterOutgoingEvent(
+      { event: name, properties: { $current_url: "https://clinforms.co.uk/demo?t=45&utm_source=mail", $pathname: "/demo", area: "marketing", at: 45, chapter: "Gaps flagged" } },
+      ORIGIN,
+    );
+    assert.ok(out, name);
+    assert.equal(out.properties.$current_url, "https://clinforms.co.uk/demo?utm_source=mail");
+    assert.equal(out.properties.area, "marketing");
+    assert.equal("at" in out.properties, false);
+    assert.equal("chapter" in out.properties, false);
+  }
+  const pageview = filterOutgoingEvent({ event: "$pageview", properties: { $pathname: "/demo", $current_url: "https://clinforms.co.uk/demo?t=45" } }, ORIGIN);
+  assert.equal(pageview?.properties.$current_url, "https://clinforms.co.uk/demo");
 });

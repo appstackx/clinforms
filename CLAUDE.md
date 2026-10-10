@@ -173,4 +173,5 @@ ignores the `auto` and runs in demo mode unless `--live`.
 | `docs/demo-red-physio.md` | RED call pack (internal): support matrix, checklist, script, answers, fallbacks |
 | `assets/sales/blue-heart/` | Dell's video, SRT, narration, voice-over scripts |
 | `scripts/e2e/`, `scripts/dev-tools/` | Ad hoc Playwright flows (port 3107-era) and dev tools (model probe, flag check) |
+| `src/lib/site/demo-video.ts` | `/demo` (feat/production, 10/10): the product video's single source – media URLs (R2 `clinforms-media`, EU, `media.clinforms.co.uk/demo/<date>/`, never overwritten), chapters, transcript, markup; tests `src/lib/site/demo-video.test.ts` + `scripts/e2e/demo-video.cjs`; see `docs/production-architecture.md` §4 |
 | `memory/` | Deep memory (this pack) |

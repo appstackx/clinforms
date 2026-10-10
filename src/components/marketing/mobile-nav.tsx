@@ -1,12 +1,12 @@
 "use client";
 
-/** Header menu below the md breakpoint: a disclosure button and a panel under the header. */
+/** Header menu below the lg breakpoint (four links do not fit beside the buttons at md): a disclosure button and a panel under the header. */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { TrackedLink } from "../analytics/tracked-link";
-import { DEMO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, SIGN_IN_HREF, btn } from "./nav";
+import { DEMO_HREF, DEMO_VIDEO_HREF, MARKETING_NAV, REQUEST_ACCESS_HREF, SIGN_IN_HREF, btn } from "./nav";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -28,7 +28,7 @@ export function MobileNav() {
     "block rounded-lg px-3 py-2.5 text-base font-medium text-slate-800 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <button
         type="button"
         aria-expanded={open}
@@ -50,6 +50,9 @@ export function MobileNav() {
               {link.label}
             </Link>
           ))}
+          <Link href={DEMO_VIDEO_HREF} className={item} onClick={() => setOpen(false)}>
+            Watch the demo
+          </Link>
           <TrackedLink href={DEMO_HREF} prefetch={false} className={item} event="demo_opened" eventProps={{ area: "marketing", cta: "mobile_nav" }}>
             Try the demo
           </TrackedLink>

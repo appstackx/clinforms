@@ -4,7 +4,10 @@ export const MARKETING_NAV = [
   { href: "/security", label: "Security" },
 ] as const;
 
+/** The interactive demo (Studio with fictional patients). */
 export const DEMO_HREF = "/reports";
+/** The product demo video (src/app/(marketing)/demo). */
+export const DEMO_VIDEO_HREF = "/demo";
 export const REQUEST_ACCESS_HREF = "/request-access";
 /** Clinic members sign in here (invitation-only accounts, two-step verification required). */
 export const SIGN_IN_HREF = "/login";
