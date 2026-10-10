@@ -443,9 +443,11 @@ test("the privacy policy describes the player as it behaves, naming no vendor", 
   assert.match(PRIVACY, /Opening the page loads nothing from that provider: the poster image and the captions come from this website, and the video is fetched only when you press play or choose a chapter \(or download the file\)\./);
   assert.match(PRIVACY, /It carries no cookies, the video sets none/);
   assert.match(PRIVACY, /The provider keeps a record of each request: for example the IP address, the time, the file, the browser type, the site it was played from and the country it came from\./);
-  // The media host sends a network error reporting policy: failed requests may be reported to the provider.
-  assert.match(PRIVACY, /The provider also asks browsers to report failed requests: after a play, some browsers keep that instruction for up to a week, and if a later request for the video fails they send the provider a short error report/);
-  assert.match(PRIVACY, /Successful requests are not reported\./);
+  // Network Error Logging is OFF on the media zone since 10/10 (owner decision), so the media host sends no `nel` /
+  // `report-to` headers and the policy no longer mentions error reports. Switching it back on needs the disclosure back.
+  assert.doesNotMatch(PRIVACY, /error report|report failed requests/i);
+  assert.match(PRIVACY, /about the last month\. We use these records only to keep the video available and to count how often it is played/);
+  assert.match(PRIVACY, /its records of requests may be kept there; as with our other providers/);
   assert.match(PRIVACY, /<strong>Demo video plays<\/strong> \(only if you play or download our\{" "\} <Link href="\/demo">product demo<\/Link>\)/);
   assert.match(PRIVACY, /Our lawful basis is our legitimate interest in showing our product to people who choose to watch it/);
   assert.match(PRIVACY, /<strong>Media delivery<\/strong> – stores our product demo video in the EU/);

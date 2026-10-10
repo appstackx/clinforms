@@ -139,13 +139,10 @@ export default function PrivacyPage() {
       <p>
         The provider keeps a record of each request: for example the IP address, the time, the file, the browser type,
         the site it was played from and the country it came from. Its dashboard shows us a sample of these records for
-        about the last month. The provider also asks browsers to report failed requests: after a play, some browsers
-        keep that instruction for up to a week, and if a later request for the video fails they send the provider a
-        short error report (the address requested, the kind of error, timings and the browser type), which reaches it
-        from your IP address. Successful requests are not reported. We use these records only to keep the video
-        available and to count how often it is played, and we do not try to work out who watched. If you allow
-        analytics, we also count that the video was played and played to the end, with nothing that identifies you. Our
-        lawful basis is our legitimate interest in showing our product to people who choose to watch it.
+        about the last month. We use these records only to keep the video available and to count how often it is
+        played, and we do not try to work out who watched. If you allow analytics, we also count that the video was
+        played and played to the end, with nothing that identifies you. Our lawful basis is our legitimate interest in
+        showing our product to people who choose to watch it.
       </p>
 
       <h2 id="patient-data">4. Patient information we process for clinics</h2>
@@ -219,8 +216,8 @@ export default function PrivacyPage() {
       <p>
         The demo video is stored in the EU. When you play it, it is delivered from our media delivery provider&rsquo;s
         global network, usually from a data centre near you, which may be outside the UK and the EU. The provider is
-        based in the United States, and its records of requests (and any error reports) may be kept there; as with our
-        other providers, that transfer is protected as described above.
+        based in the United States, and its records of requests may be kept there; as with our other providers, that
+        transfer is protected as described above.
       </p>
 
       <h2 id="rights">7. Your rights</h2>
