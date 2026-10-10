@@ -66,6 +66,8 @@ export const DISABLED_PATHS = [
   "/organization/check-slug",
   "/delete-user",
   "/change-email",
+  // A member's name is the signer's name on approvals: never self-edited (fix wave 2). No ClinForms page uses it.
+  "/update-user",
   // Both list a clinic's pending invitations (ids included) to ANY member, whatever the role. ClinForms shows
   // open invitations to owners and administrators only, server-side (Settings → Members).
   "/organization/list-invitations",

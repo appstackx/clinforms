@@ -25,7 +25,8 @@ import "server-only";
  * Wave 2: an actor is required (auth/actor.ts; any role – a final copy needs a receipt anyway). The
  * report, its form map and its receipt must be the actor's clinic's (403 TENANT_MISMATCH; a receipt or map
  * of another clinic never makes a FINAL copy, even though its MAC verifies). A clinic's FINAL render is
- * written to its audit trail (report id, format, receipt MAC prefix).
+ * written to its audit trail (report id, format, receipt MAC prefix, purpose) – except (fix wave 2) the review's
+ * on-screen preview (`purpose: "preview"`), which is not recorded and carries no file token.
  *
  * Owner: forms-engine agent.
  */
@@ -174,12 +175,21 @@ async function renderBuiltIn(
 }
 
 /** A clinic's FINAL copy goes into its audit trail (ids only). */
-async function auditFinal(deps: MedreportDeps, actor: Actor, report: Report, receipt: SignReceipt | undefined, format: RenderFormat, form: FormDefinition | null): Promise<void> {
+async function auditFinal(
+  deps: MedreportDeps,
+  actor: Actor,
+  report: Report,
+  receipt: SignReceipt | undefined,
+  format: RenderFormat,
+  form: FormDefinition | null,
+  purpose: "download" | "preview" | "file_back",
+): Promise<void> {
+  if (purpose === "preview") return; // the on-screen preview of an approved report: nobody produced a document
   await auditActor(deps, actor, {
     action: AUDIT_ACTIONS.renderFinal,
     targetType: "report",
     targetId: report.id,
-    detail: { format, ...(form ? { formId: form.id, kind: form.kind } : { templateId: report.templateId }), receiptMac: macPrefix(receipt?.mac) },
+    detail: { format, purpose, ...(form ? { formId: form.id, kind: form.kind } : { templateId: report.templateId }), receiptMac: macPrefix(receipt?.mac) },
   });
 }
 
@@ -192,6 +202,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const { format } = query.data;
   const { report, receipt, templateDocxBase64, form, fileBase64 } = parsed.data;
   const reviewCopy = parsed.data.reviewCopy === true;
+  const purpose = parsed.data.purpose ?? "download";
   assertActorTenant(actor, report.tenantId, "report");
   if (form) assertActorTenant(actor, form.tenantId, "form");
   if (receipt) assertActorTenant(actor, receipt.tenantId, "approval");
@@ -218,7 +229,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   // FINAL files carry the server's token for exactly these bytes, this approval and this episode;
   // the write-back (POST /connectors/{id}/documents) accepts nothing else.
   const fileTokenHeader = (bytes: Uint8Array): Record<string, string> =>
-    final && receipt
+    final && receipt && purpose !== "preview"
       ? {
           [HEADERS.fileToken]: createFileToken({
             receiptMac: receipt.mac,
@@ -243,7 +254,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     const out = await renderQuestionSummaryPdf(report, formDef, template, { receipt: final ? receipt : undefined });
     const base = reviewCopy ? `${out.baseName}_REVIEW-COPY` : out.baseName;
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: 0, ms: Date.now() - started });
-    if (final) await auditFinal(deps, actor, report, receipt, format, formDef);
+    if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose);
     return fileResponse(out.bytes, {
       contentType: CONTENT_TYPES.pdf,
       fileName: `${base}.pdf`,
@@ -264,7 +275,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     const out = await renderFormFile({ form: formDef, file, answers, draft: !final, reviewMarkers: reviewCopy, format: format === "pdf" ? "pdf" : "original" });
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
-    if (final) await auditFinal(deps, actor, report, receipt, format, formDef);
+    if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose);
     return fileResponse(out.bytes, {
       contentType: out.contentType,
       fileName: `${reviewCopy ? `${base}_REVIEW-COPY` : base}.${out.extension}`,
@@ -275,7 +286,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const out = await renderBuiltIn(format, report, template, final, receipt, reviewCopy, templateDocxBase64);
   if (out instanceof Response) return out;
   logEvent("render", { template: template.id, format, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
-  if (final) await auditFinal(deps, actor, report, receipt, format, null);
+  if (final) await auditFinal(deps, actor, report, receipt, format, null, purpose);
   return fileResponse(out.bytes, {
     contentType: out.contentType,
     fileName: `${out.baseName}.${out.ext}`,

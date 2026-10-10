@@ -11,7 +11,6 @@ import { Crosshair, Trash2 } from "lucide-react";
 import {
   ANSWER_TYPE_LABELS,
   COMPUTED_FACT_FORMAT_LABELS,
-  FILL_SOURCE_LABELS,
   REGISTRATION_PATH_LABELS,
   SIGNOFF_PART_LABELS,
 } from "../../../core/labels";
@@ -27,7 +26,9 @@ import {
 import type { FillSource, FormAnchor, FormField, FormKind } from "../../../core/types";
 import { Button, Input, cn } from "../../primitives";
 import { WORDING } from "../../wording";
-import { FILL_SOURCE_SHORT, FieldLabel, Select, Textarea } from "../shared/ui-bits";
+import { FieldLabel, Select, Textarea, useFillSourceLabels } from "../shared/ui-bits";
+import { useStudioMode } from "../../host-hooks";
+import { TENANT_COPY } from "../../studio-copy";
 import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription } from "./mapping";
 import { PdfAnchorFields } from "./pdf-anchor-fields";
 import { AnchorJsonEditor, AppointmentColumnsEditor } from "./table-anchor-editor";
@@ -63,6 +64,8 @@ export interface FieldEditorProps {
 
 export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTogglePick, readOnly }: FieldEditorProps) {
   const id = useId();
+  const tenant = useStudioMode() === "tenant";
+  const sourceLabels = useFillSourceLabels();
   const set = <K extends keyof FormField>(key: K, value: FormField[K]) => onChange({ ...field, [key]: value });
   const setSource = (fillSource: FillSource) => onChange({ ...field, fillSource });
   const setAnchor = (anchor: FormAnchor) => onChange({ ...field, anchor });
@@ -134,17 +137,17 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                   "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600",
                   active ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-teal-400",
                 )}
-                title={FILL_SOURCE_LABELS[kind]}
+                title={sourceLabels.long[kind]}
               >
-                {FILL_SOURCE_SHORT[kind]}
+                {sourceLabels.short[kind]}
               </button>
             );
           })}
         </div>
-        <p className="text-xs text-slate-600">{FILL_HELP[src.kind]}</p>
+        <p className="text-xs text-slate-600">{tenant && src.kind === "registration" ? TENANT_COPY.sources.fillHelpRegistration : FILL_HELP[src.kind]}</p>
         {src.kind === "registration" ? (
           <div>
-            <FieldLabel htmlFor={`${id}-path`}>TM3 value</FieldLabel>
+            <FieldLabel htmlFor={`${id}-path`}>{tenant ? TENANT_COPY.sources.registrationValue : "TM3 value"}</FieldLabel>
             <Select id={`${id}-path`} value={src.path} onChange={(e) => setSource({ kind: "registration", path: RegistrationPathSchema.parse(e.target.value) })}>
               {RegistrationPathSchema.options.map((p) => (
                 <option key={p} value={p}>

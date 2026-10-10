@@ -248,6 +248,21 @@ export interface AccessWording {
   partnerKeyTitle: string;
   partnerKeyDetail: string;
   launchStateUnavailable: string;
+  /** Fix wave 2: the Studio page was opened for another clinic or member than the sign-in now holds. */
+  signInChangedTitle: string;
+  signInChangedDetail: string;
+  /** Fix wave 2: an approved report or a confirmed form map is protected. */
+  approvedLockedTitle: string;
+  approvedDeleteDetail: string;
+  confirmedMapTitle: string;
+  confirmedMapDetail: string;
+  /** Fix wave 2: answers drafted in another clinician's voice ("I recorded…"). */
+  otherVoiceTitle: string;
+  otherVoiceDetail(author: string, signer: string, keys: string[]): string;
+  /** Fix wave 2: too many changes to the clinic's records in a short time. */
+  storeLimitTitle: string;
+  storeLimitDetail(seconds: number): string;
+  storeDailyLimitDetail: string;
 }
 
 /** The access wording is the same under every disclosure setting: it never names a technology. */
@@ -285,6 +300,22 @@ const ACCESS: AccessWording = {
   partnerKeyTitle: "Partner key required",
   partnerKeyDetail: "POST /launch is called server-to-server by the clinic system with a valid partner key.",
   launchStateUnavailable: "Launch links cannot be checked at the moment. Try again shortly.",
+  signInChangedTitle: "Your sign-in has changed",
+  signInChangedDetail:
+    "This page was opened for another clinic or another member than the one now signed in, so the change was not saved. Reload the page.",
+  approvedLockedTitle: "This report has been approved",
+  approvedDeleteDetail: "An approved report can only be deleted by the clinic's owner or an administrator. To correct it, start an amended version.",
+  confirmedMapTitle: "This form mapping has been confirmed",
+  confirmedMapDetail:
+    "Only a clinician, an administrator or the owner can change or delete a confirmed form mapping. Ask one of them.",
+  otherVoiceTitle: "Drafted in another clinician's voice",
+  otherVoiceDetail: (author, signer, keys) =>
+    `${keys.length === 1 ? "One answer speaks" : `${keys.length} answers speak`} as ${author} ("I …"): ${keys.join(", ")}. ` +
+    `You are approving as ${signer}. Edit ${keys.length === 1 ? "it" : "them"} so ${keys.length === 1 ? "it does" : "they do"} not speak as ${author}, or ask ${author} to approve.`,
+  storeLimitTitle: "Too many changes at once",
+  storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
+  storeDailyLimitDetail:
+    "Your clinic has added an unusually large amount of new data today, so new records are paused until tomorrow. Contact ClinForms support if you need more.",
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

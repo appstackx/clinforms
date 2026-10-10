@@ -48,6 +48,8 @@ function setup() {
     a: member(A),
     b: member(B),
     nofactor: member(A, { twoFactorVerified: false }),
+    staff: member(A, { userId: "user-staff-a", authSessionId: "sess-staff-a", role: "staff" }),
+    owner: member(A, { userId: "user-owner-a", authSessionId: "sess-owner-a", role: "owner" }),
   });
   const as = (who: string | null, origin?: string) => storeFetch(deps, { member: who, origin });
   return { store, deps, as };
@@ -206,12 +208,19 @@ test("tenant isolation: another clinic can neither see nor change a clinic's rec
   assert.equal((await as("a")(storeApiPaths.report(report.id), json({ report }))).status, 201);
   const b = as("b");
   assert.equal((await b(storeApiPaths.report(report.id))).status, 404);
-  assert.equal((await b(storeApiPaths.report(report.id), json({ report }, { "if-match": '"1"' }))).status, 404);
+  assert.equal((await b(storeApiPaths.report(report.id), json({ report }, { "if-match": '"1"' }))).status, 403, "A's report body is refused");
+  assert.equal((await b(storeApiPaths.report(report.id), json({ report: { ...report, tenantId: B } }, { "if-match": '"1"' }))).status, 404);
   assert.deepEqual(await (await b(storeApiPaths.report(report.id), { method: "DELETE" })).json(), { deleted: false });
   const snapB = StoreSnapshotResponseSchema.parse(await (await b(storeApiPaths.snapshot())).json());
   assert.deepEqual(snapB.reports, []);
-  // B creating the same id makes B's own copy; A's is untouched.
-  const own = await b(storeApiPaths.report(report.id), json({ report: { ...report, patientLabel: "B's copy" } }));
+  // A body naming clinic A is never re-filed under clinic B (fix wave 2: refused, not rewritten).
+  const refiled = await b(storeApiPaths.report(report.id), json({ report: { ...report, patientLabel: "B's copy" } }));
+  assert.equal(refiled.status, 403);
+  assert.equal((await refiled.json()).code, "TENANT_MISMATCH");
+  const refiledForm = await b(storeApiPaths.form(formFor(A).id), json({ form: formFor(A) }));
+  assert.equal(refiledForm.status, 403);
+  // B creating the same id for itself makes B's own copy; A's is untouched.
+  const own = await b(storeApiPaths.report(report.id), json({ report: { ...report, tenantId: B, patientLabel: "B's copy" } }));
   assert.equal(own.status, 201);
   assert.equal(StoreReportResponseSchema.parse(await own.json()).report.tenantId, B);
   const a = StoreReportResponseSchema.parse(await (await as("a")(storeApiPaths.report(report.id))).json());
@@ -448,4 +457,121 @@ test("/forms/fill-preview and /render prefer the clinic's stored copy of the for
   assert.equal((await demo({})).status, 422);
   const demoOk = await demo({ fileBase64: b64 });
   assert.equal(demoOk.status, 200, await demoOk.clone().text());
+});
+
+test("fix wave 2: the page's clinic and member must be the sign-in's (x-clinforms-tenant / x-clinforms-member)", async () => {
+  const { as } = setup();
+  const f = as("a");
+  const report = reportFor(A, "rpt_scope");
+  const scoped = (headers: Record<string, string>) => f(storeApiPaths.report(report.id), json({ report }, headers));
+  const otherClinic = await scoped({ "x-clinforms-tenant": B });
+  assert.equal(otherClinic.status, 403);
+  assert.equal((await otherClinic.json()).code, "TENANT_MISMATCH");
+  const otherMember = await scoped({ "x-clinforms-tenant": A, "x-clinforms-member": "user-someone-else" });
+  assert.equal(otherMember.status, 403);
+  assert.equal((await otherMember.json()).code, "SIGN_IN_CHANGED");
+  // Reads are checked too (the Studio sends the headers on every request).
+  const snap = await f(storeApiPaths.snapshot(), { headers: { "x-clinforms-tenant": B } });
+  assert.equal(snap.status, 403);
+  assert.equal((await scoped({ "x-clinforms-tenant": A, "x-clinforms-member": "user-clinic-a" })).status, 201);
+  // Nothing was written by the refused requests.
+  const del = await f(storeApiPaths.report(report.id), { method: "DELETE", headers: { "x-clinforms-tenant": B } });
+  assert.equal(del.status, 403);
+  assert.equal((await f(storeApiPaths.report(report.id))).status, 200);
+});
+
+test("fix wave 2: an approved report cannot be deleted (and re-created as a draft) by staff or clinicians; owners/admins can", async () => {
+  const { as, store } = setup();
+  const draft = reportFor(A, "rpt_locked");
+  const receipt = await createReceipt({ report: draft, signer: SARAH, statementAccepted: true, attestations: [...FORM_ATTESTATIONS] });
+  const signed = { ...draft, status: "signed" as const, receipt };
+  assert.equal((await as("a")(storeApiPaths.report(draft.id), json({ report: signed }))).status, 201);
+  for (const who of ["staff", "a"]) {
+    const del = await as(who)(storeApiPaths.report(draft.id), { method: "DELETE" });
+    assert.equal(del.status, 409, who);
+    assert.equal((await del.json()).code, "REPORT_LOCKED");
+    // …so a create over the same id is still "exists" (never a fresh draft).
+    const over = await as(who)(storeApiPaths.report(draft.id), json({ report: { ...draft, patientLabel: "replaced" } }));
+    assert.equal(over.status, 409, who);
+    assert.equal((await over.json()).code, "REV_CONFLICT");
+  }
+  const kept = StoreReportResponseSchema.parse(await (await as("staff")(storeApiPaths.report(draft.id))).json());
+  assert.equal(kept.report.status, "signed");
+  assert.ok(kept.report.receipt);
+  // A draft is deleted by any member; an approved report by the owner (audited).
+  assert.equal((await as("staff")(storeApiPaths.report("rpt_draft_x"), json({ report: { ...draft, id: "rpt_draft_x" } }))).status, 201);
+  assert.deepEqual(await (await as("staff")(storeApiPaths.report("rpt_draft_x"), { method: "DELETE" })).json(), { deleted: true });
+  assert.deepEqual(await (await as("owner")(storeApiPaths.report(draft.id), { method: "DELETE" })).json(), { deleted: true });
+  const deletes = store.auditLog.filter((e) => e.action === "report.delete");
+  assert.deepEqual(deletes.map((e) => [e.targetId, e.userId, (e.detail as { status: string }).status]), [
+    ["rpt_draft_x", "user-staff-a", "draft"],
+    [draft.id, "user-owner-a", "signed"],
+  ]);
+});
+
+test("fix wave 2: staff can neither un-confirm nor delete a confirmed form map; a clinician can", async () => {
+  const { as } = setup();
+  const attested = withAttestedConfirmation(formFor(A), "Practice manager", "2026-10-09T09:00:00.000Z");
+  assert.equal((await as("a")(storeApiPaths.form(attested.id), json({ form: attested }))).status, 201);
+  const proposed: FormDefinition = { ...attested, status: "proposed" };
+  delete proposed.confirmed;
+  const undo = await as("staff")(storeApiPaths.form(attested.id), json({ form: proposed }, { "if-match": '"1"' }));
+  assert.equal(undo.status, 403);
+  assert.equal((await undo.json()).code, "ROLE_NOT_ALLOWED");
+  // A changed map whose confirmation no longer verifies is stored as proposed – an un-confirm too, refused the same way.
+  const changed = { ...attested, fields: attested.fields.slice(1) };
+  const forged = await as("staff")(storeApiPaths.form(attested.id), json({ form: changed }, { "if-match": '"1"' }));
+  assert.equal(forged.status, 403);
+  const del = await as("staff")(storeApiPaths.form(attested.id), { method: "DELETE" });
+  assert.equal(del.status, 403);
+  assert.equal(StoreFormResponseSchema.parse(await (await as("staff")(storeApiPaths.form(attested.id))).json()).form.status, "confirmed");
+  // Staff may still work on a proposed map; a clinician may un-confirm and delete.
+  assert.equal((await as("a")(storeApiPaths.form(attested.id), json({ form: proposed }, { "if-match": '"1"' }))).status, 200);
+  assert.equal((await as("staff")(storeApiPaths.form(attested.id), json({ form: { ...proposed, title: "Staff edit" } }, { "if-match": '"2"' }))).status, 200);
+  assert.deepEqual(await (await as("a")(storeApiPaths.form(attested.id), { method: "DELETE" })).json(), { deleted: true });
+});
+
+test("fix wave 2: store writes are limited per member and per clinic (429 with Retry-After)", async () => {
+  const { STORE_WRITES_PER_MEMBER_PER_MINUTE } = await import("../../src/modules/medreport/api/store-contract");
+  const store = createMemoryTenantStore();
+  const counts = new Map<string, number>();
+  const deps = {
+    ...storeDeps(store, { a: member(A) }),
+    sharedState: {
+      async hit(key: string, _windowMs: number, amount = 1) {
+        counts.set(key, (counts.get(key) ?? 0) + amount);
+        return { count: counts.get(key) ?? 0, resetAt: new Date(Date.now() + 30_000).toISOString() };
+      },
+      async peek(key: string) {
+        return { count: counts.get(key) ?? 0, resetAt: new Date(Date.now() + 30_000).toISOString() };
+      },
+      async reset(key: string) {
+        counts.delete(key);
+      },
+      async claimOnce() {
+        return true;
+      },
+    },
+  };
+  const f = storeFetch(deps, { member: "a" });
+  const memberKey = Array.from({ length: 1 }, () => `store:writes:member:${A}:user-clinic-a`)[0];
+  counts.set(memberKey, STORE_WRITES_PER_MEMBER_PER_MINUTE);
+  const report = reportFor(A, "rpt_limited");
+  const res = await f(storeApiPaths.report(report.id), json({ report }));
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).code, "RATE_LIMITED");
+  assert.ok(Number(res.headers.get("retry-after")) >= 1);
+  assert.equal((await f(storeApiPaths.snapshot())).status, 200, "reads are not limited");
+  counts.clear();
+  assert.equal((await f(storeApiPaths.report(report.id), json({ report }))).status, 201);
+  // New data per clinic per day (kilobytes of new records and uploaded chunks): a create over it is refused…
+  const { STORE_NEW_KB_PER_CLINIC_PER_DAY } = await import("../../src/modules/medreport/api/store-contract");
+  const dayKey = `store:new-kb:clinic:${A}`;
+  assert.ok((counts.get(dayKey) ?? 0) > 0, "the create counted its size");
+  counts.set(dayKey, STORE_NEW_KB_PER_CLINIC_PER_DAY);
+  const big = await f(storeApiPaths.report("rpt_next"), json({ report: { ...report, id: "rpt_next" } }));
+  assert.equal(big.status, 429);
+  assert.match((await big.json()).detail, /tomorrow/);
+  // …while editing an existing record still works (it does not grow the database).
+  assert.equal((await f(storeApiPaths.report(report.id), json({ report: { ...report, patientLabel: "edited" } }, { "if-match": '"1"' }))).status, 200);
 });

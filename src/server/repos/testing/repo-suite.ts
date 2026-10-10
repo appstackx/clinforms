@@ -308,6 +308,10 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.equal(next.count, 1);
       assert.ok(next.windowStart > counts[0].windowStart);
       assert.equal(await purgeRateLimits(ctx, next.windowStart), 1);
+      // Fix wave 2: a hit may count an amount (kilobytes of new data).
+      assert.equal((await hitRateLimit(ctx, "store:new-kb:clinic-a", 86_400_000, 1500)).count, 1500);
+      assert.equal((await hitRateLimit(ctx, "store:new-kb:clinic-a", 86_400_000, 20)).count, 1520);
+      await assert.rejects(hitRateLimit(ctx, "store:new-kb:clinic-a", 86_400_000, 0));
     });
 
     it("access requests", async () => {

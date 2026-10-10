@@ -37,3 +37,43 @@ export function onStoreModeChange(listener: (mode: StoreMode) => void): () => vo
     listeners.delete(listener);
   };
 }
+
+/**
+ * Whose records the "server" backend holds in memory (fix wave 2): the clinic and member the Studio page was
+ * opened for (HostHooks.clinic.tenantId, HostHooks.member.userId). <HostHooksProvider> applies it; when it
+ * changes (another member signs in, or the member switches clinic, without a full page load) the server store
+ * forgets every record and queued change of the previous scope, and sends the scope with each request so the
+ * server refuses a change made under another sign-in (api/store-contract.ts STORE_TENANT_HEADER).
+ */
+export interface StoreScope {
+  tenantId: string;
+  userId?: string | null;
+}
+
+let currentScope: StoreScope | null = null;
+const scopeListeners = new Set<(scope: StoreScope | null) => void>();
+
+export function getStoreScope(): StoreScope | null {
+  return currentScope;
+}
+
+export function setStoreScope(scope: StoreScope | null): void {
+  const next = scope && scope.tenantId ? { tenantId: scope.tenantId, userId: scope.userId ?? null } : null;
+  if (next === null && currentScope === null) return;
+  if (next && currentScope && next.tenantId === currentScope.tenantId && next.userId === (currentScope.userId ?? null)) return;
+  currentScope = next;
+  Array.from(scopeListeners).forEach((listener) => {
+    try {
+      listener(next);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+export function onStoreScopeChange(listener: (scope: StoreScope | null) => void): () => void {
+  scopeListeners.add(listener);
+  return () => {
+    scopeListeners.delete(listener);
+  };
+}

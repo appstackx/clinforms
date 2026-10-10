@@ -32,6 +32,8 @@ export interface TenantStudioContext {
   draftingEnabled: boolean;
   member: {
     name: string;
+    /** The account id (scopes the Studio's in-memory records to this member; not a secret). */
+    userId: string;
     email: string;
     role: MemberRole;
     roleLabel: string;
@@ -68,6 +70,7 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
       draftingEnabled: clinic?.draftingEnabled === true,
       member: {
         name: session.user.name,
+        userId: session.user.id,
         email: session.user.email,
         role: membership.role,
         roleLabel: roleLabel(membership.role),

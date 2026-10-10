@@ -248,6 +248,10 @@ export const ACTIVITY_COPY = {
   newer: "Newer",
   older: "Older",
   newest: "Back to the newest",
+  includeSaves: "Include routine saves of drafts and form mappings",
+  savesHidden: "Routine saves of drafts and form mappings are hidden.",
+  showSaves: "Show them",
+  openTarget: "Open",
   download: "Download these entries (CSV)",
   downloadNote: "The download holds ids and action codes only, for the entries on this page.",
 } as const;

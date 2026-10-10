@@ -267,19 +267,19 @@ export function PreviewPanel({
         if (!form) return;
         out = await api.render(
           "pdf",
-          signed && current.receipt ? { report: current, receipt: current.receipt, form, requireFinal: true } : { report: current, form },
+          signed && current.receipt ? { report: current, receipt: current.receipt, form, requireFinal: true, purpose: "preview" } : { report: current, form, purpose: "preview" },
           { signal: ctrl.signal },
         );
       } else if (isForm) {
         if (!form || file.status !== "ready") return;
         out =
           signed && current.receipt
-            ? await api.render("original", { report: current, receipt: current.receipt, form, fileBase64: file.base64, requireFinal: true }, { signal: ctrl.signal })
+            ? await api.render("original", { report: current, receipt: current.receipt, form, fileBase64: file.base64, requireFinal: true, purpose: "preview" }, { signal: ctrl.signal })
             : await api.fillPreview({ report: current, form, fileBase64: file.base64, mode: "draft" }, { signal: ctrl.signal });
       } else {
         out = await api.render(
           "pdf",
-          signed && current.receipt ? { report: current, receipt: current.receipt, requireFinal: true } : { report: current },
+          signed && current.receipt ? { report: current, receipt: current.receipt, requireFinal: true, purpose: "preview" } : { report: current, purpose: "preview" },
           { signal: ctrl.signal },
         );
       }

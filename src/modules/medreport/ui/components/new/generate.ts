@@ -63,6 +63,11 @@ export interface GenerateInput {
   /** Treating clinician for clinician.* form fields (e.g. the clinician who launched from TM3). */
   clinician?: Clinician;
   /**
+   * Fix wave 2: who will sign (report.author – drafts speak in their first person). Default: the clinician.
+   * null: nobody named – drafts in the third person, so any signing clinician can approve them.
+   */
+  author?: Clinician | null;
+  /**
    * A live drafting passcode is set in this tab, so /drafts may draft live. When false and the bundle
    * response lists the demo drafts it holds (`demoDrafts`), questions with no demo draft are not sent
    * to /drafts (they would return NO_DEMO_DRAFT): they are left for the clinician.
@@ -127,7 +132,7 @@ export function templateOf(target: GenerateTarget): ReportTemplate {
 }
 
 /** Create the report (no drafting) – code-filled answers only. */
-export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "actor" | "now">): Report {
+export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now">): Report {
   const now = input.now?.() ?? new Date();
   const common = {
     bundle: input.data.bundle,
@@ -138,7 +143,12 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
   };
   const created =
     input.target.kind === "form"
-      ? createFormReport({ ...common, form: input.target.form, clinician: input.clinician ?? primaryTreatingClinician(input.data.bundle) ?? undefined })
+      ? createFormReport({
+          ...common,
+          form: input.target.form,
+          clinician: input.clinician ?? primaryTreatingClinician(input.data.bundle) ?? undefined,
+          ...(input.author !== undefined ? { author: input.author } : {}),
+        })
       : createReport({ ...common, template: input.target.template });
   // Remember whether this deployment holds demo answers for this record (review's "Draft them now").
   const demo = input.data.demoDrafts;

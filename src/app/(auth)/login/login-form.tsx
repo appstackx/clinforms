@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFormState } from "react-dom";
 import { Field, Notice, TextLink } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
@@ -16,6 +16,11 @@ function LoginSteps({ next, onRestart }: { next: string; onRestart: () => void }
   const [pwState, pwAction] = useFormState(passwordStep, IDLE);
   const [codeState, codeAction] = useFormState(codeStep, IDLE);
   const [useBackup, setUseBackup] = useState(false);
+  // Signed in: load the next page in full, so nothing held in memory before this sign-in survives it.
+  const done = codeState.status === "done" ? codeState.next : null;
+  useEffect(() => {
+    if (done) window.location.assign(done);
+  }, [done]);
 
   if (pwState.status !== "code") {
     return (

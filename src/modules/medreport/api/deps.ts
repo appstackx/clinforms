@@ -67,8 +67,8 @@ export interface SharedCounterWindow {
  * except where a missing shared store would weaken a clinic's security (see auth/shared-limits.ts).
  */
 export interface SharedStateStore {
-  /** Count one hit for `key` in the current fixed window of `windowMs`. Atomic. */
-  hit(key: string, windowMs: number): Promise<SharedCounterWindow>;
+  /** Count one hit (or `amount` – fix wave 2, e.g. kilobytes stored) for `key` in the current fixed window of `windowMs`. Atomic. */
+  hit(key: string, windowMs: number, amount?: number): Promise<SharedCounterWindow>;
   /** The current window's count without counting a hit. */
   peek(key: string, windowMs: number): Promise<SharedCounterWindow>;
   /** Forget every window of `key`. */

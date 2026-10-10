@@ -127,9 +127,9 @@ export function useReviewActions(opts: {
   /* Render -------------------------------------------------------------------------------------- */
 
   const render = useCallback(
-    async (kind: DownloadKind, final: boolean): Promise<FileDownload> => {
+    async (kind: DownloadKind, final: boolean, purpose: "download" | "file_back" = "download"): Promise<FileDownload> => {
       const current = reportRef.current;
-      const body: RenderRequest = { report: current };
+      const body: RenderRequest = { report: current, purpose };
       if (final && current.receipt) {
         body.receipt = current.receipt;
         body.requireFinal = true;
@@ -258,12 +258,12 @@ export function useReviewActions(opts: {
       // file where this deployment can convert it – clinics usually send the PDF to the referrer.
       const filedNames: string[] = [];
       const primaryKind: DownloadKind = isForm ? "original" : "docx";
-      filedNames.push(await fileOne(await render(primaryKind, true)));
+      filedNames.push(await fileOne(await render(primaryKind, true, "file_back")));
       const wantsPdfCopy = isForm ? current.form?.kind === "docx" : true;
       let pdfNote: string | null = null;
       if (wantsPdfCopy) {
         try {
-          filedNames.push(await fileOne(await render("pdf", true)));
+          filedNames.push(await fileOne(await render("pdf", true, "file_back")));
         } catch (err) {
           if (err instanceof ApiError && err.code === "PDF_CONVERSION_UNAVAILABLE") {
             pdfNote = "The PDF copy is made on the production converter; the Word file was filed.";

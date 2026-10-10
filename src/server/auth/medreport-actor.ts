@@ -76,9 +76,12 @@ export async function resolveMedreportCaller(auth: Auth, db: Kysely<Database>, h
   };
 }
 
-/** clinic_profile → the module's ClinicProfile. */
+/**
+ * clinic_profile → the module's ClinicProfile; null when the clinic has none. A read that FAILS throws (fix wave
+ * 2): the module then fails closed (no drafting it cannot check) instead of taking the failure for "no profile".
+ */
 export async function loadClinicProfile(db: Kysely<Database>, tenantId: string): Promise<ClinicProfile | null> {
-  const p = await getClinicProfile({ db }, tenantId).catch(() => null);
+  const p = await getClinicProfile({ db }, tenantId);
   if (!p) return null;
   return {
     tenantId: p.tenantId,

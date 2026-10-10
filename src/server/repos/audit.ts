@@ -84,6 +84,8 @@ export interface ListAuditOptions {
   afterId?: string;
   /** Only entries with exactly this action. */
   action?: string;
+  /** Leave out entries with these actions (fix wave 2: routine saves hidden by default on the activity page). */
+  excludeActions?: readonly string[];
   /** Only entries written by this user. */
   userId?: string;
 }
@@ -95,6 +97,7 @@ export async function listAudit(ctx: DbContext, tenantId: string, options: ListA
   let query = ctx.db.selectFrom("audit_log").selectAll().where("tenant_id", "=", tenantId);
   if (options.userId !== undefined) query = query.where("user_id", "=", options.userId);
   if (options.action !== undefined) query = query.where("action", "=", options.action);
+  if (options.excludeActions && options.excludeActions.length > 0) query = query.where("action", "not in", [...options.excludeActions]);
   const ascending = !options.beforeId && Boolean(options.afterId);
   if (options.beforeId) query = query.where("id", "<", options.beforeId);
   else if (options.afterId) query = query.where("id", ">", options.afterId);

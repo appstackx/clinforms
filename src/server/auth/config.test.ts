@@ -104,7 +104,7 @@ describe("Better Auth options per dialect", () => {
       assert.equal(o.rateLimit?.storage, "database");
       assert.equal(o.emailAndPassword?.minPasswordLength, 12);
     }
-    for (const p of ["/sign-up/email", "/two-factor/disable", "/organization/create", "/organization/delete"]) assert.ok(DISABLED_PATHS.includes(p));
+    for (const p of ["/sign-up/email", "/two-factor/disable", "/organization/create", "/organization/delete", "/update-user"]) assert.ok(DISABLED_PATHS.includes(p));
     await t.close();
   });
 });

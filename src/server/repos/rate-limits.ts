@@ -27,14 +27,18 @@ function windowOf(nowMs: number, windowMs: number): { start: string; reset: stri
   return { start: new Date(startMs).toISOString(), reset: new Date(startMs + windowMs).toISOString() };
 }
 
-/** Counts one hit for `key` in the current window and returns the window's total. */
-export async function hitRateLimit(ctx: DbContext, key: string, windowMs: number): Promise<RateLimitHit> {
+/**
+ * Counts one hit (or `amount`, e.g. kilobytes stored – fix wave 2) for `key` in the current window and returns the
+ * window's total.
+ */
+export async function hitRateLimit(ctx: DbContext, key: string, windowMs: number, amount = 1): Promise<RateLimitHit> {
   checkKey(key);
+  if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) throw new RepoInputError("amount must be an integer from 1 to 1,000,000.");
   const { start, reset } = windowOf(Date.parse(nowIso(ctx)), windowMs);
   const row = await ctx.db
     .insertInto("rate_limits")
-    .values({ key, window_start: start, count: 1 })
-    .onConflict((oc) => oc.columns(["key", "window_start"]).doUpdateSet((eb) => ({ count: eb("rate_limits.count", "+", 1) })))
+    .values({ key, window_start: start, count: amount })
+    .onConflict((oc) => oc.columns(["key", "window_start"]).doUpdateSet((eb) => ({ count: eb("rate_limits.count", "+", amount) })))
     .returning("count")
     .executeTakeFirstOrThrow();
   return { count: toInt(row.count), windowStart: start, resetAt: reset };

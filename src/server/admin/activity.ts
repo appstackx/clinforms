@@ -49,7 +49,12 @@ export interface ActivityParams {
   /** Download only: the newest and the oldest entry shown on the page (inclusive), so it holds exactly those. */
   from: string | null;
   to: string | null;
+  /** Fix wave 2: include routine saves (SAVE_ACTIONS), hidden by default so approvals are not buried. */
+  saves: boolean;
 }
+
+/** Routine saves of a draft or a form mapping: recorded, but left out of the activity page unless asked for. */
+export const SAVE_ACTIONS: readonly string[] = ["report.update", "form.update"];
 
 const ACTION = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
 const USER_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/;
@@ -79,6 +84,7 @@ export function parseActivityParams(source: ParamSource): ActivityParams {
     after: before ? null : pick("after", ULID),
     from: range ? from : null,
     to: range ? to : null,
+    saves: first(source, "saves") === "1",
   };
 }
 
@@ -86,6 +92,8 @@ export function parseActivityParams(source: ParamSource): ActivityParams {
 export interface ActivityQuery {
   tenantId: string;
   action: string | null;
+  /** Actions left out (routine saves, unless asked for or filtered on). */
+  excludeActions: readonly string[];
   userId: string | null;
   before: string | null;
   after: string | null;
@@ -95,6 +103,7 @@ export function activityQuery(scope: ActivityScope, params: ActivityParams): Act
   return {
     tenantId: scope.tenantId,
     action: params.action,
+    excludeActions: params.action || params.saves ? [] : SAVE_ACTIONS,
     userId: scope.everyone ? params.user : scope.viewerId,
     before: params.before,
     after: params.after,
@@ -116,7 +125,7 @@ export interface ActivityPage {
  */
 export async function loadActivityPage(ctx: DbContext, query: ActivityQuery, pageSize = ACTIVITY_PAGE_SIZE): Promise<ActivityPage> {
   const size = Math.min(Math.max(1, Math.floor(pageSize)), 200);
-  const filters = { action: query.action ?? undefined, userId: query.userId ?? undefined, limit: size + 1 };
+  const filters = { action: query.action ?? undefined, userId: query.userId ?? undefined, excludeActions: query.excludeActions, limit: size + 1 };
   if (query.after) {
     const rows = await listAudit(ctx, query.tenantId, { ...filters, afterId: query.after });
     if (rows.length > size) {
@@ -155,6 +164,7 @@ export async function loadActivityRange(
     .where("id", ">=", range.oldest);
   if (query.userId !== null) q = q.where("user_id", "=", query.userId);
   if (query.action !== null) q = q.where("action", "=", query.action);
+  if (query.excludeActions.length > 0) q = q.where("action", "not in", [...query.excludeActions]);
   const rows = await q.orderBy("id", "desc").limit(Math.min(Math.max(1, Math.floor(max)), 200)).execute();
   return rows.map((r) => ({ id: r.id, at: r.at, action: r.action, userId: r.user_id, targetType: r.target_type, targetId: r.target_id }));
 }
@@ -166,6 +176,7 @@ export function activityHref(path: string, params: Partial<ActivityParams>): str
     const value = params[key];
     if (value) search.set(key, value);
   }
+  if (params.saves) search.set("saves", "1");
   const text = search.toString();
   return text ? `${path}?${text}` : path;
 }
@@ -228,7 +239,17 @@ export interface ActivityRow {
   label: string;
   who: string;
   target: string | null;
+  /** Fix wave 2: where the report or form mapping opens in the clinic's Studio (null for anything else). */
+  targetHref: string | null;
   detail: string | null;
+}
+
+/** The Studio page of an entry's report or form mapping. */
+export function activityTargetHref(entry: Pick<AuditEntry, "targetType" | "targetId">): string | null {
+  if (!entry.targetId) return null;
+  if (entry.targetType === "report") return `/app/studio/${encodeURIComponent(entry.targetId)}`;
+  if (entry.targetType === "form") return `/app/studio/forms/${encodeURIComponent(entry.targetId)}`;
+  return null;
 }
 
 function personName(userId: string | null, lookups: ActivityLookups): string {
@@ -277,6 +298,7 @@ export function presentActivity(entries: AuditEntry[], lookups: ActivityLookups)
     label: activityLabel(e.action),
     who: personName(e.userId, lookups),
     target: targetText(e, lookups),
+    targetHref: activityTargetHref(e),
     detail: describeActivityDetail(e.action, e.detail),
   }));
 }

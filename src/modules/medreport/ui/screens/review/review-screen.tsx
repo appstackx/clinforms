@@ -27,6 +27,7 @@ import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
+import { otherClinicianVoice } from "../../../core/voice";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -307,8 +308,21 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   // fail, so the Studio says what to do instead of offering it.
   const draftingUnavailable = !aiMode.expectLive && report.demoDraftsAvailable === false;
 
-  // Answers that describe the signer's own notes in the third person ("Sarah Reid recorded…").
-  const voiceAuthor = report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null);
+  // Answers that describe the signer's own notes in the third person ("Sarah Reid recorded…"). In a clinic's
+  // Studio the signer is the signed-in member (fix wave 2): never rewrite answers into someone else's voice.
+  const voiceAuthor = tenant
+    ? (member?.name ?? null)
+    : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null));
+  // Fix wave 2: who may approve in a clinic's Studio, and drafted answers that speak as another clinician.
+  const tenantSignProblem = useMemo((): string | null => {
+    if (!tenant || signed || !member) return null;
+    if (member.role === "staff") return TENANT_COPY.review.staffCannotApprove;
+    if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
+    const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
+    if (!voice) return null;
+    const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
+    return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
+  }, [tenant, signed, member, report, questions]);
   const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
 
   const startAmendment = useCallback(async () => {
@@ -344,7 +358,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
               ? "This report's template is not available."
               : actions.draftingKeys.size > 0
                 ? "Drafting is still running."
-                : null;
+                : tenantSignProblem;
   const canApprove = !signed && !approveUnavailable && !validating && blocking.length === 0;
 
   /* Layout state ------------------------------------------------------------------------------- */

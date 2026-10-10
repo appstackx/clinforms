@@ -86,6 +86,8 @@ export const ALL_ROLES: readonly MemberRole[] = ["owner", "admin", "clinician", 
 export const CONFIRM_ROLES: readonly MemberRole[] = ["owner", "admin", "clinician"];
 /** Roles that may approve (sign) – with an HCPC number and "may sign" on the member profile. */
 export const SIGN_ROLES: readonly MemberRole[] = ["owner", "admin", "clinician"];
+/** Roles that manage the clinic's records (fix wave 2: delete an approved report). */
+export const MANAGE_ROLES: readonly MemberRole[] = ["owner", "admin"];
 
 /** The public demo's own pages: a request from one of them carrying a demo session is the demo. */
 const PUBLIC_DEMO_PATHS = ["/reports", "/pms-sandbox"];

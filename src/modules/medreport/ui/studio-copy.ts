@@ -16,6 +16,7 @@ export const TENANT_COPY = {
     uploadStepText: "The patient's notes printed to PDF from your clinic system, or an export.",
     approveStepText: "The referrer's own Word or PDF, completed and ready to send.",
     securityCardBlurb: "Clinician approval, two-step verification, encryption and data minimisation – what is in place today.",
+    deleteNote: "This cannot be undone. The deletion is recorded in your clinic's activity.",
   },
   wizard: {
     description:
@@ -41,6 +42,11 @@ export const TENANT_COPY = {
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
+    staffCannotApprove: "Ready for a signing clinician: staff prepare forms, and a clinician with signing details approves them.",
+    noSigningDetails:
+      "You cannot approve yet: your clinic profile has no HCPC number or permission to sign. Ask an administrator (Settings → Members), or a signing clinician to approve.",
+    otherVoicePrefix: "Drafted in another clinician's voice:",
+    otherVoiceSuffix: "Edit those answers so they do not speak as them, or ask them to approve.",
   },
   files: {
     missing: "The referrer's original file is not in your clinic's storage. Upload the referrer's form again to preview, fill or download it.",
@@ -55,6 +61,15 @@ export const TENANT_COPY = {
     notFoundTitle: "This form is not in your clinic's library",
     notFoundBody: "It may have been deleted. Upload the referrer's form again to map it.",
     libraryIntro: "Upload the form an MLC or insurer sent you (.docx or PDF).",
+  },
+  /** Fix wave 2: where answers come from, in a clinic's Studio (its notes upload – never a practice-system link). */
+  sources: {
+    registrationLong: "From the patient record in the uploaded notes – filled by code",
+    registrationShort: "From the patient record",
+    registrationValue: "Record value",
+    fillHelpRegistration: "Copied by code from the patient's details, referral or episode in the uploaded notes – never drafted.",
+    mappingIdentifiers: "Identifiers are always copied by code from the patient record, never drafted.",
+    lockedFromRecords: "Filled in by code from the uploaded notes. To change it, correct the notes and upload them again.",
   },
   batch: {
     title: "Batch",

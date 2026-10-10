@@ -98,11 +98,13 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     const first = await access(jar.headers());
     assert.equal(first.kind, "ok");
     if (first.kind !== "ok") return;
+    const userId = (await auth.api.getSession({ headers: jar.headers() }))!.user.id;
     assert.deepEqual(first.context, {
       tenantId: "studio-test",
       clinicName: "Studio Test Physio (fictional)",
       draftingEnabled: false,
-      member: { name: "Olivia Owner", email: "owner@studio-test.example", role: "owner", roleLabel: "Owner", canSign: false },
+      // userId (fix wave 2) scopes the Studio's in-memory records to this member.
+      member: { name: "Olivia Owner", userId, email: "owner@studio-test.example", role: "owner", roleLabel: "Owner", canSign: false },
     });
 
     await upsertMemberProfile({ db: t.db }, clinic.organizationId, (await auth.api.getSession({ headers: jar.headers() }))!.user.id, {
@@ -117,6 +119,7 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     assert.equal(second.context.draftingEnabled, true);
     assert.deepEqual(second.context.member, {
       name: "Olivia Owner",
+      userId,
       email: "owner@studio-test.example",
       role: "owner",
       roleLabel: "Owner",

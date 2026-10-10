@@ -241,6 +241,11 @@ export interface CreateFormReportInput {
   computedFacts: ComputedFact[];
   /** Treating clinician for clinician.* fields (default: the clinician who wrote most notes). */
   clinician?: Clinician;
+  /**
+   * Fix wave 2: the clinician who will sign – drafts speak in their first person about their own notes and name
+   * everyone else (report.author). Default: `clinician`. null = nobody named: drafts in the third person.
+   */
+  author?: Clinician | null;
   id?: string;
   now?: Date;
   actor?: string;
@@ -380,8 +385,12 @@ export function createFormReport(input: CreateFormReportInput): Report {
     createdAt: at,
     updatedAt: at,
     form: formRefOf(form),
-    ...(input.clinician ? { author: input.clinician } : {}),
+    ...(authorOf(input) ? { author: authorOf(input) as Clinician } : {}),
   };
+}
+
+function authorOf(input: Pick<CreateFormReportInput, "clinician" | "author">): Clinician | undefined {
+  return input.author === undefined ? input.clinician : (input.author ?? undefined);
 }
 
 /** Text shown for a structured from-records answer (the value as written on the form). */

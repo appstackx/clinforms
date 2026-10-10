@@ -7,7 +7,12 @@ import { safeNextPath } from "@/server/auth/config";
 import { authErrorKey, authErrorMessage } from "@/server/auth/errors";
 import { clientIp, requestHeaders, throttle } from "@/server/auth/session";
 
-export type LoginState = { status: "idle" } | { status: "code" } | { status: "error"; error: string; restart?: boolean };
+export type LoginState =
+  | { status: "idle" }
+  | { status: "code" }
+  | { status: "error"; error: string; restart?: boolean }
+  /** Signed in: the form loads `next` in full (fix wave 2: no client-side state from before the sign-in survives). */
+  | { status: "done"; next: string };
 
 const WINDOW = 15 * 60_000;
 
@@ -42,5 +47,5 @@ export async function codeStep(_prev: LoginState, form: FormData): Promise<Login
     const key = authErrorKey(err);
     return { status: "error", error: authErrorMessage(err, "second_factor"), restart: key === "challengeExpired" };
   }
-  redirect(next);
+  return { status: "done", next };
 }

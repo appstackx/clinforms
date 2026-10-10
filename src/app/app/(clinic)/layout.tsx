@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
-import { signOutAction } from "../actions";
+import { SignOutForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +35,11 @@ export default async function ClinicLayout({ children }: { children: React.React
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <span className="hidden text-sm text-slate-600 md:inline">{session.user.email}</span>
-            <form action={signOutAction}>
+            <SignOutForm>
               <SubmitButton variant="secondary" className="h-8 px-3 text-xs" pendingText="Signing out…">
                 Sign out
               </SubmitButton>
-            </form>
+            </SignOutForm>
           </div>
         </div>
         <div className="mx-auto max-w-5xl px-4 pb-2">

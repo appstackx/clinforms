@@ -9,13 +9,13 @@
  * - clinic, member: worked out on the server by the layout (src/server/auth/studio-access.ts); the member is
  *   the default signer and the name on activity entries.
  * - track: the consent-gated, allow-listed analytics (src/components/analytics), tagged area "app".
- * - onSignOut: the shared sign-out action (redirects to /login).
+ * - onSignOut: the shared sign-out, then /login loaded in full (fix wave 2: nothing in memory survives).
  * - No onDocumentFiled / onResetDemo / clinicRecordUrl: there is no simulated record or demo state here.
  */
 import { useMemo, type ReactNode } from "react";
 import { track } from "@/components/analytics";
 import { HostHooksProvider, type HostHooks, type StudioClinic, type StudioMember } from "@/modules/medreport/ui/host-hooks";
-import { signOutAction } from "../actions";
+import { signOutAndReload } from "../session-forms";
 
 export const TENANT_STUDIO_BASE_PATH = "/app/studio";
 
@@ -35,15 +35,15 @@ export function tenantHooks(clinic: StudioClinic, member: StudioMember, options:
 
 export function TenantHost({ clinic, member, children }: { clinic: StudioClinic; member: StudioMember; children: ReactNode }) {
   const { tenantId, name, draftingEnabled } = clinic;
-  const { name: memberName, email, roleLabel, hcpc, jobTitle, canSign } = member;
+  const { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign } = member;
   const hooks = useMemo(
     () =>
       tenantHooks(
         { tenantId, name, draftingEnabled },
-        { name: memberName, email, roleLabel, hcpc, jobTitle, canSign },
-        { onSignOut: () => signOutAction() },
+        { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign },
+        { onSignOut: () => signOutAndReload() },
       ),
-    [tenantId, name, draftingEnabled, memberName, email, roleLabel, hcpc, jobTitle, canSign],
+    [tenantId, name, draftingEnabled, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign],
   );
   return <HostHooksProvider hooks={hooks}>{children}</HostHooksProvider>;
 }

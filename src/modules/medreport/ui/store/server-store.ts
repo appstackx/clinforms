@@ -13,11 +13,16 @@
  * - Cross-tab: a BroadcastChannel message after each stored write ({tenantId, kind, id, rev}) and a refresh of the
  *   snapshot when the tab regains focus (replaces the 'storage' event of the browser backend).
  * - A record with a write waiting or in flight is never overwritten by a fetch (the local copy is newer).
+ * - Scope (fix wave 2): the cache belongs to ONE clinic and member (setScope, from HostHooks via ui/store/mode.ts).
+ *   A new scope forgets every record and queued change; every request names the scope and the server refuses a
+ *   request whose sign-in is no longer that clinic and member (403 TENANT_MISMATCH / SIGN_IN_CHANGED), which
+ *   also empties the cache – one clinic's records are never shown to, or stored by, another sign-in.
  */
 import type { ReferrerLinks, StoreFormSummary, StoreReportSummary, StoreSnapshotResponse } from "../../api/store-contract";
 import type { FormDefinition, Report } from "../../core/types";
 import { notify as notifyWindow } from "./events";
-import { createServerApi, StoreRequestError, type ServerApi } from "./server-api";
+import type { StoreScope } from "./mode";
+import { createServerApi, SIGN_IN_CHANGED_CODES, StoreRequestError, type ServerApi } from "./server-api";
 import type { StoredFormFile } from "./types";
 import { WriteQueue, type SendOutcome, type WriteQueueOptions } from "./write-queue";
 
@@ -48,6 +53,8 @@ interface BroadcastMessage {
 
 export interface ServerStoreOptions {
   api?: ServerApi;
+  /** fetch() for the default transport (which sends the store's scope with every request). */
+  fetch?: typeof fetch;
   /** BroadcastChannel and focus / online listeners (default: on in a browser). */
   browserEvents?: boolean;
   /** Same-tab change event (default: STORE_EVENT on window). */
@@ -63,6 +70,7 @@ const CHANNEL = "medreport-store";
 const REFRESH_MIN_INTERVAL_MS = 3000;
 
 const LOAD_FAILED = "The clinic's records could not be loaded. Check the connection; the page will try again.";
+const SIGN_IN_CHANGED = "You are now signed in as someone else or to another clinic. Reload the page to open the right records.";
 
 const reportKey = (id: string) => `report:${id}`;
 const formKey = (id: string) => `form:${id}`;
@@ -94,7 +102,11 @@ function sameJson(a: unknown, b: unknown): boolean {
 export type ServerStore = ReturnType<typeof createServerStore>;
 
 export function createServerStore(options: ServerStoreOptions = {}) {
-  const api = options.api ?? createServerApi();
+  /** The clinic and member this cache belongs to (null = not set: the server's sign-in decides). */
+  let scope: StoreScope | null = null;
+  /** Bumped by every reset: a load that started before it is not applied after it. */
+  let generation = 0;
+  const api = options.api ?? createServerApi(options.fetch, { scope: () => scope });
   const concurrency = options.concurrency ?? 4;
   const notifyWindow_ = options.notify ?? notifyWindow;
 
@@ -102,6 +114,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
   let hydrated = false;
   let hydratedAt = 0;
   let hydratePromise: Promise<void> | null = null;
+  let hydrateSeq = 0;
   let loadError: string | null = null;
 
   const reports = new Map<string, Report>();
@@ -330,6 +343,8 @@ export function createServerStore(options: ServerStoreOptions = {}) {
   /* Loading ------------------------------------------------------------------------------------- */
 
   function resetCache(): void {
+    generation++;
+    hydratePromise = null; // a load already under way belongs to the previous generation
     queue.clear();
     reports.clear();
     reportRevs.clear();
@@ -344,7 +359,9 @@ export function createServerStore(options: ServerStoreOptions = {}) {
   }
 
   async function fetchReport(id: string): Promise<void> {
+    const gen = generation;
     const got = await api.getReport(id);
+    if (gen !== generation) return; // the cache was reset meanwhile (another sign-in)
     if (busy(reportKey(id))) return; // a local edit is newer
     if (!got) {
       if (reportRevs.has(id)) dropReport(id); // deleted elsewhere
@@ -356,7 +373,9 @@ export function createServerStore(options: ServerStoreOptions = {}) {
   }
 
   async function fetchForm(id: string): Promise<void> {
+    const gen = generation;
     const got = await api.getForm(id);
+    if (gen !== generation) return;
     if (busy(formKey(id))) return;
     if (!got) {
       if (formRevs.has(id)) dropForm(id);
@@ -372,6 +391,12 @@ export function createServerStore(options: ServerStoreOptions = {}) {
    * than the snapshot's view of it and is left as it is (the snapshot may not list a report created a moment ago).
    */
   async function applySnapshot(snap: StoreSnapshotResponse, requestedAt: number): Promise<void> {
+    if (scope && scope.tenantId !== snap.tenantId) {
+      // The sign-in now belongs to another clinic than this page: show none of either clinic's records here.
+      resetCache();
+      tenantId = null;
+      throw new StoreRequestError(403, "rejected", SIGN_IN_CHANGED, "TENANT_MISMATCH");
+    }
     if (tenantId !== null && tenantId !== snap.tenantId) resetCache(); // another clinic: start afresh
     tenantId = snap.tenantId;
     const fresher = (key: string) => busy(key) || (writtenAt.get(key) ?? 0) >= requestedAt;
@@ -422,9 +447,11 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     } catch {
       channel = null;
     }
+    // Reload first, then retry: a sign-in that changed meanwhile empties the cache and the queue (hydrate's
+    // 403) before anything waiting is sent again – and the server refuses it anyway (the scope headers).
     const refresh = () => {
-      queue.retryFailed();
-      if (hydrated && Date.now() - hydratedAt > REFRESH_MIN_INTERVAL_MS) void hydrate({ force: true });
+      if (hydrated && Date.now() - hydratedAt > REFRESH_MIN_INTERVAL_MS) void hydrate({ force: true }).then(() => queue.retryFailed());
+      else queue.retryFailed();
     };
     window.addEventListener("focus", refresh);
     window.addEventListener("online", () => queue.retryFailed());
@@ -462,17 +489,29 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     listen();
     if (hydrated && !opts.force) return Promise.resolve();
     if (hydratePromise) return hydratePromise;
+    const seq = ++hydrateSeq;
     hydratePromise = (async () => {
       try {
         const requestedAt = Date.now();
-        await applySnapshot(await api.snapshot(), requestedAt);
+        const gen = generation;
+        const snap = await api.snapshot();
+        if (gen !== generation) return; // reset meanwhile: the next hook loads afresh
+        await applySnapshot(snap, requestedAt);
         hydrated = true;
         hydratedAt = Date.now();
         loadError = null;
       } catch (err) {
-        loadError = err instanceof StoreRequestError ? err.message : LOAD_FAILED;
+        if (err instanceof StoreRequestError && err.code && SIGN_IN_CHANGED_CODES.includes(err.code)) {
+          // Signed in as someone else (or to another clinic) since this page opened: forget this page's records
+          // and every change still waiting – none of it may reach, or be shown under, the new sign-in.
+          resetCache();
+          tenantId = null;
+          loadError = SIGN_IN_CHANGED;
+        } else {
+          loadError = err instanceof StoreRequestError ? err.message : LOAD_FAILED;
+        }
       } finally {
-        hydratePromise = null;
+        if (seq === hydrateSeq) hydratePromise = null;
         notify();
       }
     })();
@@ -480,6 +519,27 @@ export function createServerStore(options: ServerStoreOptions = {}) {
   }
 
   return {
+    /* Scope (fix wave 2) */
+    /**
+     * The clinic and member this page was opened for. A different scope forgets every record and queued change
+     * held in memory (the previous sign-in's); true when it changed.
+     */
+    setScope(next: StoreScope | null): boolean {
+      const same = next === null ? scope === null : scope !== null && scope.tenantId === next.tenantId && (scope.userId ?? null) === (next.userId ?? null);
+      if (same) return false;
+      const hadScope = scope !== null || tenantId !== null || hydrated;
+      scope = next ? { tenantId: next.tenantId, userId: next.userId ?? null } : null;
+      if (hadScope) {
+        resetCache();
+        tenantId = null;
+        loadError = null;
+        // Called while the host renders: tell the screens after this render (they reload on their own).
+        void Promise.resolve().then(notify);
+      }
+      return hadScope;
+    },
+    scope: (): StoreScope | null => scope,
+
     /* Hydration */
     hydrate,
     isHydrated: () => hydrated,

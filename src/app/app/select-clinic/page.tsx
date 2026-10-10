@@ -8,7 +8,7 @@ import { inviteToken } from "@/server/auth/invite-token";
 import { listMemberships } from "@/server/auth/membership";
 import { requireSignedIn } from "@/server/auth/session";
 import { getDb } from "@/server/db";
-import { signOutAction, switchClinicAction } from "../actions";
+import { SignOutForm, SwitchClinicForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Choose a clinic" };
@@ -29,11 +29,11 @@ export default async function SelectClinicPage() {
     <AuthShell
       title={memberships.length ? "Choose a clinic" : "No clinic yet"}
       footer={
-        <form action={signOutAction}>
+        <SignOutForm>
           <button type="submit" className="font-medium text-teal-700 underline-offset-4 hover:underline">
             Sign out
           </button>
-        </form>
+        </SignOutForm>
       }
     >
       <div className="space-y-4">
@@ -41,8 +41,7 @@ export default async function SelectClinicPage() {
           <Notice>You are not a member of any clinic. Ask your clinic&apos;s owner or an administrator for an invitation.</Notice>
         ) : null}
         {memberships.map((m) => (
-          <form key={m.organizationId} action={switchClinicAction} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
-            <input type="hidden" name="organizationId" value={m.organizationId} />
+          <SwitchClinicForm key={m.organizationId} organizationId={m.organizationId} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
             <div>
               <p className="text-sm font-medium">{m.clinicName}</p>
               <p className="text-xs text-slate-500">{roleLabel(m.role)}</p>
@@ -50,7 +49,7 @@ export default async function SelectClinicPage() {
             <SubmitButton variant="secondary" pendingText="Opening…">
               Open
             </SubmitButton>
-          </form>
+          </SwitchClinicForm>
         ))}
         {invitations.map((inv) => (
           <div key={inv.id} className="flex items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50/50 p-3">

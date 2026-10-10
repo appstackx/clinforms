@@ -186,8 +186,8 @@ type DbSource = () => Kysely<Database>;
 /** rate_limits / launch_token_uses: the state every server instance shares. */
 export function dbSharedState(db: DbSource): SharedStateStore {
   return {
-    async hit(key, windowMs) {
-      const h = await hitRateLimit({ db: db() }, key, windowMs);
+    async hit(key, windowMs, amount) {
+      const h = await hitRateLimit({ db: db() }, key, windowMs, amount ?? 1);
       return { count: h.count, resetAt: h.resetAt };
     },
     async peek(key, windowMs) {

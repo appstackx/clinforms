@@ -14,7 +14,7 @@ import "server-only";
  * Wave 2 – chooseAiModeForActor(): the handlers' gate. The public demo (actor via "demo") keeps the
  * passcode, with its guesses and the live cap shared by every instance (auth/passcode.ts). A clinic's
  * signed-in member needs no passcode: live when this deployment can draft (tenantLiveAiAvailable) and the
- * clinic's profile allows it (clinic_profile.drafting_enabled, on when there is no profile), within the
+ * clinic's profile allows it (clinic_profile.drafting_enabled; off without a profile or when it cannot be read), within the
  * clinic's own per-minute and per-day limits (CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE / _PER_DAY, shared;
  * 429 + retry-after). prefer "live" with drafting switched off → 403 DRAFTING_DISABLED.
  *
@@ -140,12 +140,16 @@ function limitResponse(actor: Actor, slot: { retryAfterSeconds: number; daily?: 
   });
 }
 
-/** Whether a clinic may draft now (profile switch; on when there is no profile or it cannot be read). */
+/**
+ * Whether a clinic may draft now: its profile's switch. Off when the clinic has no profile (clinics are created
+ * with one, drafting off) or it cannot be read (fix wave 2: fail closed). On only without deps.clinicProfile
+ * (a host that has no clinic profiles).
+ */
 async function clinicDraftingEnabled(actor: Actor, deps: MedreportDeps): Promise<boolean> {
   if (!deps.clinicProfile) return true;
   try {
     const profile = await deps.clinicProfile(actor.tenantId);
-    return profile ? profile.draftingEnabled : true;
+    return profile ? profile.draftingEnabled : false;
   } catch (err) {
     logEvent("clinic_profile_unavailable", { error: err instanceof Error ? err.name : "error" });
     return false; // fail closed: never spend a clinic's drafting allowance we cannot check

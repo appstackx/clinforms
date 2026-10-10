@@ -29,6 +29,8 @@ export default async function TenantStudioLayout({ children }: { children: React
       clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled }}
       member={{
         name: context.member.name,
+        userId: context.member.userId,
+        role: context.member.role,
         email: context.member.email,
         roleLabel: context.member.roleLabel,
         hcpc: context.member.hcpc,

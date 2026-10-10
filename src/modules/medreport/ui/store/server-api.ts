@@ -7,6 +7,8 @@
 import { CONTENT_TYPES, ProblemSchema } from "../../api/contract";
 import {
   STORE_FILE_CHUNK_BYTES,
+  STORE_MEMBER_HEADER,
+  STORE_TENANT_HEADER,
   StoreConflictSchema,
   StoreFileCompleteResponseSchema,
   StoreFileInitResponseSchema,
@@ -23,6 +25,7 @@ import {
 import { sha256HexBytes } from "../../core/fingerprint";
 import { FormMimeTypeSchema } from "../../core/schemas";
 import type { FormDefinition, Report } from "../../core/types";
+import type { StoreScope } from "./mode";
 import type { StoredFormFile } from "./types";
 
 /** keepalive requests may carry at most 64 KiB in flight (all of them together): stay well under it. */
@@ -40,13 +43,19 @@ export type DeleteOutcome = { ok: true } | { ok: false; kind: FailureKind; statu
 export class StoreRequestError extends Error {
   readonly status: number;
   readonly kind: FailureKind;
-  constructor(status: number, kind: FailureKind, message: string) {
+  /** The problem code, when the server sent one. */
+  readonly code?: string;
+  constructor(status: number, kind: FailureKind, message: string, code?: string) {
     super(message);
     this.name = "StoreRequestError";
     this.status = status;
     this.kind = kind;
+    if (code) this.code = code;
   }
 }
+
+/** The server refused the request because the page's sign-in changed (fix wave 2): never retried. */
+export const SIGN_IN_CHANGED_CODES: readonly string[] = ["TENANT_MISMATCH", "SIGN_IN_CHANGED"];
 
 export interface ServerApi {
   snapshot(): Promise<StoreSnapshotResponse>;
@@ -72,7 +81,9 @@ const MESSAGES = {
   rejected: "The change could not be saved.",
 } as const;
 
-export function classifyStatus(status: number): FailureKind {
+export function classifyStatus(status: number, code?: unknown): FailureKind {
+  // A change made under another sign-in (another clinic or member) is refused for good, never kept for sign-in.
+  if (status === 403 && typeof code === "string" && SIGN_IN_CHANGED_CODES.includes(code)) return "rejected";
   if (status === 401 || status === 403) return "blocked";
   if (status === 404) return "not_found";
   if (status === 409) return "conflict";
@@ -95,20 +106,30 @@ function defaultMessage(kind: FailureKind, status: number): string {
   }
 }
 
-async function problemOf(res: Response): Promise<{ raw: unknown; detail: string | null }> {
+async function problemOf(res: Response): Promise<{ raw: unknown; detail: string | null; code?: string }> {
   try {
     const raw: unknown = await res.json();
     const parsed = ProblemSchema.safeParse(raw);
-    return { raw, detail: parsed.success ? (parsed.data.detail ?? parsed.data.title) : null };
+    return { raw, detail: parsed.success ? (parsed.data.detail ?? parsed.data.title) : null, ...(parsed.success ? { code: parsed.data.code } : {}) };
   } catch {
     return { raw: null, detail: null };
   }
 }
 
-export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch(input, init)): ServerApi {
+export interface ServerApiOptions {
+  /** The clinic and member the page was opened for: sent with every request (fix wave 2). */
+  scope?: () => StoreScope | null;
+}
+
+export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch(input, init), apiOptions: ServerApiOptions = {}): ServerApi {
   async function call(url: string, init: RequestInit & { keepalive?: boolean } = {}): Promise<Response | null> {
     const headers = new Headers(init.headers);
     if (!headers.has("accept")) headers.set("accept", CONTENT_TYPES.json);
+    const scope = apiOptions.scope?.() ?? null;
+    if (scope) {
+      headers.set(STORE_TENANT_HEADER, scope.tenantId);
+      if (scope.userId) headers.set(STORE_MEMBER_HEADER, scope.userId);
+    }
     const body = init.body;
     const keepalive = Boolean(init.keepalive) && (typeof body !== "string" || body.length <= KEEPALIVE_MAX_BODY);
     try {
@@ -123,9 +144,9 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
     if (!res) throw new StoreRequestError(0, "retry", MESSAGES.network);
     if (res.status === 404) return null;
     if (!res.ok) {
-      const { detail } = await problemOf(res);
-      const kind = classifyStatus(res.status);
-      throw new StoreRequestError(res.status, kind, detail ?? defaultMessage(kind, res.status));
+      const { detail, code } = await problemOf(res);
+      const kind = classifyStatus(res.status, code);
+      throw new StoreRequestError(res.status, kind, detail ?? defaultMessage(kind, res.status), code);
     }
     const parsed = parse(await res.json().catch(() => null));
     if (parsed === null) throw new StoreRequestError(res.status, "retry", MESSAGES.server);
@@ -148,8 +169,8 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
       const parsed = read(await res.json().catch(() => null));
       return parsed ? { ok: true, ...parsed } : { ok: false, kind: "retry", status: res.status, message: MESSAGES.server };
     }
-    const { raw, detail } = await problemOf(res);
-    const kind = classifyStatus(res.status);
+    const { raw, detail, code } = await problemOf(res);
+    const kind = classifyStatus(res.status, code);
     if (kind === "conflict") return { ok: false, kind, current: readCurrent(raw), message: detail ?? MESSAGES.conflict };
     return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status) };
   }
@@ -158,8 +179,8 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
     const res = await call(url, { method: "DELETE", keepalive });
     if (!res) return { ok: false, kind: "retry", status: 0, message: MESSAGES.network };
     if (res.ok || res.status === 404) return { ok: true };
-    const { detail } = await problemOf(res);
-    const kind = classifyStatus(res.status);
+    const { detail, code } = await problemOf(res);
+    const kind = classifyStatus(res.status, code);
     return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status) };
   }
 

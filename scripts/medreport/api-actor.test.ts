@@ -222,6 +222,10 @@ before(async () => {
     draftingEnabled: true,
   });
   await upsertClinicProfile({ db: db1 }, B, { organizationId: "org_b", displayName: "Brook Clinic (fictional)", draftingEnabled: false });
+  // Clinics of the shared-limit tests: drafting on (fix wave 2 – a clinic without a profile does not draft).
+  for (const id of ["clinic-limit", "clinic-other", "clinic-daily"]) {
+    await upsertClinicProfile({ db: db1 }, id, { organizationId: `org_${id}`, displayName: `${id} (fictional)`, draftingEnabled: true });
+  }
 });
 
 after(async () => {
@@ -656,6 +660,33 @@ describe("clinic members – roles and approval", () => {
     assert.ok((await listAudit({ db: db1 }, A)).some((r) => r.action === "report.render_final" && r.targetId === report.id));
   });
 
+  test("fix wave 2: answers drafted in another clinician's first person are never approved as the signer's own", async () => {
+    const base = reportOf(A);
+    const firstPerson = (text: string) => text.replace(/^On 07\/07\/2026 Sarah Reid, physiotherapist, recorded that/, "On 07/07/2026 I recorded that");
+    const sections = base.sections.map((s) =>
+      s.key === "F-15" ? { ...s, paragraphs: s.paragraphs.map((p) => (p.origin === "ai" ? { ...p, text: firstPerson(p.text) } : p)) } : s,
+    );
+    assert.ok(sections.find((s) => s.key === "F-15")?.paragraphs.some((p) => p.text.startsWith("On 07/07/2026 I recorded")));
+    const report: Report = { ...base, id: "rpt_voice", sections, author: { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" } };
+    const form = formOf(A);
+    const refused = await call(handleSign, "/sign", { member: "clin-a", body: signBody(report, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    const problem = await problemOf(refused.clone());
+    await expectProblem(refused, 409, "SIGNER_NOT_AUTHOR");
+    assert.match(problem.detail ?? "", /Sarah Reid/);
+    assert.match(problem.detail ?? "", /F-15/);
+    // Edited by the approver (their own words now), or drafted in the third person: approved.
+    const edited: Report = {
+      ...report,
+      sections: report.sections.map((s) => (s.key === "F-15" ? { ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "edited" as const, originalText: p.text })) } : s)),
+    };
+    const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    // The author approving their own first-person draft is fine (the author is the member).
+    const own: Report = { ...report, author: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" } };
+    const mine = await call(handleSign, "/sign", { member: "clin-a", body: signBody(own, form, { name: "S. Ward", hcpc: "PH-DEMO-05" }, "Sam Ward (fictional)") });
+    assert.equal(mine.status, 200, await mine.clone().text());
+  });
+
   test("launch from the clinic's own system: clinic partner key → the clinic's Studio; only its member redeems it; scope and launch clinician enforced", async () => {
     const key = await createPartnerKey({ db: db1 }, A, { name: "Clinic system", createdBy: "u_owner_a" });
     const launch = await call(handleLaunch, "/launch", {
@@ -839,6 +870,27 @@ describe("drafting gate and shared limits", () => {
     });
   });
 
+  test("fix wave 2: the drafting switch fails closed – no profile, or a profile that cannot be read, means no live drafting", async () => {
+    await withLiveDeployment(async () => {
+      const none = await chooseAiModeForActor(req(), { ...actorA, tenantId: "clinic-without-profile" }, one, "auto", wording);
+      assert.deepEqual(none, { ok: true, mode: "demo" });
+      const broken: MedreportDeps = {
+        ...one,
+        clinicProfile: async () => {
+          throw new Error("database unavailable");
+        },
+      };
+      assert.deepEqual(await chooseAiModeForActor(req(), actorA, broken, "auto", wording), { ok: true, mode: "demo" });
+      const live = await chooseAiModeForActor(req(), actorA, broken, "live", wording);
+      assert.equal(live.ok, false);
+      if (!live.ok) await expectProblem(live.response, 403, "DRAFTING_DISABLED");
+      // The host's loader passes a failed read on (it is not "no profile").
+      const { loadClinicProfile: load } = await import("@/server/auth/medreport-actor");
+      const failing = { selectFrom: () => { throw new Error("gateway timeout"); } } as unknown as Parameters<typeof load>[0];
+      await assert.rejects(load(failing, A));
+    }, { CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE: "100", CLINFORMS_TENANT_LIVE_CALLS_PER_DAY: "1000" });
+  });
+
   test("a clinic's per-minute limit is shared by every instance (429 + Retry-After), and other clinics are not affected", async () => {
     resetMemoryLimits();
     await withLiveDeployment(
@@ -898,6 +950,15 @@ describe("drafting gate and shared limits", () => {
         // Another client is not locked out by them.
         const other = await checkLivePasscodeShared(req({ "x-medreport-passcode": "the-right-demo-passcode", "x-forwarded-for": "198.51.100.4" }), two);
         assert.deepEqual(other, { ok: true });
+        // Fix wave 2: 30 wrong guesses from six clients lock out further wrong guesses everywhere, never a
+        // presenter with the right passcode.
+        for (let ip = 0; ip < 6; ip++) {
+          for (let i = 0; i < 5; i++) await checkLivePasscodeShared(req({ "x-medreport-passcode": "wrong", "x-forwarded-for": `192.0.2.${ip + 1}` }), ip % 2 ? one : two);
+        }
+        const wrongElsewhere = await checkLivePasscodeShared(req({ "x-medreport-passcode": "wrong", "x-forwarded-for": "198.51.100.77" }), one);
+        assert.equal(wrongElsewhere.ok === false && wrongElsewhere.reason, "locked");
+        const presenter = await checkLivePasscodeShared(req({ "x-medreport-passcode": "the-right-demo-passcode", "x-forwarded-for": "198.51.100.78" }), two);
+        assert.deepEqual(presenter, { ok: true });
         // Counter keys never hold the IP address itself.
         const keys = (await db1.selectFrom("rate_limits").select("key").execute()).map((r) => r.key).join(" ");
         assert.ok(!keys.includes("203.0.113.9"));

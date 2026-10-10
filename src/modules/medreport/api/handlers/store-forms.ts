@@ -10,13 +10,19 @@ import "server-only";
  *        marked "confirmed" is stored as "proposed" unless it carries the server's valid attestation of exactly
  *        this map for this clinic (auth/attestations.ts) – "confirmed" is never just the browser's claim.
  *        Portal question sets (kind "questions") have no file: nothing here requires one.
+ *        (Fix wave 2) a body naming another clinic (neither the member's nor "demo") is 403 TENANT_MISMATCH; a
+ *        confirmed map is turned back into a proposal only by a role that may confirm (owner, admin, clinician –
+ *        403 ROLE_NOT_ALLOWED for staff).
  * DELETE → {deleted}; the map's file is deleted too when no other map of the clinic uses it (as in the
- *        browser store). If-Match optional.
+ *        browser store). If-Match optional. (Fix wave 2) a confirmed map is deleted only by a role that may confirm.
  * Every change writes an audit row (ids, revision and status only).
  *
  * Owner: store slice (wave 2).
  */
+import { CONFIRM_ROLES, assertActorTenant } from "../../auth/actor";
 import { formConfirmationProblem, verifyFormConfirmation } from "../../auth/attestations";
+import { DEMO_TENANT_ID } from "../../config.public";
+import { WORDING } from "../../core/wording";
 import { FormDefinitionSchema } from "../../core/schemas";
 import type { FormDefinition } from "../../core/types";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
@@ -29,7 +35,7 @@ import {
   type StoreFormResponse,
 } from "../store-contract";
 import type { TenantStore } from "../store-port";
-import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor } from "./store-actor";
+import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -50,6 +56,11 @@ async function currentCopy(store: TenantStore, tenantId: string, id: string): Pr
 
 function conflict(current: Omit<StoreFormResponse, "downgraded"> | null, detail: string): Response {
   return problemWith(409, "This form mapping was changed elsewhere", "REV_CONFLICT", detail, { current });
+}
+
+/** 403 ROLE_NOT_ALLOWED: only a role that may confirm a map may undo or delete a confirmed one. */
+function confirmedMapRefusal(): Response {
+  return problem(403, WORDING.server.access.confirmedMapTitle, { code: "ROLE_NOT_ALLOWED", detail: WORDING.server.access.confirmedMapDetail });
 }
 
 /**
@@ -90,9 +101,14 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
   if (parsed.data.form.id !== id) {
     return problem(422, "Form id does not match the path", { code: "VALIDATION_FAILED", issues: [{ path: "form.id", message: "Must equal the id in the path." }] });
   }
+  if (parsed.data.form.tenantId !== DEMO_TENANT_ID) assertActorTenant(t.actor, parsed.data.form.tenantId, "form");
   const { form, downgraded } = normaliseStoredForm(parsed.data.form, t.tenantId);
   if (new TextEncoder().encode(JSON.stringify(form)).byteLength > STORE_MAX_RECORD_BYTES) {
     return problem(413, "This form mapping is too large to store", { code: "PAYLOAD_TOO_LARGE" });
+  }
+  if (ifMatch !== null && form.status !== "confirmed" && CONFIRM_ROLES.indexOf(t.actor.role) < 0) {
+    const stored = (await t.store.listForms(t.tenantId)).find((f) => f.id === id);
+    if (stored && stored.status === "confirmed") return confirmedMapRefusal();
   }
   const row = {
     id,
@@ -104,6 +120,7 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
     sampleId: form.sampleId ?? null,
     payload: form,
   };
+  if (ifMatch === null) await takeNewData(deps, t, new TextEncoder().encode(JSON.stringify(form)).byteLength);
   const result = ifMatch === null ? await t.store.createForm(t.tenantId, row) : await t.store.updateForm(t.tenantId, row, ifMatch);
   if (!result.ok) {
     switch (result.reason) {
@@ -137,6 +154,7 @@ export const handleStoreFormDelete: MedreportHandler = async (req, ctx, deps) =>
   if (target && ifMatch !== null && target.rev !== ifMatch) {
     return conflict(await currentCopy(t.store, t.tenantId, id), "Someone saved this form mapping after you opened it. The stored copy was loaded.");
   }
+  if (target && target.status === "confirmed" && CONFIRM_ROLES.indexOf(t.actor.role) < 0) return confirmedMapRefusal();
   const deleted = target ? await t.store.deleteForm(t.tenantId, id) : false;
   let fileDeleted = false;
   if (deleted && target && !forms.some((f) => f.id !== id && f.fileSha256 === target.fileSha256)) {

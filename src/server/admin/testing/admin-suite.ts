@@ -21,8 +21,10 @@ import type { DbContext } from "../../repos/context";
 import {
   ACTIVITY_PAGE_SIZE,
   activityCsv,
+  activityHref,
   activityQuery,
   activityScope,
+  activityTargetHref,
   loadActivityLookups,
   loadActivityPage,
   loadActivityRange,
@@ -210,7 +212,25 @@ export function defineAdminSuite(name: string, setup: () => Promise<AdminSuiteDb
         after: null,
         from: null,
         to: null,
+        saves: false,
       });
+    });
+
+    it("fix wave 2: routine saves are hidden unless asked for (saves=1) or filtered on; rows link to the Studio", async () => {
+      await appendAudit(ctx, CLINIC, { userId: "u-admin", action: "report.update", targetType: "report", targetId: "rpt_saves_1" });
+      await appendAudit(ctx, CLINIC, { userId: "u-admin", action: "report.sign", targetType: "report", targetId: "rpt_saves_1" });
+      const scope = activityScope(viewer("admin"));
+      const hidden = await loadActivityPage(ctx, activityQuery(scope, parseActivityParams({})), 200);
+      assert.ok(hidden.entries.some((e) => e.action === "report.sign" && e.targetId === "rpt_saves_1"));
+      assert.ok(!hidden.entries.some((e) => e.action === "report.update"));
+      const shown = await loadActivityPage(ctx, activityQuery(scope, parseActivityParams({ saves: "1" })), 200);
+      assert.ok(shown.entries.some((e) => e.action === "report.update" && e.targetId === "rpt_saves_1"));
+      const filtered = await loadActivityPage(ctx, activityQuery(scope, parseActivityParams({ action: "report.update" })), 200);
+      assert.ok(filtered.entries.length > 0 && filtered.entries.every((e) => e.action === "report.update"));
+      assert.equal(activityHref("/app/settings/activity", { saves: true }), "/app/settings/activity?saves=1");
+      assert.equal(activityTargetHref({ targetType: "report", targetId: "rpt_saves_1" }), "/app/studio/rpt_saves_1");
+      assert.equal(activityTargetHref({ targetType: "form", targetId: "frm_1" }), "/app/studio/forms/frm_1");
+      assert.equal(activityTargetHref({ targetType: "user", targetId: "u-admin" }), null);
     });
 
     it("the download holds exactly the entries shown (inclusive range, same scope), ids and codes only", async () => {

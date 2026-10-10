@@ -59,7 +59,6 @@ import {
   EmptyState,
   FieldLabel,
   FillSourceChip,
-  FILL_SOURCE_SHORT,
   fillSourceCounts,
   notAnsweredText,
   questionBreakdown,
@@ -68,6 +67,7 @@ import {
   Notice,
   SampleBadge,
   Select,
+  useFillSourceLabels,
   type FillSourceKind,
 } from "../../components/shared/ui-bits";
 
@@ -115,6 +115,8 @@ export function FormMappingScreen({ formId }: { formId: string }) {
 function MappingEditor({ saved }: { saved: FormDefinition }) {
   const hooks = useHostHooks();
   const paths = useStudioPaths();
+  const tenant = hooks.mode === "tenant";
+  const sourceLabels = useFillSourceLabels();
   const [draft, setDraft] = useState<FormDefinition>(saved);
   const [editing, setEditing] = useState(saved.status !== "confirmed");
   const [selected, setSelected] = useState<string | null>(saved.fields.find((f) => f.confidence !== "high")?.id ?? saved.fields[0]?.id ?? null);
@@ -265,7 +267,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           {questionSet
             ? "Check each question's answer type and where its answer comes from. Questions marked “Check” or “Needs review” were matched from their wording."
             : "Click each question to see where its answer goes in the original form. Questions marked “Check” or “Needs review” were less certain."}{" "}
-          {WORDING.byCode.mappingIdentifiers}
+          {tenant ? TENANT_COPY.sources.mappingIdentifiers : WORDING.byCode.mappingIdentifiers}
         </Notice>
       )}
 
@@ -352,7 +354,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               .filter((k) => counts[k] > 0)
               .map((k) => (
                 <FilterChip key={k} active={filter === k} onClick={() => setFilter(k)}>
-                  {FILL_SOURCE_SHORT[k]} {counts[k]}
+                  {sourceLabels.short[k]} {counts[k]}
                 </FilterChip>
               ))}
           </div>

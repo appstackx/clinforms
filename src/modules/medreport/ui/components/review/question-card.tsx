@@ -13,10 +13,13 @@ import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
-import { ANSWER_TYPE_LABELS, FILL_SOURCE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
+import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
+import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
+import { useFillSourceLabels } from "../shared/ui-bits";
 import { FlagItem, GapItem } from "./issues";
 import { TableAnswer } from "./table-answer";
 import { rowsOf } from "./table-answer-model";
@@ -353,6 +356,8 @@ function TypedValueEditor({
 
 function QuestionCardImpl(props: QuestionCardProps) {
   const { q, status, flags, gaps, bundle, connectorId, readOnly, receipt, actor, dispatch, onOpenSource, canAcknowledge } = props;
+  const tenant = useStudioMode() === "tenant";
+  const sourceLabels = useFillSourceLabels();
   const section = q.section;
   const [focusId, setFocusId] = useState<string | null>(null);
   const clearFocus = useRef(() => setFocusId(null)).current;
@@ -385,10 +390,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const fillSourceText = staffEntered
     ? "Typed in by staff – not from the clinic record (see the Activity tab)"
     : field
-      ? FILL_SOURCE_LABELS[field.fillSource.kind]
+      ? sourceLabels.long[field.fillSource.kind]
       : section
         ? section.kind === "from_records"
-          ? "From records – filled by code"
+          ? tenant
+            ? TENANT_COPY.sources.registrationLong
+            : "From records – filled by code"
           : section.kind === "declaration"
             ? "Declaration – fixed wording"
             : WORDING.labels.fillSourceNotesNarrative
@@ -742,6 +749,7 @@ function LockedRecordsAnswer({
   activeSourceId: string | null;
   onOpenSource(id: string): void;
 }) {
+  const tenant = useStudioMode() === "tenant";
   return (
     <div className="space-y-1.5">
       <p className="flex items-start gap-2 whitespace-pre-wrap rounded-lg border border-teal-100 bg-teal-50/40 px-3 py-2 text-sm leading-relaxed text-slate-900">
@@ -753,7 +761,7 @@ function LockedRecordsAnswer({
         {sourceIds.map((id) => (
           <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} active={activeSourceId === id} />
         ))}
-        <span className="text-[11px] text-slate-500">{WORDING.byCode.lockedFromRecords}</span>
+        <span className="text-[11px] text-slate-500">{tenant ? TENANT_COPY.sources.lockedFromRecords : WORDING.byCode.lockedFromRecords}</span>
       </div>
     </div>
   );

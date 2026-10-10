@@ -33,6 +33,25 @@ export const STORE_MAX_PUT_BYTES = STORE_MAX_RECORD_BYTES + 16_384;
 /** Largest number of remembered referrer → form links. */
 export const STORE_MAX_REFERRER_LINKS = 1000;
 
+/**
+ * The clinic and member the Studio page was opened for (fix wave 2): the Studio sends them with every store
+ * request, and a request whose sign-in now belongs to another clinic or member is refused (403
+ * TENANT_MISMATCH / SIGN_IN_CHANGED) – a change made under one sign-in is never stored under another.
+ * Optional for other callers (the clinic always comes from the sign-in).
+ */
+export const STORE_TENANT_HEADER = "x-clinforms-tenant";
+export const STORE_MEMBER_HEADER = "x-clinforms-member";
+
+/** Store writes a member may make per minute, and a clinic per minute (all members together) – fix wave 2. */
+export const STORE_WRITES_PER_MEMBER_PER_MINUTE = 120;
+export const STORE_WRITES_PER_CLINIC_PER_MINUTE = 400;
+/**
+ * New data a clinic may add per day (new reports and form maps, uploaded form-file chunks), in kilobytes – a brake
+ * on growth of the shared database (updates of an existing record do not count: a record is at most
+ * STORE_MAX_RECORD_BYTES).
+ */
+export const STORE_NEW_KB_PER_CLINIC_PER_DAY = 250_000;
+
 /** Record ids accepted by the store (reports, forms): printable, no whitespace, ≤ 128 characters. */
 export const STORE_RECORD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/;
 export const StoreRecordIdSchema = z.string().regex(STORE_RECORD_ID_PATTERN, "Record ids are letters, digits and . _ : @ -");

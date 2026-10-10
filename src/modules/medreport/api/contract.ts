@@ -252,6 +252,9 @@ export const PROBLEM_CODES = [
   "CONNECTOR_NOT_AVAILABLE",
   "ORIGIN_NOT_ALLOWED",
   "SERVICE_UNAVAILABLE",
+  // Fix wave 2: the Studio page's sign-in changed (store); answers drafted in another clinician's voice (sign).
+  "SIGN_IN_CHANGED",
+  "SIGNER_NOT_AUTHOR",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -477,6 +480,12 @@ export const RenderRequestSchema = z.object({
   reviewCopy: z.boolean().optional(),
   /** Fail with 409 SIGNOFF_BLOCKED / RECEIPT_INVALID instead of falling back to DRAFT. */
   requireFinal: z.boolean().optional(),
+  /**
+   * Fix wave 2: why the copy is made. "download" (default) and "file_back" are written to a clinic's audit trail
+   * as a final document produced; "preview" (the review's on-screen preview) is not, and carries no file token
+   * (it cannot be filed back).
+   */
+  purpose: z.enum(["download", "preview", "file_back"]).optional(),
   /** Form reports: the form map (required when report.form is set). */
   form: FormDefinitionSchema.optional(),
   /**

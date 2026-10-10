@@ -150,7 +150,13 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   const templateRef = useRef(template);
   templateRef.current = template;
 
-  const dispatch = useCallback((action: ReviewAction) => rawDispatch(action), []);
+  // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
+  // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.
+  const changedByUser = useRef(false);
+  const dispatch = useCallback((action: ReviewAction) => {
+    if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
+    rawDispatch(action);
+  }, []);
 
   // A newer copy saved elsewhere (another tab, background drafting) replaces the working copy.
   useEffect(() => {
@@ -166,6 +172,12 @@ export function useReviewState(initial: Report, stored: Report | null, template:
     const current = reportRef.current;
     if (current === lastSaved.current) return;
     if (getStoreMode() === "server") {
+      if (!changedByUser.current) {
+        // Only refreshed flags since the report was opened: nothing to store (they are recomputed on every open).
+        lastSaved.current = current;
+        setSaveState("saved");
+        return;
+      }
       // A clinic's Studio: the save is queued at once; the indicator follows the server's answer.
       lastSaved.current = current;
       setSaveState("saving");

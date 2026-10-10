@@ -31,13 +31,13 @@ import type { FormDefinition, Report, SessionToken } from "../core/types";
 import { CASE_EXPORT_FORMAT_VERSION, decodeCaseReport, encodeCaseReport, type CaseExport } from "../core/case-export";
 import * as browser from "./store/browser-backend";
 import { STORE_EVENT, notify } from "./store/events";
-import { getStoreMode, setStoreMode, type StoreMode } from "./store/mode";
+import { getStoreMode, getStoreScope, onStoreScopeChange, setStoreMode, setStoreScope, type StoreMode, type StoreScope } from "./store/mode";
 import { fetchSampleForms as fetchSamples } from "./store/samples";
 import { createServerStore, type ServerStore, type StoreSyncState } from "./store/server-store";
 import type { StoredFormFile } from "./store/types";
 
-export { STORE_EVENT, getStoreMode, setStoreMode };
-export type { StoreMode, StoreSyncState, StoredFormFile };
+export { STORE_EVENT, getStoreMode, setStoreMode, getStoreScope, setStoreScope };
+export type { StoreMode, StoreScope, StoreSyncState, StoredFormFile };
 export const REPORT_KEY_PREFIX = browser.REPORT_KEY_PREFIX;
 export const SESSION_KEY = `${STORAGE_PREFIX}session`;
 export const PASSCODE_KEY = `${STORAGE_PREFIX}passcode`;
@@ -45,11 +45,18 @@ export const PASSCODE_KEY = `${STORAGE_PREFIX}passcode`;
 const server = (): boolean => getStoreMode() === "server";
 
 let serverStore: ServerStore | null = null;
-/** The server backend (created on first use; one per page load). */
+/** The server backend (created on first use; one per page load), scoped to the page's clinic and member. */
 function srv(): ServerStore {
-  if (!serverStore) serverStore = createServerStore();
+  if (!serverStore) {
+    serverStore = createServerStore();
+    serverStore.setScope(getStoreScope());
+  }
   return serverStore;
 }
+// Another clinic or member (fix wave 2): the server backend forgets the previous scope's records and queue.
+onStoreScopeChange((scope) => {
+  serverStore?.setScope(scope);
+});
 
 /* ------------------------------------------------------------------------------------------------
  * Reports

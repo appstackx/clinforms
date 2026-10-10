@@ -329,6 +329,19 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.deepEqual(withProfile?.clinician, { name: "Sarah Reid (fictional)", hcpc: "PH999999", jobTitle: "Senior Physiotherapist", canSign: true });
     });
 
+    it("fix wave 2: no member renames their own account (the signer's name on approvals) over HTTP", async () => {
+      const before = (await auth.api.getSession({ headers: clinicianJar.headers() }))?.user.name;
+      const res = await auth.handler(
+        new Request(`${ORIGIN}/api/auth/update-user`, {
+          method: "POST",
+          headers: clinicianJar.headers({ origin: ORIGIN, "content-type": "application/json" }),
+          body: JSON.stringify({ name: "Someone Else (fictional)" }),
+        }),
+      );
+      assert.equal(res.status, 404);
+      assert.equal((await auth.api.getSession({ headers: clinicianJar.headers(), query: { disableCookieCache: true } }))?.user.name, before);
+    });
+
     it("no member reads pending invitations over HTTP; the invitation email carries the signed link", async () => {
       const before = sent.length;
       const pending = await auth.api.createInvitation({ body: { email: "pending-admin@riverside.example", role: "admin" }, headers: ownerJar.headers() });

@@ -11,9 +11,9 @@
  *
  * Shared contract (orchestrator-owned): additive optional hooks only.
  */
-import { createContext, useContext, type ReactNode } from "react";
+import { Fragment, createContext, useContext, type ReactNode } from "react";
 import type { AttachReceipt, ConnectorId, SignReceipt } from "../core/types";
-import { setStoreMode } from "./store/mode";
+import { setStoreMode, setStoreScope } from "./store/mode";
 
 export interface FiledDocument {
   connectorId: ConnectorId;
@@ -51,6 +51,10 @@ export interface StudioClinic {
 /** The signed-in member (tenant mode). Their signing details are the default signer on approvals. */
 export interface StudioMember {
   name: string;
+  /** The member's account id (fix wave 2): scopes the Studio's in-memory records to this member. Not a secret. */
+  userId?: string;
+  /** The member's role in the clinic (fix wave 2): staff prepare reports but never approve. */
+  role?: "owner" | "admin" | "clinician" | "staff";
   email?: string;
   /** The role as the host words it ("Clinician"). */
   roleLabel?: string;
@@ -117,7 +121,16 @@ const HostHooksContext = createContext<HostHooks>({});
 export function HostHooksProvider({ hooks, children }: { hooks: HostHooks; children: ReactNode }) {
   // The store backend must be chosen before any child reads the store (children render after this line).
   setStoreMode(hooks.storage ?? "browser");
-  return <HostHooksContext.Provider value={hooks}>{children}</HostHooksContext.Provider>;
+  // A clinic's Studio: its records in memory belong to this clinic and member only. Another scope (a different
+  // sign-in or clinic without a full page load) empties them, and the screens below remount and load afresh.
+  const scope = hooks.storage === "server" && hooks.clinic ? { tenantId: hooks.clinic.tenantId, userId: hooks.member?.userId ?? null } : null;
+  if (hooks.storage === "server") setStoreScope(scope);
+  const scopeKey = scope ? `${scope.tenantId}|${scope.userId ?? ""}` : "browser";
+  return (
+    <HostHooksContext.Provider value={hooks}>
+      <Fragment key={scopeKey}>{children}</Fragment>
+    </HostHooksContext.Provider>
+  );
 }
 
 export function useHostHooks(): HostHooks {

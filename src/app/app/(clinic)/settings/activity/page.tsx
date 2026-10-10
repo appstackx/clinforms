@@ -41,8 +41,8 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
   ]);
   const rows = presentActivity(page.entries, lookups);
   // Filters carried by every link (the person filter only for those who may use it).
-  const filters = { action: query.action, user: scope.everyone ? query.userId : null };
-  const filtered = Boolean(filters.action || filters.user);
+  const filters = { action: query.action, user: scope.everyone ? query.userId : null, saves: params.saves };
+  const filtered = Boolean(filters.action || filters.user || filters.saves);
   const paged = Boolean(params.before || params.after);
   const knownActions = new Set(ACTIVITY_GROUPS.flatMap((g) => g.actions));
   const personChoices =
@@ -56,6 +56,10 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
 
       <Panel className="mb-6">
         <form method="get" action={ACTIVITY_PATH} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-3 sm:order-last">
+            <input type="checkbox" name="saves" value="1" defaultChecked={filters.saves} className="h-4 w-4 rounded border-slate-300 text-teal-700" />
+            {ACTIVITY_COPY.includeSaves}
+          </label>
           <div className="space-y-1.5">
             <label htmlFor="activity-action" className="block text-sm font-medium text-slate-800">
               {ACTIVITY_COPY.filterAction}
@@ -112,7 +116,18 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
           <p className="text-sm text-slate-600">{filtered || paged ? ACTIVITY_COPY.empty : ACTIVITY_COPY.emptyAll}</p>
         ) : (
           <>
-            <p className="mb-2 text-xs text-slate-500">{ACTIVITY_COPY.timesNote}</p>
+            <p className="mb-2 text-xs text-slate-500">
+              {ACTIVITY_COPY.timesNote}
+              {query.excludeActions.length > 0 ? (
+                <>
+                  {" "}
+                  {ACTIVITY_COPY.savesHidden}{" "}
+                  <Link href={activityHref(ACTIVITY_PATH, { ...filters, saves: true })} className="font-medium text-teal-700 underline-offset-4 hover:underline">
+                    {ACTIVITY_COPY.showSaves}
+                  </Link>
+                </>
+              ) : null}
+            </p>
             <ul className="divide-y divide-slate-100">
               {rows.map((row) => (
                 <li key={row.id} className="grid gap-1 py-3 sm:grid-cols-[11rem_1fr] sm:gap-4">
@@ -131,6 +146,14 @@ export default async function ActivityPage({ searchParams }: { searchParams: Rec
                     </p>
                     <p className="mt-0.5 break-words text-sm text-slate-600">
                       {[`By ${row.who}`, row.target, row.detail].filter((part): part is string => Boolean(part)).join(" · ")}
+                      {row.targetHref ? (
+                        <>
+                          {" · "}
+                          <Link href={row.targetHref} className="font-medium text-teal-700 underline-offset-4 hover:underline">
+                            {ACTIVITY_COPY.openTarget}
+                          </Link>
+                        </>
+                      ) : null}
                     </p>
                   </div>
                 </li>

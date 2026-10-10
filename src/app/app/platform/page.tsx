@@ -6,7 +6,7 @@ import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
 import { getDb } from "@/server/db";
-import { signOutAction } from "../actions";
+import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction } from "./actions";
 import { CreateClinicForm } from "./forms";
 
@@ -44,11 +44,11 @@ export default async function PlatformPage() {
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <span className="hidden text-sm text-slate-600 md:inline">{admin.email}</span>
-            <form action={signOutAction}>
+            <SignOutForm>
               <SubmitButton variant="secondary" className="h-8 px-3 text-xs" pendingText="Signing out…">
                 Sign out
               </SubmitButton>
-            </form>
+            </SignOutForm>
           </div>
         </div>
       </header>

@@ -353,3 +353,105 @@ test("ui/store.ts in server mode: same exports, no localStorage or IndexedDB, du
     if (saved.window === undefined) delete g.window;
   }
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Fix wave 2 (security review): the in-memory store belongs to one clinic and member.
+ * -------------------------------------------------------------------------------------------------------------*/
+
+function scopedTab(jar: { who: string | null }, deps: ReturnType<typeof storeDeps>) {
+  const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => storeFetch(deps, { member: jar.who })(input, init)) as typeof fetch;
+  return createServerStore({ fetch: fetchFn, browserEvents: false, notify: () => {}, queue: { backoffMs: () => 1, maxAttempts: 2 } });
+}
+
+function twoClinics() {
+  const store = createMemoryTenantStore();
+  const deps = storeDeps(store, {
+    alice: member("clinic-x", { userId: "user-alice", authSessionId: "sess-alice" }),
+    bob: member("clinic-y", { userId: "user-bob", authSessionId: "sess-bob" }),
+    carol: member("clinic-x", { userId: "user-carol", authSessionId: "sess-carol" }),
+  });
+  return { store, deps };
+}
+
+function xReport(id: string, patientLabel: string): Report {
+  return { ...report(id, patientLabel), tenantId: "clinic-x", bundleSnapshot: { ...report(id, patientLabel).bundleSnapshot, tenantId: "clinic-x" } };
+}
+
+test("fix wave 2: a new sign-in in the same tab never sees the previous clinic's records", async () => {
+  const { deps } = twoClinics();
+  const jar = { who: "alice" as string | null };
+  const client = scopedTab(jar, deps);
+  client.setScope({ tenantId: "clinic-x", userId: "user-alice" });
+  await client.hydrate();
+  assert.equal(client.saveReport(xReport("rpt_x1", "Megan Hart")), true);
+  assert.equal(await client.flush(), true);
+  await client.loadAllReports();
+  assert.equal(client.listReports().length, 1);
+
+  // Alice signs out; Bob (clinic Y) signs in on the same tab without a full page load: the Studio's host gives
+  // the new scope, and the cache is emptied before anything is shown.
+  jar.who = "bob";
+  assert.equal(client.setScope({ tenantId: "clinic-y", userId: "user-bob" }), true);
+  assert.deepEqual(client.listReports(), []);
+  await client.hydrate();
+  await client.loadAllReports();
+  assert.deepEqual(client.listReports(), [], "clinic X's report is not listed for Bob");
+  assert.equal(await client.ensureReport("rpt_x1"), null, "nor can Bob open it");
+  assert.equal(client.tenantId(), "clinic-y");
+});
+
+test("fix wave 2: a change queued under one sign-in is never stored under the next one", async () => {
+  const { store, deps } = twoClinics();
+  const jar = { who: "alice" as string | null };
+  const client = scopedTab(jar, deps);
+  client.setScope({ tenantId: "clinic-x", userId: "user-alice" });
+  await client.hydrate();
+
+  // Alice's session ends while she saves: kept, waiting for sign-in.
+  jar.who = null;
+  assert.equal(client.saveReport(xReport("rpt_x2", "Daniel Brooks")), true);
+  assert.equal(await client.flush(), false);
+
+  // Bob (clinic Y) signs in on the same tab; the page (still Alice's) retries on focus: refused by the server
+  // (the request names clinic X and Alice), never re-filed under clinic Y.
+  jar.who = "bob";
+  client.retryFailed();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(await store.getReport("clinic-y", "rpt_x2"), null);
+  assert.equal((await store.listReports("clinic-y")).length, 0);
+  // The page's next load sees the sign-in changed: it forgets the records and the waiting changes.
+  await client.hydrate({ force: true });
+  assert.deepEqual(client.listReports(), []);
+  assert.equal(client.syncState().pending, 0);
+  assert.match(client.syncState().error ?? "", /Reload the page/);
+
+  // Same clinic, another member (Carol): Alice's waiting change is not replayed as Carol's either.
+  const tab2 = scopedTab(jar, deps);
+  tab2.setScope({ tenantId: "clinic-x", userId: "user-alice" });
+  jar.who = "alice";
+  await tab2.hydrate();
+  jar.who = null;
+  tab2.saveReport(xReport("rpt_x3", "Priya Nair"));
+  assert.equal(await tab2.flush(), false);
+  jar.who = "carol";
+  tab2.retryFailed();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(await store.getReport("clinic-x", "rpt_x3"), null);
+  assert.equal(store.auditLog.some((e) => e.userId === "user-carol"), false);
+});
+
+test("fix wave 2: the Studio's host scope reaches the server store through ui/store.ts (setStoreScope)", async () => {
+  const mode = await import("../../src/modules/medreport/ui/store/mode");
+  mode.setStoreScope({ tenantId: "clinic-x", userId: "user-alice" });
+  assert.deepEqual(mode.getStoreScope(), { tenantId: "clinic-x", userId: "user-alice" });
+  let calls = 0;
+  const off = mode.onStoreScopeChange(() => {
+    calls += 1;
+  });
+  mode.setStoreScope({ tenantId: "clinic-x", userId: "user-alice" });
+  assert.equal(calls, 0, "same scope: nothing happens");
+  mode.setStoreScope({ tenantId: "clinic-x", userId: "user-carol" });
+  assert.equal(calls, 1);
+  off();
+  mode.setStoreScope(null);
+});

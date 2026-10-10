@@ -13,12 +13,19 @@ import "server-only";
  *        approval receipt that verifies for this clinic and this exact content (422 RECEIPT_INVALID); any receipt
  *        on a draft must at least be genuine and for this report and clinic; an approved (signed) report cannot be
  *        turned back into a draft (409 REPORT_LOCKED – an amendment is a new report).
- * DELETE → {deleted}; If-Match optional (409 REV_CONFLICT when it does not match).
+ *        (fix wave 2) a body naming another clinic (report.tenantId neither the member's clinic nor "demo" – a
+ *        case imported from the public demo) is refused: 403 TENANT_MISMATCH, never re-filed under this clinic.
+ * DELETE → {deleted}; If-Match optional (409 REV_CONFLICT when it does not match). (Fix wave 2) an approved
+ *        report is deleted only by the clinic's owner or an administrator (409 REPORT_LOCKED otherwise) – so an
+ *        approved record can never be deleted and re-created as a draft by another role.
  * Every change writes an audit row (ids, revision and status only). Patient data is encrypted at rest by the host.
  *
  * Owner: store slice (wave 2).
  */
+import { MANAGE_ROLES, assertActorTenant } from "../../auth/actor";
 import { verifyReceipt } from "../../auth/sign-receipt";
+import { DEMO_TENANT_ID } from "../../config.public";
+import { WORDING } from "../../core/wording";
 import { ReportSchema } from "../../core/schemas";
 import type { Report } from "../../core/types";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
@@ -31,7 +38,7 @@ import {
   type StoreReportResponse,
 } from "../store-contract";
 import type { StoredReportMeta, TenantStore } from "../store-port";
-import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor } from "./store-actor";
+import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -117,7 +124,10 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
   if (parsed.data.report.id !== id) {
     return problem(422, "Report id does not match the path", { code: "VALIDATION_FAILED", issues: [{ path: "report.id", message: "Must equal the id in the path." }] });
   }
-  // The clinic is the signed-in member's – a stored report can never be filed under another clinic.
+  // The clinic is the signed-in member's – a stored report can never be filed under another clinic. A body that
+  // names another clinic is refused (a change made for one clinic is never re-filed under another); a case
+  // imported from the public demo (tenant "demo") becomes the clinic's own.
+  if (parsed.data.report.tenantId !== DEMO_TENANT_ID) assertActorTenant(t.actor, parsed.data.report.tenantId, "report");
   const report: Report = parsed.data.report.tenantId === t.tenantId ? parsed.data.report : { ...parsed.data.report, tenantId: t.tenantId };
   if (new TextEncoder().encode(JSON.stringify(report)).byteLength > STORE_MAX_RECORD_BYTES) {
     return problem(413, "This report is too large to store", { code: "PAYLOAD_TOO_LARGE" });
@@ -137,6 +147,7 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
   }
 
   const row = { id, status: report.status, templateId: report.templateId, formId: report.form?.formId ?? null, payload: report };
+  if (ifMatch === null) await takeNewData(deps, t, new TextEncoder().encode(JSON.stringify(report)).byteLength);
   const result = ifMatch === null ? await t.store.createReport(t.tenantId, row) : await t.store.updateReport(t.tenantId, row, ifMatch);
   if (!result.ok) {
     switch (result.reason) {
@@ -168,6 +179,9 @@ export const handleStoreReportDelete: MedreportHandler = async (req, ctx, deps) 
   const before = await t.store.getReportMeta(t.tenantId, id);
   if (before && ifMatch !== null && before.rev !== ifMatch) {
     return conflict(await currentCopy(t.store, t.tenantId, id), "Someone saved this report after you opened it. The stored copy was loaded.");
+  }
+  if (before && before.status === "signed" && MANAGE_ROLES.indexOf(t.actor.role) < 0) {
+    return problem(409, WORDING.server.access.approvedLockedTitle, { code: "REPORT_LOCKED", detail: WORDING.server.access.approvedDeleteDetail });
   }
   const deleted = before ? await t.store.deleteReport(t.tenantId, id) : false;
   if (deleted) {

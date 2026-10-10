@@ -24,7 +24,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, FileCheck2, RotateCcw
 import type { BundleResponse } from "../../../api/contract";
 import type { Clinician, FormDefinition, ReportTemplate } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useHostHooks, useStudioMode, type StudioMember } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { flushStore, saveReport, setSession, useForms } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
@@ -57,6 +57,15 @@ type LaunchState =
   | { status: "loading"; patientName?: string }
   | { status: "done" }
   | { status: "error"; message: string };
+
+/**
+ * The author of a clinic's new report (fix wave 2): the signed-in member when they can sign (owner, admin or
+ * clinician with an HCPC number and "may sign"), else nobody (null: third-person drafts).
+ */
+export function tenantAuthor(member: StudioMember | undefined): Clinician | null {
+  if (!member || member.role === "staff" || member.canSign === false || !member.hcpc || !member.name.trim()) return null;
+  return { name: member.name, hcpc: member.hcpc, ...(member.jobTitle ? { role: member.jobTitle } : {}) };
+}
 
 function launchErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
@@ -166,6 +175,9 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         data,
         target,
         clinician,
+        // A clinic's Studio (fix wave 2): drafts speak in the first person of the member who will sign them, or –
+        // when this member cannot sign – in the third person, so whichever clinician approves, "I" is theirs.
+        ...(tenant && !clinician ? { author: tenantAuthor(hooks.member) } : {}),
         livePossible: livePossible(),
         concurrency: 3,
         signal: controller.signal,

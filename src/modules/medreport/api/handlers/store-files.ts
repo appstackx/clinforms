@@ -39,7 +39,7 @@ import {
   type StoreFileCompleteResponse,
   type StoreFileInitResponse,
 } from "../store-contract";
-import { assertContentType, auditStore, pathParam, problemWith, requireTenantActor, type TenantActor } from "./store-actor";
+import { assertContentType, auditStore, pathParam, problemWith, requireTenantActor, type TenantActor, takeNewData } from "./store-actor";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const OCTET_STREAM = "application/octet-stream";
@@ -147,6 +147,7 @@ export const handleStoreFileChunk: MedreportHandler = async (req, ctx, deps) => 
   if (meta && meta.sizeBytes !== size) {
     return problem(422, "The size differs from the upload's", { code: "VALIDATION_FAILED", issues: [{ path: "size", message: `This upload is ${meta.sizeBytes} bytes.` }] });
   }
+  if (meta) await takeNewData(deps, t, bytes.byteLength); // fix wave 2: new data counts against the daily allowance
   const result = meta ? await t.store.putChunk(t.tenantId, sha256, idx, bytes) : "not_started";
   if (result === "not_started") {
     return problemWith(409, "The upload has not been started", "UPLOAD_INCOMPLETE", "Start the upload first.", { missing: [] });

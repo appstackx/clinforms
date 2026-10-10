@@ -35,33 +35,33 @@ function windowStart(nowMs: number, windowMs: number): number {
   return Math.floor(nowMs / windowMs) * windowMs;
 }
 
-function memoryCounter(op: "hit" | "peek", key: string, windowMs: number, nowMs: number): WindowState {
+function memoryCounter(op: "hit" | "peek", key: string, windowMs: number, nowMs: number, amount = 1): WindowState {
   const start = windowStart(nowMs, windowMs);
   const id = `${key}|${windowMs}`;
   const current = memoryWindows.get(id);
   const count = current && current.start === start ? current.count : 0;
   if (op === "hit") {
-    memoryWindows.set(id, { start, count: count + 1 });
+    memoryWindows.set(id, { start, count: count + amount });
     if (memoryWindows.size > 10_000) {
       for (const [k, v] of Array.from(memoryWindows.entries())) if (v.start + 7 * 86_400_000 < nowMs) memoryWindows.delete(k);
     }
-    return { count: count + 1, resetAtMs: start + windowMs };
+    return { count: count + amount, resetAtMs: start + windowMs };
   }
   return { count, resetAtMs: start + windowMs };
 }
 
-async function counter(deps: MedreportDeps, op: "hit" | "peek", key: string, windowMs: number, nowMs: number): Promise<WindowState> {
+async function counter(deps: MedreportDeps, op: "hit" | "peek", key: string, windowMs: number, nowMs: number, amount = 1): Promise<WindowState> {
   const store = deps.sharedState;
   if (store) {
     try {
-      const w = op === "hit" ? await store.hit(key, windowMs) : await store.peek(key, windowMs);
+      const w = op === "hit" ? await (amount === 1 ? store.hit(key, windowMs) : store.hit(key, windowMs, amount)) : await store.peek(key, windowMs);
       const resetAtMs = Date.parse(w.resetAt);
       return { count: w.count, resetAtMs: Number.isFinite(resetAtMs) ? resetAtMs : windowStart(nowMs, windowMs) + windowMs };
     } catch (err) {
       logEvent("shared_state_unavailable", { op, error: err instanceof Error ? err.name : "error" });
     }
   }
-  return memoryCounter(op, key, windowMs, nowMs);
+  return memoryCounter(op, key, windowMs, nowMs, amount);
 }
 
 function retryAfter(resetAtMs: number, nowMs: number): number {
@@ -73,9 +73,9 @@ export async function peekCount(deps: MedreportDeps, key: string, windowMs: numb
   return counter(deps, "peek", key, windowMs, nowMs);
 }
 
-/** Count one hit (e.g. a wrong passcode). */
-export async function countHit(deps: MedreportDeps, key: string, windowMs: number, nowMs: number = Date.now()): Promise<WindowState> {
-  return counter(deps, "hit", key, windowMs, nowMs);
+/** Count one hit (e.g. a wrong passcode), or `amount` (fix wave 2: kilobytes stored). */
+export async function countHit(deps: MedreportDeps, key: string, windowMs: number, nowMs: number = Date.now(), amount = 1): Promise<WindowState> {
+  return counter(deps, "hit", key, windowMs, nowMs, Math.max(1, Math.floor(amount)));
 }
 
 /**

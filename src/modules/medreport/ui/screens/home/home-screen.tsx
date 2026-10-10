@@ -349,8 +349,8 @@ function ConnectorTiles({
   }, []);
 
   const byId = (id: ConnectorInfo["id"]) => connectors?.find((c) => c.id === id);
-  // A clinic's Studio never shows the simulated clinic system.
-  const order: ConnectorInfo["id"][] = tenant ? ["file-import", "tm3"] : ["tm3-sim", "file-import", "tm3"];
+  // A clinic's Studio never shows the simulated clinic system, nor a practice-system link it does not have.
+  const order: ConnectorInfo["id"][] = tenant ? ["file-import"] : ["tm3-sim", "file-import", "tm3"];
   const icons = { "tm3-sim": PlugZap, "file-import": FileUp, tm3: Lock } as const;
   const hrefs = { "tm3-sim": "/pms-sandbox", "file-import": paths.newReport, tm3: null } as const;
 
@@ -537,9 +537,9 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
             <DialogTitle>Delete this report?</DialogTitle>
             <DialogDescription>
               {confirmDelete
-                ? `The ${confirmDelete.form?.title ?? "report"} for ${confirmDelete.patientLabel} will be removed${tenant ? "" : " from this browser"}.`
+                ? `The ${confirmDelete.form?.title ?? "report"} for ${confirmDelete.patientLabel} will be removed${tenant ? " from your clinic's records" : " from this browser"}.`
                 : ""}{" "}
-              Export the case JSON first if you want to keep it.
+              {tenant ? TENANT_COPY.home.deleteNote : "Export the case JSON first if you want to keep it."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -600,24 +600,34 @@ function FlagCell({ report, prefillFor }: { report: Report; prefillFor: string |
 
 function RowActions({ report, onExport, onDelete }: { report: Report; onExport(): void; onDelete(): void }) {
   const paths = useStudioPaths();
+  const hooks = useHostHooks();
+  const tenant = hooks.mode === "tenant";
+  // A clinic's Studio (fix wave 2): no case download from the browser (a patient's whole record, unrecorded);
+  // an approved report is deleted only by the clinic's owner or an administrator (the server enforces it too).
+  const role = hooks.member?.role;
+  const canDelete = !tenant || report.status !== "signed" || role === "owner" || role === "admin";
   return (
     <div className="flex items-center justify-end gap-1">
       <Button asChild size="sm" variant="ghost">
         <Link href={paths.report(report.id)}>{report.status === "signed" ? "Open" : "Review"}</Link>
       </Button>
-      <Button size="sm" variant="ghost" onClick={onExport} title="Export case JSON" aria-label={`Export case JSON for ${report.patientLabel}`}>
-        <Download className="h-4 w-4" aria-hidden />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={onDelete}
-        title="Delete"
-        aria-label={`Delete the report for ${report.patientLabel}`}
-        className="text-slate-500 hover:text-red-700"
-      >
-        <Trash2 className="h-4 w-4" aria-hidden />
-      </Button>
+      {tenant ? null : (
+        <Button size="sm" variant="ghost" onClick={onExport} title="Export case JSON" aria-label={`Export case JSON for ${report.patientLabel}`}>
+          <Download className="h-4 w-4" aria-hidden />
+        </Button>
+      )}
+      {canDelete ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onDelete}
+          title="Delete"
+          aria-label={`Delete the report for ${report.patientLabel}`}
+          className="text-slate-500 hover:text-red-700"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden />
+        </Button>
+      ) : null}
     </div>
   );
 }
