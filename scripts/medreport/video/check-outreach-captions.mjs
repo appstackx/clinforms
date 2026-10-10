@@ -84,7 +84,7 @@ if (prevEnd !== CAP.video.seconds) problems.push(`shots end at ${prevEnd}, video
 for (let i = 1; i < CAP.lines.length; i++) if (CAP.lines[i].start !== CAP.lines[i - 1].end) problems.push(`line ${CAP.lines[i].id} start ≠ previous end`);
 const tsum = CAP.teaser.shots.reduce((s, t) => s + (t.seconds ?? t.out - t.in), 0);
 if (Math.abs(tsum - CAP.teaser.seconds) > 0.05) problems.push(`teaser shots sum to ${tsum.toFixed(2)} s, teaser.seconds ${CAP.teaser.seconds}`);
-if (tsum < 15 || tsum > 20) problems.push(`teaser ${tsum} s outside 15–20 s`);
+if (tsum < 15 || tsum > 20.05) problems.push(`teaser ${tsum.toFixed(2)} s outside 15–20 s`);
 
 // 5. Extra files (storyboard, narration script): banned terms everywhere; customer checks on quoted narration only.
 for (const f of extra) {

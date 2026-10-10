@@ -1,43 +1,57 @@
 #!/usr/bin/env node
 /**
- * Records the PICTURE of the generic ClinForms outreach video (v1, 89 s) for owners and managers of UK private
+ * Records the PICTURE of the generic ClinForms outreach video (v1, about 90 s) for owners and managers of UK private
  * physiotherapy clinics, driven by outreach-captions.json (lines, shots, cards, teaser). Fictional data only.
  *
  * It reuses the machinery of record-demo.mjs through video-kit.mjs: native 1920x1080 screencast frames
  * (1600x900 CSS viewport at device scale 1.2), the injected cursor dot with its click ripple and heartbeat,
  * hard cuts, the ffmpeg frame concat. Differences from record-demo.mjs:
- *  - The recording runs on a CLOCK: every shot action is scheduled at its time in the final cut (outreach-captions.json
- *    shots[].actions), holds pad the gaps, and everything off camera (page loads, the drafting, the remaining clinician
- *    answers, filling the approval dialog) happens inside hard cuts. Video time = wall time minus cut time, so each
- *    voice line lands at its planned start in the final cut; late actions are logged as drift.
+ *  - The recording runs on a CLOCK: every action is scheduled relative to the start of its narration line (the line
+ *    starts in outreach-captions.json are planned from the measured narration clips, voice/lines.json), holds pad the
+ *    gaps, and everything off camera (page loads, the drafting, the remaining clinician answers, filling the approval
+ *    dialog) happens inside hard cuts. Video time = wall time minus cut time, so each voice line lands at its planned
+ *    start; a screen that belongs to the next line never appears before the current line has been spoken. Late
+ *    actions are logged as drift.
+ *  - The problem statement (S02) is a montage of the five bundled fictional blank forms, rendered from the forms
+ *    themselves (Word via docx-preview, PDF via pdftoppm) and animated in a local page (work/cards/montage.html) that
+ *    is recorded by the same screencast.
  *  - Captions are NOT burned into the page: they are rendered as PNGs and overlaid by ffmpeg at the recorded line
  *    times, so a caption-free master exists for the teaser and captions can be re-timed without re-recording.
  *  - A framing sampler runs in the page every 150 ms and the recording ABORTS (naming the shot) when a frame that is
  *    not inside a cut shows legible "TM3" without the "Simulated TM3" label, or a real insurer's name, unless a
- *    punch-in crop (S05c, S06b) keeps it out of the picture.
+ *    punch-in crop (S05c, S06) keeps it out of the picture.
+ *  - Presentation only (no app code is changed): the Studio footer (version string, sandbox link) is hidden; on
+ *    "Complete a form" the page intro and the "Launch from the patient record" card are hidden and the simulated
+ *    picker is labelled "Clinic system (simulated)" with its "Simulated TM3 sandbox – demo data, not affiliated with
+ *    TM3." label kept verbatim and enlarged; on the approved form "Completed form (PDF)" (no Word-to-PDF converter on
+ *    the live site) and "Save to clinic record" (needs a live clinic-system connection) are hidden; the upload dialog's
+ *    grid column is held to the dialog width (a long file name overflowed it).
  *  - Demo mode only (the server must report aiMode "demo"): the reading and the drafts are the app's prepared demo
  *    outputs, and nothing on screen or in the captions says otherwise.
  *
- * Outputs (all under --out, never in the repo):
- *   work/picture.mp4         silent master with captions, 1920x1080, H.264, 30 fps
- *   work/picture-clean.mp4   the same without captions or the corner tag (source for the teaser and re-composition)
- *   work/picture.srt         subtitles at the recorded caption times
- *   work/timeline.json       frames, events, cuts, punch-ins, recorded caption start/end times, drift, framing log
- *   work/teaser-source.mp4   caption-free 19.2 s teaser cut (T1–T5) + work/teaser-source.json
- *   work/cards/              title and end card (HTML + PNG), the final form page used on the title card
- *   work/captions/           one PNG per caption (and the corner tag) with their positions in captions.json
- *   --review DIR             review frames every 2 s of picture.mp4 (default work/review)
+ * Outputs (all under <src>/work, never in the repo):
+ *   picture.mp4         silent master with captions, 1920x1080, H.264, 30 fps
+ *   picture-clean.mp4   the same without captions or the corner tag (source for the teaser and re-composition)
+ *   picture.srt         subtitles at the recorded caption times
+ *   timeline.json       frames, events, cuts, punch-ins, recorded caption start/end times, drift, framing log
+ *   teaser-source.mp4   caption-free 20 s teaser cut (T0–T5) + teaser-source.json; teaser.mp4 / teaser.gif / teaser-1080.mp4
+ *   cards/              title card, end card (tagline / with the call to action), teaser title card, montage page
+ *   montage/            page 1 of each bundled fictional blank form (PNG)
+ *   captions/           one PNG per caption (and the corner tags) with their positions in captions.json
+ *   --review DIR        review frames every 2 s of picture.mp4 (default work/review)
  *
  * Usage:
  *   PORT=3310 MEDREPORT_AI_MODE=demo npm run start &
- *   NODE_PATH=<dir with playwright> node scripts/medreport/video/record-outreach.mjs --out <folder> [--review <dir>]
+ *   NODE_PATH=<dir with playwright> node scripts/medreport/video/record-outreach.mjs --src <outreach-video-v1-src> [--review <dir>]
  *   ... --assemble-only      re-render cards and captions and re-encode from work/timeline.json (no recording)
+ *   (--out is accepted as an alias of --src.)
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   sleep,
   now,
@@ -75,6 +89,7 @@ try {
  * Configuration
  * -------------------------------------------------------------------------------------------*/
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(HERE, "../../..");
 const CAP = JSON.parse(fs.readFileSync(path.join(HERE, "outreach-captions.json"), "utf8"));
 const argv = process.argv.slice(2);
 const arg = (name, def) => {
@@ -83,8 +98,8 @@ const arg = (name, def) => {
 };
 const flag = (name) => argv.includes(name);
 const BASE = (process.env.BASE || CAP.video.base).replace(/\/$/, "");
-const OUT = path.resolve(arg("--out", process.env.VIDEO_OUT || path.join(os.tmpdir(), "clinforms-outreach")));
-const WORK = path.join(OUT, "work");
+const SRC = path.resolve(arg("--src", arg("--out", process.env.VIDEO_OUT || path.join(os.tmpdir(), "clinforms-outreach"))));
+const WORK = path.join(SRC, "work");
 const REVIEW = path.resolve(arg("--review", path.join(WORK, "review")));
 const VIEW = { w: 1600, h: 900 };
 const SCALE = 1.2;
@@ -97,16 +112,39 @@ const DIRS = {
   cards: path.join(WORK, "cards"),
   caps: path.join(WORK, "captions"),
   clips: path.join(WORK, "clips"),
+  montage: path.join(WORK, "montage"),
 };
 const SHOT = Object.fromEntries(CAP.shots.map((s) => [s.id, s]));
-const APP_START = SHOT.S02.start; // the title card runs before the app segment
+const LINE = Object.fromEntries(CAP.lines.map((l) => [l.id, l]));
+const APP_START = SHOT.S02.start; // the title card runs before the recorded segment (montage + app)
 const APP_END = SHOT.S07.start; // the end card runs after it
 const TOTAL = CAP.video.seconds;
+/** Measured narration clip lengths (voice/lines.json); without them a line is assumed to fill its slot less 0.45 s. */
+const VOICE = (() => {
+  const f = path.join(SRC, "voice", "lines.json");
+  if (!fs.existsSync(f)) return {};
+  return Object.fromEntries(JSON.parse(fs.readFileSync(f, "utf8")).map((v) => [v.id, v.trimmedDurationSec]));
+})();
+/** Start of line `id` in the final cut, plus `dt`. */
+const L = (id, dt = 0) => LINE[id].start + dt;
+/** End of the spoken line `id` (its clip length after its start), plus `dt`. */
+const LE = (id, dt = 0) => LINE[id].start + (VOICE[id] ?? LINE[id].end - LINE[id].start - 0.45) + dt;
 /**
- * Presentation only: dialogs sit a little higher and end above the caption band, so a caption never covers a dialog's
- * buttons (the approval dialog's "Approve and sign", the upload dialog's "Review the mapping").
+ * Presentation only (see the header): dialogs sit a little higher and end above the caption band; the upload dialog's
+ * single grid column is held to the dialog width; the Studio footer and the "Launch from the patient record" card are
+ * hidden, and the source cards then share two columns.
  */
-const DIALOG_CSS = "[role=dialog] { top: calc(50% - 58px) !important; max-height: calc(100vh - 140px) !important; }";
+const PRESENTATION_CSS = [
+  "[role=dialog] { top: calc(50% - 58px) !important; max-height: calc(100vh - 140px) !important; }",
+  "[role=dialog].grid { grid-template-columns: minmax(0, 1fr) !important; }",
+  "footer.border-t.border-slate-200 { display: none !important; }",
+  'main a.group[href="/pms-sandbox"] { display: none !important; }',
+  '.grid:has(> a.group[href="/pms-sandbox"]) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }',
+  "[data-vid-hide] { display: none !important; }",
+  // The unfiltered patient list ends with a fictional patient whose insurer is a real company: only its first four
+  // rows are shown (the step filters to Megan Hart straight away).
+  'ul[aria-label="Patients"] > li:nth-child(n+5) { display: none !important; }',
+].join("\n");
 /** The caption band (CSS px of the 1600x900 viewport): a label under it is not legible. */
 const CAPTION_ZONE = { x0: 460, x1: 1140, y0: 772 };
 const PROGNOSIS = "In my opinion Ms Hart has made a good recovery; the remaining neck ache should settle within three to six months.";
@@ -348,7 +386,7 @@ class Director extends BaseDirector {
     const text = await pageText(p).catch(() => "");
     GUARD.checks++;
     const hits = bannedIn(text);
-    GUARD.scenes.push({ label, shot: this.shot, url: p.url().replace(BASE, ""), hits: hits.length });
+    GUARD.scenes.push({ label, shot: this.shot, url: p.url().replace(BASE, "").replace(/^file:.*\//, "file:"), hits: hits.length });
     if (hits.length) throw new Error(`BANNED TERM visible at "${label}" (${p.url()}): ${JSON.stringify(Array.from(new Set(hits)).slice(0, 6))}`);
   }
   async shotStart(id) {
@@ -363,8 +401,8 @@ class Director extends BaseDirector {
     this.check();
     const late = this.vt() - t;
     if (!quiet && late > 0.2) {
-      this.drift.push({ shot: this.shot, label, target: t, late: Number(late.toFixed(2)) });
-      log(`late ${this.shot} ${label}: ${late.toFixed(2)} s after ${t}`);
+      this.drift.push({ shot: this.shot, label, target: Number(t.toFixed(2)), late: Number(late.toFixed(2)) });
+      log(`late ${this.shot} ${label}: ${late.toFixed(2)} s after ${t.toFixed(2)}`);
     }
     for (;;) {
       const left = t - this.vt();
@@ -384,7 +422,7 @@ class Director extends BaseDirector {
     await this.click(loc, { ms, ...opts });
     const late = this.vt() - t - (opts.after ?? 280) / 1000;
     if (late > 0.3) {
-      this.drift.push({ shot: this.shot, label: `click ${opts.label || ""}`, target: t, late: Number(late.toFixed(2)) });
+      this.drift.push({ shot: this.shot, label: `click ${opts.label || ""}`, target: Number(t.toFixed(2)), late: Number(late.toFixed(2)) });
       log(`late click ${this.shot} ${opts.label || ""}: ${late.toFixed(2)} s`);
     }
   }
@@ -393,7 +431,7 @@ class Director extends BaseDirector {
     await this.hover(loc, { ms: 600, ...opts });
   }
   async moveAt(t, x, y, ms = 600) {
-    await this.until(t, `move at ${t}`);
+    await this.until(t, `move at ${t.toFixed(2)}`);
     await this.moveTo(x, y, ms);
   }
   /** Put the cursor somewhere without moving it on camera (inside a cut). */
@@ -513,6 +551,62 @@ async function computeCrop(page) {
   return { x0, y0, x1, y1, minTop, pushed };
 }
 
+/**
+ * Presentation only, on the approved form: hide "Completed form (PDF)" (a Word form; there is no Word-to-PDF converter
+ * on the live site) and "Save to clinic record" (it needs a live clinic-system connection). Returns what was hidden.
+ */
+async function hideApprovedExtras(page) {
+  return page.evaluate(() => {
+    const hidden = [];
+    for (const b of document.querySelectorAll("main button")) {
+      const t = (b.innerText || "").replace(/\s+/g, " ").trim();
+      if (t === "Completed form (PDF)" || t === "Save to clinic record") {
+        b.setAttribute("data-vid-hide", "");
+        hidden.push(t);
+      }
+    }
+    for (const p of document.querySelectorAll("main p")) if (/needs the live TM3 connection/.test(p.textContent || "")) p.setAttribute("data-vid-hide", "");
+    return hidden;
+  });
+}
+
+/**
+ * Presentation only, on "Complete a form" step 1: hide the page intro (it names the simulated system), label the
+ * simulated picker "Clinic system (simulated)", and keep its "Simulated TM3 sandbox – demo data, not affiliated with
+ * TM3." label verbatim, larger and darker so it can be read at e-mail size.
+ */
+async function presentSourceStep(page) {
+  return page.evaluate(() => {
+    const done = {};
+    const h1 = document.querySelector("main h1");
+    const intro = h1 && h1.nextElementSibling;
+    if (intro && /registration details and physiotherapy notes/.test(intro.textContent || "")) {
+      intro.setAttribute("data-vid-hide", "");
+      done.intro = true;
+    }
+    for (const el of document.querySelectorAll("main span, main label")) {
+      if (el.children.length) continue;
+      const t = (el.textContent || "").trim();
+      if (t === "Simulated TM3") {
+        el.textContent = "Clinic system (simulated)";
+        done.card = true;
+      } else if (t === "Find a patient in Simulated TM3") {
+        el.textContent = "Find a patient (simulated clinic system)";
+        done.search = true;
+      }
+    }
+    const label = Array.from(document.querySelectorAll("main p")).find((p) => /^Simulated TM3 sandbox – demo data, not affiliated with TM3\.?$/.test((p.textContent || "").trim()));
+    if (label) {
+      label.style.setProperty("font-size", "14px", "important");
+      label.style.setProperty("color", "#334155", "important");
+      label.style.setProperty("font-weight", "500", "important");
+      label.style.setProperty("margin-top", "6px", "important");
+      done.label = true;
+    }
+    return done;
+  });
+}
+
 /** Clinician answers and gap resolution on the review page, off camera (direct clicks inside a cut). */
 async function resolveAllDirect(page) {
   const keys = await page.locator("article[id^='q-']").evaluateAll((els) => els.map((e) => e.id.slice(2)));
@@ -575,6 +669,164 @@ async function scrollToY(loc, y) {
   await sleep(250);
 }
 
+/**
+ * Smooth-scroll the scroll container of `anchor` (inside a dialog) so that the bottom of the table that holds
+ * `anchor` ends at `bottomY` (CSS px), over `ms`. Used on the final form so the signed declaration ends above the
+ * caption band and the page footer stays below the visible area.
+ */
+async function scrollTableBottomTo(loc, bottomY, ms) {
+  return loc.evaluate(
+    async (el, { bottomY, ms }) => {
+      let sp = el.parentElement;
+      while (sp && !(sp.scrollHeight > sp.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(sp).overflowY))) sp = sp.parentElement;
+      if (!sp) return null;
+      const table = el.closest("table") || el;
+      // Never past the visible part of the scroll container (less a 14 px margin).
+      const target = Math.min(bottomY, sp.getBoundingClientRect().bottom - 14);
+      const delta = table.getBoundingClientRect().bottom - target;
+      const start = sp.scrollTop;
+      const end = Math.max(0, Math.min(sp.scrollHeight - sp.clientHeight, start + delta));
+      await new Promise((res) => {
+        const t0 = performance.now();
+        const step = (t) => {
+          const k = Math.min(1, (t - t0) / ms);
+          const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+          sp.scrollTop = start + (end - start) * e;
+          if (k < 1) requestAnimationFrame(step);
+          else res();
+        };
+        requestAnimationFrame(step);
+      });
+      const r = sp.getBoundingClientRect();
+      return { tableBottom: Math.round(table.getBoundingClientRect().bottom), viewBottom: Math.round(r.bottom) };
+    },
+    { bottomY, ms },
+  );
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * The problem-statement montage: page 1 of each bundled fictional blank form, animated in a local page
+ * -------------------------------------------------------------------------------------------*/
+/** PNG of page 1 of each bundled fictional form (Word via docx-preview in a browser page, PDF via pdftoppm). */
+async function renderFormPages(browser) {
+  fs.mkdirSync(DIRS.montage, { recursive: true });
+  const out = {};
+  const page = await (await browser.newContext({ viewport: { width: 1000, height: 1400 }, deviceScaleFactor: 2 })).newPage();
+  await page.setContent(
+    `<!doctype html><html><head><style>body{margin:0;background:#fff}.docx-wrapper{background:#fff!important;padding:0!important}section.docx{box-shadow:none!important;margin:0!important}</style></head><body><div id="c"></div></body></html>`,
+  );
+  await page.addScriptTag({ path: path.join(REPO, "node_modules/jszip/dist/jszip.min.js") });
+  await page.addScriptTag({ path: path.join(REPO, "node_modules/docx-preview/dist/docx-preview.min.js") });
+  for (const f of CAP.cards.montage.forms) {
+    const png = path.join(DIRS.montage, `${f.id}.png`);
+    const res = await fetch(`${BASE}/api/reports/v1/forms/samples/${f.id}/file`);
+    if (!res.ok) throw new Error(`Could not fetch the sample form ${f.id}: ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.subarray(0, 4).toString() === "%PDF") {
+      const pdf = path.join(DIRS.montage, `${f.id}.pdf`);
+      fs.writeFileSync(pdf, buf);
+      execFileSync("pdftoppm", ["-f", "1", "-l", "1", "-r", "144", "-png", "-singlefile", pdf, png.replace(/\.png$/, "")]);
+      scanOrThrow(`montage form ${f.id}`, documentText(pdf));
+    } else {
+      const docx = path.join(DIRS.montage, `${f.id}.docx`);
+      fs.writeFileSync(docx, buf);
+      scanOrThrow(`montage form ${f.id}`, documentText(docx));
+      await page.evaluate(async (b64) => {
+        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const c = document.getElementById("c");
+        c.innerHTML = "";
+        await window.docx.renderAsync(new Blob([bin]), c, null, { breakPages: true, inWrapper: true, experimental: true });
+      }, buf.toString("base64"));
+      await page.evaluate(() => document.fonts.ready);
+      await sleep(300);
+      // Page 1 at A4 proportions (docx-preview draws one long section when the form has no explicit page break).
+      const b = await page.locator("section.docx").first().boundingBox();
+      await page.screenshot({ path: png, clip: { x: b.x, y: b.y, width: b.width, height: Math.min(b.height, b.width * Math.SQRT2) } });
+    }
+    out[f.id] = png;
+  }
+  await page.context().close();
+  return out;
+}
+
+function montageHtml(font, pages) {
+  const M = CAP.cards.montage;
+  const img = (f) => `data:image/png;base64,${fs.readFileSync(pages[f.id]).toString("base64")}`;
+  const W = 272;
+  const H = Math.round(W * Math.SQRT2);
+  const cx = [232, 516, 800, 1084, 1368];
+  const top = 158;
+  const rot = [-3.5, 2.2, -1.4, 2.8, -2.2];
+  const dy = [8, -8, 4, -12, 6];
+  const forms = M.forms
+    .map(
+      (f, i) => `<div class="form" style="--x:${cx[i] - W / 2}px;--y:${top + dy[i]}px;--r:${rot[i]}deg;--d:${(0.08 + i * 0.32).toFixed(2)}s">
+        <div class="paper"><img src="${img(f)}" alt=""><div class="badge"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>${esc(M.retyped)}</div></div>
+        <div class="lab"><b>${esc(f.kind)}</b><span class="fmt ${/PDF/.test(f.format) ? "pdf" : "word"}">${esc(f.format)}</span></div>
+      </div>`,
+    )
+    .join("");
+  const notes = `<div id="notes"><div class="nh"><span class="ni"><svg viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></span><div><b>${esc(M.notes.title)}</b><small>${esc(M.notes.sub)}</small></div></div>${M.notes.lines.map((l) => `<p>${esc(l)}</p>`).join("")}<div class="bars"><i></i><i></i><i style="width:62%"></i></div></div>`;
+  return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>ClinForms</title><style>${font.faces}
+  ${CARD_CSS}
+  body{font-family:${font.family}Inter,system-ui,sans-serif}
+  #fan{position:absolute;inset:0;transform-origin:800px 420px;transition:transform .65s cubic-bezier(.3,.7,.2,1)}
+  body.p2 #fan{transform:translateX(150px) scale(.78)}
+  .form{position:absolute;left:0;top:0;width:${W}px;transform:translate(var(--x),calc(var(--y) + 620px)) rotate(var(--r));opacity:0;
+    transition:transform .75s cubic-bezier(.2,.8,.2,1) var(--d),opacity .35s ease var(--d)}
+  body.p1 .form{transform:translate(var(--x),var(--y)) rotate(var(--r));opacity:1}
+  .paper{position:relative;width:${W}px;height:${H}px;background:#fff;border-radius:4px;overflow:visible;
+    box-shadow:0 22px 44px rgba(15,23,42,.18),0 0 0 1px rgba(15,23,42,.08);transition:box-shadow .3s}
+  .paper img{display:block;width:100%;height:100%;object-fit:cover;object-position:top;border-radius:4px}
+  .hit .paper{box-shadow:0 22px 44px rgba(15,23,42,.18),0 0 0 3px #f59e0b}
+  .badge{position:absolute;right:-14px;top:-16px;display:flex;align-items:center;gap:7px;background:#fffbeb;color:#92400e;font-weight:700;font-size:19px;
+    padding:8px 13px;border-radius:999px;box-shadow:0 0 0 2px #f59e0b,0 8px 18px rgba(146,64,14,.25);transform:scale(0);opacity:0;
+    transition:transform .35s cubic-bezier(.3,1.6,.5,1),opacity .2s}
+  .badge svg{width:19px;height:19px;fill:none;stroke:#b45309;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  .hit .badge{transform:scale(1);opacity:1}
+  .lab{margin-top:18px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+  .lab b{font-size:19px;color:#0f172a;font-weight:650}
+  .fmt{display:inline-flex;font-size:16px;font-weight:600;padding:4px 11px;border-radius:8px}
+  .fmt.word{background:#eff6ff;color:#1d4ed8;box-shadow:0 0 0 1px #bfdbfe}
+  .fmt.pdf{background:#fef2f2;color:#b91c1c;box-shadow:0 0 0 1px #fecaca}
+  #notes{position:absolute;left:48px;top:246px;width:318px;background:#fff;border-radius:18px;padding:22px 22px 20px;
+    box-shadow:0 22px 44px rgba(15,23,42,.16),0 0 0 2px #14b8a6;transform:translateX(-440px);opacity:0;transition:transform .6s cubic-bezier(.2,.8,.2,1),opacity .3s}
+  body.p2 #notes{transform:none;opacity:1}
+  .nh{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+  .nh b{display:block;font-size:22px}.nh small{display:block;font-size:14px;color:#64748b;margin-top:2px}
+  .ni{width:42px;height:42px;border-radius:11px;background:#ccfbf1;display:flex;align-items:center;justify-content:center;flex:none}
+  .ni svg{width:24px;height:24px;fill:none;stroke:#0f766e;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  #notes p{margin:0 0 9px;font-size:15.5px;line-height:1.38;color:#334155}
+  .bars i{display:block;height:9px;border-radius:5px;background:#e2e8f0;margin-top:9px}
+  .chip{position:absolute;left:0;top:0;background:#0d9488;color:#fff;font-weight:700;font-size:17px;padding:8px 14px;border-radius:999px;
+    box-shadow:0 10px 22px rgba(13,148,136,.35);white-space:nowrap;opacity:0;z-index:5}
+  .hb{position:fixed;right:0;bottom:0;width:2px;height:2px}
+  </style></head><body>
+  <div id="fan">${forms}</div>${notes}<div class="hb"></div>
+  <script>
+    // A 2 px repaint every 100 ms keeps the screencast delivering frames during still stretches.
+    let on = false; setInterval(() => { on = !on; document.querySelector('.hb').style.background = on ? 'rgba(128,128,128,.035)' : 'rgba(128,128,128,.02)'; }, 100);
+    window.__play = (n) => { document.body.classList.add('p' + n); if (n === 2) setTimeout(fly, 700); };
+    function fly() {
+      const nr = document.getElementById('notes').getBoundingClientRect();
+      const from = { x: nr.right - 40, y: nr.top + nr.height * 0.42 };
+      document.querySelectorAll('.form').forEach((f, i) => {
+        const p = f.querySelector('.paper').getBoundingClientRect();
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.textContent = ${JSON.stringify("Same notes")};
+        document.body.appendChild(chip);
+        const cw = chip.offsetWidth, ch = chip.offsetHeight;
+        const to = { x: p.left + p.width / 2, y: p.top + p.height * 0.45 };
+        const at = (o, s) => 'translate(' + (o.x - cw / 2) + 'px,' + (o.y - ch / 2) + 'px) scale(' + s + ')';
+        chip.animate([{ transform: at(from, .85), opacity: 0 }, { opacity: 1, offset: .12 }, { transform: at(to, 1), opacity: 1, offset: .82 }, { transform: at(to, .6), opacity: 0 }],
+          { duration: 640, delay: i * 330, easing: 'cubic-bezier(.35,.6,.25,1)', fill: 'forwards' });
+        setTimeout(() => f.classList.add('hit'), i * 330 + 540);
+      });
+    }
+  </script></body></html>`;
+}
+
 /* ---------------------------------------------------------------------------------------------
  * The recording
  * -------------------------------------------------------------------------------------------*/
@@ -591,7 +843,6 @@ async function waitForQuietMachine() {
 }
 
 async function record() {
-  const loadAtStart = await waitForQuietMachine();
   for (const k of ["frames", "input", "downloads"]) {
     fs.rmSync(DIRS[k], { recursive: true, force: true });
     fs.mkdirSync(DIRS[k], { recursive: true });
@@ -599,6 +850,7 @@ async function record() {
   fs.mkdirSync(DIRS.cards, { recursive: true });
   const health = await (await fetch(`${BASE}/api/reports/v1/health`)).json();
   if (health.aiMode !== "demo") throw new Error(`The outreach video is recorded in demo mode: start the server with MEDREPORT_AI_MODE=demo (got ${health.aiMode}).`);
+  if (Object.keys(VOICE).length !== CAP.lines.length) log(`WARNING: voice/lines.json not found or incomplete under ${SRC}: actions are timed on the line slots instead`);
   const meridianName = "Meridian-Claims_Physiotherapy-Discharge-Report_MCS-PDR-3.docx";
   const res = await fetch(`${BASE}/api/reports/v1/forms/samples/meridian-discharge-report/file`);
   if (!res.ok) throw new Error(`Could not fetch the Meridian sample form: ${res.status}`);
@@ -607,15 +859,22 @@ async function record() {
 
   const browser = await chromium.launch({
     executablePath: findChromium(),
-    args: [`--force-device-scale-factor=${SCALE}`, `--window-size=${VIEW.w},${VIEW.h}`, "--hide-scrollbars"],
+    args: [`--force-device-scale-factor=${SCALE}`, `--window-size=${VIEW.w},${VIEW.h}`, "--hide-scrollbars", "--allow-file-access-from-files"],
   });
+  // The montage page: the five fictional blank forms, page 1 each.
+  const font = await appFontCss();
+  const pages = await renderFormPages(browser);
+  const montageFile = path.join(DIRS.cards, "montage.html");
+  fs.writeFileSync(montageFile, montageHtml(font, pages));
+  const loadAtStart = await waitForQuietMachine();
+
   const ctx = await browser.newContext({ viewport: null, acceptDownloads: true, locale: "en-GB", timezoneId: "Europe/London" });
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE });
   const reports = [];
   await ctx.exposeBinding("__vidReport", (_src, r) => {
     reports.push(r);
   });
-  await ctx.addInitScript(overlayInit, { bar: false, liftToasts: false, css: DIALOG_CSS });
+  await ctx.addInitScript(overlayInit, { bar: false, liftToasts: false, css: PRESENTATION_CSS });
   await ctx.addInitScript(framingSampler);
   const problems = [];
   ctx.on("page", (p) => {
@@ -636,82 +895,64 @@ async function record() {
   await page.getByRole("button", { name: "Reset demo" }).first().click();
   await page.getByRole("dialog").getByRole("button", { name: "Reset demo" }).click();
   await sleep(1200);
-  for (const u of ["/reports/new", "/reports"]) {
+  for (const u of ["/reports/new", "/reports", "/reports/forms"]) {
     await page.goto(BASE + u);
     await page.waitForLoadState("networkidle");
   }
-  await page.goto(`${BASE}/reports/forms`);
-  await page.waitForLoadState("networkidle");
   await page.getByText(/3 confirmed/).first().waitFor({ timeout: 20000 });
 
   const cast = new Cast(DIRS.frames);
   const d = new Director(cast, reports);
   const checks = {};
   const downloads = {};
-  await cast.attach(page);
 
-  // ---- S02 set-up (before the segment starts, so not in the video)
-  await page.reload();
-  await page.waitForLoadState("networkidle");
-  await page.locator("main canvas").first().waitFor({ timeout: 20000 });
-  await page.locator("main section.docx").first().waitFor({ timeout: 20000 });
-  await sleep(2500);
-  await page.evaluate(() => {
-    const h = Array.from(document.querySelectorAll("h2")).find((x) => /Forms library/.test(x.textContent || ""));
-    if (h) window.scrollTo(0, h.getBoundingClientRect().top + scrollY - 92);
-  });
+  // ---- S02 set-up (before the segment starts, so not in the video): the montage page, forms not yet in.
+  await page.goto(pathToFileURL(montageFile).href);
+  await page.locator(".form img").first().waitFor();
+  await page.evaluate(() => Promise.all(Array.from(document.images).map((i) => (i.complete ? null : new Promise((r) => (i.onload = r))))));
+  await page.evaluate(() => document.fonts.ready);
   await sleep(600);
-  await d.park(820, 648);
+  await cast.attach(page);
   await sleep(500);
 
-  /* ======================= App segment (6.0 – 80.0 in the final cut) ======================= */
+  /* ======================= Recorded segment (S02 start – S07 start in the final cut) ======================= */
   d.start();
 
-  // ---------- S02: every referrer's own form ----------
+  // ---------- S02: every referrer's own form (montage) ----------
   await d.shotStart("S02");
-  const lib = page.locator("main");
-  let t = 6.2;
-  for (const title of ["Treating Physiotherapist Report", "Rehabilitation Progress Report", "Return to Work Assessment"]) {
-    const b = await lib.getByText(title, { exact: true }).first().boundingBox();
-    await d.moveAt(t, b.x + b.width / 2, b.y - 120, 800);
-    t += 1.4;
-  }
-  await d.until(10.6, "scroll to Try a new form");
-  // ~120 px (the page can scroll ~160): the two "Try a new form" cards come in; the page footer (its clinic-system label would sit half under
-  // the caption) stays below the fold.
-  await d.scrollWin(120, 1400);
-  {
-    const h = await lib.getByText("Try a new form", { exact: true }).first().boundingBox();
-    if (h) await d.moveAt(12.8, VIEW.w / 2, h.y + h.height + 118, 900);
-  }
-  await d.until(SHOT.S03a.start, "end S02");
+  await page.evaluate(() => window.__play(1));
+  await d.until(L("V03", -0.15), "montage phase 2");
+  await page.evaluate(() => window.__play(2));
+  await d.until(Math.max(SHOT.S03a.start, LE("V03", 0.12)), "end S02");
 
   // ---------- S03a: upload their form once ----------
+  const dlg = page.getByRole("dialog");
   await d.cut(async () => {
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await sleep(300);
-    // The "Upload a referrer form" dialog opens inside the cut: four seconds are enough for choosing the file,
-    // naming the referrer, its type and Analyse form, not for the button click as well.
+    await page.goto(`${BASE}/reports/forms`);
+    await page.waitForLoadState("networkidle");
+    await page.locator("main canvas").first().waitFor({ timeout: 20000 });
+    await page.locator("main section.docx").first().waitFor({ timeout: 20000 });
+    await sleep(1200);
     await page.getByRole("button", { name: "Upload a referrer form" }).first().click();
-    await page.getByRole("dialog").locator(".border-dashed button").first().waitFor();
+    await dlg.locator(".border-dashed button").first().waitFor();
     await sleep(500);
-    const z = await page.getByRole("dialog").locator(".border-dashed button").first().boundingBox();
+    const z = await dlg.locator(".border-dashed button").first().boundingBox();
     await d.park(z.x + z.width / 2 + 150, z.y + z.height / 2 + 60);
-    await sleep(200);
   });
   await d.shotStart("S03a");
-  const dlg = page.getByRole("dialog");
   const chooserP = page.waitForEvent("filechooser");
-  await d.clickAt(15.3, dlg.locator(".border-dashed button").first(), { ms: 260, label: "drop zone", after: 60 });
+  await d.clickAt(L("V04", 0.25), dlg.locator(".border-dashed button").first(), { ms: 300, label: "drop zone", after: 60 });
   const chooser = await chooserP;
   await chooser.setFiles(meridianPath);
   await d.waitCut(dlg.getByRole("button", { name: /^Analyse form$/ }).waitFor({ timeout: 15000 }), 0.25);
-  await d.until(15.9, "type referrer", { quiet: true });
-  await d.type(dlg.locator("#upload-referrer"), "Meridian Claims Services (fictional)", { cps: 60, ms: 260, after: 60 });
-  await d.hover(dlg.locator("#upload-referrer-type"), { ms: 260 });
+  await d.until(L("V04", 0.85), "type referrer", { quiet: true });
+  await d.type(dlg.locator("#upload-referrer"), "Meridian Claims Services (fictional)", { cps: 60, ms: 300, after: 60 });
+  await d.hover(dlg.locator("#upload-referrer-type"), { ms: 300 });
   await dlg.locator("#upload-referrer-type").selectOption({ label: "Insurer" });
   await sleep(200);
-  await d.clickAt(17.9, dlg.getByRole("button", { name: /^Analyse form$/ }), { ms: 320, label: "Analyse form" });
+  checks.uploadDialogFits = await dlg.evaluate((el) => Array.from(el.querySelectorAll("*")).every((c) => c.getBoundingClientRect().right <= el.getBoundingClientRect().right - 8));
+  // The result appears 0.3 s after the click (the prepared reading is cut), just after "…exactly as it arrived".
+  await d.clickAt(LE("V04", -0.15), dlg.getByRole("button", { name: /^Analyse form$/ }), { ms: 420, label: "Analyse form", after: 0 });
   await d.waitCut(
     page.waitForFunction(() => /Review the mapping|could not be analysed|Try again/.test(document.querySelector("[role=dialog]")?.textContent || ""), null, { timeout: 60000 }),
     0.3,
@@ -721,11 +962,11 @@ async function record() {
   if (!/Prepared demo reading/.test(dlgText)) throw new Error("Expected the prepared demo reading label: " + dlgText.slice(0, 300));
   checks.formReading = { questions: Number((dlgText.match(/(\d+) questions found/) || [])[1]), toCheck: Number((dlgText.match(/(\d+) questions? to check/) || [0, 0])[1]) };
 
-  // ---------- S03b: every question found ----------
-  await d.until(SHOT.S03b.start, "S03b", { quiet: true });
+  // ---------- S03b: questions found (the prepared reading is on screen for under a second) ----------
   await d.shotStart("S03b");
-  await d.hoverAt(19.2, dlg.getByText(/questions found in/).first(), { ms: 600, dx: 0.985, label: "summary line" });
-  await d.clickAt(21.6, dlg.getByRole("button", { name: /Review the mapping/ }), { ms: 650, label: "Review the mapping", after: 0 });
+  const tResult = d.vt();
+  checks.resultShownAt = Number(tResult.toFixed(2));
+  await d.clickAt(tResult + 0.78, dlg.getByRole("button", { name: /Review the mapping/ }), { ms: 520, label: "Review the mapping", after: 0 });
 
   // ---------- S03c: where each answer goes ----------
   await d.cut(async () => {
@@ -734,12 +975,13 @@ async function record() {
     await sleep(600);
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await sleep(600);
-    await d.park(1060, 760);
+    await d.park(1060, 700);
   });
-  await d.until(SHOT.S03c.start, "S03c", { quiet: true });
   await d.shotStart("S03c");
+  const tMap = d.vt();
+  checks.resultOnScreenSec = Number((tMap - tResult).toFixed(2));
   const hl = page.locator(".mr-preview .mr-hl").first();
-  await d.hoverAt(22.3, hl, { ms: 800, dx: 1.025, dy: 0.5, label: "answer space" });
+  await d.hoverAt(tMap + 0.45, hl, { ms: 800, dx: 1.025, dy: 0.5, label: "answer space" });
   {
     // The "Clinician opinion" chip on the question list's F-14 card (not the form preview's copy of the question).
     const best = await page.evaluate(() => {
@@ -759,19 +1001,18 @@ async function record() {
       }
       return null;
     });
-    if (best) await d.moveAt(23.7, best.x + best.width / 2, best.y + best.height / 2, 800);
+    if (best) await d.moveAt(Math.max(tMap + 1.6, L("V05", 2.95)), best.x + best.width / 2, best.y + best.height / 2, 800);
     else log("S03c: F-14 'Clinician opinion' chip not found");
   }
   const confirmBtn = page.getByRole("button", { name: /^Confirm mapping$/ }).first();
-  await d.hoverAt(24.6, confirmBtn, { ms: 600, label: "Confirm mapping" });
+  await d.hoverAt(L("V06", -0.75), confirmBtn, { ms: 600, label: "Confirm mapping" });
 
   // ---------- S03d: checked once by your team ----------
-  await d.until(SHOT.S03d.start, "S03d", { quiet: true });
+  await d.until(L("V06", -0.1), "S03d", { quiet: true });
   await d.shotStart("S03d");
-  await d.clickAt(25.3, confirmBtn, { ms: 150, label: "Confirm mapping" });
+  await d.clickAt(L("V06", 0.1), confirmBtn, { ms: 150, label: "Confirm mapping" });
   await page.locator("#confirm-by").waitFor();
   const by = page.locator("#confirm-by");
-  await d.until(26.0 - 0.45, "type name", { quiet: true });
   await d.click(by, { ms: 320, after: 60 });
   if (await by.inputValue()) {
     await page.keyboard.press("ControlOrMeta+A");
@@ -779,14 +1020,14 @@ async function record() {
   }
   await d.typeText("Sarah Reid", 30);
   const tick = page.locator("[role=dialog] input[type=checkbox], [role=dialog] button[role=checkbox]").first();
-  await d.clickAt(26.9, tick, { ms: 450, label: "tick" });
+  await d.clickAt(L("V06", 1.9), tick, { ms: 450, label: "tick" });
   {
     const desc = page.getByRole("dialog").getByText(/is completed this way for every patient/).first();
-    if (await desc.count()) await d.hoverAt(27.4, desc, { ms: 700, dx: 0.6, dy: 1.15, label: "description" });
+    if (await desc.count()) await d.hoverAt(L("V06", 2.45), desc, { ms: 650, dx: 0.6, dy: 1.15, label: "description" });
   }
   // Once confirmed, the sticky confirm bar goes and the page gets shorter, so the browser pins it to its new bottom and
-  // the page footer (whose clinic-system label would sit half under the caption) comes up. In the same frame, while
-  // the dialog's backdrop is still fading out, the page is moved 120 px up so the footer stays below the fold.
+  // the page's last section comes up. In the same frame, while the dialog's backdrop is still fading out, the page is
+  // moved 120 px up so the framing stays as it was.
   const settle = page.evaluate(
     () =>
       new Promise((res) => {
@@ -802,25 +1043,27 @@ async function record() {
         requestAnimationFrame(step);
       }),
   );
-  await d.clickAt(28.7, page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }), { ms: 600, label: "Confirm mapping (dialog)" });
+  await d.clickAt(L("V06", 3.35), page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }), { ms: 600, label: "Confirm mapping (dialog)" });
   if (!(await settle)) throw new Error("The mapping was not confirmed");
   await page.getByText(/Mapping confirmed by Sarah Reid/).first().waitFor({ timeout: 10000 });
 
   // ---------- S04a: pick the patient ----------
-  await d.until(SHOT.S04a.start, "end S03d");
+  await d.until(Math.max(LE("V06", 0.3), L("V07", -0.15)), "end S03d");
   await d.cut(async () => {
     await page.goto(`${BASE}/reports/new`);
     await page.waitForLoadState("networkidle");
     await page.getByPlaceholder(/Name, e\.g\. Megan/).waitFor({ timeout: 20000 });
+    checks.sourceStep = await presentSourceStep(page);
+    if (!checks.sourceStep.card || !checks.sourceStep.label || !checks.sourceStep.intro) throw new Error(`Patient step presentation incomplete: ${JSON.stringify(checks.sourceStep)}`);
     await sleep(500);
-    await d.park(560, 640);
+    await d.park(560, 600);
   });
   await d.shotStart("S04a");
-  await d.hoverAt(30.3, page.getByText("Upload the notes", { exact: true }).first(), { ms: 600, dx: 0.5, label: "Upload the notes" });
+  await d.hoverAt(L("V07", 0.1), page.getByText("Upload the notes", { exact: true }).first(), { ms: 600, dx: 0.5, label: "Upload the notes" });
   const search = page.getByPlaceholder(/Name, e\.g\. Megan/);
-  await d.clickAt(31.5, search, { ms: 550, dx: 0.12, label: "search" });
+  await d.clickAt(L("V07", 1.25), search, { ms: 550, dx: 0.12, label: "search" });
   await d.typeText("Megan", 12);
-  await d.clickAt(32.7, page.getByText("Neck pain and headaches following road traffic accident").first(), { ms: 500, dx: 0.3, label: "episode", after: 0 });
+  await d.clickAt(LE("V07", 0.05), page.getByText("Neck pain and headaches following road traffic accident").first(), { ms: 600, dx: 0.3, label: "episode", after: 0 });
 
   // ---------- S04b: their form, chosen for you ----------
   await d.cut(async () => {
@@ -830,20 +1073,17 @@ async function record() {
     await choose.click();
     await page.getByRole("radio", { name: /Harrow & Pike/ }).waitFor({ timeout: 20000 });
     await sleep(500);
-    // Presentation only: 120 px more room at the bottom, so the page intro (which names the clinic system) goes fully
-    // under the sticky header and the footer with the "Simulated TM3 sandbox" label sits above the caption.
-    await page.evaluate(() => (document.body.style.paddingBottom = "120px"));
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await sleep(400);
-    await d.park(640, 760);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(300);
+    const m = await page.getByText(/Matches the referrer on the referral/).first().boundingBox();
+    await d.park(m.x + m.width + 140, m.y + 90);
   });
-  await d.until(SHOT.S04b.start, "S04b", { quiet: true });
+  await d.until(L("V08", -0.3), "S04b", { quiet: true });
   await d.shotStart("S04b");
   checks.harrowPikePreselected = await page.getByRole("radio", { name: /Harrow & Pike/ }).isChecked().catch(() => null);
-  await d.hoverAt(33.4, page.getByText(/Matches the referrer on the referral/).first(), { ms: 650, label: "matches chip" });
+  await d.hoverAt(L("V08", -0.2), page.getByText(/Matches the referrer on the referral/).first(), { ms: 500, label: "matches chip" });
   const completeBtn = page.getByRole("button", { name: "Complete this form" });
-  await d.hoverAt(34.6, completeBtn, { ms: 600, label: "Complete this form" });
-  await d.clickAt(35.4, completeBtn, { ms: 100, label: "Complete this form", after: 0 });
+  await d.clickAt(L("V08", 1.45), completeBtn, { ms: 650, label: "Complete this form", after: 0 });
 
   // ---------- S04c: filled in, in their own layout ----------
   const pv = page.getByRole("dialog");
@@ -864,20 +1104,20 @@ async function record() {
     const sb = await pv.locator("section.docx").first().boundingBox();
     await d.park(sb.x - 40, sb.y + 140);
   });
-  await d.until(SHOT.S04c.start, "S04c", { quiet: true });
   await d.shotStart("S04c");
+  const tDraft = d.vt();
   {
     const sb = await pv.locator("section.docx").first().boundingBox();
     const cn = await pv.getByText("Claimant name", { exact: true }).first().boundingBox();
-    if (cn) await d.moveAt(36.6, sb.x - 30, cn.y + cn.height / 2, 900);
-    await d.until(38.2, "scroll to B1");
+    if (cn) await d.moveAt(tDraft + 0.6, sb.x - 30, cn.y + cn.height / 2, 900);
+    await d.until(Math.max(tDraft + 2.0, LE("V08", -2.6)), "scroll to B1");
     await d.reveal(pv.getByText(/Mechanism of injury/).first(), { inner: true, force: true, ms: 1600 });
     const mb = await pv.getByText(/Mechanism of injury/).first().boundingBox();
     if (mb) await d.moveTo(sb.x - 30, mb.y + mb.height / 2, 700);
   }
 
   // ---------- S04d: every answer shows its source ----------
-  await d.until(SHOT.S04d.start, "end S04c");
+  await d.until(Math.max(LE("V08", 0.15), L("V09", -0.2)), "end S04c");
   const f7 = page.locator("#q-F-07");
   await d.cut(async () => {
     await pv
@@ -895,21 +1135,21 @@ async function record() {
   await d.shotStart("S04d");
   {
     const p = await f7.locator("textarea").first().boundingBox();
-    await d.moveAt(41.3, p.x + p.width * 0.75, p.y + 30, 700);
+    await d.moveAt(L("V09", 0.15), p.x + p.width * 0.75, p.y + 30, 700);
     const chip = await textBox(f7, "Drafted from the notes");
-    if (chip) await d.moveAt(42.2, chip.x + chip.width / 2, chip.y + chip.height / 2, 600);
+    if (chip) await d.moveAt(L("V09", 1.0), chip.x + chip.width / 2, chip.y + chip.height / 2, 600);
   }
-  await d.clickAt(43.6, f7.locator("button[aria-label^='Source N-001']").first(), { ms: 650, label: "citation N-001" });
+  await d.clickAt(L("V10", 0.15), f7.locator("button[aria-label^='Source N-001']").first(), { ms: 650, label: "citation N-001" });
   const note = page.locator('article[data-source-id="N-001"]').first();
   await note.waitFor({ timeout: 10000 });
   {
-    await d.until(44.4 - 0.05, "note", { quiet: true });
+    await d.until(L("V10", 0.9), "note", { quiet: true });
     const b = await textBox(note, "restrained driver");
     if (b) await d.moveTo(b.x + b.width / 2, b.y + b.height / 2 + 2, 700);
   }
 
   // ---------- S04e: a gap is flagged, not guessed ----------
-  await d.until(SHOT.S04e.start, "end S04d");
+  await d.until(Math.max(LE("V10", 0.15), L("V11", -0.15)), "end S04d");
   const f14 = page.locator("#q-F-14");
   await d.cut(async () => {
     await scrollToY(f14, 150);
@@ -924,29 +1164,38 @@ async function record() {
       const b = await boxes.nth(i).boundingBox();
       if (b && (!box || b.y > box.y)) box = b;
     }
-    if (box) await d.moveAt(47.9 - 0.05, box.x + box.width + 24, box.y + box.height / 2, 650);
+    if (box) await d.moveAt(L("V11", 0.7), box.x + box.width + 24, box.y + box.height / 2, 650);
   }
-  await d.hoverAt(50.5 - 0.05, f14.getByText(/Gap – not in the record/).first(), { ms: 650, dx: 1.06, label: "gap" });
+  await d.hoverAt(L("V11", 3.0), f14.getByText(/Gap – not in the record/).first(), { ms: 650, dx: 1.06, label: "gap" });
   {
     const b = await textBox(f14, "Only an opinion a clinician recorded");
-    if (b) await d.moveAt(52.9 - 0.05, b.x + b.width + 18, b.y + b.height / 2, 700);
+    if (b) await d.moveAt(L("V12", 0.1), b.x + b.width + 18, b.y + b.height / 2, 700);
   }
 
   // ---------- S05a: her own opinion ----------
-  await d.until(SHOT.S05a.start, "end S04e");
+  await d.until(Math.max(LE("V12", 0.1), L("V13", -0.15)), "end S04e");
   await d.shotStart("S05a");
   {
     const add = f14.getByRole("button", { name: "Add a paragraph in your own words" });
-    if (!(await f14.locator("textarea").count()) && (await add.count())) await d.clickAt(55.4, add, { ms: 300, label: "add paragraph" });
-    await d.clickAt(55.65, f14.locator("textarea").last(), { ms: 250, dx: 0.25, dy: 0.4, label: "answer box", after: 40 });
-    await d.typeText(PROGNOSIS, 62);
-    await d.clickAt(58.3, f14.locator("h3").first(), { ms: 320, label: "card heading", after: 120 });
+    if (!(await f14.locator("textarea").count()) && (await add.count())) await d.clickAt(L("V13", -0.1), add, { ms: 300, label: "add paragraph" });
+    await d.clickAt(L("V13", 0.3), f14.locator("textarea").last(), { ms: 450, dx: 0.25, dy: 0.4, label: "answer box", after: 40 });
+    const parkAt = { ...d.mouse };
+    await d.until(L("V13", 0.75), "opinion", { quiet: true });
+    // While a paragraph is being typed the card shows a transient red "Missing field" state (the answer is only
+    // committed on blur), so her words are entered and committed inside a short cut.
+    await d.cut(async () => {
+      await f14.locator("textarea").last().fill(PROGNOSIS);
+      await f14.locator("h3").first().click();
+      await sleep(450);
+      await d.park(parkAt.x, parkAt.y);
+    });
+    checks.opinionCommitted = /Your own words/.test(await f14.innerText());
     const quick = f14.getByRole("button", { name: "Mark resolved" });
-    if ((await quick.count()) && !(await f14.locator("form").count())) await d.click(quick.first(), { ms: 320, after: 60 });
+    if ((await quick.count()) && !(await f14.locator("form").count())) await d.clickAt(L("V13", 2.0), quick.first(), { ms: 600, label: "Mark resolved", after: 60 });
   }
 
   // ---------- S05b: approve – nothing is issued before ----------
-  await d.until(SHOT.S05b.start, "end S05a");
+  await d.until(L("V13", 3.0), "end S05a");
   const appr = page.getByRole("dialog");
   await d.cut(async () => {
     await page.locator("#q-F-13").getByLabel("Yes", { exact: true }).click();
@@ -993,22 +1242,24 @@ async function record() {
     const cbs = appr.locator("input[type=checkbox]");
     const btn = await appr.getByRole("button", { name: /Approve and sign/ }).boundingBox();
     const pts = [];
-    for (let i = 1; i < (await cbs.count()); i++) {
+    for (let i = 0; i < (await cbs.count()); i++) {
       const b = await cbs.nth(i).boundingBox();
       if (b && b.y > 0 && b.y + b.height < (btn ? btn.y - 24 : VIEW.h - 130)) pts.push(b);
     }
     if (pts.length) {
-      await d.moveAt(59.8, pts[0].x + 28, pts[0].y + pts[0].height / 2, 400);
+      await d.moveAt(L("V13", 3.35), pts[0].x + 28, pts[0].y + pts[0].height / 2, 400);
       const last = pts[pts.length - 1];
-      await d.moveTo(last.x + 28, last.y + last.height / 2, 1000);
+      await d.moveTo(last.x + 28, last.y + last.height / 2, 1400);
     }
   }
-  await d.clickAt(61.6, appr.getByRole("button", { name: /Approve and sign/ }), { ms: 500, label: "Approve and sign", after: 0 });
+  await d.clickAt(LE("V14", -0.3), appr.getByRole("button", { name: /Approve and sign/ }), { ms: 700, label: "Approve and sign", after: 0 });
 
   // ---------- S05c: download their own file (punch-in: the cards below the copy panel name TM3) ----------
   await d.cut(async () => {
     await page.locator("h2", { hasText: "Approved" }).first().waitFor({ timeout: 30000 });
     await sleep(600);
+    checks.hiddenOnApproved = await hideApprovedExtras(page);
+    if (checks.hiddenOnApproved.length !== 2) throw new Error(`Expected to hide two buttons on the approved form, hid ${JSON.stringify(checks.hiddenOnApproved)}`);
     await dismissToasts(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(400);
@@ -1019,13 +1270,13 @@ async function record() {
     const w = await page.getByRole("button", { name: "Completed form (Word)" }).boundingBox();
     await d.park(w.x + w.width + 160, w.y - 70);
   });
-  await d.until(SHOT.S05c.start, "S05c", { quiet: true });
+  await d.until(L("V15", -0.3), "S05c", { quiet: true });
   await d.shotStart("S05c");
   const wordBtn = page.getByRole("button", { name: "Completed form (Word)" });
-  await d.hoverAt(62.2, wordBtn, { ms: 550, label: "Completed form (Word)" });
+  await d.hoverAt(L("V15", 0.1), wordBtn, { ms: 550, label: "Completed form (Word)" });
   {
     const dl = page.waitForEvent("download", { timeout: 60000 });
-    await d.clickAt(62.9, wordBtn, { ms: 100, label: "Completed form (Word)", after: 60 });
+    await d.clickAt(L("V15", 0.75), wordBtn, { ms: 100, label: "Completed form (Word)", after: 60 });
     const download = await d.waitCut(dl, 0.3);
     const file = path.join(DIRS.downloads, download.suggestedFilename());
     await download.saveAs(file);
@@ -1037,7 +1288,7 @@ async function record() {
   }
 
   // ---------- S05d: the final form, in their layout ----------
-  await d.until(SHOT.S05d.start, "end S05c");
+  await d.until(Math.max(SHOT.S05d.start, L("V15", 2.3)), "end S05c");
   await d.cut(async () => {
     d.zoomOff();
     await dismissToasts(page);
@@ -1081,20 +1332,34 @@ async function record() {
     await d.park(sb.x - 40, sb.y + 110);
   });
   await d.shotStart("S05d");
+  const tFinal = d.vt();
   {
     const sb = await pv.locator("section.docx").first().boundingBox();
-    await d.until(66.2, "scroll to B7 and Part C");
-    const b7 = pv.getByText(/B7\. Prognosis/).first();
-    await d.reveal(b7, { inner: true, force: true, block: "start", ms: 1600 });
+    await d.until(tFinal + 1.4, "scroll to B7 and Part C");
+    // The signed declaration ends above the caption band; the page footer (its page-number fields are not drawn by
+    // the preview) stays below the visible part of the dialog.
+    checks.finalScroll = await scrollTableBottomTo(pv.getByText(/approved electronically/).first(), 752, 1600);
     const pb = await textBox(pv, "In my opinion Ms Hart has made a good recovery");
-    if (pb) await d.moveAt(68.0, sb.x - 30, pb.y + pb.height / 2, 600);
+    if (pb) await d.moveAt(tFinal + 3.2, sb.x - 30, pb.y + pb.height / 2, 600);
     const sig = await textBox(pv, "approved electronically");
-    if (sig) await d.moveAt(69.0, sb.x - 30, sig.y + sig.height / 2, 600);
+    if (sig) await d.moveAt(tFinal + 4.0, sb.x - 30, sig.y + sig.height / 2, 600);
     checks.finalSignedVisible = Boolean(sig && sig.y > 0 && sig.y < VIEW.h - 120);
+    checks.finalFooterHidden = await pv.evaluate((el) => {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = w.nextNode())) {
+        if (!/Form HPM-TP3/.test(n.nodeValue)) continue;
+        let sp = n.parentElement;
+        while (sp && !(sp.scrollHeight > sp.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(sp).overflowY))) sp = sp.parentElement;
+        const r = n.parentElement.getBoundingClientRect();
+        return !sp || r.top >= sp.getBoundingClientRect().bottom - 2;
+      }
+      return true;
+    });
   }
 
-  // ---------- S06a: portal answers, one at a time ----------
-  await d.until(SHOT.S06a.start, "end S05d");
+  // ---------- S06: portal answers (punch-in on the approved "Copy answers" panel; no answer cards on screen) ----------
+  await d.until(Math.max(LE("V15", 0.15), L("V16", -0.15)), "end S05d");
   await d.cut(async () => {
     await pv
       .getByRole("button", { name: "Close" })
@@ -1104,44 +1369,33 @@ async function record() {
     await pv.waitFor({ state: "hidden" });
     await sleep(300);
     await dismissToasts(page);
-    await scrollToY(f7, 122);
-    const c = await f7.getByRole("button", { name: /^Copy the answer to/ }).boundingBox();
-    await d.park(c.x + 260, c.y + 120);
-  });
-  await d.shotStart("S06a");
-  const copyOne = f7.getByRole("button", { name: /^Copy the answer to/ });
-  await d.hoverAt(70.4, copyOne, { ms: 600, label: "Copy B1" });
-  await d.clickAt(71.2, copyOne, { ms: 100, label: "Copy B1" });
-  await page.getByText(/Answer to .B1\. Mechanism of injury. copied/).first().waitFor({ timeout: 5000 });
-  checks.copyOne = true;
-  {
-    const b = await textBox(f7, "restrained driver");
-    if (b) await d.moveAt(73.0, b.x + b.width / 2, b.y + b.height + 6, 900);
-  }
-
-  // ---------- S06b: portal answers, all at once (punch-in) ----------
-  await d.until(SHOT.S06b.start, "end S06a");
-  await d.cut(async () => {
-    await dismissToasts(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(400);
     const crop = await computeCrop(page);
     await placeToasts(page, { top: Math.round(crop.y0 + 12), right: Math.round(VIEW.w - crop.x1 + 14) });
     d.zoomOn(crop);
-    checks.cropS06b = crop;
+    checks.cropS06 = crop;
     const c = await page.getByRole("button", { name: "Copy all answers" }).boundingBox();
     await d.park(c.x + c.width + 150, c.y + 110);
   });
-  await d.shotStart("S06b");
+  await d.shotStart("S06");
+  {
+    const h = await textBox(page.locator("main"), "Copy answers");
+    if (h) await d.moveAt(L("V16", 0.2), h.x + h.width + 14, h.y + h.height / 2, 650);
+    // The cursor points at the words from just above the line or from the margin, never over the text.
+    const p = await textBox(page.locator("main"), "for a portal, an e-mail or a letter");
+    if (p) await d.moveAt(L("V16", 2.3), p.x + p.width * 0.45, p.y - 7, 900);
+    const one = await textBox(page.locator("main"), "Copy an answer, or all of them");
+    if (one) await d.moveAt(L("V17", 0.0), one.x - 26, one.y + one.height / 2, 650);
+  }
   const copyAll = page.getByRole("button", { name: "Copy all answers" });
-  await d.hoverAt(75.9, copyAll, { ms: 600, label: "Copy all answers" });
-  await d.clickAt(76.6, copyAll, { ms: 100, label: "Copy all answers" });
+  await d.clickAt(L("V17", 1.2), copyAll, { ms: 500, label: "Copy all answers" });
   {
     const toast = page.getByText(/\d+ answers copied/).first();
     await toast.waitFor({ timeout: 5000 });
     checks.copyAll = (await toast.innerText()).trim();
   }
-  await d.until(APP_END, "end S06b");
+  await d.until(Math.max(APP_END, LE("V17", 0.25)), "end S06");
   d.stop();
   d.zoomOff();
   await d.guard("end");
@@ -1152,10 +1406,11 @@ async function record() {
 
   const timeline = {
     recordedAt: new Date().toISOString(),
-    load: { atStart: loadAtStart, atEnd: Number(os.loadavg()[0].toFixed(1)) },
+    load: { atStart: loadAtStart, max: Number((d.maxLoad || 0).toFixed(1)), atEnd: Number(os.loadavg()[0].toFixed(1)) },
     base: BASE,
     health,
     viewport: size,
+    voiceDurations: VOICE,
     checks,
     downloads,
     drift: d.drift,
@@ -1168,7 +1423,7 @@ async function record() {
   };
   fs.writeFileSync(path.join(WORK, "timeline.json"), JSON.stringify(timeline, null, 1));
   await browser.close();
-  log(`recorded ${timeline.frames.length} frames; drift ${d.drift.length}; tooltips ${d.tooltips.length}; problems ${problems.length}; load ${loadAtStart} -> ${timeline.load.atEnd}`);
+  log(`recorded ${timeline.frames.length} frames; drift ${d.drift.length}; tooltips ${d.tooltips.length}; problems ${problems.length}; load ${loadAtStart} -> ${timeline.load.atEnd} (max ${timeline.load.max})`);
   const worst = d.drift.reduce((m, x) => Math.max(m, x.late), 0);
   if (worst > 1) log(`WARNING: an action ran ${worst.toFixed(2)} s late (machine busy?): check the drift list and consider re-recording`);
   if (problems.length) log(problems.join("\n"));
@@ -1176,7 +1431,7 @@ async function record() {
 }
 
 /* ---------------------------------------------------------------------------------------------
- * Layout: cuts, the app segment's kept intervals and the final-cut times of lines, shots and punch-ins
+ * Layout: cuts, the recorded segment's kept intervals and the final-cut times of lines, shots and punch-ins
  * -------------------------------------------------------------------------------------------*/
 function computeLayout(timeline) {
   const ev = timeline.events;
@@ -1204,12 +1459,13 @@ function computeLayout(timeline) {
     if (e) {
       start = fin(e.t);
       recorded = true;
-    }
+    } else if (l.start >= APP_END) start = appEnd + (l.start - APP_END); // end-card lines keep their place on the card
     return { id: l.id, start, recorded, planned: l.start, caption: l.caption, srt: l.srt, vo: l.vo, i };
   });
+  const total = Math.max(TOTAL, appEnd + (TOTAL - APP_END));
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];
-    lines[i].end = next ? next.start : TOTAL;
+    lines[i].end = next ? next.start : total;
     // A caption pill never runs over the end card.
     lines[i].capEnd = lines[i].start < appEnd ? Math.min(lines[i].end, appEnd) : lines[i].end;
   }
@@ -1217,7 +1473,7 @@ function computeLayout(timeline) {
   for (const e of ev.filter((x) => x.type === "shot")) shots.push({ id: e.id, start: fin(e.t), planned: SHOT[e.id].start });
   shots.unshift({ id: "S01", start: 0, planned: 0 });
   shots.push({ id: "S07", start: appEnd, planned: APP_END });
-  for (let i = 0; i < shots.length; i++) shots[i].end = shots[i + 1] ? shots[i + 1].start : TOTAL;
+  for (let i = 0; i < shots.length; i++) shots[i].end = shots[i + 1] ? shots[i + 1].start : total;
   const zooms = [];
   let z = null;
   for (const e of ev.filter((x) => x.type === "zoom")) {
@@ -1227,14 +1483,15 @@ function computeLayout(timeline) {
       z = null;
     }
   }
-  return { a, b, cuts, kept, dur, lines, shots, zooms, fin };
+  const cta = lines.find((l) => l.id === CAP.cards.end.ctaWith);
+  return { a, b, cuts, kept, dur, lines, shots, zooms, fin, total, ctaAt: cta ? cta.start - 0.15 : appEnd + 5 };
 }
 
 /* ---------------------------------------------------------------------------------------------
  * Cards and caption images (rendered on the app's origin so the Studio's own Inter font is used)
  * -------------------------------------------------------------------------------------------*/
 /**
- * The Studio's own Inter @font-face rules with the font files inlined (data: URIs), cached in work/captions/font.json
+ * The Studio's own Inter @font-face rules with the font files inlined (data: URIs), cached in work/font.json
  * so that --assemble-only works without the server.
  */
 async function appFontCss() {
@@ -1262,12 +1519,14 @@ async function appFontCss() {
   const fam = (faces.find((f) => /Inter/.test(f) && !/Fallback/.test(f)) || "").match(/font-family:([^;]+);/);
   const res = { faces: faces.join("\n"), family: fam ? `${fam[1]}, ` : "" };
   if (!res.family) throw new Error("The Studio's Inter font was not found in its CSS");
+  fs.mkdirSync(WORK, { recursive: true });
   fs.writeFileSync(cache, JSON.stringify(res));
   return res;
 }
 
+const PLAY_SVG = `<svg viewBox="0 0 24 24"><path d="M6 3.8v16.4a1 1 0 0 0 1.5.86l13.2-8.2a1 1 0 0 0 0-1.72L7.5 2.94A1 1 0 0 0 6 3.8z" fill="#fff"/></svg>`;
+
 function cardHtml(key, font, finalImg) {
-  const c = CAP.cards[key];
   const ff_ = `${font.family}Inter, system-ui, sans-serif`;
   const head = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>ClinForms</title><style>${font.faces}\n${CARD_CSS}
     body{font-family:${ff_}}
@@ -1278,15 +1537,25 @@ function cardHtml(key, font, finalImg) {
     .big .logo{width:78px;height:78px;border-radius:20px}
     .big .logo svg{width:42px;height:42px}
     .big h1{font-size:92px;margin:0;letter-spacing:-.03em}
+    .play{width:132px;height:132px;border-radius:50%;background:rgba(13,148,136,.96);box-shadow:0 0 0 8px rgba(255,255,255,.9),0 20px 50px rgba(15,23,42,.3);display:flex;align-items:center;justify-content:center;flex:none}
+    .play svg{width:58px;height:58px;margin-left:9px}
   </style></head><body><div class="wrap">`;
   const tail = "</div></body></html>";
+  // A line break after the comma nearest the middle keeps a line on two balanced lines (no orphan word).
+  const lede = (t) => {
+    const cuts = [...t.matchAll(/, /g)].map((m) => m.index);
+    if (!cuts.length) return esc(t);
+    const k = cuts.sort((a, b) => Math.abs(a - t.length / 2) - Math.abs(b - t.length / 2))[0];
+    return `${esc(t.slice(0, k + 1))}<br>${esc(t.slice(k + 2))}`;
+  };
   if (key === "title") {
+    const c = CAP.cards.title;
     return `${head}
       <div style="display:flex;gap:40px;align-items:center;flex:1;min-height:0">
         <div style="flex:1.25">
           <div class="kicker" style="font-size:19px">${esc(c.kicker)}</div>
           <div class="big">${LOGO}<h1>${esc(c.title)}</h1></div>
-          <p style="font-size:31px;color:#1e293b;line-height:1.35;margin:30px 0 0;max-width:760px;font-weight:600;letter-spacing:-.01em">${esc(c.lede)}</p>
+          <p style="font-size:31px;color:#1e293b;line-height:1.35;margin:30px 0 0;max-width:760px;font-weight:600;letter-spacing:-.01em">${lede(c.lede)}</p>
           <div class="chips">${c.chips.map((x) => `<span class="chip"><i>&#10003;</i>${esc(x)}</span>`).join("")}</div>
         </div>
         <div style="flex:.75;position:relative;height:700px">
@@ -1295,16 +1564,39 @@ function cardHtml(key, font, finalImg) {
       </div>
       <div class="foot"><span class="pill" style="font-size:20px">${esc(c.footer)}</span><span></span></div>${tail}`;
   }
-  if (key === "end") {
+  if (key === "end" || key === "endCta") {
+    const c = CAP.cards.end;
+    const show = key === "endCta" ? "visible" : "hidden";
     return `${head}
       <div style="margin:auto 0;display:flex;flex-direction:column;align-items:center;text-align:center">
         <div class="brand" style="font-size:30px;gap:16px">${LOGO.replace('class="logo"', 'class="logo" style="width:52px;height:52px;border-radius:14px"')}${esc(c.kicker)}</div>
-        <h1 style="font-size:84px;margin-top:34px">${esc(c.title)}</h1>
-        <div style="margin-top:34px;font-size:40px;font-weight:700;color:#0f766e">${esc(c.lines[0])}</div>
-        <div style="margin-top:12px;font-size:32px;font-weight:500;color:#334155">${esc(c.lines[1])}</div>
-        <div style="margin-top:40px;font-size:17px;color:#64748b">${esc(c.small)}</div>
+        <div style="margin-top:30px;font-size:50px;line-height:1.16;font-weight:750;letter-spacing:-.02em;color:#0f172a">${lede(c.tagline)}</div>
+        <div style="visibility:${show};margin-top:46px;display:flex;flex-direction:column;align-items:center">
+          <div style="background:#0d9488;color:#fff;font-size:46px;font-weight:750;letter-spacing:-.01em;padding:18px 40px;border-radius:20px;box-shadow:0 16px 36px rgba(13,148,136,.3)">${esc(c.title)}</div>
+          <div style="margin-top:28px;font-size:40px;font-weight:700;color:#0f766e">${esc(c.lines[0])}</div>
+          <div style="margin-top:10px;font-size:31px;font-weight:500;color:#334155">${esc(c.lines[1])}</div>
+        </div>
+        <div style="margin-top:34px;font-size:17px;color:#64748b">${esc(c.small)}</div>
       </div>
       <div class="foot" style="justify-content:center"><span>${esc(c.footer)}</span></div>${tail}`;
+  }
+  if (key === "teaserTitle") {
+    // Frame 0 of the e-mail GIF (some desktop mail apps show only that frame): big enough to read at 800 px wide.
+    const c = CAP.cards.teaserTitle;
+    return `${head}
+      <div style="margin:auto 0;display:flex;align-items:center;gap:80px;padding:0 20px">
+        <div style="flex:1">
+          <div class="big">${LOGO}<h1 style="font-size:116px">${esc(c.title)}</h1></div>
+          <p style="font-size:50px;color:#1e293b;line-height:1.22;margin:34px 0 0;font-weight:650;letter-spacing:-.015em">${lede(c.lede)}</p>
+          <div style="margin-top:44px;display:inline-flex;align-items:center;gap:16px;background:rgba(15,23,42,.9);color:#fff;font-weight:650;font-size:40px;padding:16px 28px;border-radius:18px">
+            <span style="width:0;height:0;border-left:24px solid #fff;border-top:15px solid transparent;border-bottom:15px solid transparent"></span>${esc(c.badge)}</div>
+        </div>
+        <div style="position:relative;width:520px;height:640px;flex:none">
+          ${finalImg ? `<img src="${finalImg}" style="position:absolute;left:30px;top:10px;width:460px;border-radius:6px;-webkit-mask-image:linear-gradient(180deg,#000 80%,transparent);mask-image:linear-gradient(180deg,#000 80%,transparent);box-shadow:0 30px 60px rgba(15,23,42,.25),0 0 0 1px rgba(15,23,42,.08);transform:rotate(2deg)">` : ""}
+          <div class="play" style="position:absolute;left:194px;top:230px">${PLAY_SVG}</div>
+          ${finalImg ? `<div style="position:absolute;left:110px;top:560px;background:#0d9488;color:#fff;font-weight:650;font-size:24px;padding:10px 18px;border-radius:12px;box-shadow:0 10px 24px rgba(13,148,136,.35)">Fictional patient data</div>` : ""}
+        </div>
+      </div>${tail}`;
   }
   throw new Error("unknown card " + key);
 }
@@ -1319,6 +1611,8 @@ const CAPTION_CSS = (font) => `${font.faces}
   .tag{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.92);color:#334155;font-weight:600;font-size:13px;padding:6px 11px;border-radius:999px;
     box-shadow:0 0 0 1px rgba(15,23,42,.12),0 2px 6px rgba(2,6,23,.12)}
   .tag i{width:7px;height:7px;border-radius:50%;background:#0d9488}
+  .tag.l{font-size:30px;gap:14px;padding:12px 24px}
+  .tag.l i{width:14px;height:14px}
   .big{background:rgba(15,23,42,.9);color:#fff;font-weight:700;font-size:76px;line-height:1.2;padding:24px 50px 28px;border-radius:30px;text-align:center;box-shadow:0 14px 40px rgba(2,6,23,.4)}
   .big div{white-space:nowrap}
 `;
@@ -1336,8 +1630,8 @@ async function renderCardsAndCaptions(layout) {
   const page = await ctx.newPage();
   const imgFile = path.join(DIRS.cards, "final-form-p1.png");
   const finalImg = fs.existsSync(imgFile) ? `data:image/png;base64,${fs.readFileSync(imgFile).toString("base64")}` : null;
-  const out = { cards: {}, captions: [], teaser: [] };
-  for (const key of ["title", "end"]) {
+  const out = { cards: {}, captions: [], teaser: [], ctaAt: layout.ctaAt };
+  for (const key of ["title", "end", "endCta", "teaserTitle"]) {
     const html = cardHtml(key, font, finalImg);
     fs.writeFileSync(path.join(DIRS.cards, `${key}.html`), html);
     await page.setContent(html, { waitUntil: "load" });
@@ -1348,7 +1642,7 @@ async function renderCardsAndCaptions(layout) {
     await page.screenshot({ path: png });
     out.cards[key] = png;
   }
-  // Caption pills (one PNG per line with words), the corner tag and the teaser's big captions.
+  // Caption pills (one PNG per line with words), the corner tags and the teaser's big captions.
   const shoot = async (html, file) => {
     await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>${CAPTION_CSS(font)}</style></head><body><div class="w">${html}</div></body></html>`, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
@@ -1369,9 +1663,18 @@ async function renderCardsAndCaptions(layout) {
     const file = path.join(DIRS.caps, "tag-fictional.png");
     const { w, h } = await shoot(`<span class="tag"><i></i>Fictional data</span>`, file);
     const pad = Math.round(20 * SCALE);
-    out.tag = { file, w, h, x: 22 - pad, y: 18 - pad, start: APP_START, end: APP_START + layout.dur, hide: layout.zooms.map((z) => [APP_START + z.start, APP_START + z.end]) };
+    const zoomed = layout.zooms.map((z) => [APP_START + z.start, APP_START + z.end]);
+    // Top left on every recorded frame; inside a punch-in it moves right of the page's "← Reports" link.
+    out.tag = { id: "tag", file, w, h, x: 22 - pad, y: 18 - pad, start: APP_START, end: APP_START + layout.dur, hide: zoomed };
+    out.tagZoom = { id: "tagZoom", file, w, h, x: 190 - pad, y: 18 - pad, start: APP_START, end: APP_START + layout.dur, only: zoomed };
+  }
+  {
+    const file = path.join(DIRS.caps, "tag-fictional-large.png");
+    const { w, h } = await shoot(`<span class="tag l"><i></i>Fictional data</span>`, file);
+    out.tagLarge = { file, w, h };
   }
   for (const tsh of CAP.teaser.shots) {
+    if (!tsh.caption.length || tsh.from === "card") continue;
     const file = path.join(DIRS.caps, `teaser-${tsh.id}.png`);
     const { w, h } = await shoot(`<div class="big">${tsh.caption.map((x) => `<div>${esc(x)}</div>`).join("")}</div>`, file);
     out.teaser.push({ id: tsh.id, file, w, h });
@@ -1386,7 +1689,7 @@ async function renderCardsAndCaptions(layout) {
  * -------------------------------------------------------------------------------------------*/
 const even = (v) => 2 * Math.round(v / 2);
 
-/** The app segment, caption-free, with the punch-ins applied: work/clips/app-clean.mp4 (high quality intermediate). */
+/** The recorded segment, caption-free, with the punch-ins applied: work/clips/app-clean.mp4 (high quality intermediate). */
 function encodeApp(timeline, layout) {
   fs.rmSync(DIRS.clips, { recursive: true, force: true });
   fs.mkdirSync(DIRS.clips, { recursive: true });
@@ -1424,48 +1727,64 @@ function encodeApp(timeline, layout) {
   return { file: out, parts };
 }
 
-/** Title card + app segment + end card (+ captions and the corner tag): one 1920x1080 30 fps H.264 file. */
-function compose(appFile, appDur, rendered, { captions, out, crf, preset }) {
+/** An ffmpeg `enable` expression: inside [start, end], outside every `hide` interval and (if given) inside one `only` interval. */
+function enableExpr(c, s = c.start, e = c.end, hide = c.hide || [], only = c.only) {
+  const parts = [`between(t,${s.toFixed(3)},${e.toFixed(3)})`];
+  for (const [a, b] of hide) parts.push(`not(between(t,${a.toFixed(3)},${b.toFixed(3)}))`);
+  if (only) parts.push(only.length ? `(${only.map(([a, b]) => `between(t,${a.toFixed(3)},${b.toFixed(3)})`).join("+")})` : "0");
+  return parts.join("*");
+}
+
+/** Title card + recorded segment + end card (call to action fading in) (+ captions and the corner tags): one 1920x1080 30 fps H.264 file. */
+function compose(appFile, appDur, rendered, layout, { captions, out, crf, preset }) {
   const titleDur = APP_START;
-  const endDur = TOTAL - APP_START - appDur;
+  const endDur = layout.total - APP_START - appDur;
   const inputs = ["-loop", "1", "-framerate", "30", "-t", titleDur.toFixed(3), "-i", rendered.cards.title, "-i", appFile, "-loop", "1", "-framerate", "30", "-t", endDur.toFixed(3), "-i", rendered.cards.end];
   const norm = `crop=w='min(iw,${OUT_W})':h='min(ih,${OUT_H})':x=0:y=0,scale=${OUT_W}:${OUT_H},setsar=1,fps=30,format=yuv420p`;
   const graph = [
     `[0:v]${norm},fade=t=in:st=0:d=0.35,fade=t=out:st=${(titleDur - 0.15).toFixed(3)}:d=0.15:color=white[t]`,
     `[1:v]${norm},fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(appDur - 0.15).toFixed(3)}:d=0.15:color=white[a]`,
-    `[2:v]${norm},fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(endDur - 0.5).toFixed(3)}:d=0.5[e]`,
-    "[t][a][e]concat=n=3:v=1:a=0[c0]",
+    `[2:v]${norm}[e0]`,
   ];
+  // The call to action fades in over the tagline card as its line starts.
+  inputs.push("-loop", "1", "-framerate", "30", "-t", endDur.toFixed(3), "-i", rendered.cards.endCta);
+  const ctaLocal = Math.max(0.2, layout.ctaAt - (APP_START + appDur));
+  graph.push(
+    `[3:v]${norm},format=rgba,fade=t=in:st=${ctaLocal.toFixed(3)}:d=0.45:alpha=1[cta]`,
+    `[e0][cta]overlay=0:0:format=auto,format=yuv420p,fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(endDur - 0.5).toFixed(3)}:d=0.5[e]`,
+    "[t][a][e]concat=n=3:v=1:a=0[c0]",
+  );
   let last = "c0";
   if (captions) {
-    const items = [...rendered.captions, { ...rendered.tag, fade: 0.3 }];
+    const items = [...rendered.captions, { ...rendered.tag, fade: 0.3 }, { ...rendered.tagZoom, fade: 0 }];
     items.forEach((c, i) => {
-      const idx = 3 + i;
+      const idx = 4 + i;
       inputs.push("-loop", "1", "-framerate", "30", "-t", (c.end + 0.2).toFixed(3), "-i", c.file);
       const fd = c.fade ?? 0.2;
-      graph.push(
-        `[${idx}:v]format=rgba,fade=t=in:st=${c.start.toFixed(3)}:d=${fd}:alpha=1,fade=t=out:st=${(c.end - fd).toFixed(3)}:d=${fd}:alpha=1[k${i}]`,
-        `[${last}][k${i}]overlay=x=${c.x}:y=${c.y}:eof_action=pass:enable='between(t,${c.start.toFixed(3)},${c.end.toFixed(3)})${(c.hide || []).map(([a, b]) => `*not(between(t,${a.toFixed(3)},${b.toFixed(3)}))`).join("")}'[o${i}]`,
-      );
+      const fades = fd ? `,fade=t=in:st=${c.start.toFixed(3)}:d=${fd}:alpha=1,fade=t=out:st=${(c.end - fd).toFixed(3)}:d=${fd}:alpha=1` : "";
+      graph.push(`[${idx}:v]format=rgba${fades}[k${i}]`, `[${last}][k${i}]overlay=x=${c.x}:y=${c.y}:eof_action=pass:enable='${enableExpr(c)}'[o${i}]`);
       last = `o${i}`;
     });
   }
   graph.push(`[${last}]format=yuv420p[vout]`);
-  ff([...inputs, "-filter_complex", graph.join(";"), "-map", "[vout]", "-t", TOTAL.toFixed(3), "-c:v", "libx264", "-preset", preset, "-crf", String(crf), "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart", "-an", out]);
+  ff([...inputs, "-filter_complex", graph.join(";"), "-map", "[vout]", "-t", layout.total.toFixed(3), "-c:v", "libx264", "-preset", preset, "-crf", String(crf), "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart", "-an", out]);
 }
 
-/** The caption-free teaser source: T1–T4 from picture-clean.mp4 at their master times, T5 = the end card. */
+/** The caption-free teaser source: T0 = teaser title card, T1–T4 from picture-clean.mp4 at their master times, T5 = the end card with the call to action. */
 function teaserSource(cleanFile, layout, rendered) {
   const cutsAt = layout.shots.map((s) => s.start);
   const segs = [];
   for (const tsh of CAP.teaser.shots) {
     if (tsh.from === "card") {
-      segs.push({ id: tsh.id, card: rendered.cards.end, dur: tsh.seconds, caption: tsh.caption });
+      segs.push({ id: tsh.id, card: rendered.cards[tsh.card === "end" ? "endCta" : tsh.card], dur: tsh.seconds, caption: tsh.caption });
       continue;
     }
     const dur = tsh.out - tsh.in;
-    let a = tsh.in;
-    let b = tsh.out;
+    // Planned master times follow the recorded shot (a shot that started late moves its teaser window with it).
+    const shot = layout.shots.find((s) => s.id === tsh.from);
+    const off = shot ? shot.start - shot.planned : 0;
+    let a = tsh.in + off;
+    let b = tsh.out + off;
     // Keep each teaser shot inside one master shot: if a cut falls inside, slide the window back before it.
     const inside = cutsAt.find((c) => c > a + 0.05 && c < b - 0.05);
     if (inside !== undefined) {
@@ -1500,15 +1819,25 @@ function teaserSource(cleanFile, layout, rendered) {
 }
 
 /**
- * The e-mail teaser from the caption-free source: big captions (lower third, faded in and out), then an MP4
- * (1280x720) and a looping GIF (800x450, 10 fps, palette per CAP.teaser.gif; dropped to 8 fps / 720x405 if it is
- * over the target size). The end-card segment carries no extra caption: the card says the same words.
+ * The e-mail teaser from the caption-free source: big captions (lower third, faded in and out) and the large
+ * "Fictional data" tag on every recorded segment, then an MP4 (1280x720) and a looping GIF (800x450, 10 fps, palette
+ * per CAP.teaser.gif; dropped to 8 fps / 720x405 if it is over the target size). Frame 0 is the teaser title card.
+ * The card segments carry no extra caption: the cards say the same words.
  */
 function teaserFinal(src, rendered) {
   const segs = src.segments;
   const inputs = ["-i", src.file];
   const graph = ["[0:v]format=yuv420p[b0]"];
   let last = "b0";
+  const rec = segs.filter((s) => !s.card);
+  // The large corner tag on the recorded segments.
+  {
+    inputs.push("-loop", "1", "-framerate", "30", "-t", src.seconds.toFixed(3), "-i", rendered.tagLarge.file);
+    const k = inputs.filter((x) => x === "-i").length - 1;
+    const pad = Math.round(20 * SCALE);
+    graph.push(`[${last}][${k}:v]overlay=x=${30 - pad}:y=${26 - pad}:enable='${rec.map((s) => `between(t,${s.teaserStart.toFixed(3)},${(s.teaserEnd - 0.01).toFixed(3)})`).join("+")}'[tg]`);
+    last = "tg";
+  }
   segs.forEach((sg, i) => {
     if (sg.card) return;
     const cap = rendered.teaser.find((x) => x.id === sg.id);
@@ -1539,17 +1868,20 @@ function teaserFinal(src, rendered) {
     used = { w, h, fps, bytes: fs.statSync(gif).size };
     if (used.bytes <= target) break;
   }
-  // Static fallback for clients that block animation: T2's first frame (the completed form) with its caption.
+  // Frame 0 of the GIF, as a mail app that shows only the first frame would show it.
+  const first = path.join(WORK, "teaser-gif-frame0.png");
+  ff(["-i", gif, "-frames:v", "1", first]);
+  // Static fallback for clients that block animation: T2's first second (the completed form) with its caption.
   const t2 = segs.find((x) => x.id === "T2") || segs[0];
   const poster = path.join(WORK, "teaser-poster.png");
   ff(["-ss", (t2.teaserStart + 0.9).toFixed(2), "-i", big, "-frames:v", "1", "-vf", "scale=800:450:flags=lanczos", poster]);
-  return { mp4, gif, poster, gifSettings: used, gifMB: Number((used.bytes / 1e6).toFixed(2)) };
+  return { mp4, gif, poster, frame0: first, gifSettings: used, gifMB: Number((used.bytes / 1e6).toFixed(2)) };
 }
 
 function writeSrt(layout) {
   const entries = [];
   for (const l of layout.lines) entries.push({ start: l.start, end: l.end - 0.05, text: l.srt });
-  entries[entries.length - 1].end = TOTAL - 0.4;
+  entries[entries.length - 1].end = layout.total - 0.4;
   const srt = entries.map((s, i) => `${i + 1}\n${srtTime(s.start)} --> ${srtTime(s.end)}\n${wrapSrt(s.text)}\n`).join("\n");
   scanOrThrow("SRT", srt);
   const file = path.join(WORK, "picture.srt");
@@ -1571,15 +1903,15 @@ function reviewFrames(file, dur) {
 
 async function assemble(timeline) {
   const layout = computeLayout(timeline);
-  log(`app segment ${layout.dur.toFixed(2)} s (planned ${APP_END - APP_START}); cuts ${layout.cuts.length}; punch-ins ${layout.zooms.length}`);
-  if (Math.abs(layout.dur - (APP_END - APP_START)) > 0.3) log(`WARNING: app segment is ${layout.dur.toFixed(2)} s, planned ${APP_END - APP_START} s`);
+  log(`recorded segment ${layout.dur.toFixed(2)} s (planned ${(APP_END - APP_START).toFixed(2)}); cuts ${layout.cuts.length}; punch-ins ${layout.zooms.length}; total ${layout.total.toFixed(2)} s`);
+  if (Math.abs(layout.dur - (APP_END - APP_START)) > 0.3) log(`WARNING: recorded segment is ${layout.dur.toFixed(2)} s, planned ${(APP_END - APP_START).toFixed(2)} s`);
   for (const f of Object.values(timeline.downloads || {})) if (f && fs.existsSync(f)) scanOrThrow(`download ${path.basename(f)}`, `${path.basename(f)}\n${documentText(f)}`);
   const rendered = await renderCardsAndCaptions(layout);
   const app = encodeApp(timeline, layout);
   const clean = path.join(WORK, "picture-clean.mp4");
-  compose(app.file, layout.dur, rendered, { captions: false, out: clean, crf: 14, preset: "medium" });
+  compose(app.file, layout.dur, rendered, layout, { captions: false, out: clean, crf: 14, preset: "medium" });
   const picture = path.join(WORK, "picture.mp4");
-  compose(app.file, layout.dur, rendered, { captions: true, out: picture, crf: 18, preset: "slow" });
+  compose(app.file, layout.dur, rendered, layout, { captions: true, out: picture, crf: 18, preset: "slow" });
   const srt = writeSrt(layout);
   fs.copyFileSync(rendered.cards.title, path.join(WORK, "poster.png"));
   const teaser = teaserSource(clean, layout, rendered);
@@ -1593,6 +1925,7 @@ async function assemble(timeline) {
     srt,
     durationSec: Number(dur.toFixed(3)),
     appSegmentSec: Number(layout.dur.toFixed(3)),
+    ctaAt: Number(layout.ctaAt.toFixed(3)),
     lines: layout.lines.map((l) => ({
       id: l.id,
       start: Number(l.start.toFixed(3)),
@@ -1616,6 +1949,39 @@ async function assemble(timeline) {
   return timeline.final;
 }
 
+/** --preview-montage: render the montage page and the cards, and screenshot the montage at a few moments (no take). */
+async function previewMontage() {
+  const browser = await chromium.launch({ executablePath: findChromium(), args: [`--force-device-scale-factor=${SCALE}`, `--window-size=${VIEW.w},${VIEW.h}`, "--hide-scrollbars"] });
+  const font = await appFontCss();
+  const pages = await renderFormPages(browser);
+  fs.mkdirSync(DIRS.cards, { recursive: true });
+  const file = path.join(DIRS.cards, "montage.html");
+  fs.writeFileSync(file, montageHtml(font, pages));
+  const page = await (await browser.newContext({ viewport: null })).newPage();
+  await page.goto(pathToFileURL(file).href);
+  await page.evaluate(() => document.fonts.ready);
+  await sleep(400);
+  fs.mkdirSync(REVIEW, { recursive: true });
+  await page.evaluate(() => window.__play(1));
+  for (const [ms, name] of [[700, "a"], [2600, "b"]]) {
+    await sleep(ms);
+    await page.screenshot({ path: path.join(REVIEW, `montage-${name}.png`) });
+  }
+  await page.evaluate(() => window.__play(2));
+  for (const [ms, name] of [[900, "c"], [900, "d"], [1600, "e"]]) {
+    await sleep(ms);
+    await page.screenshot({ path: path.join(REVIEW, `montage-${name}.png`) });
+  }
+  for (const key of ["title", "end", "endCta", "teaserTitle"]) {
+    await page.setContent(cardHtml(key, font, null), { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
+    await sleep(200);
+    await page.screenshot({ path: path.join(REVIEW, `card-${key}.png`) });
+  }
+  await browser.close();
+  log("montage preview in", REVIEW);
+}
+
 /* ---------------------------------------------------------------------------------------------
  * Main
  * -------------------------------------------------------------------------------------------*/
@@ -1628,6 +1994,7 @@ async function main() {
     scanOrThrow("outreach-captions.json", JSON.stringify(rest));
     void shots;
   }
+  if (flag("--preview-montage")) return previewMontage();
   let timeline;
   if (flag("--assemble-only")) timeline = JSON.parse(fs.readFileSync(path.join(WORK, "timeline.json"), "utf8"));
   else timeline = await record();
@@ -1640,6 +2007,7 @@ async function main() {
         duration: final.durationSec,
         lines: final.lines.map((l) => `${l.id}@${l.start}`).join(" "),
         drift: timeline.drift,
+        checks: timeline.checks,
         violations: timeline.framing.violations.length,
         tooltips: timeline.tooltips,
         teaser: final.teaser.file,

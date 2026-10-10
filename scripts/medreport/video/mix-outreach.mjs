@@ -2,7 +2,7 @@
 /**
  * Puts the narration under the ClinForms outreach video and builds the outreach deliverables.
  *
- * Inputs (all under --out, produced by record-outreach.mjs and the narration step):
+ * Inputs (all under --src, produced by record-outreach.mjs and the narration step):
  *   work/timeline.json          final.lines (recorded caption starts), final.shots, durationSec
  *   work/captions/captions.json caption PNGs, their positions, the corner tag and the cards
  *   work/clips/app-clean.mp4    the caption-free app segment with the punch-ins (high-quality intermediate)
@@ -17,18 +17,19 @@
  * out of the slots with the most spare time (never more than leaves CFG.trimMargin of that slot free). The title
  * card is shortened to --title seconds. Captions, the corner tag and the punch-in hides move with the edits.
  *
- * Picture: re-composed from the same sources as picture.mp4 (title card, app-clean.mp4, end card, caption PNGs),
- * converted once to limited-range BT.709 (the most widely supported tagging), H.264 CRF 18. The narration is mixed
- * (fades 12/15 ms), normalised with two-pass loudnorm to about -16 LUFS / -1.5 dBTP and muxed without re-encoding
- * the picture.
+ * Picture: re-composed from the same sources as picture.mp4 (title card, app-clean.mp4, end card with the call to
+ * action fading in as its line starts, caption PNGs, the corner tag), converted once to limited-range BT.709 (the most
+ * widely supported tagging), H.264 High at level 4.0 (4 reference frames), CRF 18. The narration is mixed (fades
+ * 12/15 ms), levelled (static gain, two-stage compression, a look-ahead limiter on the few remaining peaks) and
+ * normalised with two-pass loudnorm in linear mode to about -16 LUFS, then muxed without re-encoding the picture.
  *
- * Outputs (in --out): ClinForms-demo.mp4, ClinForms-demo-email.mp4, ClinForms-demo.srt, ClinForms-demo-poster.png,
- * ClinForms-teaser.gif / .mp4 (copied from the recorder's teaser), README.md; work/mix/ holds plan.json, the
- * placed narration (vo-final.wav) and the silent picture (picture-mixed.mp4).
+ * Outputs (in --out, the folder that is shared): ClinForms-demo.mp4, ClinForms-demo-email.mp4, ClinForms-demo.srt,
+ * ClinForms-demo-poster.png, ClinForms-teaser.gif / .mp4 (from the recorder's teaser), README.md. Working files stay
+ * under --src: work/mix/ holds plan.json, the placed narration (vo-final.wav) and the silent picture (picture-mixed.mp4).
  *
  * Usage:
- *   NODE_PATH=<dir with playwright> node scripts/medreport/video/mix-outreach.mjs --out <outreach-video-v1>
- *     [--plan-only] [--target 90] [--title 5.4] [--frames <dir for verification frames>] [--email-crf 26]
+ *   NODE_PATH=<dir with playwright> node scripts/medreport/video/mix-outreach.mjs --src <outreach-video-v1-src> --out <outreach-video-v1>
+ *     [--plan-only] [--target 90] [--title <s>] [--frames <dir for verification frames>] [--email-crf 26]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -46,7 +47,8 @@ const arg = (n, d) => {
 };
 const flag = (n) => argv.includes(n);
 const OUT = path.resolve(arg("--out", process.env.VIDEO_OUT || "."));
-const WORK = path.join(OUT, "work");
+const SRC = path.resolve(arg("--src", OUT));
+const WORK = path.join(SRC, "work");
 const MIX = path.join(WORK, "mix");
 const FRAMES = path.resolve(arg("--frames", path.join(MIX, "frames")));
 const FPS = 30;
@@ -60,7 +62,7 @@ const CFG = {
   tempoSoft: 1.08, // speed-up used before a picture hold is added
   tempoHard: 1.15, // never faster than this
   holdMin: 0.04, // smaller overruns are absorbed by tempo
-  titleSec: Number(arg("--title", 5.4)),
+  titleSec: arg("--title", null) === null ? null : Number(arg("--title")), // null: keep the recorded title card
   target: Number(arg("--target", 90)),
   trimMax: 0.7, // most still picture removed from one slot
   trimMargin: 0.15, // spare time left in a slot after a trim
@@ -70,6 +72,10 @@ const CFG = {
   crfEmail: Number(arg("--email-crf", 26)),
   emailMaxMB: 18,
   lufs: -16,
+  // Two-stage compression before the limiter (2:1 over the body of the speech, 4:1 with a fast attack on the peaks),
+  // so the limiter only catches the last few transients (about 2 dB at most, measured on every build).
+  comp: "acompressor=threshold=-26dB:ratio=2:attack=1:release=150:knee=8:makeup=1,acompressor=threshold=-14dB:ratio=4:attack=0.5:release=50:knee=4:makeup=1",
+  x264: ["-profile:v", "high", "-level:v", "4.0", "-x264-params", "ref=4"],
   tp: -1.5,
   lra: 11,
   aacMaster: "160k",
@@ -92,14 +98,15 @@ const FILES = {
 const timeline = JSON.parse(fs.readFileSync(path.join(WORK, "timeline.json"), "utf8"));
 const FIN = timeline.final;
 const CAPS = JSON.parse(fs.readFileSync(path.join(WORK, "captions", "captions.json"), "utf8"));
-const VOICE = JSON.parse(fs.readFileSync(path.join(OUT, "voice", "lines.json"), "utf8"));
+const VOICE = JSON.parse(fs.readFileSync(path.join(SRC, "voice", "lines.json"), "utf8"));
 const APP_FILE = path.join(WORK, "clips", "app-clean.mp4");
 const CLEAN = path.join(WORK, "picture-clean.mp4");
 const shotStart = (id) => FIN.shots.find((s) => s.id === id).start;
-const APP0 = shotStart("S02"); // title card before
-const END0 = shotStart("S07"); // end card after
-const DUR0 = FIN.durationSec;
 const fr = (t) => Math.round(t * FPS);
+// On frame boundaries, so the title card, the recorded segment and the end card add up exactly.
+const APP0 = fr(shotStart("S02")) / FPS; // title card before
+const END0 = fr(shotStart("S07")) / FPS; // end card after
+const DUR0 = FIN.durationSec;
 const TITLE_F0 = fr(APP0);
 const APP_F = fr(END0) - fr(APP0);
 const END_F0 = fr(DUR0) - fr(END0);
@@ -108,7 +115,7 @@ const LINES = FIN.lines.map((l, i) => {
   const v = VOICE.find((x) => x.id === l.id);
   if (!v) throw new Error(`no narration clip for ${l.id}`);
   const capLine = CAP.lines.find((x) => x.id === l.id);
-  return { i, id: l.id, c: l.start, D: v.trimmedDurationSec, file: path.join(OUT, v.trimmedWav), vo: capLine.vo, caption: l.caption };
+  return { i, id: l.id, c: l.start, D: v.trimmedDurationSec, file: path.join(SRC, v.trimmedWav), vo: capLine.vo, caption: l.caption, shot: capLine.shot, during: capLine.shotsDuring || [] };
 });
 const LAST = LINES.length - 1;
 
@@ -178,7 +185,7 @@ function makeMapper(edits, titleF) {
 }
 
 function plan(d) {
-  const titleF = fr(CFG.titleSec);
+  const titleF = CFG.titleSec === null ? TITLE_F0 : fr(CFG.titleSec);
   const edits = [];
   const P = LINES.map((l) => ({ id: l.id, c: l.c, D: l.D, tempo: 1, hold: 0, trim: 0, slack: 0, note: "" }));
   let N = makeMapper(edits, titleF);
@@ -287,6 +294,14 @@ function printPlan(pl) {
  * -------------------------------------------------------------------------------------------*/
 const TAGS = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"];
 
+/** An ffmpeg `enable` expression: inside [s, e], outside every `hide` interval and (if given) inside one `only` interval. */
+function enableExpr(s, e, hide = [], only = null) {
+  const parts = [`between(t,${s.toFixed(3)},${e.toFixed(3)})`];
+  for (const [a, b] of hide) parts.push(`not(between(t,${a.toFixed(3)},${b.toFixed(3)}))`);
+  if (only) parts.push(only.length ? `(${only.map(([a, b]) => `between(t,${a.toFixed(3)},${b.toFixed(3)})`).join("+")})` : "0");
+  return parts.join("*");
+}
+
 function renderPicture(pl, out) {
   const { titleF, edits, L, N } = pl;
   const titleDur = titleF / FPS;
@@ -308,31 +323,44 @@ function renderPicture(pl, out) {
   const appF = segs.reduce((s, x) => s + (x.b - x.a) + x.pad, 0);
   const appDur = appF / FPS;
   if (Math.abs(titleDur + appDur - L.endStart) > 0.001) throw new Error(`app length mismatch ${titleDur + appDur} vs ${L.endStart}`);
-  const inputs = ["-loop", "1", "-framerate", "30", "-t", titleDur.toFixed(3), "-i", CAPS.cards.title, "-i", APP_FILE, "-loop", "1", "-framerate", "30", "-t", endDur.toFixed(3), "-i", CAPS.cards.end];
+  // The call to action fades in on the end card just before its line (the last line) starts.
+  const ctaLocal = Math.max(0.2, L.starts[LAST] - 0.15 - L.endStart);
+  const inputs = [
+    "-loop", "1", "-framerate", "30", "-t", titleDur.toFixed(3), "-i", CAPS.cards.title,
+    "-i", APP_FILE,
+    "-loop", "1", "-framerate", "30", "-t", endDur.toFixed(3), "-i", CAPS.cards.end,
+    "-loop", "1", "-framerate", "30", "-t", endDur.toFixed(3), "-i", CAPS.cards.endCta,
+  ];
   const card = `crop=${W}:${H}:0:0,setsar=1,fps=30,format=rgb24`;
   const g = [];
   g.push(`[0:v]${card},fade=t=in:st=0:d=0.35,fade=t=out:st=${(titleDur - 0.15).toFixed(3)}:d=0.15:color=white[t]`);
   g.push(`[1:v]setsar=1,split=${segs.length}${segs.map((_, j) => `[s${j}]`).join("")}`);
   segs.forEach((s, j) => g.push(`[s${j}]trim=start_frame=${s.a}:end_frame=${s.b},setpts=PTS-STARTPTS${s.pad ? `,tpad=stop=${s.pad}:stop_mode=clone` : ""}[g${j}]`));
   g.push(`${segs.map((_, j) => `[g${j}]`).join("")}concat=n=${segs.length}:v=1:a=0,format=rgb24,fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(appDur - 0.15).toFixed(3)}:d=0.15:color=white[a]`);
-  g.push(`[2:v]${card},fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(endDur - 0.5).toFixed(3)}:d=0.5[e]`);
+  g.push(`[2:v]${card}[e0]`);
+  g.push(`[3:v]crop=${W}:${H}:0:0,setsar=1,fps=30,format=rgba,fade=t=in:st=${ctaLocal.toFixed(3)}:d=0.45:alpha=1[cta]`);
+  g.push(`[e0][cta]overlay=0:0:format=rgb,format=rgb24,fade=t=in:st=0:d=0.15:color=white,fade=t=out:st=${(endDur - 0.5).toFixed(3)}:d=0.5[e]`);
   g.push("[t][a][e]concat=n=3:v=1:a=0[c0]");
   let last = "c0";
-  const items = [...CAPS.captions.map((c) => ({ ...c, s: N(c.start), e: N(c.end), fade: 0.2, hide: [] })), { ...CAPS.tag, s: N(CAPS.tag.start), e: N(CAPS.tag.end), fade: 0.3, hide: CAPS.tag.hide.map(([a, b]) => [N(a), N(b)]) }];
+  const mapIv = (iv) => (iv || []).map(([a, b]) => [N(a), N(b)]);
+  const items = [
+    ...CAPS.captions.map((c) => ({ ...c, s: N(c.start), e: N(c.end), fade: 0.2, hide: [], only: null })),
+    { ...CAPS.tag, s: N(CAPS.tag.start), e: N(CAPS.tag.end), fade: 0.3, hide: mapIv(CAPS.tag.hide), only: null },
+    ...(CAPS.tagZoom ? [{ ...CAPS.tagZoom, s: N(CAPS.tagZoom.start), e: N(CAPS.tagZoom.end), fade: 0, hide: [], only: mapIv(CAPS.tagZoom.only) }] : []),
+  ];
   items.forEach((c, i) => {
-    const idx = 3 + i;
+    const idx = 4 + i;
     inputs.push("-loop", "1", "-framerate", "30", "-t", (c.e + 0.2).toFixed(3), "-i", c.file);
-    g.push(
-      `[${idx}:v]format=rgba,fade=t=in:st=${c.s.toFixed(3)}:d=${c.fade}:alpha=1,fade=t=out:st=${(c.e - c.fade).toFixed(3)}:d=${c.fade}:alpha=1[k${i}]`,
-      `[${last}][k${i}]overlay=x=${c.x}:y=${c.y}:format=rgb:eof_action=pass:enable='between(t,${c.s.toFixed(3)},${c.e.toFixed(3)})${c.hide.map(([a, b]) => `*not(between(t,${a.toFixed(3)},${b.toFixed(3)}))`).join("")}'[o${i}]`,
-    );
+    const fades = c.fade ? `,fade=t=in:st=${c.s.toFixed(3)}:d=${c.fade}:alpha=1,fade=t=out:st=${(c.e - c.fade).toFixed(3)}:d=${c.fade}:alpha=1` : "";
+    g.push(`[${idx}:v]format=rgba${fades}[k${i}]`, `[${last}][k${i}]overlay=x=${c.x}:y=${c.y}:format=rgb:eof_action=pass:enable='${enableExpr(c.s, c.e, c.hide, c.only)}'[o${i}]`);
     last = `o${i}`;
   });
   g.push(`[${last}]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709[vout]`);
-  ff([...inputs, "-filter_complex", g.join(";"), "-map", "[vout]", "-t", L.total.toFixed(3), "-c:v", "libx264", "-preset", "slow", "-crf", String(CFG.crfMaster), "-pix_fmt", "yuv420p", ...TAGS, "-r", "30", "-an", "-map_metadata", "-1", "-movflags", "+faststart", out]);
+  ff([...inputs, "-filter_complex", g.join(";"), "-map", "[vout]", "-t", L.total.toFixed(3), "-c:v", "libx264", "-preset", "slow", "-crf", String(CFG.crfMaster), ...CFG.x264, "-pix_fmt", "yuv420p", ...TAGS, "-r", "30", "-an", "-map_metadata", "-1", "-movflags", "+faststart", out]);
   return {
     segments: segs,
     appDur,
+    ctaAt: Number((L.endStart + ctaLocal).toFixed(3)),
     captions: items.map((c) => ({ id: c.id || "tag", start: Number(c.s.toFixed(3)), end: Number(c.e.toFixed(3)) })),
   };
 }
@@ -368,17 +396,26 @@ function renderNarration(pl) {
   // a look-ahead peak limiter on the few transients, then loudnorm in LINEAR mode for the last fraction of a dB.
   const m0 = lastJson(ffStderr(["-i", placed, "-af", `${ln}:print_format=json`, "-f", "null", "-"]));
   const gain = CFG.lufs - Number(m0.input_i);
+  // Static gain + a gentle compressor, then a second static gain back to the target (the compressor lowers the
+  // loudness a little). Written out, so the limiter's own gain reduction can be measured against it.
+  const comp0 = path.join(MIX, "vo-compressed0.wav");
+  ff(["-i", placed, "-af", `volume=${gain.toFixed(2)}dB,${CFG.comp}`, "-ar", "48000", "-c:a", "pcm_f32le", comp0]);
+  const mc = lastJson(ffStderr(["-i", comp0, "-af", `${ln}:print_format=json`, "-f", "null", "-"]));
+  const gain2 = CFG.lufs - Number(mc.input_i);
+  const pre = path.join(MIX, "vo-compressed.wav");
+  ff(["-i", comp0, "-af", `volume=${gain2.toFixed(2)}dB`, "-ar", "48000", "-c:a", "pcm_f32le", pre]);
   let limited;
   let m1;
   let limit;
   for (const lim of [-2.3, -2.8, -3.3]) {
     limit = lim;
     limited = path.join(MIX, "vo-limited.wav");
-    ff(["-i", placed, "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=${(10 ** (lim / 20)).toFixed(4)}:attack=5:release=60:level=false:asc=1`, "-ar", "48000", "-c:a", "pcm_f32le", limited]);
+    ff(["-i", pre, "-af", `alimiter=limit=${(10 ** (lim / 20)).toFixed(4)}:attack=5:release=60:level=false:asc=1`, "-ar", "48000", "-c:a", "pcm_f32le", limited]);
     m1 = lastJson(ffStderr(["-i", limited, "-af", `${ln}:print_format=json`, "-f", "null", "-"]));
     // linear mode is possible when the gain still to apply keeps the true peak under the target
     if (Number(m1.input_tp) + (CFG.lufs - Number(m1.input_i)) <= CFG.tp - 0.05) break;
   }
+  const reduction = limiterReduction(pre, limited, 5);
   const final = path.join(MIX, "vo-final.wav");
   const m2 = lastJson(
     ffStderr([
@@ -398,7 +435,45 @@ function renderNarration(pl) {
     ]),
   );
   if (m2.normalization_type !== "linear") throw new Error(`loudnorm used ${m2.normalization_type} mode`);
-  return { placed, final, placedLoudness: { I: Number(m0.input_i), TP: Number(m0.input_tp), LRA: Number(m0.input_lra) }, gainDb: Number(gain.toFixed(2)), limiterDbfs: limit, pass1: m1, pass2: m2 };
+  return { placed, final, placedLoudness: { I: Number(m0.input_i), TP: Number(m0.input_tp), LRA: Number(m0.input_lra) }, gainDb: Number(gain.toFixed(2)), gainAfterCompressorDb: Number(gain2.toFixed(2)), compressor: CFG.comp, limiterDbfs: limit, limiterReduction: reduction, pass1: m1, pass2: m2 };
+}
+
+/** Mono float PCM of a file at 48 kHz. */
+function pcm(file) {
+  const buf = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-f", "f32le", "-ac", "1", "-ar", "48000", "-"], { maxBuffer: 2 ** 31 - 1 });
+  return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
+}
+
+/**
+ * How much the limiter turned the signal down: per 5 ms window, the peak before (after the compressor) over the peak
+ * after (shifted by the limiter's look-ahead), in dB. Returns the largest reduction and how many windows exceed 1 and 2 dB.
+ */
+function limiterReduction(preFile, postFile, lookaheadMs) {
+  const a = pcm(preFile);
+  const b = pcm(postFile);
+  const lag = Math.round((lookaheadMs / 1000) * 48000);
+  const win = 240;
+  let max = 0;
+  let at = 0;
+  let over1 = 0;
+  let over2 = 0;
+  for (let i = 0; i + win + lag < Math.min(a.length, b.length); i += win) {
+    let pa = 0;
+    let pb = 0;
+    for (let k = i; k < i + win; k++) {
+      pa = Math.max(pa, Math.abs(a[k]));
+      pb = Math.max(pb, Math.abs(b[k + lag]));
+    }
+    if (pa < 0.05) continue;
+    const gr = 20 * Math.log10(pa / Math.max(pb, 1e-6));
+    if (gr > max) {
+      max = gr;
+      at = i / 48000;
+    }
+    if (gr > 1) over1++;
+    if (gr > 2) over2++;
+  }
+  return { maxDb: Number(max.toFixed(2)), atSec: Number(at.toFixed(2)), windowsOver1dB: over1, windowsOver2dB: over2 };
 }
 
 function loudness(file) {
@@ -427,7 +502,7 @@ function speechSegments(file, total) {
 /* ---------------------------------------------------------------------------------------------
  * Subtitles (the narration as spoken, at the narration's times)
  * -------------------------------------------------------------------------------------------*/
-const SUBTITLE_TEXT = (t) => t.replace(/fifteen-minute/g, "15-minute").replace(/clinforms dot co dot uk/gi, "clinforms.co.uk");
+const SUBTITLE_TEXT = (t) => t.replace(/fifteen-minute/g, "15-minute").replace(/clinforms dot co dot u\.?k\.?/gi, "clinforms.co.uk.").replace(/\.\.$/, ".");
 
 function wrap42(text) {
   if (text.length <= 42) return [text];
@@ -553,102 +628,123 @@ function verificationFrames(pl, total) {
  * Probe helpers
  * -------------------------------------------------------------------------------------------*/
 function probe(file) {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration,size,bit_rate:format_tags:stream=index,codec_type,codec_name,profile,width,height,r_frame_rate,nb_frames,pix_fmt,color_range,color_space,sample_rate,channels,bit_rate:stream_tags", "-of", "json", file], { encoding: "utf8" }));
+  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration,size,bit_rate:format_tags:stream=index,codec_type,codec_name,profile,level,refs,width,height,r_frame_rate,nb_frames,pix_fmt,color_range,color_space,sample_rate,channels,bit_rate:stream_tags", "-of", "json", file], { encoding: "utf8" }));
   return j;
 }
 const MB = (b) => Number((b / 1e6).toFixed(2));
 
 /* ---------------------------------------------------------------------------------------------
- * README for the deliverables folder (internal: for whoever sends the outreach)
+ * README for the deliverables folder (for whoever sends the outreach; internal, never attached)
  * -------------------------------------------------------------------------------------------*/
 function writeReadme(r) {
   // A reviewer's notes on this build (work/mix/review.md), included verbatim when present.
   const reviewFile = path.join(MIX, "review.md");
   const review = fs.existsSync(reviewFile) ? fs.readFileSync(reviewFile, "utf8") : "";
+  const gen = fs.existsSync(path.join(SRC, "voice", "generation.json")) ? JSON.parse(fs.readFileSync(path.join(SRC, "voice", "generation.json"), "utf8")) : null;
   const mmss = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
   const len = r.poster.len;
   const v = (k) => r.probes[k].streams.find((s) => s.codec_type === "video");
   const a = (k) => r.probes[k].streams.find((s) => s.codec_type === "audio");
+  const lvl = (k) => (v(k).level ? (v(k).level / 10).toFixed(1) : "?");
   const gifInfo = v("gif");
   const holds = r.edits.filter((e) => e.kind === "hold");
   const trims = r.edits.filter((e) => e.kind === "trim");
   const sped = r.lines.filter((l) => l.tempo > 1.0005);
+  const srcRel = path.relative(OUT, SRC);
   const md = `# ClinForms outreach video (v1)
 
-A ${len} demo of ClinForms for owners and managers of UK private physiotherapy clinics, built for cold outreach
-emails. It follows one fictional patient (Megan Hart) on one fictional referrer form (Harrow & Pike Medico-Legal
-(fictional), Word) from upload of a referrer's form to the approved, completed form and copy-ready portal answers,
-and ends on "Book a 15-minute demo · clinforms.co.uk · khuram@appstackx.co.uk". All data on screen is fictional.
+> **Internal notes for the sender – do not attach or forward this README.** Send or host only the six media files
+> below. Working files (recording, narration clips, storyboard, scripts' inputs) are in \`${srcRel}/\`, outside this folder.
+
+A ${len} demo of ClinForms for owners and managers of UK private physiotherapy clinics, made for cold outreach
+e-mails. It opens with five different fictional referrer forms (the problem), then follows one fictional patient
+(Megan Hart) on one fictional referrer form (Harrow & Pike Medico-Legal (fictional), Word): a new referrer form
+uploaded and its mapping checked once, the answers drafted from the notes into the referrer's own layout, the source
+note behind an answer, the prognosis gap flagged instead of guessed, the physiotherapist's own opinion and approval,
+the completed Word form, and the approved answers copied for an insurer's portal. It ends on "Their form, your
+notes, your clinician's sign-off" and "Book a 15-minute call · clinforms.co.uk · khuram@appstackx.co.uk".
+All data on screen is fictional.
 
 ## Files
 
 | File | What it is | Length | Size | Format |
 |---|---|---|---|---|
-| \`ClinForms-demo.mp4\` | Master: narration + short on-screen captions burned in | ${mmss(r.totalSec)} | ${r.master.MB} MB | ${v("master").width}x${v("master").height}, 30 fps, H.264 High, AAC ${a("master").channels === 2 ? "stereo" : "mono"} ${Math.round(a("master").bit_rate / 1000)} kb/s, ${r.master.loudness.I} LUFS |
-| \`ClinForms-demo-email.mp4\` | Same video, lighter encode for attaching to an e-mail | ${mmss(r.totalSec)} | ${r.email.MB} MB | ${r.email.scale.replace(":", "x")}, CRF ${r.email.crf}, AAC mono ${Math.round(a("email").bit_rate / 1000)} kb/s, ${r.email.loudness.I} LUFS |
+| \`ClinForms-demo.mp4\` | Master: narration + short on-screen captions burned in | ${mmss(r.totalSec)} | ${r.master.MB} MB | ${v("master").width}x${v("master").height}, 30 fps, H.264 High @ level ${lvl("master")}, AAC stereo ${Math.round(a("master").bit_rate / 1000)} kb/s, ${r.master.loudness.I} LUFS |
+| \`ClinForms-demo-email.mp4\` | Same video, lighter encode for attaching to an e-mail | ${mmss(r.totalSec)} | ${r.email.MB} MB | ${r.email.scale.replace(":", "x")}, CRF ${r.email.crf}, H.264 High @ level ${lvl("email")}, AAC stereo ${Math.round(a("email").bit_rate / 1000)} kb/s, ${r.email.loudness.I} LUFS |
 | \`ClinForms-demo.srt\` | Subtitles: the narration word for word, at the narration's times (${r.srt.events} cues) | ${mmss(r.totalSec)} | ${(fs.statSync(r.srt.file).size / 1000).toFixed(1)} kB | SRT, UTF-8 |
 | \`ClinForms-demo-poster.png\` | Thumbnail for e-mails and links: title card with a play button and "Watch the demo · ${len}" | – | ${MB(fs.statSync(r.poster.file).size)} MB | 1280x720 PNG |
-| \`ClinForms-teaser.gif\` | Silent looping teaser with big captions (forms library → completed form → source note → gap flagged → end card) | ${r.teaser.seconds} s | ${r.teaser.gifMB} MB | ${gifInfo.width}x${gifInfo.height}, ${gifInfo.r_frame_rate.split("/").reduce((x, y) => Number(x) / Number(y))} fps |
+| \`ClinForms-teaser.gif\` | Silent looping teaser: title frame with play badge → five fictional forms → completed form → source note → gap flagged → call to action | ${r.teaser.seconds} s | ${r.teaser.gifMB} MB | ${gifInfo.width}x${gifInfo.height}, ${gifInfo.r_frame_rate.split("/").reduce((x, y) => Number(x) / Number(y))} fps, loops |
 | \`ClinForms-teaser.mp4\` | The same teaser as a silent MP4 | ${r.teaser.seconds} s | ${r.teaser.mp4MB} MB | 1280x720, 30 fps, H.264, no audio |
-
-Working files (not for sending): \`storyboard.md\`, \`narration-script.md\`, \`storyboard-frames/\`, \`voice/\` (one clip
-per line, provenance in \`voice/generation.json\`), \`work/\` (recording, captions, cards, \`work/mix/plan.json\` with
-every placement and check).
 
 ## Using it in outreach
 
-- **First (cold) e-mail: link, don't attach.** Put the video on a page you control (for example an unlisted video
+- **First (cold) e-mail: link, don't attach.** Put the master on a page you control (for example an unlisted video
   link or a page on clinforms.co.uk), then paste \`ClinForms-demo-poster.png\` (or \`ClinForms-teaser.gif\`) into the
   e-mail as an image that links to it. Attachments from an unknown sender are more likely to be filtered, and a
   tracked link shows who watched. Suggested alt text: "ClinForms – ${len} demo (fictional patient data)".
-- **The GIF** shows movement in the inbox; it is ${r.teaser.gifMB} MB, under the usual 3 MB comfort limit. Some desktop
-  mail apps only show its first frame (the forms library with "Every referrer sends its own form"), which still
-  reads well. Use the poster if you want one static, crisp image.
+- **The GIF** shows movement in the inbox; it is ${r.teaser.gifMB} MB, under the usual 3 MB comfort limit. Its first
+  frame is a title frame ("ClinForms – Every referrer's own report form, completed from your notes – Watch the demo ·
+  ${len}" with a play button), so a desktop mail app that shows only the first frame (some Outlook versions) still
+  shows a readable, clickable title. Use the poster if you want one static, crisp image.
 - **Replies and warm leads: attach \`ClinForms-demo-email.mp4\`** (${r.email.MB} MB, well under Gmail's 25 MB limit).
-  Gmail and most phones play it inline.
+  Gmail and most phones play it inline (H.264 level ${lvl("email")}, which older phones and mail previews accept).
 - **Hosting the master:** upload \`ClinForms-demo.mp4\`; add \`ClinForms-demo.srt\` as closed captions (accessibility,
   search). The master already has short captions in the picture, so leave the closed captions off by default.
 - **One-line lead-in that matches the video:** "Here is a ${len} look at how ClinForms completes each referrer's own
   report form from your notes – every answer shows its source, and nothing leaves until your physio approves it."
-- Don't present it as a customer's real case: the patient, clinicians, referrers and forms are fictional (the end card
-  says so).
+- Don't present it as a customer's real case: the patient, clinicians, referrers and forms are fictional (the corner
+  tag and the end card say so).
 
 ## Narration (as spoken, with start times in this cut)
 
 ${r.lines.map((l) => `- ${mmss(l.start)} – ${l.vo}`).join("\n")}
 
-## How the narration was fitted
+## How the picture and narration fit
 
+- The recording runs on the narration's clock: each action is scheduled from the start of its line, so a screen that
+  belongs to the next line never appears before the current line has been spoken (checked below).
 - Each narration clip starts at its caption's recorded start and never runs into the next line (at least
   ${r.config.gap.toFixed(2)} s apart; ${r.config.gapCta.toFixed(2)} s before the closing call to action).
-- Picture holds (a frame repeated inside a run of identical frames, so nothing visibly stops): ${holds.map((e) => `${e.line} +${e.sec.toFixed(2)} s`).join(", ") || "none"}; the end card stays up ${(r.endCardSec - END_F0 / FPS).toFixed(2)} s longer (${r.endCardSec.toFixed(2)} s).
-- Still frames taken out where a slot had spare time, to stay within ${r.config.target} s: ${trims.map((e) => `${e.line} −${e.sec.toFixed(2)} s`).join(", ") || "none"}; the title card runs ${r.titleSec.toFixed(1)} s (was 6.0 s).
-- Small speed-ups (at most x${Math.max(...r.lines.map((l) => l.tempo)).toFixed(2)}): ${sped.map((l) => `${l.id} x${l.tempo.toFixed(3)}`).join(", ") || "none"}.
-- Loudness: ${r.narration.measured.I} LUFS integrated, true peak ${r.narration.measured.TP} dBTP, LRA ${r.narration.measured.LRA} LU (static gain, a look-ahead peak limiter on the loudest transients, two-pass loudnorm in linear mode). Clip fades 12 ms in / 15 ms out.
-- Picture: converted once to limited-range BT.709 (the tagging every player and mail preview expects); the master's
-  picture was muxed without a second encode.
-
-## Rebuilding
-
-From the \`sales/outreach-video\` worktree (\`clinforms-wt/video\`):
-
-\`\`\`bash
-NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-outreach.mjs --out <this folder>
-#   --plan-only   print the placement only     --target 90   longest allowed length (s)     --title 5.4   title card (s)
-\`\`\`
-
-It needs \`work/timeline.json\`, \`work/captions/\`, \`work/clips/app-clean.mp4\`, \`work/picture-clean.mp4\` and
-\`voice/lines.json\` + \`voice/trimmed/\`. A re-timed caption pass (\`record-outreach.mjs --assemble-only\`) regenerates
-those inputs; then run the mixer again.
+- Picture holds (a frame repeated inside a run of identical frames, so nothing visibly stops): ${holds.map((e) => `${e.line} +${e.sec.toFixed(2)} s`).join(", ") || "none"}; the end card runs ${r.endCardSec.toFixed(2)} s.
+- Still frames taken out to stay within ${r.config.target} s: ${trims.map((e) => `${e.line} −${e.sec.toFixed(2)} s`).join(", ") || "none"}; the title card runs ${r.titleSec.toFixed(1)} s.
+- Speed-ups: ${sped.map((l) => `${l.id} x${l.tempo.toFixed(3)}`).join(", ") || "none – every line plays at its natural speed"}.
+- Loudness: ${r.narration.measured.I} LUFS integrated, true peak ${r.narration.measured.TP} dBTP, LRA ${r.narration.measured.LRA} LU. Static gain, two-stage compression (2:1 over the speech, 4:1 with a fast attack on the peaks), then a look-ahead limiter that turns the loudest peak down by ${r.narration.limiterReduction.maxDb} dB (${r.narration.limiterReduction.windowsOver2dB} of the 5 ms windows by more than 2 dB), then two-pass loudnorm in linear mode. Clip fades 12 ms in / 15 ms out.
+- The end card shows the tagline while it is spoken; the call to action fades in at ${mmss(r.ctaAt)}, as its line starts.
+- Picture: converted once to limited-range BT.709 (the tagging every player and mail preview expects), H.264 High
+  level 4.0 with 4 reference frames; the master's picture was muxed without a second encode.
 
 ## Checks done (${r.made.slice(0, 10)})
 
-- Durations and streams: master ${r.probes.master.format.duration} s (video ${v("master").nb_frames} frames + audio), e-mail ${r.probes.email.format.duration} s, teaser ${r.probes.teaser.format.duration} s, GIF ${r.probes.gif.format.duration} s.
+- Durations and streams: master ${r.probes.master.format.duration} s (video ${v("master").nb_frames} frames + stereo audio), e-mail ${r.probes.email.format.duration} s (stereo audio), teaser ${r.probes.teaser.format.duration} s, GIF ${r.probes.gif.format.duration} s.
+- Loudness as played (both channels): master ${r.master.loudness.I} LUFS, e-mail ${r.email.loudness.I} LUFS.
 - Every narration line was found in the final audio at its planned start (silence detection; largest offset ${r.narration.startCheck.maxOffset.toFixed(3)} s, the clips' 30 ms lead included), no overlaps.
+- Screen changes: ${r.junctions.filter((j) => j.early > 0.08).length ? `${r.junctions.filter((j) => j.early > 0.08).length} screen(s) appear before the previous line ends: ${r.junctions.filter((j) => j.early > 0.08).map((j) => `${j.shot} ${j.early.toFixed(2)} s early`).join(", ")}` : `each line's first screen appears once the previous line has been spoken (${r.junctions.length} junctions; the closest is ${Math.min(...r.junctions.map((j) => j.screenAt - j.previousLineEnds)).toFixed(2)} s after the previous line's last word, which includes the clip's 0.1 s tail)`}.
 - Picture edits are inside runs of identical frames (checked on the caption-free master before editing).
+- GIF frame 0 (what a first-frame-only mail app shows) was extracted and read: \`${path.relative(OUT, r.gifFrame0)}\`.
 - File metadata carries only a neutral title ("ClinForms demo"); subtitles, poster and this README pass the banned-term scan.
 - ${r.frames.count} verification frames (every 3 s and 0.35 s after each line starts) and 2x2 contact sheets were written
-  to ${r.frames.dir.startsWith(OUT + path.sep) ? `\`${path.relative(OUT, r.frames.dir)}\`` : "the folder given with --frames"} – look through them after any rebuild.
+  to ${r.frames.dir.startsWith(SRC + path.sep) ? `\`${path.relative(OUT, r.frames.dir)}\`` : "the folder given with --frames"}.
+
+## Voice-over (internal provenance)
+
+${gen ? `- Generated with ${gen.provider}; voice "${gen.voice.name.split(" - ")[0]}" (\`${gen.voice.voiceId}\`, ${gen.voice.accent}), \`${gen.engine || "eleven_v4"}\`, one clip per line.
+- Flow: "${gen.flowName}" – ${gen.flowUrl} (open it from the account that owns the connector; the link may need \`?mode=switchWorkspace\`).
+- ${gen.passes.map((p) => `${p.date} ${p.label}: ${p.lines}`).join("\n- ")}
+- Credits: ${gen.credits.summary}
+- Every clip was checked with speech-to-text (Scribe) against the script: ${gen.transcription.result}.
+- The original downloads carried content credentials that mark the audio as synthetic; these were removed along with
+  all other file metadata. Decide whether to say "voice-over generated" wherever the video is hosted.` : "- voice/generation.json not found."}
+
+## Rebuilding
+
+From the \`sales/outreach-video\` worktree (\`clinforms-wt/video\`), with its demo server running on port 3310 in demo mode
+(see \`scripts/medreport/video/README.md\` there):
+
+\`\`\`bash
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/record-outreach.mjs --src ${SRC}   # the take (about 3 min)
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-outreach.mjs --src ${SRC} --out ${OUT}
+#   --plan-only   print the placement only     --target 90   longest allowed length (s)
+\`\`\`
 ${review ? `\n## Manual review\n\n${review.trim()}\n` : ""}`;
   const hits = bannedIn(md);
   if (hits.length) throw new Error("banned terms in README: " + hits.join(" | "));
@@ -674,7 +770,7 @@ async function main() {
   log("picture: re-composing with the holds and trims");
   const pic = path.join(MIX, "picture-mixed.mp4");
   // Re-use the silent picture when nothing that shapes it changed (same edits, card lengths and sources).
-  const picKey = JSON.stringify({ edits: pl.edits, titleF: pl.titleF, endF: L.endF, total: L.total, app: fs.statSync(APP_FILE).size, caps: CAPS.captions.map((c) => [c.id, c.start, c.end, c.x, c.y]), crf: CFG.crfMaster });
+  const picKey = JSON.stringify({ edits: pl.edits, titleF: pl.titleF, endF: L.endF, total: L.total, cta: L.starts[LAST], app: fs.statSync(APP_FILE).size, caps: CAPS.captions.map((c) => [c.id, c.start, c.end, c.x, c.y]), tag: [CAPS.tag, CAPS.tagZoom], crf: CFG.crfMaster, x264: CFG.x264 });
   const picMeta = path.join(MIX, "picture-mixed.json");
   let picInfo;
   if (fs.existsSync(pic) && fs.existsSync(picMeta) && JSON.parse(fs.readFileSync(picMeta, "utf8")).key === picKey) {
@@ -694,7 +790,8 @@ async function main() {
   let email = null;
   for (const [crf, scale] of [[CFG.crfEmail, null], [CFG.crfEmail + 2, null], [CFG.crfEmail + 2, "1600:900"], [30, "1600:900"], [32, "1600:900"]]) {
     const vf = scale ? ["-vf", `scale=${scale}:flags=lanczos:in_range=tv:out_range=tv`] : [];
-    ff(["-i", pic, "-i", vo.final, "-map", "0:v:0", "-map", "1:a:0", ...vf, "-c:v", "libx264", "-preset", "slow", "-crf", String(crf), "-tune", "stillimage", "-pix_fmt", "yuv420p", ...TAGS, "-r", "30", "-c:a", "aac_at", "-b:a", CFG.aacEmail, "-ac", "1", "-ar", "48000", "-t", L.total.toFixed(3), "-map_metadata", "-1", "-metadata", "title=ClinForms demo", "-movflags", "+faststart", FILES.email]);
+    // Two identical channels (a mono AAC track plays on both speakers about 3 dB louder than the stereo master).
+    ff(["-i", pic, "-i", vo.final, "-map", "0:v:0", "-map", "1:a:0", ...vf, "-c:v", "libx264", "-preset", "slow", "-crf", String(crf), "-tune", "stillimage", ...CFG.x264, "-pix_fmt", "yuv420p", ...TAGS, "-r", "30", "-c:a", "aac_at", "-b:a", CFG.aacEmail, "-ac", "2", "-ar", "48000", "-t", L.total.toFixed(3), "-map_metadata", "-1", "-metadata", "title=ClinForms demo", "-movflags", "+faststart", FILES.email]);
     const size = fs.statSync(FILES.email).size;
     email = { crf, scale: scale || `${W}:${H}`, bytes: size, MB: MB(size) };
     log(`e-mail encode crf ${crf} ${email.scale}: ${email.MB} MB`);
@@ -705,6 +802,9 @@ async function main() {
   const subs = writeSrt(pl);
   const poster = await renderPoster(L.total);
   fs.copyFileSync(path.join(WORK, "teaser.gif"), FILES.gif);
+  // What a mail app that shows only the first frame of the GIF shows.
+  const gifFrame0 = path.join(MIX, "gif-frame0.png");
+  ff(["-i", FILES.gif, "-frames:v", "1", gifFrame0]);
   // The teaser MP4 again from the recorder's 1080p teaser, with the same limited-range BT.709 tagging as the masters.
   ff(["-i", path.join(WORK, "teaser-1080.mp4"), "-vf", "format=rgb24,scale=1280:720:flags=lanczos,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709", "-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p", ...TAGS, "-r", "30", "-an", "-map_metadata", "-1", "-movflags", "+faststart", FILES.teaser]);
 
@@ -719,6 +819,19 @@ async function main() {
     return seg[0] - L.starts[i];
   });
   const startCheck = { maxOffset: Math.max(...offsets.map(Math.abs)), offsets: offsets.map((x) => Number(x.toFixed(3))) };
+  // Screen changes against the narration: the first screen of each line must not appear before the previous line
+  // has been spoken (a later screen change inside a line is part of that line).
+  const junctions = [];
+  for (let i = 1; i < LINES.length; i++) {
+    const shot = FIN.shots.find((s) => s.id === LINES[i].shot);
+    // A screen that the previous line itself introduces (shotsDuring) is part of that line.
+    if (!shot || shot.id === LINES[i - 1].shot || LINES[i - 1].during.includes(shot.id)) continue;
+    const at = pl.N(shot.start);
+    const prevEnd = L.starts[i - 1] + L.durs[i - 1];
+    junctions.push({ line: LINES[i].id, shot: shot.id, screenAt: Number(at.toFixed(3)), previousLineEnds: Number(prevEnd.toFixed(3)), early: Number(Math.max(0, prevEnd - at).toFixed(3)) });
+  }
+  const earlyScreens = junctions.filter((j) => j.early > 0.08);
+  if (earlyScreens.length) log(`WARNING: a screen appears before the previous line has finished: ${JSON.stringify(earlyScreens)}`);
   const frames = verificationFrames(pl, L.total);
   const probes = Object.fromEntries(["master", "email", "teaser", "gif"].map((k) => [k, probe(FILES[k])]));
   // Metadata must not name tools or vendors.
@@ -747,12 +860,15 @@ async function main() {
       vo: LINES[i].vo,
     })),
     captions: picInfo.captions,
-    narration: { gainDb: vo.gainDb, limiterDbfs: vo.limiterDbfs, placedLoudness: vo.placedLoudness, loudnorm: vo.pass2, measured: voLoud, speechSegments: speech, startCheck },
+    ctaAt: picInfo.ctaAt,
+    junctions,
+    gifFrame0,
+    narration: { gainDb: vo.gainDb, compressor: vo.compressor, limiterDbfs: vo.limiterDbfs, limiterReduction: vo.limiterReduction, placedLoudness: vo.placedLoudness, loudnorm: vo.pass2, measured: voLoud, speechSegments: speech, startCheck },
     master: { file: FILES.master, MB: MB(fs.statSync(FILES.master).size), loudness: masterLoud },
     email: { file: FILES.email, ...email, loudness: emailLoud },
     srt: { file: FILES.srt, events: subs.length },
     poster,
-    teaser: { gif: FILES.gif, gifMB: MB(fs.statSync(FILES.gif).size), mp4: FILES.teaser, mp4MB: MB(fs.statSync(FILES.teaser).size), seconds: FIN.teaser.seconds },
+    teaser: { gif: FILES.gif, gifMB: MB(fs.statSync(FILES.gif).size), mp4: FILES.teaser, mp4MB: MB(fs.statSync(FILES.teaser).size), seconds: Number(FIN.teaser.seconds.toFixed(1)) },
     probes,
     frames,
   };
