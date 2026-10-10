@@ -16,10 +16,10 @@ import { ArrowRight, CheckCircle2, CircleDashed, ListPlus, Play, Plus, Square, T
 import { BATCH_CONCURRENCY } from "../../../config.public";
 import { formatUkDate } from "../../../core/dates";
 import type { EpisodeSummary, FormDefinition, PatientSummary } from "../../../core/types";
-import { api } from "../../api-client";
+import { api, passcodeVerifier } from "../../api-client";
 import { useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
-import { getPasscode, saveReport, useForms } from "../../store";
+import { saveReport, useForms } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
 import { Button, Skeleton, cn } from "../../primitives";
 import { generateReport } from "../../components/new/generate";
@@ -148,7 +148,10 @@ function SimulatedBatchScreen() {
             client: api,
             data,
             target: { kind: "form", form },
-            livePossible: Boolean(getPasscode()),
+            // Only a passcode the server accepted on this page load (ui/passcode-check.ts), re-confirmed before the
+            // item's drafting starts (items running at once share one check).
+            livePossible: Boolean(passcodeVerifier.verifiedPasscode()),
+            confirmLive: () => passcodeVerifier.reconfirm(),
             concurrency: 1,
             signal: controller.signal,
             actor: "Batch",

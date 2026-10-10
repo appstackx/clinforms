@@ -63,6 +63,7 @@ const LINE_SAMPLE = { sectionKeys: ["F-09"], mode: "demo_prewritten", at: "2026-
 /** Arguments for every wording function (by path). A model id or an AI_* code is passed wherever one can reach the text. */
 const CALLS: Record<string, unknown[][]> = {
   "mode.ariaLabel": [["Demo mode"]],
+  "mode.passcodeLocked": [[1], [10]],
   "drafting.liveProgress": [[10], [1], []],
   "drafting.groupDone": [["live", MODEL], ["demo_recorded", MODEL], ["demo_prewritten"], [undefined]],
   "drafting.activityDrafted": [[["F-07", "F-08"], "live", MODEL], [["F-07"], "demo_recorded", MODEL], [["F-09"], "demo_prewritten"]],
@@ -139,6 +140,10 @@ test("the guide's wording is used where the owner set it", () => {
   assert.equal(WORDING.mode.live, "Live drafting");
   assert.equal(WORDING.mode.demo, "Demo mode");
   assert.equal(WORDING.mode.passcodeLabel, "Live drafting passcode");
+  // The passcode dialog's messages (POST /passcode/check), as the owner asked for them.
+  assert.equal(WORDING.mode.passcodeNotRecognised, "Passcode not recognised");
+  assert.equal(WORDING.mode.passcodeLocked(4), "Too many attempts – try again in 4 minutes");
+  assert.equal(WORDING.mode.passcodeLocked(1), "Too many attempts – try again in 1 minute");
   assert.equal(WORDING.origin.drafted, "Draft");
   assert.equal(WORDING.drafting.liveProgress(10), "Drafting answers from 10 notes…");
   assert.equal(WORDING.generation.live("17 s"), "Drafted from the notes in 17 s");

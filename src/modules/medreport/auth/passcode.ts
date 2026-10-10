@@ -13,7 +13,8 @@ import "server-only";
  *
  * The limiter is in memory, per serverless instance: a soft cap for a demo, not a security boundary.
  * Wrong passcodes are counted too: 5 per client and 30 per instance in 10 minutes, then 429 – so the
- * passcode cannot be guessed at request speed. Use a long random passcode (16+ characters).
+ * passcode cannot be guessed at request speed. The passcode must be 16+ characters (config.server.ts
+ * MIN_LIVE_PASSCODE_LENGTH – a shorter one counts as not configured); use a long random one.
  *
  * Wave 2: the handlers use the SHARED variants at the end of this file (checkLivePasscodeShared,
  * takeDemoLiveCalls): the same limits counted in MedreportDeps.sharedState (database `rate_limits`), so
@@ -26,7 +27,7 @@ import { getLivePasscode } from "../config.server";
 import { HEADERS } from "../api/contract";
 import type { MedreportDeps } from "../api/deps";
 import { timingSafeEqualString } from "../api/http";
-import { countHit, peekCount, resetKey, subjectKey, takeSlots } from "./shared-limits";
+import { countHit, resetKey, subjectKey, takeSlots } from "./shared-limits";
 
 export type PasscodeCheck =
   | { ok: true }
@@ -44,12 +45,61 @@ const instanceFailures: number[] = [];
 /**
  * The client a request comes from, for counting failures: the first X-Forwarded-For hop (set by the
  * platform on Vercel), else "unknown". On a self-hosted server that header can be forged, which is why
- * failures are also capped for the whole instance.
+ * failures are also capped for the whole instance. An IPv6 address counts as its /64 network (one
+ * subscriber's or one LAN's addresses: rotating within it gains no extra guesses); an IPv4-mapped IPv6
+ * address counts as its IPv4 address.
  */
 export function clientKey(req: Request): string {
   const xff = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const real = req.headers.get("x-real-ip")?.trim();
-  return (xff || real || "unknown").slice(0, 64);
+  return clientSubject(xff || real || "unknown").slice(0, 64);
+}
+
+/** An address as a counter subject: IPv6 → its /64 prefix ("2001:db8:1:2::/64"); anything else as given. */
+export function clientSubject(raw: string): string {
+  let a = raw.trim().toLowerCase();
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(a);
+  if (bracketed) a = bracketed[1];
+  if (!a.includes(":")) return a;
+  a = a.replace(/%.*$/, ""); // zone id
+  const groups = ipv6Groups(a);
+  if (!groups) return a;
+  // IPv4-mapped (::ffff:192.0.2.1): the IPv4 client.
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    return [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join(".");
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(":")}::/64`;
+}
+
+/** The eight 16-bit groups of an IPv6 address (with "::" and an embedded IPv4 tail), or null when it is not one. */
+function ipv6Groups(address: string): number[] | null {
+  const halves = address.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (part === "") return [];
+    const out: number[] = [];
+    const list = part.split(":");
+    for (let i = 0; i < list.length; i++) {
+      const g = list[i];
+      const v4 = i === list.length - 1 ? /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(g) : null;
+      if (v4) {
+        const b = v4.slice(1).map(Number);
+        if (b.some((n) => n > 255)) return null;
+        out.push((b[0] << 8) | b[1], (b[2] << 8) | b[3]);
+      } else if (/^[0-9a-f]{1,4}$/.test(g)) out.push(parseInt(g, 16));
+      else return null;
+    }
+    return out;
+  };
+  const head = parse(halves[0]);
+  const tail = halves.length === 2 ? parse(halves[1]) : [];
+  if (!head || !tail) return null;
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
+  return [...head, ...Array.from({ length: missing }, () => 0), ...tail];
 }
 
 function recent(list: number[], now: number): number[] {
@@ -87,8 +137,12 @@ export function checkLivePasscode(req: Request, nowMs: number = Date.now()): Pas
   const mine = lockedFor(key, nowMs, "client");
   if (mine > 0) return { ok: false, reason: "locked", retryAfterSeconds: mine };
   // Fix wave 2: the instance-wide cap throttles wrong guesses only – other clients' guesses never lock out a
-  // presenter holding the right passcode.
-  if (timingSafeEqualString(given.trim(), configured)) return { ok: true };
+  // presenter holding the right passcode. The right passcode clears this client's wrong guesses (only its
+  // holder can), as on the shared path below.
+  if (timingSafeEqualString(given.trim(), configured)) {
+    failuresByClient.delete(key);
+    return { ok: true };
+  }
   const all = lockedFor(key, nowMs, "all");
   if (all > 0) return { ok: false, reason: "locked", retryAfterSeconds: all };
   recordFailure(key, nowMs);
@@ -196,6 +250,12 @@ const DEMO_LIVE_KEY = "demo:live-calls";
 /**
  * checkLivePasscode() with its wrong-guess counters shared by every instance (5 per client, 30 in all,
  * per 10-minute window). In-memory (checkLivePasscode) when there is no shared store.
+ *
+ * Every attempt is counted BEFORE the compare, with one atomic upsert (countHit) that returns this attempt's
+ * own count: guesses sent at the same time each get a different count, so at most PASSCODE_FAILURES_PER_CLIENT
+ * of them per window are ever compared – a burst cannot slip past the limit by reading the counter before
+ * any of them added to it. The right passcode then clears the client's counter (only the passcode's holder can,
+ * so a presenter's own live calls never add up to a lock-out); a wrong one is also counted for the deployment.
  */
 export async function checkLivePasscodeShared(req: Request, deps: MedreportDeps, nowMs: number = Date.now()): Promise<PasscodeCheck> {
   if (!deps.sharedState) return checkLivePasscode(req, nowMs);
@@ -204,21 +264,18 @@ export async function checkLivePasscodeShared(req: Request, deps: MedreportDeps,
   const given = req.headers.get(HEADERS.passcode);
   if (!given || !given.trim()) return { ok: false, reason: "missing" };
   const clientCounter = passcodeFailClientKey(req);
-  const [mine, all] = await Promise.all([
-    peekCount(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
-    peekCount(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
-  ]);
   const lockedUntil = (w: { resetAtMs: number }): PasscodeCheck => ({ ok: false, reason: "locked", retryAfterSeconds: Math.max(1, Math.ceil((w.resetAtMs - nowMs) / 1000)) });
+  const mine = await countHit(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs);
   // This client's own wrong guesses lock it out, even for the right passcode (guessing gains nothing).
-  if (mine.count >= PASSCODE_FAILURES_PER_CLIENT) return lockedUntil(mine);
+  if (mine.count > PASSCODE_FAILURES_PER_CLIENT) return lockedUntil(mine);
   // Fix wave 2: the deployment-wide cap throttles wrong guesses only – other clients' guesses never lock out a
-  // presenter holding the right passcode (the passcode is 16+ random characters).
-  if (timingSafeEqualString(given.trim(), configured)) return { ok: true };
-  if (all.count >= PASSCODE_FAILURES_PER_INSTANCE) return lockedUntil(all);
-  await Promise.all([
-    countHit(deps, clientCounter, PASSCODE_FAILURE_WINDOW_MS, nowMs),
-    countHit(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs),
-  ]);
+  // presenter holding the right passcode (the passcode is 16+ characters: config.server.ts MIN_LIVE_PASSCODE_LENGTH).
+  if (timingSafeEqualString(given.trim(), configured)) {
+    await resetKey(deps, clientCounter);
+    return { ok: true };
+  }
+  const all = await countHit(deps, PASSCODE_FAIL_ALL_KEY, PASSCODE_FAILURE_WINDOW_MS, nowMs);
+  if (all.count > PASSCODE_FAILURES_PER_INSTANCE) return lockedUntil(all);
   return { ok: false, reason: "invalid" };
 }
 
