@@ -169,8 +169,8 @@ A clearly fictional clinic on the live site holds the same demonstration: **"Riv
 (`riverside-demo`), the six insurer forms + the portal set confirmed, and Rebecca Lane's four **draft** reports (Bupa
 22 of 22 answered, AXA with Bupa's numbers held back, Allianz, portal set) – the same answers as the laptop demo.
 
-**Set it up once, yourself** (production write = your call; not on Monday evening – do it before the rehearsal), from the
-branch `ops/red-live-backup` (worktree `~/Projects/Appstackx/clinforms-wt/red-backup`):
+**Set up on production on 10/10 at 22:14 UTC** (your go; checks green – nothing more to run). For reference, the
+commands, from the branch `ops/red-live-backup` (worktree `~/Projects/Appstackx/clinforms-wt/red-backup`):
 ```bash
 cd ~/Projects/Appstackx/clinforms-wt/red-backup && A=~/Projects/Appstackx/clinforms/demo-assets/insurers
 npm run admin:seed-demo-clinic -- --env production --owner-email khuram@appstackx.co.uk --maps-dir $A/maps --pdf-dir $A

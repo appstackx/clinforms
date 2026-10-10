@@ -57,10 +57,10 @@ Update this file at the end of every session (status, blockers, what changed).
      (prefill) → ask for 2–3 blank forms.
   3. Confirm RED's practice system if possible (if not TM3, avoid the home page); decide the price line (§A Q4).
   4. Don't send Daniel clinforms.co.uk as "the demo" (call pack); whether to follow up with the `/demo` video is Khuram's call.
-- **Live-site backup (built 10/10, D65; Khuram runs it):** call pack §2.7. From `~/Projects/Appstackx/clinforms-wt/red-backup`
-  (branch `ops/red-live-backup`, pushed, NOT merged): `npm run admin:seed-demo-clinic -- --env production --owner-email
-  khuram@appstackx.co.uk --maps-dir <assets>/maps --pdf-dir <assets>` (dry run OK 10/10), then `--confirm --yes` – before
-  Monday evening. Limits on the live backup: no "Write in my own voice" (Khuram ≠ Sarah Reid), no approval (no HCPC),
+- **Live-site backup – SEEDED on production 10/10 22:14 UTC (D65):** call pack §2.7. Khuram signs in at clinforms.co.uk →
+  Choose a clinic → "Riverside Physiotherapy (fictional)". Branch `ops/red-live-backup` (worktree
+  `~/Projects/Appstackx/clinforms-wt/red-backup`, NOT merged) holds the script; after a rehearsal put the drafts back with
+  `… --refresh-reports --confirm --yes` (not Monday evening). Reports untouched for 30 days are deleted (~9 Nov). Limits on the live backup: no "Write in my own voice" (Khuram ≠ Sarah Reid), no approval (no HCPC),
   new uploads draft live. After the call: offboard `riverside-demo` or keep it; decide whether to merge the branch (the
   JSON import's insurer fields are a small product change).
 - **After the call:** record Daniel's answers in `memory/projects/red-physiotherapy.md` §7 + `decisions.md`; then the
