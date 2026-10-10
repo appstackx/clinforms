@@ -13,6 +13,14 @@ export {
   type DataCryptoErrorCode,
   type Keyring,
 } from "./envelope";
+export {
+  KEY_FINGERPRINT_LABEL,
+  KEY_FINGERPRINT_PATTERN,
+  keyFingerprint,
+  keyringFingerprints,
+  type KeyFingerprint,
+  type KeyringFingerprints,
+} from "./fingerprint";
 
 let cached: { keys: string | undefined; kid: string | undefined; cipher: DataCipher } | undefined;
 
