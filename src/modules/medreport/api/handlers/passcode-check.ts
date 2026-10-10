@@ -19,8 +19,10 @@ import "server-only";
  *   403 ORIGIN_NOT_ALLOWED              a cross-site request (bindHandler, like every POST)
  *
  * The check is ai/live-gate.ts checkDemoPasscode() – the very path every live request of the demo takes, with
- * the same wrong-guess counters (5 per client, 30 for the deployment, per 10 minutes; shared by every instance
- * via MedreportDeps.sharedState), so this endpoint allows no faster guessing than POST /drafts already does.
+ * the same wrong-guess counters (5 per client – an IPv6 client by its /64 – and 30 for the deployment, per 10
+ * minutes; shared by every instance via MedreportDeps.sharedState; each attempt counted BEFORE the compare, so
+ * guesses sent at once are bounded too), so this endpoint allows no faster guessing than POST /drafts already
+ * does. A passcode shorter than 16 characters is never configured (config.server.ts MIN_LIVE_PASSCODE_LENGTH).
  * It takes NO live-call slot and calls no drafting service. Logs carry the outcome only, never the passcode.
  *
  * Owner: API slice.

@@ -16,7 +16,7 @@ import { sha256HexBytes } from "../../../core/fingerprint";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
-import { ApiError, api, saveBlob, toBase64, type FileDownload } from "../../api-client";
+import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
 import { flushStore } from "../../store";
 import type { HostHooks } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
@@ -304,6 +304,9 @@ export function useReviewActions(opts: {
       if (groups.length === 0) return;
       setDraftFailures((list) => list.filter((f) => !f.keys.some((k) => wanted.has(k))));
       setDraftingKeys((prev) => new Set(Array.from(prev).concat(groups.flat())));
+      // The demo's live passcode is re-confirmed before the groups go out at once (ui/passcode-check.ts reconfirm):
+      // one refused (rotated) is removed here, so the groups go in demo mode and cost no wrong guesses.
+      if (prefer === "auto" && passcodeVerifier.verifiedPasscode()) await passcodeVerifier.reconfirm();
       const queue = groups.slice();
       const worker = async () => {
         while (queue.length > 0) {

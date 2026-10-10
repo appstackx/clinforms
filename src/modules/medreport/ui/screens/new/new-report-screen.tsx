@@ -90,7 +90,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
   const hooks = useHostHooks();
   const paths = useStudioPaths();
   const tenant = useStudioMode() === "tenant";
-  const { expectLive, livePossible } = useAiMode();
+  const { expectLive, livePossible, confirmLive } = useAiMode();
   const { forms, ready: formsReady } = useForms();
   const [step, setStep] = useState<Step>(1);
   const [launch, setLaunch] = useState<LaunchState>(launchToken ? { status: "verifying" } : { status: "none" });
@@ -179,6 +179,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         // when this member cannot sign – in the third person, so whichever clinician approves, "I" is theirs.
         ...(tenant && !clinician ? { author: tenantAuthor(hooks.member) } : {}),
         livePossible: livePossible(),
+        confirmLive,
         concurrency: 3,
         signal: controller.signal,
         onReport: (report) => {

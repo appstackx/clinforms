@@ -6,8 +6,9 @@
  * - otherwise, in demo AI mode, the FIXED public demo constant from config.ts is used;
  * - otherwise (a live deployment with the secret missing) the secret is "not configured" → null.
  *
- * "Demo AI mode" = MEDREPORT_AI_MODE is "demo", or ANTHROPIC_API_KEY / MEDREPORT_LIVE_PASSCODE is unset
- * (same rule as the module's resolveAiMode()). Values are read at call time and never logged.
+ * "Demo AI mode" = MEDREPORT_AI_MODE is "demo", or ANTHROPIC_API_KEY / MEDREPORT_LIVE_PASSCODE is unset, or
+ * the passcode is shorter than 16 characters (same rule as the module's resolveAiMode() and its
+ * MIN_LIVE_PASSCODE_LENGTH). Values are read at call time and never logged.
  *
  * Only server code (route handlers, server actions) imports this file.
  *
@@ -22,10 +23,14 @@ function env(name: string): string | undefined {
   return value && value.trim() !== "" ? value.trim() : undefined;
 }
 
-/** Same rule as the module's resolveAiMode(): live only with mode ≠ demo, an API key and a passcode. */
+/** The module's MIN_LIVE_PASSCODE_LENGTH (config.server.ts): a shorter passcode counts as not configured. */
+const MIN_LIVE_PASSCODE_LENGTH = 16;
+
+/** Same rule as the module's resolveAiMode(): live only with mode ≠ demo, an API key and a 16+ character passcode. */
 export function sandboxDemoMode(): boolean {
   const mode = env("MEDREPORT_AI_MODE")?.toLowerCase();
-  const live = mode !== "demo" && env("ANTHROPIC_API_KEY") !== undefined && env("MEDREPORT_LIVE_PASSCODE") !== undefined;
+  const passcode = env("MEDREPORT_LIVE_PASSCODE");
+  const live = mode !== "demo" && env("ANTHROPIC_API_KEY") !== undefined && passcode !== undefined && passcode.length >= MIN_LIVE_PASSCODE_LENGTH;
   return !live;
 }
 

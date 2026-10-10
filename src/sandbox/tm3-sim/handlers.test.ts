@@ -127,9 +127,17 @@ describe("auth", () => {
   it("does not fall back to the demo token outside demo mode", async () => {
     delete process.env.TM3_SIM_TOKEN;
     process.env.ANTHROPIC_API_KEY = "x";
-    process.env.MEDREPORT_LIVE_PASSCODE = "y";
+    process.env.MEDREPORT_LIVE_PASSCODE = "y".repeat(16);
     const res = await simListPatients(get("/patients", DEMO_FALLBACKS.TM3_SIM_TOKEN), ctx());
     assert.equal(res.status, 503);
+  });
+
+  it("a passcode shorter than 16 characters is demo mode, as in the module (config.server.ts MIN_LIVE_PASSCODE_LENGTH)", async () => {
+    delete process.env.TM3_SIM_TOKEN;
+    process.env.ANTHROPIC_API_KEY = "x";
+    process.env.MEDREPORT_LIVE_PASSCODE = "y".repeat(15);
+    const ok = await simListPatients(get("/patients", DEMO_FALLBACKS.TM3_SIM_TOKEN), ctx());
+    assert.equal(ok.status, 200);
   });
 
   it("does not accept the demo token when a real token is configured", async () => {

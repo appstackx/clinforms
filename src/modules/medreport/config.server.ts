@@ -119,14 +119,47 @@ export function hasAnthropicKey(): boolean {
   return env("ANTHROPIC_API_KEY") !== undefined;
 }
 
-/** Whether a live-AI passcode is configured (its value is never exposed). */
-export function hasLivePasscode(): boolean {
-  return env("MEDREPORT_LIVE_PASSCODE") !== undefined;
+/**
+ * The shortest MEDREPORT_LIVE_PASSCODE accepted. The passcode is all that stands between the public demo and
+ * live drafting on this deployment's API key, and wrong guesses are only rate limited (auth/passcode.ts), so a
+ * shorter one counts as NOT configured: live drafting stays off and the server log says why (once).
+ * The sandbox repeats this rule (src/sandbox/tm3-sim/server-config.ts).
+ */
+export const MIN_LIVE_PASSCODE_LENGTH = 16;
+
+let warnedShortPasscode = false;
+
+/** MEDREPORT_LIVE_PASSCODE (trimmed) when it is set and long enough, else undefined. */
+function livePasscodeSetting(): string | undefined {
+  const value = env("MEDREPORT_LIVE_PASSCODE");
+  if (value === undefined || value.length >= MIN_LIVE_PASSCODE_LENGTH) return value;
+  if (!warnedShortPasscode) {
+    warnedShortPasscode = true;
+    // Same one-line JSON shape as api/http.ts logEvent(); never the value or its length.
+    console.warn(
+      JSON.stringify({
+        at: new Date().toISOString(),
+        svc: "medreport",
+        event: "config.live_passcode_too_short",
+        minLength: MIN_LIVE_PASSCODE_LENGTH,
+        effect: "live drafting off for the public demo",
+      }),
+    );
+  }
+  return undefined;
 }
 
 /**
- * Live drafting is available when the mode is not forced to "demo" AND an API key AND a passcode
- * are configured. ("live" cannot be honoured without a key, so it then degrades to demo.)
+ * Whether a usable live-AI passcode is configured: set, and at least MIN_LIVE_PASSCODE_LENGTH characters (its
+ * value is never exposed).
+ */
+export function hasLivePasscode(): boolean {
+  return livePasscodeSetting() !== undefined;
+}
+
+/**
+ * Live drafting is available when the mode is not forced to "demo" AND an API key AND a passcode (16+
+ * characters) are configured. ("live" cannot be honoured without a key, so it then degrades to demo.)
  */
 export function liveAiAvailable(): boolean {
   return aiModeSetting() !== "demo" && hasAnthropicKey() && hasLivePasscode();
@@ -185,9 +218,12 @@ export function signingKey(purpose: "receipt" | "form-confirmation" | "file-toke
   return purpose === "receipt" ? secret : createHmac("sha256", secret).update(`appstackx-reports:${purpose}:v1`, "utf8").digest("base64url");
 }
 
-/** The live-AI passcode, or null when none is configured. Compare with timingSafeEqualString only. */
+/**
+ * The live-AI passcode, or null when none is configured (or it is shorter than MIN_LIVE_PASSCODE_LENGTH).
+ * Compare with timingSafeEqualString only.
+ */
 export function getLivePasscode(): string | null {
-  return env("MEDREPORT_LIVE_PASSCODE") ?? null;
+  return livePasscodeSetting() ?? null;
 }
 
 /**

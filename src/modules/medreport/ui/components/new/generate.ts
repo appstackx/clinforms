@@ -74,6 +74,12 @@ export interface GenerateInput {
    * clinician.
    */
   livePossible?: boolean;
+  /**
+   * Called once before the first /drafts call when `livePossible`: the server re-confirms that live drafting is
+   * still possible (the demo's passcode – ui/passcode-check.ts reconfirm). False → the run goes as with
+   * `livePossible` false. A rotated passcode then costs one wrong guess instead of one per group sent at once.
+   */
+  confirmLive?: () => Promise<boolean>;
   /** Concurrent /drafts calls (wizard: 3; batch: 1 per item). */
   concurrency?: number;
   signal?: AbortSignal;
@@ -98,6 +104,12 @@ export const RATE_LIMIT_WAIT_MS = 12_000;
 function isRateLimited(err: unknown): boolean {
   const e = err as { status?: unknown; code?: unknown } | null;
   return !!e && e.status === 429 && e.code === "RATE_LIMITED";
+}
+
+/** 401 PASSCODE_INVALID / PASSCODE_REQUIRED: the live passcode was refused (e.g. rotated since it was checked). */
+function isPasscodeRefused(err: unknown): boolean {
+  const e = err as { status?: unknown; code?: unknown } | null;
+  return !!e && e.status === 401 && (e.code === "PASSCODE_INVALID" || e.code === "PASSCODE_REQUIRED");
 }
 
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -175,14 +187,27 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
   const emit = () => input.onProgress?.(groups.map((g) => ({ ...g })));
   emit();
 
+  // Live drafting expected: the server re-confirms it first (one request; see GenerateInput.confirmLive).
+  let livePossible = Boolean(input.livePossible);
+  if (livePossible && input.confirmLive) livePossible = await input.confirmLive().catch(() => true);
+
   // Demo mode without a demo draft for this patient and form: nothing to fetch.
   const demo = input.data.demoDrafts;
   const demoCovered = form ? demo?.formSha256s.includes(form.file.sha256) : demo?.templateIds.includes(report.templateId);
-  if (!input.livePossible && demo && !demoCovered) {
+  if (!livePossible && demo && !demoCovered) {
     return finish(
       groups.map(() => ({ ok: false, error: Object.assign(new Error(NO_DEMO_DRAFT_MESSAGE), { code: NO_DEMO_DRAFT_CODE }) })),
     );
   }
+
+  /**
+   * The first refusal of the live passcode in this run (401 – rotated after the check above). From then on no
+   * group asks for live drafting again: each one – the refused ones once more – asks for the demo answers where
+   * this deployment holds them (prefer "demo": no passcode is checked, so no further wrong guess is counted);
+   * otherwise it fails with the refusal, without another request.
+   */
+  let passcodeRefusal: unknown = null;
+  const demoMayAnswer = !demo || Boolean(demoCovered);
 
   const results = await runPool(
     groups,
@@ -203,11 +228,20 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
         ...(form && report.author ? { author: report.author } : {}),
       };
       let res;
+      let demoRetried = false;
       for (let attempt = 1; ; attempt++) {
         try {
-          res = await input.client.drafts(request, { signal: input.signal });
+          if (passcodeRefusal !== null) {
+            if (!demoMayAnswer) throw passcodeRefusal;
+            demoRetried = true;
+            res = await input.client.drafts({ ...request, prefer: "demo" }, { signal: input.signal });
+          } else {
+            res = await input.client.drafts(request, { signal: input.signal });
+          }
           break;
         } catch (err) {
+          if (isPasscodeRefused(err) && passcodeRefusal === null) passcodeRefusal = err;
+          if (isPasscodeRefused(err) && demoMayAnswer && !demoRetried && !input.signal?.aborted) continue;
           if (!isRateLimited(err) || attempt >= RATE_LIMIT_ATTEMPTS || input.signal?.aborted) throw err;
           group.waitingForSlot = true;
           emit();

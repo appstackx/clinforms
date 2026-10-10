@@ -193,7 +193,7 @@ options rather than merging them, so the script writes one full pattern list per
 | `ANTHROPIC_API_KEY` | Live drafting and live form analysis. Without it the deployment runs in demo mode |
 | `MEDREPORT_MODEL` | Optional Claude model for the live calls. Default `claude-sonnet-5-5`; allowed: the allow-list in `config.server.ts` (`claude-sonnet-5-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-opus-4-8`). Anything else is ignored with a `config.model_rejected` warning in the server log. See "Model and effort" |
 | `MEDREPORT_AI_MODE` | `auto` (default), `demo` or `live`. Live needs both the key and the passcode |
-| `MEDREPORT_LIVE_PASSCODE` | `x-medreport-passcode` for live calls (timing-safe compare, about 6 per minute per instance; 5 wrong guesses per client or 30 per instance in 10 minutes → 429 with `Retry-After` – `POST /passcode/check` counts in the same counters). Use 16+ random characters |
+| `MEDREPORT_LIVE_PASSCODE` | `x-medreport-passcode` for live calls (timing-safe compare, about 6 per minute per instance; 5 wrong guesses per client – an IPv6 client by its /64 – or 30 per instance in 10 minutes → 429 with `Retry-After` – `POST /passcode/check` counts in the same counters; each attempt is counted before the compare, so guesses sent at once cannot get past the limit). At least 16 characters: a shorter one counts as not set (live drafting off, one `config.live_passcode_too_short` warning in the server log). Use 16+ random characters |
 | `MEDREPORT_LAUNCH_SECRET` | HMAC secret for launch tokens (single use, `jti`) and session tokens |
 | `MEDREPORT_SIGNING_SECRET` | HMAC secret for `SignReceipt.mac`; purpose-bound keys for form-map confirmations and filed-document tokens are derived from it (`signingKey(purpose)`) |
 | `MEDREPORT_ALLOW_DEMO_SECRETS` | `1` lets a production deployment use the public demo constants for the two secrets above. Not recommended |
@@ -365,7 +365,12 @@ button while it checks, and never stores a refused passcode. A stored passcode i
 checkable (429, network) → kept but unused, with a notice. `ui/passcode-check.ts` holds the logic
 (`createPasscodeVerifier`, tested in `passcode-check.test.ts`); `api-client.ts passcodeVerifier.verifiedPasscode()` is
 the only passcode the default client sends and the only one that makes `useAiMode().expectLive` / `livePossible()`
-true. Tenant mode has no passcode and is unchanged.
+true. A live call refused for that passcode (401 – rotated while the tab was open) removes it at once (badge: demo,
+the same notice), and before a run of live calls (completing a form, a batch item, redrafting) the passcode is
+re-confirmed with one check (`reconfirm()`), so a rotation costs one wrong guess and the run goes in demo mode; groups
+refused mid-run are asked again for the demo answers (`prefer: "demo"`). A passcode with a character outside
+printable ASCII (a pasted long dash or curly quote) is refused as not recognised without a request. Tenant mode has
+no passcode and is unchanged.
 
 **Stateless:** the bundle travels inside `report.bundleSnapshot`. `/validate`, `/sign` and `/render`
 take the report alone, not a separate bundle. Form maps and the referrers' files live in the browser

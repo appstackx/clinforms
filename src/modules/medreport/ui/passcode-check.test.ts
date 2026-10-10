@@ -8,6 +8,7 @@ import { ApiError, createApiClient, retryAfterSecondsOf } from "./api-client";
 import {
   classifyPasscodeCheckError,
   createPasscodeVerifier,
+  isSendablePasscode,
   passcodeCheckMessage,
   type PasscodeCheckOutcome,
   type PasscodeVerifierDeps,
@@ -68,6 +69,8 @@ test("the dialog's messages are the neutral wording (null = accepted, the dialog
   const m = (o: PasscodeCheckOutcome) => passcodeCheckMessage(o);
   assert.equal(m({ kind: "verified" }), null);
   assert.equal(m({ kind: "invalid" }), "Passcode not recognised");
+  assert.equal(m({ kind: "unsupported" }), WORDING.mode.passcodeUnsupportedCharacters);
+  assert.match(m({ kind: "unsupported" }) ?? "", /^Passcode not recognised – .*long dash.*Type it in/);
   assert.equal(m({ kind: "locked", retryAfterSeconds: 240, minutes: 4 }), "Too many attempts – try again in 4 minutes");
   assert.equal(m({ kind: "unavailable" }), WORDING.mode.passcodeLiveUnavailable);
   assert.equal(m({ kind: "network" }), WORDING.mode.passcodeNetworkError);
@@ -231,4 +234,105 @@ test("api.checkPasscode: POST /passcode/check with the passcode in the header on
   assert.equal(retryAfterSecondsOf(null), undefined);
   assert.equal(retryAfterSecondsOf(" 30 "), 30);
   assert.equal(retryAfterSecondsOf("Wed, 21 Oct 2026 07:28:00 GMT"), undefined);
+});
+
+test("a passcode with a character no header can carry (pasted long dash, curly quote, €) is 'not recognised' without a request", async () => {
+  assert.equal(isSendablePasscode("test-only-passcode-right"), true);
+  assert.equal(isSendablePasscode("with spaces and ~!@#$%^&*()_+{}|:<>?"), true);
+  for (const odd of ["test\u2013only\u2013passcode", "\u201Cquoted\u201D-passcode", "price-\u20AC-passcode", "tab\there", "caf\u00E9-passcode"]) {
+    assert.equal(isSendablePasscode(odd), false, odd);
+    // The header itself would refuse it: this is what the check prevents.
+    if (/[^\x00-\xFF]/.test(odd)) assert.throws(() => new Headers().set("x-medreport-passcode", odd), TypeError);
+  }
+
+  const h = harness(server);
+  const outcome = await h.verifier.submit("test\u2013only\u2013passcode-right");
+  assert.deepEqual(outcome, { kind: "unsupported" });
+  assert.equal(passcodeCheckMessage(outcome), WORDING.mode.passcodeUnsupportedCharacters);
+  assert.deepEqual(h.checked, [], "nothing sent");
+  assert.equal(h.stored(), null);
+
+  // One stored by an older Studio (which kept any passcode): refused unsent on page load, removed, notice.
+  const old = harness(server, "test\u2013only\u2013passcode-right");
+  assert.deepEqual(await old.verifier.recheckStored(), { status: "none", notice: "rejected" });
+  assert.deepEqual(old.checked, []);
+  assert.equal(old.stored(), null);
+});
+
+test("reject(): a live call refused the VERIFIED passcode → removed, demo mode, 'rejected'; any other passcode changes nothing", async () => {
+  const h = harness(server);
+  assert.deepEqual(await h.verifier.submit(RIGHT), { kind: "verified" });
+  const changes: string[] = [];
+  h.verifier.subscribe(() => changes.push(h.verifier.getState().status));
+
+  assert.equal(h.verifier.reject("a-wrong-guess-typed-in-the-dialog"), false);
+  assert.equal(h.verifier.verifiedPasscode(), RIGHT, "a refused dialog guess never clears the verified passcode");
+  assert.deepEqual(changes, []);
+
+  assert.equal(h.verifier.reject(RIGHT), true);
+  assert.equal(h.verifier.verifiedPasscode(), null);
+  assert.deepEqual(h.verifier.getState(), { status: "none", notice: "rejected" });
+  assert.equal(h.stored(), null);
+  assert.deepEqual(changes, ["none"]);
+  assert.equal(h.verifier.reject(RIGHT), false, "only once");
+
+  // A stored but unverified passcode (page-load check pending) is not the client's to reject.
+  const pending = harness(server, RIGHT);
+  assert.equal(pending.verifier.reject(RIGHT), false);
+  assert.equal(pending.stored(), RIGHT);
+});
+
+test("reconfirm(): one check before a run of live calls; refused (rotated) → removed and false; concurrent callers share it", async () => {
+  // Nothing verified: false, no request.
+  const none = harness(server, RIGHT);
+  assert.equal(await none.verifier.reconfirm(), false);
+  assert.deepEqual(none.checked, []);
+
+  // Accepted: true; calls at the same time share one request.
+  let accept = true;
+  const h = harness((passcode) => {
+    if (!accept || passcode !== RIGHT) throw problemError(401, "PASSCODE_INVALID");
+  });
+  assert.deepEqual(await h.verifier.submit(RIGHT), { kind: "verified" });
+  h.checked.length = 0;
+  assert.deepEqual(await Promise.all([h.verifier.reconfirm(), h.verifier.reconfirm()]), [true, true]);
+  assert.deepEqual(h.checked, [RIGHT], "one request");
+  assert.equal(await h.verifier.reconfirm(), true);
+  assert.equal(h.checked.length, 2, "a later run checks again");
+
+  // Rotated on the server: false, removed, notice – and from then on nothing to send.
+  accept = false;
+  assert.equal(await h.verifier.reconfirm(), false);
+  assert.deepEqual(h.verifier.getState(), { status: "none", notice: "rejected" });
+  assert.equal(h.verifier.verifiedPasscode(), null);
+  assert.equal(await h.verifier.reconfirm(), false);
+  assert.equal(h.checked.length, 3, "no request without a verified passcode");
+
+  // Could not tell (network, lock-out, server error): true, kept – the live calls decide, as before. 503: false.
+  for (const [err, expected] of [
+    [problemError(0, "NETWORK_ERROR"), true],
+    [problemError(429, "RATE_LIMITED", 60), true],
+    [problemError(500, "INTERNAL"), true],
+    [problemError(503, "LIVE_AI_UNAVAILABLE"), false],
+  ] as const) {
+    let fail = false;
+    const v = harness(() => {
+      if (fail) throw err;
+    });
+    await v.verifier.submit(RIGHT);
+    fail = true;
+    assert.equal(await v.verifier.reconfirm(), expected, err.code);
+    assert.equal(v.verifier.verifiedPasscode(), RIGHT, `${err.code}: kept`);
+  }
+
+  // "Switch to demo mode" while the check runs: false.
+  let release!: () => void;
+  const slow = harness(() => new Promise<void>((resolve) => (release = resolve)));
+  const first = slow.verifier.submit(RIGHT);
+  release();
+  await first;
+  const run = slow.verifier.reconfirm();
+  slow.verifier.clear();
+  release();
+  assert.equal(await run, false);
 });

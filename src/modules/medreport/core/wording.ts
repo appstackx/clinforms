@@ -67,6 +67,8 @@ export interface Wording {
     passcodeChecking: string;
     /** 401: the server did not accept the passcode (owner's wording). */
     passcodeNotRecognised: string;
+    /** The passcode has a character no passcode has (e.g. a long dash or curly quote from pasting): not sent. */
+    passcodeUnsupportedCharacters: string;
     /** 429: too many wrong passcodes from this browser (owner's wording). */
     passcodeLocked(minutes: number): string;
     /** 503: this deployment has no live drafting. */
@@ -493,6 +495,8 @@ const NEUTRAL: Wording = {
     passcodeHint: "Checked by the server before it is kept. Live drafting is rate limited. Fictional data only.",
     passcodeChecking: "Checking…",
     passcodeNotRecognised: "Passcode not recognised",
+    passcodeUnsupportedCharacters:
+      "Passcode not recognised – it contains a character a passcode never has, such as a long dash or a curly quote. Type it in rather than pasting it.",
     passcodeLocked: (minutes) => `Too many attempts – try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}`,
     passcodeLiveUnavailable: "Live drafting is not available on this deployment",
     passcodeNetworkError: "Could not reach the server to check the passcode. Check your connection and try again.",
@@ -687,6 +691,8 @@ const AI_ASSISTED: Wording = {
     passcodeHint: "Checked by the server before it is kept. Live AI is rate limited. Fictional data only.",
     passcodeChecking: "Checking…",
     passcodeNotRecognised: "Passcode not recognised",
+    passcodeUnsupportedCharacters:
+      "Passcode not recognised – it contains a character a passcode never has, such as a long dash or a curly quote. Type it in rather than pasting it.",
     passcodeLocked: (minutes) => `Too many attempts – try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}`,
     passcodeLiveUnavailable: "Live AI is not available on this deployment",
     passcodeNetworkError: "Could not reach the server to check the passcode. Check your connection and try again.",

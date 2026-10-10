@@ -86,6 +86,12 @@ export interface AiModeState {
    * needs a passcode the server accepted; a clinic's Studio needs drafting switched on for the clinic.
    */
   livePossible(): boolean;
+  /**
+   * Just before a run of live calls (completing a form): livePossible(), and in the demo the server re-confirms
+   * the passcode first (ui/passcode-check.ts reconfirm – one request, no live call). A passcode refused since it
+   * was checked (rotated) is removed and the run goes in demo mode – one wrong guess, not one per drafting group.
+   */
+  confirmLive(): Promise<boolean>;
 }
 
 /** /health plus the passcode's check, kept in sync with the store. */
@@ -116,6 +122,7 @@ export function useAiMode(): AiModeState {
     passcodeStatus: tenant ? "none" : passcode.status,
     expectLive: Boolean(health?.liveAiAvailable && (tenant ? tenantDrafting : verified)),
     livePossible: () => (tenant ? tenantDrafting : Boolean(passcodeVerifier.verifiedPasscode())),
+    confirmLive: () => (tenant ? Promise.resolve(tenantDrafting) : passcodeVerifier.reconfirm()),
   };
 }
 

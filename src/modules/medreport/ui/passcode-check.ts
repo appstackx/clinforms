@@ -12,6 +12,14 @@
  *   this deployment) leaves it unverified without a notice – the badge already says demo mode.
  * - verifiedPasscode(): the stored passcode only when the server accepted it on this page load. It is the only
  *   passcode the default API client sends, and the only one that makes the badge show live drafting.
+ * - reject(passcode): a live call that carried the verified passcode was refused (401 – e.g. the passcode was
+ *   rotated while this tab was open): it is removed, the badge returns to demo mode and the notice "rejected" is
+ *   raised, so no later call sends it again (api-client.ts calls this).
+ * - reconfirm(): before a run of live calls (completing a form, a batch, redrafting), the verified passcode is
+ *   checked once more – one request, no live call – so a rotated passcode costs one wrong guess, not one per
+ *   drafting group, and the run goes in demo mode instead of failing.
+ * - A passcode with a character outside printable ASCII (a long dash or curly quote pasted from an e-mail) can
+ *   never be sent in a request header: it is refused as not recognised without a request.
  *
  * Tenant mode (a clinic's own Studio) has no passcode and never uses this.
  *
@@ -25,6 +33,8 @@ export type PasscodeCheckOutcome =
   | { kind: "invalid" }
   /** 401 PASSCODE_REQUIRED (nothing typed) */
   | { kind: "required" }
+  /** A character no passcode has (outside printable ASCII, e.g. a long dash or curly quote): nothing was sent. */
+  | { kind: "unsupported" }
   /** 429: locked out after wrong passcodes; `minutes` rounded up, at least 1. */
   | { kind: "locked"; retryAfterSeconds: number; minutes: number }
   /** 503 LIVE_AI_UNAVAILABLE: no live drafting on this deployment. */
@@ -60,6 +70,14 @@ export function classifyPasscodeCheckError(err: unknown): PasscodeCheckOutcome {
   return { kind: "error" };
 }
 
+/**
+ * Whether a passcode can be sent at all: printable ASCII only (a request header cannot carry other characters,
+ * and a passcode never has them – they come from pasting text that was auto-corrected, e.g. "–" for "-").
+ */
+export function isSendablePasscode(passcode: string): boolean {
+  return /^[\x20-\x7E]+$/.test(passcode);
+}
+
 /** What the dialog shows after a check: null when the passcode was accepted (the dialog closes). */
 export function passcodeCheckMessage(outcome: PasscodeCheckOutcome): string | null {
   const w = WORDING.mode;
@@ -69,6 +87,8 @@ export function passcodeCheckMessage(outcome: PasscodeCheckOutcome): string | nu
     case "invalid":
     case "required":
       return w.passcodeNotRecognised;
+    case "unsupported":
+      return w.passcodeUnsupportedCharacters;
     case "locked":
       return w.passcodeLocked(outcome.minutes);
     case "unavailable":
@@ -115,6 +135,18 @@ export interface PasscodeVerifier {
   recheckStored(): Promise<PasscodeState>;
   /** The stored passcode when the server accepted it on this page load, else null. */
   verifiedPasscode(): string | null;
+  /**
+   * A call carrying `passcode` was refused (401 PASSCODE_INVALID / PASSCODE_REQUIRED). When it is the verified
+   * passcode, it is removed (badge: demo mode; notice "rejected"); true then. Any other passcode: nothing changes.
+   */
+  reject(passcode: string): boolean;
+  /**
+   * Check the verified passcode again (before a run of live calls; concurrent callers share one request). False
+   * when there is none, when the server now refuses it (it is removed, as reject()) or has no live drafting;
+   * true when accepted – or when the check could not tell (network, lock-out, server error): the live calls then
+   * decide, as they would without this check.
+   */
+  reconfirm(): Promise<boolean>;
   /** "Switch to demo mode": forget the passcode. */
   clear(): void;
   dismissNotice(): void;
@@ -126,6 +158,7 @@ export function createPasscodeVerifier(deps: PasscodeVerifierDeps): PasscodeVeri
   let notice: PasscodeNotice = null;
   let recheck: Promise<PasscodeState> | null = null;
   let recheckDone = false;
+  let confirming: Promise<boolean> | null = null;
   const listeners = new Set<() => void>();
 
   const stored = (): string | null => {
@@ -152,6 +185,20 @@ export function createPasscodeVerifier(deps: PasscodeVerifierDeps): PasscodeVeri
     }
   }
 
+  function verifiedPasscode(): string | null {
+    const current = stored();
+    return current && current === verified ? current : null;
+  }
+
+  function reject(passcode: string): boolean {
+    if (!passcode || passcode !== verified) return false;
+    verified = null;
+    if (stored() === passcode) deps.setStored(null);
+    notice = "rejected";
+    emit();
+    return true;
+  }
+
   return {
     getState,
 
@@ -165,6 +212,7 @@ export function createPasscodeVerifier(deps: PasscodeVerifierDeps): PasscodeVeri
     async submit(value) {
       const passcode = value.trim();
       if (!passcode) return { kind: "required" };
+      if (!isSendablePasscode(passcode)) return { kind: "unsupported" };
       try {
         await deps.check(passcode);
       } catch (err) {
@@ -188,17 +236,22 @@ export function createPasscodeVerifier(deps: PasscodeVerifierDeps): PasscodeVeri
         }
         emit(); // "checking"
         let outcome: PasscodeCheckOutcome;
-        try {
-          await deps.check(passcode);
-          outcome = { kind: "verified" };
-        } catch (err) {
-          outcome = classifyPasscodeCheckError(err);
+        if (!isSendablePasscode(passcode)) {
+          // Stored by an older Studio that kept any passcode: it can never be sent, so it is refused unsent.
+          outcome = { kind: "unsupported" };
+        } else {
+          try {
+            await deps.check(passcode);
+            outcome = { kind: "verified" };
+          } catch (err) {
+            outcome = classifyPasscodeCheckError(err);
+          }
         }
         recheckDone = true;
         // A passcode entered in the dialog meanwhile wins: only the one that was checked is acted on.
         if (stored() === passcode) {
           if (outcome.kind === "verified") verified = passcode;
-          else if (outcome.kind === "invalid" || outcome.kind === "required") {
+          else if (outcome.kind === "invalid" || outcome.kind === "required" || outcome.kind === "unsupported") {
             deps.setStored(null);
             notice = "rejected";
           } else if (outcome.kind !== "unavailable") notice = "unchecked";
@@ -209,9 +262,30 @@ export function createPasscodeVerifier(deps: PasscodeVerifierDeps): PasscodeVeri
       return recheck;
     },
 
-    verifiedPasscode() {
-      const current = stored();
-      return current && current === verified ? current : null;
+    verifiedPasscode,
+
+    reject,
+
+    reconfirm() {
+      if (confirming) return confirming;
+      const passcode = verifiedPasscode();
+      if (!passcode) return Promise.resolve(false);
+      const run = (async () => {
+        try {
+          await deps.check(passcode);
+        } catch (err) {
+          const outcome = classifyPasscodeCheckError(err);
+          if (outcome.kind === "invalid" || outcome.kind === "required") reject(passcode);
+          else if (outcome.kind === "unavailable") return false;
+        }
+        // A passcode accepted in the dialog meanwhile counts; "Switch to demo mode" meanwhile does too.
+        return verifiedPasscode() !== null;
+      })();
+      confirming = run;
+      void run.finally(() => {
+        if (confirming === run) confirming = null;
+      });
+      return run;
     },
 
     clear() {

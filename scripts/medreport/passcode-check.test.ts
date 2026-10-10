@@ -36,7 +36,14 @@ import { bindHandler, type MedreportHandler } from "@/modules/medreport/api/http
 import { takeLiveCallsFor } from "@/modules/medreport/ai/live-gate";
 import type { Actor } from "@/modules/medreport/auth/actor";
 import { withAttestedConfirmation } from "@/modules/medreport/auth/attestations";
-import { LIVE_CALLS_PER_MINUTE, PASSCODE_FAILURES_PER_CLIENT, resetLiveCallLimiter, resetPasscodeFailures } from "@/modules/medreport/auth/passcode";
+import {
+  LIVE_CALLS_PER_MINUTE,
+  PASSCODE_FAILURES_PER_CLIENT,
+  PASSCODE_FAILURES_PER_INSTANCE,
+  resetLiveCallLimiter,
+  resetPasscodeFailures,
+  resetSharedDemoCounters,
+} from "@/modules/medreport/auth/passcode";
 import { resetMemoryLimits } from "@/modules/medreport/auth/shared-limits";
 import { formTemplateId } from "@/modules/medreport/core/forms";
 import { HARROW_PIKE_FORM } from "@/modules/medreport/forms/samples/maps/harrow-pike";
@@ -261,6 +268,56 @@ describe("POST /passcode/check", () => {
       events.map((e) => e.result),
       ["ok", "invalid", "not_demo"],
     );
+  });
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Guesses sent at the same time (shared store)
+ * ----------------------------------------------------------------------------------------------*/
+
+describe("concurrent guesses on the shared store", () => {
+  beforeEach(async () => {
+    await resetSharedDemoCounters(one);
+  });
+
+  const statuses = async (responses: Promise<Response>[]) => (await Promise.all(responses)).map((r) => r.status);
+  const tally = (list: number[]) => list.reduce<Record<number, number>>((t, s) => ({ ...t, [s]: (t[s] ?? 0) + 1 }), {});
+
+  test(`50 wrong checks at once from one client: at most ${PASSCODE_FAILURES_PER_CLIENT} are compared (401), the rest are refused (429)`, async () => {
+    const ip = freshIp();
+    const got = tally(await statuses(Array.from({ length: 50 }, (_, i) => check({ passcode: `burst-guess-${i}`, ip, deps: i % 2 ? one : two }))));
+    assert.ok((got[401] ?? 0) <= PASSCODE_FAILURES_PER_CLIENT, JSON.stringify(got));
+    assert.equal((got[401] ?? 0) + (got[429] ?? 0), 50, JSON.stringify(got));
+    // Locked for the right passcode too – the burst gained nothing.
+    await expectProblem(await check({ passcode: PASSCODE, ip, deps: one }), 429, "RATE_LIMITED", "right passcode after the burst");
+  });
+
+  test("a burst of wrong live calls (POST /drafts) is bounded the same way", async () => {
+    const ip = freshIp();
+    const got = tally(await statuses(Array.from({ length: 20 }, (_, i) => liveDraft(`burst-draft-${i}`, ip, i % 2 ? one : two))));
+    assert.ok((got[401] ?? 0) <= PASSCODE_FAILURES_PER_CLIENT, JSON.stringify(got));
+    assert.equal((got[401] ?? 0) + (got[429] ?? 0), 20, JSON.stringify(got));
+  });
+
+  test(`wrong checks at once from many clients: at most ${PASSCODE_FAILURES_PER_INSTANCE} answered 401 for the deployment; the right passcode still passes`, async () => {
+    const got = tally(await statuses(Array.from({ length: PASSCODE_FAILURES_PER_INSTANCE + 15 }, (_, i) => check({ passcode: `wide-guess-${i}`, ip: freshIp(), deps: i % 2 ? one : two }))));
+    assert.ok((got[401] ?? 0) <= PASSCODE_FAILURES_PER_INSTANCE, JSON.stringify(got));
+    assert.equal((got[401] ?? 0) + (got[429] ?? 0), PASSCODE_FAILURES_PER_INSTANCE + 15, JSON.stringify(got));
+    await expectProblem(await check({ passcode: "one-more-wrong-guess", ip: freshIp(), deps: one }), 429, "RATE_LIMITED", "deployment cap");
+    // Other clients' guesses never lock out a presenter holding the right passcode (fix wave 2).
+    assert.equal((await check({ passcode: PASSCODE, ip: freshIp(), deps: two })).status, 204);
+  });
+
+  test("a presenter's own requests never add up: the right passcode clears the client's count, and calls at once all pass", async () => {
+    const ip = freshIp();
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < PASSCODE_FAILURES_PER_CLIENT - 1; i++) await expectProblem(await check({ passcode: `typo-${round}-${i}`, ip, deps: one }), 401, "PASSCODE_INVALID", `round ${round} typo ${i + 1}`);
+      assert.equal((await check({ passcode: PASSCODE, ip, deps: two })).status, 204, `round ${round}: right passcode`);
+    }
+    // The Studio's busiest moment: a check and three drafting groups at once, many times over.
+    for (let round = 0; round < 4; round++) {
+      assert.deepEqual(await statuses(Array.from({ length: 4 }, (_, i) => check({ passcode: PASSCODE, ip, deps: i % 2 ? one : two }))), [204, 204, 204, 204]);
+    }
   });
 });
 

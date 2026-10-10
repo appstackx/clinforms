@@ -148,8 +148,10 @@ function SimulatedBatchScreen() {
             client: api,
             data,
             target: { kind: "form", form },
-            // Only a passcode the server accepted on this page load (ui/passcode-check.ts).
+            // Only a passcode the server accepted on this page load (ui/passcode-check.ts), re-confirmed before the
+            // item's drafting starts (items running at once share one check).
             livePossible: Boolean(passcodeVerifier.verifiedPasscode()),
+            confirmLive: () => passcodeVerifier.reconfirm(),
             concurrency: 1,
             signal: controller.signal,
             actor: "Batch",

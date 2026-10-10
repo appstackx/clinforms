@@ -5,7 +5,9 @@
  * Attaches `Authorization: Bearer <session>` when a session token is available and
  * `x-medreport-passcode` when a passcode is provided (per call or via getPasscode()). The default `api`
  * client sends only a passcode the server accepted on this page load (`passcodeVerifier`,
- * ui/passcode-check.ts) – never one that was merely typed or stored.
+ * ui/passcode-check.ts) – never one that was merely typed or stored – and drops it as soon as a call carrying
+ * it is refused (401 PASSCODE_INVALID / PASSCODE_REQUIRED, e.g. the passcode was rotated): the badge returns to
+ * demo mode and no later call sends it again.
  * Never import the Anthropic SDK, docx or react-pdf here.
  *
  * Shared contract (orchestrator-owned): add methods only.
@@ -110,6 +112,11 @@ export interface ApiClientOptions {
    * member is recognised by the sign-in cookie, which the server prefers to any demo session).
    */
   ensureSessionToken?: () => Promise<string | null>;
+  /**
+   * A call that carried `passcode` was refused with 401 PASSCODE_INVALID or PASSCODE_REQUIRED (called before the
+   * ApiError is thrown). The default `api` client forgets a verified passcode here (passcodeVerifier.reject).
+   */
+  onPasscodeRefused?: (passcode: string) => void;
 }
 
 /** Paths that never need a caller (the rest of the Report API needs a signed-in member or a session). */
@@ -239,7 +246,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
         retryable: true,
       });
     }
-    if (!res.ok) throw await toApiError(res);
+    if (!res.ok) {
+      const err = await toApiError(res);
+      if (err.status === 401 && (err.code === "PASSCODE_INVALID" || err.code === "PASSCODE_REQUIRED")) {
+        const sent = new Headers(init.headers).get(HEADERS.passcode);
+        if (sent && options.onPasscodeRefused) {
+          try {
+            options.onPasscodeRefused(sent);
+          } catch {
+            // the caller still gets the refusal
+          }
+        }
+      }
+      throw err;
+    }
     return res;
   }
 
@@ -510,11 +530,13 @@ export const passcodeVerifier = createPasscodeVerifier({
 /**
  * Default same-origin client using the stored session token and the VERIFIED passcode (a stored passcode the
  * server has not accepted on this page load is never sent, so nothing goes live that the badge does not show).
+ * A call refused for that passcode (401 – rotated since it was checked) removes it from the tab at once.
  */
 export const api: ApiClient = createApiClient({
   getSessionToken: storedSessionToken,
   getPasscode: () => passcodeVerifier.verifiedPasscode(),
   ensureSessionToken: ensureDemoSessionToken,
+  onPasscodeRefused: (passcode) => void passcodeVerifier.reject(passcode),
 });
 
 /** Base64 of a Blob/ArrayBuffer (for template uploads and write-back). */
