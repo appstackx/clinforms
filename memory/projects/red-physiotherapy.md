@@ -7,6 +7,15 @@
 RED Physiotherapy LTD, company **13547807**, registered office 30 Elba Gate, Newton Leys, Milton Keynes MK3 5QX. Sites: **Milton Keynes, Towcester, Northampton**. contact@red-physiotherapy.co.uk; www.red-physiotherapy.co.uk; phones MK 01908 713973, Towcester 01327 362717, Northampton 01604 385343. Official physio of NTFC Women's; "Three Best Rated 2025 – Best Physiotherapists Milton Keynes". Unknown: size, staff, revenue, clinic system, insurer mix, volumes, Word/PDF vs portal, signers.
 Overlaps geographically with Blue Heart (MK, Northampton) – keep materials separate.
 
+## 1a. Company facts (checked 10/10/2026 ~20:30 UTC – Companies House + red-physiotherapy.co.uk)
+- RED PHYSIOTHERAPY LTD 13547807, incorporated 04/08/2021, SIC 86210 + 96040; registered office 39 Elba Gate, Bletchley, MK3 5QX
+  (the signature said 30 – Companies House says 39). Accounts: micro (FY to 08/2022, 08/2024), total-exemption full (08/2023, 08/2025) → micro/small company.
+- **Family-run**, 3 sites (Milton Keynes, Northampton, Towcester). **8 named clinicians:** Daniel Vatamanu (co-founder), Diana
+  Vatamanu (co-founder & physiotherapist), six advanced physiotherapists. 500+ reviews (5.0); National Family Business Awards 2026 finalist.
+- **Practice system: Cliniko** (booking links red-physiotherapy.uk1.cliniko.com) – NOT TM3. Cliniko has a public API (a direct
+  connection is feasible later – don't promise dates). Today: Cliniko notes/letters exported as PDF → ClinForms notes import.
+- **Insurers named on their site:** Bupa, AXA Health, Vitality, Aviva, Cigna, Healix, medicash (WPA not listed).
+
 ## 2. Email thread (verbatim, from Khuram's Gmail screenshots shared 09/10 14:04 UTC; all Wed 7 Oct 2026, UK time; thread "7 of 563")
 0. Khuram → RED (before 09:23): initial outreach – content not visible (only signature "AppstackX Ltd / khuram@appstackx.co.uk").
 1. **RED (Daniel) → Khuram, 09:23**

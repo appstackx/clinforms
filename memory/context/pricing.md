@@ -1,6 +1,31 @@
 # Pricing – all tiers, numbers and reasoning
 
-**Nothing has been formally quoted to any prospect.** All prices below are assistant proposals; Khuram has not explicitly confirmed a price list. RED pricing has not been discussed. Third-party prices came from search snippets – check at source before quoting.
+**Official price list agreed by Khuram on 10/10/2026 (§0).** Sections 1–6 are the earlier proposals and reasoning, kept for history. Nothing has been quoted to a prospect yet. RED pricing has not been discussed. Third-party prices came from search snippets – check at source before quoting.
+
+## 0. OFFICIAL PRICE LIST (Khuram: "pricing ok", 10/10/2026 ~20:30 UTC)
+Per clinic (organisation), **all sites and all users included** – tiers by completed forms per month, not by sites or seats.
+
+| Plan | Price (ex VAT – VAT status of AppstackX Ltd to confirm) | Includes |
+|---|---|---|
+| Starter | **£99/mo** | up to 25 completed forms/month; 3 referrer forms set up |
+| **Practice** | **£199/mo** | up to 100 completed forms/month; 10 referrer forms set up; portal question sets; priority support |
+| Group | **from £349/mo** | high volume (100+/month) or large groups; dedicated onboarding; optional dedicated database later |
+| Set-up (one-off) | **£250** | top referrer/insurer forms set up, DPA paperwork, a training session |
+| **Founding clinics (first 5)** | **Practice at £149/mo fixed 12 months + £250 set-up**, fair use up to 150 forms/month | monthly, cancel any time; in return for feedback and a case study (year 1 ≈ £2,038) |
+
+Script: "We price per clinic, not per user – all your sites and staff are included. Practice is £199 a month; as one of our
+first clinics it's £149 a month fixed for 12 months, plus a one-off £250 to set up your main forms and the data-protection
+paperwork. Monthly, cancel any time. The best next step is a short pilot on two or three of your own forms."
+Ask volume first ("roughly how many insurer/MLC reports a month across your sites?"); under ~25/month → Starter £99.
+Don't: quote per seat, discount below founding on a call, promise portal submission or a direct PMS link, claim savings.
+Before taking money: Vercel Pro (Hobby is non-commercial), a ClinForms Stripe account (one per product – CLAUDE.md
+rule), DPA/terms reviewed, VAT status confirmed (physio clinics usually can't reclaim VAT: £149 ≈ £179 to them).
+
+**Affordability check (10/10):** RED – 8 clinicians, 3 sites, family-run, micro/small company accounts (micro accounts FY to
+08/2024, total-exemption full to 08/2025), Cliniko; Blue Heart – ~16 staff, 6–9 FTE clinicians, turnover est. £450–700k [I].
+£149–199/mo ≈ £1.8–2.4k/yr ≈ 0.3–0.6% of a £400–700k turnover, ≈ 3 physio appointments a month; per-seat tools for 8
+clinicians (scribes ~£40–55/clinician) would cost £320–440/mo. Reasonable for both IF volume is real: value comes from
+insurer/MLC forms per month – unknown for RED (many PMI updates go via portals); ask on the call.
 
 ## 1. First proposal (assistant, 2026-10-06 09:24 UTC)
 Charge **per clinic, not per clinician**, tiered by report volume.
