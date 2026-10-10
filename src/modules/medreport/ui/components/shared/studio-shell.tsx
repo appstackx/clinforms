@@ -9,7 +9,8 @@
  * - A StudioShell rendered inside it (by a screen) draws only the page header (title, description,
  *   actions, back link) around its children, so screens can always wrap themselves in StudioShell.
  *
- * Demo mode (default): the drafting-mode badge, "Fictional data only" and the Simulated TM3 link.
+ * Demo mode (default): the drafting-mode badge (and its one-line passcode notice above the page), "Fictional data
+ * only" and the Simulated TM3 link.
  * Tenant mode (HostHooks.mode = "tenant"): the clinic's name, the signed-in member's menu (clinic
  * settings, sign out) and no demo wording. Paths come from HostHooks.basePath (ui/routes.ts).
  *
@@ -26,7 +27,7 @@ import { PRODUCT } from "../../../config.public";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } from "../../routes";
-import { AiModeBadge } from "./ai-mode";
+import { AiModeBadge, PasscodeNotice } from "./ai-mode";
 import { BrandMark } from "./brand-mark";
 import { StudioLegalLinks } from "./legal-links";
 import { useScrollFade } from "./scroll-fade";
@@ -185,6 +186,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
         </nav>
       </header>
       <main id="studio-main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        {tenant ? null : <PasscodeNotice className="mb-4" />}
         {hasPage ? <PageFrame {...page}>{children}</PageFrame> : children}
       </main>
       <footer className="border-t border-slate-200 bg-white">

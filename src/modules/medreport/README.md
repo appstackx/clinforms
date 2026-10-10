@@ -193,7 +193,7 @@ options rather than merging them, so the script writes one full pattern list per
 | `ANTHROPIC_API_KEY` | Live drafting and live form analysis. Without it the deployment runs in demo mode |
 | `MEDREPORT_MODEL` | Optional Claude model for the live calls. Default `claude-sonnet-5-5`; allowed: the allow-list in `config.server.ts` (`claude-sonnet-5-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-5-5`, `claude-opus-4-8`). Anything else is ignored with a `config.model_rejected` warning in the server log. See "Model and effort" |
 | `MEDREPORT_AI_MODE` | `auto` (default), `demo` or `live`. Live needs both the key and the passcode |
-| `MEDREPORT_LIVE_PASSCODE` | `x-medreport-passcode` for live calls (timing-safe compare, about 6 per minute per instance; 5 wrong guesses per client or 30 per instance in 10 minutes → 429 with `Retry-After`). Use 16+ random characters |
+| `MEDREPORT_LIVE_PASSCODE` | `x-medreport-passcode` for live calls (timing-safe compare, about 6 per minute per instance; 5 wrong guesses per client or 30 per instance in 10 minutes → 429 with `Retry-After` – `POST /passcode/check` counts in the same counters). Use 16+ random characters |
 | `MEDREPORT_LAUNCH_SECRET` | HMAC secret for launch tokens (single use, `jti`) and session tokens |
 | `MEDREPORT_SIGNING_SECRET` | HMAC secret for `SignReceipt.mac`; purpose-bound keys for form-map confirmations and filed-document tokens are derived from it (`signingKey(purpose)`) |
 | `MEDREPORT_ALLOW_DEMO_SECRETS` | `1` lets a production deployment use the public demo constants for the two secrets above. Not recommended |
@@ -334,6 +334,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/launch` | `x-partner-key` | launch.ts | `{connectorId, patientId, episodeId, clinician}` → `{launchUrl, expiresAt}`; the demo key → tenant `demo`, a clinic's key (partner_keys) → that clinic |
 | POST | `/launch/verify` | launch token (+ the clinic's member for a clinic launch) | launch-verify.ts | `{token}` → `{claims, session}` |
 | POST | `/sessions/demo` | – | sessions-demo.ts | Demo-tenant session for the picker, uploads and batch |
+| POST | `/passcode/check` | actor: the public demo only (demo session) | passcode-check.ts | Live passcode in `x-medreport-passcode` (never the URL or body) → 204 when accepted and live drafting is available; 401 `PASSCODE_REQUIRED` / `PASSCODE_INVALID`, 429 + `Retry-After` when locked out, 503 `LIVE_AI_UNAVAILABLE`; 403 for a clinic's member, 404 while `CLINFORMS_PUBLIC_DEMO=0`. The same check and wrong-guess counters as live calls (`ai/live-gate.ts checkDemoPasscode`), no live slot taken, nothing called; logs the outcome only |
 | GET | `/connectors/{id}/patients?search=` | actor | patients.ts | `{patients, trace}` |
 | GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | actor (launch scope matches path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
 | POST | `/connectors/file-import/bundle` | actor | file-import-bundle.ts | Upload (ImportPayload) → bundle response (a clinic's bundle carries `clinic`); documented format only |
@@ -354,6 +355,17 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/forms/confirm` | actor: owner/admin/clinician | forms-confirm.ts | `{form, confirmedBy}` → `{form}` confirmed, with `confirmed {by, at, mapSha256, mac}`: the server's attestation of exactly this map (`auth/attestations.ts`) |
 | POST | `/ai/payload-preview` | actor | ai-payload-preview.ts | `{templateId, bundle, instructingParty, form?}` → `{model, promptVersion, blocks, systemSummary, removed, withheld}`: exactly what a drafting call would send, minimised, with no AI call |
 | POST | `/forms/fill-preview` | actor | forms-fill-preview.ts | `{report, form, fileBase64, mode: "draft", reviewMarkers?}` → the original file filled, DRAFT; `x-medreport-fill-warnings`; `maxDuration = 60` |
+
+**Passcode checked before it is kept (public demo).** The Studio's drafting-mode dialog sends the typed passcode
+to `POST /passcode/check` and stores it (sessionStorage, this tab) and switches the badge to live drafting ONLY on
+204; it shows "Passcode not recognised" (401), "Too many attempts – try again in N minutes" (429, from
+`Retry-After`), "live drafting is not available on this deployment" (503) or a network message, with a spinner on the
+button while it checks, and never stores a refused passcode. A stored passcode is re-checked once per page load
+(cached like `/health`): refused (e.g. rotated) → removed, demo mode, and a one-line notice above the page; not
+checkable (429, network) → kept but unused, with a notice. `ui/passcode-check.ts` holds the logic
+(`createPasscodeVerifier`, tested in `passcode-check.test.ts`); `api-client.ts passcodeVerifier.verifiedPasscode()` is
+the only passcode the default client sends and the only one that makes `useAiMode().expectLive` / `livePossible()`
+true. Tenant mode has no passcode and is unchanged.
 
 **Stateless:** the bundle travels inside `report.bundleSnapshot`. `/validate`, `/sign` and `/render`
 take the report alone, not a separate bundle. Form maps and the referrers' files live in the browser

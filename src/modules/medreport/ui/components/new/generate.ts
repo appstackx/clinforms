@@ -68,9 +68,10 @@ export interface GenerateInput {
    */
   author?: Clinician | null;
   /**
-   * A live drafting passcode is set in this tab, so /drafts may draft live. When false and the bundle
-   * response lists the demo drafts it holds (`demoDrafts`), questions with no demo draft are not sent
-   * to /drafts (they would return NO_DEMO_DRAFT): they are left for the clinician.
+   * A live drafting passcode the server accepted is set in this tab (ui/passcode-check.ts), so /drafts may
+   * draft live. When false and the bundle response lists the demo drafts it holds (`demoDrafts`), questions
+   * with no demo draft are not sent to /drafts (they would return NO_DEMO_DRAFT): they are left for the
+   * clinician.
    */
   livePossible?: boolean;
   /** Concurrent /drafts calls (wizard: 3; batch: 1 per item). */

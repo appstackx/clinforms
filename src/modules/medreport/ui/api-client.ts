@@ -3,7 +3,9 @@
  * contract schemas; errors arrive as ApiError carrying the parsed problem+json.
  *
  * Attaches `Authorization: Bearer <session>` when a session token is available and
- * `x-medreport-passcode` when a passcode is provided (per call or via getPasscode()).
+ * `x-medreport-passcode` when a passcode is provided (per call or via getPasscode()). The default `api`
+ * client sends only a passcode the server accepted on this page load (`passcodeVerifier`,
+ * ui/passcode-check.ts) – never one that was merely typed or stored.
  * Never import the Anthropic SDK, docx or react-pdf here.
  *
  * Shared contract (orchestrator-owned): add methods only.
@@ -70,20 +72,24 @@ import {
   type ValidateResponse,
 } from "../api/contract";
 import { DEMO_TENANT_ID, MAX_FORM_REQUEST_BYTES } from "../config.public";
-import { getPasscode, getSession, getStoreMode, setSession } from "./store";
+import { createPasscodeVerifier } from "./passcode-check";
+import { getPasscode, getSession, getStoreMode, setPasscode, setSession } from "./store";
 
 /** A failed API call. `problem` is the server's problem+json (or a synthesised one). */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly problem: Problem;
+  /** From the response's Retry-After header (seconds), when it carried one (429, some 503s). */
+  readonly retryAfterSeconds?: number;
 
-  constructor(problem: Problem) {
+  constructor(problem: Problem, extra: { retryAfterSeconds?: number } = {}) {
     super(problem.detail ? `${problem.title}: ${problem.detail}` : problem.title);
     this.name = "ApiError";
     this.status = problem.status;
     this.code = problem.code;
     this.problem = problem;
+    if (extra.retryAfterSeconds !== undefined) this.retryAfterSeconds = extra.retryAfterSeconds;
   }
 
   get retryable(): boolean {
@@ -152,6 +158,13 @@ function parseWarnings(header: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/** Retry-After in seconds (the API sends delta-seconds), or undefined. */
+export function retryAfterSecondsOf(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : undefined;
 }
 
 function extensionFor(contentType: string): string {
@@ -231,18 +244,22 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   async function toApiError(res: Response): Promise<ApiError> {
+    const extra = { retryAfterSeconds: retryAfterSecondsOf(res.headers.get("retry-after")) };
     try {
       const parsed = ProblemSchema.safeParse(await res.json());
-      if (parsed.success) return new ApiError(parsed.data);
+      if (parsed.success) return new ApiError(parsed.data, extra);
     } catch {
       // not JSON
     }
-    return new ApiError({
-      type: "about:blank",
-      title: res.statusText || `HTTP ${res.status}`,
-      status: res.status,
-      code: `HTTP_${res.status}`,
-    });
+    return new ApiError(
+      {
+        type: "about:blank",
+        title: res.statusText || `HTTP ${res.status}`,
+        status: res.status,
+        code: `HTTP_${res.status}`,
+      },
+      extra,
+    );
   }
 
   async function parseJson<S extends z.ZodType>(res: Response, schema: S): Promise<z.output<S>> {
@@ -320,6 +337,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** POST /sessions/demo */
     demoSession: (body: DemoSessionRequest, opts?: CallOptions): Promise<DemoSessionResponse> =>
       postJson(reportApiPaths.sessionsDemo(), body, DemoSessionResponseSchema, { ...opts, sessionToken: null }),
+
+    /**
+     * POST /passcode/check (public demo): resolves when the server accepts `passcode` (204). Otherwise an
+     * ApiError: 401 PASSCODE_INVALID / PASSCODE_REQUIRED, 429 (retryAfterSeconds), 503 LIVE_AI_UNAVAILABLE.
+     * The passcode travels in the x-medreport-passcode header only. No live call is made.
+     */
+    checkPasscode: async (passcode: string, opts?: CallOptions): Promise<void> => {
+      await send(reportApiPaths.passcodeCheck(), {
+        method: "POST",
+        headers: headersFor({ ...opts, passcode }, true),
+        body: "{}",
+        signal: opts?.signal,
+      });
+    },
 
     /** GET /connectors/{id}/patients?search= (session) */
     patients: (connectorId: string, search?: string, opts?: CallOptions): Promise<PatientsResponse> =>
@@ -466,10 +497,23 @@ function storedSessionToken(): string | null {
   return current.token;
 }
 
-/** Default same-origin client using the stored session token and passcode. */
+/**
+ * The public demo's live passcode for this tab: checked by the server before it is stored, re-checked once per
+ * page load (ui/passcode-check.ts). The badge, the dialog and the default client below share it.
+ */
+export const passcodeVerifier = createPasscodeVerifier({
+  check: (passcode) => api.checkPasscode(passcode),
+  getStored: getPasscode,
+  setStored: setPasscode,
+});
+
+/**
+ * Default same-origin client using the stored session token and the VERIFIED passcode (a stored passcode the
+ * server has not accepted on this page load is never sent, so nothing goes live that the badge does not show).
+ */
 export const api: ApiClient = createApiClient({
   getSessionToken: storedSessionToken,
-  getPasscode,
+  getPasscode: () => passcodeVerifier.verifiedPasscode(),
   ensureSessionToken: ensureDemoSessionToken,
 });
 

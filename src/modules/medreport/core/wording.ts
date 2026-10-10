@@ -61,6 +61,25 @@ export interface Wording {
     passcodeLabel: string;
     useLive: string;
     switchToDemo: string;
+    /** Under the passcode field: the passcode is checked by the server before it is kept. */
+    passcodeHint: string;
+    /** The dialog's button while the server checks the passcode. */
+    passcodeChecking: string;
+    /** 401: the server did not accept the passcode (owner's wording). */
+    passcodeNotRecognised: string;
+    /** 429: too many wrong passcodes from this browser (owner's wording). */
+    passcodeLocked(minutes: number): string;
+    /** 503: this deployment has no live drafting. */
+    passcodeLiveUnavailable: string;
+    /** The server could not be reached. */
+    passcodeNetworkError: string;
+    /** Any other failure (e.g. a server error): nothing was stored. */
+    passcodeCheckFailed: string;
+    /** One-line notice: the passcode stored in this tab was refused on page load (e.g. rotated) and removed. */
+    passcodeRejectedNotice: string;
+    /** One-line notice: the stored passcode could not be checked on page load; the tab stays in demo mode. */
+    passcodeUncheckedNotice: string;
+    dismissNotice: string;
   };
 
   /* Drafting the answers --------------------------------------------------------------------- */
@@ -181,6 +200,9 @@ export interface Wording {
     gateActionDraft: string;
     gateActionAnalyse: string;
     analyseAlternative: string;
+    /** POST /passcode/check: what the passcode is for, and what to do instead. */
+    gateActionCheck: string;
+    checkAlternative: string;
     refusalTitle: string;
     sdk: {
       timeout(alt: string): string;
@@ -270,6 +292,9 @@ export interface AccessWording {
   /** Fix wave 3: too many notes uploads read in a short time (per sign-in or demo session, and per network address). */
   importLimitTitle: string;
   importLimitDetail(seconds: number): string;
+  /** POST /passcode/check from a clinic's Studio: the passcode belongs to the public demo only. */
+  passcodeDemoOnlyTitle: string;
+  passcodeDemoOnlyDetail: string;
 }
 
 /** The access wording is the same under every disclosure setting: it never names a technology. */
@@ -325,6 +350,8 @@ const ACCESS: AccessWording = {
     "Your clinic has added an unusually large amount of new data today, so new records are paused until tomorrow. Contact ClinForms support if you need more.",
   importLimitTitle: "Too many uploads at once",
   importLimitDetail: (seconds) => `Too many notes were uploaded or checked in a short time. Try again in ${seconds} s.`,
+  passcodeDemoOnlyTitle: "No passcode needed",
+  passcodeDemoOnlyDetail: "The passcode belongs to the public demo. In your clinic's Studio, drafting follows your clinic's settings.",
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -463,6 +490,16 @@ const NEUTRAL: Wording = {
     passcodeLabel: "Live drafting passcode",
     useLive: "Use live drafting",
     switchToDemo: "Switch to demo mode",
+    passcodeHint: "Checked by the server before it is kept. Live drafting is rate limited. Fictional data only.",
+    passcodeChecking: "Checking…",
+    passcodeNotRecognised: "Passcode not recognised",
+    passcodeLocked: (minutes) => `Too many attempts – try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}`,
+    passcodeLiveUnavailable: "Live drafting is not available on this deployment",
+    passcodeNetworkError: "Could not reach the server to check the passcode. Check your connection and try again.",
+    passcodeCheckFailed: "The passcode could not be checked just now. Nothing was stored – try again in a moment.",
+    passcodeRejectedNotice: "The stored live drafting passcode is no longer accepted, so this tab is back in demo mode.",
+    passcodeUncheckedNotice: "The stored live drafting passcode could not be checked just now, so this tab uses demo mode.",
+    dismissNotice: "Dismiss",
   },
   drafting: {
     liveProgress: (n) => (n && n > 0 ? `Drafting answers from ${plural(n, "note")}…` : "Drafting answers from the notes…"),
@@ -578,6 +615,8 @@ const NEUTRAL: Wording = {
     liveRateLimited: (seconds, alt) => `Live drafting is limited per minute. Try again in ${seconds} s, or ${alt}.`,
     gateActionDraft: "draft live from the notes",
     gateActionAnalyse: "read forms live",
+    gateActionCheck: "switch this tab to live drafting",
+    checkAlternative: "keep using demo mode",
     analyseAlternative: "use the prepared or layout-rules mapping",
     refusalTitle: "This section could not be drafted",
     sdk: {
@@ -645,6 +684,16 @@ const AI_ASSISTED: Wording = {
     passcodeLabel: "Live AI passcode",
     useLive: "Use live AI",
     switchToDemo: "Switch to demo AI",
+    passcodeHint: "Checked by the server before it is kept. Live AI is rate limited. Fictional data only.",
+    passcodeChecking: "Checking…",
+    passcodeNotRecognised: "Passcode not recognised",
+    passcodeLocked: (minutes) => `Too many attempts – try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}`,
+    passcodeLiveUnavailable: "Live AI is not available on this deployment",
+    passcodeNetworkError: "Could not reach the server to check the passcode. Check your connection and try again.",
+    passcodeCheckFailed: "The passcode could not be checked just now. Nothing was stored – try again in a moment.",
+    passcodeRejectedNotice: "The stored live AI passcode is no longer accepted, so this tab is back in demo AI.",
+    passcodeUncheckedNotice: "The stored live AI passcode could not be checked just now, so this tab uses demo AI.",
+    dismissNotice: "Dismiss",
   },
   drafting: {
     liveProgress: () => "Claude is drafting these answers strictly from the notes, with citations…",
@@ -765,6 +814,8 @@ const AI_ASSISTED: Wording = {
     liveRateLimited: (seconds, alt) => `Live AI is limited per minute. Try again in ${seconds} s, or ${alt}.`,
     gateActionDraft: "draft with Claude",
     gateActionAnalyse: "analyse forms with Claude",
+    gateActionCheck: "switch this tab to live AI",
+    checkAlternative: "keep using demo AI",
     analyseAlternative: "use the recorded or rules-based mapping",
     refusalTitle: "Claude declined to draft this section",
     sdk: {

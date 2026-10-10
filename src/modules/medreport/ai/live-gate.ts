@@ -18,6 +18,10 @@ import "server-only";
  * clinic's own per-minute and per-day limits (CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE / _PER_DAY, shared;
  * 429 + retry-after). prefer "live" with drafting switched off → 403 DRAFTING_DISABLED.
  *
+ * checkDemoPasscode(): the demo's passcode check on its own (the gate above uses it too) – POST
+ * /passcode/check asks it before the Studio stores a passcode, with the same wrong-guess accounting and no
+ * live slot taken.
+ *
  * Owner: ai agent (wave 2 actor gate: API slice).
  */
 import { HEADERS } from "../api/contract";
@@ -162,9 +166,60 @@ export async function liveAvailableFor(actor: Actor | null, deps: MedreportDeps)
   return tenantLiveAiAvailable() && (await clinicDraftingEnabled(actor, deps));
 }
 
+/** Why the public demo's passcode check did not pass (DemoPasscodeResult). */
+export type DemoPasscodeRefusal = "live_unavailable" | "missing" | "invalid" | "locked" | "not_configured";
+
+export type DemoPasscodeResult = { ok: true } | { ok: false; reason: DemoPasscodeRefusal; response: Response };
+
 /**
- * The handlers' gate (POST /drafts, POST /forms/analyse). Demo: chooseAiMode() with the shared passcode
- * counters and cap. Clinic member: see the header.
+ * The public demo's passcode check – the ONE path for every live request of the demo (POST /drafts,
+ * POST /forms/analyse via chooseAiModeForActor) and for POST /passcode/check: 503 LIVE_AI_UNAVAILABLE when
+ * this deployment cannot draft live, then auth/passcode.ts checkLivePasscodeShared (timing-safe compare;
+ * wrong guesses counted per client and for the whole deployment, shared by every instance) → 401
+ * PASSCODE_REQUIRED / PASSCODE_INVALID, 429 RATE_LIMITED + retry-after when locked out. Takes no live slot
+ * and calls no drafting service.
+ */
+export async function checkDemoPasscode(req: Request, deps: MedreportDeps, wording: LiveGateWording): Promise<DemoPasscodeResult> {
+  if (!liveAiAvailable()) {
+    return {
+      ok: false,
+      reason: "live_unavailable",
+      response: problem(503, WORDING.server.liveUnavailableTitle, {
+        code: "LIVE_AI_UNAVAILABLE",
+        detail: `This deployment runs in demo mode. Please ${wording.alternative} instead.`,
+      }),
+    };
+  }
+  const pass = await checkLivePasscodeShared(req, deps);
+  if (pass.ok) return { ok: true };
+  if (pass.reason === "locked") {
+    return {
+      ok: false,
+      reason: "locked",
+      response: problem(429, "Too many wrong passcodes", {
+        code: "RATE_LIMITED",
+        detail: WORDING.server.liveLocked(Math.ceil(pass.retryAfterSeconds / 60), wording.alternative),
+        retryable: true,
+        headers: { "retry-after": String(pass.retryAfterSeconds) },
+      }),
+    };
+  }
+  if (pass.reason === "missing") {
+    return { ok: false, reason: "missing", response: problem(401, "Passcode required", { code: "PASSCODE_REQUIRED", detail: WORDING.server.passcodeRequired(wording.action) }) };
+  }
+  if (pass.reason === "invalid") {
+    return { ok: false, reason: "invalid", response: problem(401, "Passcode not recognised", { code: "PASSCODE_INVALID", detail: WORDING.server.passcodeInvalid }) };
+  }
+  return {
+    ok: false,
+    reason: "not_configured",
+    response: problem(503, WORDING.server.liveUnavailableTitle, { code: "LIVE_AI_UNAVAILABLE", detail: WORDING.server.noPasscodeConfigured }),
+  };
+}
+
+/**
+ * The handlers' gate (POST /drafts, POST /forms/analyse). Demo: checkDemoPasscode() (the shared passcode
+ * counters), then a slot of the shared cap. Clinic member: see the header.
  */
 export async function chooseAiModeForActor(
   req: Request,
@@ -177,39 +232,8 @@ export async function chooseAiModeForActor(
   if (actor.via === "demo") {
     const passcodeSent = Boolean(req.headers.get(HEADERS.passcode)?.trim());
     if (!(p === "live" || (p === "auto" && passcodeSent && liveAiAvailable()))) return { ok: true, mode: "demo" };
-    if (!liveAiAvailable()) {
-      return {
-        ok: false,
-        response: problem(503, WORDING.server.liveUnavailableTitle, {
-          code: "LIVE_AI_UNAVAILABLE",
-          detail: `This deployment runs in demo mode. Please ${wording.alternative} instead.`,
-        }),
-      };
-    }
-    const pass = await checkLivePasscodeShared(req, deps);
-    if (!pass.ok) {
-      if (pass.reason === "locked") {
-        return {
-          ok: false,
-          response: problem(429, "Too many wrong passcodes", {
-            code: "RATE_LIMITED",
-            detail: WORDING.server.liveLocked(Math.ceil(pass.retryAfterSeconds / 60), wording.alternative),
-            retryable: true,
-            headers: { "retry-after": String(pass.retryAfterSeconds) },
-          }),
-        };
-      }
-      if (pass.reason === "missing") {
-        return { ok: false, response: problem(401, "Passcode required", { code: "PASSCODE_REQUIRED", detail: WORDING.server.passcodeRequired(wording.action) }) };
-      }
-      if (pass.reason === "invalid") {
-        return { ok: false, response: problem(401, "Passcode not recognised", { code: "PASSCODE_INVALID", detail: WORDING.server.passcodeInvalid }) };
-      }
-      return {
-        ok: false,
-        response: problem(503, WORDING.server.liveUnavailableTitle, { code: "LIVE_AI_UNAVAILABLE", detail: WORDING.server.noPasscodeConfigured }),
-      };
-    }
+    const pass = await checkDemoPasscode(req, deps, wording);
+    if (!pass.ok) return { ok: false, response: pass.response };
     const slot = await takeLiveCallsFor(actor, deps, 1);
     if (!slot.ok) return { ok: false, response: limitResponse(actor, slot, wording) };
     return { ok: true, mode: "live" };

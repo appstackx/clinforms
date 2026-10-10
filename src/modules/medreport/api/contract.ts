@@ -53,7 +53,7 @@ export const REPORT_API_BASE = "/api/reports/v1" as const;
 export const TM3_SIM_API_BASE = "/api/tm3-sim/v1" as const;
 
 export const HEADERS = {
-  /** Live AI passcode (POST /drafts with live AI). Compared with timingSafeEqual. */
+  /** Live AI passcode (POST /drafts with live AI; POST /passcode/check). Compared with timingSafeEqual. */
   passcode: "x-medreport-passcode",
   /** Partner key, sent server-to-server by the clinic system on POST /launch. Never from a browser. */
   partnerKey: "x-partner-key",
@@ -98,6 +98,8 @@ export const reportApiPaths = {
   launch: () => `${REPORT_API_BASE}/launch`,
   launchVerify: () => `${REPORT_API_BASE}/launch/verify`,
   sessionsDemo: () => `${REPORT_API_BASE}/sessions/demo`,
+  // The public demo's passcode dialog: is this passcode accepted? (204 / 401 / 429 / 503; no live call)
+  passcodeCheck: () => `${REPORT_API_BASE}/passcode/check`,
   patients: (connectorId: string, search?: string) =>
     `${REPORT_API_BASE}/connectors/${e(connectorId)}/patients${search ? `?search=${e(search)}` : ""}`,
   bundle: (connectorId: string, patientId: string, episodeId: string) =>
@@ -186,6 +188,15 @@ export const REPORT_API_ENDPOINTS: readonly EndpointSpec[] = [
   { name: "formsFillPreview", method: "POST", path: "/api/reports/v1/forms/fill-preview", auth: "actor", handler: "forms-fill-preview.ts", summary: "The referrer's form filled with the current answers, marked DRAFT (for the live preview)" },
   { name: "formsConfirm", method: "POST", path: "/api/reports/v1/forms/confirm", auth: "actor", handler: "forms-confirm.ts", summary: "Check a reviewed form map and return it confirmed, with the server's attestation of exactly that map" },
   { name: "aiPayloadPreview", method: "POST", path: "/api/reports/v1/ai/payload-preview", auth: "actor", handler: "ai-payload-preview.ts", summary: "Exactly what a drafting call would send to Claude for this record (minimised), without calling it" },
+  {
+    name: "passcodeCheck",
+    method: "POST",
+    path: "/api/reports/v1/passcode/check",
+    auth: "actor",
+    handler: "passcode-check.ts",
+    summary:
+      "Public demo only: check the live passcode (x-medreport-passcode) before the Studio stores it – 204, 401 PASSCODE_REQUIRED/PASSCODE_INVALID, 429 + Retry-After, 503 LIVE_AI_UNAVAILABLE; same wrong-guess counters as live calls, takes no live slot, calls nothing",
+  },
 ];
 
 export const TM3_SIM_ENDPOINTS: readonly EndpointSpec[] = [
