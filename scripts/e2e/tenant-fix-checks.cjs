@@ -139,7 +139,8 @@ const count = (text, label) => text.split(label).length - 1;
       const page = await owner.locator("main").innerText();
       assert(/Approval check code/.test(page), "no approval check code on the approved banner");
       assert(!/server-signed|fingerprint/i.test(page), "technical wording on the approved report");
-      assert(!/\bFACT-[a-z]|\bREG\b/.test(page), "internal source codes on the approved report");
+      const code = /\bFACT-[a-z]|\bREG\b/.exec(page);
+      assert(!code, `internal source code on the approved report: …${code ? page.slice(Math.max(0, code.index - 80), code.index + 40).replace(/\s+/g, " ") : ""}…`);
       const after = await owner.evaluate(async (id) => (await (await fetch(`/api/reports/v1/store/reports/${id}`)).json()).rev, state.reportId);
       const finalsAfter = count(await activityText(owner, "?action=report.render_final"), "Final document produced");
       assert(writes.length === 0, `store writes on view: ${writes.join(", ")}`);
@@ -148,7 +149,7 @@ const count = (text, label) => text.split(label).length - 1;
       return { rev: after, finalEntries: finals };
     });
 
-    const draftId = `rpt_fixcheck_${N}`;
+    const draftId = `rpt_fixcheck_${N}_${Date.now().toString(36)}`;
     await step("view: opening a draft writes nothing (no new revision, no 'Report saved')", async () => {
       const draft = { ...state.reportJson, id: draftId, status: "draft", updatedAt: new Date().toISOString() };
       delete draft.receipt;
@@ -274,6 +275,8 @@ const count = (text, label) => text.split(label).length - 1;
       assert(/data processing agreement/.test(overview) && /Optional/.test(overview), "the drafting step does not explain the opt-in");
       await owner.goto(`${BASE}/app/studio`);
       await owner.waitForSelector("text=Completed and in-progress forms", { timeout: 30000 });
+      // The first run appears once the clinic's records have loaded (an empty clinic).
+      await owner.getByText("Complete your clinic's first form").waitFor({ timeout: 30000 });
       const home = await owner.locator("body").innerText();
       await owner.goto(`${BASE}/app/studio/new`);
       await owner.waitForSelector("text=Drop the patient's notes here");
@@ -282,7 +285,9 @@ const count = (text, label) => text.split(label).length - 1;
       assert(/switched off for your clinic/.test(home), "drafting-off notice in the Studio");
       assert(/Add a referrer's form/.test(home), "no first run on a new clinic's Studio home");
       assert(!/\bTM3\b/.test(home) && !/\bTM3\b/.test(wizard), "TM3 wording in a clinic's Studio");
-      assert(!/fictional/i.test(wizard), "fictional samples in a clinic's wizard");
+      // The test clinics' own names end "(fictional)" (house rule for test data): only the Studio's wording counts.
+      const own = (t) => t.replace(/ZZ W2 E2E Clinic [AB] \(fictional\)/g, "");
+      assert(!/fictional/i.test(own(wizard)), "fictional samples in a clinic's wizard");
       return { checklist: true };
     });
 

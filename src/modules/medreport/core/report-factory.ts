@@ -415,12 +415,15 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
 }
 
 function missingValueGap(field: FormField, what: string, unmatched?: string): Gap {
+  // Fix wave 2: no internal source code ("FACT-attendance", "patient.postcode") in text a clinician reads – the
+  // registration record or the appointment figures, in words.
+  const where = what.startsWith("FACT-") ? "the appointment figures" : "the patient's registration details";
   return {
     id: `gap-${field.id}-record`,
     sectionKey: field.id,
     issue: unmatched
       ? `The record's value for “${field.label}” (“${unmatched}”) does not fit the form's answer options, so it has been left blank.`
-      : `The record does not hold a value for “${field.label}” (${what}), so it has been left blank.`,
+      : `The record does not hold a value for “${field.label}” (${where}), so it has been left blank.`,
     suggestedQuestion: `What should be entered for “${field.label}”? Check the patient's registration details in the clinic system.`,
     relatedNoteIds: [],
     raisedBy: "system",
