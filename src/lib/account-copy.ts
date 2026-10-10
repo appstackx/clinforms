@@ -78,6 +78,6 @@ export const DRAFTING_COPY = {
   whenToSwitchOn:
     "It is off until your clinic switches it on. Switch it on only once your clinic has signed the data processing agreement and is content for notes to be used this way. While it is off, nothing from the notes is sent and your clinicians write those answers themselves.",
   checklistOff:
-    "Optional, and off until you switch it on. When on, the patient's notes (without name, date of birth, address or contact details) are sent to the drafting service in your data processing agreement to draft answers for the clinician to check. Switch it on in Clinic details once the agreement is signed; until then your clinicians write the answers.",
+    "Off until you switch it on. When on, the patient's notes (without name, date of birth, address or contact details) are sent to the drafting service in your data processing agreement to draft answers for the clinician to check. Switch it on in Clinic details once the agreement is signed; until then your clinicians write the answers.",
   checklistOn: "Switched on: answers are drafted from the notes for the clinician to check and approve.",
 } as const;

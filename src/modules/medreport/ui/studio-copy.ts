@@ -62,7 +62,8 @@ export const TENANT_COPY = {
       "Every check runs again, then your approval is recorded against exactly the answers you approve. The answers are then locked, ready to copy into the portal, and a summary PDF is kept for the record.",
     approvalCode: "Approval check code",
     approvalCodeHint: "identifies exactly what was approved",
-    listApproved: "Approved",
+    /** The work queue's "Next step" for an approved form (its status already says "Approved"). */
+    listApproved: "Download the completed form",
     approveSavedFailed: "Approved, but the change could not be saved. Download the completed form now.",
     approvedToast: "Your approval is recorded with your name and HCPC number. The completed form is ready to download.",
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",

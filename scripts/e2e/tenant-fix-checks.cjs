@@ -285,9 +285,10 @@ const count = (text, label) => text.split(label).length - 1;
       assert(/switched off for your clinic/.test(home), "drafting-off notice in the Studio");
       assert(/Add a referrer's form/.test(home), "no first run on a new clinic's Studio home");
       assert(!/\bTM3\b/.test(home) && !/\bTM3\b/.test(wizard), "TM3 wording in a clinic's Studio");
-      // The test clinics' own names end "(fictional)" (house rule for test data): only the Studio's wording counts.
-      const own = (t) => t.replace(/ZZ W2 E2E Clinic [AB] \(fictional\)/g, "");
-      assert(!/fictional/i.test(own(wizard)), "fictional samples in a clinic's wizard");
+      // The test clinic and accounts are named "… (fictional)" (house rule for test data), so look for the demo's own
+      // sample wording, not the word (the render tests pin the Studio's copy word by word: ui/tenant-mode.test.ts).
+      const demoWords = /Sample \(fictional\)|Fictional data only|fictional (?:sample|date|patient|clinician)|\bTry the\b|Sample printed notes|Sample export/i.exec(wizard);
+      assert(!demoWords, `fictional samples in a clinic's wizard: …${demoWords ? wizard.slice(Math.max(0, demoWords.index - 80), demoWords.index + 40).replace(/\s+/g, " ") : ""}…`);
       return { checklist: true };
     });
 
