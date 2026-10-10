@@ -311,6 +311,19 @@ inside Freedom's fees table; truncated text on a few stat tiles.
 
 ---
 
+### 4.4 If he asks about price (agreed price list – `memory/context/pricing.md` §0)
+Ask first: "Roughly how many insurer reports do you do a month across the three sites?"
+> "We price per clinic, not per user – all three sites and all your staff are included. Practice is £199 a month; as one
+> of our first clinics it's £149 a month fixed for 12 months, plus a one-off £250 to set up your main insurer forms and the
+> data-protection paperwork. Monthly, cancel any time. The best next step is a short pilot on two or three of your own forms."
+Under ~25 forms a month → Starter £99. Don't quote per user, don't discount further, don't promise portal submission or a
+direct Cliniko connection, don't claim time savings (the pilot measures them). Prices are ex VAT (confirm VAT status first).
+
+### 4.5 RED facts to have in mind (checked 10/10)
+- They use **Cliniko** (not TM3). Say: "The demo shows a simulated clinic system; with Cliniko you'd upload the notes PDF it
+  exports – and Cliniko has an API, so a direct connection is something we can look at with you." No dates.
+- Insurers on their website: Bupa, AXA Health, Vitality, Aviva, Cigna, Healix, medicash. Family-run, 8 clinicians, 3 sites.
+
 ## 5. If something breaks on the call
 
 | Symptom | Do this |

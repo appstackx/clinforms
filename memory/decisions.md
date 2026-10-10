@@ -5,6 +5,7 @@ Add new rows at the top. Keep entries short; link to detail files.
 
 | # | When | Who | Decision | Why | Status |
 |---|---|---|---|---|---|
+| D64 | 2026-10-10 20:30 | K | **Price list agreed** ("pricing ok"): per clinic, all sites/users; Starter £99 (≤25 forms/mo), Practice £199 (≤100), Group from £349; set-up £250; founding Practice £149×12 + £250 (first 5 clinics) | Fits RED (8 clinicians, 3 sites) and Blue Heart; volume-based so sites don't push small multi-site clinics up | ACTIVE → `context/pricing.md` §0 |
 | D63 | 2026-10-10 ~18:50 | A (K asked why) | **Anthropic key:** keep the new production key, delete the older keys (06/10 chat key, second cloud key file) in the Console; not a launch blocker | Old keys were exposed in the cloud session | OPEN – Khuram's confirmation unanswered (`next-steps.md` §A Q2) |
 | D62 | 2026-10-10 ~18:50 | K → A | **Go-live §7.6 without a test upload:** Khuram declined to upload a test form in `/app/studio`; instead a `CRON_SECRET`-protected `/api/ops/key-fingerprint` compares the production key's fingerprint with the secrets file's (branch `ops/key-fingerprint`, workflow `wf_c9f57175-279`) | Prove the offline key matches before any clinic data, without creating data | IN PROGRESS (not on `main` at 19:00) |
 | D61 | 2026-10-10 ~18:50 | K | **Always Use HTTPS ON** for zone `clinforms.co.uk` (media host `http://` → 301 `https://`) | HSTS includeSubDomains; no subdomain over plain http | DONE |
