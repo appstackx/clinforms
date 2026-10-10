@@ -303,6 +303,8 @@ export const AUDIT_ACTIONS = {
   reportDelete: "report.delete",
   reportExport: "report.export",
   launchIssue: "launch.issue",
+  /** Wave 3: a patient's notes were turned into the record a form is completed from (counts and format only). */
+  notesImported: "notes.imported",
 } as const;
 
 /** The first characters of a receipt MAC: enough to match audit rows to receipts, useless to forge one. */

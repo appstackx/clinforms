@@ -27,7 +27,7 @@ export const TENANT_COPY = {
     firstFormTitle: "Add a referrer's form",
     firstFormText: "Upload the blank form an insurer or medico-legal company sent you (Word or PDF) and confirm its mapping once. It is reused for every patient that referrer sends.",
     firstReportTitle: "Upload the patient's notes",
-    firstReportText: "Print the notes to PDF from your clinic system, or use an export, then choose the referrer's form. The treating clinician reviews and approves every answer.",
+    firstReportText: "Upload the notes – printed to PDF from your clinic system, a Word document, a CSV export or text – check what was read, then choose the referrer's form. The treating clinician reviews and approves every answer.",
   },
   wizard: {
     description:
@@ -41,11 +41,11 @@ export const TENANT_COPY = {
     launchFailed: "Choose the patient's notes below instead.",
     formatGuideSummary: "What the notes need – the format guide",
     formatSummary:
-      "Upload the patient's notes printed or saved as a PDF from your clinic system, a JSON or CSV file in the documented format, or paste the notes.",
-    notesHelpTitle: "Notes not read?",
+      "Notes in any layout are read and shown to you to check before they are used: a PDF printed or saved from your clinic system (not a scan), a Word document, a CSV export, a text file or pasted notes. Notes in the documented layout below are used straight away.",
+    notesHelpTitle: "Notes not read well?",
     notesHelp:
-      "A printed PDF cannot be edited: paste the notes as text instead and add the missing line, or send ClinForms support a sample printout from your clinic system (with made-up details) so its layout can be checked before you use it with patients.",
-    missingLineHint: "A PDF printout cannot be edited: paste the notes as text below and add the missing lines.",
+      "Scanned notes cannot be read: print or save the notes as a PDF from your clinic system, or paste them as text. If your system's printout is read poorly, send ClinForms support a sample printout (with made-up details) so its layout can be checked.",
+    missingLineHint: "Add the missing lines to the file and upload it again.",
   },
   progress: {
     leftBlank: "Left blank for the clinician to answer.",

@@ -22,6 +22,7 @@ import {
   AiPayloadPreviewResponseSchema,
   HEADERS,
   HealthResponseSchema,
+  FileImportReadResponseSchema,
   LaunchResponseSchema,
   LaunchVerifyResponseSchema,
   PatientsResponseSchema,
@@ -41,6 +42,8 @@ import {
   type DraftsRequest,
   type DraftsResponse,
   type FileImportBundleRequest,
+  type FileImportConfirmRequest,
+  type FileImportReadResponse,
   type FormFillPreviewRequest,
   type FormSamplesResponse,
   type FormsAnalyseRequest,
@@ -329,6 +332,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** POST /connectors/file-import/bundle (session) */
     fileImportBundle: (body: FileImportBundleRequest, opts?: CallOptions): Promise<BundleResponse> =>
       postJson(reportApiPaths.fileImportBundle(), body, BundleResponseSchema, opts),
+
+    /** POST /connectors/file-import/read (wave 3): the bundle, or ordinary clinic notes to check first */
+    fileImportRead: (body: FileImportBundleRequest, opts?: CallOptions): Promise<FileImportReadResponse> =>
+      postJson(reportApiPaths.fileImportRead(), body, FileImportReadResponseSchema, opts),
+
+    /** POST /connectors/file-import/confirm (wave 3): the checked notes → the bundle */
+    fileImportConfirm: (body: FileImportConfirmRequest, opts?: CallOptions): Promise<BundleResponse> =>
+      postJson(reportApiPaths.fileImportConfirm(), body, BundleResponseSchema, opts),
 
     /** GET /templates */
     templates: (opts?: CallOptions): Promise<TemplatesListResponse> =>

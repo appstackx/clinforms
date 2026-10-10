@@ -51,6 +51,8 @@ src/modules/medreport/
     tm3-sim/              wire.ts (sim wire schemas), client.ts, mapper.ts, connector.ts
     file-import/          format.ts, parser.ts, connector.ts   (our documented JSON/CSV/text format)
                           pdf-notes.ts                          (printed notes PDF → the text format)
+                          general-notes.ts docx-notes.ts        (wave 3: ordinary clinic notes in any layout → NotesReview)
+                          review-contract.ts review-bundle.ts   (wave 3: the review staff check; checked review → bundle)
     tm3/connector.ts      real TM3 placeholder: not_configured
   auth/                   server-only: hmac-token, launch-token, session-token, sign-receipt, passcode,
                           attestations (form-map confirmations, filed-document tokens)
@@ -334,7 +336,9 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/sessions/demo` | – | sessions-demo.ts | Demo-tenant session for the picker, uploads and batch |
 | GET | `/connectors/{id}/patients?search=` | actor | patients.ts | `{patients, trace}` |
 | GET | `/connectors/{id}/patients/{pid}/episodes/{eid}/bundle` | actor (launch scope matches path) | bundle.ts | `{bundle, computedFacts, dataChecks, trace, demoDrafts?}` |
-| POST | `/connectors/file-import/bundle` | actor | file-import-bundle.ts | Upload (ImportPayload) → bundle response (a clinic's bundle carries `clinic`) |
+| POST | `/connectors/file-import/bundle` | actor | file-import-bundle.ts | Upload (ImportPayload) → bundle response (a clinic's bundle carries `clinic`); documented format only |
+| POST | `/connectors/file-import/read` | actor | file-import-read.ts | Wave 3: upload (ImportPayload, `format` json\|csv\|text\|pdf\|docx) → `{result: "bundle", data}` (documented format) or `{result: "review", review: NotesReview, trace}` (ordinary clinic notes to check) |
+| POST | `/connectors/file-import/confirm` | actor | file-import-confirm.ts | Wave 3: `{review}` (checked by staff) → bundle response; 422 `IMPORT_INVALID` with plain-English issues |
 | GET | `/templates` | – | templates-list.ts | `{templates}` |
 | GET | `/templates/{id}` | – | template-get.ts | `{template}` |
 | GET | `/templates/{id}/docx` | – | template-docx.ts | Tagged .docx download |
@@ -1197,3 +1201,119 @@ crop marks.
 
 **Hygiene.** Prompt examples, test fixtures and comments use wording of our own – no insurer's question text
 in git. `demo:red` stays in demo mode unless `--live`; replayed drafts log the neutral engine name.
+
+## Production wave 3 – ordinary clinic notes (notes import, 10/10/2026, branch `prod/w3-notes`)
+
+A clinic can now upload the notes its own system prints, in whatever layout, and check what was read before the
+record is built. Before this, only our documented layout (JSON / CSV / text, or a PDF printed in that layout) was
+accepted and ordinary notes PDFs were refused (end-to-end review e2e#3).
+
+**Flow.** The Studio's source step (both Studios) posts the upload to `POST /connectors/file-import/read`
+(`api/handlers/file-import-read.ts` → `connectors/file-import/connector.ts` `readNotesUpload`):
+1. **Documented format first** – JSON, CSV, text, and a PDF or Word document whose text is in the documented layout
+   (`parser.ts`). If it parses and every note has an author, the bundle comes back straight away (as before). A CSV
+   whose header row names every documented column reports its mistakes as before; a Word document with a table of
+   three or more columns is never tried as the documented layout (a table row is not a heading).
+2. **Otherwise the general notes reader** (`general-notes.ts`) reads the upload as clinic notes and returns a
+   **NotesReview** (`review-contract.ts`, browser-safe zod): registration fields (editable), one entry per dated
+   block (date, time, clinician name / HCPC, type, attendance status, the heading lines and the note's text exactly
+   as written, where it was found, included or not), outcome scores, an attendance flag and plain-English warnings.
+   Nothing is built, stored or drafted.
+3. Staff check it in the **review panel** (`ui/components/new/notes-review.tsx`, state helpers in
+   `notes-review-model.ts`): registration table with "From the notes" / "Not found" / "Required" tags; entries with
+   editable date, time, clinician (known clinicians, "Someone else…", "Not recorded") and type, "Include" tick box,
+   the first lines and "Show the full text"; a bulk "Clinician for these entries → Apply"; live counts
+   ("4 entries · 1 clinician · 5 outcome scores") and blockers ("3 entries without a clinician – choose one", "no date
+   found for 1 block …", "enter the date of birth"). "Use these notes" stays disabled until nothing blocks.
+4. `POST /connectors/file-import/confirm` (`file-import-confirm.ts` → `review-bundle.ts` `bundleFromReview`) checks
+   everything again and builds the bundle **exactly as for any import**: the review becomes an ImportDocument and
+   goes through `parser.ts` `bundleFromImportDocument` → the sim mapper (N-001… in date and time order, A-001…,
+   OM-<instrument>, clinicians once each, computed facts, data checks). Labelled `S:`/`O:`/`A:`/`P:` (or the words,
+   `PMH:`, `SH:`) lines fill those fields; other text is the note's other text; an entry with no text keeps its
+   heading. With an attendance record each status is an appointment (attended → linked to its note; a missed or
+   cancelled appointment without text is an appointment only, with its reason). Added afterwards (no import-format
+   field): a medico-legal company / "other" as the instructing party's type, the insurer's membership and
+   authorisation numbers, `referral.referredBy` and `registration.gpPractice` (new optional bundle fields, never in
+   the drafting payload – `core/validation/sources.ts` `registrationLines` is a whitelist).
+
+**What the reader recognises** (all conservative – unclear values are left blank, with a warning where useful):
+- **Inputs** – PDF text layer (`pdf-notes.ts` `readPrintedNotes` / `pdfPagesToBlocks`: lines kept as printed; page
+  numbers and lines at the top or bottom of every page dropped, a repeated "Label: value" header line kept once;
+  scans refused: "scanned notes cannot be read"), Word (`docx-notes.ts`: paragraphs and tables through the forms
+  engine's Word helpers), text, CSV (header row found below title lines; `Key,value` rows above it are header
+  lines) and pasted text.
+- **Entries** – a line that starts with a date: `18/03/2026`, `8/3/26` (notes only; a two-digit year more than a
+  year ahead is not a date), `18 March 2026`, `18-Mar-2026`, `Mar 18 2026`, `March 18, 2026`, `2026-03-18`; after an
+  optional bullet, markdown, `Date:` / `Appointment:` / `Session date:` …, or a weekday; with an optional time
+  (`09:00`, `9.30am`, `2pm`, ranges). A date alone on a line with nothing under it is ignored (warning); a date line
+  followed by "Dear …" is a letter's date. Text before the first note that is not a registration or title line
+  becomes a block without a date (left out until staff date it). Tables with a date column and a notes, SOAP,
+  treatment or clinician column give one entry per row (date, time, clinician, HCPC, type, status, reason, NPRS /
+  ODI / NDI / PSFS / QuickDASH columns; patient, DOB, insurer, policy and claim columns used when every row agrees).
+- **Heading text** – type (initial assessment / IA / new patient, follow-up / FU / review / treatment, discharge,
+  telephone), clinician (`Name (HCPC)`, `Name, Physiotherapist, HCPC …`, or a bare name between separators,
+  checked against a list of clinical words), status (attended, DNA / did not attend, late cancellation, cancelled,
+  booked) and `Key: value` details on or under the heading (`Practitioner:`, `Time:`, `Type:`, `Status:`, `HCPC:`).
+  Any other heading text is part of the note. A clinician not in the heading comes from a signature at the end
+  (`Signed:`, `Seen by`, `— Name (HCPC)`, "Kind regards" + name, the HCPC number on the next line). The same name
+  with and without a number in different entries gets the number.
+- **Registration** – `Label: value` lines before the first note, several per line: patient / name / re (title,
+  first and last name, "Surname, First" too), first name, surname, title, date of birth / DOB / D.O.B. (also inline:
+  "Re: …, DOB 03/02/1979"; a two-digit year is never completed), sex, address (with continuation lines; a trailing
+  postcode is split off), postcode, phone / mobile, email, occupation, employer, insurer, membership / policy number,
+  authorisation number, their reference / claim number ("Our ref" ignored), instructing party / solicitor / case
+  manager / medico-legal company, referred by, GP practice, date of accident, how it happened, consent (yes / no and
+  its date). Identifiers must contain a digit; phones need 10–13 digits; emails a proper address. When no
+  instructing party is written, the insurer (or a "referred by" naming a solicitor, insurer, case manager or
+  medico-legal company) is offered as who the form is for, with "Taken from the insurer line – check it".
+- **Outcome scores** – `NPRS 7/10`, `QuickDASH 52.3`, `PSFS 2.7`, `ODI 48%`, `NDI 42%` (`NDI 21/50` → 42), with the
+  entry's date or a date written after the score; lists ("7/10 (18/03/2026), 3/10 (15/04/2026)"). Ranges
+  ("3-4/10"), a pain score as a percentage, and one instrument with two different undated values in one note
+  ("from 6/10 to 3/10") are left out with a warning.
+
+**Audit.** `notes.imported` (`AUDIT_ACTIONS.notesImported`, `api/handlers/file-import-response.ts`) for a clinic's
+member on every import that gives a bundle – `/bundle`, `/read` with the documented format, `/confirm` – detail
+`{format, layout: "documented"|"general", notes, appointments, outcomeScores, clinicians}` plus, on confirm,
+`entriesLeftOut`, `detailsFound`, `detailsFilled`. Never names, notes, file names or clinicians. Activity page label
+"Patient notes imported" (`src/lib/activity-copy.ts`), e.g. "4 notes, 4 appointments, 7 outcome scores · from a PDF ·
+checked before use". Reading the notes (a review) records nothing. Logs: `notes_read`, `notes_confirmed` (counts).
+
+**Copy.** Review copy lives in `review-contract.ts` `NOTES_REVIEW_COPY` / `NOTES_REVIEW_FIELD_LABELS` (neutral;
+`notesReviewCopyStrings()` is checked against the banned terms). The format guide, the clinic's notes help and the
+upload hints now say notes in any layout are read and checked before use.
+
+**Tests.** `scripts/medreport/notes-import.test.ts` (26) with FICTIONAL fixtures in `scripts/medreport/notes-fixtures.ts`:
+a practice-system printout (text, and a two-page PDF built with pdf-lib with a running header and page numbers), a
+letter-style Word document (letter date, Re: line, details table, undated opening paragraph, signature with the HCPC
+on the next line), a Word notes table, a CSV appointment export (DNA and cancelled rows, NPRS column), email-style
+pasted notes (weekday, 12-hour time, three date styles, sign-off), a diary with uncertain details, and the documented
+format (still read first: pasted text, the JSON / CSV / text samples and the Priya Nair PDF). Also the review → bundle
+build, both endpoints (401, demo, a clinic member's audit row holding counts only, 422 issues), the review model, a
+render of the panel in both Studios, and the wording.
+
+**Browser check.** `scripts/e2e/notes-import-check.cjs` (tenant mode, LOCAL SQLite only): owner invitation → account
+→ two-step; uploads the PDF, both Word documents, the CSV and the email text, pastes the printout, the uncertain
+notes (nothing guessed; confirm blocked until staff fill them in) and the documented layout (no review); browser
+storage holds nothing from the notes; the review fits 375 px; the activity lists the imports. Set-up:
+`node --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/write-notes-fixtures.ts <dir>`; an env
+file with `CLINFORMS_DB=sqlite`, `CLINFORMS_SQLITE_PATH`, test-only `BETTER_AUTH_SECRET`, `CLINFORMS_DATA_KEYS` /
+`CLINFORMS_DATA_KEY_ID`, `BETTER_AUTH_URL=http://localhost:3141`; `node --env-file=<env> … scripts/admin/create-clinic.ts
+… --app-url http://localhost:3141 > invite.txt`; `node --env-file=<env> node_modules/next/dist/bin/next start -p 3141`;
+then `INVITE_FILE=… INPUTS=… BASE=http://localhost:3141 RUN_ID=… NODE_PATH=<playwright> node scripts/e2e/notes-import-check.cjs`.
+
+**Not built – assisted structuring ("Organise these notes"), a scoped follow-up.** Deliberately left out of this
+wave rather than shipped half-done: it sends a patient's notes to the drafting service, which the clinic must have
+switched on (and, for a real clinic, a signed DPA covers). Design when it is built:
+- `POST /connectors/file-import/organise` (actor): the same upload body; allowed only when the clinic has drafting
+  on (`clinic_profile.drafting_enabled`) or, in the public demo, with the live passcode; counted with the drafting
+  limits (`ai/live-gate.ts`, shared counters).
+- Input: the upload's lines numbered (`L001: …`), minimised with `ai/prompts.ts` `createMinimiser` built from the
+  registration the reader found, every date of birth removed (labelled and inline, `dobPatterns`), phone numbers,
+  emails, postcodes and NHS-style numbers replaced as in drafting; registration lines are not sent at all.
+- Output: a strict JSON schema (structured output, as the drafting call) – entries as LINE RANGES with date, time,
+  clinician index, type and status; no text. The server maps the ranges back onto the original lines, so every
+  note's text stays verbatim; registration and scores still come from the reader's own patterns.
+- Shown in the same review step as "Organised structure – check it", never accepted automatically; staff confirm
+  as today. Audit `notes.organised` with counts only (lines sent, entries proposed); a neutral button label and no
+  vendor names. Tests with a stubbed client (schema, range validation, minimisation of every DOB form).
+

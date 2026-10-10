@@ -158,7 +158,7 @@ new clinic – owner decision 10/10: a clinic opts in to sending notes to the dr
 the switch and the overview's set-up checklist say so in plain words, `src/lib/account-copy.ts` `DRAFTING_COPY`); a clinic's launch link opens `/app/studio/new`; `/app/settings/activity` (audit trail: owners/admins the whole clinic, clinicians/staff their own entries; CSV of the page, ids only) and `/app/platform` (emails in `CLINFORMS_PLATFORM_ADMINS` with two-step on, 404 for everyone else) |
 | `/reports/**`, `/pms-sandbox/**` | public demo | Unchanged demo-tenant Studio, browser storage, fictional data. On while `CLINFORMS_PUBLIC_DEMO=1` (*built:* on unless `CLINFORMS_PUBLIC_DEMO=0`) |
 | `/api/auth/[...all]` | – | Better Auth |
-| `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only) |
+| `/api/reports/v1/**` | demo or tenant actor | + `/store/**` endpoints (tenant only). *Wave 3:* `/connectors/file-import/read` and `/confirm` – notes in any layout, checked by staff before the record is built (§8) |
 | `/api/cron/retention` | Vercel cron (`CRON_SECRET`) | Deletes reports past `delete_after`, expired rate-limit/jti rows. *Built:* daily (vercel.json, 03:17 UTC); also deletes reports unchanged for their clinic's `retention_days` (read at run time) and access requests older than 24 months; *wave 2:* also form-file uploads started over a day ago and never completed; refuses every call while `CRON_SECRET` is unset |
 
 Edge middleware (Next 14.2) only does optimistic cookie redirects for `/app` and the auth pages; real checks are
@@ -202,3 +202,16 @@ Existing `MEDREPORT_*`, `TM3_SIM_*`, `ANTHROPIC_API_KEY`, plus: `CLINFORMS_DB`, 
 `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` (*built:* replace `CLINFORMS_EMAIL_FROM`, still read as a fallback),
 `CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO`, `CRON_SECRET`,
 `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`).
+
+## 8. Notes import (wave 3, branch `prod/w3-notes`)
+A clinic's notes come in as its own system prints them. `POST /api/reports/v1/connectors/file-import/read` tries our
+documented import format first (JSON / CSV / text, or a PDF or Word document in that layout → the bundle at once);
+anything else – a PDF's text layer (scans refused), a Word document, a CSV export, a text file or pasted text – is read
+by the general notes reader into a **NotesReview**: registration details found with conservative patterns (unclear
+values left blank, never guessed), one entry per dated block with its text exactly as written, clinicians from
+headings or signatures, outcome scores, warnings. Staff check and correct it in the Studio (both Studios) and confirm;
+`POST …/confirm` re-checks it and builds the bundle exactly as for any import. Nothing is stored or drafted before
+confirming; audit `notes.imported` holds format and counts only. Detail: `src/modules/medreport/README.md`
+"Production wave 3". **Not built:** assisted structuring ("Organise these notes" through the drafting service) – a
+scoped follow-up described there; it needs drafting switched on for the clinic.
+

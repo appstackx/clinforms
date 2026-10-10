@@ -153,6 +153,9 @@ twice on purpose and the tests check both sides agree.
   ciphertext moved to another row, table or tenant does not decrypt.
 - Encrypted: `forms.payload_enc`, `reports.payload_enc`, `form_file_chunks.data_enc`. Not encrypted (no patient
   data): ids, statuses, titles, referrer names, file names, settings, clinic and member profiles, audit rows.
+- *Wave 3 (notes import):* uploaded notes and the review staff check are never stored – only the bundle built when
+  they confirm, inside the report's encrypted payload (it may now carry `registration.gpPractice` and
+  `referral.referredBy`). The `notes.imported` audit row holds the format and counts only. No migration.
 
 **Key rotation:** (1) add `"k2"` to `CLINFORMS_DATA_KEYS` everywhere (both keys present), deploy; (2) set
 `CLINFORMS_DATA_KEY_ID=k2`, deploy – new writes use k2, old rows still decrypt with k1; (3) re-encrypt in the
