@@ -404,7 +404,7 @@ function EntryRow({
         ) : null}
         <div>
           <FieldLabel htmlFor={`${entry.key}-type`}>Type</FieldLabel>
-          <Select id={`${entry.key}-type`} className="h-10 w-48" value={entry.type} onChange={(e) => onChange({ type: e.target.value as NoteType })}>
+          <Select id={`${entry.key}-type`} className="h-10 w-56" value={entry.type} onChange={(e) => onChange({ type: e.target.value as NoteType })}>
             {(Object.keys(NOTE_TYPE_LABELS) as NoteType[]).map((t) => (
               <option key={t} value={t}>
                 {NOTE_TYPE_LABELS[t]}
