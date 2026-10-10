@@ -1,0 +1,483 @@
+{
+  "about": "Generic ClinForms outreach video (v1) for owners and managers of UK private physiotherapy clinics: 89 s, one fictional patient (Megan Hart, sim-pat-001) on one fictional referrer form (Harrow & Pike Medico-Legal (fictional), Word), plus the bundled Meridian sample for the upload-once step. Consumed by record-outreach.mjs (to be written; reuse the overlay, Cast/Director, cards, assembly, e-mail encode and SRT code of record-demo.mjs). 'lines' are the caption + voice-over pairs: one sentence each, caption max 2 lines of 42 characters, 'start' is the target start time in the FINAL cut (seconds), 'end' is when the next line starts (the slot). 'shots' give the exact on-screen action, the setup that happens inside a hard cut, verified locators and reference frames (marketing/clinforms/outreach-video-v1/storyboard-frames/). Server: the video worktree build on port 3310 in demo mode, so the drafts and the form reading are the prepared demo outputs: captions never say the drafting is happening in real time and never show or claim a drafting time. Framing rule: no legible 'TM3' text in a frame unless the label 'Simulated TM3 sandbox – demo data, not affiliated with TM3' (or the 'Simulated TM3' card) is legible in the same frame. Never show the sixth sandbox patient (Rebecca Lane) or any screen that names a real insurer. Never click 'Completed form (PDF)' on the Harrow & Pike report (no converter on this machine – it prints a 'not available on this demo deployment' note). Full storyboard: marketing/clinforms/outreach-video-v1/storyboard.md.",
+  "video": {
+    "name": "clinforms-outreach-v1",
+    "seconds": 89,
+    "size": "1920x1080",
+    "viewportCss": "1600x900 at device scale 1.2",
+    "fps": 30,
+    "base": "http://localhost:3310"
+  },
+  "cards": {
+    "title": {
+      "start": 0,
+      "end": 6,
+      "kicker": "For UK private physiotherapy clinics",
+      "title": "ClinForms",
+      "lede": "Every referrer's own report form, completed from your notes",
+      "chips": ["Their form, their layout", "Every answer shows its source", "Approved by your clinician"],
+      "footer": "clinforms.co.uk",
+      "srt": ["Every referrer's own report form – completed from your clinic notes."],
+      "vo": "V01"
+    },
+    "end": {
+      "start": 80,
+      "end": 89,
+      "kicker": "ClinForms",
+      "title": "Book a 15-minute demo",
+      "lines": ["clinforms.co.uk", "khuram@appstackx.co.uk"],
+      "small": "Fictional patient data shown.",
+      "footer": "ClinForms · AppstackX Ltd",
+      "srt": ["ClinForms. Their form, your notes, your clinician's sign-off.", "Book a 15-minute demo · clinforms.co.uk · khuram@appstackx.co.uk"],
+      "vo": ["V18", "V19"]
+    }
+  },
+  "lines": [
+    {
+      "id": "V01",
+      "shot": "S01",
+      "start": 0.6,
+      "end": 6.4,
+      "caption": [],
+      "srt": "Every referrer's own report form – completed from your clinic notes.",
+      "vo": "Every referrer's own report form – completed from your clinic notes."
+    },
+    {
+      "id": "V02",
+      "shot": "S02",
+      "start": 6.4,
+      "end": 10.8,
+      "caption": ["Every referrer sends its own form,", "with its own questions and layout"],
+      "srt": "Every referrer sends its own form, with its own questions and layout.",
+      "vo": "Insurers, medico-legal companies and case managers each send their own form."
+    },
+    {
+      "id": "V03",
+      "shot": "S02",
+      "start": 10.8,
+      "end": 15.4,
+      "caption": ["And your team retypes the same notes", "into every one"],
+      "srt": "And your team retypes the same notes into every one.",
+      "vo": "And your team retypes the same notes into every one."
+    },
+    {
+      "id": "V04",
+      "shot": "S03a",
+      "start": 15.4,
+      "end": 19.6,
+      "caption": ["Upload each referrer's form once,", "exactly as it arrived"],
+      "srt": "Upload each referrer's form once, exactly as it arrived.",
+      "vo": "Upload each referrer's form once, exactly as it arrived."
+    },
+    {
+      "id": "V05",
+      "shot": "S03b",
+      "start": 19.6,
+      "end": 24.6,
+      "caption": ["It finds every question – and where", "each answer goes on the page"],
+      "srt": "It finds every question – and where each answer goes on the page.",
+      "vo": "It finds every question, and where each answer goes on the page."
+    },
+    {
+      "id": "V06",
+      "shot": "S03d",
+      "start": 24.6,
+      "end": 30.4,
+      "caption": ["Your team checks it once,", "then it's reused for every patient"],
+      "srt": "Your team checks it once, then it's reused for every patient.",
+      "vo": "Your team checks it once; then it's reused for every patient."
+    },
+    {
+      "id": "V07",
+      "shot": "S04a",
+      "start": 30.4,
+      "end": 34.0,
+      "caption": ["Pick the patient – or upload their notes"],
+      "srt": "Pick the patient – or upload their notes.",
+      "vo": "Now pick the patient – or upload their notes."
+    },
+    {
+      "id": "V08",
+      "shot": "S04b",
+      "start": 34.0,
+      "end": 41.3,
+      "caption": ["Answers drafted from the notes,", "straight into the original layout"],
+      "srt": "Answers drafted from the notes, straight into the referrer's original layout.",
+      "vo": "Choose the referrer's form, and the answers are drafted from the notes, straight into its original layout."
+    },
+    {
+      "id": "V09",
+      "shot": "S04d",
+      "start": 41.3,
+      "end": 43.6,
+      "caption": ["Every answer shows its source"],
+      "srt": "Every answer shows its source.",
+      "vo": "Every answer shows its source."
+    },
+    {
+      "id": "V10",
+      "shot": "S04d",
+      "start": 43.6,
+      "end": 47.4,
+      "caption": ["One click opens the note it came from"],
+      "srt": "One click opens the note it came from.",
+      "vo": "One click, and there's the note it came from."
+    },
+    {
+      "id": "V11",
+      "shot": "S04e",
+      "start": 47.4,
+      "end": 52.8,
+      "caption": ["No prognosis in the notes,", "so it's flagged – never guessed"],
+      "srt": "No prognosis in the notes, so it's flagged as a gap – never guessed.",
+      "vo": "Anything not in the notes – like a prognosis – is flagged, never guessed."
+    },
+    {
+      "id": "V12",
+      "shot": "S04e",
+      "start": 52.8,
+      "end": 56.0,
+      "caption": ["Opinions only ever come from a clinician"],
+      "srt": "Opinions only ever come from a clinician.",
+      "vo": "Opinions only ever come from a clinician."
+    },
+    {
+      "id": "V13",
+      "shot": "S05a",
+      "start": 56.0,
+      "end": 60.6,
+      "caption": ["The physiotherapist adds her opinion,", "checks every answer and approves"],
+      "srt": "The physiotherapist adds her own opinion, checks every answer and approves.",
+      "vo": "The treating physiotherapist adds her own opinion, checks every answer and approves."
+    },
+    {
+      "id": "V14",
+      "shot": "S05b",
+      "start": 60.6,
+      "end": 63.0,
+      "caption": ["Nothing is issued until she approves"],
+      "srt": "Nothing is issued until she approves.",
+      "vo": "Nothing is issued until she does."
+    },
+    {
+      "id": "V15",
+      "shot": "S05c",
+      "start": 63.0,
+      "end": 70.4,
+      "caption": ["The referrer's own Word or PDF form,", "completed in their layout"],
+      "srt": "The referrer's own Word or PDF form, completed in their layout.",
+      "vo": "Then download the referrer's own Word or PDF file – completed, in their layout, ready to send."
+    },
+    {
+      "id": "V16",
+      "shot": "S06a",
+      "start": 70.4,
+      "end": 77.0,
+      "caption": ["Insurer portal? Every approved answer", "is ready to copy and paste"],
+      "srt": "Insurer portal? Every approved answer is ready to copy and paste.",
+      "vo": "If an insurer uses an online portal instead, every approved answer is ready to copy and paste."
+    },
+    {
+      "id": "V17",
+      "shot": "S06b",
+      "start": 77.0,
+      "end": 80.6,
+      "caption": ["One at a time, or all at once"],
+      "srt": "One at a time, or all at once.",
+      "vo": "One at a time, or all at once."
+    },
+    {
+      "id": "V18",
+      "shot": "S07",
+      "start": 80.6,
+      "end": 84.4,
+      "caption": [],
+      "srt": "ClinForms. Their form, your notes, your clinician's sign-off.",
+      "vo": "ClinForms. Their form, your notes, your clinician's sign-off."
+    },
+    {
+      "id": "V19",
+      "shot": "S07",
+      "start": 84.4,
+      "end": 89.0,
+      "caption": [],
+      "srt": "Book a 15-minute demo · clinforms.co.uk · khuram@appstackx.co.uk",
+      "vo": "Book a fifteen-minute demo at clinforms dot co dot uk."
+    }
+  ],
+  "shots": [
+    {
+      "id": "S01",
+      "start": 0,
+      "end": 6,
+      "label": "Title card",
+      "screen": "card",
+      "action": "Static title card (cards.title). Fade in 0.35 s. No caption pill; the card carries the words.",
+      "frame": null
+    },
+    {
+      "id": "S02",
+      "start": 6,
+      "end": 15,
+      "label": "The problem: every referrer's own form",
+      "screen": "/reports/forms",
+      "setup": "Inside a hard cut: reset the demo (Reports → Demo tools → Reset demo), open /reports/forms, wait for 'main canvas' and 'main section.docx' (thumbnails drawn) plus 2.5 s, then scroll so the 'Forms library' h2 sits 92 px below the top (same scroll as record-demo.mjs q1).",
+      "actions": [
+        { "t": 6.2, "do": "Cursor glides over the Harrow & Pike thumbnail (Word), then Northfield Assurance (Fillable PDF), then Kingsway (Word): about 1.4 s each, pointing above each card title, never over the text." },
+        { "t": 10.6, "do": "Smooth scroll down about 120 px (1.4 s) so 'Try a new form' shows the Ashcroft (Flat PDF) and Meridian (Word) cards: five different layouts on screen. (No further: the page footer, whose clinic-system label would sit half under the caption, must stay below the fold.)" },
+        { "t": 12.6, "do": "Cursor rests between the Ashcroft and Meridian cards until 15.0." }
+      ],
+      "locators": ["h2 'Forms library'", "text 'Treating Physiotherapist Report'", "text 'Rehabilitation Progress Report'", "text 'Return to Work Assessment'", "text 'Try a new form'"],
+      "frame": "S02-forms-library.png"
+    },
+    {
+      "id": "S03a",
+      "start": 15,
+      "end": 19,
+      "label": "Upload their form once",
+      "screen": "/reports/forms (top)",
+      "setup": "Inside a hard cut: scroll to the top of /reports/forms and open 'Upload a referrer form' (as recorded: four seconds are not enough for the button click as well). Fetch the bundled Meridian sample from /api/reports/v1/forms/samples/meridian-discharge-report/file and save it as Meridian-Claims_Physiotherapy-Discharge-Report_MCS-PDR-3.docx (as record-demo.mjs does).",
+      "actions": [
+        { "t": 15.3, "do": "Click the dashed drop zone's button; set the Meridian file on the file chooser (reading the file is cut)." },
+        { "t": 15.9, "do": "Type 'Meridian Claims Services (fictional)' into #upload-referrer at about 60 characters a second." },
+        { "t": 17.3, "do": "Hover #upload-referrer-type and select 'Insurer'." },
+        { "t": 17.9, "do": "Click 'Analyse form'; anything over 0.25 s of the prepared reading is cut." }
+      ],
+      "locators": ["getByRole('button', { name: 'Upload a referrer form' })", "dialog .border-dashed button", "#upload-referrer", "#upload-referrer-type", "getByRole('button', { name: /^Analyse form$/ })"],
+      "frame": "S03a-upload-dialog.png"
+    },
+    {
+      "id": "S03b",
+      "start": 19,
+      "end": 22,
+      "label": "Every question found",
+      "screen": "upload dialog, result",
+      "actions": [
+        { "t": 19.2, "do": "The result appears at once: '17 questions found in “Physiotherapy Discharge Report”' and 'Things to check'. Cursor rests just right of the summary line (not over its text)." },
+        { "t": 21.6, "do": "Click 'Review the mapping'." }
+      ],
+      "locators": ["dialog text /questions found in/", "getByRole('button', { name: /Review the mapping/ })"],
+      "checks": ["The summary count is read from the dialog, never typed into a caption."],
+      "frame": "S03b-questions-found.png"
+    },
+    {
+      "id": "S03c",
+      "start": 22,
+      "end": 25.2,
+      "label": "Where each answer goes",
+      "screen": "/reports/forms/<new form id> (mapping review, unconfirmed)",
+      "setup": "Inside a hard cut: wait for the URL /reports/forms/… and '.mr-preview section.docx', then scroll to the BOTTOM of the page. The left preview is sticky and already highlights one answer space in green; the question list shows sections 4–5 with 'Clinician opinion' and 'Sign-off' chips. Do NOT click a question here: an expanded question lists every source option, one of which names TM3.",
+      "actions": [
+        { "t": 22.3, "do": "Cursor moves to the green-highlighted answer space in the left preview and rests beside it (1.2 s)." },
+        { "t": 23.7, "do": "Cursor moves to the 'Clinician opinion' chip on the question 'In your opinion, what is the likely long-term outcome for this claimant?' (F-14)." },
+        { "t": 24.8, "do": "Cursor moves to the sticky 'Confirm mapping' button (bottom right)." }
+      ],
+      "locators": [".mr-preview .mr-hl", "main text 'Clinician opinion'", "getByRole('button', { name: /^Confirm mapping$/ })"],
+      "frame": "S03c-mapping-highlight.png"
+    },
+    {
+      "id": "S03d",
+      "start": 25.2,
+      "end": 30,
+      "label": "Checked once by your team",
+      "screen": "confirm mapping dialog",
+      "actions": [
+        { "t": 25.3, "do": "Click 'Confirm mapping'. The dialog reads: 'Once confirmed, “Physiotherapy Discharge Report” is completed this way for every patient Meridian Claims Services (fictional) refers…'." },
+        { "t": 26.0, "do": "Clear #confirm-by and type 'Sarah Reid' (about 25 characters a second)." },
+        { "t": 26.9, "do": "Tick the check box 'I have checked each question's answer type, where its answer comes from and where it goes in the form.'" },
+        { "t": 27.4, "do": "Cursor rests near the dialog's description for about 1.2 s." },
+        { "t": 28.7, "do": "Click the dialog's 'Confirm mapping'. The page stays at the bottom: the sticky confirm bar disappears (confirmed). Hold to 30.0." }
+      ],
+      "locators": ["#confirm-by", "[role=dialog] input[type=checkbox]", "[role=dialog] getByRole('button', { name: /Confirm mapping/ })", "text /Mapping confirmed by Sarah Reid/ (wait for it, do not scroll to it)"],
+      "checks": ["Do not scroll to the top banner after confirming: the stats card under it says 'TM3 registration'."],
+      "frame": "S03d-confirm-once.png"
+    },
+    {
+      "id": "S04a",
+      "start": 30,
+      "end": 33.2,
+      "label": "Pick the patient",
+      "screen": "/reports/new (step 1, Simulated TM3 picker)",
+      "setup": "Inside a hard cut: open /reports/new and wait for network idle.",
+      "actions": [
+        { "t": 30.3, "do": "Cursor hovers the 'Upload the notes – Available now' card (0.9 s), then moves to the search box." },
+        { "t": 31.5, "do": "Click the search box (placeholder 'Name, e.g. Megan') and type 'Megan' (about 12 characters a second). The list filters to Megan Hart only." },
+        { "t": 32.7, "do": "Click 'Neck pain and headaches following road traffic accident'." }
+      ],
+      "locators": ["text 'Upload the notes'", "getByPlaceholder(/Name, e\\.g\\. Megan/)", "text 'Neck pain and headaches following road traffic accident'"],
+      "checks": ["'Simulated TM3' card and 'Simulated TM3 sandbox – demo data, not affiliated with TM3.' are legible.", "Type the filter before anything else: the unfiltered list's last row names a real insurer and must never be on screen."],
+      "frame": "S04a-pick-patient.png"
+    },
+    {
+      "id": "S04b",
+      "start": 33.2,
+      "end": 35.8,
+      "label": "Their form, chosen for you",
+      "screen": "/reports/new (step 3, 'Which referrer form?')",
+      "setup": "Inside a hard cut: step 2 loads; click 'Choose the referrer form'; then scroll to the bottom (about 76 px) so the page intro sentence is under the header.",
+      "actions": [
+        { "t": 33.4, "do": "Cursor hovers the Harrow & Pike card's 'Matches the referrer on the referral' chip (1.0 s)." },
+        { "t": 34.6, "do": "Cursor moves to 'Complete this form'." },
+        { "t": 35.4, "do": "Click 'Complete this form'." }
+      ],
+      "locators": ["getByRole('button', { name: 'Choose the referrer form' })", "getByRole('radio', { name: /Harrow & Pike/ }) (pre-selected)", "getByRole('button', { name: 'Complete this form' })"],
+      "checks": ["The page intro ('…from the TM3 registration details…') must be scrolled out of view; the footer label stays visible."],
+      "frame": "S04b-referrer-form.png"
+    },
+    {
+      "id": "S04c",
+      "start": 35.8,
+      "end": 41,
+      "label": "Filled in, in their own layout",
+      "screen": "/reports/<id> review, 'Open a larger preview' dialog (DRAFT)",
+      "setup": "Inside a hard cut (no drafting progress or timing on screen): wait for the review URL, '#q-F-07', and the right-hand preview drawn ('[role=tabpanel][data-state=active] section.docx'); click 'Open a larger preview'; wait for the dialog's 'section.docx' plus 0.6 s.",
+      "actions": [
+        { "t": 36.0, "do": "First frame: the Harrow & Pike form, top of page – their header, 'DRAFT – awaiting clinician approval', Part A filled (Megan Hart, 22/11/1991, HP/RTA/2291 …)." },
+        { "t": 36.6, "do": "Cursor points from the margin at the filled 'Claimant name' row (1.2 s)." },
+        { "t": 38.2, "do": "Smooth scroll inside the dialog (1.6 s) to 'B1. Mechanism of injury' so its drafted answer fills the middle of the page; cursor rests in the margin." },
+        { "t": 40.8, "do": "Close the dialog (inside the next cut)." }
+      ],
+      "locators": ["getByRole('button', { name: 'Open a larger preview' })", "dialog section.docx", "dialog text 'Claimant name'", "dialog text /Mechanism of injury/", "dialog getByRole('button', { name: 'Close' })"],
+      "frame": "S04c-draft-own-layout.png"
+    },
+    {
+      "id": "S04d",
+      "start": 41,
+      "end": 47,
+      "label": "Every answer shows its source",
+      "screen": "/reports/<id> review, question B1 (F-07)",
+      "setup": "Inside a hard cut: close the dialog; scroll so the 'PART B – CLINICAL INFORMATION' heading sits just under the sticky header (about y 70 CSS). The F-06 card above must be fully out of view (its chip names TM3).",
+      "actions": [
+        { "t": 41.3, "do": "Cursor moves along the first drafted paragraph of 'B1. Mechanism of injury' and rests on its 'Drafted from the notes' chip (1.8 s)." },
+        { "t": 43.6, "do": "Click the citation chip 'N-001 · 18/03' under the first paragraph. The right panel switches to Sources and outlines note N-001 (18/03/2026, initial assessment, Sarah Reid)." },
+        { "t": 44.4, "do": "Cursor moves to the note's SUBJECTIVE text ('…restrained driver of a stationary car… struck from behind…') and rests there to 47.0." }
+      ],
+      "locators": ["#q-F-07", "#q-F-07 button[aria-label^='Source N-']", "article[data-source-id='N-001']"],
+      "frame": "S04d-source-note.png"
+    },
+    {
+      "id": "S04e",
+      "start": 47,
+      "end": 55.6,
+      "label": "A gap is flagged, not guessed",
+      "screen": "/reports/<id> review, question B7. Prognosis (F-14)",
+      "actions": [
+        { "t": 47.0, "do": "Hard cut (not a scroll: a scroll from B1 passes F-10/F-11, whose chips name TM3) so 'B7. Prognosis' (#q-F-14) starts about 150 px below the top." },
+        { "t": 47.9, "do": "Hover the 'Needs clinician input' box: 'No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed.' (2.4 s)." },
+        { "t": 50.5, "do": "Hover 'Gap – not in the record' (2.2 s)." },
+        { "t": 52.9, "do": "Hover the card's subtitle 'Only an opinion a clinician recorded, attributed to them; otherwise left for the clinician.' and rest to 55.6." }
+      ],
+      "locators": ["#q-F-14", "#q-F-14 text 'Needs clinician input'", "#q-F-14 text /Gap – not in the record/"],
+      "frame": "S04e-prognosis-gap.png"
+    },
+    {
+      "id": "S05a",
+      "start": 55.6,
+      "end": 59.4,
+      "label": "Her own opinion",
+      "screen": "/reports/<id> review, F-14",
+      "actions": [
+        { "t": 55.7, "do": "Click the empty answer box ('Write your clinical opinion here…'); if only 'Add a paragraph in your own words' shows, click that first." },
+        { "t": 56.0, "do": "Type at about 45 characters a second: 'In my opinion Ms Hart has made a good recovery; the remaining neck ache should settle within three to six months.'" },
+        { "t": 58.7, "do": "Click the card heading; the paragraph is tagged 'Clinician · Your own words – no citation needed'. Click 'Mark resolved' on 'Gap – not in the record'." }
+      ],
+      "locators": ["#q-F-14 textarea (last)", "#q-F-14 getByRole('button', { name: 'Add a paragraph in your own words' })", "#q-F-14 h3", "#q-F-14 getByRole('button', { name: 'Mark resolved' })"],
+      "frame": "S05a-clinician-opinion.png"
+    },
+    {
+      "id": "S05b",
+      "start": 59.4,
+      "end": 62.2,
+      "label": "Approve – nothing is issued before",
+      "screen": "Approve dialog",
+      "setup": "Inside a hard cut (the remaining clinician answers, same kind of clicks): F-13 'Yes'; F-15 and F-16 in her own words (texts as in record-demo.mjs); resolve every remaining item; 'Write in my own voice' if offered; wait until 'Approve…' is enabled ('16 of 16 answered and clear', 'Ready for your approval'); click 'Approve…'; fill Full name 'Sarah Reid', HCPC 'PH-DEMO-01' (fictional) and the typed signature; tick all five check boxes. Dismiss any old toasts.",
+      "actions": [
+        { "t": 59.5, "do": "First frame: the filled dialog – 'Approve the completed form … Nothing is issued until you approve it.', the declaration fields, the typed signature and the ticked attestations." },
+        { "t": 59.8, "do": "Cursor runs down the attestations (1.4 s), then to 'Approve and sign'." },
+        { "t": 61.6, "do": "Click 'Approve and sign'." }
+      ],
+      "locators": ["getByRole('button', { name: /^Approve/ })", "dialog getByLabel('Full name', { exact: true })", "dialog getByLabel('HCPC registration number')", "dialog getByLabel(/Typed signature/)", "dialog input[type=checkbox]", "dialog getByRole('button', { name: /Approve and sign/ })"],
+      "frame": "S05b-approve.png"
+    },
+    {
+      "id": "S05c",
+      "start": 62.2,
+      "end": 64.2,
+      "label": "Download their own file",
+      "screen": "/reports/<id> approved",
+      "actions": [
+        { "t": 62.2, "do": "'Approved – the completed form is final · Approved by Sarah Reid (HCPC PH-DEMO-01)…' Cursor to 'Completed form (Word)'." },
+        { "t": 62.9, "do": "Click 'Completed form (Word)'. Toast: 'Final document downloaded · Hart_M_Treating-Physiotherapist-Report_…_SIGNED.docx'. Save the download (it is checked for banned terms)." }
+      ],
+      "locators": ["h2 'Approved'", "getByRole('button', { name: 'Completed form (Word)' })"],
+      "checks": ["Never click 'Completed form (PDF)' here.", "As recorded: punch-in to a 16:9 crop of the full content width from under the header (x 172–1428, y 58–764 CSS px, about 1.27x); the F-01 card is pushed down with a presentation-only margin so its TM3 chips stay below the crop; the toast stack is moved top-right inside the crop."],
+      "frame": "S05c-approved-download.png"
+    },
+    {
+      "id": "S05d",
+      "start": 64.2,
+      "end": 70,
+      "label": "The final form, in their layout",
+      "screen": "'Open a larger preview' dialog (FINAL)",
+      "actions": [
+        { "t": 64.2, "do": "Click the Preview panel's 'Open a larger preview'. 'Final completed form. Harrow & Pike Medico-Legal (fictional) – original layout.' Top of the form, no DRAFT mark (1.8 s)." },
+        { "t": 66.2, "do": "Smooth scroll (1.6 s) so 'B7. Prognosis' (her words) and 'PART C – DECLARATION' (Sarah Reid, PH-DEMO-01, 'approved electronically on …', date) are both on screen." },
+        { "t": 68.0, "do": "Cursor points from the margin at her prognosis, then at the signed declaration; hold to 70.0." }
+      ],
+      "locators": ["getByRole('button', { name: 'Open a larger preview' })", "dialog text /B7\\. Prognosis/", "dialog text /PART C/"],
+      "frame": "S05d-final-signed.png"
+    },
+    {
+      "id": "S06a",
+      "start": 70,
+      "end": 75.8,
+      "label": "Portal answers: copy one",
+      "screen": "/reports/<id> approved, question B1 (F-07)",
+      "setup": "Inside a hard cut: close the dialog, dismiss old toasts, scroll so 'PART B – CLINICAL INFORMATION' sits just under the sticky header (F-06 fully out of view). The browser context must grant clipboard-read and clipboard-write, or the app shows a 'did not allow copying' message.",
+      "actions": [
+        { "t": 70.4, "do": "Cursor to the F-07 'Copy' button (beside 'Drafted from the notes')." },
+        { "t": 71.2, "do": "Click it. Toast: 'Answer to “B1. Mechanism of injury” copied · The approved answers, ready to paste.' Hold." },
+        { "t": 73.0, "do": "Cursor rests under the copied answer's first paragraph; hold to 75.8. (No scroll up to the copy panel: it would pass the TM3-labelled registration answers. S06b starts with a hard cut.)" }
+      ],
+      "locators": ["#q-F-07 getByRole('button', { name: /^Copy the answer to/ })"],
+      "frame": "S06a-copy-one.png"
+    },
+    {
+      "id": "S06b",
+      "start": 75.8,
+      "end": 80,
+      "label": "Portal answers: copy all",
+      "screen": "/reports/<id> approved, 'Copy answers' panel",
+      "actions": [
+        { "t": 75.9, "do": "Cursor to 'Copy all answers' (the panel says '…as plain text – for a portal, an e-mail or a letter.')." },
+        { "t": 76.6, "do": "Click 'Copy all answers'. Toast: '16 answers copied · The approved answers, ready to paste.' Hold to 80.0." }
+      ],
+      "locators": ["getByRole('button', { name: 'Copy all answers' })"],
+      "checks": ["Same punch-in, margin and toast placement as S05c."],
+      "frame": "S06b-copy-all.png"
+    },
+    {
+      "id": "S07",
+      "start": 80,
+      "end": 89,
+      "label": "End card",
+      "screen": "card",
+      "action": "Static end card (cards.end). Fade out over the last 0.5 s. No caption pill.",
+      "frame": null
+    }
+  ],
+  "teaser": {
+    "name": "clinforms-outreach-v1-teaser",
+    "seconds": 19.2,
+    "silent": true,
+    "gif": { "width": 800, "height": 450, "fps": 10, "loop": true, "targetMB": 3, "maxMB": 5 },
+    "captionStyle": "Big caption, one or two lines, white on a dark pill, about 44 px at 800 px wide, centred in the lower third. Built from caption-free frames (the main caption pill must not appear).",
+    "shots": [
+      { "id": "T1", "from": "S02", "in": 6.2, "out": 10.5, "caption": ["Every referrer sends its own form"] },
+      { "id": "T2", "from": "S05d", "in": 64.3, "out": 68.6, "caption": ["Completed from your notes,", "in their own layout"] },
+      { "id": "T3", "from": "S04d", "in": 42.9, "out": 47.2, "caption": ["Every answer shows its source"] },
+      { "id": "T4", "from": "S04e", "in": 47.6, "out": 51.9, "caption": ["Gaps flagged – never guessed"] },
+      { "id": "T5", "from": "card", "seconds": 2.0, "caption": ["Book a 15-minute demo", "clinforms.co.uk"] }
+    ]
+  }
+}

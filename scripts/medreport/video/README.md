@@ -17,6 +17,10 @@ name ("AppStackX Reports") and the earlier file names. Re-running the recorder p
 |---|---|
 | `record-demo.mjs` | Drives the Studio and the Simulated TM3 sandbox with Playwright, captures frames, assembles the MP4s and the other outputs |
 | `captions.json` | Every caption, chapter chip, question card, answer line, card and suggested voice-over line. Edit the wording here, not in the script |
+| `video-kit.mjs` | Shared machinery for both recorders: overlay (cursor, ripple, heartbeat, optional chapter bar and captions), screencast `Cast`, `BaseDirector` (cursor moves, scrolling, clicks, typing, cuts), banned-term patterns, ffmpeg frame concat, SRT helpers, card styles |
+| `record-outreach.mjs` | The generic 89 s outreach video for UK private physiotherapy clinics (see below) |
+| `outreach-captions.json` | Its lines (caption + voice-over, timed), shots (actions, locators), cards and teaser. Edit the wording and timings here |
+| `check-outreach-captions.mjs` | Self-check of `outreach-captions.json` (banned terms, caption length, narration fit, continuity) |
 
 ## What it produces
 
@@ -137,3 +141,47 @@ see or download (`src/modules/medreport/core/wording.ts`). The recorder enforces
   patients and referrers are fictional. A direct TM3 connection is "subject to TM3 providing access";
   today's route is a TM3 export.
 - Make no time-saving claims, and do not use real MLC or insurer branding.
+
+## Outreach video (`record-outreach.mjs`)
+
+A generic 89 s video for cold outreach to UK private physiotherapy clinics: title card, 74 s of the Studio
+(Megan Hart on the Harrow & Pike form, the Meridian form uploaded once), end card. Storyboard and narration
+live outside the repo (`marketing/clinforms/outreach-video-v1/`). Demo mode only: the server must report
+`aiMode: "demo"`; no keys are needed.
+
+```bash
+npm run build && PORT=3310 MEDREPORT_AI_MODE=demo npm run start &      # .env.local with only MEDREPORT_AI_MODE=demo
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/record-outreach.mjs \
+  --out ~/Projects/Appstackx/marketing/clinforms/outreach-video-v1 [--review /tmp/frames]
+# Re-render cards and captions and re-encode from work/timeline.json (no recording):
+NODE_PATH=... node scripts/medreport/video/record-outreach.mjs --out ... --assemble-only
+```
+
+How it differs from the walkthrough recorder:
+
+- **Clock.** Every action is scheduled at its time in the final cut (`shots[].actions` in the JSON); holds pad
+  the gaps. Video time is wall time minus cut time, so each voice line lands at its planned start; an action
+  that runs late is logged as `drift` in `work/timeline.json`.
+- **Hard cuts only.** Page loads, the drafting, the remaining clinician answers and filling the approval
+  dialog happen inside cuts. Nothing is sped up and no wait is labelled or timed.
+- **Captions in post.** Caption pills are rendered as PNGs (the Studio's own Inter font) and overlaid by ffmpeg
+  at the recorded line times, so `work/picture-clean.mp4` has no captions (teaser source) and captions can be
+  re-timed with `--assemble-only`. A small "Fictional data" tag sits top left on the app screens.
+- **Framing guard.** A sampler in the page (every 150 ms) aborts the recording, naming the shot, if a frame
+  outside a cut shows legible "TM3" without a readable "Simulated TM3" label (a label half under a caption pill
+  does not count), or a real insurer's name. The Studio names TM3 on its registration answers, so S05c and S06b
+  are punched in (about 1.27×) to a 16:9 crop of the full content width; the first registration card is pushed
+  below the crop with a presentation-only margin and the toast stack is moved into the crop. Other
+  presentation-only CSS: dialogs sit higher and end above the caption band, and S04b gets 120 px of bottom
+  padding so the page intro that names TM3 can go under the header. The banned-term guard of the walkthrough
+  recorder runs at every shot and caption, on the cards, captions, SRT and the downloaded final Word file.
+- **Busy machine.** The take waits until the 1-minute load is below `MAX_LOAD` (default 12) and aborts with
+  "MACHINE BUSY" if it rises above `ABORT_LOAD` (default 30) mid-take: a loaded machine gives late actions and
+  dropped frames. Late actions are listed as `drift` in the timeline.
+- **Headless** at a 1600×900 window and device scale 1.2 (native 1920×1080 frames); the browser context grants
+  clipboard read/write so the "Copy" toasts work.
+
+Outputs (under `--out`, not in git): `work/picture.mp4` (silent master with captions), `work/picture-clean.mp4`,
+`work/picture.srt`, `work/timeline.json` (recorded line, shot and punch-in times in `final`), `work/teaser-source.mp4`
++ `work/teaser-source.json` (caption-free T1–T5 cut, 19.2 s), `work/teaser.mp4` / `work/teaser.gif` /
+`work/teaser-poster.png` (the teaser with its big captions; GIF 800×450), `work/cards/`, `work/captions/`, `work/poster.png`.
