@@ -7,6 +7,46 @@ The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/cli
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
+**UPDATE 20/10 ~17:00 UTC: call BOOKED Fri 23 Oct 2026 11:30 BST (Khuram replied himself) – ignore the slot/email steps below. RED DECLINED (Khuram 20/10: "not going ahead"; reason not recorded).**
+**Dell Baines replied on 20/10** (verbatim: `memory/projects/blue-heart-clinics.md` §2.6): ClinForms is "exactly what I
+have been looking for"; he wants **a 15-minute session** (he asks questions, Khuram demos) and asked for dates and times.
+- **Material (branch `sales/blue-heart-call`, worktree `clinforms-wt/blue-heart-call`, NOT merged – docs/memory only):**
+  run sheet `docs/blue-heart-runsheet.md` (set-up, rehearsal, 15-min table with exact labels and say lines, questions,
+  honest answers, fallbacks); call pack `docs/demo-blue-heart.md` (support matrix, labels to frame, caveats, data
+  protection built vs planned, price per §0 of pricing.md, proof-of-concept next step, **§email = reply to Dell**).
+- **Demo:** frozen folder `~/Projects/Appstackx/clinforms-demo`, `npm run demo:red -- --skip-build` (demo mode). Story:
+  Megan Hart on Harrow & Pike (Word MLC) end to end incl. approval → Meridian uploaded live → Megan on Meridian, previews
+  side by side for Dell's prognosis/restrictions/recommendations example. Verified 20/10 headless on port 3158 (22 steps,
+  every wait < 1.2 s; server stopped after). Public demo on clinforms.co.uk verified read-only as the fallback.
+  Fallback files (gitignored): `clinforms/demo-assets/outputs/blue-heart/` (signed Harrow & Pike .docx + 10 screenshots;
+  05 and 08 replaced 20/10 ~17:30 UTC – the old ones showed "Blocked" and a DRAFT thumbnail under FINAL).
+- **Review fixes (20/10, same branch):** say lines now match measured live times (~20 s a form, not "a few seconds");
+  TM3 = "upload as PDF, Word or CSV – a real TM3 export not tested yet" (no attendance from printed notes); step 7 stops
+  at "Completed form (Word)" – **don't click "Save to clinic record"** (simulated filing + "production converter"
+  note); tabs told apart by the green Approved badge, not tab numbers; prepared-draft disclosure said at step 0;
+  no "30 days" retention claim; email slots are `[SLOT …]` placeholders (UK time) for Khuram to fill; backup click
+  paths in run sheet E.2.
+- **Khuram, in order:** (1) choose 3 slots and type them over the `[SLOT …]` placeholders (suggestions Thu 22 Oct 12:30,
+  Fri 23 Oct 12:30, Mon 26 Oct 17:30 UK time – lunchtime only with his own Mac and a quiet room) and send the reply in
+  Dell's thread (keep Gmail's "Re:" subject), deciding the optional "blank forms beforehand" paragraph; (2) decide year-2 price at ~125/month, VAT,
+  proof-of-concept turnaround, DPA timing (call pack §0); (3) check Sent mail for what he last sent Dell (unrecorded);
+  (4) restart the demo server – the RED-era one (started 13/10) was still on :3000 at 18:00 BST 20/10 – then Reset demo
+  and rehearse once; (5) after the call, give Claude Dell's answers → deal file §7.
+- **Known demo traps (call pack §5):** never click "Completed form (PDF)" on a Word form (no Word→PDF converter; the
+  screen's "production converter" wording is misleading); don't open "Security & GDPR" on the laptop **or on clinforms.co.uk**
+  (both say "launch from TM3 in the patient's context" under live; the laptop one also says UK hosting in the present
+  tense); don't click "Save to clinic record"; don't approve Meridian/Northfield for Megan.
+- **RED:** call held 13/10, **outcome not recorded** – ask Khuram (§A). The RED freeze is over, but leave the folder/tag
+  as is. Never mention RED (or any prospect) to Dell.
+- Product follow-ups seen while verifying (plan first, not started): Word→PDF converter (§4); own-voice rewrite leaves
+  stiff/ungrammatical sentences (Harrow & Pike B2/B3, Northfield §3); demo "Security & GDPR" page and the
+  "production converter" message out of date vs the live site; downloaded .docx metadata still says "AppStackX Reports".
+  **Live site too (Khuram decides before the call):** on `main` (deployed) the Studio security screen's "live" column
+  says "launch from TM3 in the patient's context" (`src/modules/medreport/ui/screens/security/security-screen.tsx:70`,
+  shown at clinforms.co.uk/reports/security) – change it to match the TM3 row ("Notes export upload now; a direct
+  connection subject to TM3 providing access"). One-line copy change, but it deploys production: plan first, his go.
+
 ## 0. First 15 minutes of a new session (checklist)
 1. Read `CLAUDE.md`, this file, `memory/README.md`; skim `memory/decisions.md` (top rows).
 2. `git fetch && git status && git worktree list && git log --oneline -5` (expect `main` = `8def25b` or later);
@@ -27,7 +67,7 @@ Update this file at the end of every session (status, blockers, what changed).
 2. **Anthropic key:** is the production `ANTHROPIC_API_KEY` the new key, and have the older keys (the 06/10 chat key
    and the second cloud key file) been deleted in the Console? (Asked at go-live; he asked why – told: keep the new
    key, delete older ones; not a launch blocker. **Confirmation still unanswered.**)
-3. Did the voiced v2 video go to Dell? Did he reply or send forms? Which of our 06/10 draft replies did you send?
+3. ~~Did Dell reply?~~ **Yes, 20/10 – wants a 15-min session (see TOP).** Still open: what did you last send him (v2 video? `/demo` link? prices?), and which 06/10 drafts were sent?
 4. If Daniel asks about price on Tuesday, what do we say? (Proposal: `memory/context/pricing.md`; same structure as
    Blue Heart – per clinic; Practice £199/mo list; founding £149/mo × 12 + £250 setup incl. 5 forms – or "depends on
    volume, typically £99–£199/month; confirmed after a short pilot".)
@@ -37,6 +77,7 @@ Update this file at the end of every session (status, blockers, what changed).
    pages (§2 item 2.6)?
 7. Is `clinforms.com` registered (redirect to `.co.uk`)? UK IPO trademark search "ClinForms" (classes 9, 42)?
 8. Outreach: start sending the video (link `clinforms.co.uk/demo`) – to whom, from which mailbox, when?
+9. **RED call (13/10): how did it go?** Daniel's answers and next step → `memory/projects/red-physiotherapy.md` §7 (not recorded).
 
 ---
 
@@ -131,7 +172,7 @@ Plan (do not build yet) production hardening of ClinForms for a first pilot clin
 | # | Item | Status | Needs |
 |---|---|---|---|
 | 7.1 | **Keys:** production `MEDREPORT_*` / `TM3_SIM_TOKEN` values are fresh (generated 09/10 for Vercel, in the secrets file); production data key rotated k1 → k2 on 10/10 (k1 shown in a screenshot, no data existed). **Anthropic:** Khuram to confirm the new key is in production and older keys (06/10 chat key + the second cloud key file) are deleted; spend-limited workspace + alerts | PARTLY DONE | Khuram (§A Q2) |
-| 7.2 | Dell follow-up: confirm v2 sent; introduce "ClinForms"; chase anonymised forms + notes; fix the "[7–10] days" commitment; the `/demo` video could go to him too | PENDING | Khuram answers §A Q3 |
+| 7.2 | Dell follow-up: **superseded 20/10 – Dell replied, wants a 15-min session; see TOP** (reply drafted in `docs/demo-blue-heart.md` §email; turnaround "[X] working days" still Khuram's call) | IN PROGRESS | Khuram sends reply |
 | 7.3 | `clinforms.co.uk` registered and live (DNS on Cloudflare); `clinforms.com` unknown; UK IPO trademark search "ClinForms" (classes 9, 42) | PARTLY DONE | Khuram (§A Q7) |
 | 7.4 | RED company check (Companies House 13547807, website, likely PMS) before Tuesday | Not done | Web access |
 | 7.5 | RED-specific or other video after the call. Generic outreach video DONE 10/10 (`marketing/clinforms/outreach-video-v1/`, recorder on `sales/outreach-video`) | – | Khuram's OK |

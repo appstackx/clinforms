@@ -1,6 +1,7 @@
 # Blue Heart Clinics deal (Dell Baines)
 
-**Status (2026-10-09):** Voiced demo video (v2) ready since 13:51 UTC; Khuram planned to email it to Dell before 15:15 BST. **Whether it was sent, and whether Dell replied, is unverified – ask Khuram.** Next step we asked for: Dell sends 1–2 anonymised MLC forms + matching anonymised notes; we return completed drafts.
+**Status (2026-10-20 ~17:35 UTC; material first written ~17:15 UTC):** **Dell replied** (email pasted by Khuram Tue 20/10, verbatim §2.6): ClinForms is "exactly what I have been looking for"; he wants **a 15-minute session** to see it in action and discuss how it fits Blue Heart's reporting workflow, and asks Khuram for "a few dates and times". He names **ClinForms**, so he has seen the new name (probably via clinforms.co.uk/demo, whose button says "Book a 15-minute call", or Khuram's latest email – what Khuram last sent him is **unrecorded**; his email opens "Thank you for getting in touch"). **Call material ready on branch `sales/blue-heart-call` (not merged):** run sheet `docs/blue-heart-runsheet.md`, call pack `docs/demo-blue-heart.md` (incl. §email = the reply with 3 `[SLOT …]` placeholders for Khuram to fill). Review fixes applied ~17:35 UTC (live times ~20 s a form; TM3 export untested; no "Save to clinic record" click; no retention-period claim; backup click paths in run sheet E.2). Demo = frozen local folder `~/Projects/Appstackx/clinforms-demo` (Megan Hart on Harrow & Pike end to end + Meridian uploaded live for his prognosis/restrictions/recommendations example), verified 20/10 (22 steps, every wait < 1.2 s); public site clinforms.co.uk verified as fallback. **UPDATE 20/10 ~17:00 UTC: Khuram replied himself (his text not recorded) and the call is BOOKED for Fri 23 Oct 2026, 11:30 BST (10:30 UTC). §email in the call pack is superseded.** Price line given to Khuram 20/10 (the agreed list, no change after RED's no): ask volume first; founding £149/mo fixed 12 months (fair use 150 forms/mo) + £250 set-up, all 11 sites and staff, monthly, ex VAT; over ~150/mo → Group from £349, founding price agreed after the pilot; free proof of concept on 2–3 blank forms + anonymised notes before any payment; paid use starts with real patients after DPA + UK hosting.
+**Earlier status (2026-10-09):** Voiced demo video (v2) ready since 13:51 UTC; Khuram planned to email it to Dell before 15:15 BST. Whether it was sent is still unverified. Next step we asked for: Dell sends 1–2 anonymised MLC forms + matching anonymised notes; we return completed drafts.
 **Contact:** Dell Baines – `memory/people/dell-baines.md`. Research briefing (06/10): `memory/sources/blue-heart-briefing.md`.
 
 ## 1. The company (search-snippet research, 06/10; [C] public, [I] inference, [U] unknown)
@@ -139,6 +140,22 @@ Notes: Khuram must choose the "[7–10] days" commitment himself. This draft say
 > Khuram Masood
 > AppStackX
 
+### 2.6 Dell → Khuram, third email (pasted by Khuram Tue 20/10, ~16:41 UTC) – wants a 15-minute session
+> Dear Khuram,
+>
+> Thank you for getting in touch. This is exactly what I have been looking for to help us complete the different MLC and insurer forms we receive, while allowing our clinicians to review and approve the information before it is sent.
+>
+> I'd be very interested in seeing ClinForms in action and discussing how it could fit into Blue Heart Clinics' reporting workflow. A 15-minute session would be useful. Please send me a few dates and times that work for you.
+>
+> Kindest Regards,
+> Dell Baines.
+> Company Owner.
+
+Khuram's message that this answers is **not in our records** (he names ClinForms, so it post-dates the rename). Khuram asked the same day: "are we ready for them?" (15-min call: Dell asks questions, Khuram demos).
+
+### 2.7 Our reply 3 (assistant draft, 20/10) – **not sent yet**
+In `docs/demo-blue-heart.md` §email (branch `sales/blue-heart-call`): thanks; three 15-minute slots as `[SLOT …]` **placeholders for Khuram to fill**, "(UK time)" (suggestions in the placeholders: Thu 22 Oct 12:30, Fri 23 Oct 12:30, Mon 26 Oct 17:30 – UK clocks go back Sun 25 Oct, so the Monday slot is GMT; lunchtime only works with his own Mac and a quiet room); subject = leave Gmail's "Re: <his subject>" (his subject is not recorded); live walkthrough on fictional data – an MLC form and an insurer form completed in their own layout from clinic notes, clinician review/amend/approve; optional paragraph asking for 1–2 blank MLC forms beforehand ("I'll aim to show…", scanned not supported; only if Khuram will do that prep); signed Khuram Masood, AppstackX Ltd, khuram@appstackx.co.uk, https://appstackx.co.uk.
+
 ## 3. How each of Dell's points is answered (product + video v2, 6:15)
 | Dell's point | Answer | Video time |
 |---|---|---|
@@ -153,8 +170,10 @@ Notes: Khuram must choose the "[7–10] days" commitment himself. This draft say
 | His offer of anonymised examples | "Send us an anonymised MLC form with matching notes; we'll send the completed draft" | 6:06 next-step card; recap 5:52 |
 
 **Honest gaps if Dell presses:** forms are fictional look-alikes; scanned/non-fillable PDFs not shown (biggest risk if common); TM3 simulated (export+upload today); GDPR measures are commitments not built (demo stores in browser); PDF copy of a Word form needs a converter server in production.
+**Update 20/10:** since go-live (10/10) much of Q5 is **built and live** (invite-only accounts, required two-step sign-in, roles, per-clinic AES-256-GCM encryption, append-only audit log, clinic-set retention). Still NOT done: DPA, DPIA, UK (London) database – the app runs in London but the database is in the **EU** today; automatic deletion "being switched on"; no security certification. Word→PDF still not built (Word forms come back as Word). Call wording: `docs/demo-blue-heart.md` §8.
 
 ## 4. Pricing for Blue Heart (internal; nothing formally quoted)
+- **20/10: superseded by the official price list agreed 10/10 (D64, `memory/context/pricing.md` §0):** founding Practice £149/mo fixed 12 months (fair use 150 forms/month) + £250 set-up; Practice includes 10 referrer forms (so the "5 forms / 10 extra for £300" idea below is dead). At ~125 forms/month the list price would be Group "from £349" – **year-2 price is Khuram's open decision**. Call wording: `docs/demo-blue-heart.md` §9. The rest of this section is the 06/10 reasoning, kept for history.
 - Recommended quote: **Practice £199/mo list; founding offer £149/mo fixed for 12 months + £250 setup**, monthly, cancel any time. 5 included forms = their Blue Heart template + top 4 referrers. Extra forms capped (e.g. **up to 10 extra forms for £300**). Year 1 ≈ £2,040. State whether prices include VAT (they likely can't reclaim: £149 ≈ £179).
 - Don't offer Starter £99 (undersells 11 sites). Avoid per-seat, annual lock-in, piling form fees.
 - Comfort zone £100–300/mo + setup ≤ ~£500; five-figure build fee is a stretch.
@@ -169,8 +188,13 @@ Full pricing reasoning: `memory/context/pricing.md`.
 - Never claim a direct TM3 link until TM3 confirms access; test scanned/flat PDFs with his examples before promising.
 - Data to request: 2–3 forms in original Word/PDF; anonymised registration + notes for 1–2 cases as TM3 exports them; one actually-sent completed report; which TM3 export formats exist; whether his TM3 can issue API keys. He must remove names, DOBs, addresses, NHS numbers, claim refs.
 
-## 6. Next actions
-1. Ask Khuram: was v2 sent? Any reply? Which drafts were sent?
-2. Introduce the name **ClinForms** in the next email (video says "AppStackX Reports").
-3. When forms/notes arrive: classify each (Word / AcroForm / flat / scanned), map + confirm, build an anonymised fixture from his notes (or map his real TM3 export format), complete, return drafts + short walkthrough. Keep his files out of git (use gitignored `demo-assets/`).
-4. Before contract: legal entity, VAT, DPO, DPA naming Anthropic as sub-processor, price.
+## 6. Next actions (updated 20/10)
+1. **Khuram: send the reply** (`docs/demo-blue-heart.md` §email) after typing his three chosen slots over the `[SLOT …]` placeholders (around his day job); keep or delete the optional "send blank forms beforehand" paragraph (only if he will prep them before the call). Reply in Dell's thread.
+2. **Khuram decides before the call** (`docs/demo-blue-heart.md` §0): what he last sent Dell (check Sent mail – unrecorded); year-2 price at ~125 forms/month; VAT status; proof of concept free + turnaround "[X] working days"; when to get a DPA drafted (none exists; the live `/security` page says it is "available on request").
+3. **Before the call:** restart the frozen demo server (the 13/10 one was still listening on :3000 at 18:00 BST on 20/10), Reset demo in the "ClinForms demo" Chrome profile, rehearse once with `docs/blue-heart-runsheet.md`. Never mention RED or any other prospect to Dell.
+4. **After the call:** record Dell's answers in §7 below (referrers + volumes, Word/PDF/scanned/portal split, TM3 web/desktop and export options, who writes/signs, data rules, price reaction, next step and date) and in `memory/people/dell-baines.md`; draft the follow-up.
+5. When forms/notes arrive: classify each (Word / AcroForm / flat / scanned), map + confirm, turn his anonymised notes into a made-up patient before any drafting, complete, return drafts + short walkthrough (`docs/demo-blue-heart.md` §10). Keep his files out of git (use gitignored `demo-assets/`).
+6. Before contract: legal entity (09158709 files dormant accounts), VAT, DPO, DPA naming Anthropic as sub-processor, DPIA, London database, price.
+
+## 7. Call notes (fill in after the call)
+_Not held yet._
