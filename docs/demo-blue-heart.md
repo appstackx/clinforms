@@ -17,7 +17,7 @@
 
 ## The one-line answer
 
-> "Yes. ClinForms completes each MLC's or insurer's own form – Word or PDF – in its own layout, from the TM3
+> "Yes. ClinForms completes each MLC's or insurer's own form – Word or PDF – in its own layout, from the patient's
 > registration details and notes. Every answer shows the note it came from, opinions are left for the clinician, and
 > nothing is issued until a clinician approves it. Which MLCs send you the most forms?"
 
@@ -81,13 +81,15 @@ Northfield · **Rebecca Lane** with the portal questions or Bupa.
 
 | Referrer (fictional) | Form | Type | Where | Use on the call |
 |---|---|---|---|---|
-| Harrow & Pike Medico-Legal | Treating Physiotherapist Report (16 questions) | Word | Library | **Main:** Megan end to end – review, sources, flags, clinician opinions, own voice, approval, Word download, save to record |
+| Harrow & Pike Medico-Legal | Treating Physiotherapist Report (16 questions) | Word | Library | **Main:** Megan end to end – review, sources, flags, clinician opinions, own voice, approval, Word download (don't click "Save to clinic record" on the call – §5) |
 | Meridian Claims Services | Physiotherapy Discharge Report (17 found, 14 to answer) | Word with content controls and tick boxes | "Try a new form" | **His example:** uploaded live, map checked, Megan completed to preview. Don't approve (claim reference and reason for discharge need staff/clinician) |
 | Northfield Assurance | Rehabilitation Progress Report (17) | Fillable PDF | Library | Backup (a) if he asks about PDF. Long answers end "(continued on the continuation sheet)" – looks clunky. Don't approve locally |
 | Kingsway Case Management | Return to Work Assessment (18) | Word, case manager | Library | Backup (b) with Daniel Brooks (launched by Tom Ellis) – 14 of 18 |
 | Example insurer portal | Example portal questions (illustrative) (8) | Portal | Library | Backup (c) with Rebecca Lane: 7 of 8, prognosis left for the clinician, "Copy all answers" |
 | Ashcroft Medical Reporting | Physiotherapy Update Report | Flat PDF | "Try a new form" | **Not verified to the end on 20 Oct – don't use** |
 | Bupa (public form) | Therapies management form | Fillable PDF | "Demonstration forms" (upload from `clinforms/demo-assets/insurers/`) | Backup (d) only. Bupa isn't one of his insurers – prefer the portal questions for PMI |
+
+Click paths for the backups (a)–(c): run sheet E.2.
 
 There is no employer form. Don't scroll down to "Demonstration forms" unless he asks about PMI: those cards are public
 insurer forms (Aviva, Allianz…), not his.
@@ -136,27 +138,29 @@ talking and typing, not waiting. Talking times in the run sheet are estimates.
 
 | On screen | What it is | Say if asked |
 |---|---|---|
-| "Prepared demo draft (09/10/2026)" (every review) | The answers were drafted from these notes earlier and saved, so the demo runs offline | "These were drafted from her notes earlier and saved for the demo. Live, drafting takes a few seconds." |
+| "Prepared demo draft (09/10/2026)" (every review) | The answers were drafted from these notes earlier and saved, so the demo runs offline | "These were drafted from her notes earlier and saved so the demo runs offline. Live, a form like this takes about 20 seconds to draft." (Measured live: 15–30 s per form, `memory/sources/cv-live.md`) |
 | "Prepared demo reading" + "How it was analysed: Prepared demo reading · <today> · 11.1 s" (Meridian map) | The reading was prepared earlier; the timestamp is today's but the 11.1 s is the recorded one, so it looks live | Say up front: "I prepared this reading earlier; a new form takes about 15–25 seconds to read live." |
 | "Simulated TM3 sandbox – demo data, not affiliated with TM3" | The made-up clinic system | "We simulate TM3 for demos; we're not connected to TM3." |
 | "Direct TM3 connection – subject to TM3 providing access" (home card) | Honest status | "Exactly – it depends on TM3." |
 | "Demo mode" (header) | No live drafting | "It's running on my laptop in demo mode." |
 | "FACT-attendance", chips like "N-010" / "A-005", "sim-pat-001", an "Integration log" on the data step | Internal record IDs | "Those are record IDs – each note and appointment has one." |
-| After "Save to clinic record": "PDF conversion runs on the production converter…" / "The PDF copy is made on the production converter; the Word file was filed." | **Misleading:** there is no Word→PDF converter anywhere yet | Don't read it out. "Word forms come back as Word today; a PDF copy isn't switched on yet." |
+| After "Save to clinic record": "PDF conversion runs on the production converter…" / "The PDF copy is made on the production converter; the Word file was filed." | **Misleading:** there is no Word→PDF converter anywhere yet, and filing only works into the simulated TM3 | **Don't click "Save to clinic record" on the call** (run sheet step 7). If clicked by mistake: "Ignore the converter note – a PDF copy of a Word form isn't switched on yet, and in your clinic you'd attach the file in TM3 yourself." |
 | "Completed form (PDF)" button after approving a Word form | Looks enabled; clicking hangs ~16 s then says no PDF copy is available | **Never click it** |
 | Own-voice banner example "On 01/10/2026 Sarah Reid recorded that loading needs progressing…" | The example sentence comes from a different made-up case | Ignore |
 | A few stiff own-voice sentences (B2 "On 18/03/2026: forward head posture…", B3 mixes "I explained" with "treatment recorded by Sarah Reid and Tom Ellis") | Cosmetic | "The clinician edits any line before approving." |
 | "Blocked – check required" for about half a second after typing an opinion | Checks catching up | Wait a moment before "Mark resolved" |
 | "Page  of " in the Word preview footer | The page numbers don't render in the browser preview; the real file has them | Ignore |
-| "Security & GDPR" page / "Security & data protection" card | Written before go-live: says "UK hosting" in the present tense and mentions launching from TM3 | **Don't open it.** Answer security out loud (§8) |
+| "Security & GDPR" page / "Security & data protection" card – on the laptop **and** on clinforms.co.uk (`/reports/security`) | Both still say "launch from TM3 in the patient's context" under live (main `src/modules/medreport/ui/screens/security/security-screen.tsx:70`); the laptop one also says "UK hosting" in the present tense | **Don't open "Security & GDPR" on the laptop or on clinforms.co.uk.** Answer security out loud (§8). If Dell raises it: "That describes the goal once TM3 gives access; today it's an upload." |
 
 ---
 
 ## 6. Caveats – say them before he finds them
 
 - The forms are **made-up look-alikes**, not his MLCs' forms; the patient and clinic are fictional.
-- The TM3 shown is **simulated**. Today it works from an export or upload of the notes; there is no TM3 link.
-- The form reading and the answers were **prepared earlier** and replayed so the demo runs offline.
+- The TM3 shown is **simulated**. Today it works from an upload of the notes (PDF, Word or CSV); a real TM3 export
+  hasn't been tested yet, and there is no TM3 link.
+- The form reading and the answers were **prepared earlier** and replayed so the demo runs offline – say it at the
+  start (run sheet step 0): live, a form takes about 20 seconds.
 - **Word forms come back as Word**; a PDF copy of a Word form isn't switched on yet. PDF forms come back as PDF.
 - **Scanned paper forms aren't supported yet**; flat PDFs are best effort.
 - In the demo, reports live in the browser and anyone could type a clinician's name to approve. The live version has
@@ -172,14 +176,14 @@ talking and typing, not waiting. Talking times in the run sheet are estimates.
 |---|---|
 | **Different MLC forms? (Q1)** | Yes. Each form is uploaded once, read, checked once by your staff, and reused for every patient from that referrer. Versions sit side by side |
 | **Original layout? (Q2)** | Word and fillable PDF: yes, in their own layout. Flat PDF: best effort. Scanned: not yet. Word comes back as Word for now |
-| **TM3 without retyping? (Q3)** | "You print or save the patient's notes from TM3, upload them once, staff check what was read, and that's the record the form is built from. A direct link depends on TM3 giving access to clinical notes – I've seen TM3 has an API-token screen for approved integrations, and I'd want to confirm with them what it allows before promising anything." |
+| **TM3 without retyping? (Q3)** | "Today you'd upload the notes as PDF, Word or CSV, however TM3 lets you save them. We haven't tested a real TM3 export yet; that's the first thing the pilot checks. Staff check what was read before it's used. A direct link depends on TM3 giving access to clinical notes – I've seen TM3 has an API-token screen for approved integrations, and I'd want to confirm with them what it allows before promising anything." |
 | **Review and approval? (Q4)** | Every answer shows its note; dates and figures the note doesn't support block approval; gaps are flagged, not guessed; opinions only from the clinician; the clinician can edit or revert any answer. It stays DRAFT until a clinician approves with name, HCPC number, typed signature and attestations; a signed receipt locks the content. On the live version every approval and final download is logged |
 | **Secure / GDPR? (Q5)** | §8 |
 | **Is it live?** | Yes – clinforms.co.uk since 10 October, clinic accounts with two-step sign-in. No clinic uses it with real patients yet |
 | **Can we start with real patients?** | After the data processing agreement and impact assessment are signed and the database is in London. A proof of concept on anonymised data can start now |
 | **Who else uses it?** | "You'd be one of our first five founding clinics." Name no one |
-| **What does the drafting? (only if asked)** | "Anthropic's model, under their commercial terms. They don't use the data for training, and they delete it within 30 days. It only gets a minimised extract – no name, no date of birth, no address – and Anthropic will be named as a sub-processor in the data processing agreement." If he asks whether data leaves the UK: "The drafting service is a US company; I'll set out exactly where it's processed in the agreement rather than guess." (Its processing location is not confirmed as UK/EU – don't claim UK-only) |
-| **Time saved?** | Not measured – the pilot measures it. Machine time is seconds (a few seconds to draft a form, 15–25 s to read a new form). Don't quote savings |
+| **What does the drafting? (only if asked)** | "Anthropic, under their commercial terms: they don't train on it, and I'll set out their exact retention terms in the data processing agreement. It only gets a minimised extract: no patient name, date of birth, address or contact details. Anthropic will be named as a sub-processor in the agreement." (No source for any retention period; the zero-data-retention arrangement is not done – `memory/context/compliance.md`. Clinician names are sent.) If he asks whether data leaves the UK: "The drafting service is a US company; I'll set out exactly where it's processed in the agreement rather than guess." (Its processing location is not confirmed as UK/EU – don't claim UK-only) |
+| **Time saved?** | Not measured – the pilot measures it. Machine time: about 15–30 s to draft a form, 15–25 s to read a new form. Don't quote savings |
 | **Does it file back to TM3?** | Download it and attach it to the record, as with letters |
 | **Online portals?** | Answers ready to paste. It doesn't log in or submit |
 | **Several sites and users?** | All included: owner, administrator, clinician and staff roles |
@@ -328,30 +332,38 @@ Run sheet F. In short:
 
 ## §email – reply to Dell (customer-facing)
 
-Reply in his thread (keep his subject line). **Before sending:** confirm the three times around your day job, and keep
-or delete the optional paragraph (§0.5, §10.4). No "AI" or vendor words – checked.
+Reply in his thread. **Before sending:**
 
-**Subject:** Re: ClinForms – 15-minute session
+1. **Choose the three slots** and type them over the `[SLOT …]` placeholders – nothing is offered until you do.
+   Suggestions (yours to change): Thu 22 Oct 12:30 · Fri 23 Oct 12:30 · Mon 26 Oct 17:30 (UK clocks go back Sun 25 Oct,
+   so the Monday slot is GMT). A lunchtime slot only works if you have **your own Mac** (the demo runs on it) and a
+   quiet room; otherwise offer after-work times.
+2. Keep or delete the optional paragraph (§0.5, §10.4).
+
+No "AI" or vendor words – checked.
+
+**Subject:** leave Gmail's "Re: <his subject>" as it is (his subject line isn't recorded – don't retype it).
 
 > Dear Dell,
 >
 > Thank you for coming back to me – I'm really pleased ClinForms sounds like what you've been looking for.
 >
-> I'd be glad to show you. Here are three 15-minute slots that would suit me – they're only suggestions, so please say
-> if another time works better:
+> I'd be glad to show you. Here are three 15-minute slots (UK time) that would suit me – they're only suggestions, so
+> please say if another time works better:
 >
-> - Thursday 22 October, 12:30
-> - Friday 23 October, 12:30
-> - Monday 26 October, 17:30
+> - [SLOT 1 – Khuram to choose; suggestion: Thursday 22 October, 12:30]
+> - [SLOT 2 – Khuram to choose; suggestion: Friday 23 October, 12:30]
+> - [SLOT 3 – Khuram to choose; suggestion: Monday 26 October, 17:30]
 >
-> It will be a live walkthrough using fictional data. I'll show a medico-legal company's form and an insurer's form,
+> It will be a short on-screen walkthrough using fictional data. I'll show a medico-legal company's form and an insurer's form,
 > each completed in its own layout from a patient's clinic notes, and how your clinician reviews, amends and approves
 > the information before anything is sent. That will leave time for your questions, including how it would fit into
 > your reporting workflow alongside TM3.
 >
 > *[Optional – keep only if you will prepare his forms before the call:]* If you're able to send one or two of the
-> blank MLC forms you receive most often beforehand (blank forms only, please – no patient details), I can show you
-> those completed for a made-up patient as well.
+> blank MLC forms you receive most often beforehand (blank forms only, please – no patient details), I'll aim to show
+> you those completed for a made-up patient as well (Word or PDF files work best; scanned copies aren't supported
+> yet).
 >
 > Once you've chosen a time, I'll send a calendar invitation with a video link.
 >

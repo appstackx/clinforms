@@ -7,7 +7,7 @@ The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/cli
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
-## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~17:40 UTC)
+## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
 **Dell Baines replied on 20/10** (verbatim: `memory/projects/blue-heart-clinics.md` §2.6): ClinForms is "exactly what I
 have been looking for"; he wants **a 15-minute session** (he asks questions, Khuram demos) and asked for dates and times.
 - **Material (branch `sales/blue-heart-call`, worktree `clinforms-wt/blue-heart-call`, NOT merged – docs/memory only):**
@@ -18,20 +18,33 @@ have been looking for"; he wants **a 15-minute session** (he asks questions, Khu
   Megan Hart on Harrow & Pike (Word MLC) end to end incl. approval → Meridian uploaded live → Megan on Meridian, previews
   side by side for Dell's prognosis/restrictions/recommendations example. Verified 20/10 headless on port 3158 (22 steps,
   every wait < 1.2 s; server stopped after). Public demo on clinforms.co.uk verified read-only as the fallback.
-  Fallback files (gitignored): `clinforms/demo-assets/outputs/blue-heart/` (signed Harrow & Pike .docx + 10 screenshots).
-- **Khuram, in order:** (1) confirm the 3 slots (Thu 22 Oct 12:30, Fri 23 Oct 12:30, Mon 26 Oct 17:30 – suggestions) and
-  send the reply, deciding the optional "blank forms beforehand" paragraph; (2) decide year-2 price at ~125/month, VAT,
+  Fallback files (gitignored): `clinforms/demo-assets/outputs/blue-heart/` (signed Harrow & Pike .docx + 10 screenshots;
+  05 and 08 replaced 20/10 ~17:30 UTC – the old ones showed "Blocked" and a DRAFT thumbnail under FINAL).
+- **Review fixes (20/10, same branch):** say lines now match measured live times (~20 s a form, not "a few seconds");
+  TM3 = "upload as PDF, Word or CSV – a real TM3 export not tested yet" (no attendance from printed notes); step 7 stops
+  at "Completed form (Word)" – **don't click "Save to clinic record"** (simulated filing + "production converter"
+  note); tabs told apart by the green Approved badge, not tab numbers; prepared-draft disclosure said at step 0;
+  no "30 days" retention claim; email slots are `[SLOT …]` placeholders (UK time) for Khuram to fill; backup click
+  paths in run sheet E.2.
+- **Khuram, in order:** (1) choose 3 slots and type them over the `[SLOT …]` placeholders (suggestions Thu 22 Oct 12:30,
+  Fri 23 Oct 12:30, Mon 26 Oct 17:30 UK time – lunchtime only with his own Mac and a quiet room) and send the reply in
+  Dell's thread (keep Gmail's "Re:" subject), deciding the optional "blank forms beforehand" paragraph; (2) decide year-2 price at ~125/month, VAT,
   proof-of-concept turnaround, DPA timing (call pack §0); (3) check Sent mail for what he last sent Dell (unrecorded);
   (4) restart the demo server – the RED-era one (started 13/10) was still on :3000 at 18:00 BST 20/10 – then Reset demo
   and rehearse once; (5) after the call, give Claude Dell's answers → deal file §7.
 - **Known demo traps (call pack §5):** never click "Completed form (PDF)" on a Word form (no Word→PDF converter; the
-  screen's "production converter" wording is misleading); don't open the demo's "Security & GDPR" page (says UK hosting in
-  the present tense – the database is in the EU today); don't approve Meridian/Northfield for Megan.
+  screen's "production converter" wording is misleading); don't open "Security & GDPR" on the laptop **or on clinforms.co.uk**
+  (both say "launch from TM3 in the patient's context" under live; the laptop one also says UK hosting in the present
+  tense); don't click "Save to clinic record"; don't approve Meridian/Northfield for Megan.
 - **RED:** call held 13/10, **outcome not recorded** – ask Khuram (§A). The RED freeze is over, but leave the folder/tag
   as is. Never mention RED (or any prospect) to Dell.
 - Product follow-ups seen while verifying (plan first, not started): Word→PDF converter (§4); own-voice rewrite leaves
   stiff/ungrammatical sentences (Harrow & Pike B2/B3, Northfield §3); demo "Security & GDPR" page and the
   "production converter" message out of date vs the live site; downloaded .docx metadata still says "AppStackX Reports".
+  **Live site too (Khuram decides before the call):** on `main` (deployed) the Studio security screen's "live" column
+  says "launch from TM3 in the patient's context" (`src/modules/medreport/ui/screens/security/security-screen.tsx:70`,
+  shown at clinforms.co.uk/reports/security) – change it to match the TM3 row ("Notes export upload now; a direct
+  connection subject to TM3 providing access"). One-line copy change, but it deploys production: plan first, his go.
 
 ## 0. First 15 minutes of a new session (checklist)
 1. Read `CLAUDE.md`, this file, `memory/README.md`; skim `memory/decisions.md` (top rows).
