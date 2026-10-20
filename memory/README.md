@@ -38,6 +38,6 @@ Deep memory for ClinForms (two-tier convention: `../CLAUDE.md` is the hot cache 
 
 The six build reports are historical (careconnect-mk era, pre-Sonnet, pre-rename); the module README supersedes them.
 
-Related repo docs (authoritative for code): `../docs/go-live.md` (runbook + 10/10 run log), `../docs/production-architecture.md`, `../docs/auth.md`, `../docs/database.md`, `../docs/demo-red-physio.md` (RED call pack, internal), `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
+Related repo docs (authoritative for code): `../docs/go-live.md` (runbook + 10/10 run log), `../docs/production-architecture.md`, `../docs/auth.md`, `../docs/database.md`, `../docs/demo-red-physio.md` (RED call pack, internal), `../docs/demo-blue-heart.md` + `../docs/blue-heart-runsheet.md` (Blue Heart call pack + one-page run sheet, internal, 20/10), `../README.md`, `../docs/plan.md`, `../src/modules/medreport/README.md`, `../assets/sales/blue-heart/README.md`, `../scripts/medreport/video/README.md`.
 
 Conventions: times are UTC unless marked (UK = BST, UTC+1, in October 2026); **(unverified)** = not confirmed by Khuram or a source; [C] public source, [I] inference, [U] unknown (research files).
