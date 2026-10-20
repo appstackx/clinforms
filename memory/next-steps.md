@@ -8,6 +8,7 @@ Rule: Khuram wants **a short plan first, build after his OK** for anything big �
 Update this file at the end of every session (status, blockers, what changed).
 
 ## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
+**UPDATE 20/10 ~17:00 UTC: call BOOKED Fri 23 Oct 2026 11:30 BST (Khuram replied himself) – ignore the slot/email steps below. RED DECLINED (Khuram 20/10: "not going ahead"; reason not recorded).**
 **Dell Baines replied on 20/10** (verbatim: `memory/projects/blue-heart-clinics.md` §2.6): ClinForms is "exactly what I
 have been looking for"; he wants **a 15-minute session** (he asks questions, Khuram demos) and asked for dates and times.
 - **Material (branch `sales/blue-heart-call`, worktree `clinforms-wt/blue-heart-call`, NOT merged – docs/memory only):**

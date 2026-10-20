@@ -6,7 +6,7 @@
 
 | | |
 |---|---|
-| **Call** | **Dell Baines**, owner and director, **Blue Heart Clinics** (11 sites, main base Dunstable; uses **TM3**). 15 minutes: he asks questions, you show a demo. Date and time: one of the slots in §email, once he picks |
+| **Call** | **Dell Baines**, owner and director, **Blue Heart Clinics** (11 sites, main base Dunstable; uses **TM3**). 15 minutes: he asks questions, you show a demo. **Fri 23 Oct 2026, 11:30** (booked 20/10 by Khuram's own reply) |
 | **His words (email pasted Tue 20 Oct)** | "exactly what I have been looking for to help us complete the different MLC and insurer forms we receive, while allowing our clinicians to review and approve the information before it is sent" · "seeing ClinForms in action and discussing how it could fit into Blue Heart Clinics' reporting workflow" |
 | **His five questions (06 Oct)** | Q1 different MLC/insurer forms · Q2 original layout · Q3 TM3 details and notes without retyping · Q4 clinician review, amendment and approval · Q5 secure and GDPR compliant. Plus his example: prognosis, functional restrictions and treatment recommendations asked in different structures by different referrers |
 | **Product name** | **ClinForms** – he used it himself. The 6:15 video called it "AppStackX Reports"; if he mentions it: "that was the working name" |
@@ -330,7 +330,9 @@ Run sheet F. In short:
 
 ---
 
-## §email – reply to Dell (customer-facing)
+## §email – reply to Dell (customer-facing) – SUPERSEDED
+
+> Khuram replied to Dell himself on 20/10 and booked Fri 23 Oct 11:30. Kept for reference only; do not send.
 
 Reply in his thread. **Before sending:**
 

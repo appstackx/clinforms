@@ -1,5 +1,7 @@
 # RED Physiotherapy deal (Daniel Vatamanu)
 
+**Status (2026-10-20): DECLINED.** Khuram reported 20/10 that RED "declined and said they are not going ahead". The call took place Tue 13 Oct (Khuram rehearsed that morning; laptop demo + run sheet `docs/red-call-runsheet.md`). Reason and Daniel's answers not recorded – ask Khuram if useful. The live backup clinic `riverside-demo` still exists on production (remove with `admin:offboard-clinic --slug riverside-demo` on Khuram's go, or keep as a demo clinic).
+
 **Status (2026-10-09 ~23:15 UTC; run location updated 10/10):** Call **booked** (Khuram 09/10 14:08) for **Tue 13 Oct 2026, morning** (per the 09/10 desktop brief; exact time not in our records – check the invite). **Demo pack BUILT, reviewed, fixed and rehearsed; CALL PACK written: `docs/demo-red-physio.md`** (support matrix, Monday/Tuesday checklist, 10-minute script with click path and timings, honest answers, fallbacks). Branch `demo/red-physio`, **frozen at tag `red-demo-2026-10-13` (= `3521401`)**; run `npm run demo:red` from the frozen folder **`~/Projects/Appstackx/clinforms-demo`** (since 10/10 – not from `clinforms-wt/red-integrate` or `main`); assets in gitignored `clinforms/demo-assets/insurers/`. *(10/10: clinforms.co.uk now runs the production line – the call still uses the local frozen demo, not the website.)* **Left for Khuram:** one rehearsal in his own Chrome (demo profile, Monday evening), confirm RED's practice system if he can, decide what to say on price.
 **Contact:** `memory/people/daniel-vatamanu.md`.
 
