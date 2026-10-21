@@ -933,6 +933,23 @@ export const FormFieldSchema = z.object({
   completedBy: PartySchema.optional(),
 });
 
+/**
+ * A mail-merge field found in a referrer's form file when it was analysed (10/2026, core/merge-fields.ts):
+ * «Name», <<Name>> or a MERGEFIELD field code. One entry per occurrence. Approval is blocked while any is
+ * left on the completed form: `blockId` (Word body text) is cleared only by an answered question that
+ * replaces exactly that text there; `fieldName` (a fillable PDF field's printed value) by an answered
+ * question in that field; anything else (`fixed`: page header or footer, a Word field code, text printed
+ * on a PDF page) cannot be completed here at all.
+ */
+export const FormMergeFieldSchema = z.object({
+  text: z.string().min(1).max(80),
+  /** Where it is, in words ("table 1, row 3", "page header", "page 2"). */
+  where: z.string().max(120),
+  blockId: BlockIdSchema.optional(),
+  fieldName: z.string().max(200).optional(),
+  fixed: z.boolean().optional(),
+});
+
 export const FormAnalysisSchema = z.object({
   mode: FormAnalysisModeSchema,
   /** Model that served the analysis (live / demo_recorded). */
@@ -943,6 +960,8 @@ export const FormAnalysisSchema = z.object({
   at: IsoDateTimeSchema,
   /** Plain-English caveats, e.g. "Flat PDF: answers are overlaid at estimated positions." */
   warnings: z.array(z.string()),
+  /** Mail-merge fields in the file (10/2026; absent when there are none – every earlier map). */
+  mergeFields: z.array(FormMergeFieldSchema).max(500).optional(),
 });
 
 /** A referrer's form, analysed into a form map. Saved per referrer form and reused for every patient. */

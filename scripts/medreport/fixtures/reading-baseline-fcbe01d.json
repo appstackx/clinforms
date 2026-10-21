@@ -1,0 +1,4378 @@
+{
+ "harrow-pike-treating-physio": {
+  "rules": {
+   "dropped": 0,
+   "warnings": [],
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant name",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r0.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r1.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Our reference",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r2.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of accident",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r3.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of first assessment",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r4.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Date of last treatment",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r5.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.lastSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "B1. Mechanism of injury",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r1.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "B2. Presenting symptoms at initial assessment",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r2.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "B3. Treatment provided to date",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r3.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "B4. Number of sessions attended / failed to attend – Attended",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "t2.r4.c1",
+      "placeholderText": "__________"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "B4. Number of sessions attended / failed to attend – Failed to attend",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "t2.r4.c1",
+      "placeholderText": "__________"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "B5. Current symptoms and progress",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r5.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "B6. Has the claimant reached maximum medical improvement?",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t2.r6.c1",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "t2.r6.c1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "t2.r6.c1",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "B7. Prognosis",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r7.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "B8. Functional restrictions",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r8.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "B9. Treatment recommendations",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r9.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "Name",
+     "section": "PART C – DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r0.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "HCPC registration number",
+     "section": "PART C – DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r1.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "Signature",
+     "section": "PART C – DECLARATION",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r2.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "Date",
+     "section": "PART C – DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r3.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Date received",
+     "section": "FOR OFFICE USE ONLY",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t4.r1.c1"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "Checked by",
+     "section": "FOR OFFICE USE ONLY",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t4.r1.c3"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "low",
+     "note": null
+    }
+   ]
+  },
+  "demo": {
+   "status": 200,
+   "mode": "demo_recorded",
+   "warnings": [],
+   "mergeFields": null,
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant name",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r0.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r1.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Our reference",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r2.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of accident",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r3.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of first assessment",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r4.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Date of last treatment",
+     "section": "PART A – CLAIMANT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r5.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.lastSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "Mechanism of injury",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r1.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "Presenting symptoms at initial assessment",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r2.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Treatment provided to date",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r3.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Number of sessions attended",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "t2.r4.c1",
+      "placeholderText": "__________"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Number of sessions failed to attend",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "t2.r4.c1",
+      "placeholderText": "__________"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "Current symptoms and progress",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r5.c1"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Outcome scores may be added from computed outcome measures."
+    },
+    {
+     "id": "F-13",
+     "label": "Has the claimant reached maximum medical improvement?",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t2.r6.c1",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "t2.r6.c1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "t2.r6.c1",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "Prognosis",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r7.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "Functional restrictions",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r8.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Treatment recommendations",
+     "section": "PART B – CLINICAL INFORMATION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r9.c1"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "Name",
+     "section": "PART C – DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r0.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "HCPC registration number",
+     "section": "PART C – DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r1.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "Signature",
+     "section": "PART C – DECLARATION",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r2.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "Date",
+     "section": "PART C – DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r3.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Date received",
+     "section": "FOR OFFICE USE ONLY",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t4.r1.c1"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "Checked by",
+     "section": "FOR OFFICE USE ONLY",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t4.r1.c3"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    }
+   ]
+  }
+ },
+ "northfield-rehab-progress": {
+  "rules": {
+   "dropped": 0,
+   "warnings": [],
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Policy / claim no.",
+     "section": "CLAIM DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtPolicyNo",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of injury",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtInjuryDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Claimant",
+     "section": "CLAIM DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtClaimant",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of birth",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtDOB",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of first treatment",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtFirstSeen",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Date of this report",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtReportDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "report.date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "DIAGNOSIS / WORKING DIAGNOSIS",
+     "section": "1. DIAGNOSIS / WORKING DIAGNOSIS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ1Diagnosis",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "TREATMENT TO DATE AND ATTENDANCE",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ2Treatment",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Sessions attended",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numAttended",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Sessions missed (DNA)",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numDNA",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Treatment completed - claimant discharged",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "checkbox",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "chkDischarged",
+      "fieldType": "checkbox"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "section": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ3Limitations",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "IS THE CLAIMANT FIT FOR WORK?",
+     "section": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "answerType": "single_choice",
+     "options": [
+      "Yes",
+      "No",
+      "Modified duties"
+     ],
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "rdoFitForWork",
+      "fieldType": "radio",
+      "options": [
+       "Yes",
+       "No",
+       "Modified duties"
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "If modified duties, please give details (duties, hours and expected duration)",
+     "section": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ4Details",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ5Further",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Estimated number of further sessions",
+     "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numFurtherSessions",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+     "section": "6. EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ6Prognosis",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "Therapist name",
+     "section": "DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtTherapistName",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "HCPC registration no.",
+     "section": "DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtHCPC",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "Signature (typed)",
+     "section": "DECLARATION",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtSignature",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Date",
+     "section": "DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtSignedDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "FOR NORTHFIELD ASSURANCE USE ONLY",
+     "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtOfficeHandler",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-23",
+     "label": "Date received",
+     "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtOfficeReceived",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "low",
+     "note": null
+    }
+   ]
+  },
+  "demo": {
+   "status": 200,
+   "mode": "demo_recorded",
+   "warnings": [],
+   "mergeFields": null,
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Policy / claim no.",
+     "section": "CLAIM DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtPolicyNo",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of injury",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtInjuryDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Claimant",
+     "section": "CLAIM DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtClaimant",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of birth",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtDOB",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of first treatment",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtFirstSeen",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Date of this report",
+     "section": "CLAIM DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtReportDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "report.date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "DIAGNOSIS / WORKING DIAGNOSIS",
+     "section": "1. DIAGNOSIS / WORKING DIAGNOSIS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ1Diagnosis",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Diagnosis is a clinical judgement; clinician should review the draft."
+    },
+    {
+     "id": "F-08",
+     "label": "Type of treatment, exercise programme and advice given",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ2Treatment",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Sessions attended",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numAttended",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Sessions missed (DNA)",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numDNA",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Treatment completed - claimant discharged",
+     "section": "2. TREATMENT TO DATE AND ATTENDANCE",
+     "answerType": "checkbox",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "chkDischarged",
+      "fieldType": "checkbox"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": false,
+     "confidence": "medium",
+     "note": "Confirm discharge status from the notes before ticking."
+    },
+    {
+     "id": "F-12",
+     "label": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "section": "3. FUNCTIONAL LIMITATIONS AFFECTING WORK AND DAILY ACTIVITIES",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ3Limitations",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "4. IS THE CLAIMANT FIT FOR WORK?",
+     "section": "4. IS THE CLAIMANT FIT FOR WORK?",
+     "answerType": "single_choice",
+     "options": [
+      "Yes",
+      "No",
+      "Modified duties"
+     ],
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "rdoFitForWork",
+      "fieldType": "radio",
+      "options": [
+       "Yes",
+       "No",
+       "Modified duties"
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "If modified duties, please give details (duties, hours and expected duration)",
+     "section": "4. IS THE CLAIMANT FIT FOR WORK?",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ4Details",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": "Only needed if Modified duties is selected."
+    },
+    {
+     "id": "F-15",
+     "label": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ5Further",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Estimated number of further sessions",
+     "section": "5. RECOMMENDED FURTHER TREATMENT AND ESTIMATED SESSIONS",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "numFurtherSessions",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+     "section": "6. EXPECTED RECOVERY TIMESCALE (PROGNOSIS)",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtQ6Prognosis",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "Therapist name",
+     "section": "DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtTherapistName",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "HCPC registration no.",
+     "section": "DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtHCPC",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "Signature (typed)",
+     "section": "DECLARATION",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtSignature",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Date",
+     "section": "DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtSignedDate",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "Claims handler",
+     "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtOfficeHandler",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-23",
+     "label": "Date received",
+     "section": "FOR NORTHFIELD ASSURANCE USE ONLY",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_field",
+      "fieldName": "txtOfficeReceived",
+      "fieldType": "text"
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    }
+   ]
+  }
+ },
+ "kingsway-rtw-assessment": {
+  "rules": {
+   "dropped": 0,
+   "warnings": [],
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Employer / client reference",
+     "section": "Return to Work Assessment",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p3",
+      "placeholderText": ".................................."
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Kingsway case no.",
+     "section": "Return to Work Assessment",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p3",
+      "placeholderText": ".........................."
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Employee name",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p5",
+      "placeholderText": "____________________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of birth",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p5",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Job title",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p6",
+      "placeholderText": "______________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.occupation"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Employer",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p6",
+      "placeholderText": "________________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.employer"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "Date of injury / onset",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "Date first seen",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Date last seen",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.lastSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Nature of the injury and diagnosis",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p10",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Treatment provided to date, including the number of sessions attended",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p14",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "Current functional capacity",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p19",
+      "placeholderText": "................................................................................................................................................................................"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "In your opinion, is the employee fit to return to their normal duties?",
+     "section": "Section C – Fitness for work",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "p24",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "p24",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "p24",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "If not, are they fit for modified or restricted duties?",
+     "section": "Section C – Fitness for work",
+     "answerType": "single_choice",
+     "options": [
+      "Yes, with the adjustments below",
+      "No",
+      "Not applicable"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "p26",
+      "optionGlyphs": [
+       {
+        "option": "Yes, with the adjustments below",
+        "blockId": "p26",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "p26",
+        "glyphIndex": 1
+       },
+       {
+        "option": "Not applicable",
+        "blockId": "p26",
+        "glyphIndex": 2
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "Recommended adjustments or restrictions",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "p28"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Recommended return-to-work plan and timescale",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p32",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "Is further treatment required? If so, please give details.",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p35",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "When should the employee be reviewed?",
+     "section": "Section C – Fitness for work",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p38",
+      "placeholderText": "________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "Therapist name",
+     "section": "Section D – Declaration",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p41",
+      "placeholderText": "__________________________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "HCPC no.",
+     "section": "Section D – Declaration",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p41",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Signature",
+     "section": "Section D – Declaration",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p42",
+      "placeholderText": "______________________________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "Date",
+     "section": "Section D – Declaration",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p42",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    }
+   ]
+  },
+  "demo": {
+   "status": 200,
+   "mode": "demo_recorded",
+   "warnings": [
+    "The reference line holds two references (employer/client and Kingsway case number); confirm which value goes in each.",
+    "Questions 7 and 8 have extra dotted lines below the first answer line; only the first line is filled."
+   ],
+   "mergeFields": null,
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Employer / client reference",
+     "section": null,
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p3",
+      "placeholderText": ".................................."
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Check whether this is the employer's reference or the referrer's; both references sit on one line."
+    },
+    {
+     "id": "F-02",
+     "label": "Kingsway case no.",
+     "section": null,
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p3",
+      "placeholderText": ".........................."
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Both references on this line map to the same reference field; check each is right."
+    },
+    {
+     "id": "F-03",
+     "label": "Employee name",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p5",
+      "placeholderText": "____________________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of birth",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p5",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Job title",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p6",
+      "placeholderText": "______________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.occupation"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "Employer",
+     "section": "Section A – Employee details",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p6",
+      "placeholderText": "________________________________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.employer"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "Date of injury / onset",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "Date first seen",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Date last seen",
+     "section": "Section A – Employee details",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p7",
+      "placeholderText": "______________"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.lastSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Nature of the injury and diagnosis",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p10",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Two further dotted lines below continue this answer; only the first line is mapped."
+    },
+    {
+     "id": "F-11",
+     "label": "Treatment provided to date, including the number of sessions attended",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p14",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Answer runs over several lines; the following dotted lines are continuation space, not separate questions."
+    },
+    {
+     "id": "F-12",
+     "label": "Current functional capacity",
+     "section": "Section B – Clinical findings",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p19",
+      "placeholderText": "................................................................................................................................................................................"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Lines below are continuation space for the same answer."
+    },
+    {
+     "id": "F-13",
+     "label": "In your opinion, is the employee fit to return to their normal duties?",
+     "section": "Section C – Fitness for work",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "p24",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "p24",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "p24",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "5. If not, are they fit for modified or restricted duties?",
+     "section": "Section C – Fitness for work",
+     "answerType": "single_choice",
+     "options": [
+      "Yes, with the adjustments below",
+      "No",
+      "Not applicable"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "p26",
+      "optionGlyphs": [
+       {
+        "option": "Yes, with the adjustments below",
+        "blockId": "p26",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "p26",
+        "glyphIndex": 1
+       },
+       {
+        "option": "Not applicable",
+        "blockId": "p26",
+        "glyphIndex": 2
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "6. Recommended adjustments or restrictions",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "p28"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Answer goes in the empty paragraphs after the example line."
+    },
+    {
+     "id": "F-16",
+     "label": "7. Recommended return-to-work plan and timescale",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p32",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "8. Is further treatment required? If so, please give details.",
+     "section": "Section C – Fitness for work",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p35",
+      "placeholderText": "______________________________________________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-18",
+     "label": "9. When should the employee be reviewed?",
+     "section": "Section C – Fitness for work",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p38",
+      "placeholderText": "________________________________________"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-19",
+     "label": "Therapist name",
+     "section": "Section D – Declaration",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p41",
+      "placeholderText": "__________________________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-20",
+     "label": "HCPC no.",
+     "section": "Section D – Declaration",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p41",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-21",
+     "label": "Signature",
+     "section": "Section D – Declaration",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p42",
+      "placeholderText": "______________________________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-22",
+     "label": "Date",
+     "section": "Section D – Declaration",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "replace_placeholder",
+      "blockId": "p42",
+      "placeholderText": "________________"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    }
+   ]
+  }
+ },
+ "ashcroft-update-report": {
+  "rules": {
+   "dropped": 0,
+   "warnings": [],
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant name",
+     "section": "SECTION A – CLAIMANT",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 114,
+      "y": 671,
+      "width": 446,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "SECTION A – CLAIMANT",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 114,
+      "y": 649,
+      "width": 446,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-03",
+     "label": "Instructing solicitor's reference",
+     "section": "SECTION A – CLAIMANT",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 214,
+      "y": 627,
+      "width": 346,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-04",
+     "label": "Date of accident",
+     "section": "SECTION A – CLAIMANT",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 129,
+      "y": 605,
+      "width": 431,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-05",
+     "label": "B1. Presenting symptoms at the first assessment",
+     "section": "SECTION B – TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 279,
+      "y": 549,
+      "width": 281,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-06",
+     "label": "B2. Treatment provided",
+     "section": "SECTION B – TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 154,
+      "y": 421,
+      "width": 406,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-07",
+     "label": "B3. Number of treatment sessions attended",
+     "section": "SECTION B – TREATMENT",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 249,
+      "y": 297,
+      "width": 311,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-08",
+     "label": "B4. Current symptoms and level of function",
+     "section": "SECTION B – TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 254,
+      "y": 261,
+      "width": 306,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-09",
+     "label": "C1. Prognosis",
+     "section": "SECTION C – OPINION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 109,
+      "y": 759,
+      "width": 451,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-10",
+     "label": "C2. Is further treatment recommended? (Yes / No)",
+     "section": "SECTION C – OPINION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 284,
+      "y": 633,
+      "width": 276,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-11",
+     "label": "C3. If yes, please give details",
+     "section": "SECTION C – OPINION",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 199,
+      "y": 595,
+      "width": 361,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-12",
+     "label": "Name: HCPC no.",
+     "section": "SECTION D – DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 379,
+      "y": 455,
+      "width": 181,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-13",
+     "label": "Signature: Date",
+     "section": "SECTION D – DECLARATION",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 364,
+      "y": 427,
+      "width": 196,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    },
+    {
+     "id": "F-14",
+     "label": "File ref.",
+     "section": "FOR ASHCROFT USE ONLY",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 102,
+      "y": 366,
+      "width": 458,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "low",
+     "note": "Flat PDF: the answer is written at an estimated position – check it in the preview."
+    }
+   ]
+  },
+  "demo": {
+   "status": 200,
+   "mode": "demo_prewritten",
+   "warnings": [
+    "This PDF has no fillable fields, so answers are written at the positions of its answer lines. Check every answer in the preview."
+   ],
+   "mergeFields": null,
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant name",
+     "section": "Section A – Claimant",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 202,
+      "y": 671,
+      "width": 350,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "Section A – Claimant",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 202,
+      "y": 649,
+      "width": 150,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Instructing solicitor's reference",
+     "section": "Section A – Claimant",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 202,
+      "y": 627,
+      "width": 200,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date of accident",
+     "section": "Section A – Claimant",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 202,
+      "y": 605,
+      "width": 150,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "incident.date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "B1. Presenting symptoms at the first assessment",
+     "section": "Section B – Treatment",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 42,
+      "y": 458,
+      "width": 511,
+      "height": 82
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "B2. Treatment provided",
+     "section": "Section B – Treatment",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 42,
+      "y": 330,
+      "width": 511,
+      "height": 82
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "B3. Number of treatment sessions attended",
+     "section": "Section B – Treatment",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 252,
+      "y": 297,
+      "width": 60,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "B4. Current symptoms and level of function",
+     "section": "Section B – Treatment",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 1,
+      "x": 42,
+      "y": 170,
+      "width": 511,
+      "height": 82
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "C1. Prognosis",
+     "section": "Section C – Opinion",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 42,
+      "y": 668,
+      "width": 511,
+      "height": 82
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "C2. Is further treatment recommended?",
+     "section": "Section C – Opinion",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 352,
+      "y": 633,
+      "width": 90,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "C3. If yes, please give details",
+     "section": "Section C – Opinion",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 42,
+      "y": 540,
+      "width": 511,
+      "height": 46
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "Name",
+     "section": "Section D – Declaration",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 112,
+      "y": 455,
+      "width": 190,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "HCPC no.",
+     "section": "Section D – Declaration",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 392,
+      "y": 455,
+      "width": 160,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "Signature",
+     "section": "Section D – Declaration",
+     "answerType": "signature",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 112,
+      "y": 427,
+      "width": 190,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "signature"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "Date",
+     "section": "Section D – Declaration",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 392,
+      "y": 427,
+      "width": 160,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "File ref.",
+     "section": "For Ashcroft use only",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "pdf_overlay",
+      "page": 2,
+      "x": 152,
+      "y": 366,
+      "width": 150,
+      "height": 14
+     },
+     "fillSource": {
+      "kind": "leave_blank"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    }
+   ]
+  }
+ },
+ "meridian-discharge-report": {
+  "rules": {
+   "dropped": 0,
+   "warnings": [],
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant's full name",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r1.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r2.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Meridian claim reference",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r3.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date treatment started",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r4.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of discharge",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r5.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.dischargeDate"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "What was your final diagnosis? Please include the mechanism of injury as reported to you.",
+     "section": "2 DIAGNOSIS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t1.r1.c0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "Please summarise the claimant's progress during treatment, including any objective outcome measures.",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r1.c0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-08",
+     "label": "Please comment on the claimant's ability to carry out normal daily activities.",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t2.r2.c0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Sessions attended",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t2.r3.c0"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Sessions missed",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t2.r3.c0"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Reason for discharge",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "single_choice",
+     "options": [
+      "Goals achieved",
+      "Plateaued",
+      "Self-discharged",
+      "Did not attend"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t3.r1.c0.p1",
+      "optionGlyphs": [
+       {
+        "option": "Goals achieved",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "Plateaued",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 1
+       },
+       {
+        "option": "Self-discharged",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 2
+       },
+       {
+        "option": "Did not attend",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 3
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "Is any further treatment or investigation recommended?",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t3.r2.c0.p1",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "t3.r2.c0.p1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "t3.r2.c0.p1",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "Is any further treatment or investigation recommended? – If yes, please give details",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t3.r2.c0.p2"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "In your opinion, what is the likely long-term outcome for this claimant?",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "table_cell",
+      "blockId": "t3.r3.c0"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "Name",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r2.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Professional registration number",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r3.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "Date",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r4.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "low",
+     "note": null
+    }
+   ]
+  },
+  "demo": {
+   "status": 200,
+   "mode": "demo_recorded",
+   "warnings": [
+    "The declaration has no separate signature box; the name field serves as the sign-off."
+   ],
+   "mergeFields": null,
+   "fields": [
+    {
+     "id": "F-01",
+     "label": "Claimant's full name",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r1.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.fullName"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-02",
+     "label": "Date of birth",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r2.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "patient.dob"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-03",
+     "label": "Meridian claim reference",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "short_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r3.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "referral.reference"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-04",
+     "label": "Date treatment started",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r4.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.firstSeen"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-05",
+     "label": "Date of discharge",
+     "section": "1 CLAIMANT AND TREATMENT DETAILS",
+     "answerType": "date",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t0.r5.c1"
+     },
+     "fillSource": {
+      "kind": "registration",
+      "path": "episode.dischargeDate"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-06",
+     "label": "What was your final diagnosis? Please include the mechanism of injury as reported to you.",
+     "section": "2 DIAGNOSIS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "t1.r1.c0.p0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-07",
+     "label": "Please summarise the claimant's progress during treatment, including any objective outcome measures.",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "t2.r1.c0.p0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "medium",
+     "note": "Outcome measure scores may be added from computed figures."
+    },
+    {
+     "id": "F-08",
+     "label": "Please comment on the claimant's ability to carry out normal daily activities.",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "t2.r2.c0.p0"
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-09",
+     "label": "Sessions attended",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t2.r3.c0"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "sessions_attended"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-10",
+     "label": "Sessions missed",
+     "section": "3 PROGRESS DURING TREATMENT",
+     "answerType": "number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t2.r3.c0"
+     },
+     "fillSource": {
+      "kind": "computed_fact",
+      "factId": "FACT-attendance",
+      "format": "dna_count"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-11",
+     "label": "Reason for discharge",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "single_choice",
+     "options": [
+      "Goals achieved",
+      "Plateaued",
+      "Self-discharged",
+      "Did not attend"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t3.r1.c0.p1",
+      "optionGlyphs": [
+       {
+        "option": "Goals achieved",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "Plateaued",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 1
+       },
+       {
+        "option": "Self-discharged",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 2
+       },
+       {
+        "option": "Did not attend",
+        "blockId": "t3.r1.c0.p1",
+        "glyphIndex": 3
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "notes_narrative"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-12",
+     "label": "Is any further treatment or investigation recommended?",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "yes_no",
+     "options": [
+      "Yes",
+      "No"
+     ],
+     "anchor": {
+      "kind": "docx",
+      "target": "checkbox_glyph",
+      "blockId": "t3.r2.c0.p1",
+      "optionGlyphs": [
+       {
+        "option": "Yes",
+        "blockId": "t3.r2.c0.p1",
+        "glyphIndex": 0
+       },
+       {
+        "option": "No",
+        "blockId": "t3.r2.c0.p1",
+        "glyphIndex": 1
+       }
+      ]
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-13",
+     "label": "If yes, please give details:",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t3.r2.c0.p2"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": false,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-14",
+     "label": "In your opinion, what is the likely long-term outcome for this claimant?",
+     "section": "4 OUTCOME AND RECOMMENDATIONS",
+     "answerType": "long_text",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "after_paragraph",
+      "blockId": "t3.r3.c0.p0"
+     },
+     "fillSource": {
+      "kind": "clinician_opinion"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-15",
+     "label": "Name",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "clinician_name",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r2.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "name"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-16",
+     "label": "Professional registration number",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "hcpc_number",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r3.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "hcpc"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    },
+    {
+     "id": "F-17",
+     "label": "Date",
+     "section": "5 THERAPIST DECLARATION",
+     "answerType": "date_signed",
+     "options": null,
+     "anchor": {
+      "kind": "docx",
+      "target": "content_control",
+      "blockId": "t4.r4.c1"
+     },
+     "fillSource": {
+      "kind": "signoff",
+      "part": "date"
+     },
+     "required": true,
+     "confidence": "high",
+     "note": null
+    }
+   ]
+  }
+ },
+ "portal-example": {
+  "fields": [
+   {
+    "id": "F-01",
+    "label": "Patient's full name",
+    "section": "Patient and treatment details",
+    "answerType": "short_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p0"
+    },
+    "fillSource": {
+     "kind": "registration",
+     "path": "patient.fullName"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-02",
+    "label": "Date of birth",
+    "section": "Patient and treatment details",
+    "answerType": "date",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p1"
+    },
+    "fillSource": {
+     "kind": "registration",
+     "path": "patient.dob"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-03",
+    "label": "Membership number",
+    "section": "Patient and treatment details",
+    "answerType": "short_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p2"
+    },
+    "fillSource": {
+     "kind": "registration",
+     "path": "referral.membershipNumber"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-04",
+    "label": "Date of initial assessment",
+    "section": "Patient and treatment details",
+    "answerType": "date",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p3"
+    },
+    "fillSource": {
+     "kind": "registration",
+     "path": "episode.firstSeen"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-05",
+    "label": "Number of sessions attended to date",
+    "section": "Patient and treatment details",
+    "answerType": "number",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p4"
+    },
+    "fillSource": {
+     "kind": "computed_fact",
+     "factId": "FACT-attendance",
+     "format": "sessions_attended"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-06",
+    "label": "Presenting condition and how it started",
+    "section": "Clinical update",
+    "answerType": "long_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p5"
+    },
+    "fillSource": {
+     "kind": "notes_narrative"
+    },
+    "required": true,
+    "confidence": "high",
+    "note": null
+   },
+   {
+    "id": "F-07",
+    "label": "Current symptoms and progress since the initial assessment",
+    "section": "Clinical update",
+    "answerType": "long_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p6"
+    },
+    "fillSource": {
+     "kind": "notes_narrative"
+    },
+    "required": true,
+    "confidence": "high",
+    "note": null
+   },
+   {
+    "id": "F-08",
+    "label": "Objective findings at the latest session",
+    "section": "Clinical update",
+    "answerType": "long_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p7"
+    },
+    "fillSource": {
+     "kind": "notes_narrative"
+    },
+    "required": true,
+    "confidence": "high",
+    "note": null
+   },
+   {
+    "id": "F-09",
+    "label": "Outcome measure scores (initial and latest)",
+    "section": "Clinical update",
+    "answerType": "long_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p8"
+    },
+    "fillSource": {
+     "kind": "notes_narrative"
+    },
+    "required": true,
+    "confidence": "high",
+    "note": null
+   },
+   {
+    "id": "F-10",
+    "label": "Is the patient back at work?",
+    "section": "Clinical update",
+    "answerType": "yes_no",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p9"
+    },
+    "fillSource": {
+     "kind": "notes_narrative"
+    },
+    "required": true,
+    "confidence": "high",
+    "note": null
+   },
+   {
+    "id": "F-11",
+    "label": "Is further treatment requested?",
+    "section": "Plan",
+    "answerType": "yes_no",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p10"
+    },
+    "fillSource": {
+     "kind": "clinician_opinion"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-12",
+    "label": "Number of further sessions requested",
+    "section": "Plan",
+    "answerType": "number",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p11"
+    },
+    "fillSource": {
+     "kind": "clinician_opinion"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-13",
+    "label": "Expected discharge date",
+    "section": "Plan",
+    "answerType": "date",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p12"
+    },
+    "fillSource": {
+     "kind": "clinician_opinion"
+    },
+    "required": false,
+    "confidence": "medium",
+    "note": null
+   },
+   {
+    "id": "F-14",
+    "label": "Prognosis",
+    "section": "Plan",
+    "answerType": "long_text",
+    "options": null,
+    "anchor": {
+     "kind": "docx",
+     "target": "after_paragraph",
+     "blockId": "p13"
+    },
+    "fillSource": {
+     "kind": "clinician_opinion"
+    },
+    "required": true,
+    "confidence": "medium",
+    "note": null
+   }
+  ]
+ }
+}

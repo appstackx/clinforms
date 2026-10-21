@@ -8,6 +8,8 @@ import "server-only";
  * 1. forms/file.ts decodeFormFile() (413 / 422 FORM_INVALID), type from the bytes. An RTF file is converted
  *    to Word there first (10/2026; `convertRtf`), and the conversion's notes for staff (what was left out)
  *    are added to the proposed map's analysis warnings, with a "Converted the RTF file to Word" trace step.
+ *    Mail-merge fields (10/2026, forms/merge-scan.ts) left in any file are recorded on the map
+ *    (analysis.mergeFields) with a warning: approval is blocked until each is answered or replaced.
  * 2. Deterministic parsing: forms/docx-outline.ts buildDocxOutline() or forms/pdf-outline.ts readPdfForm().
  * 3. Mapping (ai/analyse-form.ts): live Claude (passcode + rate cap, same rules as /drafts; form text is
  *    DATA, never instructions; long forms in parallel chunks), else the recorded analysis for a bundled
@@ -33,6 +35,8 @@ import { AUDIT_ACTIONS, auditActor, requireActor } from "../../auth/actor";
 import { DraftGenerationError } from "../../ai/types";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { decodeFormFile } from "../../forms/file";
+import { findFormMergeFields } from "../../forms/merge-scan";
+import { listMergeTokens } from "../../core/merge-fields";
 import { FormsAnalyseRequestSchema, type FormsAnalyseResponse } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
@@ -102,6 +106,16 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
     // (core/wording.ts); the real model id stays in the log line above.
     const analysis = { ...result.form.analysis, model: publicEngineName(result.form.analysis.model) };
     let trace = result.trace;
+    const mergeFields = await findFormMergeFields(file);
+    if (mergeFields.length > 0) {
+      analysis.mergeFields = mergeFields;
+      const fixed = mergeFields.filter((m) => m.fixed);
+      analysis.warnings = [
+        `This form contains ${mergeFields.length === 1 ? "a mail-merge field" : `${mergeFields.length} mail-merge fields`} (${listMergeTokens(mergeFields.map((m) => m.text))}). A form is never approved with one left on it: check that a question replaces each one${fixed.length ? `; ${fixed.length === 1 ? "one is" : `${fixed.length} are`} in ${listMergeTokens(fixed.map((m) => m.where), 2)}, which cannot be completed here – ask the referrer for the form without ${fixed.length === 1 ? "it" : "them"}` : ""}.`,
+        ...analysis.warnings,
+      ];
+      logEvent("form_merge_fields", { form: result.form.id, count: mergeFields.length, fixed: fixed.length });
+    }
     if (file.convertedFrom) {
       // An RTF upload converted to Word (forms/file.ts): staff see what the conversion left out.
       const notes = file.convertedFrom.notes;
