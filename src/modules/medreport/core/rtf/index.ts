@@ -8,6 +8,13 @@
  * form map, analysis, fill, preview, approval, downloads) sees an ordinary Word form; the form map keeps
  * the original file name ("Report.rtf") and the completed form downloads as .docx.
  *
+ * Mail-merge fields (10/2026): a practice system's merge fields – Word MERGEFIELD fields and typed «Name» /
+ * <<Name>> – never survive the conversion: each becomes an empty answer space (an empty line or cell, or
+ * a "__________" line beside its label), recorded in the notes ("N mail-merge fields from your clinic
+ * system were turned into answer boxes – check the mapping once"). Other tokens ([Name], {Name}, $Name$,
+ * %Name%) are kept and noted. Engine-wide, core/merge-fields.ts blocks approval of any form that still
+ * has a merge field on it.
+ *
  * convertRtfToDocx(bytes, {maxBytes}) → {docx, notes, stats}. `notes` are plain-English lines for staff
  * (what was left out, what became what), each starting with RTF_NOTE_PREFIX so the mapping screen can
  * show them under "Converted from RTF". Throws RtfConversionError (code + message) for a file that is
@@ -68,7 +75,13 @@ export function rtfConversionNotes(stats: RtfStats): string[] {
   }
   if (stats.mergeFields > 0) {
     const examples = stats.mergeFieldNames.slice(0, 3).map((n) => `«${n}»`).join(", ");
-    notes.push(`${p}${plural(stats.mergeFields, "mail-merge field")}${examples ? ` (${examples})` : ""} ${stats.mergeFields === 1 ? "is" : "are"} kept as printed – check that each one is mapped to the right answer, or left blank.`);
+    notes.push(`${p}${plural(stats.mergeFields, "mail-merge field")} from your clinic system${examples ? ` (${examples})` : ""} ${was(stats.mergeFields)} turned into answer boxes – check the mapping once.`);
+  }
+  if (stats.otherTokens > 0) {
+    const examples = stats.otherTokenExamples.join(", ");
+    notes.push(
+      `${p}${plural(stats.otherTokens, "placeholder")} that another system may fill in${examples ? ` (${examples})` : ""} ${stats.otherTokens === 1 ? "was kept as printed – check whether it is an answer box, and map it if it is." : "were kept as printed – check whether each one is an answer box, and map it if it is."}`,
+    );
   }
   const formFields = stats.formTextFields + stats.formCheckboxes + stats.formDropdowns;
   if (formFields > 0) notes.push(`${p}${plural(formFields, "form field")} became tick boxes or fill-in spaces.`);

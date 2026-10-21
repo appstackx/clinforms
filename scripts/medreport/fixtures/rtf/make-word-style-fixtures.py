@@ -208,6 +208,18 @@ def fixture_c():
     body += para(run("Date of birth: ", B) + merge_field("DOB"))
     body += para(run("Treating physiotherapist: ", B) + merge_field("Physio_Name", result=False))
     body += para(run("Our reference: ", B) + run("«Clinic_Ref»"))
+    body += para(run("Referral date: ", B) + run("<<Referral_Date>>"))
+    body += para(run("Case number: [Case_ID]"))
+    # The details table a practice system merges into: merge fields alone in the answer cells.
+    W1, W2 = 3402, 9638
+    rows = [
+        ("Patient name", merge_field("Patient_Name")),
+        ("Referral reference", run("«Referral Ref»")),
+        ("Treating therapist", merge_field("Therapist")),
+        ("HCPC number", run("«") + run("HCPC", r"\b") + run("»")),
+    ]
+    for i, (label, content) in enumerate(rows):
+        body += table_row(i, [(W1, ""), (W2, "")], [run(label, B), content], last=(i == len(rows) - 1))
     body += para("")
     body += heading("1. Diagnosis", 2)
     body += para(run("Working diagnosis: ") + form_text("Diagnosis"))

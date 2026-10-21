@@ -107,13 +107,20 @@ test("every fictional RTF fixture converts and the Word engine finds its questio
   assert.equal(b.get("t0.r1.c0")?.text, "Sessions attended since the last report");
   assert.equal(b.get("p14")?.checkboxGlyphs, 2);
 
-  // (c) mail merge: «merge» placeholders kept as printed, FORMTEXT → blank line, dropdown → [A / B / C].
-  const c = outlineTexts(docxOf(FIXTURES.merge));
-  assert.equal(c.p1, "Patient: «Patient_Name»");
-  assert.equal(c.p4, "Treating physiotherapist: «Physio_Name»");
-  assert.equal(c.p5, "Our reference: «Clinic_Ref»");
-  assert.equal(c.p8, "Working diagnosis: __________");
-  assert.equal(c.p16, "Current fitness for work: [Fit / Fit with adjustments / Unfit]");
+  // (c) mail merge: every merge field (MERGEFIELD, typed «…», <<…>>) is an answer space – a fill-in line
+  // beside its label, an empty cell where it filled the cell; [Case_ID] is kept (noted); FORMTEXT → blank
+  // line; dropdown → [A / B / C].
+  const cb = new Map(buildDocxOutline(docxOf(FIXTURES.merge)).blocks.map((x) => [x.id, x]));
+  assert.equal(cb.get("p1")?.text, "Patient: __________");
+  assert.equal(cb.get("p4")?.text, "Treating physiotherapist: __________");
+  assert.equal(cb.get("p5")?.text, "Our reference: __________");
+  assert.equal(cb.get("p6")?.text, "Referral date: __________");
+  assert.equal(cb.get("p7")?.text, "Case number: [Case_ID]");
+  for (const r of [0, 1, 2, 3]) assert.equal(cb.get(`t0.r${r}.c1`)?.isEmpty, true, `merge cell row ${r} is an empty answer cell`);
+  assert.equal(cb.get("t0.r3.c0")?.text, "HCPC number");
+  assert.equal(cb.get("p10")?.text, "Working diagnosis: __________");
+  assert.equal(cb.get("p18")?.text, "Current fitness for work: [Fit / Fit with adjustments / Unfit]");
+  assert.ok(Array.from(cb.values()).every((x) => !/«|»|<<|>>/.test(x.text)), "no merge field survives the conversion");
 
   // (d) tick boxes of every kind read as ☐/☒.
   const d = new Map(buildDocxOutline(docxOf(FIXTURES.ticks)).blocks.map((x) => [x.id, x]));
@@ -211,8 +218,16 @@ test("POST /forms/analyse on each RTF fixture: a Word map that keeps the .rtf na
   assert.equal(a.form.fields.find((x) => x.label === "Date of birth")?.fillSource.kind, "registration");
 
   const c = await analyseRtf(FIXTURES.merge);
-  assert.ok(c.form.analysis.warnings.some((w) => /mail-merge fields \(«Patient_Name», «Patient_Address», «DOB»\)/.test(w)));
-  assert.ok(c.form.analysis.warnings.some((w) => /page header or footer has 1 fill-in space/.test(w)));
+  assert.ok(c.form.analysis.warnings.includes("Converted from RTF: 12 mail-merge fields from your clinic system («Patient_Name», «Clinic_Ref», «Patient_Address») were turned into answer boxes – check the mapping once."));
+  assert.ok(c.form.analysis.warnings.some((w) => /placeholder that another system may fill in \(\[Case_ID\]\) was kept as printed/.test(w)));
+  assert.ok(c.form.analysis.warnings.some((w) => /page header or footer has 2 fill-in spaces/.test(w)));
+  assert.equal(c.form.analysis.mergeFields, undefined, "nothing left for the merge-field check");
+  // The merge cells are separate questions, each with its own box (the therapist and the HCPC number too).
+  assert.deepEqual(anchorOf(c.form, "Treating therapist"), { kind: "docx", target: "table_cell", blockId: "t0.r2.c1" });
+  assert.deepEqual(anchorOf(c.form, "HCPC number"), { kind: "docx", target: "table_cell", blockId: "t0.r3.c1" });
+  assert.deepEqual(anchorOf(c.form, "Referral reference"), { kind: "docx", target: "table_cell", blockId: "t0.r1.c1" });
+  assert.deepEqual(c.form.fields.find((f) => f.label === "HCPC number")?.fillSource, { kind: "registration", path: "clinician.hcpc" });
+  assert.deepEqual(c.form.fields.find((f) => f.label === "Treating therapist")?.fillSource, { kind: "registration", path: "clinician.name" });
 
   const d = await analyseRtf(FIXTURES.ticks);
   const discharged = d.form.fields.find((f) => /Discharged from treatment/.test(f.label));
@@ -272,20 +287,31 @@ test("fillDocx writes into a converted form's own blanks, «merge» placeholders
   const merge = mapFor(
     FIXTURES.merge,
     [
-      field("F-01", "Patient", blank("p1", "«Patient_Name»"), { kind: "registration", path: "patient.fullName" }),
-      field("F-02", "Date of birth", blank("p3", "«DOB»"), { kind: "registration", path: "patient.dob" }, { answerType: "date" }),
-      field("F-03", "Working diagnosis", blank("p8", "__________"), { kind: "notes_narrative" }),
-      field("F-04", "Current symptoms", { kind: "docx", target: "after_paragraph", blockId: "p9" }, { kind: "notes_narrative" }, { answerType: "long_text" }),
+      field("F-01", "Patient", blank("p1", "__________"), { kind: "registration", path: "patient.fullName" }),
+      field("F-02", "Date of birth", blank("p3", "__________"), { kind: "registration", path: "patient.dob" }, { answerType: "date" }),
+      field("F-03", "Working diagnosis", blank("p10", "__________"), { kind: "notes_narrative" }),
+      field("F-04", "Current symptoms", { kind: "docx", target: "after_paragraph", blockId: "p11" }, { kind: "notes_narrative" }, { answerType: "long_text" }),
+      field("F-05", "Treating therapist", cellAnchor("t0.r2.c1"), { kind: "registration", path: "clinician.name" }),
+      field("F-06", "HCPC number", cellAnchor("t0.r3.c1"), { kind: "registration", path: "clinician.hcpc" }),
     ],
     { name: "Wrenfield Reporting Partners (fictional)", type: "mlc" },
   );
-  const m = outlineTexts(fillDocx(docxOf(FIXTURES.merge), merge, { "F-01": { text: "Megan Hart" }, "F-02": { text: "22/11/1991" }, "F-03": { text: "Whiplash-associated disorder grade II" }, "F-04": { text: "Occasional neck ache after long drives." } }, { draft: false }));
+  const m = outlineTexts(
+    fillDocx(
+      docxOf(FIXTURES.merge),
+      merge,
+      { "F-01": { text: "Megan Hart" }, "F-02": { text: "22/11/1991" }, "F-03": { text: "Whiplash-associated disorder grade II" }, "F-04": { text: "Occasional neck ache after long drives." }, "F-05": { text: "Sarah Reid" }, "F-06": { text: "PH-DEMO-01" } },
+      { draft: false },
+    ),
+  );
   assert.equal(m.p1, "Patient: Megan Hart");
   assert.equal(m.p3, "Date of birth: 22/11/1991");
-  assert.equal(m.p2, "Address: «Patient_Address»", "an unmapped merge field stays as printed");
-  assert.equal(m.p8, "Working diagnosis: Whiplash-associated disorder grade II");
-  assert.equal(m.p9, "2. Current symptoms");
-  assert.equal(m.p10, "Occasional neck ache after long drives.");
+  assert.equal(m.p2, "Address: __________", "an unmapped merge field is a blank line, never «Patient_Address»");
+  assert.equal(m.p10, "Working diagnosis: Whiplash-associated disorder grade II");
+  assert.equal(m.p11, "2. Current symptoms");
+  assert.equal(m.p12, "Occasional neck ache after long drives.");
+  assert.equal(m["t0.r2.c1"], "Sarah Reid");
+  assert.equal(m["t0.r3.c1"], "PH-DEMO-01", "the HCPC number in its own cell");
 
   const progress = mapFor(
     FIXTURES.progress,

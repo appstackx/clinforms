@@ -14,7 +14,8 @@
  * - tables (`\trowd` … `\cellx`, `\cell`, `\row`), nested tables (`\itap`, `\nestcell`, `\nestrow`,
  *   `\nesttableprops`), cell widths, borders, shading, vertical alignment, row heights, header rows,
  *   horizontal (`\clmgf`/`\clmrg`) and vertical (`\clvmgf`/`\clvmrg`) merges;
- * - fields: the visible result is kept (MERGEFIELD «Name» stays «Name»; an empty result prints «Name});
+ * - fields: the visible result is kept, except mail-merge fields (below); FORMCHECKBOX → ☐/☒;
+ *   FORMTEXT → "__________" (or "[default text]"); FORMDROPDOWN → "[A / B]";
  *   FORMCHECKBOX → ☐/☒; FORMTEXT → "__________" (or "[default text]"); FORMDROPDOWN → "[A / B]";
  *   SYMBOL fields and symbol fonts (Wingdings tick boxes → ☐/☒, Symbol bullets → •); PAGE/NUMPAGES in a
  *   page header or footer stay live fields;
@@ -204,14 +205,14 @@ class Story {
     return this.stack.length;
   }
 
-  addText(text: string, style: RunStyle): void {
+  addText(text: string, style: RunStyle, generated = false): void {
     if (!text) return;
     const last = this.inlines[this.inlines.length - 1];
-    if (last && last.kind === "text" && last.style === style) {
+    if (last && last.kind === "text" && last.style === style && Boolean(last.generated) === generated) {
       last.text += text;
     } else {
       this.r.countInline();
-      this.inlines.push({ kind: "text", text, style });
+      this.inlines.push(generated ? { kind: "text", text, style, generated } : { kind: "text", text, style });
     }
     this.textCount += 1;
   }
@@ -252,7 +253,7 @@ class Story {
       style = { ...style, pageBreakBefore: true };
       this.pageBreakNext = false;
     }
-    const para: Paragraph = { kind: "paragraph", style, mark: snap.mark, inlines: this.inlines };
+    const para: Paragraph = { kind: "paragraph", style, mark: snap.mark, inlines: resolveMergeFields(this.inlines, this.r.stats, this.isHeaderFooter) };
     this.inlines = [];
     this.ensureLevel(Math.min(lvl, this.r.maxDepth));
     this.container(this.stack.length).push(para);
@@ -1688,9 +1689,9 @@ class Reader {
         }
         return;
       case "MERGEFIELD":
-        this.stats.mergeFields += 1;
-        if (inHeader) this.stats.headerFooterFillIns += 1;
-        this.noteMergeName(f);
+        // Never printed: an answer space instead (resolveMergeFields), however the result reads.
+        f.story.addInline({ kind: "merge", name: mergeName(f) || "field", style: s.run });
+        s.dest = "skip";
         return;
       default:
         return;
@@ -1714,10 +1715,7 @@ class Reader {
           this.emitToStory(f, () => this.emitSymbolField(f));
           return;
         case "MERGEFIELD":
-          this.stats.mergeFields += 1;
-          if (f.story.isHeaderFooter) this.stats.headerFooterFillIns += 1;
-          this.noteMergeName(f);
-          f.story.addText(`«${mergeName(f) || "field"}»`, f.style);
+          f.story.addInline({ kind: "merge", name: mergeName(f) || "field", style: f.style });
           return;
         case "PAGE":
         case "NUMPAGES":
@@ -1734,9 +1732,6 @@ class Reader {
         f.story.addInline({ kind: "field", instr: f.type as "PAGE", text: f.collected.trim() || "1", style: f.collectStyle ?? f.style });
       }
       return;
-    }
-    if (f.type === "MERGEFIELD" && f.story.textCount === f.textMark) {
-      f.story.addText(`«${mergeName(f) || "field"}»`, f.style);
     }
   }
 
@@ -1762,7 +1757,7 @@ class Reader {
     this.stats.formCheckboxes += 1;
     this.stats.tickBoxes += 1;
     if (f.story.isHeaderFooter) this.stats.headerFooterFillIns += 1;
-    f.story.addText(checked ? CHECKED_BOX : UNCHECKED_BOX, { ...style, font: null });
+    f.story.addText(checked ? CHECKED_BOX : UNCHECKED_BOX, { ...style, font: null }, true);
   }
 
   private emitFormText(f: FieldCtx): void {
@@ -1772,15 +1767,15 @@ class Reader {
       this.stats.formDropdowns += 1;
       const items = f.ff.items.filter(Boolean);
       const label = items.length ? items.join(" / ") : f.collected.replace(MERGE_FILLER, " ").trim();
-      f.story.addText(label && label.length <= 60 && !/[[\]]/.test(label) ? `[${label}]` : label || "__________", style);
+      f.story.addText(label && label.length <= 60 && !/[[\]]/.test(label) ? `[${label}]` : label || "__________", style, true);
       return;
     }
     this.stats.formTextFields += 1;
     let text = f.collected.replace(MERGE_FILLER, " ").trim();
     if (!text) text = f.ff.deftext.replace(MERGE_FILLER, " ").trim();
-    if (!text) f.story.addText("__________", style);
-    else if (text.length <= 60 && !/[[\]]/.test(text)) f.story.addText(`[${text}]`, style);
-    else f.story.addText(text, style);
+    if (!text) f.story.addText("__________", style, true);
+    else if (text.length <= 60 && !/[[\]]/.test(text)) f.story.addText(`[${text}]`, style, true);
+    else f.story.addText(text, style, true);
   }
 
   private emitSymbolField(f: FieldCtx): void {
@@ -1793,11 +1788,6 @@ class Reader {
       if (code === 0x2610 || code === 0x2612 || code === 0x2611) this.stats.tickBoxes += 1;
       f.story.addText(String.fromCharCode(code), f.style);
     }
-  }
-
-  private noteMergeName(f: FieldCtx): void {
-    const name = mergeName(f);
-    if (name && this.stats.mergeFieldNames.length < 5 && !this.stats.mergeFieldNames.includes(name)) this.stats.mergeFieldNames.push(name);
   }
 
   /* font / colour / style tables ----------------------------------------------------------------------- */
@@ -1886,6 +1876,95 @@ function parseSymbolCode(arg: string | undefined): number | null {
   if (!arg) return null;
   const v = /^0x[0-9a-f]+$/i.test(arg) ? parseInt(arg.slice(2), 16) : /^\d+$/.test(arg) ? parseInt(arg, 10) : NaN;
   return Number.isFinite(v) && v >= 0 && v <= 0xffff ? v : null;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Mail-merge fields → answer spaces (10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A typed merge placeholder: «Name» or <<Name>> (one paragraph, at most 60 characters inside). */
+const TYPED_MERGE = /«\s*([^«»\u0000\n]{1,60}?)\s*»|<<\s*([^<>\u0000\n]{1,60}?)\s*>>/g;
+/** Another system's fill-in token, kept as printed and noted: [Name], {Name}, $Name$, %Name%. */
+const OTHER_TOKENS = /\[[A-Za-z][A-Za-z0-9 _.\-/]{0,39}\]|\{[A-Za-z][A-Za-z0-9 _.\-/]{0,39}\}|\$[A-Za-z][A-Za-z0-9_.]{0,39}\$|%[A-Za-z][A-Za-z0-9_.]{0,39}%/g;
+/** What may stand between merge fields in an otherwise empty line ("«Town», «Postcode»"). */
+const FILLER_ONLY = /^[\s,;:.\-\u2013\u2014/()]*$/;
+/** The fill-in line a merge field becomes when the line has other text ("Patient: __________"). */
+export const MERGE_BLANK = "__________";
+
+function noteMergeName(stats: RtfStats, name: string): void {
+  stats.mergeFields += 1;
+  const n = name.trim().slice(0, 60);
+  if (n && stats.mergeFieldNames.length < 50 && !stats.mergeFieldNames.includes(n)) stats.mergeFieldNames.push(n);
+}
+
+/**
+ * A paragraph's mail-merge fields – MERGEFIELD fields (already "merge" inlines) and typed «Name» /
+ * <<Name>> in the template's own text, even split across runs – become answer spaces: a line that is
+ * only merge fields (and commas, spaces…) becomes an empty paragraph – an empty table cell when it is a
+ * cell's only line; otherwise each becomes a "__________" fill-in line beside its label. Text that looks
+ * like another system's token ([Name], {Name}, $Name$, %Name%) is kept and counted for the notes.
+ */
+function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: boolean): Inline[] {
+  // The template's own text, one character per inline position for anything else (so no token spans it).
+  let full = "";
+  const starts: number[] = [];
+  for (const inl of inlines) {
+    starts.push(full.length);
+    full += inl.kind === "text" && !inl.generated ? inl.text : "\u0000";
+  }
+  const ranges: Array<{ start: number; end: number; name: string }> = [];
+  const re = new RegExp(TYPED_MERGE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(full)) !== null) ranges.push({ start: m.index, end: m.index + m[0].length, name: (m[1] ?? m[2] ?? "").trim() });
+  const other = new RegExp(OTHER_TOKENS.source, "g");
+  while ((m = other.exec(full)) !== null) {
+    stats.otherTokens += 1;
+    if (stats.otherTokenExamples.length < 3 && !stats.otherTokenExamples.includes(m[0])) stats.otherTokenExamples.push(m[0]);
+  }
+  const hasMarkers = inlines.some((i) => i.kind === "merge");
+  if (ranges.length === 0 && !hasMarkers) return inlines;
+
+  // Cut the typed tokens out, leaving a merge marker where each began.
+  let work: Inline[] = inlines;
+  if (ranges.length > 0) {
+    work = [];
+    let r = 0;
+    inlines.forEach((inl, i) => {
+      if (inl.kind !== "text" || inl.generated) {
+        work.push(inl);
+        return;
+      }
+      const from = starts[i];
+      const to = from + inl.text.length;
+      let piece = "";
+      for (let pos = from; pos < to; pos++) {
+        while (r < ranges.length && ranges[r].end <= pos) r++;
+        const range = ranges[r];
+        if (range && pos >= range.start && pos < range.end) {
+          if (pos === range.start) {
+            if (piece) work.push({ kind: "text", text: piece, style: inl.style });
+            piece = "";
+            work.push({ kind: "merge", name: range.name, style: inl.style });
+          }
+          continue;
+        }
+        piece += full[pos];
+      }
+      if (piece) work.push({ kind: "text", text: piece, style: inl.style });
+    });
+  }
+
+  let merges = 0;
+  for (const inl of work) {
+    if (inl.kind !== "merge") continue;
+    merges += 1;
+    noteMergeName(stats, inl.name);
+  }
+  if (headerFooter) stats.headerFooterFillIns += merges;
+  const visible = work.some((inl) => (inl.kind === "text" ? !FILLER_ONLY.test(inl.text) : inl.kind === "sym" || inl.kind === "field"));
+  // Only merge fields on this line: an empty line (or cell) is the answer space.
+  if (!visible) return [];
+  return work.map((inl) => (inl.kind === "merge" ? { kind: "text", text: MERGE_BLANK, style: inl.style, generated: true } : inl));
 }
 
 /** Whether the bytes are an RTF file ("{\rtf" after an optional byte-order mark and white space). */

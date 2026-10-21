@@ -25,7 +25,10 @@ export interface RunStyle {
 }
 
 export type Inline =
-  | { kind: "text"; text: string; style: RunStyle }
+  /** `generated`: written by the converter itself (a form field's fill-in line), not the template's own text. */
+  | { kind: "text"; text: string; style: RunStyle; generated?: boolean }
+  /** A mail-merge field while its paragraph is read (resolved to an answer space when the paragraph ends). */
+  | { kind: "merge"; name: string; style: RunStyle }
   | { kind: "tab"; style: RunStyle }
   | { kind: "break"; style: RunStyle }
   /** A character of a symbol font kept as a Word symbol (w:sym), e.g. a Wingdings arrow. */
@@ -149,9 +152,14 @@ export interface RtfStats {
   paragraphs: number;
   tables: number;
   cells: number;
+  /** Mail-merge fields (MERGEFIELD fields and typed «Name» / <<Name>>) turned into answer spaces. */
   mergeFields: number;
-  /** Up to five merge-field names as printed, for the note ("«PatientName»"). */
+  /** Their names, distinct, in order (at most 50). */
   mergeFieldNames: string[];
+  /** Text that looks like another system's fill-in token ([Name], {Name}, $Name$, %Name%) – kept, noted. */
+  otherTokens: number;
+  /** Up to three of them as printed. */
+  otherTokenExamples: string[];
   formTextFields: number;
   formCheckboxes: number;
   formDropdowns: number;
@@ -222,6 +230,8 @@ export function emptyStats(): RtfStats {
     cells: 0,
     mergeFields: 0,
     mergeFieldNames: [],
+    otherTokens: 0,
+    otherTokenExamples: [],
     formTextFields: 0,
     formCheckboxes: 0,
     formDropdowns: 0,

@@ -271,21 +271,50 @@ test("a table with more cells than definitions, or none, still gets widths", () 
  * Fields, form fields and tick boxes
  * ----------------------------------------------------------------------------------------------*/
 
-test("MERGEFIELD keeps its printed «Name»; an empty result prints «Name»; nested fields in instructions do not leak", () => {
+test("mail-merge fields (MERGEFIELD, typed «Name» and <<Name>>) become answer spaces beside their labels; nested fields in instructions do not leak", () => {
   const r = convert(
     doc(
       "Name: {\\field{\\*\\fldinst { MERGEFIELD Patient_Name \\\\* MERGEFORMAT }}{\\fldrslt {\\'abPatient_Name\\'bb}}}\\par " +
         "DOB: {\\field{\\*\\fldinst MERGEFIELD \"Date of Birth\"}{\\fldrslt }}\\par " +
-        "Typed: \\'abClinic_Ref\\'bb\\par " +
+        "Typed: \\'abClinic_Ref\\'bb and {\\'ab}{\\b Split}{\\i _Ref}{\\'bb}.\\par " +
+        "Angled: <<Referral Date>>\\par " +
         "{\\field{\\*\\fldinst IF {\\field{\\*\\fldinst MERGEFIELD Sex}{\\fldrslt F}} = \"F\" \"Mrs\" \"Mr\"}{\\fldrslt Mrs}} Smith\\par " +
         "{\\field{\\*\\fldinst HYPERLINK \"https://example.invalid/\"}{\\fldrslt Link text}}\\par",
     ),
   );
-  assert.deepEqual(texts(body(r)), ["Name: «Patient_Name»", "DOB: «Date of Birth»", "Typed: «Clinic_Ref»", "Mrs Smith", "Link text"]);
-  assert.equal(r.stats.mergeFields, 2);
-  assert.deepEqual(r.stats.mergeFieldNames, ["Patient_Name", "Date of Birth"]);
-  assert.doesNotMatch(body(r), /example\.invalid|HYPERLINK|MERGEFIELD/);
-  assert.ok(r.notes.some((n) => /2 mail-merge fields \(«Patient_Name», «Date of Birth»\) are kept as printed/.test(n)));
+  const xml = body(r);
+  assert.deepEqual(texts(xml), ["Name: __________", "DOB: __________", "Typed: __________ and __________.", "Angled: __________", "Mrs Smith", "Link text"]);
+  assert.equal(r.stats.mergeFields, 5);
+  assert.deepEqual(r.stats.mergeFieldNames, ["Patient_Name", "Date of Birth", "Clinic_Ref", "Split_Ref", "Referral Date"]);
+  assert.doesNotMatch(xml, /example\.invalid|HYPERLINK|MERGEFIELD|«|»|&lt;&lt;/);
+  assert.ok(r.notes.includes("Converted from RTF: 5 mail-merge fields from your clinic system («Patient_Name», «Date of Birth», «Clinic_Ref») were turned into answer boxes – check the mapping once."));
+});
+
+test("a line or table cell that is only mail-merge fields becomes an empty answer space; other tokens are kept and noted", () => {
+  const field = (name: string) => `{\\field{\\*\\fldinst MERGEFIELD ${name}}{\\fldrslt \\'ab${name}\\'bb}}`;
+  const r = convert(
+    doc(
+      `Address:\\par ${field("Address_1")}\\par \\'abTown\\'bb, \\'abPostcode\\'bb\\par ` +
+        `\\trowd\\cellx3000\\cellx9000\\pard\\intbl Referral reference\\cell \\'abReferral Ref\\'bb\\cell\\row ` +
+        `\\trowd\\cellx3000\\cellx9000\\pard\\intbl Treating therapist\\cell ${field("Therapist")}\\cell\\row ` +
+        "\\pard Case: [Case_ID] \\{Claim\\} $DOB$ %REF% and [ordinary words, with commas]\\par " +
+        `Form field: {\\field{\\*\\fldinst FORMTEXT {\\*\\formfield{\\fftype0{\\*\\ffname T}}}}{\\fldrslt Default}}\\par`,
+    ),
+  );
+  const xml = body(r);
+  assert.deepEqual(texts(xml), ["Address:", "", "", "Referral reference", "", "Treating therapist", "", "Case: [Case_ID] {Claim} $DOB$ %REF% and [ordinary words, with commas]", "Form field: [Default]"]);
+  assert.equal(r.stats.mergeFields, 5);
+  assert.equal(r.stats.otherTokens, 4, "[Case_ID] {Claim} $DOB$ %REF% – not the sentence in brackets, not the form field's own [Default]");
+  assert.deepEqual(r.stats.otherTokenExamples, ["[Case_ID]", "{Claim}", "$DOB$"]);
+  assert.ok(r.notes.some((n) => /4 placeholders that another system may fill in \(\[Case_ID\], \{Claim\}, \$DOB\$\) were kept as printed – check whether each one is an answer box/.test(n)));
+});
+
+test("merge fields in a page header become fill-in lines there too, and are noted", () => {
+  const r = convert(doc("{\\header \\pard Re: {\\field{\\*\\fldinst MERGEFIELD Patient}{\\fldrslt \\'abPatient\\'bb}}\\tab <<Ref>>\\par}Body\\par"));
+  const header = part(r.docx, "word/header1.xml");
+  assert.match(header, /Re: __________<\/w:t><w:tab\/><w:t xml:space="preserve">__________/);
+  assert.doesNotMatch(header, /«|&lt;&lt;/);
+  assert.equal(r.stats.headerFooterFillIns, 2);
 });
 
 test("form fields: FORMTEXT → a fill-in line (or [default]), FORMCHECKBOX → ☐/☒, FORMDROPDOWN → [A / B]", () => {

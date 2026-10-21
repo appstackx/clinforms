@@ -145,6 +145,7 @@ function runsXml(inlines: Inline[], ctx: Ctx, out: Out): void {
     body = "";
   };
   for (const inl of inlines) {
+    if (inl.kind === "merge") continue; // resolved by the reader; never written
     if (inl.kind === "field") {
       flushRun();
       out.push(`<w:fldSimple w:instr=" ${inl.instr} "><w:r>${rPr(inl.style, ctx)}<w:t xml:space="preserve">${esc(inl.text)}</w:t></w:r></w:fldSimple>`);
