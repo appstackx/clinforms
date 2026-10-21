@@ -152,7 +152,7 @@ He decides everything; the agent proposes.
   (6:15, 17.7 MB). Whether Khuram emailed it to Dell is **unverified** – ask.
 
 ## Top next actions (detail in `memory/next-steps.md`)
-1. **Blue Heart call Fri 23 Oct 11:30** – `docs/blue-heart-runsheet.md` (laptop demo from `~/Projects/Appstackx/clinforms-demo`, Megan Hart on Harrow & Pike + Meridian). Updated 21/10 for Dell's process email: no RTF upload or IA demo on the call; product gaps in `memory/next-steps.md` TOP-b. *(Old:)* **RED call** (Tue 13 Oct, morning; RED declined) – all in **`docs/demo-red-physio.md`**: Monday-evening rehearsal from
+1. **Blue Heart call Fri 23 Oct 11:30** – `docs/blue-heart-runsheet.md` (laptop demo from `~/Projects/Appstackx/clinforms-demo`, Megan Hart on Harrow & Pike + Bodycare IA). Updated 21/10 for Dell's process email: **Bodycare's public Initial Assessment Report** added as a prepared demo form (steps 8–9); RTF support being built on `feat/rtf-forms` (ships only after full checks); product gaps in `memory/next-steps.md` TOP-b. *(Old:)* **RED call** (Tue 13 Oct, morning; RED declined) – all in **`docs/demo-red-physio.md`**: Monday-evening rehearsal from
    `~/Projects/Appstackx/clinforms-demo`; Tuesday `npm run demo:red -- --skip-build`; afterwards record Daniel's answers in
    `memory/projects/red-physiotherapy.md` §7. No production changes Monday evening → after the call.
 2. **Go-live loose ends:** §7.6 key check (via the `ops/key-fingerprint` endpoint once merged, or after the first

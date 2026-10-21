@@ -55,17 +55,16 @@ Update this file at the end of every session (status, blockers, what changed).
   1. Read the run sheet changes.
   2. Rehearse as planned (A/B of the run sheet).
   3. Make the call pack §0 decisions (Sent mail, year-2 price, VAT, PoC turnaround, DPA).
-  4. On the call: **no RTF upload and no IA demo.** Describe the IA test, don't run it (if he insists, show the output
-     file: run sheet E.2).
-- **Seen 21/10 ~20:50 BST, not from this branch (Khuram decides before rehearsal):** another job in this session put
-  Bodycare's public .doc templates in `clinforms/demo-assets/bodycare-source/`, a converted
-  `bodycare-initial-assessment-report.docx` plus a map and a Megan Hart draft in `demo-assets/insurers/` (the folder
-  the frozen demo reads), and `bodycare-*.png` plus `Hart_M_Initial-Assessment-Report_2026-10-21_SIGNED.docx` in the
-  fallback folder `demo-assets/outputs/blue-heart/` (all 20:17–20:46 BST). Effects: the frozen demo's "Demonstration
-  forms" shows a **BODYCARE** card; `npm run demo:check` will count 8 maps, 5 answer files and 7 form files, not the
-  run sheet's 7/4/6; sharing the fallback Finder folder shows Bodycare file names; and the E row "We don't hold any
-  provider's forms" is no longer true. Either keep it and change those lines, or move those files out before
-  rehearsal. None of the call material on this branch uses it.
+  4. On the call: IA demo = **Bodycare's Initial Assessment Report** for Megan (steps 8–9). RTF upload only if the
+     RTF build ships Thursday after all checks (feat/rtf-forms) – otherwise "Save As .docx".
+- **Bodycare added to the demo (Khuram approved 21/10 ~20:20 BST, "yes"):** Bodycare Clinics' public Initial and
+  Final Assessment .doc templates downloaded to gitignored `clinforms/demo-assets/bodycare-source/`; the Initial one
+  converted via Pages (textutil drops tables), metadata stripped, added as a prepared demonstration form
+  (`demo-assets/insurers/bodycare-initial-assessment-report.docx`, map `maps/bodycare-iar.json`, Megan Hart answers
+  `drafts/sim-pat-001__form-bodycare-iar.json` – drafted live from her IA note N-001 then curated; footer names Bodycare
+  Clinics). `demo:check` = 8 maps, 5 answer files, 7 form files. Checked end to end + regression (H&P, Meridian,
+  Northfield, Bupa, Reset) 21/10. Run sheet steps 8–9 now use Bodycare (Meridian moved to E.2). Show the final form in
+  the app preview, not Pages (tables run past the margin there). Final Assessment card not built (optional).
 - **Not tested:** TM3's real merge syntax and RTF export; a real Word "Save As .docx"; how TM3 prints a patient's
   notes; re-importing a completed form into TM3; any real provider form. All test material was fictional.
 - **The proof-of-concept conversion route for his RTFs is unsettled.** This Mac has no Word or LibreOffice, and
