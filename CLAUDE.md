@@ -104,7 +104,7 @@ He decides everything; the agent proposes.
 | Name | What | Status |
 |---|---|---|
 | **ClinForms** | The product: completes each referrer's own form, original layout, from clinic notes | **LIVE on clinforms.co.uk since 10/10 17:13 UTC** (public site, invite-only clinic sign-in, clinic Studio, encrypted D1); only the internal clinic `appstackx` exists → `memory/projects/clinforms.md` |
-| **Blue Heart deal** | Dell; MLC/case-manager forms; voiced 6:15 video made 09/10 | **Dell replied 20/10 ("exactly what I have been looking for"); 15-min call BOOKED Fri 23 Oct 2026 11:30 BST** – run sheet `docs/blue-heart-runsheet.md`, call pack `docs/demo-blue-heart.md` → `memory/projects/blue-heart-clinics.md` |
+| **Blue Heart deal** | Dell; MLC/case-manager forms; voiced 6:15 video made 09/10 | **Dell replied 20/10 ("exactly what I have been looking for"); 15-min call BOOKED Fri 23 Oct 2026 11:30 BST.** 21/10: his process email (RTF templates in TM3 + mail-merge; physios type the IA clinical part). Coverage: call pack section "Dell's process" (branch `sales/blue-heart-fit`, not merged – until it is, open the run sheet in `~/Projects/Appstackx/clinforms-wt/blue-heart-fit/`) – run sheet `docs/blue-heart-runsheet.md`, call pack `docs/demo-blue-heart.md` → `memory/projects/blue-heart-clinics.md` |
 | **RED deal** | Daniel; insurer (PMI) forms; call Tue 13 Oct, morning | **DECLINED** (Khuram, 20/10: "not going ahead"; reason not recorded) → `memory/projects/red-physiotherapy.md` |
 | **Outreach video** | 1:30 ClinForms demo for cold outreach (fictional data, voice Beth) | FINAL 10/10; files in `~/Projects/Appstackx/marketing/clinforms/outreach-video-v1/`; hosted at **clinforms.co.uk/demo**; no outreach sent yet (as far as recorded) |
 | **careconnect-mk** | Origin repo (patient-portal portfolio demo); module first built on branch `claude/confident-noether-z6l7kr` @ `ff05fab` | Superseded; unmerged → `memory/projects/careconnect-mk.md` |
@@ -152,7 +152,7 @@ He decides everything; the agent proposes.
   (6:15, 17.7 MB). Whether Khuram emailed it to Dell is **unverified** – ask.
 
 ## Top next actions (detail in `memory/next-steps.md`)
-1. **Blue Heart call Fri 23 Oct 11:30** – `docs/blue-heart-runsheet.md` (laptop demo from `~/Projects/Appstackx/clinforms-demo`, Megan Hart on Harrow & Pike + Meridian). *(Old:)* **RED call** (Tue 13 Oct, morning; RED declined) – all in **`docs/demo-red-physio.md`**: Monday-evening rehearsal from
+1. **Blue Heart call Fri 23 Oct 11:30** – `docs/blue-heart-runsheet.md` (laptop demo from `~/Projects/Appstackx/clinforms-demo`, Megan Hart on Harrow & Pike + Bodycare IA). Updated 21/10 for Dell's process email: **Bodycare's public Initial Assessment Report** added as a prepared demo form (steps 8–9); RTF support being built on `feat/rtf-forms` (ships only after full checks); product gaps in `memory/next-steps.md` TOP-b. *(Old:)* **RED call** (Tue 13 Oct, morning; RED declined) – all in **`docs/demo-red-physio.md`**: Monday-evening rehearsal from
    `~/Projects/Appstackx/clinforms-demo`; Tuesday `npm run demo:red -- --skip-build`; afterwards record Daniel's answers in
    `memory/projects/red-physiotherapy.md` §7. No production changes Monday evening → after the call.
 2. **Go-live loose ends:** §7.6 key check (via the `ops/key-fingerprint` endpoint once merged, or after the first

@@ -19,6 +19,7 @@
   5. Patient data secure and GDPR compliant?
 - **His offer:** "happy to consider sending anonymised examples of an MLC report form and corresponding anonymised clinical notes" for a proof of concept.
 - 20/10 (third email, pasted by Khuram): ClinForms is "exactly what I have been looking for to help us complete the different MLC and insurer forms we receive, while allowing our clinicians to review and approve the information before it is sent"; wants "a 15-minute session" to see it in action and discuss how it fits Blue Heart's reporting workflow; asked for dates and times. Signed "Dell Baines. Company Owner." Call material: `docs/blue-heart-runsheet.md`, `docs/demo-blue-heart.md`.
+- 21/10 (fourth email, answering Khuram's calendar invite): his common providers are "Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic and The Treatment Network". Each provider's template is converted to RTF and added to TM3, which mail-merges name, address, DOB and treating physio. They then "manually add the clinical information gathered during the Initial Assessment. This is the time-consuming part". He wants "a way to populate these clinical sections from our assessment notes", with the treating physio reviewing, amending and approving before it is sent. Signs "Hi Khuram," (less formal than before). Coverage: call pack "Dell's process".
 Full verbatim emails: `memory/projects/blue-heart-clinics.md`.
 
 ## Communication notes
