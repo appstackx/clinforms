@@ -70,6 +70,7 @@ async function confirmMapping(page) {
   await page.locator("[role=dialog] input[type=checkbox], [role=dialog] button[role=checkbox]").first().click();
   await page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }).click();
   await page.getByText(new RegExp(`Mapping confirmed by ${SIGNER.name}`)).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(1000); // let the "Use for a patient" link's prefetch finish before leaving the page
 }
 
 async function analyseSample(page, title) {
