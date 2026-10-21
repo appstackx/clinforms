@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import type { FormDefinition } from "../../../core/types";
-import { wordFileNameFor } from "../../../core/rtf";
+import { wordFileNameFor } from "../../../core/rtf/notes";
 import { saveBlob } from "../../api-client";
 import { getStoreMode, loadFormFile, type StoredFormFile } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";

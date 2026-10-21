@@ -16,7 +16,7 @@ import type { FormsAnalyseResponse } from "../../../api/contract";
 import { MAX_FORM_FILE_BYTES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
 import { nowIso } from "../../../core/dates";
-import { RtfConversionError, convertRtfToDocx, isRtfBytes } from "../../../core/rtf";
+import { isRtfBytes } from "../../../core/rtf/sniff";
 import type { FormDefinition, FormMimeType, ReferrerInfo } from "../../../core/types";
 import { api, toBase64, type ApiClient } from "../../api-client";
 import { listForms, saveFormDurable, saveFormFile } from "../../store";
@@ -51,8 +51,12 @@ export function sniffFormType(bytes: Uint8Array, fileName: string): FormMimeType
   throw new FormFileError(`“${fileName}” is not a Word (.docx), PDF or RTF file.`);
 }
 
-/** An RTF file → its Word conversion (deterministic: the server converts it to the same bytes). */
+/**
+ * An RTF file → its Word conversion (deterministic: the server converts it to the same bytes). The
+ * converter is loaded only now, so pages that never see an RTF file do not carry it.
+ */
 async function convertLocalRtf(fileName: string, bytes: Uint8Array): Promise<LocalFormFile> {
+  const { RtfConversionError, convertRtfToDocx } = await import("../../../core/rtf");
   const started = Date.now();
   let docx: Uint8Array;
   let notes: string[];

@@ -41,6 +41,7 @@ import {
   symbolGlyph,
   type SymbolFontKind,
 } from "./codepages";
+import { isRtfBytes } from "./sniff";
 import {
   defaultCellDef,
   defaultParagraphStyle,
@@ -1965,14 +1966,6 @@ function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: bo
   // Only merge fields on this line: an empty line (or cell) is the answer space.
   if (!visible) return [];
   return work.map((inl) => (inl.kind === "merge" ? { kind: "text", text: MERGE_BLANK, style: inl.style, generated: true } : inl));
-}
-
-/** Whether the bytes are an RTF file ("{\rtf" after an optional byte-order mark and white space). */
-export function isRtfBytes(bytes: Uint8Array): boolean {
-  let i = 0;
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) i = 3;
-  while (i < bytes.length && i < 64 && (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0d || bytes[i] === 0x0a)) i++;
-  return bytes[i] === 0x7b && bytes[i + 1] === 0x5c && bytes[i + 2] === 0x72 && bytes[i + 3] === 0x74 && bytes[i + 4] === 0x66;
 }
 
 /** Read an RTF file into the document model. Throws RtfConversionError. */

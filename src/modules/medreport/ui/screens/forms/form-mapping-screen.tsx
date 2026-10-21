@@ -18,7 +18,7 @@ import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, 
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
-import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf";
+import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
 import {
   ANSWER_TYPE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
