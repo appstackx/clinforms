@@ -84,7 +84,7 @@ function rtfError(fn: () => unknown): RtfConversionError {
 
 test("isRtfBytes: {\\rtf after an optional byte-order mark and white space; nothing else", () => {
   assert.equal(isRtfBytes(enc("{\\rtf1\\ansi hi}")), true);
-  assert.equal(isRtfBytes(new Uint8Array([0xef, 0xbb, 0xbf, ...enc("\r\n {\\rtf1 x}")])), true);
+  assert.equal(isRtfBytes(new Uint8Array([0xef, 0xbb, 0xbf, ...Array.from(enc("\r\n {\\rtf1 x}"))])), true);
   assert.equal(isRtfBytes(enc("%PDF-1.7")), false);
   assert.equal(isRtfBytes(new Uint8Array([0x50, 0x4b, 0x03, 0x04])), false);
   assert.equal(isRtfBytes(enc("{rtf1}")), false);
