@@ -122,6 +122,15 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | 18:58 | Read-only check: prod D1 has 1 clinic, 0 reports, 0 form files, 1 (fictional) access request; health OK. |
 | ~19:00 | End-of-session memory update (CLAUDE.md, `memory/`, `docs/go-live.md` run log). |
 
+### Wed 2026-10-21 (desktop – RTF referrer forms, branch `feat/rtf-forms`)
+| Time | Event |
+|---|---|
+| ~19:10 | Khuram approves RTF referrer-form support (Blue Heart keeps provider templates as RTF in TM3); hard condition: nothing that works today may break. Worktree `clinforms-wt/rtf` off `origin/main` `fcbe01d`. |
+| 19:49 | `023f478` converter `core/rtf` + 4 fictional fixtures; `dd6aea2` boundary conversion (upload dialog + `decodeFormFile({convertRtf})` for analyse/fill/render), map-screen note. Full check chain green. |
+| ~20:00 | Coordinator adds required scope (D67): merge fields never reach an approved form, all forms; reading never silently drops a distinct question. |
+| 20:17 | `2f30d5e` converter: merge fields → empty answer spaces; `cc89a02` reading keeps distinct questions on one box (flagged); `27ecae8` merge-field safety (analysis record, approval block, final-render refusal). Bundled readings proved identical to `main` (snapshot). |
+| 20:28–20:42 | Converter lazy-loaded (forms pages back to main's size); e2e: bundled PDF + Word forms on `main` vs branch builds – PDFs byte-identical, Word parts identical; RTF e2e demo (4 uploads, 2 completed + approved) and one LIVE run (5 live calls). |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
