@@ -1426,7 +1426,9 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
 
 - **Converter** `core/rtf/` (pure TypeScript, browser + Node, no dependencies, no network, no native tools):
   `convertRtfToDocx(bytes, {maxBytes})` → `{docx, notes, stats}`. One linear pass with hard limits (group depth
-  256, 60 000 paragraphs + cells, 400 000 text pieces, output ≤ the upload limit); malformed or truncated input →
+  256, 60 000 paragraphs + cells + tables opened, 400 000 text pieces, 200 000 cell definitions kept with the rows,
+  output ≤ the upload limit – a small file that opens and closes nested tables per paragraph, or repeats one wide row
+  definition, is refused instead of filling the memory; fix/rtf-verify 10/2026); malformed or truncated input →
   `RtfConversionError` with a plain-English message (→ 422 FORM_INVALID / 413 on the server). Output is a
   **stored (uncompressed) ZIP with fixed dates – deterministic**: the same RTF gives the same .docx bytes and
   SHA-256 in the browser and in Node (`RTF_CONVERTER_VERSION` = `rtf-docx-1`; any change to what it writes

@@ -435,6 +435,27 @@ test("giant input: linear time, block and size limits, the upload limit for the 
   assert.equal(rtfError(() => convert(doc("Some text\\par".repeat(200)), { maxBytes: 4000 })).code, "RTF_TOO_LARGE");
 });
 
+test("memory bombs in small files are refused quickly: nesting levels that open and close tables, one wide row repeated", () => {
+  const heapBefore = process.memoryUsage().heapUsed;
+  let started = Date.now();
+  // ~0.7 MB: every pair of paragraphs opens and closes 256 nested tables (used to need over 4 GB).
+  const nesting = `{\\rtf1 ${"\\pard\\intbl\\itap256 x\\par\\pard y\\par ".repeat(20_000)}}`;
+  assert.equal(rtfError(() => convert(nesting)).code, "RTF_TOO_COMPLEX");
+  // ~0.5 MB: one 63-cell row definition with borders, repeated for 30 000 rows (each row keeps its own copy).
+  let wide = "\\trowd";
+  for (let i = 1; i <= 63; i++) wide += `\\clbrdrt\\brdrs\\clbrdrb\\brdrs\\cellx${i * 100}`;
+  assert.equal(rtfError(() => convert(`{\\rtf1 ${wide} ${"\\intbl x\\cell\\row ".repeat(30_000)}}`)).code, "RTF_TOO_COMPLEX");
+  assert.ok(Date.now() - started < 2000, `refusals took ${Date.now() - started} ms`);
+  assert.ok(process.memoryUsage().heapUsed - heapBefore < 400 * 1024 * 1024, "memory stays bounded");
+  // Ordinary nested tables and long tables still convert.
+  started = Date.now();
+  const nested = convert(`{\\rtf1 \\pard\\intbl\\itap2 inner\\nestcell{\\*\\nesttableprops\\trowd\\cellx2000\\nestrow}\\pard\\intbl outer\\cell\\trowd\\cellx4000\\row}`);
+  assert.match(body(nested), /<w:tbl>[\s\S]*<w:tbl>[\s\S]*inner[\s\S]*<\/w:tbl>[\s\S]*outer[\s\S]*<\/w:tbl>/);
+  const long = convert(`{\\rtf1 ${"\\trowd\\cellx3000\\cellx6000\\cellx9000\\intbl a\\cell b\\cell c\\cell\\row ".repeat(2000)}}`);
+  assert.equal((body(long).match(/<w:tr>/g) ?? []).length, 2000);
+  assert.ok(Date.now() - started < 2000);
+});
+
 /* ------------------------------------------------------------------------------------------------
  * Helpers used by the Studio
  * ----------------------------------------------------------------------------------------------*/

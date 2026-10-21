@@ -83,12 +83,18 @@ export const RTF_LIMITS = {
   maxBlocks: 60_000,
   /** Text pieces, tabs, breaks and symbols together. */
   maxInlines: 400_000,
+  /**
+   * Cell definitions kept with the table rows (each row keeps its own copy of up to 63 `\cellx`), so a
+   * small file that repeats one wide row definition cannot fill the memory.
+   */
+  maxCellDefs: 200_000,
 } as const;
 
 export interface RtfReadLimits {
   maxDepth?: number;
   maxBlocks?: number;
   maxInlines?: number;
+  maxCellDefs?: number;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -230,7 +236,12 @@ class Story {
 
   private ensureLevel(level: number): void {
     while (this.stack.length > level) this.closeTable();
-    while (this.stack.length < level) this.stack.push({ rows: [], row: [], cell: [] });
+    while (this.stack.length < level) {
+      // Each table opened counts as a block: paragraphs that alternate between nesting levels (\itap) would
+      // otherwise open and close hundreds of tables per paragraph without limit (memory).
+      this.r.countBlock();
+      this.stack.push({ rows: [], row: [], cell: [] });
+    }
   }
 
   private closeTable(): void {
@@ -238,7 +249,7 @@ class Story {
     const ctx = this.stack.pop();
     if (!ctx) return;
     if (ctx.cell.length > 0) ctx.row.push(ctx.cell);
-    if (ctx.row.length > 0) ctx.rows.push({ def: cloneRowDef(this.r.rowDefFor(level)), cells: ctx.row });
+    if (ctx.row.length > 0) ctx.rows.push({ def: this.r.rowDefCopy(this.r.rowDefFor(level)), cells: ctx.row });
     if (ctx.rows.length === 0) return;
     this.container(this.stack.length).push({ kind: "table", rows: ctx.rows });
     this.r.stats.tables += 1;
@@ -283,7 +294,7 @@ class Story {
       ctx.cell = [];
     }
     if (ctx.row.length === 0) return;
-    ctx.rows.push({ def: cloneRowDef(def), cells: ctx.row });
+    ctx.rows.push({ def: this.r.rowDefCopy(def), cells: ctx.row });
     ctx.row = [];
   }
 
@@ -475,8 +486,10 @@ class Reader {
   readonly maxDepth: number;
   private readonly maxBlocks: number;
   private readonly maxInlines: number;
+  private readonly maxCellDefs: number;
   private blocks = 0;
   private inlineCount = 0;
+  private cellDefCount = 0;
 
   private readonly fonts = new Map<number, FontInfo>();
   private fontEntry: number | null = null;
@@ -515,6 +528,7 @@ class Reader {
     this.maxDepth = limits.maxDepth ?? RTF_LIMITS.maxDepth;
     this.maxBlocks = limits.maxBlocks ?? RTF_LIMITS.maxBlocks;
     this.maxInlines = limits.maxInlines ?? RTF_LIMITS.maxInlines;
+    this.maxCellDefs = limits.maxCellDefs ?? RTF_LIMITS.maxCellDefs;
     this.body = new Story(this, false);
     this.state = {
       dest: "normal",
@@ -557,6 +571,15 @@ class Reader {
 
   rowDefFor(level: number): RowDef {
     return level <= 1 ? this.topDef : this.nestDef;
+  }
+
+  /** A table row's own copy of the current row definition, counted against maxCellDefs. */
+  rowDefCopy(def: RowDef): RowDef {
+    this.cellDefCount += def.cells.length + 1;
+    if (this.cellDefCount > this.maxCellDefs) {
+      throw new RtfConversionError("RTF_TOO_COMPLEX", "The RTF file has more table cells than a referrer form would. Check that it is the right file.");
+    }
+    return cloneRowDef(def);
   }
 
   styleOutline(index: number): number | null {
