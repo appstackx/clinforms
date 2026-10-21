@@ -147,7 +147,7 @@ export function FormsLibraryScreen() {
           {tenant ? (
             TENANT_COPY.forms.libraryIntro
           ) : (
-            <>Upload the form an MLC or insurer sent you (.docx or PDF). The sample forms reappear after “Reset demo” on the Reports page.</>
+            <>Upload the form an MLC or insurer sent you (Word, PDF or RTF). The sample forms reappear after “Reset demo” on the Reports page.</>
           )}
         </EmptyState>
       ) : (

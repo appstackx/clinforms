@@ -96,6 +96,32 @@ started 21/10 ~20:10 BST by a subagent of this session. Its brief says Khuram ap
 `scripts/medreport/fixtures/`, still changing. It keeps «…» merge text as it appears, so it must not ship before P2.
 
 ## TOP (20/10 detail) – Blue Heart call material (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
+
+## NEW – RTF referrer forms + mail-merge safety (built 21/10 on branch `feat/rtf-forms`, NOT merged, NOT deployed)
+Approved by Khuram 21/10 ~19:10 UTC (D66); merge-field safety added by the coordinator (D67). Worktree
+`~/Projects/Appstackx/clinforms-wt/rtf`. Detail: module README "RTF referrer forms" + "Mail-merge fields never reach an
+approved form".
+- **Shipped on the branch:** RTF uploads (both Studios + partner API) converted to Word on upload (pure TS, deterministic);
+  merge fields (MERGEFIELD, «…», <<…>>) become empty answer spaces in the conversion; any Word/PDF form with merge fields
+  left is blocked from approval (and a final render refused); the reading keeps two distinct questions on one box
+  (flagged) instead of dropping one.
+- **Verified:** full check chain green; e2e on local builds of `main` and the branch – bundled PDFs byte-identical,
+  bundled Word outputs part-for-part identical; RTF e2e (demo: 4 fixtures uploaded/confirmed, 2 completed + approved as
+  Sarah Reid; LIVE: 1 reading + 3 drafting calls).
+- **Next (owner's agent):** independent check → merge `--no-ff` into `main` (= deploy). Not for the Friday demo folder.
+- **Proposals (not built):**
+  1. **Real TM3 RTF templates from Blue Heart** (blank, no patient data) to validate the converter and learn TM3's exact
+     merge-field syntax (only MERGEFIELD, «…» and <<…>> are recognised; [X]/{X}/$X$/%X% are only noted).
+  2. **"Download as RTF"** for completed RTF-origin forms (clinics may want to file the RTF back into TM3).
+  3. **Raise the RTF input cap** above 2.5 MB (pictures are hex text in RTF and are dropped anyway; the converted file is
+     what is stored) – e.g. 10 MB for RTF only, after checking request-size limits.
+  4. **Merge fields in uploaded Word forms:** auto-repair in the reading (a question anchored in a cell that holds only a
+     merge field → replace that text) and let the layout rules treat «…» as an answer space – today staff fix the
+     mapping when approval is blocked.
+  5. Rules reading can put an answer box in the lower half of a vertically merged cell (any Word form) – skip
+     `vMerge` continuation cells as answer spaces.
+
+## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
 **UPDATE 20/10 ~17:00 UTC: call BOOKED Fri 23 Oct 2026 11:30 BST (Khuram replied himself) – ignore the slot/email steps below. RED DECLINED (Khuram 20/10: "not going ahead"; reason not recorded).**
 **Dell Baines replied on 20/10** (verbatim: `memory/projects/blue-heart-clinics.md` §2.6): ClinForms is "exactly what I
 have been looking for"; he wants **a 15-minute session** (he asks questions, Khuram demos) and asked for dates and times.

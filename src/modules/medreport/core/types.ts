@@ -128,6 +128,7 @@ export type FillSource = z.infer<typeof S.FillSourceSchema>;
 export type FillSourceKind = FillSource["kind"];
 export type FormField = z.infer<typeof S.FormFieldSchema>;
 export type FormAnalysis = z.infer<typeof S.FormAnalysisSchema>;
+export type FormMergeField = z.infer<typeof S.FormMergeFieldSchema>;
 export type FormDefinition = z.infer<typeof S.FormDefinitionSchema>;
 export type OutlineBlock = z.infer<typeof S.OutlineBlockSchema>;
 export type PdfOutlineField = z.infer<typeof S.PdfOutlineFieldSchema>;

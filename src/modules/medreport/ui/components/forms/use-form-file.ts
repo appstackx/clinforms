@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import type { FormDefinition } from "../../../core/types";
+import { wordFileNameFor } from "../../../core/rtf/notes";
 import { saveBlob } from "../../api-client";
 import { getStoreMode, loadFormFile, type StoredFormFile } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
@@ -58,7 +59,7 @@ export function useFormFile(form: Pick<FormDefinition, "file" | "sampleId"> | nu
   return state;
 }
 
-/** Download a stored original file. */
+/** Download a stored original file (a form converted from RTF downloads as its Word file, "….docx"). */
 export function downloadStoredFile(file: StoredFormFile): void {
-  saveBlob(new Blob([file.bytes.slice()], { type: file.mimeType }), file.fileName);
+  saveBlob(new Blob([file.bytes.slice()], { type: file.mimeType }), wordFileNameFor(file));
 }

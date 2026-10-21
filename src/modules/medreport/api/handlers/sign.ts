@@ -129,7 +129,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (issues.length > 0) return problem(422, "The approval is incomplete", { code: "VALIDATION_FAILED", issues });
 
   const started = Date.now();
-  const result = validateReport(report, template);
+  // A form report: the form map too (10/2026 – mail-merge fields left on the form block approval).
+  const result = validateReport(report, template, { form: resolved.form });
   if (!result.canSign) {
     logEvent("sign_blocked", { template: template.id, blocking: result.blocking.length, ms: Date.now() - started });
     return problem(409, "Blocking items remain", {

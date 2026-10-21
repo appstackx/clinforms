@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
-import type { FormAnswerRow, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
+import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
@@ -143,8 +143,9 @@ const SAVE_DELAY_MS = 300;
  * @param initial  the stored report when the screen opened
  * @param stored   the latest stored copy (useReport); a newer one replaces the working copy
  * @param template the report's template (null when the form map is missing: validation is skipped)
+ * @param form     the referrer's form map of a form report (its mail-merge fields are checked, 10/2026)
  */
-export function useReviewState(initial: Report, stored: Report | null, template: ReportTemplate | null): ReviewState {
+export function useReviewState(initial: Report, stored: Report | null, template: ReportTemplate | null, form: FormDefinition | null = null): ReviewState {
   const [report, rawDispatch] = useReducer(reviewReducer, initial);
   const [validating, setValidating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -154,6 +155,8 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   const lastSaved = useRef<Report>(initial);
   const templateRef = useRef(template);
   templateRef.current = template;
+  const formRef = useRef(form);
+  formRef.current = form;
 
   // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
   // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.
@@ -243,7 +246,7 @@ export function useReviewState(initial: Report, stored: Report | null, template:
     const tpl = templateRef.current;
     if (!tpl || current.status === "signed") return current;
     try {
-      const result = validateReport(current, tpl);
+      const result = validateReport(current, tpl, { form: formRef.current });
       if (!sameFlags(result.flags, current.flags)) {
         rawDispatch({ type: "setFlags", flags: result.flags });
         return { ...current, flags: result.flags };

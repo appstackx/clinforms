@@ -32,7 +32,7 @@ export const handleValidate: MedreportHandler = async (req, _ctx, deps) => {
   const template = resolved.template;
 
   const started = Date.now();
-  const result = validateReport(report, template);
+  const result = validateReport(report, template, { form: resolved.form });
   const body: ValidateResponse = { flags: result.flags, canSign: result.canSign, blocking: result.blocking };
   logEvent("validate", {
     template: template.id,

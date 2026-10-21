@@ -10,7 +10,8 @@
  * Codes: UNKNOWN_SOURCE_ID, UNCITED_PARAGRAPH (citations.ts), FIGURE_NOT_IN_SOURCE (figures.ts, and
  * form-answers.ts for drafted date/number answers on a referrer's form), TERM_NOT_IN_SOURCE (terms.ts),
  * OPINION_LANGUAGE (opinion-language.ts), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
- * MISSING_PLACEHOLDER (placeholders.ts), DATA_CHECK (data-checks.ts, by the integration agent).
+ * MISSING_PLACEHOLDER (placeholders.ts; merge-fields.ts for mail-merge fields left in an answer or on the
+ * referrer's form – 10/2026, pass `form` to validateReport), DATA_CHECK (data-checks.ts, by the integration agent).
  *
  * Known limit, stated openly: a paraphrase error that cites a valid note is not caught (terms.ts catches
  * one kind: a corrupted glossary term such as "whale-associated disorder" for WAD). Click-to-source
@@ -24,6 +25,7 @@ import type {
   ComputedFact,
   DataCheck,
   EpisodeBundle,
+  FormDefinition,
   Gap,
   Report,
   ReportFlag,
@@ -36,6 +38,7 @@ import { runDataChecks } from "./data-checks";
 import { validateFigures } from "./figures";
 import { validateFormAnswers } from "./form-answers";
 import { validateGaps } from "./gaps";
+import { validateMergeFields } from "./merge-fields";
 import { validateOpinionLanguage } from "./opinion-language";
 import { validatePlaceholders } from "./placeholders";
 import { validateScopeTerms } from "./scope-terms";
@@ -47,6 +50,8 @@ export interface ValidatorInput {
   bundle: EpisodeBundle;
   template: ReportTemplate;
   computedFacts: ComputedFact[];
+  /** The referrer's form map of a form report (10/2026: its recorded mail-merge fields are checked). */
+  form?: Pick<FormDefinition, "analysis" | "fields">;
 }
 
 /** A single validator. Each validator file in this folder exports one. */
@@ -67,6 +72,7 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "opinion-language", run: validateOpinionLanguage },
   { name: "scope-terms", run: validateScopeTerms },
   { name: "placeholders", run: validatePlaceholders },
+  { name: "merge-fields", run: validateMergeFields },
   { name: "gaps", run: validateGaps },
 ];
 
@@ -253,11 +259,11 @@ export interface ValidateReportResult extends CanSignResult {
 export function validateReport(
   report: Report,
   template: ReportTemplate,
-  opts: { computedFacts?: ComputedFact[] } = {},
+  opts: { computedFacts?: ComputedFact[]; form?: Pick<FormDefinition, "analysis" | "fields"> | null } = {},
 ): ValidateReportResult {
   const bundle = report.bundleSnapshot;
   const computedFacts = opts.computedFacts ?? computeFacts(bundle, { asOf: reportFactsDate(report) });
-  const flags = runValidators({ report, bundle, template, computedFacts });
+  const flags = runValidators({ report, bundle, template, computedFacts, ...(opts.form && { form: opts.form }) });
   const result = canSign(flags, report.gaps ?? []);
   return { flags, canSign: result.ok, ok: result.ok, blocking: result.blocking };
 }

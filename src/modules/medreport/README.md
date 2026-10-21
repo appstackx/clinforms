@@ -44,6 +44,9 @@ src/modules/medreport/
     parties.ts            who completes which part of a form ("to be completed by the policyholder", "Therapist's declaration")
     voice.ts              first-person rewrite, note shorthand expansion, job-title casing (pure)
     computed-facts.ts     FACT-attendance / -age / -episode / -outcomes-*
+    rtf/                  RTF referrer forms → Word (10/2026): reader.ts (RTF → model), docx-writer.ts, zip.ts (stored,
+                          deterministic), codepages.ts, notes.ts (staff notes, converted-form helpers), sniff.ts, index.ts
+    merge-fields.ts       mail-merge fields («Name», <<Name>>, MERGEFIELD): detector + unresolvedMergeFields (10/2026)
     scope.ts              template scope: strip fields before drafting
     validation/           citations, figures, opinion-language, scope-terms, data-checks, index (canSign)
   connectors/             server-only
@@ -73,7 +76,8 @@ src/modules/medreport/
   docgen/                 server-only: built-in template rendering – view-model, docx, docx-validate, pdf, pdf/*
                           (+ question-summary.ts: the PDF summary of a portal question set)
   forms/                  server-only: the referrer-form engine
-    file.ts               decodeFormFile (type from bytes, size cap, SHA-256), assertFormFileMatches
+    file.ts               decodeFormFile (type from bytes, size cap, SHA-256; `convertRtf`: RTF → Word first), assertFormFileMatches
+    merge-scan.ts         mail-merge fields in a form file (analysis record) and in a completed file (final-render refusal)
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
     docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
@@ -728,7 +732,7 @@ Clinics receive a different report form from every MLC, insurer, solicitor, case
 The product completes **that** form, in its original layout, rather than producing its own report.
 
 **1. Forms library (once per referrer form).** Staff upload the referrer's form (.docx or fillable
-PDF; flat PDF = best effort) → `POST /forms/analyse`: `forms/file.ts` checks the bytes, the forms
+PDF; flat PDF = best effort; RTF since 10/2026 – converted to .docx on upload, see "RTF referrer forms") → `POST /forms/analyse`: `forms/file.ts` checks the bytes, the forms
 engine parses it (`buildDocxOutline` / `readPdfForm`) and Claude proposes a **form map**
 (`FormDefinition`, status `proposed`): every question as a `FormField` with its label, the form's own
 section heading, plain-English guidance, `answerType`, options, an **anchor** (where the answer goes in
@@ -1413,3 +1417,87 @@ and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-impo
 
 **Not changed (reviewed):** drafted-wording slips (a patient as the subject of "recommended", verbless sentences) are
 drafting variance – the existing validators and the clinician's review stand; a dedicated check is a follow-up.
+
+## RTF referrer forms (10/2026, branch `feat/rtf-forms`)
+
+Clinics that keep each medico-legal provider's report template as RTF (e.g. for TM3's mail merge) upload it
+as it is. **RTF is converted to Word once, at the upload boundary, and from then on IS a Word form** – hashing,
+storage, the form map, analysis, fill, preview, approval and downloads are the unchanged Word paths.
+
+- **Converter** `core/rtf/` (pure TypeScript, browser + Node, no dependencies, no network, no native tools):
+  `convertRtfToDocx(bytes, {maxBytes})` → `{docx, notes, stats}`. One linear pass with hard limits (group depth
+  256, 60 000 paragraphs + cells + tables opened, 400 000 text pieces, 200 000 cell definitions kept with the rows,
+  output ≤ the upload limit – a small file that opens and closes nested tables per paragraph, or repeats one wide row
+  definition, is refused instead of filling the memory; fix/rtf-verify 10/2026); malformed or truncated input →
+  `RtfConversionError` with a plain-English message (→ 422 FORM_INVALID / 413 on the server). Output is a
+  **stored (uncompressed) ZIP with fixed dates – deterministic**: the same RTF gives the same .docx bytes and
+  SHA-256 in the browser and in Node (`RTF_CONVERTER_VERSION` = `rtf-docx-1`; any change to what it writes
+  changes the bytes – a map made from an RTF sent through the partner API would then need the file again).
+- **Reads:** groups, escapes, Windows-1252 `\'hh` (other code pages via TextDecoder), `\uN` + `\ucN`; paragraphs,
+  line/page/section breaks (one Word section: section breaks become page breaks, the first section's page size,
+  margins, headers and footers are used), tabs + tab stops, alignment, indents, spacing, keep-with-next, outline
+  levels (headings, also from the style sheet), paragraph borders; bold/italic/underline/strike/caps/size/font/
+  colour/super-sub; tables – `\cellx` widths on one grid per table (gridSpan/gridBefore/gridAfter), borders,
+  shading, header rows, heights, `\clmgf/\clmrg` and `\clvmgf/\clvmrg` merges, nested tables (`\itap`,
+  `\nestcell`, `\nesttableprops`), always **fixed** layout; fields – visible result kept, FORMCHECKBOX → ☐/☒,
+  FORMTEXT → `__________` (or `[default text]`), FORMDROPDOWN → `[A / B]`, SYMBOL; Wingdings / Wingdings 2 tick
+  boxes → ☐/☒ (the same codes `forms/docx-dom.ts` reads), Symbol bullets/Greek → Unicode, other symbol characters
+  → `w:sym`; page headers/footers → Word header/footer parts (PAGE/NUMPAGES stay live fields; not completed by
+  the engine).
+- **Mail-merge fields never survive:** MERGEFIELD fields and typed `«Name»` / `<<Name>>` (also split across runs)
+  become **empty answer spaces** – a line or cell that is only merge fields becomes empty (empty answer cell /
+  blank line), otherwise each becomes a `__________` line beside its label. Recorded in the notes ("N mail-merge
+  fields from your clinic system … were turned into answer boxes – check the mapping once"). `[Name]`, `{Name}`,
+  `$Name$`, `%Name%` are kept as printed and noted ("… check whether each one is an answer box").
+- **Left out, counted in the notes:** pictures (logos), embedded objects, drawn shapes/text boxes, footnotes,
+  comments, undecodable characters. Ignored silently: style-sheet formatting (Word repeats it on every paragraph),
+  automatic list numbering (the printed bullet/number text is kept), bookmarks, document info, other `\*` groups.
+- **Where it runs:** the Studio's upload dialog (`ui/components/forms/analyse.ts readFormFile`) checks the first
+  bytes (`core/rtf/sniff.ts`) and loads the converter dynamically only for an RTF file; the file keeps its name
+  ("Report.rtf"), the bytes and SHA-256 are the .docx's, and the notes are added to the proposed map's analysis
+  warnings (+ a "Converted the RTF file to Word" trace step). Server: `forms/file.ts decodeFormFile(b64,
+  {convertRtf: true})` – used by POST /forms/analyse and the fill/render file (`handlers/store-form-file.ts`), so
+  the **partner API may send the RTF itself** for analyse, fill-preview and render. The clinic store
+  (`/store/files`) and every other caller refuse RTF exactly as before (the Studio stores the converted .docx).
+- **UI:** pickers accept `.rtf`; hint "Word (.docx), PDF or RTF"; the mapping screen shows **"Converted from RTF"**
+  with the notes, and "Download Word version" saves "Report.docx"; completed forms download as `.docx`.
+- **Limits:** input ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores pictures as hex text, so a template with a large
+  logo can exceed it although the converted file would be small; East Asian double-byte text only where the
+  platform's TextDecoder knows the code page; frames/absolute positions become ordinary paragraphs; rules-mode
+  reading may put an answer box in the lower half of a vertically merged cell (same as for a Word form).
+- **Tests:** `core/rtf/rtf.test.ts` (constructs, code pages, tables, fields, tick boxes, headers, breaks, malformed
+  and hostile input, determinism), `scripts/medreport/rtf-forms.test.ts` (fixtures through the Word engine,
+  browser = server bytes, store/Word/PDF non-regression, rules analysis, fills, partner fill-preview + FINAL).
+  Fictional fixtures: `scripts/medreport/fixtures/rtf/` (Word-style generator `make-word-style-fixtures.py`;
+  `progress-report-textedit.rtf` = `textutil -convert rtf progress-report.html`). E2E: `scripts/e2e/rtf-forms.cjs`.
+
+## Mail-merge fields never reach an approved form (10/2026, all forms)
+
+- **Detector** `core/merge-fields.ts` – narrow on purpose: `«…»` / `<<…>>` around a short name that starts with a
+  letter (letters, digits, space, `_ . - /`, ≤ 40 characters) and the upper-case word `MERGEFIELD`. Never fires on
+  the demo drafts, sample answers, demo notes or bundled forms (tested).
+- **Analysis** records the merge fields of any Word or PDF file on the map, `FormAnalysis.mergeFields` (additive,
+  optional; absent on every earlier map): Word body text by block (cleared by an answered question that
+  **replaces exactly that text** there – `replace_placeholder`; writing into the cell beside it does not clear it);
+  page header/footer, text boxes, MERGEFIELD codes and text printed on a PDF page as `fixed` (cannot be completed
+  here); fillable-PDF field values by field (cleared by answering that field). Plus a warning on the map.
+- **Approval:** validator `core/validation/merge-fields.ts` (MISSING_PLACEHOLDER, blocking, not acknowledgeable):
+  an answer containing a merge field (every report), and – when the caller passes the form map
+  (`validateReport(report, template, {form})`: /sign, /render, /validate and the review screen) – every recorded
+  merge field no answered question replaces: "This form still contains a mail-merge field: «X» in table 1, row 2.
+  Answer the question whose box it is – or, in the form's mapping, make a question replace “«X»” – before
+  approving." (`fixed` ones: "… It cannot be completed here … ask the referrer for the form without mail-merge
+  fields …").
+- **Final render backstop** (`forms/render-form.ts` + `forms/merge-scan.ts`): a FINAL completed file that still
+  contains one (Word: body, text boxes, field codes, headers, footers; PDF: page text of the flattened file) is
+  refused with 422 FORM_INVALID; a Word DRAFT lists them first in its warnings.
+- **Reading** (`ai/form-postvalidate.ts`): two DISTINCT questions pointing at one answer space are **both kept**,
+  marked low confidence with "Two questions point at the same box: “X” and “Y” – check the mapping and give each
+  its own box" (+ a warning); only the same question proposed twice (equal labels, or one continuing the other on
+  exactly the same space) is listed once. Bundled forms unaffected: recorded/pre-written maps are stored, and the
+  readings of all five samples (rules + demo) and the portal example equal the snapshot taken on `main` `fcbe01d`
+  (`scripts/medreport/fixtures/reading-baseline-fcbe01d.json`, checked in `scripts/medreport/merge-fields.test.ts`).
+- **Regression e2e:** `scripts/e2e/forms-regression.cjs` (bundled PDF + Word forms completed, approved and downloaded
+  in the public demo) and `scripts/e2e/compare-form-outputs.ts` (two runs' downloads compared part by part / page
+  text).
+

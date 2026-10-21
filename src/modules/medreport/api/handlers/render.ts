@@ -213,7 +213,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const formDef = resolved.form;
 
   const started = Date.now();
-  const validation = validateReport(report, template);
+  const validation = validateReport(report, template, { form: formDef });
   const decision =
     receipt || parsed.data.requireFinal
       ? await decideFinal(report, receipt, validation, { reviewCopy, form: formDef, templateDocx: Boolean(templateDocxBase64), tenantId: actor.tenantId })

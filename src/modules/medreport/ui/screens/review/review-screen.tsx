@@ -246,7 +246,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     return getTemplate(initial.templateId) ?? null;
   }, [formInfo, form, initial.templateId]);
 
-  const { report, dispatch, validating, saveState, savedAt, validateNow, commit } = useReviewState(initial, stored, template);
+  const { report, dispatch, validating, saveState, savedAt, validateNow, commit } = useReviewState(initial, stored, template, form);
   // A portal question set has no file: nothing to load, the answers are copied into the portal.
   const questionSet = formInfo?.kind === "questions";
   const file = useFormFile(form, Boolean(formInfo) && !questionSet);

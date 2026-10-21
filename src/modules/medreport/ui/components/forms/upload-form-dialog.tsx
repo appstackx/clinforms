@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * "Upload a referrer form": pick or drop a .docx / .pdf, optionally name the referrer, analyse it
+ * "Upload a referrer form": pick or drop a .docx / .pdf / .rtf (RTF is converted to Word in the browser
+ * first – analyse.ts readFormFile), optionally name the referrer, analyse it
  * (POST /forms/analyse) with honest progress, then show what was found and go to the mapping review.
  * A clinic's Studio (tenant mode) reports form_uploaded through HostHooks.track (counts and enumerated
  * values only) and shows no demo wording.
@@ -143,7 +144,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
               accept={FORM_ACCEPT}
               onFile={(f) => void accept(f)}
               title="Drop the form here, or choose a file"
-              hint={`Word (.docx) or PDF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} · fillable PDFs work best; flat PDFs are best effort`}
+              hint={`Word (.docx), PDF or RTF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} · fillable PDFs work best; flat PDFs are best effort`}
             />
             {phase.kind === "error" ? (
               <Notice tone="error" title="That file could not be analysed">
@@ -256,17 +257,18 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
 
 function FileSummary({ local }: { local: LocalFormFile }) {
   const word = local.mimeType !== "application/pdf";
+  const rtf = local.convertedFrom?.format === "rtf";
   // A clinic's Studio (fix wave 2): no internal fingerprint – the size and the kind of form are enough.
   const tenant = useStudioMode() === "tenant";
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <span className={word ? "rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800" : "rounded-lg bg-rose-100 px-2 py-1 text-xs font-bold text-rose-800"}>
-        {word ? "DOCX" : "PDF"}
+        {rtf ? "RTF" : word ? "DOCX" : "PDF"}
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-slate-900">{local.fileName}</p>
         <p className="text-xs text-slate-500">
-          {formatBytes(local.bytes.byteLength)} · {tenant ? (word ? "Word form" : "PDF form") : `fingerprint ${local.sha256.slice(0, 12)}…`}
+          {formatBytes(local.bytes.byteLength)} · {tenant ? (rtf ? "RTF template, converted to a Word form" : word ? "Word form" : "PDF form") : `${rtf ? "converted from RTF to Word · " : ""}fingerprint ${local.sha256.slice(0, 12)}…`}
         </p>
       </div>
     </div>
@@ -276,7 +278,10 @@ function FileSummary({ local }: { local: LocalFormFile }) {
 function AnalysingPanel({ local, expectLive, elapsed }: { local: LocalFormFile; expectLive: boolean; elapsed: number }) {
   const tenant = useStudioMode() === "tenant";
   const steps = [
-    { label: `File checked and uploaded (${formatBytes(local.bytes.byteLength)})`, done: true },
+    {
+      label: local.convertedFrom ? `RTF file converted to Word, checked and uploaded (${formatBytes(local.bytes.byteLength)})` : `File checked and uploaded (${formatBytes(local.bytes.byteLength)})`,
+      done: true,
+    },
     { label: "Reading the form layout… headings, tables, answer boxes, tick boxes and fields", done: false },
     { label: expectLive ? WORDING.formReading.stepLive : WORDING.formReading.stepDemo, done: false },
   ];
