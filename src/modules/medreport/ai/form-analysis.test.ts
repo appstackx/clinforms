@@ -169,7 +169,7 @@ test("post-validation keeps good anchors, repairs slips and drops what cannot be
     }),
     rawField({ label: "Attended", answerType: "number", anchorTarget: "replace_placeholder", anchorRef: "t0.r2.c1", placeholderText: "______", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "sessions_attended" }),
     rawField({ label: "Failed to attend", answerType: "number", anchorTarget: "replace_placeholder", anchorRef: "t0.r2.c1", placeholderText: "______", fillSource: "computed_fact", computedFact: "FACT-attendance", computedFormat: "dna_count" }),
-    rawField({ label: "Third blank", anchorTarget: "replace_placeholder", anchorRef: "t0.r2.c1", placeholderText: "______" }), // only two blanks
+    rawField({ label: "Third blank", anchorTarget: "replace_placeholder", anchorRef: "t0.r2.c1", placeholderText: "______" }), // only two blanks: kept, flagged (10/2026)
     rawField({ label: "Signature", answerType: "signature", anchorTarget: "replace_placeholder", anchorRef: "p6", placeholderText: "[sig]", fillSource: "signoff" }),
   ];
   const res = postValidateFields(DOCX, raws);
@@ -180,11 +180,17 @@ test("post-validation keeps good anchors, repairs slips and drops what cannot be
     "Date of birth",
     "Attended",
     "Failed to attend",
+    "Third blank",
     "Prognosis",
     "Is further treatment recommended?",
     "Signature",
   ]);
-  assert.deepEqual(res.fields.map((x) => x.id), ["F-01", "F-02", "F-03", "F-04", "F-05", "F-06", "F-07"]);
+  assert.deepEqual(res.fields.map((x) => x.id), ["F-01", "F-02", "F-03", "F-04", "F-05", "F-06", "F-07", "F-08"]);
+  // A DISTINCT question on an answer space that is already taken is kept and flagged, never dropped (10/2026).
+  for (const label of ["Attended", "Third blank"]) {
+    assert.equal(byLabel.get(label)?.confidence, "low", label);
+    assert.match(byLabel.get(label)?.note ?? "", /Two questions point at the same box: “Attended” and “Third blank”/);
+  }
 
   const name = byLabel.get("Claimant name");
   assert.deepEqual(name?.anchor, { kind: "docx", target: "table_cell", blockId: "t0.r0.c1" });
@@ -207,10 +213,10 @@ test("post-validation keeps good anchors, repairs slips and drops what cannot be
   assert.deepEqual(byLabel.get("Signature")?.anchor, { kind: "docx", target: "replace_placeholder", blockId: "p6", placeholderText: "[signature]" });
   assert.deepEqual(byLabel.get("Signature")?.fillSource, { kind: "signoff", part: "signature" });
 
-  assert.equal(res.dropped, 3);
+  assert.equal(res.dropped, 2, "the ghost and the repeated prognosis");
   assert.ok(res.warnings.some((w) => /Ghost question/.test(w)));
-  assert.ok(res.warnings.some((w) => /Prognosis \(again\).*same answer space/.test(w)));
-  assert.ok(res.warnings.some((w) => /Third blank/.test(w)));
+  assert.ok(res.warnings.some((w) => /“Prognosis \(again\)” was found twice for the same answer space, so it is listed once\./.test(w)));
+  assert.ok(res.warnings.some((w) => /Two questions point at the same box – “Attended” and “Third blank”\. Both are kept/.test(w)));
 
   const form = {
     id: "frm_t",

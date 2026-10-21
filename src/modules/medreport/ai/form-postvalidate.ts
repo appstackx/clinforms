@@ -23,7 +23,9 @@ import "server-only";
  *   says; a computed figure never answers a choice (a 0–10 drop-down is picked from the notes); a count
  *   in a treatment plan is the number planned, not attended; a number or name the clinic record does not
  *   hold, and the "Other – please specify" box of a list, are left blank for staff.
- * - No two fields may share an answer space (the later one is dropped with a warning).
+ * - No two fields should share an answer space. The same question proposed twice for one space is listed
+ *   once; two DISTINCT questions on one space are both kept (never silently dropped – 10/2026), marked
+ *   low confidence with a note, and a warning asks staff to give each its own box in the mapping.
  * - Identifiers (name, date of birth, address, references) are always filled by code from the
  *   registration record, and opinion questions (prognosis, causation, fitness for work, restrictions,
  *   recommendations) are always "clinician_opinion" – whatever the model proposed (form-classify.ts).
@@ -879,11 +881,20 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       const clash = (used.get(full.key) ?? [])[0];
       // Two boxes of one tick-box group proposed separately, both widened to the group: one question.
       if (c.groupKey && clash?.groupKey === c.groupKey) continue;
-      dropped += 1;
-      warnings.push(
-        `${quoteLabel(c.field.label)} pointed at the same answer space as ${quoteLabel(clash?.field.label ?? "another question")}, so it was left out. Add it in the mapping editor if it is a separate question.`,
-      );
-      continue;
+      // The same question proposed twice for one answer space ("Date of diagnosis" and "Date of diagnosis
+      // (month)" both widened to one run of character boxes): listed once.
+      if ((used.get(full.key) ?? []).some((x) => sameQuestion(x.field, c.field))) {
+        dropped += 1;
+        warnings.push(`${quoteLabel(c.field.label)} was found twice for the same answer space, so it is listed once.`);
+        continue;
+      }
+      // Two DISTINCT questions on one answer space: both are kept and flagged, never dropped (10/2026).
+      const other = clash?.field.label ?? "another question";
+      const note = `Two questions point at the same box: ${quoteLabel(other)} and ${quoteLabel(c.field.label)} – check the mapping and give each its own box.`;
+      for (const x of clash ? [clash, c] : [c]) {
+        x.field = { ...x.field, confidence: "low", note: clean([x.field.note, note].filter(Boolean).join(" "), 500) };
+      }
+      warnings.push(`Two questions point at the same box – ${quoteLabel(other)} and ${quoteLabel(c.field.label)}. Both are kept: check the mapping and give each its own box.`);
     }
     slots.forEach((slot) => used.set(slot.key, [...(used.get(slot.key) ?? []), c]));
     kept.push(c);
@@ -894,6 +905,20 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     warnings.push(`${repairedCount} answer space${repairedCount === 1 ? " was" : "s were"} corrected automatically and marked for checking.`);
   }
   return { fields, warnings, dropped, repaired: repairedCount };
+}
+
+/**
+ * The same question proposed twice: labels equal ignoring case, spacing and punctuation ("Date of birth:" /
+ * "Date of Birth"), or – on exactly the same answer space – one label continuing the other ("Date of
+ * diagnosis" / "Date of diagnosis (month)"). Anything else is a distinct question.
+ */
+function sameQuestion(a: Pick<FormField, "label" | "anchor">, b: Pick<FormField, "label" | "anchor">): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const x = norm(a.label);
+  const y = norm(b.label);
+  if (x === y) return true;
+  if (JSON.stringify(a.anchor) !== JSON.stringify(b.anchor)) return false;
+  return (x.length > 0 && y.startsWith(`${x} `)) || (y.length > 0 && x.startsWith(`${y} `));
 }
 
 /** Exposed for tests and the rules mode. */
