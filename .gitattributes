@@ -4,3 +4,6 @@
 # Generated base64 payloads (built-in Word templates, sample referrer forms, fonts): hide from diffs
 # and language stats. Rebuild them with the scripts in scripts/medreport instead of editing by hand.
 *.b64.ts linguist-generated=true -diff
+
+# RTF test fixtures keep their bytes exactly as the program that made them wrote them (Word writes CRLF).
+*.rtf -text
