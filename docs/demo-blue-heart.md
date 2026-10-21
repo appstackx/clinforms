@@ -8,6 +8,7 @@
 |---|---|
 | **Call** | **Dell Baines**, owner and director, **Blue Heart Clinics** (11 sites, main base Dunstable; uses **TM3**). 15 minutes: he asks questions, you show a demo. **Fri 23 Oct 2026, 11:30** (booked 20/10 by Khuram's own reply) |
 | **His words (email pasted Tue 20 Oct)** | "exactly what I have been looking for to help us complete the different MLC and insurer forms we receive, while allowing our clinicians to review and approve the information before it is sent" · "seeing ClinForms in action and discussing how it could fit into Blue Heart Clinics' reporting workflow" |
+| **His process (email 21 Oct)** | Each provider's report template is turned into **RTF** and kept in **TM3**; TM3 mail-merges name, address, date of birth and treating physio; the physio then **types the clinical part from the Initial Assessment** – "the time-consuming part". He wants that part filled from the assessment notes, with the physio reviewing, amending and approving before it is sent. Providers he named: Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic, The Treatment Network. **Coverage: next section** |
 | **His five questions (06 Oct)** | Q1 different MLC/insurer forms · Q2 original layout · Q3 TM3 details and notes without retyping · Q4 clinician review, amendment and approval · Q5 secure and GDPR compliant. Plus his example: prognosis, functional restrictions and treatment recommendations asked in different structures by different referrers |
 | **Product name** | **ClinForms** – he used it himself. The 6:15 video called it "AppStackX Reports"; if he mentions it: "that was the working name" |
 | **Demo** | The frozen local demo you already know: `~/Projects/Appstackx/clinforms-demo`, `npm run demo:red -- --skip-build`, demo mode, no internet needed. Fictional patient **Ms Megan Hart** (road traffic accident, whiplash, solicitor referral). **Harrow & Pike** (made-up MLC, Word) end to end with approval; **Meridian** (made-up insurer/claims handler, Word) uploaded live for his example |
@@ -15,11 +16,83 @@
 | **Not yet done** | **Your own rehearsal** in the "ClinForms demo" Chrome profile (run sheet B). The old demo server from 13 Oct was still running on port 3000 at 18:00 on 20 Oct – restart it (run sheet A.2) |
 | **Never mention** | Any other clinic or prospect. Never say "AI" unprompted. Never claim a TM3 link or partnership |
 
+## Dell's process (email 21 Oct) – coverage
+
+His email word for word: `memory/projects/blue-heart-clinics.md` §2.7. Everything below comes from two checks
+on Wed 21 Oct. **Public research** looked at how each of his providers takes the treating physio's report (no
+templates downloaded). A **live test on `main`** used a fictional Initial Assessment form, "Larkfield Rehabilitation
+Network (fictional)", built as an RTF with «Field» merge placeholders. TM3's real merge syntax is unknown, so these are
+only stand-ins. It also used a fictional one-page IA note (patient "Aisha Patel"). No real provider form or wording was
+used. The test files are in a temporary session scratchpad, not in the repo.
+
+### Each point in his email
+
+| His point | Covered today? | How | Say |
+|---|---|---|---|
+| **His providers** – Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic, The Treatment Network ("to name a few"); "each provider has its own format and reporting requirements" | **Yes, with a step** (the step depends on how each provider takes the report – table below) | **Word/PDF form:** uploaded once, read in 14–33 s live (21 Oct), staff check it once, then reused for every patient from that provider. Each form's own questions set the requirements. **Provider website:** the website's questions are set up once and the answers come out ready to paste. ClinForms never logs in or submits | "Each provider's form is set up once, your team checks it once, and then it's reused for every patient. Which of these do you send back by email, and which go through their own website?" |
+| **Templates converted to RTF and kept in TM3** | **Yes, with a step.** Uploading the RTF itself: **Not yet** | An RTF is refused before upload: "… is not a Word (.docx) or PDF file." Upload the provider's **original blank** Word or PDF form. If only the RTF exists: open it in Word, **delete the TM3 merge fields**, then File → Save As → Word Document (.docx), once per template. With merge fields left in, the test produced a **wrong approved form** (see the test table) | "ClinForms takes Word and PDF forms, so the RTF won't upload as it is. The best start is the blank form each provider sends you. If all you have is the RTF, it's opened in Word and saved as a Word document once. I'd like to test two or three of yours first." |
+| **TM3 mail-merges name, address, date of birth, treating physio** | **Yes, with a step** | **Way A:** name, date of birth and reference are put on the form by code, and the physio's name and HCPC number go in at approval. On screen this shows as "From records", the same job as his mail-merge. The **address is not read from notes today**, so staff type it on each form. **Way B:** TM3 keeps doing the merge, unchanged | "ClinForms fills the patient's name, date of birth and the therapist itself. Today your staff add the address." |
+| **Clinical part typed from the Initial Assessment – "the time-consuming part"** | **Yes** | The test drafted the history and mechanism, presenting complaint, examination findings, diagnosis, plan and number of sessions from the IA note. Outcome scores (NDI 36%, ODI 28%, NPRS 6/10) are calculated by code. A prognosis is used only if the physio wrote one. Opinions that are not in the note, such as "are the injuries consistent with the accident?", are left blank and flagged. Run 1: **17 of 22** answered in 11 s. The drafted answers checked against the note were accurate and cited, and nothing was invented | "That's the part we do. From the IA note it fills the history, the presenting complaint, examination findings, outcome scores, diagnosis, plan and number of sessions. Anything that needs the physio's opinion and isn't in the note is left blank and flagged, never guessed." |
+| **"Populate these clinical sections from our assessment notes"** | **Yes, with a step** | Notes go in as PDF, Word, CSV or text, or pasted. A one-page IA note PDF was read in under a second ("1 note · 0 appointments · 3 scores"). **Not tested: how TM3 prints or exports a note.** A note's address line is ignored | "Two things I'd check in a pilot: how your TM3 prints a patient's notes, and the address." |
+| **Treating physio reviews, amends and approves "before it is sent"** | **Yes.** Sending: **yes, with a step** | Every answer shows the note it came from. An amended answer shows "Edited" and **Revert to the draft**. Opinion questions block approval until the physio writes them. **Approve and sign** takes name, HCPC number, typed signature and 4 attestations, then shows "Approved – the completed form is final". ClinForms sends nothing: staff email the Word file, upload it to the provider's website, or paste the answers into a portal, as now | "The treating physio reviews, amends and approves before anything is sent. Her name, HCPC number and date go into the form's own declaration. You then send or upload it the same way as now." |
+
+### Two ways to fit his workflow
+
+| | **A – ClinForms completes the provider's whole form** (recommend) | **B – keep the TM3 mail-merge, paste the clinical part** |
+|---|---|---|
+| Replaces | The RTF template, the mail-merge and the typing | Only the typing |
+| Set up once per provider | Upload the provider's **original blank form** (.docx or PDF). For an RTF or old .doc: open it in Word, delete the merge fields, Save As .docx. Staff check the mapping once | The same: ClinForms still needs the provider's form to know its questions |
+| Each patient | Upload the IA note → choose the provider's form → drafted in about 10 s → the physio reviews, amends and approves → **Completed form (Word)** → staff attach it to the TM3 record and send or upload it as now | TM3 merges the letter as now. In ClinForms the answers are drafted and the physio approves them. Then the per-answer **Copy** button → paste each clinical section into the TM3 letter (about 11 pastes on the test form) |
+| Proved 21 Oct | The signed .docx keeps the form's 4 tables and 23 rows. Every answer sits in its own cell. The declaration reads name / HCPC / "… approved electronically on <date>". Converted back to RTF, it keeps its tables, word for word. **Not tested: re-importing that RTF into TM3** | Per-answer **Copy** gives the clean answer text only. **Copy all answers** gives "N. Question: answer" blocks (the question labels would need deleting), so it's one paste per section. Before approval the copied text is marked "Draft – not yet approved" |
+| Limits | A Word form comes back as Word only (no PDF copy). The address is typed by staff. Inserted text uses a serif default font, not the form's own font (cosmetic). Not tested: a real Word-saved file, logos, headers and footers, fixed-height boxes | The approval and audit trail stay in ClinForms; the TM3 letter itself isn't locked. Pasting into TM3 is untested |
+
+**Recommendation:** use A for providers that take a document: Bodycare, Speed Medical and The Treatment Network.
+Use portal answers for 3D Rehab, and probably HCML and Physio Med. Offer B only if he wants to keep the TM3 letters.
+Settle it in the pilot with his own templates.
+
+### His providers – how each takes the treating physio's report (public sources, 21 Oct)
+
+[C] = a public source says so · [I] = our inference · [?] = not found. **Never show, recreate or name these
+providers' forms on screen.** All demo forms stay fictional.
+
+| Provider | Route back | Fit today |
+|---|---|---|
+| **Bodycare Clinic** (probably Bodycare Clinics Ltd, North Tyneside; Blue Heart's site doesn't list it) | It publishes its own physio "Initial Assessment Report Template" and "Final Assessment Report Template" as **old Word .doc** files [C]. Return by email is likely [I] | A, after Save As .docx |
+| **Speed Medical** | Its "Physiotherapy Portal" lets panel physios **upload completed reports** [C] | A. Staff upload the approved Word file by hand |
+| **The Treatment Network** (sister of Corporé, in the same group as Speed Medical since 2016) | Its physio login is hosted on Speed Medical's system [C], so it probably uses the same upload [I] | As Speed Medical |
+| **3D Rehab** | The **Unity** supplier portal has its own report-writing feature [C] | Portal answers, or A if they also give him a Word form |
+| **HCML** | Supplier Portal [C]. An initial and a discharge report are due within the times in each clinic's agreement [C]. Whether reports are typed or uploaded isn't stated [?] | Portal answers, probably |
+| **Physio Med** | "Physio Med Portal" with a physio login [C]. Initial, interim and discharge reports covering pain, range of movement, work ability, modified duties, diagnosis and prognosis, returned in about 2 days [C]. Written in the portal: likely [I] | Portal answers, probably |
+| **Physio Link** | Unknown: its site was down on 21 Oct [?] | Ask |
+| **The Physio Network** | Probably "The Physiotherapy & Psychological Network" (TPN, London); route not public [?] | Ask, and confirm who it is |
+
+Dell holds an RTF for *every* provider, the portal ones included. Ask whether those are emailed, uploaded or
+retyped into the website.
+
+### The 21 Oct test – what went wrong (internal; demo none of it)
+
+| What | Result | So |
+|---|---|---|
+| Upload an RTF form | Refused in the browser: "That file could not be analysed" / "… is not a Word (.docx) or PDF file." The file picker greys out .rtf, so the message only appears on drag-and-drop. Notes upload refuses .rtf too | Never try an RTF on the call |
+| RTF → .docx with macOS `textutil` | **Flattens every table** (0 tables). The answers are right, but the provider's layout is lost | Don't advise it. Word's Save As keeps tables, but that was only shown with a stand-in file: there's no Word on this Mac |
+| Template with merge fields still in | **Wrong approved form.** «Referral Ref» and «Therapist» were left in their cells. The clinician's name went into the HCPC cell. The HCPC question was dropped at reading ("pointed at the same answer space…"). A plain "Confirm mapping" still allowed approval | **Original blank forms only**, or delete the merge fields first. Check the mapping before confirming |
+| Referrer type "Case manager" | **Past medical history was left blank**, although the form asks for it and the note records it. The employer scope withholds it, and the gap text says it is "outside the scope of this form" | For the proof of concept (fictional data), set his PI and rehab providers up as "Medico-legal company". Product fix proposed in `memory/next-steps.md` |
+| Address and "Clinic" | The address is never imported from printed or pasted notes. "Clinic" came from the demo's built-in "Riverside Physiotherapy (fictional)", not from the note | Staff type the address. Check "Clinic" in a clinic's own Studio |
+| Live limit | 6 live calls a minute on the public demo. A 4th form reading within about a minute fell back to "layout rules" (12 questions, no header fields) | When preparing the proof of concept, read forms at least a minute apart |
+| Reading noise | Every reading dropped one duplicate with an odd note. Question types varied between runs | Check every mapping once (we say so anyway) |
+| Wording | The copied prognosis changed tense ("I expect" → "I expected"). Some stiff sentences | The physio edits before approving. Fix proposed |
+| Cost | About $0.55 for the whole test (24 live calls). Roughly $0.07–0.11 per new form reading and $0.06–0.09 per completed form (list prices, estimate) | Internal only |
+
 ## The one-line answer
 
 > "Yes. ClinForms completes each MLC's or insurer's own form – Word or PDF – in its own layout, from the patient's
 > registration details and notes. Every answer shows the note it came from, opinions are left for the clinician, and
 > nothing is issued until a clinician approves it. Which MLCs send you the most forms?"
+
+His process (21 Oct), in one line:
+
+> "You mail-merge the details, then your physio types the clinical part from the Initial Assessment – that's the part
+> we do. The physio still reviews, amends and approves before it goes."
 
 ---
 
@@ -44,12 +117,14 @@ UK clocks go back on **Sun 25 Oct**: a Monday 26 Oct slot is GMT (memory times a
 
 Blue Heart's referrers, from its public website (research 06 Oct): PMI **AXA Health, Aviva, Vitality, WPA**;
 personal-injury rehab and case-management networks **10 Bridge Physio, 3D Rehabilitation, HCML, Physio-Link,
-PhysioMed, Speed Medical, The Physio Network, The Treatment Network**. Which of these send their own forms, and in
-what format, is **unknown – ask him** (run sheet D).
+PhysioMed, Speed Medical, The Physio Network, The Treatment Network**. **21 Oct: Dell named his own list**: the same
+networks minus 10 Bridge Physio, plus **Bodycare Clinic**, and no insurers. How each one takes the report (public
+research) is in "Dell's process" above. Which of them email a form and which use a website still needs asking (run
+sheet D).
 
 | Referrer type | How their forms probably arrive | What ClinForms does today | Shown on the call |
 |---|---|---|---|
-| **MLCs / medico-legal companies** (his main ask) | Their own Word or PDF form; some networks take reports through their own websites [unverified] | Completes the referrer's own form in its own layout; opinions only from the clinician; approval before issue | **Harrow & Pike** (Word), end to end |
+| **MLCs / medico-legal companies** (his main ask) | Their own Word or PDF form. Some of Dell's networks take reports through their own websites: Speed Medical (upload) and 3D Rehab (Unity) are confirmed; HCML and Physio Med are likely (research 21 Oct) | Completes the referrer's own form in its own layout; opinions only from the clinician; approval before issue | **Harrow & Pike** (Word), end to end |
 | **Case managers / rehab networks** | Word or PDF forms (return-to-work, progress, discharge) [unverified] | Same | **Kingsway** Return to Work Assessment – backup (b) |
 | **Insurers and claims handlers** | Their own Word or PDF form | Same | **Meridian** Physiotherapy Discharge Report (Word) for his example; **Northfield** (fillable PDF) – backup (a) |
 | **PMI: AXA Health, Vitality, WPA** | No public physio form found – provider portals [our research] | **Portal question set:** the portal's questions set up once, answers drafted and copied out ("Copy all answers"). No login, no submission | Example portal questions – backup (c) |
@@ -65,11 +140,12 @@ what format, is **unknown – ask him** (run sheet D).
 | **Flat PDF** (no fields) | Best effort: text placed at the mapped positions (continuation sheet if long). Checked once |
 | **Scanned PDF** | **Not supported yet** (the live site says so). Biggest risk if his MLCs send scans – "send one and we'll try" |
 | Old Word .doc / password-protected PDF | Refused with a fix: "Save As .docx" or send an unprotected copy |
+| **RTF** (how Blue Heart keeps its templates in TM3) | **Refused** (tested 21 Oct): "… is not a Word (.docx) or PDF file." Use the provider's original blank form; otherwise open the RTF in Word, delete the TM3 merge fields, and Save As .docx. Never run `textutil` on it: that flattens the tables |
 | Form size | Up to 2.5 MB per form file |
 | **Notes in** | Upload the notes as the clinic system prints or exports them: PDF with a text layer, Word, CSV, text or pasted text. Staff check what was read before the record is built. Scanned notes are refused. Up to 2.5 MB |
 | **TM3** | **No direct link.** No public TM3 API or partner programme found. A TM3 admin screen for API tokens exists (Settings › Integrations › API, per a university guide), but what it gives access to is unconfirmed – it may not include clinical notes. Whether TM3 can print or save one patient's notes as a PDF is **not confirmed** by any public source – ask Dell |
 | **Back into TM3** | Download the completed form and attach it to the record by hand. "Save to clinic record" in the demo only works on the **simulated** TM3 |
-| Set-up per form | Uploaded once, read in about 15–25 s, checked once by staff, reused for every patient; a new version sits alongside the old one |
+| Set-up per form | Uploaded once, read in about 15–25 s (14–33 s in the 21 Oct test), checked once by staff, reused for every patient; a new version sits alongside the old one |
 
 ---
 
@@ -93,6 +169,11 @@ Click paths for the backups (a)–(c): run sheet E.2.
 
 There is no employer form. Don't scroll down to "Demonstration forms" unless he asks about PMI: those cards are public
 insurer forms (Aviva, Allianz…), not his.
+
+**No Initial Assessment form in the demo.** Megan's record is a full course of treatment (10 notes, 11 appointments,
+6 scores), so Harrow & Pike is an end-of-treatment report. The 21 Oct IA test ran on `main` with a fictional IA form,
+not in the frozen demo. Describe it ("we tested that this week on a made-up IA form"), but don't try to show it: there
+are no prepared answers for it, and the laptop runs in demo mode.
 
 ---
 
@@ -163,6 +244,9 @@ talking and typing, not waiting. Talking times in the run sheet are estimates.
   start (run sheet step 0): live, a form takes about 20 seconds.
 - **Word forms come back as Word**; a PDF copy of a Word form isn't switched on yet. PDF forms come back as PDF.
 - **Scanned paper forms aren't supported yet**; flat PDFs are best effort.
+- **His RTF templates won't upload as they are** (21 Oct). The provider's original blank form is best. Otherwise
+  the RTF is saved as Word once, with the TM3 merge fields taken out first.
+- **The address isn't read from notes** today, so staff type it on each form.
 - In the demo, reports live in the browser and anyone could type a clinician's name to approve. The live version has
   sign-in with two-step, roles, and only clinicians with signing rights and an HCPC number can approve.
 - Approval in the **live** clinic workspace can't be shown yet – show approval in the laptop demo only.
@@ -186,6 +270,7 @@ talking and typing, not waiting. Talking times in the run sheet are estimates.
 | **Time saved?** | Not measured – the pilot measures it. Machine time: about 15–30 s to draft a form, 15–25 s to read a new form. Don't quote savings |
 | **Does it file back to TM3?** | Download it and attach it to the record, as with letters |
 | **Online portals?** | Answers ready to paste. It doesn't log in or submit |
+| **RTF templates / "fill our TM3 templates?" / Initial Assessment reports / "do you have Speed Medical or HCML forms?"** | Run sheet E (rows added 21 Oct) and "Dell's process" at the top of this file |
 | **Several sites and users?** | All included: owner, administrator, clinician and staff roles |
 | **Does it do MedCo initial reports / legal sign-off wording?** | It isn't a MedCo initial-report tool. It completes the forms clinics receive. The statement-of-truth wording hasn't been legally reviewed – don't claim it |
 | **Is it clinical decision support?** | No – it's a documentation tool; the clinician makes every clinical judgement |
@@ -263,14 +348,19 @@ blank MLC forms with anonymised notes and I'll return them completed, so you can
 
 ### 10.1 What to ask for (end of the call, and in the follow-up)
 
-"Could you send two or three blank forms you get most, plus anonymised notes for one case as TM3 exports them?"
+"Could you send blank templates for two or three of the providers you mentioned – the original Word or PDF if you
+still have it, otherwise the RTF version as you hold it – plus one anonymised Initial Assessment note as TM3 prints or
+exports it?"
 
-- **2–3 blank forms** from different MLCs or insurers, exactly as received (Word or PDF; a scanned one too, if
-  common – it tells us the real risk).
-- **Anonymised notes for one case**, as TM3 prints or exports them (PDF, Word or CSV), plus registration details.
+- **2–3 blank templates** from the providers he named (21 Oct). Prefer the **originals** (Word or PDF, as the
+  provider sent them). Otherwise the **RTF versions** from TM3, which we convert (§10.2). Add a scanned one if those
+  are common: it tells us the real risk.
+- **One anonymised Initial Assessment note**, as TM3 prints or exports it (PDF, Word or CSV), plus registration
+  details. This is the slow part he wants filled.
 - Optional: the completed form actually sent for that case, so we can compare.
 - He must **remove names, dates of birth, addresses, NHS numbers, phone numbers and claim references** first.
-- Also ask: which TM3 export or print options he has (run sheet D.4).
+- Also ask: which TM3 export or print options he has (run sheet D.4), and which providers take the report by email
+  and which through their website (run sheet D.2).
 
 ### 10.2 How we handle his files
 
@@ -279,6 +369,12 @@ blank MLC forms with anonymised notes and I'll return them completed, so you can
 - Never uploaded to clinforms.co.uk or any clinic account before a data processing agreement.
 - Before any drafting, his anonymised notes become a **made-up patient** (fictional names and dates), so the drafting
   service only ever sees fictional data.
+- **RTF templates:** first delete the TM3 merge fields (with them left in, the 21 Oct test produced a wrong approved
+  form), then save as .docx **keeping the tables**. The conversion route isn't settled: this Mac has no Word or
+  LibreOffice, and `textutil` flattens tables. Ask Dell to Save As .docx in Word, or test another route (Pages
+  export, Word online, installing LibreOffice) on a fictional RTF first. Check every mapping before "Confirm mapping".
+- Set his PI and rehab providers up as **"Medico-legal company"**, not "Case manager". Otherwise past medical
+  history is left out (21 Oct test).
 
 ### 10.3 What we return
 
@@ -286,7 +382,8 @@ blank MLC forms with anonymised notes and I'll return them completed, so you can
   version (Word forms as Word, PDF forms as PDF).
 - A short list per form: what came from the record, what was drafted from which note, what was left for the
   clinician, and anything we couldn't do (e.g. a scanned form).
-- How well his TM3 export was read (what the import picked up, what it missed).
+- How well his TM3 export was read (what the import picked up, what it missed, including the address).
+- For his "keep TM3" option (Way B): the approved answers as per-answer text he could paste into his TM3 template.
 - A short call or screen recording walking him through it, then the pilot proposal (price §9, data processing
   agreement).
 
@@ -295,8 +392,9 @@ blank MLC forms with anonymised notes and I'll return them completed, so you can
 - Turnaround: "within **[X] working days** of receiving them" – fill in X. (Earlier drafts said 7–10 days; whether
   sent is unconfirmed.)
 - Workload (rough estimate, not measured): about 1–3 hours per form for reading, checking the map, building the
-  made-up patient and checking the output; more if a form is scanned or flat. Live reading and live drafting on your
-  laptop were **not re-checked on 20 Oct** – plan the exact set-up with Claude when the files arrive.
+  made-up patient and checking the output; more if a form is scanned or flat, or an RTF. Live reading and drafting
+  worked on this Mac on 21 Oct, from a `main` checkout in live mode (not the frozen demo). Space form readings at
+  least a minute apart (6 live calls a minute). Plan the exact set-up with Claude when the files arrive.
 - Showing his forms **on the call itself** (optional email paragraph) needs that same work done before the call.
   Only offer it if you have an evening free beforehand.
 

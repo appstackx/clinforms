@@ -4,14 +4,80 @@ State: **Sat 2026-10-10 ~19:00 UTC** (desktop). **ClinForms is LIVE on https://c
 (`main` `02ddfb5` → `04c18d0` passcode server check → `8def25b` polish, all deployed; `feat/production` == `main`).
 The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/clinforms-demo` for the call on
 **Tue 13 Oct, morning**. Snapshot of what is live: `CLAUDE.md`; run log: `docs/go-live.md`.
+**Updated Wed 2026-10-21 ~19:45 UTC:** TOP and TOP-b (Blue Heart: Dell's process email, fit test, product gaps).
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
-## TOP – Blue Heart call (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
+## TOP – Blue Heart call Fri 23 Oct 2026 11:30 BST (P0; updated Wed 2026-10-21 ~19:45 UTC for Dell's process email)
+- **Dell's fourth email (21/10, verbatim: `memory/projects/blue-heart-clinics.md` §2.7).** It names 8 providers:
+  Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic, The Treatment Network.
+  Each provider's template is turned into **RTF** and kept in **TM3**, and TM3 mail-merges name, address, DOB and
+  physio. The physio then **types the clinical part from the Initial Assessment** ("the time-consuming part"). He
+  wants that filled from the assessment notes, with the treating physio reviewing, amending and approving before sending.
+- **Answer: covered, with steps.** Full table in the call pack `docs/demo-blue-heart.md`, section "Dell's process
+  (email 21 Oct) – coverage". Based on public research on each provider and a live engine test on `main`, both 21/10:
+  - The IA clinical part drafts correctly from one IA note: 17 of 22 in 11 s, cited, nothing invented, opinions left
+    for the physio.
+  - Review, amend and approve works, and the signed Word form keeps its own tables.
+  - **RTF can't be uploaded.** Use the provider's original blank Word/PDF form, or delete the merge fields and Save As
+    .docx. With merge fields left in, the test gave a **wrong approved form**.
+  - The **address** is typed by staff.
+  - Two ways to fit his workflow: **A** = ClinForms completes the whole provider form (recommended); **B** = keep the
+    TM3 merge and paste each approved answer (per-answer Copy).
+  - Provider routes: Speed Medical (and probably The Treatment Network) take an uploaded report. 3D Rehab (Unity),
+    and probably HCML and Physio Med, have reports written in their portal. Bodycare publishes .doc templates. Physio
+    Link and The Physio Network are unknown.
+- **Material: branch `sales/blue-heart-fit`** (worktree `clinforms-wt/blue-heart-fit`), docs and memory only, **NOT
+  merged**. Merging means pushing `main`, which deploys production (docs only, no site change), so it is Khuram's call.
+  Run sheet changes:
+  - step 0: opener on his process;
+  - step 2: "full course here; an IA report drafts from the IA note – we tested that this week";
+  - step 3: point at "From records 8 · Drafted 4 · Needs input 4";
+  - step 7: point at the **Copy answers** box;
+  - step 10: RTF point;
+  - step 12: new ask (blank templates for 2–3 of his providers, originals or RTF, plus one anonymised IA note as TM3
+    prints or exports it);
+  - D1–D2 and D7–D8;
+  - E rows: RTF, "fill our TM3 templates?", IA reports, "do you have Speed Medical/HCML forms?", provider websites,
+    address.
+
+  **No click label changed**, so the 20/10 verification of the frozen demo still stands.
+- **Khuram before Friday:**
+  1. Read the run sheet changes.
+  2. Rehearse as planned (A/B of the run sheet).
+  3. Make the call pack §0 decisions (Sent mail, year-2 price, VAT, PoC turnaround, DPA).
+  4. On the call: **no RTF upload and no IA demo.** Describe the IA test, don't show it.
+- **Not tested:** TM3's real merge syntax and RTF export; a real Word "Save As .docx"; how TM3 prints a patient's
+  notes; re-importing a completed form into TM3; any real provider form. All test material was fictional.
+- **The proof-of-concept conversion route for his RTFs is unsettled.** This Mac has no Word or LibreOffice, and
+  `textutil` flattens tables. Options: ask Dell to Save As .docx, or test Pages, Word online or LibreOffice on a
+  fictional RTF first (call pack §10.2).
+
+## TOP-b – Product gaps found in the 21/10 Blue Heart fit test (proposals – plan first, NOT built)
+Seen in the live engine test on `main` (fictional RTF IA form "Larkfield Rehabilitation Network (fictional)" plus a
+fictional IA note). None of this is started. Khuram approves a plan first.
+| # | Gap | Effect | Proposal | Priority |
+|---|---|---|---|---|
+| P1 | **RTF and old .doc forms refused.** The check runs in the browser (`sniffFormFile`, `src/modules/medreport/forms/file.ts`): .doc → `FORM_INVALID`, RTF not recognised. Notes upload refuses .rtf too | Blue Heart keeps every template as RTF; Bodycare publishes .doc | Accept .rtf/.doc by converting to .docx on upload, **keeping tables**. Production has no converter (same gap as Word→PDF, §4), so this needs a converter service or a browser-side route. Until then, the refusal message should say "open in Word → remove merge fields → Save As .docx". Size it after Dell's samples | P1 if Blue Heart pilots |
+| P2 | **Merge-field templates give a wrong approved form.** «…» placeholders get mapped as placeholders. «Referral Ref»/«Therapist» stayed in cells. The clinician's name went into the HCPC cell. The HCPC question was dropped at reading as a "duplicate" ("pointed at the same answer space…"). «Referral Ref» was flagged as patient data. Approval was still allowed after a plain confirm | A silent error in a signed form | Detect merge-field syntax at reading (warn, and staff must resolve it). Block approval while any unfilled merge code is left in the final document. Never drop a distinct question that shares an anchor without flagging it | **P1 (safety)** |
+| P3 | **"Case manager"/"Employer" referrer type withholds past medical and social history** even when the form asks for it (`core/forms.ts` `formScope`). Gap text: "outside the scope of this form" | B3 left blank on an IA form; many of Dell's providers are case-management/rehab networks | The scope is deliberate (`core/forms.ts:142`: case managers' return-to-work forms usually reach the employer), but it is wrong for PI rehab IA forms. Scope by question (what the form asks), not by referrer type, and keep minimisation for employer-only forms. Workaround for the fictional proof of concept: set the type to "Medico-legal company". For real data, decide this with the DPA | P1 |
+| P4 | Copied clinician prognosis changed tense ("I expect" → "I expected") | Alters a recorded opinion | Quote recorded opinions word for word | P1 (fidelity) |
+| P5 | **Address never imported** from printed or pasted notes (no Address key) | Staff type it on every form | Add an Address key to the printed/pasted notes format and the registration mapping; check how TM3 prints it | P2 |
+| P6 | "Clinic" answer came from the demo's built-in "Riverside Physiotherapy (fictional)", not the notes header | Wrong clinic name possible | Check in a clinic's own Studio; take it from the clinic account or the notes | P2 |
+| P7 | Labels: a staff-typed address shows "Entered by staff" on its card but "Answered by the clinician" in the list, and the gap resolves as "Answered on the form by Sarah Reid". "From TM3 registration" appears for uploaded notes. "Save to clinic record" appears on uploaded-notes reports (works only with the simulated TM3). No PDF copy of a Word form (`pdfFromWord: false`) | Misleading provenance | Label by the actual source; hide "Save to clinic record" without a connector | P2 |
+| P8 | Way B (keep TM3): one paste per answer; "Copy all answers" includes question labels | Clunky for his keep-TM3 option | An "answers only" copy, or a block per section | P3 – only if Dell picks Way B |
+| P9 | Reading noise: every reading drops one duplicate with an odd note; question types vary between runs | A mapping check is needed every time | Fix the duplicate note; make classification stable | P3 |
+| P10 | Public demo live limit (6 calls a minute): a 4th reading within about a minute silently fell back to "layout rules" (12 questions, no header fields) | Worse reading without a clear warning | Wait/queue, or say plainly that it fell back | P3 |
+| P11 | Inserted answer paragraphs use the document's default serif font, not the form's (Arial) | Cosmetic | Inherit the cell/paragraph style | P3 |
+
+Note: a worktree `clinforms-wt/rtf` (branch `feat/rtf-forms`, = `main` plus an untracked `src/modules/medreport/core/rtf/`)
+was seen on 21/10. Its owner and status are unknown, so check it before planning P1.
+
+## TOP (20/10 detail) – Blue Heart call material (P0, added Tue 2026-10-20 ~16:41 UTC; material written ~17:15 UTC, review fixes ~17:35 UTC)
 **UPDATE 20/10 ~17:00 UTC: call BOOKED Fri 23 Oct 2026 11:30 BST (Khuram replied himself) – ignore the slot/email steps below. RED DECLINED (Khuram 20/10: "not going ahead"; reason not recorded).**
 **Dell Baines replied on 20/10** (verbatim: `memory/projects/blue-heart-clinics.md` §2.6): ClinForms is "exactly what I
 have been looking for"; he wants **a 15-minute session** (he asks questions, Khuram demos) and asked for dates and times.
-- **Material (branch `sales/blue-heart-call`, worktree `clinforms-wt/blue-heart-call`, NOT merged – docs/memory only):**
+- **Material (branch `sales/blue-heart-call`, worktree `clinforms-wt/blue-heart-call` – merged to `main` 20/10 as `fcbe01d`; docs/memory only):**
   run sheet `docs/blue-heart-runsheet.md` (set-up, rehearsal, 15-min table with exact labels and say lines, questions,
   honest answers, fallbacks); call pack `docs/demo-blue-heart.md` (support matrix, labels to frame, caveats, data
   protection built vs planned, price per §0 of pricing.md, proof-of-concept next step, **§email = reply to Dell**).

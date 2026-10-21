@@ -122,6 +122,13 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | 18:58 | Read-only check: prod D1 has 1 clinic, 0 reports, 0 form files, 1 (fictional) access request; health OK. |
 | ~19:00 | End-of-session memory update (CLAUDE.md, `memory/`, `docs/go-live.md` run log). |
 
+### Wed 2026-10-21 (desktop – Blue Heart: Dell's process email)
+| Time | Event |
+|---|---|
+| before ~18:50 | Khuram pastes **Dell's fourth email** (verbatim: `projects/blue-heart-clinics.md` §2.7) and asks "see if we are covered with all these bits?". The email names 8 providers, says each template is kept as RTF in TM3 with a mail-merge, and that physios type the IA clinical part (the slow part). Dell wants that filled from the notes, with the physio reviewing, amending and approving |
+| ~18:50–19:30 | Workflow. (1) Public research on each provider's report route. (2) A live engine test on a `main` worktree (port 3159, session-only test passcode, 24 live calls, about $0.55; server stopped, worktree removed) with a fictional RTF IA form "Larkfield Rehabilitation Network (fictional)" and a fictional IA note. Findings: RTF refused; `textutil` flattens tables; merge-field templates give a wrong approved form; IA drafting good (17 of 22, cited); "Case manager" type drops past medical history; address not imported; per-answer Copy works for a keep-TM3 route |
+| ~19:45 | Call pack and run sheet updated for his process; memory updated; product gaps added as proposals (`next-steps.md` TOP-b). Branch `sales/blue-heart-fit`, not merged. Frozen demo, port 3000 and production untouched |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
@@ -169,3 +176,7 @@ runbook; `wf_93c356a2-a97` outreach video; `wf_f696f1e7-947` `/demo` page; `wf_e
     with `scripts/e2e/demo-video.cjs` `REAL_MEDIA=1`.
 21. Freeze a sales demo as a tag + its own worktree (`clinforms-demo`) before shipping risky changes to `main`; the
     go-live then could not disturb the RED call.
+22. **Clinic templates kept in a practice system (TM3 RTF) carry merge fields.** Never upload them as referrer forms
+    as they are: the 21/10 test produced a wrong *approved* form (placeholders left in, a name in the HCPC cell). Ask
+    for the provider's original blank form, or delete the merge fields first. macOS `textutil` RTF→docx flattens
+    tables, so don't use it for forms.
