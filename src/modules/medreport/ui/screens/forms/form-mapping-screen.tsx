@@ -18,6 +18,7 @@ import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, 
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
+import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf";
 import {
   ANSWER_TYPE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
@@ -228,6 +229,10 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   }
 
   const a = draft.analysis;
+  // A form converted from RTF when it was added: its conversion notes get their own note (not the analysis list).
+  const fromRtf = !questionSet && isConvertedFromRtf(draft.file);
+  const rtfNotes = fromRtf ? a.warnings.filter(isRtfConversionNote) : [];
+  const analysisNotes = fromRtf ? a.warnings.filter((w) => !isRtfConversionNote(w)) : a.warnings;
 
   return (
     <StudioShell
@@ -247,7 +252,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <>
           <Button variant="outline" size="sm" className={questionSet ? "hidden" : undefined} disabled={!file} onClick={() => file && downloadStoredFile(file)}>
             <Download className="mr-1.5 h-4 w-4" aria-hidden />
-            Download original
+            {fromRtf ? "Download Word version" : "Download original"}
           </Button>
           {saved.status === "confirmed" && !editing ? (
             <>
@@ -307,10 +312,25 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         />
       </div>
 
-      {a.warnings.length ? (
+      {fromRtf ? (
+        // RTF (10/2026): the template was converted to Word when it was added (core/rtf); say so, and what was left out.
+        <Notice tone="info" title="Converted from RTF">
+          “{draft.file.fileName}” was uploaded as an RTF file and converted to a Word document when it was added, so it is
+          completed and downloaded as Word (.docx). Check the preview against the template.
+          {rtfNotes.length ? (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {rtfNotes.map((w) => (
+                <li key={w}>{rtfNoteText(w)}</li>
+              ))}
+            </ul>
+          ) : null}
+        </Notice>
+      ) : null}
+
+      {analysisNotes.length ? (
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
-            {a.warnings.map((w) => (
+            {analysisNotes.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>

@@ -25,7 +25,7 @@ export const TENANT_COPY = {
     readyForApproval: "Ready for approval",
     firstRunTitle: "Complete your clinic's first form",
     firstFormTitle: "Add a referrer's form",
-    firstFormText: "Upload the blank form an insurer or medico-legal company sent you (Word or PDF) and confirm its mapping once. It is reused for every patient that referrer sends.",
+    firstFormText: "Upload the blank form an insurer or medico-legal company sent you (Word, PDF or RTF) and confirm its mapping once. It is reused for every patient that referrer sends.",
     firstReportTitle: "Upload the patient's notes",
     firstReportText: "Upload the notes – printed to PDF from your clinic system, a Word document, a CSV export or text – check what was read, then choose the referrer's form. The treating clinician reviews and approves every answer.",
   },
@@ -88,7 +88,7 @@ export const TENANT_COPY = {
   forms: {
     notFoundTitle: "This form is not in your clinic's library",
     notFoundBody: "It may have been deleted. Upload the referrer's form again to map it.",
-    libraryIntro: "Upload the form an MLC or insurer sent you (.docx or PDF).",
+    libraryIntro: "Upload the form an MLC or insurer sent you (Word, PDF or RTF).",
     referrerNeeded: "Enter the referrer's name in Details (the form's own sender – it could not be read off the form).",
     analysisLive: "Read from the form",
     analysisRecorded: "Stored reading of this form",

@@ -5,8 +5,15 @@ import "server-only";
  * /render). Detects the type from the bytes (never from the file name), enforces MAX_FORM_FILE_BYTES and
  * computes the SHA-256 that binds a FormDefinition to its file.
  *
+ * RTF (10/2026): with `convertRtf: true` (forms-analyse, and the fill / render file in
+ * handlers/store-form-file.ts), an RTF upload – which no Word or PDF check below would accept – is
+ * converted to .docx here (core/rtf, the same converter as the Studio's upload dialog) and from then on
+ * IS a Word form: bytes, type and SHA-256 are the converted file's (`convertedFrom` says what came in).
+ * Without the option RTF is refused exactly as before (the clinic store keeps only Word and PDF files).
+ *
  * Errors are thrown as HttpError (bindHandler turns them into problem+json):
- * 413 PAYLOAD_TOO_LARGE · 422 FORM_INVALID (not .docx / PDF, or an old .doc) · 409 FORM_MISMATCH.
+ * 413 PAYLOAD_TOO_LARGE · 422 FORM_INVALID (not .docx / PDF / RTF, an old .doc, or an RTF file that
+ * cannot be converted) · 409 FORM_MISMATCH.
  *
  * Owner: forms-engine agent (contract-stage implementation; signatures are final).
  */
@@ -14,6 +21,7 @@ import { createHash } from "node:crypto";
 import { MAX_FORM_FILE_BYTES } from "../config.public";
 import type { FormMimeType } from "../core/types";
 import { HttpError } from "../api/http";
+import { RtfConversionError, convertRtfToDocx, isRtfBytes } from "../core/rtf";
 import { ZipLimitError, assertPdfWithinLimits, openZipSafely } from "./zip-guard";
 
 export const DOCX_MIME: FormMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -24,6 +32,8 @@ export interface DecodedFormFile {
   mimeType: FormMimeType;
   sha256: string;
   sizeBytes: number;
+  /** Set when the upload was an RTF file converted to Word here (decodeFormFile `convertRtf`). */
+  convertedFrom?: { format: "rtf"; sizeBytes: number; sha256: string; notes: string[]; ms: number };
 }
 
 /** SHA-256 of the bytes as 64 lower-case hex characters. */
@@ -49,8 +59,42 @@ export function sniffFormFile(bytes: Uint8Array): FormMimeType | "doc" | null {
   return null;
 }
 
-/** Decode, size-check and type-check a base64 form file. Throws HttpError (413 / 422 FORM_INVALID). */
-export function decodeFormFile(base64: string, opts: { maxBytes?: number } = {}): DecodedFormFile {
+/** RTF → Word at the boundary (see the file comment). Throws HttpError (413 / 422 FORM_INVALID). */
+function decodeRtfFormFile(rtf: Uint8Array, maxBytes: number): DecodedFormFile {
+  const started = Date.now();
+  let converted: ReturnType<typeof convertRtfToDocx>;
+  try {
+    converted = convertRtfToDocx(rtf, { maxBytes });
+  } catch (err) {
+    if (err instanceof RtfConversionError) {
+      if (err.code === "RTF_TOO_LARGE") throw new HttpError(413, "Form file too large", { code: "PAYLOAD_TOO_LARGE", detail: err.message });
+      throw new HttpError(422, "This RTF file could not be converted", { code: "FORM_INVALID", detail: err.message });
+    }
+    throw new HttpError(422, "This RTF file could not be converted", {
+      code: "FORM_INVALID",
+      detail: "Open the template in Word, save it as a Word Document (.docx) and upload that file.",
+    });
+  }
+  const bytes = converted.docx;
+  try {
+    openZipSafely(bytes);
+  } catch {
+    throw new HttpError(422, "This RTF file could not be converted", { code: "FORM_INVALID", detail: "Save the template as a Word Document (.docx) and upload that file." });
+  }
+  return {
+    bytes,
+    mimeType: DOCX_MIME,
+    sha256: sha256Hex(bytes),
+    sizeBytes: bytes.byteLength,
+    convertedFrom: { format: "rtf", sizeBytes: rtf.byteLength, sha256: sha256Hex(rtf), notes: converted.notes, ms: Date.now() - started },
+  };
+}
+
+/**
+ * Decode, size-check and type-check a base64 form file. Throws HttpError (413 / 422 FORM_INVALID).
+ * `convertRtf`: accept an RTF file and convert it to Word (see the file comment); otherwise RTF is refused.
+ */
+export function decodeFormFile(base64: string, opts: { maxBytes?: number; convertRtf?: boolean } = {}): DecodedFormFile {
   const maxBytes = opts.maxBytes ?? MAX_FORM_FILE_BYTES;
   // Rough pre-check before allocating: 4 base64 chars → 3 bytes.
   if (Math.floor((base64.length * 3) / 4) > maxBytes + 3) {
@@ -73,13 +117,16 @@ export function decodeFormFile(base64: string, opts: { maxBytes?: number } = {})
   if (sniffed === "doc") {
     throw new HttpError(422, "Older Word format (.doc)", {
       code: "FORM_INVALID",
-      detail: "This is an older Word .doc file. Open it in Word, choose File → Save As → Word Document (.docx), and upload the .docx.",
+      detail: "This is an older Word .doc file. Open it in Word, choose File → Save As → Word Document (.docx) – or Rich Text Format (.rtf) – and upload that file.",
     });
   }
+  if (!sniffed && opts.convertRtf && isRtfBytes(bytes)) return decodeRtfFormFile(bytes, maxBytes);
   if (!sniffed) {
     throw new HttpError(422, "Not a Word or PDF form", {
       code: "FORM_INVALID",
-      detail: "Upload the referrer's form as a Word document (.docx) or a PDF.",
+      detail: opts.convertRtf
+        ? "Upload the referrer's form as a Word document (.docx), a PDF or an RTF file."
+        : "Upload the referrer's form as a Word document (.docx) or a PDF.",
     });
   }
   // Decompression limits before any parser touches the file (zip bombs, oversized PDF streams).

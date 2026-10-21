@@ -5,7 +5,9 @@ import "server-only";
  * Body FormsAnalyseRequest {fileBase64, fileName, referrer?, title?, prefer?, effort?}
  *   → FormsAnalyseResponse {form (status "proposed"), outlineSummary, trace}.
  *
- * 1. forms/file.ts decodeFormFile() (413 / 422 FORM_INVALID), type from the bytes.
+ * 1. forms/file.ts decodeFormFile() (413 / 422 FORM_INVALID), type from the bytes. An RTF file is converted
+ *    to Word there first (10/2026; `convertRtf`), and the conversion's notes for staff (what was left out)
+ *    are added to the proposed map's analysis warnings, with a "Converted the RTF file to Word" trace step.
  * 2. Deterministic parsing: forms/docx-outline.ts buildDocxOutline() or forms/pdf-outline.ts readPdfForm().
  * 3. Mapping (ai/analyse-form.ts): live Claude (passcode + rate cap, same rules as /drafts; form text is
  *    DATA, never instructions; long forms in parallel chunks), else the recorded analysis for a bundled
@@ -41,7 +43,7 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
 
-  const file = decodeFormFile(body.fileBase64); // throws HttpError (413 / 422)
+  const file = decodeFormFile(body.fileBase64, { convertRtf: true }); // throws HttpError (413 / 422)
 
   const gate = await chooseAiModeForActor(req, actor, deps, body.prefer, {
     action: WORDING.server.gateActionAnalyse,
@@ -99,7 +101,23 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
     // The map is stored in the forms library and shown in the Studio: the engine is named neutrally
     // (core/wording.ts); the real model id stays in the log line above.
     const analysis = { ...result.form.analysis, model: publicEngineName(result.form.analysis.model) };
-    const response: FormsAnalyseResponse = { form: { ...result.form, analysis }, outlineSummary: result.outlineSummary, trace: result.trace };
+    let trace = result.trace;
+    if (file.convertedFrom) {
+      // An RTF upload converted to Word (forms/file.ts): staff see what the conversion left out.
+      const notes = file.convertedFrom.notes;
+      analysis.warnings = [...notes, ...analysis.warnings.filter((w) => !notes.includes(w))];
+      trace = [
+        {
+          label: "Converted the RTF file to Word",
+          status: notes.length ? "warning" : "ok",
+          ms: file.convertedFrom.ms,
+          detail: notes.length ? `${notes.length} note${notes.length === 1 ? "" : "s"} below` : "Text, tables and tick boxes carried over",
+        },
+        ...trace,
+      ];
+      logEvent("form_rtf_converted", { form: result.form.id, rtfBytes: file.convertedFrom.sizeBytes, bytes: file.sizeBytes, notes: notes.length, ms: file.convertedFrom.ms });
+    }
+    const response: FormsAnalyseResponse = { form: { ...result.form, analysis }, outlineSummary: result.outlineSummary, trace };
     return json(response);
   } catch (err) {
     if (err instanceof DraftGenerationError) {

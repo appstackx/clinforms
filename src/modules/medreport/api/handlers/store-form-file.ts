@@ -7,7 +7,9 @@ import "server-only";
  * PREFERS that copy over the `fileBase64` the browser sends: the stored copy was checked when it was
  * uploaded, and the request stays small. The public demo (no tenant storage, nobody signed in) and a clinic
  * that does not hold the file use `fileBase64` exactly as before. Additive: the request contract only
- * gained "fileBase64 may be left out when the clinic holds the file".
+ * gained "fileBase64 may be left out when the clinic holds the file". A `fileBase64` that is an RTF file
+ * (partner API, 10/2026) is converted to Word the same way as at analysis (decodeFormFile `convertRtf`);
+ * the conversion is deterministic, so it matches the map made from that RTF.
  *
  * The caller passes the clinic it already resolved (auth/actor.ts requireActor): a clinic member's tenantId, or
  * null for the public demo (whose requests never read the database).
@@ -51,5 +53,5 @@ export async function formFileForRequest(
       issues: [{ path: "fileBase64", message: "Send the referrer's original form file (from the forms library) as fileBase64." }],
     });
   }
-  return decodeFormFile(input.fileBase64);
+  return decodeFormFile(input.fileBase64, { convertRtf: true });
 }
