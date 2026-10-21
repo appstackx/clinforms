@@ -25,10 +25,15 @@ import { openZipSafely } from "./zip-guard";
 /** Most entries recorded for one form (one per occurrence). */
 const MAX_ENTRIES = 500;
 
+/** A character reference's code point as text; "" for one no string can hold (e.g. &#x110000;). */
+function codePoint(n: number): string {
+  return Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+}
+
 function decodeEntities(text: string): string {
   return text
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => codePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => codePoint(Number(d)))
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -36,33 +41,95 @@ function decodeEntities(text: string): string {
     .replace(/&amp;/g, "&");
 }
 
+interface ElementRange {
+  /** Where the start tag begins. */
+  start: number;
+  /** The start tag (with its attributes). */
+  tag: string;
+  /** The content between the start and end tag ("" for `<name …/>`). */
+  inner: string;
+  /** Just after the end tag. */
+  end: number;
+}
+
+/**
+ * The `<name …>…</name>` (and `<name …/>`) elements of a part, in order, not nested – in ONE linear pass
+ * (indexOf, never a lazy `[\s\S]*?` regex): a part (headers and footers are not parsed as XML first) full
+ * of unclosed or self-closing tags cannot make the scan quadratic. `withContent: false` only reads start
+ * tags (e.g. w:fldSimple, whose instruction is an attribute).
+ */
+function elements(xml: string, name: string, withContent = true): ElementRange[] {
+  const out: ElementRange[] = [];
+  const open = `<${name}`;
+  const close = `</${name}>`;
+  let i = 0;
+  while ((i = xml.indexOf(open, i)) >= 0) {
+    let j = i + open.length;
+    const next = xml.charCodeAt(j);
+    // The name must end here ("<w:t" is not "<w:tab").
+    if (!(next === 0x20 || next === 0x09 || next === 0x0a || next === 0x0d || next === 0x2f || next === 0x3e)) {
+      i = j;
+      continue;
+    }
+    while (j < xml.length && xml.charCodeAt(j) !== 0x3e && xml.charCodeAt(j) !== 0x3c) j++;
+    if (j >= xml.length) break; // a start tag that never ends: nothing more to read
+    if (xml.charCodeAt(j) === 0x3c) {
+      i = j; // malformed (a "<" inside the tag): carry on from there
+      continue;
+    }
+    const tag = xml.slice(i, j + 1);
+    if (!withContent || xml.charCodeAt(j - 1) === 0x2f) {
+      out.push({ start: i, tag, inner: "", end: j + 1 });
+      i = j + 1;
+      continue;
+    }
+    const c = xml.indexOf(close, j + 1);
+    if (c < 0) break; // never closed: there is no complete element after this one either
+    out.push({ start: i, tag, inner: xml.slice(j + 1, c), end: c + close.length });
+    i = c + close.length;
+  }
+  return out;
+}
+
+/** The part without these elements. */
+function withoutElements(xml: string, name: string): string {
+  const found = elements(xml, name);
+  if (found.length === 0) return xml;
+  let out = "";
+  let pos = 0;
+  for (const e of found) {
+    out += xml.slice(pos, e.start);
+    pos = e.end;
+  }
+  return out + xml.slice(pos);
+}
+
 /** Visible text of a WordprocessingML part: paragraphs on their own lines; no deleted text, no field codes. */
 function visibleText(xml: string): string {
+  // `[^<>]` (not `[^>]`) so a run of start tags without a ">" is read once, not once per tag (linear).
   return decodeEntities(
-    xml
-      .replace(/<w:delText\b[^>]*>[\s\S]*?<\/w:delText>/g, "")
-      .replace(/<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/g, "")
+    withoutElements(withoutElements(xml, "w:delText"), "w:instrText")
       .replace(/<\/w:p>/g, "\n")
-      .replace(/<w:(?:tab|br|cr)\b[^>]*\/>/g, " ")
-      .replace(/<[^>]+>/g, ""),
+      .replace(/<w:(?:tab|br|cr)\b[^<>]*\/>/g, " ")
+      .replace(/<[^<>]+>/g, ""),
   );
 }
 
-/** Field codes (complex and simple fields) of a part, joined. */
+/** Field codes (complex and simple fields) of a part, joined, in document order. */
 function fieldCodes(xml: string): string {
-  const out: string[] = [];
-  const re = /<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>|<w:fldSimple\b[^>]*\bw:instr="([^"]*)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) out.push(decodeEntities(m[1] ?? m[2] ?? ""));
-  return out.join("");
+  const codes: Array<{ at: number; text: string }> = elements(xml, "w:instrText").map((e) => ({ at: e.start, text: e.inner }));
+  for (const e of elements(xml, "w:fldSimple", false)) {
+    const m = /\bw:instr="([^"]*)"/.exec(e.tag);
+    if (m) codes.push({ at: e.start, text: m[1] });
+  }
+  codes.sort((a, b) => a.at - b.at);
+  return codes.map((c) => decodeEntities(c.text)).join("");
 }
 
 function textBoxes(xml: string): string {
-  const out: string[] = [];
-  const re = /<w:txbxContent\b[^>]*>([\s\S]*?)<\/w:txbxContent>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) out.push(visibleText(m[1]));
-  return out.join("\n");
+  return elements(xml, "w:txbxContent")
+    .map((e) => visibleText(e.inner))
+    .join("\n");
 }
 
 interface DocxParts {

@@ -221,6 +221,43 @@ test("analysis records a Word form's merge fields: answer cells by block; page h
   );
 });
 
+test("the scan is linear on hostile Word parts and never throws on a character reference no string can hold", async () => {
+  const withParts = (documentBody: string, headerXml: string): Uint8Array => {
+    const zip = new PizZip(mergeDocx({ header: "x" }));
+    zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${documentBody}<w:sectPr/></w:body></w:document>`);
+    zip.file("word/header1.xml", headerXml);
+    return zip.generate({ type: "uint8array", compression: "DEFLATE" });
+  };
+  // ~15 KB uploads that used to take over a minute each (a lazy regex per self-closing / unclosed tag).
+  const runs = (tag: string) => p(`<w:r><${tag}/><w:t>a</w:t></w:r>`.repeat(128_000));
+  const hostile = [
+    withParts(runs("w:delText"), "<w:hdr/>"),
+    withParts(runs("w:instrText"), "<w:hdr/>"),
+    withParts(runs("w:txbxContent"), "<w:hdr/>"),
+    // Headers and footers are not parsed as XML first: start tags that never end, and "<" without ">".
+    withParts(p(t("Name")), `<w:hdr>${"<w:tab ".repeat(300_000)}${"<w:instrText ".repeat(200_000)}${"<".repeat(1_000_000)}`),
+  ];
+  for (const bytes of hostile) {
+    const started = Date.now();
+    assert.deepEqual(await findFormMergeFields({ bytes, mimeType: DOCX_MIME }), []);
+    assert.deepEqual(await mergeTokensInOutput(bytes, "docx"), []);
+    assert.ok(Date.now() - started < 3000, `scan took ${Date.now() - started} ms`);
+  }
+  // A character reference beyond U+10FFFF (the Word reader accepts it) is dropped, not thrown.
+  const odd = withParts(`${p(t("Patient &#x110000; &#99999999999; name"))}<w:tbl><w:tr><w:tc>${p(t("«Patient Name»"))}</w:tc></w:tr></w:tbl>`, `<w:hdr>${p(t("&#x110000;"))}</w:hdr>`);
+  assert.deepEqual(await findFormMergeFields({ bytes: odd, mimeType: DOCX_MIME }), [{ text: "«Patient Name»", where: "table 1, row 1", blockId: "t0.r0.c0" }]);
+  assert.deepEqual(await mergeTokensInOutput(odd, "docx"), ["«Patient Name»"]);
+  // Deleted text and field codes are still left out of the visible text; a self-closing tag hides nothing.
+  const mixed = withParts(
+    p(`<w:r><w:delText/></w:r>${t("«Visible»")}<w:r><w:delText xml:space="preserve">«Deleted»</w:delText></w:r><w:r><w:instrText> MERGEFIELD Code </w:instrText></w:r>`),
+    "<w:hdr/>",
+  );
+  assert.deepEqual(
+    (await findFormMergeFields({ bytes: mixed, mimeType: DOCX_MIME })).map((m) => `${m.text}@${m.where}`),
+    ["«Visible»@paragraph 1", "MERGEFIELD@a Word field code"],
+  );
+});
+
 test("analysis records a PDF's merge fields: printed text cannot be completed; a field's value is cleared by answering it", async () => {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([400, 300]);
