@@ -4,11 +4,40 @@ State: **Sat 2026-10-10 ~19:00 UTC** (desktop). **ClinForms is LIVE on https://c
 (`main` `02ddfb5` → `04c18d0` passcode server check → `8def25b` polish, all deployed; `feat/production` == `main`).
 The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/clinforms-demo` for the call on
 **Tue 13 Oct, morning**. Snapshot of what is live: `CLAUDE.md`; run log: `docs/go-live.md`.
+**Updated Fri 2026-10-23 ~14:30 UTC, revised ~14:50 UTC:** new TOP (Blue Heart after the demo: the all-in-one / replace-TM3 question – answer no PMS build; feasibility report revised after review).
 **Updated Wed 2026-10-21 ~19:45 UTC, review fixes ~19:55 UTC:** TOP and TOP-b (Blue Heart: Dell's process email, fit test, product gaps).
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
-## TOP – Blue Heart call Fri 23 Oct 2026 11:30 BST (P0; updated Wed 2026-10-21 ~19:45 UTC for Dell's process email)
+## TOP – Blue Heart after the demo: Dell's "all-in-one / replace TM3" idea (P0; added Fri 2026-10-23 ~14:30 UTC, revised ~14:50 UTC after review)
+- **Demo held Fri 23/10 11:30 BST, "went really well"** (Khuram). Khuram's words: "Dell mentnioed that here is tool like this at the moment" –
+  "is" or "is no" tool is ambiguous [U] (Heidi is already integrated in TM3). Dell raised a bigger opportunity: one product that replaces TM3
+  (everything TM3 does + ClinForms). Khuram: "is it doable?"
+- **Report: `docs/strategy/all-in-one-pms-feasibility.md`** (branch `strategy/pms-feasibility`, worktree `clinforms-wt/pms-feasibility`,
+  pushed to origin, **not merged** – merging = pushing `main` = a production deploy, Khuram's call).
+  - **Answer:** **No – not as a product AppstackX builds or runs. Yes to ClinForms at Blue Heart now.** If Dell wants to leave TM3, "one system" =
+    an existing PMS with UK insurer billing + ClinForms (E2).
+  - Why: parity est. 4–9 years solo at 12–15 h/wk, 8–21 years at 5–8 h/wk [I]; support cover in clinic hours est. £30–60k/yr [I];
+    worth £300–1,200/mo at steady state and £0 in year one [I]; Dell's signal unverified (no money, no PoC material, no price reaction).
+  - **Recommendation (D68, PROPOSED):** A now; E2 as the answer to "one system"; E1 (TM3 integration) kept open; light D only; no PMS build.
+- **Next steps (Khuram):**
+  1. Answer the report's four §1 questions: what Dell said word for word (and did price come up?); what happened to the day-14 gate
+     (≥80 personal sends, ≥15 replies, ≥3 conversations); **what stops to make room** (October: Starwrit 721 commits, ClinForms 129).
+  2. Edit and send the §8 email (no diary/billing promise; pilot ask; VAT line to confirm; wider anonymisation list).
+  3. Record the call in `memory/projects/blue-heart-clinics.md` §7 (volumes, price reaction, PoC material, next step).
+  4. Before real data (report §3a): Cyber Essentials, ICO fee, tech PI + cyber, DPA/DPIA, IDTA/TRA for the US drafting provider, HCML notice line,
+     contracting entity, Vercel Pro, London DB, MailerSend, ClinForms Stripe account; **decide on a pen test**.
+  5. Proof of concept on 2–3 templates + one anonymised IA note; measure his form mix (Word/RTF vs portal); then the paid pilot.
+  6. Start a weekly selling-vs-building hours log here.
+- **Gate 0 (30 Nov 2026):** drafts accepted by Dell + a physio; Dell says yes to the paid pilot; ≥80 targeted sends to MLC-panel clinics.
+- **Gate 1 (31 Mar 2027):** Blue Heart paid ≥60 days; ≥3 other paying clinics; ≥10 demos by 31 Jan; hours log shows selling ≥ building.
+  A missed gate is a stop, not a re-date. Stage 2 (read-only TM3 notes import + authorisation/report-due tracker, no clinical record) only if
+  ≥10 paying clinics ask. A PMS only under the report's Appendix conditions.
+- **Don't:** promise dates, TM3 parity or a PMS; ask Dell for his TM3 invoice, pricing or contract terms (confidential: MSA cl. 1.4(a), 10.1);
+  ask for TM3 logins or recordings to copy TM3 (cl. 3.2(b)); talk about replacing TM3 (it can cost the TM3 integration route).
+- Research notes behind the report (TM3, market, compliance, build, business, review) were in the session scratchpad only, not in git.
+
+## TOP (done – call held 23/10) – Blue Heart call Fri 23 Oct 2026 11:30 BST (P0; updated Wed 2026-10-21 ~19:45 UTC for Dell's process email)
 - **Dell's fourth email (21/10, verbatim: `memory/projects/blue-heart-clinics.md` §2.7).** It names 8 providers:
   Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic, The Treatment Network.
   Each provider's template is turned into **RTF** and kept in **TM3**, and TM3 mail-merges name, address, DOB and
