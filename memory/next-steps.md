@@ -4,11 +4,38 @@ State: **Sat 2026-10-10 ~19:00 UTC** (desktop). **ClinForms is LIVE on https://c
 (`main` `02ddfb5` → `04c18d0` passcode server check → `8def25b` polish, all deployed; `feat/production` == `main`).
 The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/clinforms-demo` for the call on
 **Tue 13 Oct, morning**. Snapshot of what is live: `CLAUDE.md`; run log: `docs/go-live.md`.
+**Updated Fri 2026-10-23 ~14:30 UTC:** new TOP (Blue Heart after the demo: the all-in-one / replace-TM3 question, feasibility report).
 **Updated Wed 2026-10-21 ~19:45 UTC, review fixes ~19:55 UTC:** TOP and TOP-b (Blue Heart: Dell's process email, fit test, product gaps).
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
-## TOP – Blue Heart call Fri 23 Oct 2026 11:30 BST (P0; updated Wed 2026-10-21 ~19:45 UTC for Dell's process email)
+## TOP – Blue Heart after the demo: Dell's "all-in-one / replace TM3" idea (P0; added Fri 2026-10-23 ~14:30 UTC)
+- **Demo held Fri 23/10 11:30 BST, "went really well"** (Khuram). Dell said there is no tool like this today. He raised a
+  bigger opportunity: one product that replaces TM3 (everything TM3 does + ClinForms). Khuram: "is it doable?"
+- **Feasibility report: `docs/strategy/all-in-one-pms-feasibility.md`** (branch `strategy/pms-feasibility`, worktree
+  `clinforms-wt/pms-feasibility`, committed, **not pushed, not merged** – merging = pushing `main` = a production deploy, Khuram's call).
+  - **Answer:** technically yes. Not as a TM3 rebuild for AppstackX today:
+    - est. 20–40 months solo to a one-site MVP, and 4–9 years to switch off TM3 [I];
+    - no support in clinic hours;
+    - Healthcode, the one-shot TM3 exit and compliance come first.
+  - **Recommendation (D68, PROPOSED):** A (ClinForms on any PMS) now, C (staged wedge) with hard gates, D (light co-funding) and E (partner) alongside.
+- **Next steps (Khuram):**
+  1. Read the report (§1, §6, §7, §8).
+  2. Edit and send the reply to Dell (§8 draft: no dates, no vendor words; confirm VAT wording before quoting a price).
+  3. Record what else Dell said in `memory/projects/blue-heart-clinics.md` §7 (volumes, price reaction, PoC material, next step).
+  4. Get answers to the §8 questions. TM3 tier, licences, cost, **renewal date and 90-day notice deadline**, modules used, Healthcode, NHS work and the contracting entity come first.
+  5. Run the proof of concept on 2–3 of his templates + one anonymised IA note, then a **paid pilot at the founding price**.
+  6. In parallel, before any real data: Vercel Pro, London database, MailerSend, DPA/DPIA, ClinForms Stripe account.
+- **Gate 1 (31 Jan 2027):**
+  - Blue Heart has paid ≥60 days;
+  - ≥3 other paying clinics;
+  - Dell has prepaid or paid for discovery under a design-partner agreement (our IP, no exclusivity).
+
+  **No PMS module before that. No diary** until ≥2 multi-site letters of intent with deposits AND a funded support person (Gate 2).
+- **Don't:** promise dates or TM3 parity; ask Dell for TM3 logins or recordings to copy TM3 (MSA cl. 3.2(b)).
+- Research notes behind the report (TM3, market, compliance, build, business) were in the session scratchpad only, not in git.
+
+## TOP (done – call held 23/10) – Blue Heart call Fri 23 Oct 2026 11:30 BST (P0; updated Wed 2026-10-21 ~19:45 UTC for Dell's process email)
 - **Dell's fourth email (21/10, verbatim: `memory/projects/blue-heart-clinics.md` §2.7).** It names 8 providers:
   Speed Medical, HCML, 3D Rehab, Physio Link, Physio Med, The Physio Network, Bodycare Clinic, The Treatment Network.
   Each provider's template is turned into **RTF** and kept in **TM3**, and TM3 mail-merges name, address, DOB and
