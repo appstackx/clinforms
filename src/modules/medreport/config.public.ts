@@ -58,6 +58,16 @@ export const MAX_FORM_FIELDS_PER_DRAFT = 4;
  */
 export const MAX_FORM_FILE_BYTES = 2.5 * 1024 * 1024;
 
+/**
+ * Largest RTF template accepted (10/2026, raw bytes): RTF stores pictures (logos) and embedded objects as hex text, so
+ * a template a clinic system prints can be many MB although its converted Word file is small. An RTF file may be up
+ * to 12 MB as long as everything EXCEPT its picture / object / binary data (core/rtf/prescan.ts) stays within
+ * MAX_FORM_FILE_BYTES. The converted .docx stays within MAX_FORM_FILE_BYTES too. In the Studio the RTF is converted
+ * in the browser, so the request limit below never sees it; through the partner API (which sends the RTF itself)
+ * MAX_FORM_REQUEST_BYTES still applies.
+ */
+export const MAX_RTF_FILE_BYTES = 12 * 1024 * 1024;
+
 /** Largest JSON body for the form endpoints (base64 file + report), just under Vercel's 4.5 MB limit. */
 export const MAX_FORM_REQUEST_BYTES = 4_400_000;
 

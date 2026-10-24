@@ -1461,8 +1461,17 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   (`/store/files`) and every other caller refuse RTF exactly as before (the Studio stores the converted .docx).
 - **UI:** pickers accept `.rtf`; hint "Word (.docx), PDF or RTF"; the mapping screen shows **"Converted from RTF"**
   with the notes, and "Download Word version" saves "Report.docx"; completed forms download as `.docx`.
-- **Limits:** input ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores pictures as hex text, so a template with a large
-  logo can exceed it although the converted file would be small; East Asian double-byte text only where the
+- **Limits:** *(10/2026)* input ≤ `MAX_RTF_FILE_BYTES` (12 MB) as long as everything except picture / object / binary
+  data stays ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores logos as hex text (Dell's largest template is 6.2 MB with
+  0.09 MB of text). `core/rtf/prescan.ts` measures that in ONE linear pass that mirrors exactly what the reader skips
+  (`\pict`, `\shppict`, `\nonshppict`, `\object`, `\objdata`, `\themedata`, `\colorschememapping`, `\datastore`,
+  `\fontemb`, `\fontfile`, `\blipuid` groups and `\binN` runs; an invalid `\'` is read as the reader reads it, so a
+  picture cannot "end early" past the check); `assertRtfWithinLimits()` runs inside `convertRtfToDocx`, so the browser,
+  the server and the admin scripts apply the same rule. Control words inside skipped groups take a fast path in the
+  reader (and its per-word helpers are module-level), so 12 MB of picture data converts in well under a second;
+  every earlier limit (depth, blocks, inlines, cell definitions, output size) still applies to the text part. Through
+  the partner API the request limit (`MAX_FORM_REQUEST_BYTES`, 4.4 MB of base64) still caps the RTF at ~3.2 MB; the
+  Studio converts in the browser, so the 12 MB rule applies there. Earlier: input ≤ 2.5 MB; East Asian double-byte text only where the
   platform's TextDecoder knows the code page; frames/absolute positions become ordinary paragraphs; rules-mode
   reading may put an answer box in the lower half of a vertically merged cell (same as for a Word form).
 - **Tests:** `core/rtf/rtf.test.ts` (constructs, code pages, tables, fields, tick boxes, headers, breaks, malformed

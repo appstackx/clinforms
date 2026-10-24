@@ -98,6 +98,15 @@ export interface RtfReadLimits {
   maxCellDefs?: number;
 }
 
+/** Module-level (not per call): the reader calls these once per control word of a file of up to 12 MB. */
+function isLetter(b: number): boolean {
+  return (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+}
+
+function hex(b: number | undefined): number {
+  return b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Reader state
  * ----------------------------------------------------------------------------------------------*/
@@ -875,7 +884,7 @@ class Reader {
     const n = bytes.length;
     if (i + 1 >= n) return n;
     const c = bytes[i + 1];
-    const isLetter = (b: number) => (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+    if (isLetter(c) && this.state.dest === "skip") return this.skipControlWord(bytes, i);
     if (isLetter(c)) {
       let j = i + 1;
       while (j < n && isLetter(bytes[j]) && j - i <= 32) j++;
@@ -908,8 +917,6 @@ class Reader {
       return j;
     }
     if (c === 0x27) {
-      const hex = (b: number | undefined) =>
-        b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
       const h1 = hex(bytes[i + 2]);
       const h2 = hex(bytes[i + 3]);
       if (h1 < 0 || h2 < 0) return Math.min(n, i + 2);
@@ -927,6 +934,35 @@ class Reader {
     this.flushBytes();
     this.controlSymbol(c);
     return i + 2;
+  }
+
+  /**
+   * A control word inside a skipped destination (a picture's hex, an embedded object, a theme…; 10/2026, for RTF
+   * templates of up to 12 MB): word() would ignore it, so it is stepped over without building the word – only \binN
+   * still jumps over its N bytes. Same result as the full path (nothing in a skipped group is read), in a fraction
+   * of the time, so a template that is mostly pictures converts quickly.
+   */
+  private skipControlWord(bytes: Uint8Array, i: number): number {
+    const n = bytes.length;
+    let j = i + 1;
+    while (j < n && isLetter(bytes[j])) j++;
+    const bin = j - i - 1 === 3 && bytes[i + 1] === 0x62 && bytes[i + 2] === 0x69 && bytes[i + 3] === 0x6e;
+    let neg = false;
+    if (bytes[j] === 0x2d && j + 1 < n && bytes[j + 1] >= 0x30 && bytes[j + 1] <= 0x39) {
+      neg = true;
+      j++;
+    }
+    let param = 0;
+    let digits = 0;
+    while (j < n && bytes[j] >= 0x30 && bytes[j] <= 0x39) {
+      if (digits < 10) param = param * 10 + (bytes[j] - 0x30);
+      digits++;
+      j++;
+    }
+    if (j < n && bytes[j] === 0x20) j++;
+    this.state.starPending = false; // as word() does for any control word
+    if (bin && digits > 0 && !neg) return Math.min(n, j + Math.min(2147483647, param));
+    return j;
   }
 
   private controlSymbol(c: number): void {
