@@ -180,10 +180,14 @@ const RETURN_TO_WORK = /\breturn(?:ing)?\s+to\s+(?:work|normal\s+duties)\b|\bfit
  * (its note field and terms) is sent for drafting and its terms are confined to the answers of the asking questions
  * (TemplateScope.confineTerms: SCOPE_TERM anywhere else). Minimisation is kept for return-to-work / fitness-for-work
  * forms (they usually reach the employer) and for forms that do not ask. Other referrers: no scope, as before.
+ *
+ * Verify fix (10/2026): an EMPLOYER referrer's own form always keeps the minimisation, whatever it asks – the report
+ * goes to the employer ("keep minimisation for employer-only forms", P3). Scope by question is for case managers
+ * (personal-injury rehabilitation networks) only.
  */
 export function formScope(referrerType: ReferrerType, form?: Pick<FormDefinition, "title" | "fields">): TemplateScope {
   if (referrerType !== "employer" && referrerType !== "case_manager") return NO_SCOPE;
-  if (!form) return EMPLOYER_SCOPE;
+  if (!form || referrerType === "employer") return EMPLOYER_SCOPE;
   const drafted = form.fields.filter((f) => f.fillSource.kind === "notes_narrative" || f.fillSource.kind === "clinician_opinion");
   const printed = (f: FormField) => `${f.section ?? ""}\n${f.label}`;
   if (RETURN_TO_WORK.test(form.title) || form.fields.some((f) => RETURN_TO_WORK.test(printed(f)))) return EMPLOYER_SCOPE;
@@ -813,6 +817,19 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
  * are answered only by their value – their paragraphs are supporting text, not the answer. Text
  * answers are answered when a paragraph has text.
  */
+/**
+ * Verify fix (10/2026): whether a section's "left empty on purpose" (blankFromRecords) counts – only for the question
+ * it can come from: a line (2 or later) of an address printed over several lines (a registration fill source with a
+ * `part`, core/report-factory.ts). The flag travels with the report the browser sends, so the approval checks, the
+ * merge-code check and the forms engine never take it from any other question (a staff entry, a clinical answer, a
+ * clinic-system code such as <<P_SURNAME>>) – there an empty answer stays unanswered and blocks approval.
+ */
+export function isBlankByDesign(section: Pick<ReportSection, "blankFromRecords"> | null | undefined, field: Pick<FormField, "fillSource"> | null | undefined): boolean {
+  if (!section?.blankFromRecords || !field || field.fillSource.kind !== "registration") return false;
+  const { path, part } = field.fillSource;
+  return Boolean(part && part.index >= 2 && (path === "patient.addressLines" || path === "clinic.addressLines"));
+}
+
 export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer"> & { blankFromRecords?: boolean }): boolean {
   if (section.answer?.kind === "rows") return hasRowContent(section.answer.value);
   // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have) is answered.
@@ -928,13 +945,14 @@ export function buildFormAnswers(
       continue;
     }
     const section = report.sections.find((s) => s.key === field.id);
-    if (!section || !isSectionAnswered(section)) {
+    const blankByDesign = isBlankByDesign(section, field);
+    if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
       answers[field.id] = {};
       continue;
     }
     const text = answerToText(section);
     // 10/2026: left empty on purpose by the record – the forms engine removes the clinic system's code there.
-    if (section.blankFromRecords && text.trim() === "") {
+    if (blankByDesign && text.trim() === "") {
       answers[field.id] = { text: "", blank: true };
       continue;
     }

@@ -59,6 +59,15 @@ account on database level, so it works as multi tenant app, if we onboard other 
   per report); `<<P_HOSP_NUM>>`/`<<P_WORKTEL>>`/`<<P_INJURY>>` are staff entries; through the partner API the request
   limit still caps RTF at ~3.2 MB (the Studio converts in the browser, so 12 MB works there); the trial and DPA wording
   is Khuram's to confirm (D69).
+- **Independent verify 24/10 – branch `fix/blue-heart-verify` (off `d49e233`, pushed, NOT merged; deploy THIS branch):**
+  full chain green; forms-regression 7/7 + rtf-forms 6/6 on the branch and on `main` (PDFs and RTF Word files
+  identical, other Word files part-for-part identical); RTF pre-scan differential fuzz 45k cases, 0 mismatches; live
+  trial/limits/load-forms harness 55/55 (local SQLite, fictional). Fixes: `<<DATE>>` beside the accident's label = the
+  record's accident date, beside any other date's label (assessment, first visit, discharge, request) flagged low for
+  staff (9 of 26 DATE codes in Dell's templates); an EMPLOYER's own form keeps the history minimisation (P3 is for case
+  managers only); "left empty on purpose" honoured only for address lines 2+ (server checks); load-forms refuses a
+  0-question map (TPN PAF); trial extension past 366 days = clear refusal; timing budgets of the hostile RTF test
+  (flaky at machine load 30). Report: session scratchpad `bh-onboard/verify.md`.
 
 ## TOP – Blue Heart after the demo: Dell's "all-in-one / replace TM3" idea (P0; added Fri 2026-10-23 ~14:30 UTC, revised ~14:50 UTC after review)
 - **Demo held Fri 23/10 11:30 BST, "went really well"** (Khuram). Khuram's words: "Dell mentnioed that here is tool like this at the moment" –

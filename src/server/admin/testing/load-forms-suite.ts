@@ -146,5 +146,19 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
       assert.ok(again.files.filter((f) => f.status === "skipped").some((f) => /already in the clinic's forms library/.test(f.reason ?? "")));
       assert.equal((await listForms(ctx, CLINIC)).length, 3);
     });
+
+    it("verify fix: a file that converts without a single question (a form kept in text boxes) is refused, never loaded", async () => {
+      const own = fs.mkdtempSync(path.join(os.tmpdir(), "clinforms-load-forms-empty-"));
+      try {
+        // Fictional: the whole form sits in a drawn text box, which the RTF converter leaves out.
+        fs.writeFileSync(path.join(own, "Text box form.rtf"), "{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}{\\shp{\\*\\shpinst{\\sp{\\sn shapeType}{\\sv 202}}{\\shptxt \\pard Name: <<P_SURNAME>>\\par}}}}");
+        const r = await loadClinicForms(ctx, { tenantId: OTHER, dir: own, maps: {}, readMissing: true, confirm: true });
+        assert.equal(r.files[0]?.status, "refused", JSON.stringify(r.files[0]));
+        assert.match(r.files[0]?.reason ?? "", /No questions were found in this file/);
+        assert.equal((await listForms(ctx, OTHER)).length, 0, "nothing stored");
+      } finally {
+        fs.rmSync(own, { recursive: true, force: true });
+      }
+    });
   });
 }

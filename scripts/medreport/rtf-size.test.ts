@@ -77,7 +77,9 @@ test("large-picture templates (3, 8 and 11.5 MB) convert – browser and server 
     const started = Date.now();
     const local = await readFormFile({ name: "Heathfield IA.rtf", bytes: rtf });
     const ms = Date.now() - started;
-    assert.ok(ms < 3000, `${size} MB converted in ${ms} ms`);
+    // Budgets leave room for a busy machine (verify 10/2026: 4 s seen at load 30 for a 0.6 s case); quadratic work on
+    // 11.5 MB would take minutes.
+    assert.ok(ms < 10_000, `${size} MB converted in ${ms} ms`);
     const server = decodeFormFile(b64(rtf), { convertRtf: true });
     assert.equal(local.sha256, server.sha256, "the same Word file in the browser and on the server");
     assert.equal(sha256Hex(local.bytes), local.sha256);
@@ -128,8 +130,8 @@ test("hostile files finish quickly with bounded memory (inside and around pictur
     const t = Date.now();
     const r = convertRtfToDocx(doc(inner), { maxBytes: MAX_FORM_FILE_BYTES });
     assert.ok(r.docx.byteLength < 20_000);
-    assert.ok(Date.now() - t < 3000, `took ${Date.now() - t} ms`);
+    assert.ok(Date.now() - t < 10_000, `took ${Date.now() - t} ms`);
   }
-  assert.ok(Date.now() - started < 10_000, `all took ${Date.now() - started} ms`);
+  assert.ok(Date.now() - started < 40_000, `all took ${Date.now() - started} ms`);
   assert.ok(process.memoryUsage().heapUsed - heapBefore < 400 * MB, "memory stays bounded");
 });

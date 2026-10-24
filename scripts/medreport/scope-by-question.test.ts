@@ -1,8 +1,8 @@
 /**
- * P3 (10/2026, scope by question – core/forms.ts formScope): an employer or case-manager referrer's form that
+ * P3 (10/2026, scope by question – core/forms.ts formScope): a case-manager referrer's form that
  * explicitly ASKS for the past medical or social history gets it drafted (its note field and terms are sent), with
- * those terms confined to the asking questions (SCOPE_TERM, blocking, anywhere else); return-to-work forms and forms
- * that do not ask keep the minimisation; every other referrer type has no scope, as before. Fictional data only
+ * those terms confined to the asking questions (SCOPE_TERM, blocking, anywhere else); an employer's own form,
+ * return-to-work forms and forms that do not ask keep the minimisation; every other referrer type has no scope, as before. Fictional data only
  * (Daniel Brooks, sim-pat-002, whose first note carries a structured past medical and social history).
  */
 import { test } from "node:test";
@@ -54,7 +54,7 @@ function form(type: ReferrerType, title: string, labels: string[]): FormDefiniti
 
 const IA = (type: ReferrerType) => form(type, "Initial Assessment Report", ["History of presenting complaint", "Past medical history", "Social history", "Treatment plan"]);
 
-test("formScope: asked history is in scope for case managers and employers – confined to its questions; RTW forms and other forms keep minimisation", () => {
+test("formScope: asked history is in scope for case managers – confined to its questions; employers' own forms, RTW forms and other forms keep minimisation", () => {
   for (const type of ["mlc", "solicitor", "insurer", "other"] as const) assert.deepEqual(formScope(type, IA(type)), { excludeFields: [], excludeTerms: [] }, type);
 
   const cm = formScope("case_manager", IA("case_manager"));
@@ -65,12 +65,15 @@ test("formScope: asked history is in scope for case managers and employers – c
     { terms: ["social history", "smoker", "smoking", "alcohol", "units per week", "recreational drugs"], sectionKeys: ["F-04"] },
   ]);
   // Only the past medical history asked: the social history stays withheld.
-  const pmhOnly = formScope("employer", form("employer", "Physiotherapy Assessment", ["Relevant medical history", "Findings"]));
+  const pmhOnly = formScope("case_manager", form("case_manager", "Physiotherapy Assessment", ["Relevant medical history", "Findings"]));
   assert.deepEqual(pmhOnly.excludeFields, ["note.socialHistory"]);
   assert.ok(pmhOnly.excludeTerms.includes("smoking") && !pmhOnly.excludeTerms.includes("medical history"));
   assert.deepEqual(pmhOnly.confineTerms?.map((g) => g.sectionKeys), [["F-02"]]);
 
   const employerScope = formScope("employer");
+  // An employer's own form goes to the employer: minimisation whatever it asks (verify fix 10/2026).
+  assert.deepEqual(formScope("employer", IA("employer")), employerScope);
+  assert.deepEqual(formScope("employer", form("employer", "Physiotherapy Assessment", ["Relevant medical history", "Social history"])), employerScope);
   // Return-to-work forms (by title or by a question) and forms that do not ask: unchanged minimisation.
   assert.deepEqual(formScope("case_manager", form("case_manager", "Return to Work Report", ["Past medical history", "Fitness"])), employerScope);
   assert.deepEqual(formScope("employer", form("employer", "Physiotherapy Report", ["Past medical history", "Is the employee fit to return to their normal duties?"])), employerScope);

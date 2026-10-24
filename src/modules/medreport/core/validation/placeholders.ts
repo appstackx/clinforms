@@ -13,7 +13,7 @@
  *
  * Owner: ai agent.
  */
-import { isSectionAnswered } from "../forms";
+import { isBlankByDesign, isSectionAnswered } from "../forms";
 import type { ReportFlag } from "../types";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -34,7 +34,8 @@ export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
   for (const section of input.report.sections ?? []) {
     if (section.fieldId) {
       // Form reports: sign-off fields are filled from the approval receipt.
-      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: section.blankFromRecords })) continue;
+      const field = input.form?.fields.find((f) => f.id === section.fieldId);
+      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: isBlankByDesign(section, field) })) continue;
       const required = specs.get(section.key)?.required ?? true;
       if (!required) {
         flags.push(

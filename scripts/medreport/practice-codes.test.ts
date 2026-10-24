@@ -263,3 +263,58 @@ test("Megan Hart (fictional) on the form: record values in place, empty address 
   assert.equal(filled.get("p26"), "Date of report: 24/10/2026");
   assert.deepEqual(warnings.filter((w) => /not found|could not/.test(w)), []);
 });
+
+test("verify fix: <<DATE>> beside a label naming another date – the accident's date from the record, any other date flagged", () => {
+  const para = (id: string, text: string) => ({ id, kind: "paragraph" as const, text, isEmpty: false, hasPlaceholder: false });
+  const parsed = {
+    kind: "docx" as const,
+    blocks: [
+      para("p0", "Accident date: <<DATE>>"),
+      para("p1", "First appointment:      Discharged on: <<DATE>>"),
+      para("p2", "Date of first visit: <<DATE>>"),
+      para("p3", "Date: <<DATE>>"),
+      para("p4", "Form completed: <<DATE>>"),
+      para("p5", "Accident date:            Report date: <<DATE>>"),
+      para("p6", "Client: <<P_SURNAME>>      Assessed on: <<DATE>>"),
+    ],
+    warnings: [],
+  };
+  const r = bindPracticeMergeCodes(parsed, []);
+  const by = (block: string) => {
+    const f = r.fields.find((x) => x.anchor.kind === "docx" && x.anchor.blockId === block && x.anchor.placeholderText === "<<DATE>>");
+    assert.ok(f, block);
+    return { path: pathOf(f), confidence: f.confidence, note: f.note ?? "", answerType: f.answerType };
+  };
+  assert.deepEqual({ ...by("p0"), note: undefined }, { path: "incident.date", confidence: "medium", note: undefined, answerType: "date" }, "the accident's date, not today's");
+  assert.match(by("p0").note, /asks for the date of the accident/);
+  for (const b of ["p1", "p2", "p6"]) {
+    assert.equal(by(b).path, "report.date", b);
+    assert.equal(by(b).confidence, "low", `${b}: flagged for staff`);
+    assert.match(by(b).note, /names another date than the report's/);
+  }
+  for (const b of ["p3", "p4", "p5"]) assert.deepEqual([by(b).path, by(b).confidence], ["report.date", "high"], `${b}: the report's date`);
+});
+
+test("verify fix: 'left empty on purpose' only counts for address lines – a forged flag elsewhere never passes approval or removes a code", async () => {
+  const { form: proposed, docx } = await readFixture();
+  const form: FormDefinition = { ...proposed, status: "confirmed", confirmed: { by: "Sarah Reid", at: AT } };
+  const bundle = getDemoBundle("megan-hart");
+  const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-24" }), now: new Date(AT), id: "rpt_codes_forged" });
+  const hosp = at(form, "p14", "<<P_HOSP_NUM>>");
+  const line4 = at(form, "p8", "<<P_ADDRESS4>>");
+  const s = report.sections.find((x) => x.key === hosp.id);
+  assert.ok(s);
+  // The browser sends the report: a section flagged "left empty on purpose" that is not an address line.
+  s.blankFromRecords = true;
+  s.status = "complete";
+  report.gaps = report.gaps.filter((g) => g.sectionKey !== hosp.id);
+  assert.ok(unresolvedMergeFields(form, report).some((u) => u.text === "<<P_HOSP_NUM>>"), "the code still counts as left");
+  const v = validateReport(report, formToTemplate(form), { form });
+  assert.equal(v.canSign, false);
+  assert.ok(v.flags.some((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === hosp.id), "the empty staff entry blocks approval");
+  const answers = buildFormAnswers(report, form);
+  assert.deepEqual(answers[hosp.id], {}, "not written as a removed code");
+  assert.deepEqual(answers[line4.id], { text: "", blank: true }, "a real empty address line still is");
+  const out = fillDocx(docx, form, answers, { draft: true });
+  assert.ok((await mergeTokensInOutput(out, "docx")).includes("<<P_HOSP_NUM>>") || buildDocxOutline(out).blocks.some((b) => /not answered yet|<<P_HOSP_NUM>>/.test(b.text)), "the draft still shows it is unanswered");
+});

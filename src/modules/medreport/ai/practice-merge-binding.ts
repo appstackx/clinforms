@@ -94,6 +94,23 @@ function labelLeft(block: OutlineBlock, byId: Map<string, OutlineBlock>): string
 
 const quote = (s: string) => `“${s}”`;
 
+/**
+ * The part of a printed label nearest to its code: labels run together on a line ("First appointment:      Discharged
+ * on: <<DATE>>") – the last part ("Discharged on") is the code's own.
+ */
+function nearestLabel(label: string): string {
+  const parts = label
+    .split(/:\s*|\s{2,}|\t/)
+    .map((s) => s.trim())
+    .filter((s) => /[A-Za-z]/.test(s));
+  return parts.length ? parts[parts.length - 1] : label;
+}
+/** A date code beside the accident's label ("Accident date", "Injury date"). */
+const ACCIDENT_DATE_LABEL = /\b(?:accident|injury|incident|onset|occurrence|collision|RTA)\b/i;
+/** A date code beside a label naming another date than the report's ("Date of first visit", "Discharged on"). */
+const OTHER_DATE_LABEL =
+  /\b(?:birth|DOB|assess\w*|attend\w*|seen|appointment|admi(?:ssion|tted)|discharge\w*|treatment|referr\w*|instruct\w*|request\w*|surgery|operation|examin\w*|consultation|session|first|initial|last|next|review|follow[- ]?up|start\w*|return\w*)\b/i;
+
 function recordNote(code: string, entry: PracticeCode): string {
   return `From the clinic system's merge code ${code} (${entry.meaning}): filled from the record.`;
 }
@@ -156,6 +173,36 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
     };
   }
   if (b.kind !== "record") throw new Error("address codes are proposed by addressProposals");
+  // Verify fix (10/2026): the clinic system prints the LETTER's date for <<DATE>> wherever the template puts it – also
+  // beside an accident date's or an assessment date's label. Beside the accident it is the record's accident date
+  // (flagged); beside any other date it stays the report date but is flagged for staff to check.
+  if (b.path === "report.date" && label) {
+    const near = nearestLabel(label);
+    if (ACCIDENT_DATE_LABEL.test(near)) {
+      return {
+        ...base,
+        label: printed || near,
+        guidance: guidanceFor("Filled from the record: the date of the accident."),
+        answerType: "date",
+        fillSource: { kind: "registration", path: "incident.date" },
+        confidence: "medium",
+        note: `The clinic system prints the letter's date for ${c.text}, but the form's label ${quote(near)} asks for the date of the accident: filled from the record's accident date – check it.`,
+        fromRecords: true,
+      };
+    }
+    if (OTHER_DATE_LABEL.test(near)) {
+      return {
+        ...base,
+        label: printed || entry.label,
+        guidance: guidanceFor(`Filled from the record: ${entry.meaning}.`),
+        answerType: b.answerType,
+        fillSource: { kind: "registration", path: b.path },
+        confidence: "low",
+        note: `${recordNote(c.text, entry)} The form's label ${quote(near)} names another date than the report's – check it, and choose where it comes from in the mapping (for example the first appointment or the discharge date).`,
+        fromRecords: true,
+      };
+    }
+  }
   const doubtful = entry.doubtfulBeside && label && entry.doubtfulBeside.test(label);
   const location = b.path === "clinic.name";
   return {

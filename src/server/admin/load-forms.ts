@@ -284,6 +284,17 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       results.push({ ...base, status: "skipped", reason: "No map for this file in the maps file (add one, or use --read-missing)." });
       continue;
     }
+    // Verify fix (10/2026): a map without a single question is never loaded – staff could not confirm it, and the file
+    // is usually a form kept in drawn text boxes (left out when an RTF file is converted), i.e. it came out empty.
+    if (form.fields.length === 0) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: mapped ? "json" : "reading",
+        reason: "No questions were found in this file (a form kept in drawn text boxes is left out when an RTF file is converted): keep it in the clinic system, or use a version without text boxes.",
+      });
+      continue;
+    }
     // Every map: the file's mail-merge fields (approval stays blocked while one is left) and the RTF notes.
     const mergeFields = await findFormMergeFields(file);
     const notes = file.convertedFrom?.notes ?? [];

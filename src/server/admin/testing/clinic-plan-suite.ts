@@ -247,5 +247,16 @@ export function defineClinicPlanSuite(label: string, factory: () => Promise<Clin
       }
       await assert.rejects(setTrial(t.db, { kind: "script" }, NEW, { days: 3, start: "now" }, now()), /closed/, "a closed clinic gets no trial");
     });
+
+    it("verify fix: an extension past 366 days in all is refused with a clear message (a running trial too), nothing changed", async () => {
+      const slug = "trial-cap-test";
+      await clinic(t.db, slug, true, now().toISOString());
+      await setTrial(t.db, { kind: "script" }, slug, { days: 3, start: "now" }, now());
+      const before = await getClinicPlan(ctx(), slug);
+      await assert.rejects(extendTrial(t.db, { kind: "script" }, slug, 366, now()), (err: Error) => err instanceof RepoInputError && /The trial with its extension must be 1–366 days/.test(err.message));
+      assert.deepEqual(await getClinicPlan(ctx(), slug), before, "unchanged");
+      const ok = await extendTrial(t.db, { kind: "script" }, slug, 363, now());
+      assert.equal(ok.trialDays, 366);
+    });
   });
 }

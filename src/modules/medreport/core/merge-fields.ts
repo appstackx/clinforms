@@ -19,7 +19,7 @@
  *
  * Browser-safe and pure.
  */
-import { formAnchorPdfFieldNames, isSectionAnswered } from "./forms";
+import { formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
 import type { FormDefinition, FormField, FormMergeField, Report } from "./types";
 
 const TOKEN = "«[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}»|<<[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}>>|\\bMERGEFIELD\\b";
@@ -56,7 +56,7 @@ export interface UnresolvedMergeField extends FormMergeField {
 function answeredOrSignoff(field: FormField, report: Pick<Report, "sections">): boolean {
   if (field.fillSource.kind === "signoff") return true; // written from the approval receipt
   const section = report.sections.find((s) => s.key === field.id);
-  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: section.blankFromRecords }));
+  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: isBlankByDesign(section, field) }));
 }
 
 function inBlock(anchorBlockId: string, blockId: string): boolean {

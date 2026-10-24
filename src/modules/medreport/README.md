@@ -795,7 +795,8 @@ same calls per patient.
   and flag it if it appears in an answer (`formScope()`), as the built-in employer template does.
   *Fix 10/2026 (P3, scope by question):* `formScope(type, form)` – history a form explicitly ASKS for ("Past medical
   history", "Relevant medical history", "Social history" – a drafted question's printed label or section) is no
-  longer withheld for employer / case-manager referrers: its note field and terms are sent for drafting, and
+  longer withheld for case-manager referrers (an EMPLOYER's own form keeps the full minimisation whatever it asks –
+  verify fix 10/2026: the report goes to the employer): its note field and terms are sent for drafting, and
   `TemplateScope.confineTerms` keeps those terms to the asking questions (SCOPE_TERM, blocking, in any other answer;
   the form block tells the drafting call "Only in the answer to F-07 …"). Return-to-work / fitness-for-work forms
   (title or a question) and forms that do not ask keep the full minimisation (Kingsway unchanged). Tests:
@@ -1544,7 +1545,13 @@ templates themselves are gitignored and never committed).
   only): one question per code that REPLACES exactly that code (`replace_placeholder`), answered from the record –
   `registration` paths for name parts, DOB, telephone, employer, the referrer's reference (`<<P_GROUPREF>>`), the
   treating clinician (`<<P_CONSNAME>>`), the report date (`<<DATE>>`), the clinic's name; `<<P_ALTERNATE_REF1>>` by
-  the form's label (e.g. "Date of Accident" → `incident.date`). **Addresses:** codes on lines of their own are spread
+  the form's label (e.g. "Date of Accident" → `incident.date`). *Verify fix 10/2026:* the clinic system prints the
+  LETTER's date for `<<DATE>>` wherever the template puts it – beside the accident's label ("Accident date: <<DATE>>")
+  it is bound to `incident.date` (medium, noted); beside any other date's label (the label part nearest the code:
+  e.g. a first visit, an assessment, a discharge or a request) it stays
+  `report.date` but is LOW confidence with a note, so staff choose the source in the mapping review. A section's
+  `blankFromRecords` counts (approval checks, merge-code check, forms engine) only for an address line 2+
+  (`isBlankByDesign`). **Addresses:** codes on lines of their own are spread
   over those lines (`part: {index, of}` on the registration fill source – the record's lines in order, the last printed
   line takes any left over, a line the address does not have is left empty: `ReportSection.blankFromRecords`, and the
   fill removes the code); codes on one line (`<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>`) are ONE answer (the full

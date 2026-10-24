@@ -143,16 +143,18 @@ export async function extendClinicTrial(ctx: DbContext, tenantId: string, days: 
   const plan = await getClinicPlan(ctx, tenantId);
   if (!plan || plan.status !== "trial") throw new RepoInputError(`The clinic "${tenantId}" has no trial to extend.`);
   const at = nowIso(ctx);
+  // Verify fix (10/2026): the total is checked for a running or ended trial too (trial_days is CHECKed ≤ 366 in the
+  // table – a long extension was a database error instead of this message).
+  const total = (plan.trialDays ?? 0) + days;
+  assertDays(total, "The trial with its extension");
   if (!plan.trialEndsAt) {
-    const total = (plan.trialDays ?? 0) + days;
-    assertDays(total, "The trial with its extension");
     await ctx.db.updateTable("clinic_plan").set({ trial_days: total, updated_at: at }).where("tenant_id", "=", tenantId).execute();
     return saved(ctx, tenantId);
   }
   const from = Date.parse(plan.trialEndsAt) > Date.parse(at) ? plan.trialEndsAt : at;
   await ctx.db
     .updateTable("clinic_plan")
-    .set({ trial_ends_at: addDays(from, days), trial_days: (plan.trialDays ?? 0) + days, updated_at: at })
+    .set({ trial_ends_at: addDays(from, days), trial_days: total, updated_at: at })
     .where("tenant_id", "=", tenantId)
     .execute();
   return saved(ctx, tenantId);
