@@ -441,3 +441,99 @@ test("writeAfter: the answer goes after a printed label that has no answer space
   assert.equal(t.p1, "01. 25/03/2026 07.", "the unanswered slot keeps its printed number");
   assert.equal(t.p2, "Society no:", "a label is never removed, even with clearPlaceholder");
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Independent verify (10/2026): placeholders in running text, Y / N columns, other printed marks, hostile sizes
+ * ----------------------------------------------------------------------------------------------*/
+
+test("an “[X]” inside running text stays the template's fill-in placeholder; checklists and option boxes stay tick boxes", () => {
+  const file = docx(
+    [
+      p(r("The client attended [X] sessions over [X] weeks.")),
+      p(r("Dear [X],")),
+      p(r("Expected recovery: [x] months")),
+      p(r("Consent given: [x] yes [ ] no")),
+      p(r("[x] Manual therapy")),
+      tbl(tr(cell("Back at work now?"), cell("Yes [x]"), cell("No []")), tr(cell("Grade"), cell("[] 0"), cell("Full recovery   [x]"))),
+    ].join(""),
+  );
+  const ol = outlineOf(file);
+  assert.equal(ol.p0.checkboxGlyphs ?? 0, 0);
+  assert.deepEqual(findPlaceholders(texts(file).p0).map((m) => m.text), ["[X]", "[X]"]);
+  assert.equal(ol.p1.placeholderText, "[X]");
+  assert.equal(ol.p2.placeholderText, "[x]");
+  assert.equal(ol.p3.checkboxGlyphs, 2, "a line that also prints an unticked box is a checklist");
+  assert.equal(ol.p3.hasPlaceholder, false);
+  assert.equal(ol.p4.checkboxGlyphs, 1);
+  for (const id of ["t0.r0.c1", "t0.r0.c2", "t0.r1.c1", "t0.r1.c2"]) assert.equal(ol[id].checkboxGlyphs, 1, id);
+  assert.equal(withBracketBoxesAsGlyphs("attended [X] sessions | Yes [x]"), "attended [X] sessions | Yes ☒");
+  // The rules reading maps the running-text placeholders as text answers, so they are replaced, never left printed.
+  const parsed = { kind: "docx" as const, blocks: buildDocxOutline(file).blocks, warnings: [] };
+  const { fields } = postValidateFields(parsed, proposeFieldsByRules(parsed), { confidenceCap: "low" });
+  const inProse = fields.filter((f) => f.anchor.kind === "docx" && ["p0", "p1", "p2"].includes(f.anchor.blockId));
+  assert.ok(inProse.length >= 3 && inProse.every((f) => f.anchor.kind === "docx" && f.anchor.target === "replace_placeholder"), JSON.stringify(inProse.map((f) => f.anchor)));
+  const out = texts(fillDocx(file, form(inProse), Object.fromEntries(inProse.map((f) => [f.id, { text: "6" }])), { draft: false }));
+  assert.equal(out.p0, "The client attended 6 sessions over 6 weeks.");
+  assert.equal(out.p2, "Expected recovery: 6 months");
+});
+
+const YN = docx(tbl(tr(cell(""), cell("Y"), cell("N")), tr(cell("Saw a doctor"), cell(""), cell("x")), tr(cell("Back at work now?"), cell("Y [ ]"), cell("N [x]"))));
+const YN_FORM = form([
+  field("F-01", "Saw a doctor", { kind: "docx", target: "mark_cell", blockId: "t0.r1.c1", optionCells: [{ option: "Y", blockId: "t0.r1.c1" }, { option: "N", blockId: "t0.r1.c2" }], mark: "x" }, { answerType: "yes_no", options: ["Y", "N"] }),
+  field("F-02", "Back at work now?", { kind: "docx", target: "checkbox_glyph", blockId: "t0.r2.c1", optionGlyphs: [{ option: "Y", blockId: "t0.r2.c1", glyphIndex: 0 }, { option: "N", blockId: "t0.r2.c2", glyphIndex: 0 }] }, { answerType: "yes_no", options: ["Y", "N"] }),
+]);
+
+test("“Y” / “N” columns and boxes: a Yes / No answer marks and ticks the printed letter (never left blank)", () => {
+  const warnings: string[] = [];
+  const t = texts(fillDocx(YN, YN_FORM, { "F-01": { text: "Yes", value: true }, "F-02": { text: "Yes", value: true } }, { draft: false, onWarning: (w) => warnings.push(w) }));
+  assert.deepEqual([t["t0.r1.c1"], t["t0.r1.c2"]], ["x", ""], "the default mark under N moves to Y");
+  assert.deepEqual([t["t0.r2.c1"], t["t0.r2.c2"]], ["Y [x]", "N [ ]"]);
+  assert.deepEqual(warnings, []);
+  const no = texts(fillDocx(YN, YN_FORM, { "F-01": { text: "No", value: false }, "F-02": { text: "No", value: false } }, { draft: false }));
+  assert.deepEqual([no["t0.r1.c1"], no["t0.r1.c2"], no["t0.r2.c1"], no["t0.r2.c2"]], ["", "x", "Y [ ]", "N [x]"]);
+  assert.deepEqual(validateChoiceMarks({ report: reportWith({ "F-01": { kind: "yes_no", value: true }, "F-02": { kind: "yes_no", value: false } }), form: YN_FORM } as unknown as ValidatorInput), []);
+});
+
+test("approval check: a Yes / No answer on cells or boxes that print no Yes / No option blocks (it would print blank)", () => {
+  const odd = form([
+    field("F-01", "Return to work", { kind: "docx", target: "mark_cell", blockId: "t0.r1.c1", optionCells: [{ option: "Full", blockId: "t0.r1.c1" }, { option: "Partial", blockId: "t0.r1.c2" }] }, { answerType: "yes_no", options: ["Full", "Partial"] }),
+    field("F-02", "Duties", { kind: "docx", target: "checkbox_glyph", blockId: "t0.r2.c1", optionGlyphs: [{ option: "Full", blockId: "t0.r2.c1", glyphIndex: 0 }, { option: "Light", blockId: "t0.r2.c2", glyphIndex: 0 }] }, { answerType: "yes_no", options: ["Full", "Light"] }),
+    field("F-03", "Taping", { kind: "docx", target: "mark_cell", blockId: "t0.r1.c1", optionCells: [{ option: "Taping", blockId: "t0.r1.c1" }] }, { answerType: "checkbox", options: ["Taping"] }),
+  ]);
+  const flags = validateChoiceMarks({ report: reportWith({ "F-01": { kind: "yes_no", value: true }, "F-02": { kind: "yes_no", value: false }, "F-03": { kind: "checkbox", value: false } }), form: odd } as unknown as ValidatorInput);
+  assert.deepEqual(flags.map((f) => [f.sectionKey, f.severity]), [["F-01", "blocking"], ["F-02", "blocking"]], "a single printed item is ticked or not – no flag");
+});
+
+test("mark the column: ☑ and × printed as a default in another column are cleared too", () => {
+  for (const mark of ["☑", "×", "✕", "✖"]) {
+    const file = docx(tbl(tr(cell(""), cell("Yes"), cell("No")), tr(cell("Saw a doctor"), cell(mark), cell(""))));
+    const t = texts(fillDocx(file, form([yesNoRow("F-01", "Saw a doctor", 1)]), { "F-01": { text: "No", value: false } }, { draft: false }));
+    assert.deepEqual([t["t0.r1.c1"], t["t0.r1.c2"]], ["", "X"], mark);
+  }
+});
+
+test("hostile sizes: a paragraph of 160,000 typed boxes or bracket placeholders is read in linear time", () => {
+  for (const unit of ["[ ]", "[a]", "[x]"]) {
+    const file = docx(p(Array.from({ length: 160_000 }, () => r(unit)).join("")));
+    const t0 = Date.now();
+    const ol = buildDocxOutline(file);
+    const ms = Date.now() - t0;
+    // Linear: about 1.5 s here; the earlier per-match scans took 25–30 s on the same input.
+    assert.ok(ms < 10_000, `${unit}: ${ms} ms`);
+    assert.ok(ol.blocks.length >= 1);
+  }
+});
+
+test("a table row of exact height (RTF templates) grows to fit a written answer; rows without an answer keep their height", () => {
+  const exactRow = (label: string) => `<w:tr><w:trPr><w:trHeight w:val="284" w:hRule="exact"/></w:trPr>${cell(label)}${cell("")}</w:tr>`;
+  const file = docx(`<w:tbl>${exactRow("Any other comments")}${exactRow("Treatment plan")}</w:tbl>`);
+  const f = form([
+    field("F-01", "Any other comments", { kind: "docx", target: "table_cell", blockId: "t0.r0.c1" }, { answerType: "long_text" }),
+    field("F-02", "Treatment plan", { kind: "docx", target: "table_cell", blockId: "t0.r1.c1" }, { answerType: "long_text", required: false }),
+  ]);
+  const long = "Daniel Brooks (fictional) is progressing well with a graded home programme. ".repeat(4).trim();
+  const xml = new PizZip(fillDocx(file, f, { "F-01": { text: long } }, { draft: false })).file("word/document.xml")!.asText();
+  const rows = xml.split("<w:tr>").slice(1);
+  assert.match(rows[0], /<w:trHeight w:val="284" w:hRule="atLeast"\/>/, "the answered row may grow");
+  assert.match(rows[1], /<w:trHeight w:val="284" w:hRule="exact"\/>/, "an unanswered row keeps its exact height");
+});

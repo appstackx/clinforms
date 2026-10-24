@@ -753,6 +753,17 @@ export function matchOption(options: readonly string[] | undefined, text: string
   return prefixes.length === 1 ? options[prefixes[0].i] : null;
 }
 
+/**
+ * The printed option a yes / no answer picks (10/2026): the option that starts with "Yes" / "No", else one printed as
+ * the single letter "Y" / "N" (the readings take a "Y | N" pair as yes / no). Null when neither is printed. Pure.
+ */
+export function yesNoOption(options: readonly string[] | undefined, value: boolean): string | null {
+  const list = options ?? [];
+  const word = value ? /^\s*yes\b/i : /^\s*no\b/i;
+  const letter = value ? /^\s*y\.?\s*$/i : /^\s*n\.?\s*$/i;
+  return list.find((o) => word.test(o)) ?? list.find((o) => letter.test(o)) ?? null;
+}
+
 /** An answer that says no printed option applies ("None", "Nil", "N/A"): nothing is marked (10/2026). */
 const NONE_OF_THEM = /^(?:none|nil|no|n\/a|not applicable|none of (?:them|these|the above))\.?$/i;
 

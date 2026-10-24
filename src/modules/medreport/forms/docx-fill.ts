@@ -34,7 +34,7 @@ import "server-only";
  *
  * Owner: forms-engine agent. Signature final.
  */
-import { isAnswerableField, isUnknownAnswer, matchOption, namedOptions, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import { isAnswerableField, isUnknownAnswer, matchOption, namedOptions, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
 import type { FormDefinition, FormField } from "../core/types";
 import {
   CHECKED_GLYPH,
@@ -838,8 +838,9 @@ function resolveGlyphs(ctx: Ctx, field: FormField): GlyphTarget[] {
 function chosenOptions(field: FormField, answer: FormFillAnswer, options: string[]): Set<string> | null {
   const value = answer.value;
   const text = (answer.text ?? "").trim();
-  const yes = options.find((o) => /^\s*yes\b/i.test(o));
-  const no = options.find((o) => /^\s*no\b/i.test(o));
+  // "Yes…" / "No…", or a printed "Y" / "N" pair (10/2026).
+  const yes = yesNoOption(options, true) ?? undefined;
+  const no = yesNoOption(options, false) ?? undefined;
   if (typeof value === "boolean") {
     if (options.length === 1) return new Set(value ? options : []);
     const pick = value ? yes : no;
@@ -937,8 +938,11 @@ interface MarkTarget {
   ref: BlockRef | null;
 }
 
-/** A cell that holds only a mark ("x", "X", "✓"…) – a mark printed as a default, or one written before. */
-const MARK_ONLY_RE = /^[\s\u00A0]*[xX\u2713\u2714\u2717\u2718\u221A\u2612][\s\u00A0]*$/;
+/**
+ * A cell that holds only a mark ("x", "X", "✓"…) – a mark printed as a default, or one written before. Also the other
+ * marks forms print for "this one" (10/2026 verify): ☑, the multiplication sign ×, ✕ and ✖.
+ */
+const MARK_ONLY_RE = /^[\s\u00A0]*[xX\u2713\u2714\u2717\u2718\u221A\u2612\u2611\u00D7\u2715\u2716][\s\u00A0]*$/;
 
 function resolveMarkCells(ctx: Ctx, field: FormField): MarkTarget[] {
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
@@ -1141,6 +1145,14 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
   for (const p of Array.from(new Set(drop.map((l) => l.p)))) removeIfBlank(p);
 }
 
+/** Every table row around `el` whose height is exact is set to "at least" that height, so an answer never clips. */
+function growExactRows(ctx: Ctx, el: XmlElement): void {
+  for (let tr = isW(el, "tr") ? el : ancestorW(el, "tr"); tr; tr = ancestorW(tr, "tr")) {
+    const height = firstW(firstW(tr, "trPr"), "trHeight");
+    if (height && wAttr(height, "hRule") === "exact") setWAttr(ctx.dom, height, "hRule", "atLeast");
+  }
+}
+
 /* ------------------------------------------------------------------------------------------------
  * DRAFT banner
  * ----------------------------------------------------------------------------------------------*/
@@ -1282,6 +1294,9 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
       default:
         break;
     }
+    // 10/2026 verify: a table row of EXACT height (RTF templates' negative row heights) would clip a longer answer in
+    // Word; once something is written there it becomes "at least" that height – the same look for a one-line answer.
+    if (!skip) growExactRows(ctx, job.ref.el);
   }
 
   if (opts.draft) insertDraftBanner(ctx);

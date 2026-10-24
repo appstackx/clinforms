@@ -1538,10 +1538,17 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
   longer "[…]" fill-in placeholders (`findPlaceholders`). The fill writes the form's own style: "[ ]" → "[x]", a
   ticked default "[x]" → "[ ]" when another option is chosen ("[]" stays "[]"). A form without typed boxes gives
   exactly the slots and bytes it always gave (all tick-box text changes are applied per text element from the end,
-  on offsets read on the untouched document).
+  on offsets read on the untouched document). **Verify fix (24/10):** a ticked "[x]"/"[X]" inside running text ("attended
+  [X] sessions", "Dear [X],", "Prognosis: [x] months" – a word or "label:" before it, a lower-case word or , ; . )
+  straight after) is still the template's fill-in PLACEHOLDER, as before 10/2026, unless the same line also prints an
+  unticked typed box (a checklist "[x] yes [ ] no") – `bracketBoxMatches()`. Reading boxes and placeholders is linear
+  in the paragraph (one paragraph of 160,000 boxes or "[a]" placeholders: ~1.5 s; the per-match scans took 25–30 s).
+  A Yes / No answer also picks a printed "Y" / "N" (`core/forms.ts` `yesNoOption()`), and one that no printed option
+  stands for blocks approval (`choice-marks`, tick boxes included) instead of printing blank.
 - **"Mark the column" tables** – `mark_cell` (`DocxAnchor.optionCells` [{option, blockId}], optional `mark`, default
   "X"): one question per row (Yes | No, None | Mild | Severe, a scale, a grade column); the chosen option's cell
-  gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark: that mark again; a
+  gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark – x X ✓ ✔ √ ✗ ✘ ☒ ☑ × ✕
+  ✖: that mark again; a
   cell that prints the option itself, e.g. "40%": the mark after it), and a mark-only cell of every other option is
   CLEARED – a printed default never stays in the wrong column. A "tick all that apply" row (body areas) is a
   `short_text` question whose answer names the options ("Neck, Back", or "None"): `core/forms.ts` `namedOptions()`
