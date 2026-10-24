@@ -1501,3 +1501,40 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   in the public demo) and `scripts/e2e/compare-form-outputs.ts` (two runs' downloads compared part by part / page
   text).
 
+
+## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
+
+Blue Heart keeps each provider's report form as a TM3 letter template: upper-case codes in double angle brackets –
+`<<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>>`, `<<P_DOB>>`, `<<P_ADDRESS1>>…<<P_ADDRESS5>>`, `<<P_POSTCODE>>`,
+`<<P_GROUPREF>>`, `<<P_ALTERNATE_REF1>>`, `<<P_CONSNAME>>`, `<<DATE>>`, `<<P_LOCATION_NAME>>`,
+`<<P_LOCATION_ADDRESS1>>…`, `<<P_LOCATION_POSTCODE>>`, `<<P_EMPLOYER>>`, `<<P_HOMETEL>>`, `<<P_HOSP_NUM>>`… The
+dictionary is `core/practice-merge-codes.ts` (every code in the 19 templates Dell sent is in it – names only; the
+templates themselves are gitignored and never committed).
+
+- **Kept, not blanked:** the RTF converter keeps such codes in the body as printed (`RTF_CONVERTER_VERSION`
+  `rtf-docx-2`; only files with these codes convert to different bytes – the four earlier fixtures are byte-identical
+  to `rtf-docx-1`, pinned in `scripts/medreport/practice-codes.test.ts`). Codes in a page header/footer, «Name»,
+  mixed-case `<<Referral_Date>>` and MERGEFIELD fields are answer spaces exactly as before. A Word form (.docx) with
+  typed codes reads the same way.
+- **Bound at reading** (`ai/practice-merge-binding.ts`, after post-validation, live and rules readings, Word forms
+  only): one question per code that REPLACES exactly that code (`replace_placeholder`), answered from the record –
+  `registration` paths for name parts, DOB, telephone, employer, the referrer's reference (`<<P_GROUPREF>>`), the
+  treating clinician (`<<P_CONSNAME>>`), the report date (`<<DATE>>`), the clinic's name; `<<P_ALTERNATE_REF1>>` by
+  the form's label (e.g. "Date of Accident" → `incident.date`). **Addresses:** codes on lines of their own are spread
+  over those lines (`part: {index, of}` on the registration fill source – the record's lines in order, the last printed
+  line takes any left over, a line the address does not have is left empty: `ReportSection.blankFromRecords`, and the
+  fill removes the code); codes on one line (`<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>`) are ONE answer (the full
+  address). `<<P_LOCATION_…>>` use the clinic's address from its settings (new paths `clinic.addressLines`,
+  `clinic.postcode`). The reading's own question for the same place is replaced; another question on such a line is
+  kept and flagged.
+- **For staff:** a code the record does not hold (`<<P_HOSP_NUM>>`, `<<P_WORKTEL>>`, `<<P_INJURY>>`…) or the dictionary
+  does not know is a question with the path `staff.entry` (never filled by code: a gap staff answer on each report),
+  low confidence, its note naming the code. The new paths are not offered to the live analysis (its output schema is
+  unchanged: `ANALYSIS_REGISTRATION_PATHS`).
+- **Safety block unchanged:** approval stays blocked while any code is left on the form (core/merge-fields.ts); a
+  FINAL render with one is refused.
+- Tests: `scripts/medreport/practice-codes.test.ts` (fictional template `fixtures/rtf/practice-codes-report.rtf`,
+  "Larkfield Rehabilitation Network (fictional)", Megan Hart `sim-pat-001`); e2e `scripts/e2e/practice-codes.cjs`.
+- Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
+  its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
+  per report when another site treated the patient).

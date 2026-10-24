@@ -34,7 +34,7 @@ export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
   for (const section of input.report.sections ?? []) {
     if (section.fieldId) {
       // Form reports: sign-off fields are filled from the approval receipt.
-      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer })) continue;
+      if (section.kind === "declaration" || isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: section.blankFromRecords })) continue;
       const required = specs.get(section.key)?.required ?? true;
       if (!required) {
         flags.push(

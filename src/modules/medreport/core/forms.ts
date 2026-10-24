@@ -357,6 +357,8 @@ export interface ResolvedFormValue {
   value: string | boolean;
   /** Citable IDs ("REG", "FACT-…", "N-…"). */
   sourceIds: string[];
+  /** 10/2026: the record leaves this answer space empty on purpose (an address line it does not have). */
+  blank?: boolean;
 }
 
 function hasFact(facts: ComputedFact[], id: string): boolean {
@@ -419,6 +421,8 @@ export function resolveRegistrationValue(
   path: RegistrationPath,
   ctx: FormValueContext,
   answerType?: AnswerType,
+  /** 10/2026: one line of an address printed over several lines (a registration fill source's `part`). */
+  part?: AddressPart,
 ): ResolvedFormValue | null {
   const { bundle, instructingParty: party, computedFacts: facts } = ctx;
   const reg = bundle.registration;
@@ -451,6 +455,7 @@ export function resolveRegistrationValue(
     case "patient.address":
       return textValue(reg.addressSummary, REG);
     case "patient.addressLines":
+      if (part) return addressPartValue(splitUkAddress(reg.addressSummary).lines, part, REG);
       return textValue(splitUkAddress(reg.addressSummary).lines.join("\n"), REG);
     case "patient.postcode":
       return textValue(splitUkAddress(reg.addressSummary).postcode, REG);
@@ -503,6 +508,18 @@ export function resolveRegistrationValue(
       return textValue(bundleClinic(bundle)?.phone, []);
     case "clinic.email":
       return textValue(bundleClinic(bundle)?.email, []);
+    // 10/2026 (a clinic system's <<P_LOCATION_…>> codes): the clinic's address lines without the postcode, and the
+    // postcode, from the same lines ("postcode last").
+    case "clinic.addressLines": {
+      const lines = clinicAddress(bundle).lines;
+      if (part) return addressPartValue(lines, part, []);
+      return textValue(lines.join("\n"), []);
+    }
+    case "clinic.postcode":
+      return textValue(clinicAddress(bundle).postcode, []);
+    // A detail the record here does not hold: never filled by code – staff enter it (the caller raises the gap).
+    case "staff.entry":
+      return null;
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
@@ -517,6 +534,32 @@ export function resolveRegistrationValue(
       return textValue(clinician.role ?? "Physiotherapist", ids);
     }
   }
+}
+
+/** One line of a postal address printed over `of` lines: which line, 1-based (a registration fill source's `part`). */
+export interface AddressPart {
+  index: number;
+  of: number;
+}
+
+/** The clinic's address lines (postcode last in its settings) split into lines and postcode. */
+function clinicAddress(bundle: EpisodeBundle): { lines: string[]; postcode: string } {
+  const lines = (bundleClinic(bundle)?.addressLines ?? []).map((l) => l.trim()).filter(Boolean);
+  return splitUkAddress(lines.join(", "));
+}
+
+/**
+ * Line `part.index` of an address printed over `part.of` lines: the record's lines in order; the last printed line
+ * takes every line left over (joined with commas); a printed line the record has no line for is BLANK on purpose
+ * (`blank: true` – written as nothing, the clinic system's code removed). An address the record does not hold at all
+ * leaves the first line unanswered (one gap for staff) and the others blank.
+ */
+export function addressPartValue(lines: readonly string[], part: AddressPart, sourceIds: string[]): ResolvedFormValue | null {
+  const of = Math.max(1, Math.floor(part.of));
+  const index = Math.min(of, Math.max(1, Math.floor(part.index)));
+  if (lines.length === 0) return index === 1 ? null : { text: "", value: "", sourceIds, blank: true };
+  const text = index < of ? (lines[index - 1] ?? "") : lines.slice(index - 1).join(", ");
+  return text.trim() ? { text: text.trim(), value: text.trim(), sourceIds } : { text: "", value: "", sourceIds, blank: true };
 }
 
 /** A UK postcode at the end of an address ("MK5 8ZZ", "SW1A 1AA"). */
@@ -734,8 +777,10 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
  * are answered only by their value – their paragraphs are supporting text, not the answer. Text
  * answers are answered when a paragraph has text.
  */
-export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer">): boolean {
+export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer"> & { blankFromRecords?: boolean }): boolean {
   if (section.answer?.kind === "rows") return hasRowContent(section.answer.value);
+  // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have) is answered.
+  if (section.blankFromRecords && !section.paragraphs.some((p) => p.text.trim().length > 0)) return true;
   if (section.answer && section.answer.kind !== "text") {
     return section.answer.value !== null && section.answer.value !== "";
   }
@@ -791,6 +836,11 @@ export interface FormFillAnswer {
   value?: string | boolean | null;
   /** Table questions: the rows, column key → cell text (S2, additive). */
   rows?: FormAnswerRow[];
+  /**
+   * 10/2026: the record leaves this answer space empty on purpose (an address line it does not have): the forms
+   * engine removes the placeholder (a clinic system's merge code) instead of leaving it or a review marker.
+   */
+  blank?: boolean;
 }
 
 /** Answers keyed by form field ID ("F-01"…). */
@@ -847,6 +897,11 @@ export function buildFormAnswers(
       continue;
     }
     const text = answerToText(section);
+    // 10/2026: left empty on purpose by the record – the forms engine removes the clinic system's code there.
+    if (section.blankFromRecords && text.trim() === "") {
+      answers[field.id] = { text: "", blank: true };
+      continue;
+    }
     const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
     if (Array.isArray(structured)) {
       answers[field.id] = { text, rows: structured };

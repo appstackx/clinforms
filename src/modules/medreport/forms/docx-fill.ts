@@ -653,6 +653,26 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   }
 }
 
+/**
+ * Removes the field's exact placeholder from its block (the occurrence a filled answer would have taken), for an
+ * answer the record leaves empty on purpose. Nothing happens when the exact text is not there.
+ */
+function clearPlaceholder(ctx: Ctx, job: Job): void {
+  const { field, ref } = job;
+  const needle = field.anchor.kind === "docx" ? (field.anchor.placeholderText ?? "") : "";
+  if (!needle) return;
+  const occ = occurrences(blockParagraphs(ref), needle);
+  if (occ.length === 0) {
+    ctx.warn(`${where(field)}: the placeholder “${needle}” was not found, so nothing was removed.`);
+    return;
+  }
+  const k = skipKey(ctx, ref.el, needle);
+  const target = occ[Math.min(k, occ.length - 1)];
+  if (!replaceRange(target.p, target.index, target.index + target.length, () => [])) {
+    ctx.warn(`${where(field)}: the placeholder “${needle}” could not be removed.`);
+  }
+}
+
 /** Content controls of a block: inside its paragraphs/cell, or the block-level control around it. */
 function controlsOf(ref: BlockRef): XmlElement[] {
   const inside = descendantsW(ref.el, "sdt");
@@ -965,6 +985,13 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
       continue;
     }
     const text = answerText(field, job.answer);
+    // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have): the
+    // placeholder (a clinic system's merge code) is removed, never left or marked.
+    const blank = text === "" && job.answer.blank === true;
+    if (blank) {
+      if (anchor.target === "replace_placeholder") clearPlaceholder(ctx, job);
+      continue;
+    }
     const unanswered = text === "";
     const kind: RunKind = unanswered ? "unanswered" : "answer";
     const marker = field.fillSource.kind === "signoff" ? `[${field.id} – completed on approval]` : `[${field.id} – not answered yet]`;

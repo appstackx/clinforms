@@ -148,13 +148,26 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
         {src.kind === "registration" ? (
           <div>
             <FieldLabel htmlFor={`${id}-path`}>{tenant ? TENANT_COPY.sources.registrationValue : "TM3 value"}</FieldLabel>
-            <Select id={`${id}-path`} value={src.path} onChange={(e) => setSource({ kind: "registration", path: RegistrationPathSchema.parse(e.target.value) })}>
+            <Select
+              id={`${id}-path`}
+              value={src.path}
+              onChange={(e) => {
+                const path = RegistrationPathSchema.parse(e.target.value);
+                // An address line spread over several printed lines keeps its line while the source stays an address.
+                setSource({ kind: "registration", path, ...(src.part && /addressLines$/.test(path) ? { part: src.part } : {}) });
+              }}
+            >
               {RegistrationPathSchema.options.map((p) => (
                 <option key={p} value={p}>
                   {REGISTRATION_PATH_LABELS[p]}
                 </option>
               ))}
             </Select>
+            {src.part && /addressLines$/.test(src.path) ? (
+              <p className="mt-1 text-xs text-slate-600">
+                Line {src.part.index} of the {src.part.of} address lines printed on the form. A line the address does not have is left empty.
+              </p>
+            ) : null}
           </div>
         ) : null}
         {src.kind === "computed_fact" ? (

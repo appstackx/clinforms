@@ -227,7 +227,16 @@ export const RegistrationPathSchema = z.enum([
   // the address without its postcode, one part per line, and the postcode alone (from the same record).
   "patient.addressLines",
   "patient.postcode",
+  // Additive (10/2026, a clinic system's letter merge codes – core/practice-merge-codes.ts): the clinic's address
+  // without its postcode, one part per line, and the clinic's postcode (from the clinic's settings); and
+  // "staff.entry" – a detail the record here does not hold (e.g. a hospital number): never filled by code, always
+  // left for staff to enter on each report. Not offered to the form reading's model (ai/form-analysis-schema.ts).
+  "clinic.addressLines",
+  "clinic.postcode",
+  "staff.entry",
 ]);
+/** Registration paths only the clinic-system merge codes use (kept out of the live form analysis's choices). */
+export const MERGE_CODE_ONLY_PATHS = ["clinic.addressLines", "clinic.postcode", "staff.entry"] as const;
 /**
  * How a computed fact is written into a form answer (default "summary" = the fact's value).
  * first_score / latest_score: an outcome measure's first or latest recorded score with its date
@@ -577,6 +586,12 @@ export const ReportSectionSchema = z.object({
   fieldId: FormFieldIdSchema.optional(),
   /** Form reports: structured answer for non-text answer types (see FormAnswerSchema). */
   answer: FormAnswerSchema.optional(),
+  /**
+   * Additive (10/2026): the record leaves this answer space empty on purpose – an address line the patient's or the
+   * clinic's address does not have (core/forms.ts, `part` of a registration fill source). The answer counts as given
+   * and the form gets nothing there (the clinic system's merge code is removed).
+   */
+  blankFromRecords: z.boolean().optional(),
 });
 
 export const GapResolutionSchema = z.object({
@@ -897,7 +912,17 @@ export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "
  *   maps each table column key to what it holds (S2, additive).
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("registration"), path: RegistrationPathSchema }),
+  z.object({
+    kind: z.literal("registration"),
+    path: RegistrationPathSchema,
+    /**
+     * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
+     * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
+     * last line taking any that are left; a line the record does not have is written as nothing. Only for
+     * "patient.addressLines" and "clinic.addressLines".
+     */
+    part: z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) }).optional(),
+  }),
   z.object({ kind: z.literal("computed_fact"), factId: FactIdSchema, format: ComputedFactFormatSchema.optional() }),
   z.object({ kind: z.literal("notes_narrative") }),
   z.object({ kind: z.literal("clinician_opinion") }),

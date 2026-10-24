@@ -56,7 +56,7 @@ export interface UnresolvedMergeField extends FormMergeField {
 function answeredOrSignoff(field: FormField, report: Pick<Report, "sections">): boolean {
   if (field.fillSource.kind === "signoff") return true; // written from the approval receipt
   const section = report.sections.find((s) => s.key === field.id);
-  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer }));
+  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: section.blankFromRecords }));
 }
 
 function inBlock(anchorBlockId: string, blockId: string): boolean {

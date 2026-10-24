@@ -37,7 +37,12 @@ export { RTF_NOTE_PREFIX, isConvertedFromRtf, isRtfConversionNote, rtfConversion
 export type { RtfErrorCode } from "./reader";
 export type { RtfStats } from "./model";
 
-export const RTF_CONVERTER_VERSION = "rtf-docx-1" as const;
+/**
+ * "rtf-docx-2" (10/2026): a clinic system's own letter codes (<<P_SURNAME>>, <<DATE>>) are kept in the body instead
+ * of becoming answer spaces – only files with such codes convert to different bytes; every other RTF file gives the
+ * same .docx bytes as "rtf-docx-1".
+ */
+export const RTF_CONVERTER_VERSION = "rtf-docx-2" as const;
 export const RTF_MIME_TYPES = ["application/rtf", "text/rtf"] as const;
 
 export interface RtfConversionResult {
