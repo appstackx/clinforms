@@ -239,6 +239,30 @@ describe("every activity and platform entry point applies its guard (source chec
     }
   });
 
+  it("security fix 24/10 (D2): Settings → Members shows the invitation link only when it was NOT emailed", () => {
+    const source = read("src/app/app/(clinic)/settings/members/actions.ts");
+    const at = source.indexOf("export async function inviteMember");
+    const body = source.slice(at, source.indexOf("export async function", at + 10));
+    assert.match(body, /const link = linkToShare\(captured\) \?\? \(captured \? null : inviteLink\(/, "emailed → no link; no email attempted → the link");
+    assert.doesNotMatch(body, /captured\?\.message\.link/, "never the emailed link itself");
+    assert.match(source, /link: string \| null; delivery: InviteDelivery/);
+    const form = read("src/app/app/(clinic)/settings/members/forms.tsx");
+    assert.match(form, /\{state\.link \? \(\s*<SecretBox/, "the link box only when there is a link");
+    // Invitation emails are throttled per clinic and per address before anything is created or sent.
+    assert.ok(body.indexOf('throttle("invite-clinic"') > 0 && body.indexOf('throttle("invite-clinic"') < body.indexOf("createInvitation"));
+    assert.ok(body.indexOf('throttle("invite-address", email') > 0 && body.indexOf('throttle("invite-address", email') < body.indexOf("createInvitation"));
+  });
+
+  it("security fix 24/10 (D4): the platform's 'Email the invitation to the owner' box is off by default", () => {
+    const form = read("src/app/app/platform/forms.tsx");
+    const box = /<input type="checkbox" name="sendEmail"[^>]*\/>/.exec(form)?.[0] ?? "";
+    assert.ok(box, "the box exists");
+    assert.doesNotMatch(box, /defaultChecked/, "not ticked by default");
+    assert.match(form, /never a shared inbox/);
+    const actions = read("src/app/app/platform/actions.ts");
+    assert.match(actions, /const sendEmail = !\(form\.get\("emailChoice"\) === "1" && form\.get\("sendEmail"\) !== "on"\);/, "unticked → not emailed");
+  });
+
   it("the activity page and its download scope the query by role (the person filter is never taken from the request alone)", () => {
     for (const file of ["src/app/app/(clinic)/settings/activity/page.tsx", "src/app/app/(clinic)/settings/activity/export/route.ts"]) {
       const source = read(file);

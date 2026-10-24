@@ -23,6 +23,7 @@ import { bracketBoxText, findPlaceholders, withBracketBoxesAsGlyphs } from "./do
 import { postValidateFields } from "../ai/form-postvalidate";
 import { proposeFieldsByRules } from "../ai/form-rules";
 import type { ValidatorInput } from "../core/validation";
+import { DocxAnchorSchema, MAX_ANCHOR_OPTIONS } from "../core/schemas";
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -286,6 +287,49 @@ test("delete as necessary: unanswered, unknown or unmatched answers leave every 
   assert.equal(t["t0.r1.c1"], before["t0.r1.c1"]);
   assert.equal(t["t0.r2.c0"], "No overhead lifting", "a restriction that applies is kept");
   assert.ok(warnings.some((w) => /“Hourly” is not one of “Daily\/Weekly\/Monthly”/.test(w)));
+});
+
+test("security fix 24/10/2026: options interleaved over two lines are removed per line from the end – never the wrong characters", () => {
+  const bytes = docx(tbl(tr(tc(p(r("Delete as necessary")), p(r("Alpha Charlie")), p(r("Bravo Delta"))))));
+  const f = field(
+    "F-01",
+    "Pick one",
+    {
+      kind: "docx",
+      target: "delete_options",
+      blockId: "t0.r0.c0.p1",
+      optionTexts: [
+        { option: "Alpha", blockId: "t0.r0.c0.p1", text: "Alpha" },
+        { option: "Bravo", blockId: "t0.r0.c0.p2", text: "Bravo" },
+        { option: "Charlie", blockId: "t0.r0.c0.p1", text: "Charlie" },
+        { option: "Delta", blockId: "t0.r0.c0.p2", text: "Delta" },
+      ],
+    },
+    { answerType: "single_choice", options: ["Alpha", "Bravo", "Charlie", "Delta"] },
+  );
+  const warnings: string[] = [];
+  const out = fillDocx(bytes, form([f]), { "F-01": { text: "Delta", value: "Delta" } }, { draft: false, onWarning: (w) => warnings.push(w) });
+  const cellText = texts(out)["t0.r0.c0"].replace(/\s+/g, " ").trim();
+  assert.equal(cellText, "Delete as necessary Delta", "only the chosen option is left, nothing cut short");
+  assert.deepEqual(warnings, []);
+});
+
+test("security fix 24/10/2026: a mark or kept option with a control character never reaches document.xml; the schema refuses it", () => {
+  const bytes = docx(tbl(tr(cell(""), cell("Yes"), cell("No")), tr(cell("Swelling"), cell(""), cell(""))));
+  const f = field(
+    "F-01",
+    "Swelling",
+    { kind: "docx", target: "mark_cell", blockId: "t0.r1.c1", mark: "X\u0007", optionCells: [{ option: "Yes", blockId: "t0.r1.c1" }, { option: "No", blockId: "t0.r1.c2" }] },
+    { answerType: "yes_no", options: ["Yes", "No"] },
+  );
+  const out = fillDocx(bytes, form([f]), { "F-01": { text: "Yes", value: true } }, { draft: false });
+  const xml = new PizZip(out).file("word/document.xml")!.asText();
+  assert.ok(!xml.includes("\u0007"), "no control character in the Word file");
+  assert.equal(texts(out)["t0.r1.c1"].trim(), "X");
+  assert.equal(DocxAnchorSchema.safeParse(f.anchor).success, false, "the map schema refuses such a mark");
+  const many = { kind: "docx", target: "delete_options", blockId: "p0", optionTexts: Array.from({ length: MAX_ANCHOR_OPTIONS + 1 }, (_, i) => ({ option: `O${i}`, blockId: "p0", text: `O${i}` })) };
+  assert.equal(DocxAnchorSchema.safeParse(many).success, false, "too many printed options");
+  assert.equal(DocxAnchorSchema.safeParse({ ...many, optionTexts: many.optionTexts.slice(0, 11) }).success, true);
 });
 
 /* ------------------------------------------------------------------------------------------------

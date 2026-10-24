@@ -1039,7 +1039,7 @@ function fillMarkCells(ctx: Ctx, field: FormField, answer: FormFillAnswer, targe
     ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any column, so no cell was marked.`);
   }
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
-  const mark = (anchor?.mark ?? "X").trim() || "X";
+  const mark = cleanXmlText(anchor?.mark ?? "X").trim() || "X"; // no control characters (security fix 24/10/2026)
   for (const target of targets) {
     if (!target.ref) {
       ctx.warn(`${where(field)}: the cell for “${target.option}” was not found.`);
@@ -1113,7 +1113,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     const keep = Array.from(chosen)[0];
     const printed = target.text;
     const at = findWord(printed, keep);
-    const kept = at >= 0 ? printed.slice(at, at + keep.trim().length) : keep;
+    const kept = cleanXmlText(at >= 0 ? printed.slice(at, at + keep.trim().length) : keep); // no control characters (24/10)
     ctx.deletedParas.add(target.p);
     if (!replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => [makeRun(ctx, [kept], styleRPr, "answer")])) {
       ctx.warn(`${where(field)}: the options “${list}” could not be changed, so every option was left as printed.`);
@@ -1129,6 +1129,8 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
   }
   // Locate every option on the untouched lines first, then remove the others from the end backwards.
   const located: Array<{ option: string; p: XmlElement; index: number; length: number }> = [];
+  // Positions already taken, per paragraph (security fix 24/10/2026: a Set, not a scan of `located` per option).
+  const taken = new Map<XmlElement, Set<number>>();
   for (const o of lines) {
     const block = ctx.index.byId.get(o.blockId);
     if (!block) {
@@ -1139,7 +1141,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     for (const p of blockParagraphs(block)) {
       const text = segmentsText(paragraphSegments(p));
       const i = text.indexOf(o.text);
-      if (i >= 0 && !located.some((l) => l.p === p && l.index === i)) {
+      if (i >= 0 && !taken.get(p)?.has(i)) {
         hit = { p, index: i };
         break;
       }
@@ -1149,13 +1151,23 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
       return;
     }
     located.push({ option: o.option, p: hit.p, index: hit.index, length: o.text.length });
+    const set = taken.get(hit.p) ?? new Set<number>();
+    set.add(hit.index);
+    taken.set(hit.p, set);
   }
-  const drop = located.filter((l) => !chosen.has(l.option)).sort((a, b) => (a.p === b.p ? b.index - a.index : 0));
-  for (const l of drop) {
-    ctx.deletedParas.add(l.p);
-    if (!replaceRange(l.p, l.index, l.index + l.length, () => [])) ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
-  }
-  for (const p of Array.from(new Set(drop.map((l) => l.p)))) removeIfBlank(p);
+  // Removed per paragraph from the END backwards, so an earlier removal never shifts a later one (security fix
+  // 24/10/2026: one sort over all paragraphs with "0 when the paragraphs differ" is not a consistent comparator, and
+  // options interleaved over two paragraphs could delete the wrong characters).
+  const drop = located.filter((l) => !chosen.has(l.option));
+  const byParagraph = new Map<XmlElement, typeof drop>();
+  for (const l of drop) byParagraph.set(l.p, [...(byParagraph.get(l.p) ?? []), l]);
+  byParagraph.forEach((items, para) => {
+    for (const l of items.sort((a, b) => b.index - a.index)) {
+      ctx.deletedParas.add(para);
+      if (!replaceRange(para, l.index, l.index + l.length, () => [])) ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
+    }
+  });
+  byParagraph.forEach((_, para) => removeIfBlank(para));
 }
 
 /** Every table row around `el` whose height is exact is set to "at least" that height, so an answer never clips. */

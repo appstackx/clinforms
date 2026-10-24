@@ -82,6 +82,10 @@ export const DISABLED_PATHS = [
   // open invitations to owners and administrators only, server-side (Settings → Members).
   "/organization/list-invitations",
   "/organization/get-full-organization",
+  // Security fix 24/10/2026 (ops M2): with email on, this HTTP route would send reset emails limited per IP only. The
+  // reset page's server action (3 an hour per address + per IP) and the platform's owner reset link call
+  // auth.api.requestPasswordReset directly – disabledPaths only closes the HTTP route.
+  "/request-password-reset",
 ];
 
 /** Successful calls to these paths are audited by the after hook (it knows the acting member). */

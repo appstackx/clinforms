@@ -614,8 +614,15 @@ const TEXT_KEYS: Record<string, string> = {
  * P5 (10/2026): "Address:" and "Postcode:" header lines → the patient's address as one line, the postcode last
  * (added only when the address line does not already end with it). Null when neither is given.
  */
+/** `text` without trailing commas and whitespace – linear (security fix 24/10/2026: /[,\s]+$/ is quadratic on ",,,,…x"). */
+function trimTrailingCommas(text: string): string {
+  let end = text.length;
+  while (end > 0 && (text.charCodeAt(end - 1) === 44 /* , */ || /\s/.test(text.charAt(end - 1)))) end -= 1;
+  return text.slice(0, end);
+}
+
 export function textAddress(address: string | null | undefined, postcode: string | null | undefined): string | null {
-  const a = (address ?? "").replace(/\s+/g, " ").trim().replace(/[,\s]+$/, "");
+  const a = trimTrailingCommas((address ?? "").replace(/\s+/g, " ").trim());
   const p = (postcode ?? "").replace(/\s+/g, " ").trim().toUpperCase();
   if (!a && !p) return null;
   if (!p) return a;
@@ -624,7 +631,9 @@ export function textAddress(address: string | null | undefined, postcode: string
 }
 
 function parseClinician(text: string): { name: string; hcpc: string } | null {
-  const match = /^\s*([^()]+?)\s*\(([^()]+)\)\s*$/.exec(text);
+  // Whitespace collapsed first (security fix 24/10/2026): on a long run of spaces the lazy name and \s* backtrack
+  // quadratically ("Clinician: a<40,000 spaces>b" took about a second).
+  const match = /^\s*([^()]+?)\s*\(([^()]+)\)\s*$/.exec(text.replace(/\s+/g, " "));
   if (!match) return null;
   return { name: match[1].trim(), hcpc: match[2].trim() };
 }

@@ -129,6 +129,8 @@ export const INVITE_COPY = {
       off: `Email is not set up, so nothing was sent. Pass the link below to ${email} yourself.`,
       withheld: `The invitation was not emailed, as you chose. Pass the link below to ${email} yourself.`,
     })[delivery],
+  /** Settings → Members after an emailed invitation (no link is shown then – security fix 24/10/2026). */
+  sentHint: "If it does not arrive within a few minutes, ask them to check their spam folder, or invite them again: the earlier link then stops working.",
   linkLabel: (delivery: InviteDelivery) => (delivery === "sent" ? "A copy of the invitation link" : "Invitation link"),
   /** `expires`: "in 7 days" or "on 31 October 2026". */
   linkWarning: (delivery: InviteDelivery, expires: string) =>

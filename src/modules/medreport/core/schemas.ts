@@ -786,17 +786,20 @@ export const OptionGlyphSchema = z.object({
   glyphIndex: z.number().int().nonnegative(),
 });
 
+/** Most printed options one mark-the-column or delete-as-necessary question may have (security fix 24/10/2026). */
+export const MAX_ANCHOR_OPTIONS = 100;
+
 /** mark_cell (additive, 10/2026): the cell that is marked when this option is chosen. */
 export const OptionCellSchema = z.object({
   /** The option as printed (the column heading, or the option printed in that cell). */
-  option: z.string(),
+  option: z.string().max(300),
   /** The cell to mark ("t2.r3.c1"), or one paragraph of it ("t2.r3.c1.p0"). */
   blockId: BlockIdSchema,
 });
 
 /** delete_options with one option per line (additive, 10/2026): where an option is printed. */
 export const OptionTextSchema = z.object({
-  option: z.string(),
+  option: z.string().max(300),
   /** The paragraph or cell that prints it. */
   blockId: BlockIdSchema,
   /** The option's text exactly as printed there (removed when another option is chosen). */
@@ -815,11 +818,13 @@ export const DocxAnchorSchema = z.object({
   /** checkbox_glyph (and yes_no / single_choice): where each option's ☐ is. */
   optionGlyphs: z.array(OptionGlyphSchema).optional(),
   /** mark_cell (additive, 10/2026): the cell to mark for each option, in the order of the question's options. */
-  optionCells: z.array(OptionCellSchema).optional(),
+  // Security fix 24/10/2026: bounded (a real form has at most a few dozen; Blue Heart's maps at most 11) and a mark
+  // without control characters (one would make the Word file unreadable).
+  optionCells: z.array(OptionCellSchema).max(MAX_ANCHOR_OPTIONS).optional(),
   /** mark_cell: the mark written in the chosen cell (default "X"; e.g. "x" or "✓" to match the form). */
-  mark: z.string().min(1).max(3).optional(),
+  mark: z.string().min(1).max(3).regex(/^[^\u0000-\u001F\u007F]+$/, "A mark cannot contain control characters.").optional(),
   /** delete_options with one option per line (additive, 10/2026): where each option is printed. */
-  optionTexts: z.array(OptionTextSchema).optional(),
+  optionTexts: z.array(OptionTextSchema).max(MAX_ANCHOR_OPTIONS).optional(),
   /**
    * replace_placeholder (additive, 10/2026): the printed text is REMOVED whenever the question has no answer yet – a
    * DRAFT copy included – instead of being left as printed. For printed details that must never go out on a report,

@@ -6,13 +6,15 @@
  *   A. Email on (CLINFORMS_EMAIL_PROVIDER=log, CLINFORMS_EMAIL_REPLY_TO set):
  *      1. admin:create-clinic bootstraps the platform administrator – the script NEVER emails (even with `log` set):
  *         the link is printed once, nothing reaches the outbox.
- *      2. The administrator accepts, sets up two-step verification, opens /app/platform and creates a TRIAL clinic:
- *         "Invitation emailed to <owner>" + the copyable link with the do-not-forward warning; the emailed link (from
- *         the log, with the reply-to) is the one shown. A 3-day trial is set (starts at the owner's first visit).
+ *      2. The administrator accepts, sets up two-step verification, opens /app/platform: "Email the invitation to the
+ *         owner" is OFF by default (security fix 24/10, D4); ticked, the TRIAL clinic is created: "Invitation emailed
+ *         to <owner>" + the copyable link with the do-not-forward warning; the emailed link (from the log, with the
+ *         reply-to) is the one shown. A 3-day trial is set (starts at the owner's first visit).
  *      3. The owner opens the EMAILED link, creates the account, sets up two-step verification.
  *      4. The trial banner: "Trial – 3 days left. Use made-up notes only until your data processing agreement is signed."
  *      5. Clinic page: the drafting switch's trial text, the retention text (no "coming soon"); the overview checklist.
- *      6. Members → invite a clinician: "Invitation emailed to <address>" + the link copy and warning (= the emailed one).
+ *      6. Members → invite a clinician: "Invitation emailed to <address>" and NO link on screen (security fix 24/10, D2:
+ *         the inviter could otherwise create the invitee's account); the clinician signs up from the EMAILED link.
  *      7. Forgotten password (owner): /login → "Forgotten your password?" → email (log) → the link → new password →
  *         sign in with it + a code.
  *   B. Email failing (mailersend without a key – a configuration mistake): inviting says the email could not be sent
@@ -220,7 +222,8 @@ async function inviteMember(page, email) {
   await form.locator("button:has-text('Invite')").click();
   const result = page.locator("[data-testid=invite-result]");
   await result.waitFor({ timeout: 30000 });
-  return { text: (await result.innerText()).replace(/\s+/g, " "), link: (await result.locator("code").innerText()).trim() };
+  const codes = await result.locator("code").count();
+  return { text: (await result.innerText()).replace(/\s+/g, " "), link: codes ? (await result.locator("code").innerText()).trim() : null };
 }
 
 const visibleText = async (page) => (await page.locator("body").innerText()).replace(/\s+/g, " ");
@@ -261,7 +264,12 @@ const visibleText = async (page) => (await page.locator("body").innerText()).rep
     await admin.fill("#f-ownerEmail", OWNER);
     await admin.fill("#f-retentionDays", "30");
     const emailChecked = await admin.locator("input[name=sendEmail]").isChecked();
-    check("A2a", "platform page offers 'Email the invitation to the owner', on by default", () => assert.equal(emailChecked, true));
+    const boxHint = await visibleText(admin);
+    check("A2a", "platform page offers 'Email the invitation to the owner', OFF by default, own-mailbox hint (security fix D4)", () => {
+      assert.equal(emailChecked, false);
+      assert.match(boxHint, /Only for the owner's own mailbox – never a shared inbox: whoever opens the invitation first becomes the owner\./);
+    });
+    await admin.check("input[name=sendEmail]");
     await admin.click("button:has-text('Create clinic and invite the owner')");
     await admin.waitForSelector("text=Invitation emailed to");
     const created = await visibleText(admin);
@@ -319,15 +327,21 @@ const visibleText = async (page) => (await page.locator("body").innerText()).rep
     /* A6 – invite a clinician with email on */
     const inv = await inviteMember(owner, CLIN);
     const clinMail = lastMail(CLIN, /^Join ZZ Blue Trial Clinic/);
-    check("A6", "Members: 'Invitation emailed to <address>' + the link copy and warning; = the emailed link (reply-to set)", () => {
+    const inviteHtml = await owner.content();
+    check("A6", "Members: 'Invitation emailed to <address>', NO link on screen or in the page (security fix D2); emailed with the reply-to", () => {
       assert.match(inv.text, new RegExp(`Invitation emailed to ${CLIN.replace(/\./g, "\\.")}\\.`));
-      assert.match(inv.text, /A copy of the invitation link for zz-clinician@example\.com/);
-      assert.match(inv.text, /Keep this copy only in case the email does not arrive\. Do not forward it to anyone else: whoever opens it can create the account and join the clinic\. It works once and expires in 7 days\./);
-      assert.ok(clinMail, "emailed");
-      assert.equal(clinMail.link, inv.link);
+      assert.equal(inv.link, null, "no link box");
+      assert.doesNotMatch(inv.text, /A copy of the invitation link/);
+      assert.match(inv.text, /invite them again: the earlier link then stops working\./);
+      assert.ok(clinMail && clinMail.link, "emailed");
+      assert.ok(!inviteHtml.includes(new URL(clinMail.link).searchParams.get("token")), "the token is nowhere in the page");
       assert.equal(clinMail.replyTo, REPLY_TO);
     });
     await owner.screenshot({ path: path.join(OUT, "a6-members-invite.png"), fullPage: true });
+    const clinician = await newPage();
+    await acceptInvite(clinician, clinMail.link, CLIN, "Cara Clinician (fictional)");
+    check("A6b", "the clinician signs up from the EMAILED link (the only copy)", () => assert.equal(new URL(clinician.url()).pathname, "/app"));
+    await clinician.context().close();
 
     /* A7 – forgotten password (owner), email on */
     await signOut(owner);

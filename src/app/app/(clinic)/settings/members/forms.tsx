@@ -49,11 +49,14 @@ export function InviteForm({ roles }: { roles: RoleKey[] }) {
       {state?.ok === true ? (
         <div className="space-y-3" data-testid="invite-result">
           <Notice tone={state.delivery === "sent" ? "success" : "warning"}>{INVITE_COPY.outcome(state.delivery, state.email)}</Notice>
-          <SecretBox
-            label={`${INVITE_COPY.linkLabel(state.delivery)} for ${state.email}`}
-            value={state.link}
-            note={INVITE_COPY.linkWarning(state.delivery, "in 7 days")}
-          />
+          {state.delivery === "sent" && !state.link ? <p className="text-xs text-slate-500">{INVITE_COPY.sentHint}</p> : null}
+          {state.link ? (
+            <SecretBox
+              label={`${INVITE_COPY.linkLabel(state.delivery)} for ${state.email}`}
+              value={state.link}
+              note={INVITE_COPY.linkWarning(state.delivery, "in 7 days")}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

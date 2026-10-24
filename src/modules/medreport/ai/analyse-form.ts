@@ -27,7 +27,7 @@ import { createId } from "../core/ids";
 import { REFERRER_TO_BE_CONFIRMED } from "../core/labels";
 import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
-import { buildDocxOutline } from "../forms/docx-outline";
+import { assertReadableOutline, buildDocxOutline } from "../forms/docx-outline";
 import type { DecodedFormFile } from "../forms/file";
 import { readPdfForm } from "../forms/pdf-outline";
 import { findSampleBySha256, listSampleForms } from "../forms/samples/registry";
@@ -95,6 +95,7 @@ export async function parseFormFile(file: DecodedFormFile): Promise<ParsedForm> 
     return { kind, pdf: outline, warnings: [...warnings, ...extra] };
   }
   const outline = buildDocxOutline(file.bytes);
+  assertReadableOutline(outline); // security fix 24/10/2026: at most MAX_READ_BLOCKS paragraphs and cells to read
   return { kind: "docx", blocks: outline.blocks, warnings: outline.warnings };
 }
 

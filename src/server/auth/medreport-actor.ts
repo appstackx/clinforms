@@ -17,7 +17,7 @@ import type { Kysely } from "kysely";
 import type { AuthContext, ClinicProfile } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
 import { COMPANY } from "../../lib/site";
-import { clinicAccessOf, getClinicPlan, type ClinicPlan } from "../repos/clinic-plan";
+import { clinicAccessOf, readClinicPlan, type ClinicPlan } from "../repos/clinic-plan";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { getMemberProfile } from "../repos/member-profile";
 import type { Auth } from "./create-auth";
@@ -83,8 +83,15 @@ export async function resolveMedreportCaller(auth: Auth, db: Kysely<Database>, h
  * 2): the module then fails closed (no drafting it cannot check) instead of taking the failure for "no profile".
  */
 export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, now: Date = new Date()): Promise<ClinicProfile | null> {
-  const [p, plan] = await Promise.all([getClinicProfile({ db }, tenantId), getClinicPlan({ db }, tenantId)]);
-  if (!p) return null;
+  // readClinicPlan: a database before migration 0006 reads as "no plan" (security fix 24/10, ops M1).
+  const [p, plan] = await Promise.all([getClinicProfile({ db }, tenantId), readClinicPlan({ db }, tenantId)]);
+  if (!p) {
+    // Security fix 24/10 (authz L1): an ended trial is enforced even without a clinic_profile row – a minimal profile
+    // carrying the trial (drafting off, no clinic details) instead of null, which the module reads as "no trial".
+    const planView = clinicPlanForModule(plan, now);
+    if (planView.trial?.state !== "ended") return null;
+    return { ...planView, tenantId, displayName: "", addressLines: [], retentionDays: 30, draftingEnabled: false };
+  }
   return {
     ...clinicPlanForModule(plan, now),
     tenantId: p.tenantId,

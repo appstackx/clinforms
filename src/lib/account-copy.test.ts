@@ -23,6 +23,7 @@ function allTexts(): string[] {
     ...Object.values(DRAFTING_COPY),
     RETENTION_COPY.hint(30, 3650),
     ...DELIVERIES.flatMap((d) => [INVITE_COPY.outcome(d, "new@clinic.example"), INVITE_COPY.linkLabel(d), INVITE_COPY.linkWarning(d, "in 7 days")]),
+    INVITE_COPY.sentHint,
     OWNER_RESET_COPY.note,
     OWNER_RESET_COPY.soleOwner("help@example.test"),
     OWNER_RESET_COPY.notArrived("help@example.test"),
@@ -87,6 +88,8 @@ test("invitations: what happened, and the link always with a do-not-forward warn
   }
   assert.match(INVITE_COPY.linkWarning("sent", "in 7 days"), /^Keep this copy only in case the email does not arrive\./);
   assert.equal(INVITE_COPY.linkLabel("sent"), "A copy of the invitation link");
+  // Security fix 24/10 (D2): Settings → Members shows no link once emailed – only how to get a new one.
+  assert.equal(INVITE_COPY.sentHint, "If it does not arrive within a few minutes, ask them to check their spam folder, or invite them again: the earlier link then stops working.");
 });
 
 test("owner reset: shown once, expires, identity check first; a sole owner is pointed to support", () => {

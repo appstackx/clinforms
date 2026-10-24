@@ -12,7 +12,7 @@ process.env.MEDREPORT_AI_MODE = "demo";
 
 import { buildFormPromptParts } from "@/modules/medreport/ai/form-prompts";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
-import { formScope, formToTemplate } from "@/modules/medreport/core/forms";
+import { formScope, formToTemplate, normaliseScopeText, scopeForDraftCall } from "@/modules/medreport/core/forms";
 import { createFormReport } from "@/modules/medreport/core/report-factory";
 import { applyScope } from "@/modules/medreport/core/scope";
 import type { FormDefinition, FormField, ReferrerType } from "@/modules/medreport/core/types";
@@ -131,4 +131,53 @@ test("validation: history terms are fine in the question that asks for them and 
   const social = validateReport(report, template, { form: f }).flags.filter((x) => x.code === "SCOPE_TERM");
   assert.equal(social.length, 1, "the social history is not asked for: still out of scope everywhere");
   assert.match(social[0].message, /out of scope/);
+});
+
+test("security fix 24/10 (D3): hyphenated, underscored and usual return-to-work wordings keep the minimisation; a passing mention of alcohol does not ask for the social history", () => {
+  const employerScope = formScope("employer");
+  const pmhForm = (title: string, extra: string[] = []) => form("case_manager", title, ["History of presenting complaint", "Relevant medical history", "PMH", ...extra]);
+  // The seven probe cases: each one withholds the past medical history again.
+  for (const [title, extra] of [
+    ["Return-to-Work Assessment", []],
+    ["TPN_RTW_Report", []],
+    ["Return_to_Work_Form", []],
+    ["Back to Work Plan", []],
+    ["Progress Report", ["Expected date of return to full duties"]],
+    ["Physiotherapy Update", ["Fitness-for-work recommendation"]],
+    ["Physiotherapy Update", ["Workplace assessment findings"]],
+  ] as Array<[string, string[]]>) {
+    assert.deepEqual(formScope("case_manager", pmhForm(title, extra)), employerScope, `${title} ${extra.join(" ")}`);
+  }
+  // Unchanged: an initial assessment that asks for the past medical history gets it.
+  const ia = formScope("case_manager", pmhForm("Initial Assessment Report"));
+  assert.ok(!ia.excludeFields.includes("note.pastMedicalHistory"));
+  assert.ok(ia.excludeFields.includes("note.socialHistory"), "the social history is not asked for");
+  // "Was alcohol a factor in the accident?" is not a social-history question.
+  const alcohol = formScope("case_manager", form("case_manager", "Initial Assessment Report", ["Mechanism of injury", "Was alcohol a factor in the accident?"]));
+  assert.deepEqual(alcohol, employerScope, "nothing asked: the minimisation stays");
+  // …but a social-history question still is: by name, by status/intake, or a label that is only the term.
+  for (const label of ["Social history", "Smoking status", "Alcohol intake (units per week)", "Smoker", "Alcohol:", "3. Smoking?"]) {
+    const scoped = formScope("case_manager", form("case_manager", "Initial Assessment Report", ["Findings", label]));
+    assert.ok(!scoped.excludeFields.includes("note.socialHistory"), label);
+  }
+  assert.equal(normaliseScopeText("TPN_RTW-Report/v2.docx"), "TPN RTW Report v2 docx");
+});
+
+test("security fix 24/10 (D8): the asked history goes only into the drafting calls of its own question", () => {
+  const bundle = getDemoBundle("daniel-brooks");
+  const f = form("case_manager", "Initial Assessment Report", ["History of presenting complaint", "Past medical history", "Treatment plan"]);
+  const template = formToTemplate(f);
+  const call = (sectionKeys: string[]) =>
+    buildFormPromptParts({ form: f, template, bundle, instructingParty: bundle.referral, sectionKeys, computedFacts: computeFacts(bundle, { asOf: "2026-10-24" }) });
+  assert.match(call(["F-03"]).episode, /asthma/, "the asking question's call has it");
+  assert.match(call(["F-02", "F-03"]).episode, /asthma/, "a call that includes the asking question has it");
+  assert.doesNotMatch(call(["F-04"]).episode, /asthma/, "another question's call does not");
+  assert.doesNotMatch(call(["F-02"]).episode, /asthma/);
+  // The per-call scope itself: the other calls withhold that history's field and terms; the template is unchanged.
+  const narrowed = scopeForDraftCall(template.scope, ["F-04"]);
+  assert.ok(narrowed.excludeFields.includes("note.pastMedicalHistory"));
+  assert.ok(narrowed.excludeTerms.includes("PMH"));
+  assert.ok(!template.scope.excludeFields.includes("note.pastMedicalHistory"), "the form's own scope is not changed");
+  assert.equal(scopeForDraftCall(template.scope, ["F-03"]), template.scope, "the asking call: unchanged");
+  assert.equal(scopeForDraftCall({ excludeFields: [], excludeTerms: [] }, ["F-01"]).excludeFields.length, 0, "no confined history: nothing to do");
 });

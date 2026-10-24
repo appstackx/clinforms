@@ -207,7 +207,13 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
 
   for (const name of names) {
     const full = path.join(dir, name);
-    if (!fs.statSync(full).isFile()) continue;
+    const entry = fs.lstatSync(full);
+    if (entry.isSymbolicLink()) {
+      // Security fix 24/10/2026: a link is never followed (it could point anywhere on the operator's machine).
+      results.push({ file: name, status: "skipped", reason: "A symbolic link: not followed. Copy the file itself into the folder." });
+      continue;
+    }
+    if (!entry.isFile()) continue;
     if (/\.doc$/i.test(name)) {
       results.push({ file: name, status: "refused", reason: "An older Word .doc file: open it in Word (or Pages) and save it as a Word Document (.docx) or Rich Text Format (.rtf) first." });
       continue;

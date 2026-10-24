@@ -192,3 +192,21 @@ test("P5 (10/2026): Address and Postcode lines at the top of pasted / printed no
   assert.equal(textAddress(" 3 Lane (fictional) , Town ,", "zz9 9zz"), "3 Lane (fictional) , Town, ZZ9 9ZZ");
   assert.equal(textAddress(null, null), null);
 });
+
+test("security fix 24/10/2026: a long Address or Clinician header line is read in linear time", () => {
+  const n = 400_000;
+  let t = Date.now();
+  assert.equal(textAddress(`${",".repeat(n)}x`, null), `${",".repeat(n)}x`);
+  assert.equal(textAddress(`12 Lane (fictional)${", ".repeat(n)}`, "zz9 9zz"), "12 Lane (fictional), ZZ9 9ZZ");
+  assert.ok(Date.now() - t < 1500, `textAddress took ${Date.now() - t} ms`);
+  const notes = (address: string, clinician: string) =>
+    [`Address: ${address}`, `Clinician: ${clinician}`, "Date of birth: 02/01/1990", "Instructing party: Example Solicitors (fictional)", "18/03/2026 – Initial assessment", "S: Neck pain."].join("\n");
+  t = Date.now();
+  const r = parseImport({ format: "text", content: notes(`${",".repeat(n)}x`, `a${" ".repeat(n)}b`) }, { tenantId: "demo" });
+  assert.ok(Date.now() - t < 3000, `the whole parse took ${Date.now() - t} ms`);
+  assert.ok(r, "parsed (or refused) without hanging");
+  // Unchanged results for ordinary input.
+  const ok = parseOk({ format: "text", content: notes("1 Example Street (fictional), Exampletown,  ", "Tom   Ellis  (PH-DEMO-02)") });
+  assert.equal(ok.bundle.registration.addressSummary, "1 Example Street (fictional), Exampletown");
+  assert.equal(ok.bundle.notes[0].author.name, "Tom Ellis");
+});

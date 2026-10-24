@@ -12,6 +12,7 @@ import { after, before, describe, it } from "node:test";
 import type { Kysely } from "kysely";
 import type { Database } from "../../db/schema";
 import { testCipher } from "../../db/testing/databases";
+import { assertTenantMayCreate } from "../../../modules/medreport/auth/clinic-access";
 import { PLATFORM_USER_ID } from "../../auth/create-auth";
 import { clinicPlanForModule, loadClinicProfile } from "../../auth/medreport-actor";
 import { offboardClinic } from "../../auth/platform";
@@ -228,6 +229,23 @@ export function defineClinicPlanSuite(label: string, factory: () => Promise<Clin
       const fresh = overview.find((c) => c.tenantId === NEW);
       assert.equal(fresh?.access.state, "trial");
       assert.equal(overview.find((c) => c.tenantId === OWNED)?.plan?.livePerDay, 1500);
+    });
+
+    it("security fix 24/10 (authz L1): an ended trial is enforced even when the clinic has no clinic_profile row", async () => {
+      const slug = "trial-noprofile-test";
+      await setClinicTrial(ctx(), slug, { days: 1, startOnFirstSignIn: false });
+      assert.equal(await loadClinicProfile(t.db, slug, now()), null, "running trial without a profile: nothing to enforce yet");
+      const ended = await loadClinicProfile(t.db, slug, new Date(clock + 2 * DAY));
+      assert.ok(ended, "a minimal profile carries the ended trial");
+      assert.equal(ended.trial?.state, "ended");
+      assert.equal(ended.draftingEnabled, false);
+      assert.equal(ended.displayName, "");
+      assert.deepEqual(ended.addressLines, []);
+      await assert.rejects(
+        assertTenantMayCreate({ clinicProfile: (id: string) => loadClinicProfile(t.db, id, new Date(clock + 2 * DAY)) } as never, slug, "report"),
+        (err: unknown) => (err as { status?: number; init?: { code?: string } }).status === 403 && (err as { init?: { code?: string } }).init?.code === "TRIAL_ENDED",
+      );
+      assert.equal(await loadClinicProfile(t.db, "no-plan-no-profile", now()), null);
     });
 
     it("offboarding exports the plan and deletes it with the clinic", async () => {

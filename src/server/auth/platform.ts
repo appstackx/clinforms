@@ -460,7 +460,7 @@ export async function resetTwoFactor(db: Kysely<Database>, email: string, option
  * other owner or administrator to create a link in Settings → Members. The link is made by Better Auth's own
  * reset flow (one-time token, stored hashed, expires after RESET_TOKEN_TTL_SECONDS) with the email WITHHELD – it is
  * returned once, for the administrator to pass on after confirming who they are speaking to – and audited under
- * every clinic the account belongs to (never the link).
+ * the named clinic only (never the link).
  * ----------------------------------------------------------------------------------------------*/
 
 export interface OwnerResetLinkInput {
@@ -500,20 +500,14 @@ export async function createOwnerResetLink(db: Kysely<Database>, input: OwnerRes
   const captured = outbox.find((m) => m.message.kind === "password_reset" && m.message.to.email.trim().toLowerCase() === email);
   if (!captured?.message.link) throw new Error("No reset link was created.");
   const expiresAt = captured.message.linkExpiresAt ?? new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
-  const memberships = await db
-    .selectFrom("member")
-    .innerJoin("organization", "organization.id", "member.organizationId")
-    .select("organization.slug")
-    .where("member.userId", "=", owner.userId)
-    .execute();
-  for (const m of memberships) {
-    await appendAudit({ db }, m.slug, {
-      userId: PLATFORM_USER_ID,
-      action: "auth.password_reset_link",
-      targetType: "user",
-      targetId: owner.userId,
-      detail: { delivery: "platform" },
-    });
-  }
+  // Audited under THIS clinic only (security fix 24/10/2026, D9): another clinic the person belongs to must not learn
+  // of the support action, nor of their owner role here. The platform trail records it too (platform-console.ts).
+  await appendAudit({ db }, tenantId, {
+    userId: PLATFORM_USER_ID,
+    action: "auth.password_reset_link",
+    targetType: "user",
+    targetId: owner.userId,
+    detail: { delivery: "platform" },
+  });
   return { userId: owner.userId, organizationId: org.id, link: captured.message.link, expiresAt };
 }

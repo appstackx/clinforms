@@ -53,6 +53,8 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
       fs.writeFileSync(path.join(dir, "Harrow Pike.docx"), await sample.loadFile());
       fs.writeFileSync(path.join(dir, "Old template.doc"), Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]));
       fs.writeFileSync(path.join(dir, "notes.txt"), "not a form");
+      // Security fix 24/10/2026: a symbolic link in the folder is never followed.
+      fs.symlinkSync(path.join(FIXTURES, "initial-assessment-report.rtf"), path.join(dir, "Linked IA.rtf"));
     });
     after(async () => {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -85,6 +87,8 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
       assert.equal(by.get("Old template.doc")?.status, "refused");
       assert.match(by.get("Old template.doc")?.reason ?? "", /save it as a Word Document \(\.docx\) or Rich Text Format/);
       assert.equal(by.get("notes.txt")?.status, "skipped");
+      assert.equal(by.get("Linked IA.rtf")?.status, "skipped", "a symbolic link is not followed");
+      assert.match(by.get("Linked IA.rtf")?.reason ?? "", /symbolic link: not followed/);
       assert.equal((await listForms(ctx, CLINIC)).length, 0, "nothing stored");
       assert.equal((await listAudit(ctx, CLINIC)).length, 0, "nothing audited");
     });

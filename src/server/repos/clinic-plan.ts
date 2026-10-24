@@ -86,6 +86,55 @@ export async function listClinicPlans(ctx: DbContext): Promise<ClinicPlan[]> {
   return rows.map(toPlan);
 }
 
+/**
+ * Whether `err` says the clinic_plan table does not exist – a database before migration 0006 (SQLite / D1 through the
+ * gateway: "no such table: clinic_plan"; Postgres: SQLSTATE 42P01, relation "clinic_plan" does not exist).
+ */
+export function isMissingClinicPlanTable(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; message?: unknown; cause?: unknown };
+  const message = typeof e.message === "string" ? e.message : "";
+  const named = /\bclinic_plan\b/.test(message);
+  if (e.code === "42P01" && named) return true;
+  if (/no such table: (?:main\.)?clinic_plan\b|relation "(?:public\.)?clinic_plan" does not exist/i.test(message)) return true;
+  return e.cause !== undefined && e.cause !== err ? isMissingClinicPlanTable(e.cause) : false;
+}
+
+let missingTableNoted = false;
+function noteMissingTable(): void {
+  if (missingTableNoted) return;
+  missingTableNoted = true;
+  console.warn("[clinic_plan] table missing: migration 0006 not applied to this database; every clinic reads as having no plan.");
+}
+
+/**
+ * Security fix 24/10/2026 (deploy order, ops M1): getClinicPlan for the APP's read paths (the Report API's clinic
+ * profile, the platform page) – a database without the table (deployed before migration 0006) reads as "no plan",
+ * which is exact (without the table no clinic can have a trial), instead of failing every new report and the
+ * platform page. Only the missing-table error is absorbed; any other failure still throws. Writes and the admin
+ * scripts (admin:set-trial --show, the deploy gate) use the strict getClinicPlan, so a missing migration stays loud.
+ */
+export async function readClinicPlan(ctx: DbContext, tenantId: string): Promise<ClinicPlan | null> {
+  try {
+    return await getClinicPlan(ctx, tenantId);
+  } catch (err) {
+    if (!isMissingClinicPlanTable(err)) throw err;
+    noteMissingTable();
+    return null;
+  }
+}
+
+/** listClinicPlans for the app's read paths (see readClinicPlan): no table = no plans. */
+export async function readClinicPlans(ctx: DbContext): Promise<ClinicPlan[]> {
+  try {
+    return await listClinicPlans(ctx);
+  } catch (err) {
+    if (!isMissingClinicPlanTable(err)) throw err;
+    noteMissingTable();
+    return [];
+  }
+}
+
 function assertDays(days: number, what = "Trial length"): number {
   if (!Number.isInteger(days) || days < 1 || days > TRIAL_MAX_DAYS) throw new RepoInputError(`${what} must be 1–${TRIAL_MAX_DAYS} days.`);
   return days;

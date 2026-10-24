@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { captureOutbox, deliverEmail, inviteDeliveryOf, linkToShare, setEmailProviderForTests } from "./index";
-import { EmailConfigError, createEmailProvider, logProviderFor, mailerSendProvider, replyToAddress, resolveEmailProviderName, SENDER_NAME } from "./providers";
+import { EmailConfigError, NO_TRACKING, SEND_TIMEOUT_MS, createEmailProvider, logProviderFor, mailerSendProvider, replyToAddress, reservedTestAddress, resolveEmailProviderName, SENDER_NAME } from "./providers";
+import { sendAccessRequestNotification } from "../site/notify";
 import { escapeHtml, invitationEmail, passwordResetEmail, twoFactorEnabledEmail, ukDateTime } from "./templates";
 
 describe("email templates", () => {
@@ -189,5 +190,58 @@ describe("email: reply-to, withheld sends, links never logged (24/10/2026)", () 
     assert.match(logged, /"event":"email.failed"/);
     assert.match(logged, /"event":"email.not_sent"/);
     for (const secret of ["inv123", "token", "accept-invite", "new@clinic.example"]) assert.ok(!logged.includes(secret), secret);
+  });
+});
+
+describe("email: security fixes 24/10/2026 (tracking off, send timeout, reserved test addresses)", () => {
+  const LINK = "https://clinforms.example/accept-invite?token=inv456.MACMACMAC";
+  const invite = (to = "new@clinic.example") => invitationEmail({ to: { email: to }, clinicName: "C (fictional)", role: "clinician", link: LINK, expiresAt: new Date().toISOString() });
+
+  it("D1: every MailerSend message switches click, open and content tracking off (invitations, resets, notices)", async () => {
+    const calls: { settings?: unknown }[] = [];
+    const client = { email: { send: async (p: unknown) => (calls.push(p as never), {}) } } as never;
+    const provider = mailerSendProvider({ MAILERSEND_FROM_EMAIL: "hello@clinforms.example" }, client);
+    await provider.send(invite());
+    await provider.send(passwordResetEmail({ to: { email: "a@b.example" }, link: "https://x.example/reset-password?token=t", expiresAt: new Date().toISOString() }));
+    await provider.send(twoFactorEnabledEmail({ to: { email: "a@b.example" }, at: new Date().toISOString() }));
+    assert.equal(calls.length, 3);
+    for (const c of calls) assert.deepEqual(c.settings, { track_clicks: false, track_opens: false, track_content: false });
+    assert.deepEqual({ ...NO_TRACKING }, { track_clicks: false, track_opens: false, track_content: false });
+  });
+
+  it("D1: the access-request notification switches tracking off too", async () => {
+    const calls: { settings?: unknown; reply_to?: { email: string } }[] = [];
+    const client = { email: { send: async (p: unknown) => (calls.push(p as never), { statusCode: 202 }) } } as never;
+    await sendAccessRequestNotification(
+      { apiKey: "unused", fromEmail: "hello@clinforms.example", to: "team@clinforms.example" },
+      { id: "req-1", clinicName: "Riverside Physiotherapy (fictional)", contactName: "Rita Reid", email: "rita@riverside.example", phone: null, sites: "1", message: null, createdAt: new Date().toISOString() },
+      client,
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].settings, { track_clicks: false, track_opens: false, track_content: false });
+    assert.equal(calls[0].reply_to?.email, "rita@riverside.example");
+  });
+
+  it("D7: a send that never answers fails after the timeout (the link is then shown), instead of hanging the action", async () => {
+    const hanging = { email: { send: () => new Promise(() => undefined) } } as never;
+    const provider = mailerSendProvider({ MAILERSEND_FROM_EMAIL: "hello@clinforms.example" }, hanging, { timeoutMs: 50 });
+    const started = Date.now();
+    const logged = await capturedLogs(async () => assert.deepEqual(await provider.send(invite()), { status: "failed", provider: "mailersend" }));
+    assert.ok(Date.now() - started < 2000, "returned promptly");
+    assert.match(logged, /"event":"email.failed"/);
+    assert.match(logged, /"status":0/);
+    assert.equal(SEND_TIMEOUT_MS, 8000);
+  });
+
+  it("L4: reserved test addresses (example domains, .test, .invalid, .localhost) are never sent to MailerSend", async () => {
+    for (const a of ["zz@example.com", "A@Sub.Example.org", "x@example.net", "x@clinic.example", "x@host.test", "x@platform.invalid", "x@box.localhost"]) assert.equal(reservedTestAddress(a), true, a);
+    for (const a of ["khuram@appstackx.co.uk", "contact@blueheartclinics.co.uk", "x@myexample.com", "x@example.co.uk", "x@testing.io"]) assert.equal(reservedTestAddress(a), false, a);
+    let sends = 0;
+    const client = { email: { send: async () => (sends++, {}) } } as never;
+    const strict = mailerSendProvider({ MAILERSEND_FROM_EMAIL: "hello@clinforms.example" }, client, { skipReservedAddresses: true });
+    assert.deepEqual(await strict.send(invite("zz-owner@example.com")), { status: "failed", provider: "mailersend" });
+    assert.equal(sends, 0, "MailerSend is not called");
+    assert.deepEqual(await strict.send(invite("owner@riverside-physio.co.uk")), { status: "sent", provider: "mailersend" });
+    assert.equal(sends, 1);
   });
 });

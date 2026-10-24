@@ -17,7 +17,7 @@ import "server-only";
  *
  * Owner: ai agent.
  */
-import { answerableFields } from "../core/forms";
+import { answerableFields, scopeForDraftCall } from "../core/forms";
 import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../core/labels";
 import { applyScope, scopeExcludeTerms } from "../core/scope";
 import type {
@@ -143,7 +143,9 @@ export function buildFormPromptParts(input: {
   sectionKeys: string[];
   computedFacts: ComputedFact[];
 }): PromptParts {
-  const scoped = applyScope(input.bundle, input.template);
+  // Security fix 24/10/2026 (D8): history a question asks for goes only into the calls that draft that question.
+  const callTemplate = { ...input.template, scope: scopeForDraftCall(input.template.scope, input.sectionKeys) };
+  const scoped = applyScope(input.bundle, callTemplate);
   return {
     system: FORM_DRAFT_SYSTEM_PROMPT,
     template: buildFormBlock(input.form, input.template),

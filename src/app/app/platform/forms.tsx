@@ -48,10 +48,13 @@ export function CreateClinicForm({ emailOn }: { emailOn: boolean }) {
           <div className="sm:col-span-2">
             <input type="hidden" name="emailChoice" value="1" />
             <label className="flex items-center gap-2 text-sm text-slate-800">
-              <input type="checkbox" name="sendEmail" defaultChecked className="h-4 w-4 rounded border-slate-300" />
+              <input type="checkbox" name="sendEmail" className="h-4 w-4 rounded border-slate-300" />
               Email the invitation to the owner
             </label>
-            <p className="mt-1 text-xs text-slate-500">Either way, the link is also shown here once, to copy.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Only for the owner&apos;s own mailbox – never a shared inbox: whoever opens the invitation first becomes the owner. Either way, the link is
+              also shown here once, to copy.
+            </p>
           </div>
         ) : null}
         <div className="sm:col-span-2">

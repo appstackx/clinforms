@@ -52,11 +52,13 @@ interface CellInfo {
 
 const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
 const plain = (s: string) => tidy(withBracketBoxesAsGlyphs(s).replace(/[☐☒☑]/g, " "));
-const label = (s: string) =>
-  tidy(s)
-    .replace(/^[\s\d.)(•a-z]{0,3}[.)]\s+(?=[A-Z])/, "")
-    .replace(/[\s:]+$/, "")
-    .slice(0, 200);
+/** `s` without trailing whitespace and colons – linear (security fix 24/10/2026: /[\s:]+$/ is quadratic on "::::…x"). */
+function trimTrailing(s: string, colons: boolean): string {
+  let end = s.length;
+  while (end > 0 && ((colons && s.charCodeAt(end - 1) === 58) || /\s/.test(s.charAt(end - 1)))) end -= 1;
+  return s.slice(0, end);
+}
+const label = (s: string) => trimTrailing(tidy(s).replace(/^[\s\d.)(•a-z]{0,3}[.)]\s+(?=[A-Z])/, ""), true).slice(0, 200);
 
 /** A short printed option ("Yes", "Mild", "Up to 50%", "IIa", "0-3 months"). */
 function isOptionText(t: string): boolean {
@@ -307,7 +309,7 @@ export function slashOptions(text: string): string[] | null {
 
 /** An inline list at the end of a question line ("…any medication? Yes/No", "…will they attend? Daily/Weekly"). */
 function trailingList(text: string): { label: string; list: string; options: string[] } | null {
-  const t = text.replace(/\s+$/, "");
+  const t = trimTrailing(text, false);
   const m = /^(.*[?:])\s+([A-Za-z0-9%][^?:]*?)$/.exec(t.split("\n")[0] ?? "");
   if (!m) return null;
   const options = slashOptions(m[2]);
@@ -335,7 +337,19 @@ function deleteLists(out: ChoiceLayouts, blocks: OutlineBlock[], tables: Map<str
   const byId = new Map(blocks.map((b) => [b.id, b] as const));
   const cellInfo = new Map<string, CellInfo>();
   tables.forEach((rows) => rows.forEach((row) => row.forEach((c) => cellInfo.set(c.block.id, c))));
-  const parasOf = (cellId: string) => blocks.filter((b) => b.kind === "paragraph" && new RegExp(`^${cellId.replace(/\./g, "\\.")}\\.p\\d+$`).test(b.id));
+  // A cell's own paragraphs ("<cell>.p<n>"), indexed once (security fix 24/10/2026: one RegExp and one pass over every
+  // block per cell was O(cells × blocks)).
+  const parasByCell = new Map<string, OutlineBlock[]>();
+  for (const b of blocks) {
+    if (b.kind !== "paragraph") continue;
+    const cut = b.id.lastIndexOf(".p");
+    if (cut <= 0 || !/^\d+$/.test(b.id.slice(cut + 2))) continue;
+    const cell = b.id.slice(0, cut);
+    const list = parasByCell.get(cell);
+    if (list) list.push(b);
+    else parasByCell.set(cell, [b]);
+  }
+  const parasOf = (cellId: string) => parasByCell.get(cellId) ?? [];
 
   for (const b of blocks) {
     if (out.consumed.has(b.id)) continue;

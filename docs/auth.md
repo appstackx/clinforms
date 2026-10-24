@@ -105,9 +105,12 @@ For preview, add `--app-url <origin of the deployment or local server using the 
 ### Invite members
 The owner (or an administrator) uses **Settings → Members → Invite someone**. Afterwards the page says how it went –
 "Invitation emailed to <address>", "The invitation email to <address> could not be sent…" or "Email is not set up, so
-nothing was sent…" – and **always** shows the link to copy, with a warning not to forward it (whoever opens it can
-create the account and join the clinic): when it was emailed, the copy is only for in case the email does not arrive.
-Open invitations can be copied again or cancelled. Invitation links are never written to a log line, the audit trail
+nothing was sent…". The link to copy (with a warning not to forward it: whoever opens it can create the account and
+join the clinic) is shown **only when the invitation was not emailed** (email off, or the send failed). Once emailed,
+the inviter never sees the link (security fix 24/10/2026, D2): sign-up needs no mailbox proof, so a copy would let the
+inviter create the invitee's account first. If the email does not arrive, invite again – the earlier link stops
+working. Invitations are limited to 20 an hour per clinic and 3 a day per address.
+Open invitations can be cancelled. Invitation links are never written to a log line, the audit trail
 (`invitationRef()` only) or analytics (the query string of `/accept-invite` and `/reset-password` is dropped). A person who already has an account (another clinic)
 signs in and accepts; everyone else creates their account from the link and sets up two-step verification.
 
@@ -120,7 +123,7 @@ signs in and accepts; everyone else creates their account from the link and sets
   account). The page shows a one-time reset link **once** (Better Auth's own token, stored hashed, 2 hours) – it is
   never emailed. Confirm who you are speaking to first (call the clinic on a known number). Audited
   `platform.owner_reset_link` (naming the administrator) and `auth.password_reset_link` with `delivery: "platform"`
-  under every clinic the account belongs to – never the link. The owner still needs their authenticator app; for a
+  under the named clinic only (24/10/2026, D9: another clinic the person belongs to is not told) – never the link. The owner still needs their authenticator app; for a
   lost phone as well, also run the two-step reset below.
 - Email off: an owner or administrator opens **Settings → Members → Manage → Create a password reset link** and
   passes it on (administrators cannot do this for owners). The member still needs their authenticator app.
@@ -254,5 +257,12 @@ the security review, `--release-slug` is refused for a clinic with audit rows an
 - Email (MailerSend) is on in production from the 24/10/2026 deploy; with email off, invitation and reset links
   travel by hand. Vercel's own request logs record the path of a page request, so an opened `/accept-invite?token=…`
   or `/reset-password?token=…` URL can appear there (the app itself never logs one); both tokens work once and expire.
-- The platform page creates clinics (emailing the owner's invitation by choice), handles access requests and makes
-  one-time owner reset links; offboarding and two-step resets stay script-only.
+- The platform page creates clinics (emailing the owner's invitation only when "Email the invitation to the owner" is
+  ticked – off by default since 24/10/2026: never for a shared inbox), handles access requests and makes one-time owner
+  reset links; offboarding and two-step resets stay script-only.
+- Security fixes 24/10/2026 (`release/blue-heart`): every MailerSend message switches click, open and content tracking
+  off (`src/server/email/providers.ts` NO_TRACKING; also switch them off for the domain in MailerSend → Domains →
+  clinforms.co.uk → Advanced settings); a send that takes more than 8 s counts as failed (the link is then shown); no
+  message is sent to a reserved test address (example domains, `.test`, `.invalid`, `.localhost`); Better Auth's HTTP
+  route `POST /api/auth/request-password-reset` is disabled (the reset page's server action keeps its per-address
+  limit; the platform owner link is unaffected).

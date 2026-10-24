@@ -35,7 +35,9 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
   if (!Number.isInteger(retentionDays) || retentionDays < RETENTION_MIN_DAYS || retentionDays > RETENTION_MAX_DAYS) {
     return { ok: false, error: ACCOUNT_ERRORS.retentionRange };
   }
-  // The form offers "Email the invitation to the owner" (on by default) only while email is set up ("emailChoice").
+  // The form offers "Email the invitation to the owner" only while email is set up ("emailChoice"). Security fix
+  // 24/10/2026 (D4): the box is OFF by default – an owner's address may be a shared inbox, and whoever opens the
+  // invitation first becomes the owner; tick it only for the owner's own mailbox.
   const sendEmail = !(form.get("emailChoice") === "1" && form.get("sendEmail") !== "on");
   try {
     const created = await createClinicAsPlatform(getDb(), admin, {

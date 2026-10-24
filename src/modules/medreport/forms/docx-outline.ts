@@ -18,6 +18,7 @@ import "server-only";
  *
  * Owner: forms-engine agent. Signature final.
  */
+import { HttpError } from "../api/http";
 import type { OutlineBlock } from "../core/types";
 import {
   descendantsW,
@@ -44,6 +45,23 @@ export interface DocxOutline {
 
 /** Longest text kept per block (long declarations are cut; the analysis only needs to recognise them). */
 const MAX_BLOCK_TEXT = 1200;
+
+/**
+ * Most paragraphs and table cells a form may have to be READ (mapped) automatically – security fix 24/10/2026: the
+ * reading's layout rules are not all linear in the number of blocks, and a small crafted .docx can hold hundreds of
+ * thousands. Real referrer forms have tens to a few hundred (Blue Heart's 17 templates: 35–140). Filling and
+ * rendering are not affected.
+ */
+export const MAX_READ_BLOCKS = 5000;
+
+/** Refuses (422 FORM_INVALID) an outline too large to read automatically. */
+export function assertReadableOutline(outline: Pick<DocxOutline, "blocks">): void {
+  if (outline.blocks.length <= MAX_READ_BLOCKS) return;
+  throw new HttpError(422, "This Word file could not be read", {
+    code: "FORM_INVALID",
+    detail: `The form is too long to read automatically: it has more than ${MAX_READ_BLOCKS.toLocaleString("en-GB")} paragraphs and table cells. Split it into smaller forms, or remove unused pages.`,
+  });
+}
 
 function tidy(text: string): string {
   const t = text.replace(/[ \t ]+$/gm, "").replace(/\n{3,}/g, "\n\n").trimEnd();

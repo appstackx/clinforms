@@ -453,6 +453,10 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       const before = sent.length;
       const ADMIN = { userId: "u-ops-test", sessionId: "s-ops-test", email: "ops@platform.example", name: "Ops" };
       const requestReset = (email: string) => auth.api.requestPasswordReset({ body: { email } });
+      // The owner is also a clinician in another clinic: that clinic is not told (security fix 24/10, D9).
+      const ownerUser = await t.db.selectFrom("user").select("id").where("email", "=", "owner@riverside.example").executeTakeFirstOrThrow();
+      const quietOrg = await t.db.selectFrom("organization").select("id").where("slug", "=", "quiet-clinic-test").executeTakeFirstOrThrow();
+      await t.db.insertInto("member").values({ id: "m-owner-in-quiet", organizationId: quietOrg.id, userId: ownerUser.id, role: "clinician", createdAt: new Date().toISOString() }).execute();
       const made = await createOwnerResetLinkAsPlatform(t.db, ADMIN, {
         tenantId: "riverside-test",
         ownerEmail: " Owner@Riverside.example ",
@@ -468,6 +472,8 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.equal(clinicRows.length, 1);
       assert.equal(clinicRows[0].userId, PLATFORM_USER_ID);
       assert.deepEqual(clinicRows[0].detail, { delivery: "platform" });
+      assert.equal((await listAudit({ db: t.db }, "quiet-clinic-test")).filter((a) => a.action === "auth.password_reset_link").length, 0, "the other clinic is not told");
+      await t.db.deleteFrom("member").where("id", "=", "m-owner-in-quiet").execute();
       const platformRows = (await listAudit({ db: t.db }, PLATFORM_AUDIT_TENANT)).filter((a) => a.action === "platform.owner_reset_link");
       assert.equal(platformRows.length, 1);
       assert.equal(platformRows[0].userId, ADMIN.userId);
@@ -517,6 +523,36 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.equal(res.status, 200);
       const body = (await res.json()) as { user?: { email?: string } };
       assert.equal(body.user?.email, "owner@riverside.example");
+    });
+
+    it("security fix 24/10 (ops M2): POST /request-password-reset is closed over HTTP; the server API (reset page, platform link) still works", async () => {
+      const before = sent.length;
+      for (let i = 0; i < 3; i++) {
+        const res = await auth.handler(
+          new Request(`${ORIGIN}/api/auth/request-password-reset`, {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: ORIGIN },
+            body: JSON.stringify({ email: "owner@riverside.example", redirectTo: `${ORIGIN}/reset-password` }),
+          }),
+        );
+        assert.equal(res.status, 404, "the HTTP route is not offered");
+      }
+      assert.equal(sent.length, before, "no reset email from the HTTP route");
+      // The reset page's server action calls the API directly: still one email.
+      await auth.api.requestPasswordReset({ body: { email: "owner@riverside.example" } });
+      assert.equal(sent.length, before + 1);
+      const message = sent.at(-1);
+      assert.equal(message?.kind, "password_reset");
+      assert.match(message?.link ?? "", /\/reset-password\?token=/);
+      // The platform's owner reset link (server API inside captureOutbox, withheld): still produced.
+      const made = await createOwnerResetLink(t.db, {
+        tenantId: "riverside-test",
+        ownerEmail: "owner@riverside.example",
+        requestReset: (email) => auth.api.requestPasswordReset({ body: { email } }),
+        isPlatformAdminEmail: () => false,
+      });
+      assert.match(made.link, /\/reset-password\?token=/);
+      assert.equal(sent.length, before + 1, "the platform link is never emailed");
     });
 
     it("the module seam: clinic profile for the tenant", async () => {

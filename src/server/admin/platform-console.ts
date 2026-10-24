@@ -25,7 +25,7 @@ import {
 import { RESERVED_TENANT_SLUGS } from "../auth/tenant";
 import type { Database } from "../db/schema";
 import { listAccessRequests, setAccessRequestContacted, type AccessRequest } from "../repos/access-requests";
-import { clinicAccessOf, listClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
+import { clinicAccessOf, readClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
 import { appendAudit, listAudit, type AuditEntry } from "../repos/audit";
 import { RepoInputError, type DbContext } from "../repos/context";
 
@@ -139,7 +139,7 @@ export async function lastActivityByTenant(db: Kysely<Database>): Promise<Map<st
 }
 
 export async function listClinicsOverview(db: Kysely<Database>, now = new Date()): Promise<ClinicOverview[]> {
-  const [clinics, last, plans] = await Promise.all([listClinics(db, now), lastActivityByTenant(db), listClinicPlans({ db })]);
+  const [clinics, last, plans] = await Promise.all([listClinics(db, now), lastActivityByTenant(db), readClinicPlans({ db })]);
   const planOf = new Map(plans.map((p) => [p.tenantId, p] as const));
   return clinics.map((c) => {
     const plan = planOf.get(c.tenantId) ?? null;

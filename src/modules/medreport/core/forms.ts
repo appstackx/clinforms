@@ -166,10 +166,26 @@ const EMPLOYER_SCOPE: TemplateScope = {
 
 /** A question that asks for the past medical history ("Past medical history", "Relevant medical history", "PMH"). */
 const ASKS_PMH = /\b(?:past|previous|relevant|pre-?existing)\s+medical\s+history\b|^\s*(?:\d+[.)]\s*)?medical\s+history\b|\bPMH\b|\bco-?morbidit/i;
-/** A question that asks for the social history (or smoking / alcohol). */
-const ASKS_SOCIAL = /\bsocial\s+history\b|\bsmok(?:er|ing)\b|\balcohol\b/i;
-/** A return-to-work / fitness-for-work form: it reaches the employer, so history stays withheld whatever it asks. */
-const RETURN_TO_WORK = /\breturn(?:ing)?\s+to\s+(?:work|normal\s+duties)\b|\bfit(?:ness)?\s+(?:for|to)\s+(?:work|return|normal\s+duties|modified\s+duties)\b|\bRTW\b|\bphased\s+return\b|\bmodified\s+(?:or\s+restricted\s+)?duties\b|\bwork\s+capacity\b/i;
+/**
+ * A question that asks for the social history: "Social history", "Smoking status", "Alcohol intake", or a label that is
+ * only "Smoker" / "Smoking" / "Alcohol" (security fix 24/10/2026, D3: a passing mention – "Was alcohol a factor in the
+ * accident?" – no longer unlocks the whole social history).
+ */
+const ASKS_SOCIAL =
+  /\bsocial\s+history\b|\b(?:smok(?:er|ing)|alcohol)\s+(?:status|history|intake|consumption|habits?|use)\b|^\s*(?:\d+[.)]\s*)?(?:smoker|smoking|alcohol)\s*[:?]?\s*$/i;
+/**
+ * A return-to-work / fitness-for-work form: it reaches the employer, so history stays withheld whatever it asks.
+ * Security fix 24/10/2026 (D3): tested on normaliseScopeText() (hyphens, underscores, slashes and dots read as spaces:
+ * "Return-to-Work", "TPN_RTW_Report", "Fitness-for-work"), and the usual wordings ("back to work", "return to full /
+ * light / restricted duties", "workplace assessment") count too.
+ */
+const RETURN_TO_WORK =
+  /\b(?:return(?:ing)?|back)\s+to\s+(?:work|employment|(?:full|normal|modified|light|restricted|amended)\s+duties)\b|\bfit(?:ness)?\s+(?:for|to)\s+(?:work|return|duties|(?:normal|modified|full|light|restricted)\s+duties)\b|\brtw\b|\bphased\s+return\b|\b(?:modified|restricted|amended|light)\s+(?:or\s+(?:modified|restricted|amended|light)\s+)?duties\b|\bwork\s+capacity\b|\bworkplace\s+assessment\b/i;
+
+/** Hyphens, underscores, slashes and dots read as spaces (titles often come from file names: "TPN_RTW_Report"). */
+export function normaliseScopeText(text: string): string {
+  return text.replace(/[-_/.\u2010-\u2015]+/g, " ");
+}
 
 /**
  * Data scope applied before drafting a form for this kind of referrer.
@@ -189,8 +205,8 @@ export function formScope(referrerType: ReferrerType, form?: Pick<FormDefinition
   if (referrerType !== "employer" && referrerType !== "case_manager") return NO_SCOPE;
   if (!form || referrerType === "employer") return EMPLOYER_SCOPE;
   const drafted = form.fields.filter((f) => f.fillSource.kind === "notes_narrative" || f.fillSource.kind === "clinician_opinion");
-  const printed = (f: FormField) => `${f.section ?? ""}\n${f.label}`;
-  if (RETURN_TO_WORK.test(form.title) || form.fields.some((f) => RETURN_TO_WORK.test(printed(f)))) return EMPLOYER_SCOPE;
+  const printed = (f: FormField) => normaliseScopeText(`${f.section ?? ""}\n${f.label}`);
+  if (RETURN_TO_WORK.test(normaliseScopeText(form.title)) || form.fields.some((f) => RETURN_TO_WORK.test(printed(f)))) return EMPLOYER_SCOPE;
   const pmh = drafted.filter((f) => ASKS_PMH.test(f.label) || ASKS_PMH.test(f.section ?? ""));
   const social = drafted.filter((f) => ASKS_SOCIAL.test(f.label) || ASKS_SOCIAL.test(f.section ?? ""));
   if (pmh.length === 0 && social.length === 0) return EMPLOYER_SCOPE;
@@ -203,6 +219,28 @@ export function formScope(referrerType: ReferrerType, form?: Pick<FormDefinition
       ...(social.length ? [{ terms: SOCIAL_TERMS, sectionKeys: social.map((f) => f.id) }] : []),
     ],
   };
+}
+
+/**
+ * Security fix 24/10/2026 (D8): the scope of ONE drafting call. History a case-manager form asks for (confineTerms) is
+ * sent only in the calls that draft an asking question; every other call of the same form keeps the minimisation for
+ * that history (its note field and its terms withheld), so it cannot leak into the other answers. Pure.
+ */
+export function scopeForDraftCall(scope: TemplateScope, sectionKeys: readonly string[]): TemplateScope {
+  const groups = scope.confineTerms ?? [];
+  if (groups.length === 0) return scope;
+  const keys = new Set(sectionKeys);
+  const elsewhere = groups.filter((g) => !g.sectionKeys.some((k) => keys.has(k)));
+  if (elsewhere.length === 0) return scope;
+  const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((t, i) => t.toLowerCase() === b[i].toLowerCase());
+  const fields = new Set(scope.excludeFields);
+  const terms = [...scope.excludeTerms];
+  for (const g of elsewhere) {
+    if (same(g.terms, PMH_TERMS)) fields.add("note.pastMedicalHistory");
+    if (same(g.terms, SOCIAL_TERMS)) fields.add("note.socialHistory");
+    for (const t of g.terms) if (!terms.some((x) => x.toLowerCase() === t.toLowerCase())) terms.push(t);
+  }
+  return { ...scope, excludeFields: Array.from(fields), excludeTerms: terms };
 }
 
 /* ------------------------------------------------------------------------------------------------

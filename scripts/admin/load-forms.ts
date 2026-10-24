@@ -61,10 +61,12 @@ if (process.argv[1] && /load-forms\.ts$/.test(process.argv[1])) {
     );
     const where = target === "current" ? `the ${getDbKind()} database` : target;
     console.log(`${result.dryRun ? "PREVIEW – nothing stored." : "Stored."} Clinic ${result.tenantId} on ${where}:`);
+    // Security fix 24/10/2026: file names come from the clinic – control characters (terminal escapes) are shown as "?".
+    const safe = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
     for (const f of result.files) {
       const what = f.questions !== undefined ? `${f.questions} questions (${f.fromRecords ?? 0} from the record, ${f.forStaff ?? 0} for staff), ${f.mergeFields ?? 0} merge codes, map from ${f.mapFrom}` : "";
       const conv = f.convertedFromRtf ? ` RTF ${((f.rtfBytes ?? 0) / 1048576).toFixed(1)} MB → Word ${((f.sizeBytes ?? 0) / 1024).toFixed(0)} KB,` : "";
-      console.log(`  ${f.status.toUpperCase().padEnd(8)} ${f.file}${conv ? ` –${conv}` : ""} ${what}${f.reason ? ` – ${f.reason}` : ""}`);
+      console.log(`  ${f.status.toUpperCase().padEnd(8)} ${safe(f.file)}${conv ? ` –${conv}` : ""} ${what}${f.reason ? ` – ${safe(f.reason)}` : ""}`);
     }
     const counts = (s: string) => result.files.filter((f) => f.status === s).length;
     console.log(`  ready ${counts("ready")} · loaded ${counts("loaded")} · skipped ${counts("skipped")} · refused ${counts("refused")}`);
