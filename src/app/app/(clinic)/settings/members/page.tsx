@@ -39,7 +39,7 @@ export default async function MembersPage() {
               <Notice>Email is not set up yet: after inviting, copy the link shown and pass it on yourself.</Notice>
             </div>
           ) : null}
-          <InviteForm roles={roles} emailOff={emailOff} />
+          <InviteForm roles={roles} />
         </Panel>
       ) : null}
 

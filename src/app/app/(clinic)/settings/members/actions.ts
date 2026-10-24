@@ -5,7 +5,7 @@
  * organization rules (only owners make owners, the last owner stays); we check the same before calling it.
  */
 import { revalidatePath } from "next/cache";
-import { ACCOUNT_ERRORS } from "@/lib/account-copy";
+import { ACCOUNT_ERRORS, type InviteDelivery } from "@/lib/account-copy";
 import { isValidHcpc, normaliseHcpc } from "@/lib/hcpc";
 import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
@@ -16,7 +16,7 @@ import { assignableRoles, parseMemberRole } from "@/server/auth/roles";
 import { actionContext, auditAction, requestHeaders, type ActionResult, type AppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
-import { captureOutbox, emailProviderName, linkToShare } from "@/server/email";
+import { captureOutbox, emailProviderName, inviteDeliveryOf, linkToShare } from "@/server/email";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
 const PATH = "/app/settings/members";
@@ -37,7 +37,11 @@ async function memberOfClinic(ctx: AppContext, memberId: string) {
     .executeTakeFirst();
 }
 
-export type InviteResult = ActionResult<{ email: string; link: string | null; sent: boolean; expiresAt: string }>;
+/**
+ * After an invitation: how the email went, and the link – always, so the person who invited has a copy to pass on if
+ * the email does not arrive (the screen warns not to forward it). The link is never logged or audited.
+ */
+export type InviteResult = ActionResult<{ email: string; role: string; link: string; delivery: InviteDelivery; expiresAt: string }>;
 
 export async function inviteMember(_prev: InviteResult | null, form: FormData): Promise<InviteResult> {
   const ctx = await manager();
@@ -55,13 +59,14 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
       getAuth().api.createInvitation({ body: { email, role, organizationId: ctx.membership.organizationId }, headers: requestHeaders() }),
     );
     const captured = outbox.find((m) => m.message.kind === "invitation");
-    const link = linkToShare(captured) ?? (captured ? null : inviteLink(appOrigin(baseUrlSetting(), requestHeaders()), result.id, authSecret()));
+    const link = captured?.message.link ?? inviteLink(appOrigin(baseUrlSetting(), requestHeaders()), result.id, authSecret());
     revalidatePath(PATH);
     return {
       ok: true,
       email,
+      role,
       link,
-      sent: captured?.result.status === "sent",
+      delivery: inviteDeliveryOf(captured?.result),
       expiresAt: new Date(Date.now() + INVITATION_TTL_SECONDS * 1000).toISOString(),
     };
   } catch (err) {

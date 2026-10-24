@@ -143,3 +143,16 @@ export async function noteClinicVisit(
     return null;
   }
 }
+
+/**
+ * Whether the clinic's trial runs now (or waits for the owner's first visit): the clinic's pages then word drafting for
+ * made-up notes only (src/lib/account-copy.ts DRAFTING_COPY.*Trial). false without a trial, after it ended, and on
+ * any error (the wording falls back to the standard text).
+ */
+export async function clinicTrialRunning(db: Kysely<Database>, tenantId: string, now = new Date()): Promise<boolean> {
+  try {
+    return clinicAccessOf(await getClinicPlan({ db }, tenantId), now).state === "trial";
+  } catch {
+    return false;
+  }
+}

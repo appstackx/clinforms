@@ -4,23 +4,27 @@
  * session; anyone else gets nothing done). Each action is audited under the "platform" pseudo-tenant.
  */
 import { revalidatePath } from "next/cache";
-import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
 import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
 import { platformActionAdmin } from "@/server/admin/guards";
-import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
+import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
+import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
+import { normaliseEmail } from "@/server/auth/platform";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
 import { TenantSlugError } from "@/server/auth/tenant";
 import { getDb } from "@/server/db";
+import { inviteDeliveryOf } from "@/server/email";
 import { logAuthEvent } from "@/server/email/log";
 import { RepoInputError } from "@/server/repos/context";
 
 export type CreateClinicResult = ActionResult<{
   clinicName: string;
   tenantId: string;
+  ownerEmail: string;
   inviteLink: string;
   expiresAt: string;
-  emailSent: boolean;
+  delivery: InviteDelivery;
 }>;
 
 export async function createClinicAction(_prev: CreateClinicResult | null, form: FormData): Promise<CreateClinicResult> {
@@ -31,6 +35,8 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
   if (!Number.isInteger(retentionDays) || retentionDays < RETENTION_MIN_DAYS || retentionDays > RETENTION_MAX_DAYS) {
     return { ok: false, error: ACCOUNT_ERRORS.retentionRange };
   }
+  // The form offers "Email the invitation to the owner" (on by default) only while email is set up ("emailChoice").
+  const sendEmail = !(form.get("emailChoice") === "1" && form.get("sendEmail") !== "on");
   try {
     const created = await createClinicAsPlatform(getDb(), admin, {
       name: String(form.get("name") ?? "").trim(),
@@ -39,19 +45,47 @@ export async function createClinicAction(_prev: CreateClinicResult | null, form:
       retentionDays,
       appOrigin: appOrigin(baseUrlSetting(), requestHeaders()),
       linkSecret: authSecret(),
+      sendEmail,
     });
     revalidatePath(PLATFORM_PATH);
     return {
       ok: true,
       clinicName: String(form.get("name") ?? "").trim(),
       tenantId: created.tenantId,
+      ownerEmail: normaliseEmail(String(form.get("ownerEmail") ?? "")),
       inviteLink: created.inviteLink,
       expiresAt: created.invitationExpiresAt,
-      emailSent: created.email.status === "sent",
+      delivery: inviteDeliveryOf(created.email),
     };
   } catch (err) {
     if (err instanceof RepoInputError || err instanceof TenantSlugError) return { ok: false, error: err.message };
     logAuthEvent("platform.create_clinic_failed", { error: err instanceof Error ? err.name : "error" });
+    return { ok: false, error: ACCOUNT_ERRORS.generic };
+  }
+}
+
+export type OwnerResetResult = ActionResult<{ tenantId: string; ownerEmail: string; link: string; expiresAt: string }>;
+
+/**
+ * A one-time password reset link for a clinic owner who cannot use "Forgotten your password?" and has nobody in the
+ * clinic to create one (e.g. its only owner, email off or not arriving). Never emailed: shown once on the page.
+ */
+export async function createOwnerResetLinkAction(_prev: OwnerResetResult | null, form: FormData): Promise<OwnerResetResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  try {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const ownerEmail = normaliseEmail(String(form.get("resetOwnerEmail") ?? ""));
+    const created = await createOwnerResetLinkAsPlatform(getDb(), admin, {
+      tenantId,
+      ownerEmail,
+      requestReset: (email) => getAuth().api.requestPasswordReset({ body: { email }, headers: requestHeaders() }),
+    });
+    revalidatePath(PLATFORM_PATH);
+    return { ok: true, tenantId, ownerEmail, link: created.link, expiresAt: created.expiresAt };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, error: err.message };
+    logAuthEvent("platform.owner_reset_link_failed", { error: err instanceof Error ? err.name : "error" });
     return { ok: false, error: ACCOUNT_ERRORS.generic };
   }
 }

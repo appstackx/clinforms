@@ -129,6 +129,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.trial_ended": "Trial ended",
   "platform.trial_converted": "Trial converted to a full account",
   "platform.limits_set": "Drafting limits changed",
+  "platform.owner_reset_link": "Owner password reset link created",
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -217,6 +218,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "auth.session_revoke":
       return SESSION_SCOPES[String(detail.scope)] ?? null;
     case "auth.password_reset_link":
+      if (detail.delivery === "platform") return "Created by ClinForms support for the owner";
       return detail.delivery === "sent" ? "Emailed to the member" : "Shown to the administrator to pass on";
     case "auth.password_reset_link_refused":
       return RESET_REFUSALS[String(detail.reason)] ?? null;
@@ -245,6 +247,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "report.store_signed":
       return typeof detail.rev === "number" ? `Version ${detail.rev}` : null;
     case "platform.clinic_create":
+    case "platform.owner_reset_link":
       return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}` : null;
     case "clinic.trial_set":
     case "platform.trial_set": {

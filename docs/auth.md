@@ -16,7 +16,7 @@ Data layer: [`database.md`](database.md). Code: `src/server/auth/`, `src/server/
 | Sessions | 12 hours, refreshed hourly; cookie prefix `clinforms` (`__Secure-` on https); Better Auth caches session data in a signed cookie for 5 minutes, but `/app` pages, server actions and the module seam (`buildAuthContext`) always re-read the database, so a revoked session loses access at once |
 | Rate limits | Better Auth's own (HTTP API, stored in the `rateLimit` table) plus ClinForms limits in every sign-in server action (shared `rate_limits` table; IPs and addresses stored only as keyed hashes) |
 | Audit | Every membership or security change writes an `audit_log` row (ids only – never patient data, never an invitation link; invitations are recorded as `inv_<hash>`) |
-| Email | `CLINFORMS_EMAIL_PROVIDER` = `mailersend` \| `log` (development) \| `none` (default). With `none`, the administrator who invites someone or asks for a reset link is shown the link to pass on |
+| Email | `CLINFORMS_EMAIL_PROVIDER` = `mailersend` \| `log` (development) \| `none` (default); optional `CLINFORMS_EMAIL_REPLY_TO` (reply-to on every message). With `none`, the administrator who invites someone or asks for a reset link is shown the link to pass on; an invitation's link is shown after inviting in every case (§5 "Invite members") |
 
 **Why the checks run where they do.** Next 14 middleware runs on the Edge runtime, so `src/middleware.ts` only checks
 that a session cookie exists for `/app/**` (and never matches `/api`, `/reports` or `/pms-sandbox`). The real checks
@@ -41,7 +41,7 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 | `/login` | anyone | Email + password, then a 6-digit code or a backup code. *Fix wave 2:* signing in, signing out (`src/app/app/session-forms.tsx`) and switching clinic load the next page in full, so nothing held in memory (the Studio's clinic records) survives into another sign-in or clinic |
 | `/two-factor` | signed in | Set-up: confirm password → QR code (rendered on the server) and key → backup codes (shown once, "I have saved them" required) → code → `/app` |
 | `/accept-invite?token=…` | anyone | Create the account for the invited address (name + password) and join, or join when already signed in as that address; then `/two-factor`. The token is `<invitation id>.<MAC>` (HMAC-SHA256 under a key derived from `BETTER_AUTH_SECRET`, `src/server/auth/invite-token.ts`): an invitation id alone is not a link, and rotating the secret invalidates open links. Better Auth's `list-invitations` and `get-full-organization` endpoints are switched off (they list invitations to every member) |
-| `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link. `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
+| `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link (a clinic's only owner: ClinForms support, platform page). `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
 | `/app` | member | Clinic overview (name, your role, members, open invitations), **Open the Studio** (`/app/studio`) and a link to the public demo (`/reports`, fictional data) |
 | `/app/studio/**` | member with two-step | The clinic's own Studio (tenant mode: `src/app/app/studio/`, guard `src/server/auth/studio-access.ts`): home, `new`, `forms`, `forms/[formId]`, `templates`, `batch` (explains it needs a connected clinic system), `[id]` review; `security` redirects to the public `/security` page. Header: the clinic, the member's menu (clinic settings, sign out); footer: legal links |
 | `/app/settings/clinic` | member (edit: owner/admin) | Clinic name, legal name, address, postcode, phone, email, retention 30–3650 days. Written into referrer forms in tenant mode |
@@ -77,8 +77,9 @@ built-in `member` role is not a ClinForms role and is refused.
 |---|---|
 | `BETTER_AUTH_SECRET` | 32+ random characters. Signs cookies and **encrypts the two-step secrets**: rotating it signs everyone out and makes every member set up two-step verification again |
 | `BETTER_AUTH_URL` | Production: `https://clinforms.co.uk` (required there). **Previews: unset on purpose** – the base URL then comes from the request, but only when its host is one of the deployment's own Vercel hostnames (`VERCEL_URL`, `VERCEL_BRANCH_URL`); any other host falls back to the branch URL, so a forged Host header can never end up in a link. Local: default `http://localhost:$PORT` |
-| `CLINFORMS_EMAIL_PROVIDER` | `none` (default) \| `mailersend` \| `log` (development only; treated as `none` on production) |
+| `CLINFORMS_EMAIL_PROVIDER` | `none` (default) \| `mailersend` \| `log` (development only; treated as `none` on every Vercel deployment, production and preview: it prints whole messages, links included) |
 | `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` | For `mailersend` (same service as the owner's other apps). Sender name "ClinForms". `CLINFORMS_EMAIL_FROM` is accepted as a fallback for the from address |
+| `CLINFORMS_EMAIL_REPLY_TO` | Optional: one plain address that replies to every ClinForms email go to (MailerSend reply-to on invitations, password resets and the two-step notice). Production value: `khuram@appstackx.co.uk` (set in Vercel by Khuram). A malformed value is a configuration error: the email is then reported as not sent ("failed") and the link is shown to pass on – nothing breaks. The request-access notification keeps the requester as its reply-to |
 | `CLINFORMS_PLATFORM_ADMINS` | Comma-separated emails of ClinForms staff allowed into `/app/platform` (`isPlatformAdmin()`; the account also needs two-step verification). An account for a listed address can only be created from a **platform** invitation (§5 "Platform page") |
 
 Provisioning (values generated with node crypto, written to the secrets file first, piped to Vercel on stdin, never
@@ -95,17 +96,32 @@ also need `--yes`) or, without `--env`, the current environment (e.g. local SQLi
 npm run admin:create-clinic -- --env production --yes \
   --name "Riverside Physiotherapy" --slug riverside-physio --owner-email owner@riverside.example [--retention-days 365]
 ```
-Prints the clinic id, the owner's invitation link (**once**) and whether the email went out. With email off, send the
-link to the owner yourself (it works once and expires in 7 days). The id (slug) can never change – choose it carefully.
+Prints the clinic id and the owner's invitation link (**once**). **The script never sends email** (it runs on a laptop,
+whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days). To
+have the invitation emailed, create the clinic on the platform page instead (§ "Platform page"). The id (slug) can never
+change – choose it carefully.
 For preview, add `--app-url <origin of the deployment or local server using the preview database>`.
 
 ### Invite members
-The owner (or an administrator) uses **Settings → Members → Invite someone**. With email off the link is shown to
-copy; open invitations can be copied again or cancelled. A person who already has an account (another clinic)
+The owner (or an administrator) uses **Settings → Members → Invite someone**. Afterwards the page says how it went –
+"Invitation emailed to <address>", "The invitation email to <address> could not be sent…" or "Email is not set up, so
+nothing was sent…" – and **always** shows the link to copy, with a warning not to forward it (whoever opens it can
+create the account and join the clinic): when it was emailed, the copy is only for in case the email does not arrive.
+Open invitations can be copied again or cancelled. Invitation links are never written to a log line, the audit trail
+(`invitationRef()` only) or analytics (the query string of `/accept-invite` and `/reset-password` is dropped). A person who already has an account (another clinic)
 signs in and accepts; everyone else creates their account from the link and sets up two-step verification.
 
 ### Forgotten password
-- Email on: `/reset-password` → link by email (2 hours).
+- Email on: `/reset-password` → link by email (2 hours). Owners included: checked end to end in the browser with the
+  `log` provider (24/10/2026, `release/blue-heart`). If nothing arrives, the page points to the clinic's owner or
+  administrators, and a clinic's **only owner** to ClinForms support (next point).
+- **Only owner, no email (or not arriving):** ClinForms support opens `/app/platform` → **Owner password reset**, picks
+  the clinic and enters the owner's address (must be an owner of that clinic; never a platform administrator's own
+  account). The page shows a one-time reset link **once** (Better Auth's own token, stored hashed, 2 hours) – it is
+  never emailed. Confirm who you are speaking to first (call the clinic on a known number). Audited
+  `platform.owner_reset_link` (naming the administrator) and `auth.password_reset_link` with `delivery: "platform"`
+  under every clinic the account belongs to – never the link. The owner still needs their authenticator app; for a
+  lost phone as well, also run the two-step reset below.
 - Email off: an owner or administrator opens **Settings → Members → Manage → Create a password reset link** and
   passes it on (administrators cannot do this for owners). The member still needs their authenticator app.
   A password belongs to the account, not the clinic: for a member who also belongs to **another clinic** the link is
@@ -121,6 +137,7 @@ signs in and accepts; everyone else creates their account from the link and sets
 
 ### Platform page (`/app/platform`)
 1. **Bootstrap your own account from a platform invitation:** `npm run admin:create-clinic -- --env <env> … --owner-email <you>`
+   (the script prints the link and never emails it)
    (or have an existing platform administrator create a clinic for you on the page), open the link, set up two-step
    verification. Then add the address to `CLINFORMS_PLATFORM_ADMINS` (Vercel env, redeploy).
 2. Open `/app/platform` (no link in the clinic area – type it). Everyone else gets the 404 page; actions re-check on every call.
@@ -133,8 +150,10 @@ signs in and accepts; everyone else creates their account from the link and sets
 
 ### Trials and drafting limits (10/2026)
 A clinic can be given a **trial** (e.g. 3 days for Blue Heart's set-up): while it runs (or waits to start) the clinic
-works as usual and every page of `/app` and `/app/studio` shows "Trial – N days left. Use made-up or anonymised notes
-until your data processing agreement is signed."; once it has ended the clinic can still open, preview and download its
+works as usual and every page of `/app` and `/app/studio` shows "Trial – N days left. Use made-up notes only until
+your data processing agreement is signed." (owner direction 24/10: no real patient data in a trial; Settings → Clinic
+then says "During your trial, switch this on to try drafting with made-up notes only." beside the drafting switch, and
+the overview's checklist likewise – wording in `src/lib/account-copy.ts` `TRIAL_COPY` / `DRAFTING_COPY`); once it has ended the clinic can still open, preview and download its
 records (and finish existing drafts), but **nothing new** is created – the Report API answers 403 `TRIAL_ENDED` ("Your
 trial has ended … contact us at khuram@appstackx.co.uk") for a new report or form map, uploads (form files, notes),
 drafting, form readings and launch links (`src/modules/medreport/auth/clinic-access.ts`), and the banner says so.
@@ -232,5 +251,8 @@ the security review, `--release-slug` is refused for a clinic with audit rows an
 - Without transactions, Better Auth's multi-step writes (e.g. sign-up = user + password rows) are not atomic. A
   half-created account would block re-using that invitation; fix by hand (delete the `user` row).
 - HCPC numbers are format-checked only (not looked up on the register).
-- Email is off until a MailerSend key is set: until then invitation and reset links travel by hand.
-- The platform page creates clinics and handles access requests; offboarding and two-step resets stay script-only.
+- Email (MailerSend) is on in production from the 24/10/2026 deploy; with email off, invitation and reset links
+  travel by hand. Vercel's own request logs record the path of a page request, so an opened `/accept-invite?token=…`
+  or `/reset-password?token=…` URL can appear there (the app itself never logs one); both tokens work once and expire.
+- The platform page creates clinics (emailing the owner's invitation by choice), handles access requests and makes
+  one-time owner reset links; offboarding and two-step resets stay script-only.

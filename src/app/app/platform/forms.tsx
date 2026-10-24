@@ -2,12 +2,23 @@
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { SecretBox, SubmitButton } from "@/components/account/form-controls";
-import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
-import { changeTrialAction, createClinicAction, setLimitsAction, setTrialAction, type CreateClinicResult, type PlanActionResult } from "./actions";
+import { INVITE_COPY, OWNER_RESET_COPY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import {
+  changeTrialAction,
+  createClinicAction,
+  createOwnerResetLinkAction,
+  setLimitsAction,
+  setTrialAction,
+  type CreateClinicResult,
+  type OwnerResetResult,
+  type PlanActionResult,
+} from "./actions";
 
 const UK_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric" });
+const UK_DATE_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
-export function CreateClinicForm() {
+/** `emailOn`: email is set up on this deployment, so the invitation can be emailed (a choice, on by default). */
+export function CreateClinicForm({ emailOn }: { emailOn: boolean }) {
   const [state, action] = useFormState(createClinicAction, null as CreateClinicResult | null);
   return (
     <div className="space-y-4">
@@ -33,6 +44,16 @@ export function CreateClinicForm() {
           defaultValue={365}
           hint={`${RETENTION_MIN_DAYS}–${RETENTION_MAX_DAYS} days. The clinic can change it later.`}
         />
+        {emailOn ? (
+          <div className="sm:col-span-2">
+            <input type="hidden" name="emailChoice" value="1" />
+            <label className="flex items-center gap-2 text-sm text-slate-800">
+              <input type="checkbox" name="sendEmail" defaultChecked className="h-4 w-4 rounded border-slate-300" />
+              Email the invitation to the owner
+            </label>
+            <p className="mt-1 text-xs text-slate-500">Either way, the link is also shown here once, to copy.</p>
+          </div>
+        ) : null}
         <div className="sm:col-span-2">
           <SubmitButton pendingText="Creating…" confirmText="Create this clinic? Its id can never be changed or reused. Only do this once the data processing agreement is signed.">
             Create clinic and invite the owner
@@ -42,16 +63,45 @@ export function CreateClinicForm() {
       {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
       {state?.ok === true ? (
         <div className="space-y-3">
-          <Notice tone="success">
-            {state.clinicName} ({state.tenantId}) is set up.{" "}
-            {state.emailSent ? "The invitation was emailed to the owner." : "Email is off, so nothing was sent: pass the link below to the owner yourself."}
+          <Notice tone={state.delivery === "sent" ? "success" : "warning"}>
+            {state.clinicName} ({state.tenantId}) is set up. {INVITE_COPY.outcome(state.delivery, state.ownerEmail)}
           </Notice>
           <SecretBox
-            label="Owner invitation link"
+            label={`${INVITE_COPY.linkLabel(state.delivery)} (owner)`}
             value={state.inviteLink}
-            note={`Shown only this once. It works once and expires on ${UK_DATE.format(new Date(state.expiresAt))}.`}
+            note={`Shown only this once. ${INVITE_COPY.linkWarning(state.delivery, `on ${UK_DATE.format(new Date(state.expiresAt))}`)}`}
           />
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A one-time password reset link for a clinic owner (shown once, never emailed). */
+export function OwnerResetForm({ clinics }: { clinics: PlanClinicOption[] }) {
+  const [state, action] = useFormState(createOwnerResetLinkAction, null as OwnerResetResult | null);
+  return (
+    <div className="space-y-4">
+      <form action={action} className="grid gap-4 sm:grid-cols-2" aria-label="Owner password reset link">
+        <ClinicSelect clinics={clinics} id="owner-reset-clinic" />
+        <Field label="Owner's email address" name="resetOwnerEmail" type="email" required autoComplete="off" hint="Must be an owner of that clinic." />
+        <div className="sm:col-span-2">
+          <SubmitButton
+            variant="secondary"
+            pendingText="Creating…"
+            confirmText="Create a password reset link for this owner? Only do this after confirming who you are speaking to."
+          >
+            Create a reset link
+          </SubmitButton>
+        </div>
+      </form>
+      {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
+      {state?.ok === true ? (
+        <SecretBox
+          label={`Password reset link for ${state.ownerEmail} (${state.tenantId}) – until ${UK_DATE_TIME.format(new Date(state.expiresAt))}`}
+          value={state.link}
+          note={OWNER_RESET_COPY.note}
+        />
       ) : null}
     </div>
   );

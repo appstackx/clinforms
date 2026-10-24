@@ -222,6 +222,23 @@ describe("every activity and platform entry point applies its guard (source chec
     }
   });
 
+  it("invitation and reset links never go into an audit row or a log line from the actions that show them (24/10)", () => {
+    const files = [
+      "src/app/app/platform/actions.ts",
+      "src/app/app/(clinic)/settings/members/actions.ts",
+      "src/server/auth/platform.ts",
+      "src/server/admin/platform-console.ts",
+    ];
+    for (const file of files) {
+      const source = read(file);
+      for (const m of Array.from(source.matchAll(/(auditAction|appendAudit|appendPlatformAudit|logAuthEvent)\(([\s\S]*?)\);/g))) {
+        // comments and action / event names may say "link"
+        const call = m[2].replace(/\/\/.*$/gm, "").replace(/"[a-z_.]+"/g, '""');
+        assert.doesNotMatch(call, /\b(link|inviteLink|token|captured\.message)\b/, `${file}: ${m[1]}(${m[2].slice(0, 120)})`);
+      }
+    }
+  });
+
   it("the activity page and its download scope the query by role (the person filter is never taken from the request alone)", () => {
     for (const file of ["src/app/app/(clinic)/settings/activity/page.tsx", "src/app/app/(clinic)/settings/activity/export/route.ts"]) {
       const source = read(file);

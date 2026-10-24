@@ -7,7 +7,7 @@ import { TRIAL_COPY, trialBanner } from "./trial-copy";
 test("trial banner: N days left, the DPA line, singular, ended with the contact address, nothing without a trial", () => {
   assert.deepEqual(trialBanner({ state: "trial", daysLeft: 3, endsAt: "2026-10-27T09:00:00.000Z", pending: false }, "help@example.test"), {
     tone: "info",
-    text: "Trial – 3 days left. Use made-up or anonymised notes until your data processing agreement is signed.",
+    text: "Trial – 3 days left. Use made-up notes only until your data processing agreement is signed.",
   });
   assert.equal(trialBanner({ state: "trial", daysLeft: 1, endsAt: "2026-10-27T09:00:00.000Z", pending: false }, "x@y.test")?.text.startsWith("Trial – 1 day left."), true);
   assert.equal(trialBanner({ state: "trial", daysLeft: 3, endsAt: null, pending: true }, "x@y.test")?.text.startsWith("Trial – 3 days left."), true, "waiting for the owner");

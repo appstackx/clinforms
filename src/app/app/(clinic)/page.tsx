@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Panel } from "@/components/account/shell";
 import { DRAFTING_COPY, ROLE_DESCRIPTIONS, roleLabel } from "@/lib/account-copy";
+import { clinicTrialRunning } from "@/server/admin/clinic-plan";
 import { loadSetupChecklist } from "@/server/admin/setup-checklist";
 import { countMembers, listPendingInvitations } from "@/server/auth/membership";
 import { isManager } from "@/server/auth/roles";
@@ -16,7 +17,10 @@ export default async function ClinicOverviewPage() {
   const db = getDb();
   const [members, invitations] = await Promise.all([countMembers(db, membership.organizationId), listPendingInvitations(db, membership.organizationId)]);
   const manager = isManager(membership.role);
-  const setup = await loadSetupChecklist(db, membership, { members, openInvitations: invitations.length });
+  const [setup, trial] = await Promise.all([
+    loadSetupChecklist(db, membership, { members, openInvitations: invitations.length }),
+    clinicTrialRunning(db, membership.tenantId),
+  ]);
   // Fix wave 2: a new clinic's first steps, for the owner and administrators (who can do them).
   const steps: Array<{ done: boolean; optional?: boolean; href: string; label: string; text: string }> = [
     { done: setup.clinicDetails, href: "/app/settings/clinic", label: "Clinic details", text: "Name, address and postcode – they appear on completed forms." },
@@ -27,7 +31,7 @@ export default async function ClinicOverviewPage() {
       optional: true,
       href: "/app/settings/clinic",
       label: "Drafting from the notes",
-      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : DRAFTING_COPY.checklistOff,
+      text: setup.draftingEnabled ? DRAFTING_COPY.checklistOn : trial ? DRAFTING_COPY.checklistOffTrial : DRAFTING_COPY.checklistOff,
     },
     { done: setup.team, href: "/app/settings/members", label: "Invite your clinicians", text: "Each member signs in with two-step verification." },
     { done: setup.signer, href: "/app/settings/members", label: "Signing details", text: "An HCPC number and “may sign” for each clinician who approves forms." },

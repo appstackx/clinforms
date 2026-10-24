@@ -2,7 +2,7 @@
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { SecretBox, SubmitButton } from "@/components/account/form-controls";
-import { ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
+import { INVITE_COPY, ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { changeRole, createResetLink, inviteMember, saveMemberProfile, type InviteResult, type ResetLinkResult } from "./actions";
 
@@ -22,7 +22,7 @@ function RoleSelect({ roles, defaultValue, name = "role" }: { roles: RoleKey[]; 
   );
 }
 
-export function InviteForm({ roles, emailOff }: { roles: RoleKey[]; emailOff: boolean }) {
+export function InviteForm({ roles }: { roles: RoleKey[] }) {
   const [state, action] = useFormState(inviteMember, null as InviteResult | null);
   return (
     <div className="space-y-4">
@@ -46,18 +46,16 @@ export function InviteForm({ roles, emailOff }: { roles: RoleKey[]; emailOff: bo
         ))}
       </ul>
       {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
-      {state?.ok === true && state.link ? (
-        <SecretBox
-          label={`Invitation link for ${state.email}`}
-          value={state.link}
-          note={
-            emailOff
-              ? "Email is not set up yet, so nothing was sent. Pass this link to the person yourself. It works once and expires in 7 days."
-              : "The email could not be sent. Pass this link to the person yourself. It works once and expires in 7 days."
-          }
-        />
+      {state?.ok === true ? (
+        <div className="space-y-3" data-testid="invite-result">
+          <Notice tone={state.delivery === "sent" ? "success" : "warning"}>{INVITE_COPY.outcome(state.delivery, state.email)}</Notice>
+          <SecretBox
+            label={`${INVITE_COPY.linkLabel(state.delivery)} for ${state.email}`}
+            value={state.link}
+            note={INVITE_COPY.linkWarning(state.delivery, "in 7 days")}
+          />
+        </div>
       ) : null}
-      {state?.ok === true && state.sent ? <Notice tone="success">Invitation sent to {state.email}. The link expires in 7 days.</Notice> : null}
     </div>
   );
 }
