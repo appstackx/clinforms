@@ -10,6 +10,13 @@ The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/cli
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
 
+## TOP – Blue Heart trial is LIVE (Sat 2026-10-24 ~15:15 UTC) – what's next
+- **Live:** clinic `blue-heart` on clinforms.co.uk, 17 proposed forms, trial 3 days from Dell's first sign-in, limits 30/1,500, email on (D70). Owner invite (contact@blueheartclinics.co.uk) expires 31 Oct – Khuram sends it with `demo-assets/outputs/blue-heart/welcome/` (guide PDF, email.txt, sample-notes/).
+- **Check after Dell signs in:** `npm run -s admin:set-trial -- --env production --slug blue-heart --show` (trial running) and `admin:list-clinics` (1 owner); MailerSend dashboard shows the domain Verified (the send-only token can't read domains – good).
+- **Questions for Dell** (forms): Bodycare typed HCPC/CSP numbers (remove in TM3); 10Bridge EOTS letter date in "Date of Accident"; CLM solicitor source; JJ "Shoulder No"; TPN "FCA"; Proclaim "Strength Testing" ticks; which printed defaults stay; who confirms the 17 forms (owner/admin/clinician, not staff).
+- **Before real patient data / paid:** DPA + DPIA signed (drafts on branch `docs/blue-heart-legal`), London Postgres, Vercel Pro, confirm the nightly retention run, then `admin:set-trial --convert-to-paid`.
+- **Paused:** K2 (clinic-system sprint, wf_12ae1ae4-b57; foundation on `origin/feat/clinic-system`) – resume after the trial is running.
+
 ## TOP – Blue Heart onboarding build: 3-day trial, own templates, TM3 merge codes (P0; Sat 2026-10-24)
 Khuram (24/10): "templates added. for his setup, we will give him 3 day trial. everything should be under blue-heart
 account on database level, so it works as multi tenant app, if we onboard other customers." Dell sent 19 templates

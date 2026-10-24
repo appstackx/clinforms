@@ -149,6 +149,15 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | ~14:30 | Writer: `docs/strategy/all-in-one-pms-feasibility.md` on branch `strategy/pms-feasibility` (worktree `clinforms-wt/pms-feasibility`, off `origin/main` `ebf2582`; upstream unset so a bare push can't reach `main`). Verdict: technically yes; not as a TM3 rebuild today. Recommendation (D68, PROPOSED): paid ClinForms pilot first, staged path with gates. Memory: deal-file status + §7, next-steps TOP, D68. Committed, not pushed |
 | ~14:35–14:50 | Independent review (skeptic) + fact-check, 38 findings, verified and applied (TM3 MSA cl. 1.4/10.1 re-read from the PDF; TM3 help 4553166/4560121/4585360/4585166; HCPC, HMDG, Forensic Control, Twilio, SI 2026/82, Cliniko pricing/API/Effra, Heidi, WPA re-fetched; git counts: Starwrit 721 commits since 1/10, ~510 on 16–22/10). Report rewritten: headline **"No – not as a product AppstackX builds or runs; yes to ClinForms; one system = existing PMS + ClinForms (E2)"**; email rewritten (no diary/billing step; pilot ask with fair use and VAT line; wider anonymisation list; no TM3 price/renewal questions – confidential); 3 questions; support re-costed £30–60k/yr; 5–8 h/wk row; team row "no identified funder"; §3a pre-real-data compliance; Gate 1 → 31 Mar 2027 + activity gates; stages 3–4 → Appendix "Conditions to reopen". D68 revised. Branch pushed to origin; **not merged** – `git diff --name-only origin/main...HEAD` includes `CLAUDE.md` (outside docs/ and memory/), so the merge condition was not met |
 
+### Sat 2026-10-24 (desktop – Blue Heart trial go-live)
+| Time (UTC) | Event |
+|---|---|
+| ~11:00–13:00 | Onboarding build + verify (trial clinics, TM3 merge codes, RTF ≤12 MB with pictures, limits, P3/P5, load-forms); forms-ready (tick boxes, mark-the-column, delete-as-necessary; 17 maps; Bodycare numbers replaced); welcome pack |
+| ~13:30 | Release polish (reply-to, trial wording made-up only, retention text, invite UX, owner reset) + 4-lens security review → fixes 3c51509 (GO) |
+| ~13:58–14:10 | Vercel reply-to; preview email off; migration 0006 preview (smoke clinic + TPN load, offboarded) and production (gate ok) |
+| ~15:00 | main d433d49 + 93f643a pushed after full chain (728/277/110/81/145) → deployment clinforms-j5mootjoh Ready; health/smoke ok; reset route 404 |
+| ~15:12 | Clinic blue-heart created (owner invite printed once, private file), trial + limits set, 17 forms loaded (9 provider runs, dry run then confirm) |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
