@@ -6,8 +6,59 @@ The RED demo is frozen at tag `red-demo-2026-10-13` in `~/Projects/Appstackx/cli
 **Tue 13 Oct, morning**. Snapshot of what is live: `CLAUDE.md`; run log: `docs/go-live.md`.
 **Updated Fri 2026-10-23 ~14:30 UTC, revised ~14:50 UTC:** new TOP (Blue Heart after the demo: the all-in-one / replace-TM3 question – answer no PMS build; feasibility report revised after review).
 **Updated Wed 2026-10-21 ~19:45 UTC, review fixes ~19:55 UTC:** TOP and TOP-b (Blue Heart: Dell's process email, fit test, product gaps).
+**Updated Sat 2026-10-24 ~UTC midday:** new TOP – Blue Heart onboarding build (branch `feat/blue-heart-onboarding`, NOT merged, NOT deployed).
 Rule: Khuram wants **a short plan first, build after his OK** for anything big – keep it brief when a deadline is close.
 Update this file at the end of every session (status, blockers, what changed).
+
+## TOP – Blue Heart onboarding build: 3-day trial, own templates, TM3 merge codes (P0; Sat 2026-10-24)
+Khuram (24/10): "templates added. for his setup, we will give him 3 day trial. everything should be under blue-heart
+account on database level, so it works as multi tenant app, if we onboard other customers." Dell sent 19 templates
+(gitignored `demo-assets/blue-heart-templates/reporttemplates/` – never commit them or their wording).
+- **Branch `feat/blue-heart-onboarding`** (worktree `~/Projects/Appstackx/clinforms-wt/bh-onboard`, off `main` `5600912`,
+  pushed to origin, **not merged – merging = production deploy, Khuram's call**). Six commits:
+  1. **Trial clinics + per-clinic drafting limits** – new table `clinic_plan` (migration **`0006_clinic_plan`** /
+     Postgres `20261024000006`): trial days, starts now or **at the owner's first visit to /app or the Studio** (recorded
+     once), ends by the clock; banner in `/app` and the clinic Studio ("Trial – N days left. Use made-up or anonymised
+     notes until your data processing agreement is signed."); after the end the Report API answers **403 `TRIAL_ENDED`**
+     for anything new (reports, form maps, uploads, drafting, form/notes readings, launch links) – existing records
+     stay readable/editable/downloadable. Platform page panel "Trials and drafting limits" + scripts
+     `admin:set-trial` (`--days 3 [--start-on-first-sign-in|--start-now]`, `--extend-days`, `--convert-to-paid`,
+     `--end-now`, `--show`) and `admin:set-limits` (`--per-minute 30 --per-day 1500 | --default`). Every change audited
+     (clinic trail + platform trail). Defaults unchanged (10/min, 400/day).
+  2. **TM3 merge codes** (`<<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>> <<P_DOB>> <<P_ADDRESS1-5>> <<P_POSTCODE>>
+     <<P_GROUPREF>> <<P_ALTERNATE_REF1>> <<P_CONSNAME>> <<DATE>> <<P_LOCATION_…>> <<P_EMPLOYER>> <<P_HOMETEL>>…`):
+     dictionary `core/practice-merge-codes.ts` (all codes in Dell's 19 templates); RTF converter **keeps** these codes
+     (`rtf-docx-2`; earlier fixtures byte-identical); the reading binds each to the record (address lines spread over
+     printed lines, empty lines left empty; one-line addresses one answer; `<<P_ALTERNATE_REF1>>` by label, e.g. "Date of
+     Accident" → incident date); not-held/unknown codes = "staff.entry" (gap for staff, flagged). Safety block unchanged.
+     Local probe (rules reading, counts only): **every merge code in all 18 readable templates is covered**.
+  3. **RTF up to 12 MB** when the excess is pictures (≤ 2.5 MB of text/layout; linear pre-scan; hostile cases tested).
+     All 6 large Dell templates (2.65–6.2 MB) pass – their text is 0.08–1.13 MB.
+  4. **P3** past medical / social history scoped by question (not withheld when an employer/case-manager form asks;
+     RTW forms keep minimisation). 5. **P5** Address/Postcode lines of printed/pasted notes reach the record.
+  6. **`admin:load-forms`** – a clinic's own templates into its library, encrypted for that clinic, maps PROPOSED
+     (staff confirm each once), preview unless `--confirm`, refuses unknown/closed clinics, audited. **Not run** on
+     preview/production.
+- **Verified 24/10:** full check chain green (typecheck, lint, test:medreport 699 pass/3 skipped, test:db 246, test:auth 94,
+  test:site 74, test:gateway 127 incl. real local D1, build). E2E on local production builds, demo mode, branch :3171 vs
+  `main` `5600912` :3172: `forms-regression.cjs` 7/7 both – all 5 completed forms (3 Word, 2 PDF) **byte-identical**;
+  `rtf-forms.cjs` 6/6 both – both RTF outputs byte-identical. New `scripts/e2e/practice-codes.cjs` 3/3 on the branch: an
+  8 MB RTF (logo) converted in the browser in ~1 s; the TM3-style fictional form's codes bound to the record (24 of 27
+  questions from the record, 26 codes recorded); Megan Hart approved; the Word file holds the values and no merge code.
+- **Before merging / deploying (Khuram's go, in this order):** (1) review; (2) apply migration 0006 to **preview**, run the
+  app against preview and smoke the platform panel; (3) apply 0006 to **production** (`CLINFORMS_DB=d1 npm run db:migrate
+  -- --d1-env production --yes`) – **the branch reads `clinic_plan` on every clinic page and Report API create call, so
+  deploying without the migration breaks creating reports** (fails closed); (4) merge `--no-ff` + push = deploy.
+- **Blue Heart set-up (after the deploy, Khuram's go):** create clinic `blue-heart` (platform page or `admin:create-clinic`)
+  → `admin:set-trial --slug blue-heart --days 3` (starts at Dell's first sign-in) → `admin:set-limits --per-minute 30
+  --per-day 1500` → convert the Bodycare IA `.doc` to .docx/RTF (Pages; textutil drops tables) → `admin:load-forms
+  --slug blue-heart --dir … --read-missing --referrer … ` (preview first, then `--confirm --yes`) → staff confirm each
+  map → owner switches drafting on (made-up/anonymised notes only until the DPA is signed).
+- **Known limits:** TPN PAF keeps its codes in drawn text boxes (left out by the converter – 0 questions); the Bodycare IA
+  is a legacy .doc (convert first); `<<P_LOCATION_…>>` use the clinic profile's address (11 sites: staff correct the site
+  per report); `<<P_HOSP_NUM>>`/`<<P_WORKTEL>>`/`<<P_INJURY>>` are staff entries; through the partner API the request
+  limit still caps RTF at ~3.2 MB (the Studio converts in the browser, so 12 MB works there); the trial and DPA wording
+  is Khuram's to confirm (D69).
 
 ## TOP – Blue Heart after the demo: Dell's "all-in-one / replace TM3" idea (P0; added Fri 2026-10-23 ~14:30 UTC, revised ~14:50 UTC after review)
 - **Demo held Fri 23/10 11:30 BST, "went really well"** (Khuram). Khuram's words: "Dell mentnioed that here is tool like this at the moment" –

@@ -435,6 +435,14 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   passcode while `clinic_profile.drafting_enabled` (fix wave 2: no profile, or a profile that cannot be read = OFF –
   fail closed; the host's `loadClinicProfile` passes read errors on): prefer "live" with it off → 403
   `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
+  *10/2026:* a clinic's own limits set by ClinForms staff (`ClinicProfile.draftingLimits`, the host's `clinic_plan`,
+  e.g. 30 a minute / 1,500 a day) replace those defaults for that clinic only (`ai/live-gate.ts effectiveTenantLimits`;
+  out-of-range values ignored; a profile that cannot be read → the defaults). **Trials (10/2026):**
+  `ClinicProfile.trial` (`pending` | `running` | `ended`); once ended, `auth/clinic-access.ts assertClinicMayCreate`
+  answers 403 `TRIAL_ENDED` ("Your trial has ended … Existing reports and forms can still be opened and downloaded …
+  contact us at …") on POST /drafts, /forms/analyse, the three file-import endpoints, POST /store/files and its
+  chunks, a store PUT that CREATES a report or form map, and POST /launch – updates, approvals, renders and reads
+  are unchanged. The public demo is never affected. Tests: `scripts/medreport/clinic-trial.test.ts`.
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
   `UNSUPPORTED_MEDIA_TYPE`.
