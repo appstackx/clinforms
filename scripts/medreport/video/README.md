@@ -161,6 +161,49 @@ ever created or signed in on production.
 - Never commit the clinic's templates, maps, recordings, invitation links or keys. Record the page only (no address
   bar); cover the two-step QR code and secret and any invitation or reset link.
 
+### `record-help.mjs` (the take, and the end-to-end test run)
+
+```bash
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/record-help.mjs --src <help-video src> \
+  --local <dir with local-invite.txt, server.log, db/> [--report <file.json>] [--rehearse] [--fast] [--assemble-only]
+```
+
+- `<src>` holds `narration.json` (`[{id, chapter, line, caption, action}]`), `voice/lines.json` (each clip's
+  `trimmedDurationSec`) and `voice/words.json` (word times inside each trimmed clip). Outputs go to `<src>/work`:
+  `frames/`, `timeline.json`, `steps.json` (every step's result and timing, the facts read from the screens, findings),
+  `clips/app-clean.mp4` (the app segment, cuts and the speed-up applied, no captions) and `downloads/`.
+- **Narration-driven.** Each line runs its actions while it is spoken (clicks can land on a spoken word) and lasts at
+  least its clip plus 0.5 s, so the next screen never appears before the line has been spoken. Page loads and
+  off-camera set-up are hard cuts; the live drafting wait is recorded in full and labelled with its real time (from the
+  click) in the mix; the two labelled jump cuts (the remaining review answers; the portal report) are cuts.
+- **People.** The owner signs up from the local invitation link (two-step code worked out in the script from the key
+  on the page, never printed); the owner invites the clinician by email off camera and the script reads her link from
+  the server log; she signs up in a second browser context. Passwords are made in memory.
+- **Secrets.** CSS injected before the first paint covers the QR code, the key and the backup codes with an opaque
+  "Hidden in this video" plate and masks the 6-digit field; every line scans the page's text for link tokens and
+  key-like text (the take stops on a hit) and for banned terms (logged as findings). Error text is cleaned of data URIs
+  and tokens. On the Security page the "Where you are signed in" panel is pushed below the frame (presentation only).
+- **Off camera, the clinician finishes the report** (`finishReview`): fictional answers consistent with the sample
+  notes, one-click resolutions, acknowledgements with a reason, and drafted wording the app's own check rejects is
+  rewritten. Everything it does is listed in `steps.json`.
+- `--rehearse` leaves drafting from the notes off (no live calls); `--fast` runs the steps with minimal pacing (the
+  picture is not usable) to check the flow quickly. Reset the local clinic (`reset-mirror.sh`) before every take.
+- About 11 live drafting calls for the 10Bridge Initial Assessment Report and 2 for the portal questions.
+
+### `mix-help.mjs` (the deliverables)
+
+```bash
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-help.mjs --src <help-video src> --out <dir> \
+  [--name ClinForms-Blue-Heart-getting-started] [--chapter-cards 1.6] [--email-mb 23] [--plan-only]
+```
+
+Title card (lines of chapter 0) → per chapter a 1.6 s chapter card and that chapter's footage → end card (the last
+line). Each narration clip starts at its recorded line start (no clip is sped up or cut); captions (the lines'
+`caption`), a chapter chip top left, the "Sped up – real time about N s" badge and the "Skipped ahead" tags are burned
+in; the narration is levelled to -16 LUFS (compression, look-ahead limiter, linear loudnorm). Outputs: `<name>.mp4`
+(1920x1080), `<name>-email.mp4` (1280x720, at most `--email-mb` MB), `<name>.srt` (the narration as spoken),
+`chapters.txt`, `poster.png`; checks and verification frames in `<src>/work/mix/` (`mix-report.json`, `frames/`).
+
 ## Outreach video (`record-outreach.mjs`)
 
 A generic 90 s video for cold outreach to UK private physiotherapy clinics: title card, a montage of the five bundled
