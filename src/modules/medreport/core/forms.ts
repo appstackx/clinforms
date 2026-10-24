@@ -138,6 +138,10 @@ export const PREFILL_ATTESTATIONS = [
 
 const NO_SCOPE: TemplateScope = { excludeFields: [], excludeTerms: [] };
 
+/** Terms of the past medical history and of the social history (withheld together with their note fields). */
+const PMH_TERMS = ["past medical history", "previous medical history", "medical history", "PMH"];
+const SOCIAL_TERMS = ["social history", "smoker", "smoking", "alcohol", "units per week", "recreational drugs"];
+
 /**
  * Employer and case-manager referrers: fitness-for-work scope (same rules as the built-in employer
  * template). Case managers' return-to-work forms usually reach the employer, so unrelated past medical
@@ -160,9 +164,83 @@ const EMPLOYER_SCOPE: TemplateScope = {
   ],
 };
 
-/** Data scope applied before drafting a form for this kind of referrer. */
-export function formScope(referrerType: ReferrerType): TemplateScope {
-  return referrerType === "employer" || referrerType === "case_manager" ? EMPLOYER_SCOPE : NO_SCOPE;
+/** A question that asks for the past medical history ("Past medical history", "Relevant medical history", "PMH"). */
+const ASKS_PMH = /\b(?:past|previous|relevant|pre-?existing)\s+medical\s+history\b|^\s*(?:\d+[.)]\s*)?medical\s+history\b|\bPMH\b|\bco-?morbidit/i;
+/**
+ * A question that asks for the social history: "Social history", "Smoking status", "Alcohol intake", or a label that is
+ * only "Smoker" / "Smoking" / "Alcohol" (security fix 24/10/2026, D3: a passing mention – "Was alcohol a factor in the
+ * accident?" – no longer unlocks the whole social history).
+ */
+const ASKS_SOCIAL =
+  /\bsocial\s+history\b|\b(?:smok(?:er|ing)|alcohol)\s+(?:status|history|intake|consumption|habits?|use)\b|^\s*(?:\d+[.)]\s*)?(?:smoker|smoking|alcohol)\s*[:?]?\s*$/i;
+/**
+ * A return-to-work / fitness-for-work form: it reaches the employer, so history stays withheld whatever it asks.
+ * Security fix 24/10/2026 (D3): tested on normaliseScopeText() (hyphens, underscores, slashes and dots read as spaces:
+ * "Return-to-Work", "TPN_RTW_Report", "Fitness-for-work"), and the usual wordings ("back to work", "return to full /
+ * light / restricted duties", "workplace assessment") count too.
+ */
+const RETURN_TO_WORK =
+  /\b(?:return(?:ing)?|back)\s+to\s+(?:work|employment|(?:full|normal|modified|light|restricted|amended)\s+duties)\b|\bfit(?:ness)?\s+(?:for|to)\s+(?:work|return|duties|(?:normal|modified|full|light|restricted)\s+duties)\b|\brtw\b|\bphased\s+return\b|\b(?:modified|restricted|amended|light)\s+(?:or\s+(?:modified|restricted|amended|light)\s+)?duties\b|\bwork\s+capacity\b|\bworkplace\s+assessment\b/i;
+
+/** Hyphens, underscores, slashes and dots read as spaces (titles often come from file names: "TPN_RTW_Report"). */
+export function normaliseScopeText(text: string): string {
+  return text.replace(/[-_/.\u2010-\u2015]+/g, " ");
+}
+
+/**
+ * Data scope applied before drafting a form for this kind of referrer.
+ *
+ * Fix 10/2026 (P3, scope by question): for an employer or case-manager referrer, history the form explicitly ASKS for
+ * is no longer withheld – a personal-injury rehabilitation network's initial assessment form asks for the past
+ * medical history, and its question was left blank as "outside the scope of this form". Such a question's history
+ * (its note field and terms) is sent for drafting and its terms are confined to the answers of the asking questions
+ * (TemplateScope.confineTerms: SCOPE_TERM anywhere else). Minimisation is kept for return-to-work / fitness-for-work
+ * forms (they usually reach the employer) and for forms that do not ask. Other referrers: no scope, as before.
+ *
+ * Verify fix (10/2026): an EMPLOYER referrer's own form always keeps the minimisation, whatever it asks – the report
+ * goes to the employer ("keep minimisation for employer-only forms", P3). Scope by question is for case managers
+ * (personal-injury rehabilitation networks) only.
+ */
+export function formScope(referrerType: ReferrerType, form?: Pick<FormDefinition, "title" | "fields">): TemplateScope {
+  if (referrerType !== "employer" && referrerType !== "case_manager") return NO_SCOPE;
+  if (!form || referrerType === "employer") return EMPLOYER_SCOPE;
+  const drafted = form.fields.filter((f) => f.fillSource.kind === "notes_narrative" || f.fillSource.kind === "clinician_opinion");
+  const printed = (f: FormField) => normaliseScopeText(`${f.section ?? ""}\n${f.label}`);
+  if (RETURN_TO_WORK.test(normaliseScopeText(form.title)) || form.fields.some((f) => RETURN_TO_WORK.test(printed(f)))) return EMPLOYER_SCOPE;
+  const pmh = drafted.filter((f) => ASKS_PMH.test(f.label) || ASKS_PMH.test(f.section ?? ""));
+  const social = drafted.filter((f) => ASKS_SOCIAL.test(f.label) || ASKS_SOCIAL.test(f.section ?? ""));
+  if (pmh.length === 0 && social.length === 0) return EMPLOYER_SCOPE;
+  const asked = new Set<string>([...(pmh.length ? PMH_TERMS : []), ...(social.length ? SOCIAL_TERMS : [])].map((t) => t.toLowerCase()));
+  return {
+    excludeFields: EMPLOYER_SCOPE.excludeFields.filter((f) => !(f === "note.pastMedicalHistory" && pmh.length) && !(f === "note.socialHistory" && social.length)),
+    excludeTerms: EMPLOYER_SCOPE.excludeTerms.filter((t) => !asked.has(t.toLowerCase())),
+    confineTerms: [
+      ...(pmh.length ? [{ terms: PMH_TERMS, sectionKeys: pmh.map((f) => f.id) }] : []),
+      ...(social.length ? [{ terms: SOCIAL_TERMS, sectionKeys: social.map((f) => f.id) }] : []),
+    ],
+  };
+}
+
+/**
+ * Security fix 24/10/2026 (D8): the scope of ONE drafting call. History a case-manager form asks for (confineTerms) is
+ * sent only in the calls that draft an asking question; every other call of the same form keeps the minimisation for
+ * that history (its note field and its terms withheld), so it cannot leak into the other answers. Pure.
+ */
+export function scopeForDraftCall(scope: TemplateScope, sectionKeys: readonly string[]): TemplateScope {
+  const groups = scope.confineTerms ?? [];
+  if (groups.length === 0) return scope;
+  const keys = new Set(sectionKeys);
+  const elsewhere = groups.filter((g) => !g.sectionKeys.some((k) => keys.has(k)));
+  if (elsewhere.length === 0) return scope;
+  const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((t, i) => t.toLowerCase() === b[i].toLowerCase());
+  const fields = new Set(scope.excludeFields);
+  const terms = [...scope.excludeTerms];
+  for (const g of elsewhere) {
+    if (same(g.terms, PMH_TERMS)) fields.add("note.pastMedicalHistory");
+    if (same(g.terms, SOCIAL_TERMS)) fields.add("note.socialHistory");
+    for (const t of g.terms) if (!terms.some((x) => x.toLowerCase() === t.toLowerCase())) terms.push(t);
+  }
+  return { ...scope, excludeFields: Array.from(fields), excludeTerms: terms };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -322,7 +400,7 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
       ? `${form.referrer.name}'s portal questions, answered for entry in the portal.`
       : `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
-    scope: formScope(form.referrer.type),
+    scope: formScope(form.referrer.type, form),
     sections,
     declarationText: "",
     declarationNote: isQuestionSet(form)
@@ -357,6 +435,8 @@ export interface ResolvedFormValue {
   value: string | boolean;
   /** Citable IDs ("REG", "FACT-…", "N-…"). */
   sourceIds: string[];
+  /** 10/2026: the record leaves this answer space empty on purpose (an address line it does not have). */
+  blank?: boolean;
 }
 
 function hasFact(facts: ComputedFact[], id: string): boolean {
@@ -419,6 +499,8 @@ export function resolveRegistrationValue(
   path: RegistrationPath,
   ctx: FormValueContext,
   answerType?: AnswerType,
+  /** 10/2026: one line of an address printed over several lines (a registration fill source's `part`). */
+  part?: AddressPart,
 ): ResolvedFormValue | null {
   const { bundle, instructingParty: party, computedFacts: facts } = ctx;
   const reg = bundle.registration;
@@ -451,6 +533,7 @@ export function resolveRegistrationValue(
     case "patient.address":
       return textValue(reg.addressSummary, REG);
     case "patient.addressLines":
+      if (part) return addressPartValue(splitUkAddress(reg.addressSummary).lines, part, REG);
       return textValue(splitUkAddress(reg.addressSummary).lines.join("\n"), REG);
     case "patient.postcode":
       return textValue(splitUkAddress(reg.addressSummary).postcode, REG);
@@ -503,6 +586,18 @@ export function resolveRegistrationValue(
       return textValue(bundleClinic(bundle)?.phone, []);
     case "clinic.email":
       return textValue(bundleClinic(bundle)?.email, []);
+    // 10/2026 (a clinic system's <<P_LOCATION_…>> codes): the clinic's address lines without the postcode, and the
+    // postcode, from the same lines ("postcode last").
+    case "clinic.addressLines": {
+      const lines = clinicAddress(bundle).lines;
+      if (part) return addressPartValue(lines, part, []);
+      return textValue(lines.join("\n"), []);
+    }
+    case "clinic.postcode":
+      return textValue(clinicAddress(bundle).postcode, []);
+    // A detail the record here does not hold: never filled by code – staff enter it (the caller raises the gap).
+    case "staff.entry":
+      return null;
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
@@ -517,6 +612,32 @@ export function resolveRegistrationValue(
       return textValue(clinician.role ?? "Physiotherapist", ids);
     }
   }
+}
+
+/** One line of a postal address printed over `of` lines: which line, 1-based (a registration fill source's `part`). */
+export interface AddressPart {
+  index: number;
+  of: number;
+}
+
+/** The clinic's address lines (postcode last in its settings) split into lines and postcode. */
+function clinicAddress(bundle: EpisodeBundle): { lines: string[]; postcode: string } {
+  const lines = (bundleClinic(bundle)?.addressLines ?? []).map((l) => l.trim()).filter(Boolean);
+  return splitUkAddress(lines.join(", "));
+}
+
+/**
+ * Line `part.index` of an address printed over `part.of` lines: the record's lines in order; the last printed line
+ * takes every line left over (joined with commas); a printed line the record has no line for is BLANK on purpose
+ * (`blank: true` – written as nothing, the clinic system's code removed). An address the record does not hold at all
+ * leaves the first line unanswered (one gap for staff) and the others blank.
+ */
+export function addressPartValue(lines: readonly string[], part: AddressPart, sourceIds: string[]): ResolvedFormValue | null {
+  const of = Math.max(1, Math.floor(part.of));
+  const index = Math.min(of, Math.max(1, Math.floor(part.index)));
+  if (lines.length === 0) return index === 1 ? null : { text: "", value: "", sourceIds, blank: true };
+  const text = index < of ? (lines[index - 1] ?? "") : lines.slice(index - 1).join(", ");
+  return text.trim() ? { text: text.trim(), value: text.trim(), sourceIds } : { text: "", value: "", sourceIds, blank: true };
 }
 
 /** A UK postcode at the end of an address ("MK5 8ZZ", "SW1A 1AA"). */
@@ -670,6 +791,47 @@ export function matchOption(options: readonly string[] | undefined, text: string
   return prefixes.length === 1 ? options[prefixes[0].i] : null;
 }
 
+/**
+ * The printed option a yes / no answer picks (10/2026): the option that starts with "Yes" / "No", else one printed as
+ * the single letter "Y" / "N" (the readings take a "Y | N" pair as yes / no). Null when neither is printed. Pure.
+ */
+export function yesNoOption(options: readonly string[] | undefined, value: boolean): string | null {
+  const list = options ?? [];
+  const word = value ? /^\s*yes\b/i : /^\s*no\b/i;
+  const letter = value ? /^\s*y\.?\s*$/i : /^\s*n\.?\s*$/i;
+  return list.find((o) => word.test(o)) ?? list.find((o) => letter.test(o)) ?? null;
+}
+
+/** An answer that says no printed option applies ("None", "Nil", "N/A"): nothing is marked (10/2026). */
+const NONE_OF_THEM = /^(?:none|nil|no|n\/a|not applicable|none of (?:them|these|the above))\.?$/i;
+
+/**
+ * The printed options a TEXT answer names (10/2026: a "tick all that apply" row of a mark-the-column table, answered as
+ * text such as "Neck, Back"): every option is matched whole (case-insensitive, longest first, so "None or N/A"
+ * stays one option); `unmatched` is whatever else the answer says. "None" / "Nil" / "N/A" name no option and leave
+ * nothing unmatched. Pure.
+ */
+export function namedOptions(options: readonly string[] | undefined, text: string): { matched: string[]; unmatched: string } {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t || NONE_OF_THEM.test(t)) return { matched: [], unmatched: "" };
+  let rest = t;
+  const matched: string[] = [];
+  const byLength = (options ?? []).map((o, i) => ({ o: o.trim(), i })).filter((x) => x.o).sort((a, b) => b.o.length - a.o.length);
+  for (const { o, i } of byLength) {
+    const re = new RegExp(`(^|[^A-Za-z0-9])${o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z0-9])`, "i");
+    const m = re.exec(rest);
+    if (!m) continue;
+    matched.push((options ?? [])[i]);
+    rest = `${rest.slice(0, m.index)}${m[1]} ${rest.slice(m.index + m[0].length)}`;
+  }
+  const unmatched = rest
+    .replace(/\b(?:and|or|both|also)\b/gi, " ")
+    .replace(/[\s,;/&+.:()-]+/g, " ")
+    .trim();
+  const order = new Map((options ?? []).map((o, i) => [o, i] as const));
+  return { matched: matched.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)), unmatched };
+}
+
 /** Convert a resolved value into the structured answer for a field (null value when it does not fit). */
 export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | null): FormAnswer {
   const kind = answerKindFor(field.answerType);
@@ -734,8 +896,23 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
  * are answered only by their value – their paragraphs are supporting text, not the answer. Text
  * answers are answered when a paragraph has text.
  */
-export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer">): boolean {
+/**
+ * Verify fix (10/2026): whether a section's "left empty on purpose" (blankFromRecords) counts – only for the question
+ * it can come from: a line (2 or later) of an address printed over several lines (a registration fill source with a
+ * `part`, core/report-factory.ts). The flag travels with the report the browser sends, so the approval checks, the
+ * merge-code check and the forms engine never take it from any other question (a staff entry, a clinical answer, a
+ * clinic-system code such as <<P_SURNAME>>) – there an empty answer stays unanswered and blocks approval.
+ */
+export function isBlankByDesign(section: Pick<ReportSection, "blankFromRecords"> | null | undefined, field: Pick<FormField, "fillSource"> | null | undefined): boolean {
+  if (!section?.blankFromRecords || !field || field.fillSource.kind !== "registration") return false;
+  const { path, part } = field.fillSource;
+  return Boolean(part && part.index >= 2 && (path === "patient.addressLines" || path === "clinic.addressLines"));
+}
+
+export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer"> & { blankFromRecords?: boolean }): boolean {
   if (section.answer?.kind === "rows") return hasRowContent(section.answer.value);
+  // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have) is answered.
+  if (section.blankFromRecords && !section.paragraphs.some((p) => p.text.trim().length > 0)) return true;
   if (section.answer && section.answer.kind !== "text") {
     return section.answer.value !== null && section.answer.value !== "";
   }
@@ -791,6 +968,11 @@ export interface FormFillAnswer {
   value?: string | boolean | null;
   /** Table questions: the rows, column key → cell text (S2, additive). */
   rows?: FormAnswerRow[];
+  /**
+   * 10/2026: the record leaves this answer space empty on purpose (an address line it does not have): the forms
+   * engine removes the placeholder (a clinic system's merge code) instead of leaving it or a review marker.
+   */
+  blank?: boolean;
 }
 
 /** Answers keyed by form field ID ("F-01"…). */
@@ -842,11 +1024,17 @@ export function buildFormAnswers(
       continue;
     }
     const section = report.sections.find((s) => s.key === field.id);
-    if (!section || !isSectionAnswered(section)) {
+    const blankByDesign = isBlankByDesign(section, field);
+    if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
       answers[field.id] = {};
       continue;
     }
     const text = answerToText(section);
+    // 10/2026: left empty on purpose by the record – the forms engine removes the clinic system's code there.
+    if (blankByDesign && text.trim() === "") {
+      answers[field.id] = { text: "", blank: true };
+      continue;
+    }
     const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
     if (Array.isArray(structured)) {
       answers[field.id] = { text, rows: structured };
@@ -907,12 +1095,30 @@ export function parseBlockId(id: string): ParsedBlockId | null {
  * Answer-space identity (comparing two maps of the same file)
  * ----------------------------------------------------------------------------------------------*/
 
+/**
+ * Every Word block an anchor writes into (10/2026): the tick boxes' blocks, the cells a mark_cell question marks, the
+ * lines of a one-option-per-line delete_options list – otherwise its own block. For ordering, highlighting the
+ * answer space, the merge-code checks and the load checks.
+ */
+export function docxAnchorBlockIds(anchor: Extract<FormField["anchor"], { kind: "docx" }>): string[] {
+  if (anchor.target === "checkbox_glyph" && anchor.optionGlyphs?.length) return Array.from(new Set(anchor.optionGlyphs.map((g) => g.blockId)));
+  if (anchor.target === "mark_cell" && anchor.optionCells?.length) return Array.from(new Set(anchor.optionCells.map((c) => c.blockId)));
+  if (anchor.target === "delete_options" && anchor.optionTexts?.length && !anchor.placeholderText) return Array.from(new Set(anchor.optionTexts.map((o) => o.blockId)));
+  return [anchor.blockId];
+}
+
 /** Where an anchor writes, as a comparable string (block / placeholder / glyphs / PDF field / box). */
 export function formAnchorKey(anchor: FormField["anchor"]): string {
   switch (anchor.kind) {
     case "docx":
       if (anchor.target === "checkbox_glyph") {
         return `glyph:${(anchor.optionGlyphs ?? []).map((g) => `${g.blockId}#${g.glyphIndex}`).join(",")}`;
+      }
+      if (anchor.target === "mark_cell") return `cells:${(anchor.optionCells ?? []).map((c) => c.blockId).join(",")}`;
+      if (anchor.target === "delete_options") {
+        return anchor.placeholderText
+          ? `delete:${anchor.blockId}|${anchor.placeholderText}`
+          : `delete:${(anchor.optionTexts ?? []).map((o) => `${o.blockId}|${o.text}`).join(",")}`;
       }
       return `docx:${anchor.target === "replace_placeholder" ? `${anchor.blockId}|${anchor.placeholderText ?? ""}` : anchor.blockId}`;
     case "pdf_field": {
@@ -1014,6 +1220,30 @@ export function checkFormDefinition(form: FormDefinition): string[] {
       }
       if (field.anchor.target === "checkbox_glyph" && !field.anchor.optionGlyphs?.length) {
         problems.push(`${where}: no tick boxes are linked to this question.`);
+      }
+      // 10/2026: "mark the column" tables and "delete as necessary" lists.
+      if (field.anchor.target === "mark_cell") {
+        const cells = field.anchor.optionCells ?? [];
+        if (!cells.length) problems.push(`${where}: no cells to mark are linked to this question.`);
+        if (cells.some((c) => !c.option.trim() || !parseBlockId(c.blockId))) problems.push(`${where}: every cell to mark needs its option and a valid place.`);
+        if (new Set(cells.map((c) => c.blockId)).size !== cells.length) problems.push(`${where}: a cell is linked to more than one option.`);
+        if (field.answerType !== "yes_no" && field.answerType !== "single_choice" && field.answerType !== "checkbox" && field.answerType !== "short_text") {
+          problems.push(`${where}: a marked cell answers a choice, so the answer type must be yes / no, a single choice, a tick box, or short text naming every option that applies.`);
+        }
+        if (field.anchor.mark !== undefined && !field.anchor.mark.trim()) problems.push(`${where}: say which mark to write.`);
+      }
+      if (field.anchor.target === "delete_options") {
+        const list = field.anchor.placeholderText ?? "";
+        const lines = field.anchor.optionTexts ?? [];
+        if (!list && !lines.length) problems.push(`${where}: say where the options to keep or delete are printed.`);
+        if (lines.some((o) => !o.option.trim() || !o.text.trim() || !parseBlockId(o.blockId))) problems.push(`${where}: every printed option needs its option, its text and a valid place.`);
+        if (list && !(field.options ?? []).length) problems.push(`${where}: list the options printed in “${list}”.`);
+        if (list && (field.options ?? []).some((o) => !list.toLowerCase().includes(o.trim().toLowerCase()))) {
+          problems.push(`${where}: every option must be printed in “${list}”.`);
+        }
+        if (field.answerType !== "yes_no" && field.answerType !== "single_choice" && field.answerType !== "checkbox") {
+          problems.push(`${where}: keeping one printed option answers a choice, so the answer type must be yes / no, a single choice or a tick box.`);
+        }
       }
       if (!parseBlockId(field.anchor.blockId)) problems.push(`${where}: the location “${field.anchor.blockId}” is not valid.`);
     }

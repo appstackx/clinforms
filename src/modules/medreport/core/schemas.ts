@@ -173,8 +173,16 @@ export const FormAnalysisModeSchema = z.enum(["live", "demo_recorded", "demo_pre
  * - after_paragraph: a new paragraph after the question paragraph `blockId` ("p12").
  * - replace_placeholder: replace `placeholderText` (e.g. "[Insert prognosis]", "………", "____") in `blockId`.
  * - content_control: the w:sdt content control containing `blockId`.
- * - checkbox_glyph: tick the ☐ glyph(s) listed in `optionGlyphs` (☐ → ☒).
+ * - checkbox_glyph: tick the ☐ glyph(s) listed in `optionGlyphs` (☐ → ☒). Typed tick boxes count as glyphs too
+ *   (10/2026): "[ ]" / "[]" → "[x]", and a typed "[x]" is cleared to "[ ]" when another option is chosen.
  * - legacy_form_field: the legacy FORMTEXT / FORMCHECKBOX field in `blockId`.
+ * - mark_cell (additive, 10/2026): a "mark the column" table – rows of items, columns of options (Yes | No, a scale):
+ *   the chosen option's cell in `optionCells` gets the mark (`mark`, default "X"); a mark printed in another option's
+ *   cell (a pre-printed default) is removed, so the mark is never left in the wrong column.
+ * - delete_options (additive, 10/2026): a "delete as necessary" list – only the chosen option is kept, the others are
+ *   REMOVED from the form (not struck through): an inline list ("Daily / Weekly / Monthly") printed exactly as
+ *   `placeholderText` in `blockId`, or one option per line (`optionTexts`). A single printed item (a restriction
+ *   "delete any that do not apply") is a tick-box question: kept when ticked, removed when not.
  */
 export const DocxAnchorTargetSchema = z.enum([
   "table_cell",
@@ -183,6 +191,8 @@ export const DocxAnchorTargetSchema = z.enum([
   "content_control",
   "checkbox_glyph",
   "legacy_form_field",
+  "mark_cell",
+  "delete_options",
 ]);
 export const PdfFieldTypeSchema = z.enum(["text", "checkbox", "radio", "dropdown"]);
 /**
@@ -227,7 +237,16 @@ export const RegistrationPathSchema = z.enum([
   // the address without its postcode, one part per line, and the postcode alone (from the same record).
   "patient.addressLines",
   "patient.postcode",
+  // Additive (10/2026, a clinic system's letter merge codes – core/practice-merge-codes.ts): the clinic's address
+  // without its postcode, one part per line, and the clinic's postcode (from the clinic's settings); and
+  // "staff.entry" – a detail the record here does not hold (e.g. a hospital number): never filled by code, always
+  // left for staff to enter on each report. Not offered to the form reading's model (ai/form-analysis-schema.ts).
+  "clinic.addressLines",
+  "clinic.postcode",
+  "staff.entry",
 ]);
+/** Registration paths only the clinic-system merge codes use (kept out of the live form analysis's choices). */
+export const MERGE_CODE_ONLY_PATHS = ["clinic.addressLines", "clinic.postcode", "staff.entry"] as const;
 /**
  * How a computed fact is written into a form answer (default "summary" = the fact's value).
  * first_score / latest_score: an outcome measure's first or latest recorded score with its date
@@ -500,6 +519,12 @@ export const TemplateScopeSchema = z.object({
   excludeFields: z.array(ScopeFieldSchema),
   /** Case-insensitive terms that must not appear in drafted text (SCOPE_TERM, blocking). */
   excludeTerms: z.array(z.string()),
+  /**
+   * Additive (10/2026, scope by question – core/forms.ts formScope): history a referrer's form explicitly ASKS for
+   * (e.g. "Past medical history") is sent for drafting, but its terms belong only in the answers to those questions
+   * (`sectionKeys`): anywhere else they are SCOPE_TERM, blocking.
+   */
+  confineTerms: z.array(z.object({ terms: z.array(z.string()), sectionKeys: z.array(z.string()) })).optional(),
 });
 
 export const ReportTemplateSchema = z.object({
@@ -577,6 +602,12 @@ export const ReportSectionSchema = z.object({
   fieldId: FormFieldIdSchema.optional(),
   /** Form reports: structured answer for non-text answer types (see FormAnswerSchema). */
   answer: FormAnswerSchema.optional(),
+  /**
+   * Additive (10/2026): the record leaves this answer space empty on purpose – an address line the patient's or the
+   * clinic's address does not have (core/forms.ts, `part` of a registration fill source). The answer counts as given
+   * and the form gets nothing there (the clinic system's merge code is removed).
+   */
+  blankFromRecords: z.boolean().optional(),
 });
 
 export const GapResolutionSchema = z.object({
@@ -755,14 +786,56 @@ export const OptionGlyphSchema = z.object({
   glyphIndex: z.number().int().nonnegative(),
 });
 
+/** Most printed options one mark-the-column or delete-as-necessary question may have (security fix 24/10/2026). */
+export const MAX_ANCHOR_OPTIONS = 100;
+
+/** mark_cell (additive, 10/2026): the cell that is marked when this option is chosen. */
+export const OptionCellSchema = z.object({
+  /** The option as printed (the column heading, or the option printed in that cell). */
+  option: z.string().max(300),
+  /** The cell to mark ("t2.r3.c1"), or one paragraph of it ("t2.r3.c1.p0"). */
+  blockId: BlockIdSchema,
+});
+
+/** delete_options with one option per line (additive, 10/2026): where an option is printed. */
+export const OptionTextSchema = z.object({
+  option: z.string().max(300),
+  /** The paragraph or cell that prints it. */
+  blockId: BlockIdSchema,
+  /** The option's text exactly as printed there (removed when another option is chosen). */
+  text: z.string().min(1).max(400),
+});
+
 export const DocxAnchorSchema = z.object({
   kind: z.literal("docx"),
   target: DocxAnchorTargetSchema,
   blockId: BlockIdSchema,
-  /** replace_placeholder: the exact text to replace (e.g. "[Insert prognosis]", "……", "_____"). */
+  /**
+   * replace_placeholder: the exact text to replace (e.g. "[Insert prognosis]", "……", "_____").
+   * delete_options (inline list): the whole list exactly as printed, e.g. "Daily/Weekly/Monthly".
+   */
   placeholderText: z.string().optional(),
   /** checkbox_glyph (and yes_no / single_choice): where each option's ☐ is. */
   optionGlyphs: z.array(OptionGlyphSchema).optional(),
+  /** mark_cell (additive, 10/2026): the cell to mark for each option, in the order of the question's options. */
+  // Security fix 24/10/2026: bounded (a real form has at most a few dozen; Blue Heart's maps at most 11) and a mark
+  // without control characters (one would make the Word file unreadable).
+  optionCells: z.array(OptionCellSchema).max(MAX_ANCHOR_OPTIONS).optional(),
+  /** mark_cell: the mark written in the chosen cell (default "X"; e.g. "x" or "✓" to match the form). */
+  mark: z.string().min(1).max(3).regex(/^[^\u0000-\u001F\u007F]+$/, "A mark cannot contain control characters.").optional(),
+  /** delete_options with one option per line (additive, 10/2026): where each option is printed. */
+  optionTexts: z.array(OptionTextSchema).max(MAX_ANCHOR_OPTIONS).optional(),
+  /**
+   * replace_placeholder (additive, 10/2026): the printed text is REMOVED whenever the question has no answer yet – a
+   * DRAFT copy included – instead of being left as printed. For printed details that must never go out on a report,
+   * e.g. one named clinician's registration numbers typed into a clinic's template (replaced by the approver's own).
+   */
+  clearPlaceholder: z.boolean().optional(),
+  /**
+   * replace_placeholder (additive, 10/2026): the answer is written AFTER `placeholderText`, which stays printed – a
+   * printed label with no answer space of its own ("Job Role:", "Initial Assessment Date:", a numbered slot "01.").
+   */
+  writeAfter: z.boolean().optional(),
 });
 
 /**
@@ -897,7 +970,17 @@ export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "
  *   maps each table column key to what it holds (S2, additive).
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("registration"), path: RegistrationPathSchema }),
+  z.object({
+    kind: z.literal("registration"),
+    path: RegistrationPathSchema,
+    /**
+     * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
+     * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
+     * last line taking any that are left; a line the record does not have is written as nothing. Only for
+     * "patient.addressLines" and "clinic.addressLines".
+     */
+    part: z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) }).optional(),
+  }),
   z.object({ kind: z.literal("computed_fact"), factId: FactIdSchema, format: ComputedFactFormatSchema.optional() }),
   z.object({ kind: z.literal("notes_narrative") }),
   z.object({ kind: z.literal("clinician_opinion") }),

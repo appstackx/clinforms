@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, CircleDashed, FileSearch, ListChecks, TriangleAlert } from "lucide-react";
-import { MAX_FORM_FILE_BYTES } from "../../../config.public";
+import { MAX_FORM_FILE_BYTES, MAX_RTF_FILE_BYTES } from "../../../config.public";
 import { FORM_KIND_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, ReferrerType } from "../../../core/types";
@@ -144,7 +144,7 @@ export function UploadFormDialog({ open, onOpenChange, initialFile, initialRefer
               accept={FORM_ACCEPT}
               onFile={(f) => void accept(f)}
               title="Drop the form here, or choose a file"
-              hint={`Word (.docx), PDF or RTF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} · fillable PDFs work best; flat PDFs are best effort`}
+              hint={`Word (.docx), PDF or RTF · up to ${formatBytes(MAX_FORM_FILE_BYTES)} (an RTF template with pictures up to ${formatBytes(MAX_RTF_FILE_BYTES)}) · fillable PDFs work best; flat PDFs are best effort`}
             />
             {phase.kind === "error" ? (
               <Notice tone="error" title="That file could not be analysed">

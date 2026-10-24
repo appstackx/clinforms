@@ -15,6 +15,12 @@ import "server-only";
  *   checkbox_glyph       the chosen option's ☐ becomes ☒ (also symbol-font boxes, w14:checkbox content
  *                        controls and legacy FORMCHECKBOX fields); other options of the question are cleared.
  *   legacy_form_field    the FORMTEXT field's result is set.
+ *   mark_cell            (10/2026) a "mark the column" table: the chosen option's cell gets the mark ("X" by default),
+ *                        a mark-only cell of another option is cleared; never a mark in the wrong column.
+ *   delete_options       (10/2026) a "delete as necessary" list: only the chosen option is kept – the others are
+ *                        REMOVED (inline list replaced by the chosen option; option lines removed, an emptied line too).
+ *   Typed tick boxes ("[ ]", "[x]") are tick boxes for checkbox_glyph: "[ ]" → "[x]", and "[x]" → "[ ]".
+ *   replace_placeholder with clearPlaceholder (10/2026): an unanswered question's printed text is removed (DRAFT too).
  *
  * Answers come from core/forms.ts buildFormAnswers(report, form, {receipt}). Anchors are resolved on the
  * ORIGINAL document before anything changes, so every block ID means what the outline said. Text is
@@ -28,7 +34,7 @@ import "server-only";
  *
  * Owner: forms-engine agent. Signature final.
  */
-import { isAnswerableField, isUnknownAnswer, matchOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import { isAnswerableField, isUnknownAnswer, matchOption, namedOptions, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
 import type { FormDefinition, FormField } from "../core/types";
 import {
   CHECKED_GLYPH,
@@ -38,6 +44,7 @@ import {
   W14_NS,
   XML_NS,
   ancestorW,
+  bracketBoxText,
   childElements,
   cleanXmlText,
   descendantsW,
@@ -131,6 +138,10 @@ interface Ctx {
   skipped: Map<XmlElement, Map<string, number>>;
   usedControls: Set<XmlElement>;
   usedLegacy: Set<XmlElement>;
+  /** Tick-box changes inside text (☐ → ☒, "[ ]" → "[x]"), applied together once every tick box is decided (10/2026). */
+  glyphEdits: Map<XmlElement, Array<{ offset: number; length: number; text: string }>>;
+  /** Paragraphs a "delete as necessary" answer removed printed text from (10/2026 verify). */
+  deletedParas: Set<XmlElement>;
 }
 
 function where(field: FormField): string {
@@ -596,6 +607,12 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   const paras = blockParagraphs(ref);
   let needle = anchor?.placeholderText ?? "";
   let occ = needle ? occurrences(paras, needle) : [];
+  // 10/2026 verify: the blank was printed inside an option a "delete as necessary" answer removed (a "Max lift … kg"
+  // restriction deleted, its "…" answered): the answer belongs to the deleted option, so it is not printed anywhere else.
+  if (occ.length === 0 && paras.some((p) => ctx.deletedParas.has(p))) {
+    if (!skip) ctx.warn(`${where(field)}: “${needle}” was deleted with the printed option it belongs to, so this answer is not printed.`);
+    return;
+  }
   if (occ.length === 0) {
     // The exact text is not there: fall back to the block's detected blanks.
     const detected = paras.flatMap((p) => findPlaceholders(segmentsText(paragraphSegments(p))).map((m) => ({ p, ...m })));
@@ -620,7 +637,8 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   const p = target.p;
   const fullText = segmentsText(paragraphSegments(p));
   const paraList = toParagraphs(text);
-  const label = isBareLabel(target.text);
+  // A bare "Answer:" label, or (10/2026) a printed label the map says to write after: the answer goes after it.
+  const label = isBareLabel(target.text) || Boolean(anchor?.writeAfter);
   const before = fullText[target.index - 1] ?? "";
   const afterText = fullText.slice(target.index + target.length);
   const atLineEnd = afterText.trim() === "";
@@ -650,6 +668,26 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     const space = followingSpace(p).filter((x, i, all) => all.slice(0, i + 1).every(isFillLine));
     const rPr = withoutPlaceholderStyle(firstW(firstTextRun(p), "rPr"));
     if (rest.length > 0 || space.length > 0) writeIntoSpace(ctx, field, rest, space, p, null, answerPPr(ctx, p), typographyOf(rPr), kind);
+  }
+}
+
+/**
+ * Removes the field's exact placeholder from its block (the occurrence a filled answer would have taken), for an
+ * answer the record leaves empty on purpose. Nothing happens when the exact text is not there.
+ */
+function clearPlaceholder(ctx: Ctx, job: Job): void {
+  const { field, ref } = job;
+  const needle = field.anchor.kind === "docx" ? (field.anchor.placeholderText ?? "") : "";
+  if (!needle) return;
+  const occ = occurrences(blockParagraphs(ref), needle);
+  if (occ.length === 0) {
+    ctx.warn(`${where(field)}: the placeholder “${needle}” was not found, so nothing was removed.`);
+    return;
+  }
+  const k = skipKey(ctx, ref.el, needle);
+  const target = occ[Math.min(k, occ.length - 1)];
+  if (!replaceRange(target.p, target.index, target.index + target.length, () => [])) {
+    ctx.warn(`${where(field)}: the placeholder “${needle}” could not be removed.`);
   }
 }
 
@@ -808,8 +846,9 @@ function resolveGlyphs(ctx: Ctx, field: FormField): GlyphTarget[] {
 function chosenOptions(field: FormField, answer: FormFillAnswer, options: string[]): Set<string> | null {
   const value = answer.value;
   const text = (answer.text ?? "").trim();
-  const yes = options.find((o) => /^\s*yes\b/i.test(o));
-  const no = options.find((o) => /^\s*no\b/i.test(o));
+  // "Yes…" / "No…", or a printed "Y" / "N" pair (10/2026).
+  const yes = yesNoOption(options, true) ?? undefined;
+  const no = yesNoOption(options, false) ?? undefined;
   if (typeof value === "boolean") {
     if (options.length === 1) return new Set(value ? options : []);
     const pick = value ? yes : no;
@@ -839,10 +878,14 @@ function setGlyph(ctx: Ctx, slot: GlyphSlot, checked: boolean): void {
     const checkedEl = childElements(box).find((c) => c.localName === "checked");
     if (checkedEl) checkedEl.setAttributeNS(W14_NS, `${checkedEl.prefix ?? "w14"}:val`, checked ? "1" : "0");
   }
-  if (seg.kind === "text") {
-    const t = seg.el;
-    const text = t.textContent ?? "";
-    setText(t, text.slice(0, slot.offset) + glyph + text.slice(slot.offset + 1));
+  if (slot.bracket) {
+    // A typed tick box ("[ ]" → "[x]", "[x]" → "[ ]"), possibly split over runs: the new box in its first part.
+    slot.bracket.parts.forEach((part, i) => {
+      if (part.segment.kind !== "text") return;
+      addGlyphEdit(ctx, part.segment.el, { offset: part.offset, length: part.length, text: i === 0 ? bracketBoxText(slot.bracket!.text, checked) : "" });
+    });
+  } else if (seg.kind === "text") {
+    addGlyphEdit(ctx, seg.el, { offset: slot.offset, length: 1, text: glyph });
   } else if (seg.kind === "sym") {
     if (box) setWAttr(ctx.dom, seg.el, "char", glyph.codePointAt(0)!.toString(16).toUpperCase());
     else setWAttr(ctx.dom, seg.el, "char", symCharFor(seg.el, checked));
@@ -853,6 +896,26 @@ function setGlyph(ctx: Ctx, slot: GlyphSlot, checked: boolean): void {
     if (existing) cb.removeChild(existing);
     cb.appendChild(wEl(ctx.dom, "checked", { val: checked ? "1" : "0" }));
   }
+}
+
+function addGlyphEdit(ctx: Ctx, t: XmlElement, edit: { offset: number; length: number; text: string }): void {
+  const list = ctx.glyphEdits.get(t) ?? [];
+  list.push(edit);
+  ctx.glyphEdits.set(t, list);
+}
+
+/**
+ * Apply the tick-box changes inside text, per text element from its end backwards – a typed box can change length
+ * ("[]" → "[x]"), so every change uses the offsets read on the untouched document. A ☐ → ☒ change alone gives exactly
+ * the text it always gave.
+ */
+function flushGlyphEdits(ctx: Ctx): void {
+  ctx.glyphEdits.forEach((edits, t) => {
+    let text = t.textContent ?? "";
+    for (const e of edits.slice().sort((a, b) => b.offset - a.offset)) text = text.slice(0, e.offset) + e.text + text.slice(e.offset + e.length);
+    setText(t, text);
+  });
+  ctx.glyphEdits.clear();
 }
 
 function fillCheckboxes(ctx: Ctx, field: FormField, answer: FormFillAnswer, targets: GlyphTarget[]): void {
@@ -871,6 +934,247 @@ function fillCheckboxes(ctx: Ctx, field: FormField, answer: FormFillAnswer, targ
       continue;
     }
     setGlyph(ctx, target.slot, chosen.has(target.option));
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * "Mark the column" tables (mark_cell, 10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+interface MarkTarget {
+  option: string;
+  ref: BlockRef | null;
+}
+
+/**
+ * A cell that holds only a mark ("x", "X", "✓"…) – a mark printed as a default, or one written before. Also the other
+ * marks forms print for "this one" (10/2026 verify): ☑, the multiplication sign ×, ✕ and ✖.
+ */
+const MARK_ONLY_RE = /^[\s\u00A0]*[xX\u2713\u2714\u2717\u2718\u221A\u2612\u2611\u00D7\u2715\u2716][\s\u00A0]*$/;
+
+function resolveMarkCells(ctx: Ctx, field: FormField): MarkTarget[] {
+  const anchor = field.anchor.kind === "docx" ? field.anchor : null;
+  return (anchor?.optionCells ?? []).map((c) => ({ option: c.option, ref: ctx.index.byId.get(c.blockId) ?? null }));
+}
+
+function markParagraphs(ref: BlockRef): XmlElement[] {
+  return ref.kind === "cell" ? ref.paragraphs : [ref.el];
+}
+
+/** The mark in its own run: the cell's typography, bold, highlighted on a review copy. */
+function markRun(ctx: Ctx, mark: string, rPr: XmlElement | null): XmlElement {
+  const run = makeRun(ctx, [mark], rPr, "answer");
+  let props = firstW(run, "rPr");
+  if (!props) {
+    props = wEl(ctx.dom, "rPr");
+    run.insertBefore(props, run.firstChild);
+  }
+  setProp(props, wEl(ctx.dom, "b"), RPR_ORDER);
+  return run;
+}
+
+function writeMark(ctx: Ctx, ref: BlockRef, mark: string, field: FormField): void {
+  const paras = markParagraphs(ref);
+  if (paras.length === 0) {
+    ctx.warn(`${where(field)}: the cell to mark has no line to write in.`);
+    return;
+  }
+  const texts = paras.map((p) => segmentsText(paragraphSegments(p)));
+  const markOnly = texts.findIndex((t) => MARK_ONLY_RE.test(t));
+  const rPr = markRPr(paras[0]) ?? labelCellRPr(ref) ?? typographyOf(firstW(firstTextRun(ref.el), "rPr"));
+  if (markOnly >= 0 && texts.every((t, i) => i === markOnly || t.trim() === "")) {
+    // A mark is printed there already (a default): written again in the form's own place.
+    const p = paras[markOnly];
+    const at = texts[markOnly].search(/\S/);
+    replaceRange(p, at, at + 1, (styleRPr) => [markRun(ctx, mark, styleRPr ?? rPr)]);
+    return;
+  }
+  if (paras.every(isAnswerSpaceParagraph)) {
+    const p = paras[0];
+    clearParagraph(p);
+    p.appendChild(markRun(ctx, mark, rPr));
+    return;
+  }
+  // The cell prints the option itself ("70%", "Yes"): the mark goes after it.
+  let last = paras.length - 1;
+  while (last > 0 && texts[last].trim() === "") last -= 1;
+  const p = paras[last];
+  const end = texts[last].replace(/[\s\u00A0]+$/, "").length;
+  replaceRange(p, end, end, (styleRPr) => [makeRun(ctx, [" "], styleRPr ?? rPr, "answer"), markRun(ctx, mark, styleRPr ?? rPr)]);
+}
+
+/** A cell that holds only a mark is cleared (never a mark left in the wrong column). */
+function clearMark(ref: BlockRef): void {
+  const paras = markParagraphs(ref);
+  const texts = paras.map((p) => segmentsText(paragraphSegments(p)));
+  const markOnly = texts.findIndex((t) => MARK_ONLY_RE.test(t));
+  if (markOnly < 0 || !texts.every((t, i) => i === markOnly || t.trim() === "")) return;
+  const at = texts[markOnly].search(/\S/);
+  replaceRange(paras[markOnly], at, at + 1, () => []);
+}
+
+function fillMarkCells(ctx: Ctx, field: FormField, answer: FormFillAnswer, targets: MarkTarget[]): void {
+  if (targets.length === 0) {
+    ctx.warn(`${where(field)}: no cells to mark are linked to this question.`);
+    return;
+  }
+  const options = targets.map((t) => t.option);
+  let chosen: Set<string> | null;
+  if (field.answerType === "short_text" || field.answerType === "long_text") {
+    // "Tick all that apply": a text answer names the options to mark ("Neck, Back"). Anything else in it marks nothing.
+    const raw = (answer.text ?? "").trim();
+    if (!raw) return;
+    const named = namedOptions(options, raw);
+    if (named.unmatched) {
+      ctx.warn(`${where(field)}: “${named.unmatched}” is not one of the printed columns, so no cell was marked.`);
+      return;
+    }
+    chosen = new Set(named.matched);
+  } else {
+    chosen = chosenOptions(field, answer, options);
+  }
+  if (chosen === null) return;
+  const unticked = options.length === 1 && (answer.value === false || /^(?:no|false)\b/i.test((answer.text ?? "").trim()));
+  if (chosen.size === 0 && !unticked && field.answerType !== "short_text" && field.answerType !== "long_text" && (answer.text || answer.value !== undefined)) {
+    ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any column, so no cell was marked.`);
+  }
+  const anchor = field.anchor.kind === "docx" ? field.anchor : null;
+  const mark = cleanXmlText(anchor?.mark ?? "X").trim() || "X"; // no control characters (security fix 24/10/2026)
+  for (const target of targets) {
+    if (!target.ref) {
+      ctx.warn(`${where(field)}: the cell for “${target.option}” was not found.`);
+      continue;
+    }
+    if (chosen.has(target.option)) writeMark(ctx, target.ref, mark, field);
+    else clearMark(target.ref);
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * "Delete as necessary" lists (delete_options, 10/2026): only the chosen option is kept; the others are removed
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Index of `needle` in `text` (case-insensitive) from `from`, as a whole word or phrase; -1 when it is not there. */
+function findWord(text: string, needle: string, from = 0): number {
+  const t = text.toLowerCase();
+  const n = needle.trim().toLowerCase();
+  if (!n) return -1;
+  for (let i = t.indexOf(n, from); i >= 0; i = t.indexOf(n, i + 1)) {
+    const before = i === 0 ? "" : t.charAt(i - 1);
+    const after = t.charAt(i + n.length);
+    const edge = (ch: string, side: string) => ch === "" || !/[a-z0-9]/i.test(ch) || !/[a-z0-9]/i.test(side);
+    if (edge(before, n.charAt(0)) && edge(after, n.charAt(n.length - 1))) return i;
+  }
+  return -1;
+}
+
+function removeIfBlank(p: XmlElement): void {
+  if (segmentsText(paragraphSegments(p)).trim() !== "") return;
+  const cell = ancestorW(p, "tc");
+  if (cell && wChildren(cell, "p").length <= 1) return; // a cell keeps its last paragraph
+  if (firstW(firstW(p, "pPr"), "sectPr")) return;
+  remove(p);
+}
+
+function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
+  const { field, ref, answer } = job;
+  const anchor = field.anchor.kind === "docx" ? field.anchor : null;
+  if (!anchor) return;
+  const lines = anchor.placeholderText ? [] : (anchor.optionTexts ?? []);
+  const options = field.options?.length ? field.options : lines.map((o) => o.option);
+  const list = anchor.placeholderText ?? "";
+  const paras = blockParagraphs(ref);
+  if (list) {
+    const occ = occurrences(paras, list);
+    const k = skipKey(ctx, ref.el, list);
+    if (occ.length === 0) {
+      if (!unanswered) ctx.warn(`${where(field)}: the options “${list}” were not found, so nothing was deleted.`);
+      return;
+    }
+    const chosen = unanswered ? null : chosenOptions(field, answer, options);
+    const target = occ[Math.min(k, occ.length - 1)];
+    // A single printed item ("delete any that do not apply"): kept when ticked, removed when not.
+    if (chosen && options.length === 1) {
+      if (chosen.size === 0 && !replaceRange(target.p, target.index, target.index + target.length, () => [])) {
+        ctx.warn(`${where(field)}: “${list}” could not be removed.`);
+      }
+      if (chosen.size === 0) {
+        ctx.deletedParas.add(target.p);
+        removeIfBlank(target.p);
+      }
+      else addSkip(ctx, ref.el, list);
+      return;
+    }
+    if (chosen === null || chosen.size !== 1) {
+      if (chosen && chosen.size === 0) ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” is not one of “${list}”, so every option was left as printed.`);
+      addSkip(ctx, ref.el, list);
+      return;
+    }
+    const keep = Array.from(chosen)[0];
+    const printed = target.text;
+    const at = findWord(printed, keep);
+    const kept = cleanXmlText(at >= 0 ? printed.slice(at, at + keep.trim().length) : keep); // no control characters (24/10)
+    ctx.deletedParas.add(target.p);
+    if (!replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => [makeRun(ctx, [kept], styleRPr, "answer")])) {
+      ctx.warn(`${where(field)}: the options “${list}” could not be changed, so every option was left as printed.`);
+    }
+    return;
+  }
+  // One option per line (or a single printed item kept when ticked).
+  const chosen = unanswered ? null : chosenOptions(field, answer, options);
+  if (chosen === null) return;
+  if (chosen.size === 0 && options.length > 1) {
+    ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any printed option, so every option was left as printed.`);
+    return;
+  }
+  // Locate every option on the untouched lines first, then remove the others from the end backwards.
+  const located: Array<{ option: string; p: XmlElement; index: number; length: number }> = [];
+  // Positions already taken, per paragraph (security fix 24/10/2026: a Set, not a scan of `located` per option).
+  const taken = new Map<XmlElement, Set<number>>();
+  for (const o of lines) {
+    const block = ctx.index.byId.get(o.blockId);
+    if (!block) {
+      ctx.warn(`${where(field)}: the line for “${o.option}” was not found, so every option was left as printed.`);
+      return;
+    }
+    let hit: { p: XmlElement; index: number } | null = null;
+    for (const p of blockParagraphs(block)) {
+      const text = segmentsText(paragraphSegments(p));
+      const i = text.indexOf(o.text);
+      if (i >= 0 && !taken.get(p)?.has(i)) {
+        hit = { p, index: i };
+        break;
+      }
+    }
+    if (!hit) {
+      ctx.warn(`${where(field)}: “${o.text}” was not found, so every option was left as printed.`);
+      return;
+    }
+    located.push({ option: o.option, p: hit.p, index: hit.index, length: o.text.length });
+    const set = taken.get(hit.p) ?? new Set<number>();
+    set.add(hit.index);
+    taken.set(hit.p, set);
+  }
+  // Removed per paragraph from the END backwards, so an earlier removal never shifts a later one (security fix
+  // 24/10/2026: one sort over all paragraphs with "0 when the paragraphs differ" is not a consistent comparator, and
+  // options interleaved over two paragraphs could delete the wrong characters).
+  const drop = located.filter((l) => !chosen.has(l.option));
+  const byParagraph = new Map<XmlElement, typeof drop>();
+  for (const l of drop) byParagraph.set(l.p, [...(byParagraph.get(l.p) ?? []), l]);
+  byParagraph.forEach((items, para) => {
+    for (const l of items.sort((a, b) => b.index - a.index)) {
+      ctx.deletedParas.add(para);
+      if (!replaceRange(para, l.index, l.index + l.length, () => [])) ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
+    }
+  });
+  byParagraph.forEach((_, para) => removeIfBlank(para));
+}
+
+/** Every table row around `el` whose height is exact is set to "at least" that height, so an answer never clips. */
+function growExactRows(ctx: Ctx, el: XmlElement): void {
+  for (let tr = isW(el, "tr") ? el : ancestorW(el, "tr"); tr; tr = ancestorW(tr, "tr")) {
+    const height = firstW(firstW(tr, "trPr"), "trHeight");
+    if (height && wAttr(height, "hRule") === "exact") setWAttr(ctx.dom, height, "hRule", "atLeast");
   }
 }
 
@@ -927,11 +1231,14 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     skipped: new Map(),
     usedControls: new Set(),
     usedLegacy: new Set(),
+    glyphEdits: new Map(),
+    deletedParas: new Set(),
   };
 
   // 1. Resolve every anchor on the untouched document.
   const jobs: Job[] = [];
   const glyphJobs: { field: FormField; answer: FormFillAnswer; targets: GlyphTarget[] }[] = [];
+  const markJobs: { field: FormField; answer: FormFillAnswer; targets: MarkTarget[] }[] = [];
   for (const field of form.fields) {
     if (!isAnswerableField(field)) continue;
     const anchor = field.anchor;
@@ -944,6 +1251,10 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
       glyphJobs.push({ field, answer, targets: resolveGlyphs(ctx, field) });
       continue;
     }
+    if (anchor.target === "mark_cell") {
+      markJobs.push({ field, answer, targets: resolveMarkCells(ctx, field) });
+      continue;
+    }
     const ref = index.byId.get(anchor.blockId);
     if (!ref) {
       ctx.warn(`${where(field)}: its place on the form (${anchor.blockId}) was not found, so it was left blank. Check the form mapping.`);
@@ -952,11 +1263,15 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     jobs.push({ field, answer, ref });
   }
 
-  // 2. Tick boxes first: they only swap single characters, so nothing else moves.
+  // 2. Tick boxes first: they only swap characters, so nothing else moves. Then the marked cells (each in its own cell).
   for (const g of glyphJobs) fillCheckboxes(ctx, g.field, g.answer, g.targets);
+  flushGlyphEdits(ctx);
+  for (const m of markJobs) fillMarkCells(ctx, m.field, m.answer, m.targets);
 
-  // 3. Text answers, in form order.
-  for (const job of jobs) {
+  // 3. Text answers, in form order – "delete as necessary" lists first (10/2026 verify), so a blank printed inside a
+  //    deleted option is known to be gone, and one inside a kept option is filled whatever the questions' order.
+  const isDelete = (j: Job) => j.field.anchor.kind === "docx" && j.field.anchor.target === "delete_options";
+  for (const job of [...jobs.filter(isDelete), ...jobs.filter((j) => !isDelete(j))]) {
     const { field } = job;
     const anchor = field.anchor.kind === "docx" ? field.anchor : null;
     if (!anchor) continue;
@@ -965,12 +1280,29 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
       continue;
     }
     const text = answerText(field, job.answer);
+    // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have): the
+    // placeholder (a clinic system's merge code) is removed, never left or marked.
+    const blank = text === "" && job.answer.blank === true;
+    if (blank) {
+      if (anchor.target === "replace_placeholder" && !anchor.writeAfter) clearPlaceholder(ctx, job);
+      continue;
+    }
     const unanswered = text === "";
+    // 10/2026: printed text that must never go out (e.g. a named clinician's numbers in a template) is removed while
+    // its question has no answer yet – the review copy's marker replaces it anyway.
+    if (unanswered && anchor.target === "replace_placeholder" && anchor.clearPlaceholder && !anchor.writeAfter && !opts.reviewMarkers) {
+      clearPlaceholder(ctx, job);
+      continue;
+    }
     const kind: RunKind = unanswered ? "unanswered" : "answer";
     const marker = field.fillSource.kind === "signoff" ? `[${field.id} – completed on approval]` : `[${field.id} – not answered yet]`;
     const skip = unanswered && !opts.reviewMarkers;
     const isoDate = typeof job.answer.value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(job.answer.value) ? job.answer.value : null;
     const value = unanswered ? marker : text;
+    if (anchor.target === "delete_options") {
+      fillDeleteOptions(ctx, job, unanswered);
+      continue;
+    }
     switch (anchor.target) {
       case "table_cell":
         if (!skip) fillTableCell(ctx, job, value, kind);
@@ -990,6 +1322,9 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
       default:
         break;
     }
+    // 10/2026 verify: a table row of EXACT height (RTF templates' negative row heights) would clip a longer answer in
+    // Word; once something is written there it becomes "at least" that height – the same look for a one-line answer.
+    if (!skip) growExactRows(ctx, job.ref.el);
   }
 
   if (opts.draft) insertDraftBanner(ctx);

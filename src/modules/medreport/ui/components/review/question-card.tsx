@@ -459,6 +459,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
           staffEntry={isRecords}
         />
       ))}
+      {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && (
+        <p className="text-[12px] text-slate-600">Left empty on the form: the record&apos;s address has no line for it. Type here only if something should go on this line.</p>
+      )}
       {!readOnly && !recordsLocked && visibleParagraphs.length === 0 && !opts.supporting && (
         <AutoTextarea
           aria-label={`Answer to “${q.label}”`}

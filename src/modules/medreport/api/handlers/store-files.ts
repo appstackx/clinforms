@@ -42,6 +42,7 @@ import {
   type StoreFileInitResponse,
 } from "../store-contract";
 import { assertContentType, auditStore, pathParam, problemWith, requireTenantActor, type TenantActor, takeNewData } from "./store-actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const OCTET_STREAM = "application/octet-stream";
@@ -91,6 +92,7 @@ function formTypeOf(bytes: Uint8Array): StoreFileCompleteResponse["mimeType"] {
 
 export const handleStoreFileInit: MedreportHandler = async (req, _ctx, deps) => {
   const t = await requireTenantActor(req, deps, { write: true });
+  await assertClinicMayCreate(t.actor, deps, "upload"); // 10/2026: nothing new once a clinic's trial has ended
   assertContentType(req);
   const parsed = await parseBody(req, StoreFileInitRequestSchema, { maxBytes: 4096 });
   if (!parsed.ok) return parsed.response;
@@ -122,6 +124,7 @@ export const handleStoreFileInit: MedreportHandler = async (req, _ctx, deps) => 
 
 export const handleStoreFileChunk: MedreportHandler = async (req, ctx, deps) => {
   const t = await requireTenantActor(req, deps, { write: true });
+  await assertClinicMayCreate(t.actor, deps, "upload");
   const sha256 = pathParam(ctx.params, "sha256", SHA256_PATTERN);
   const idx = chunkIndex(ctx.params);
   const type = assertContentType(req, [OCTET_STREAM, CONTENT_TYPES.json]);

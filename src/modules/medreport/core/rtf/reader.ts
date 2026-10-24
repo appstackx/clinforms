@@ -41,6 +41,7 @@ import {
   symbolGlyph,
   type SymbolFontKind,
 } from "./codepages";
+import { isPracticeCodeName } from "../practice-merge-codes";
 import { isRtfBytes } from "./sniff";
 import {
   defaultCellDef,
@@ -95,6 +96,15 @@ export interface RtfReadLimits {
   maxBlocks?: number;
   maxInlines?: number;
   maxCellDefs?: number;
+}
+
+/** Module-level (not per call): the reader calls these once per control word of a file of up to 12 MB. */
+function isLetter(b: number): boolean {
+  return (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+}
+
+function hex(b: number | undefined): number {
+  return b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -874,7 +884,7 @@ class Reader {
     const n = bytes.length;
     if (i + 1 >= n) return n;
     const c = bytes[i + 1];
-    const isLetter = (b: number) => (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+    if (isLetter(c) && this.state.dest === "skip") return this.skipControlWord(bytes, i);
     if (isLetter(c)) {
       let j = i + 1;
       while (j < n && isLetter(bytes[j]) && j - i <= 32) j++;
@@ -907,8 +917,6 @@ class Reader {
       return j;
     }
     if (c === 0x27) {
-      const hex = (b: number | undefined) =>
-        b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
       const h1 = hex(bytes[i + 2]);
       const h2 = hex(bytes[i + 3]);
       if (h1 < 0 || h2 < 0) return Math.min(n, i + 2);
@@ -926,6 +934,35 @@ class Reader {
     this.flushBytes();
     this.controlSymbol(c);
     return i + 2;
+  }
+
+  /**
+   * A control word inside a skipped destination (a picture's hex, an embedded object, a theme…; 10/2026, for RTF
+   * templates of up to 12 MB): word() would ignore it, so it is stepped over without building the word – only \binN
+   * still jumps over its N bytes. Same result as the full path (nothing in a skipped group is read), in a fraction
+   * of the time, so a template that is mostly pictures converts quickly.
+   */
+  private skipControlWord(bytes: Uint8Array, i: number): number {
+    const n = bytes.length;
+    let j = i + 1;
+    while (j < n && isLetter(bytes[j])) j++;
+    const bin = j - i - 1 === 3 && bytes[i + 1] === 0x62 && bytes[i + 2] === 0x69 && bytes[i + 3] === 0x6e;
+    let neg = false;
+    if (bytes[j] === 0x2d && j + 1 < n && bytes[j + 1] >= 0x30 && bytes[j + 1] <= 0x39) {
+      neg = true;
+      j++;
+    }
+    let param = 0;
+    let digits = 0;
+    while (j < n && bytes[j] >= 0x30 && bytes[j] <= 0x39) {
+      if (digits < 10) param = param * 10 + (bytes[j] - 0x30);
+      digits++;
+      j++;
+    }
+    if (j < n && bytes[j] === 0x20) j++;
+    this.state.starPending = false; // as word() does for any control word
+    if (bin && digits > 0 && !neg) return Math.min(n, j + Math.min(2147483647, param));
+    return j;
   }
 
   private controlSymbol(c: number): void {
@@ -1915,6 +1952,11 @@ const FILLER_ONLY = /^[\s,;:.\-\u2013\u2014/()]*$/;
 /** The fill-in line a merge field becomes when the line has other text ("Patient: __________"). */
 export const MERGE_BLANK = "__________";
 
+function notePracticeCode(stats: RtfStats, name: string): void {
+  stats.practiceCodes += 1;
+  if (stats.practiceCodeNames.length < 50 && !stats.practiceCodeNames.includes(name)) stats.practiceCodeNames.push(name);
+}
+
 function noteMergeName(stats: RtfStats, name: string): void {
   stats.mergeFields += 1;
   const n = name.trim().slice(0, 60);
@@ -1936,10 +1978,17 @@ function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: bo
     starts.push(full.length);
     full += inl.kind === "text" && !inl.generated ? inl.text : "\u0000";
   }
-  const ranges: Array<{ start: number; end: number; name: string }> = [];
+  const ranges: Array<{ start: number; end: number; name: string; keep: boolean }> = [];
   const re = new RegExp(TYPED_MERGE.source, "g");
   let m: RegExpExecArray | null;
-  while ((m = re.exec(full)) !== null) ranges.push({ start: m.index, end: m.index + m[0].length, name: (m[1] ?? m[2] ?? "").trim() });
+  while ((m = re.exec(full)) !== null) {
+    const name = (m[1] ?? m[2] ?? "").trim();
+    // 10/2026: a clinic system's own letter code (<<P_SURNAME>>, <<DATE>> – upper case in double angle brackets) is
+    // kept as printed in the body, so the form reading can fill it from the record (core/practice-merge-codes.ts);
+    // the merge-field safety block still stops approval while one is left. Headers and footers: as before.
+    const keep = m[2] !== undefined && !headerFooter && isPracticeCodeName(name);
+    ranges.push({ start: m.index, end: m.index + m[0].length, name, keep });
+  }
   const other = new RegExp(OTHER_TOKENS.source, "g");
   while ((m = other.exec(full)) !== null) {
     stats.otherTokens += 1;
@@ -1968,7 +2017,8 @@ function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: bo
           if (pos === range.start) {
             if (piece) work.push({ kind: "text", text: piece, style: inl.style });
             piece = "";
-            work.push({ kind: "merge", name: range.name, style: inl.style });
+            work.push(range.keep ? { kind: "text", text: `<<${range.name}>>`, style: inl.style } : { kind: "merge", name: range.name, style: inl.style });
+            if (range.keep) notePracticeCode(stats, range.name);
           }
           continue;
         }

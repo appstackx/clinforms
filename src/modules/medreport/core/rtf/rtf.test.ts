@@ -28,7 +28,7 @@ const enc = (s: string) => new TextEncoder().encode(s);
 /** An RTF \uN control word (built so that no literal backslash-u escape appears in this source). */
 const U = (n: number) => `${"\\"}u${n}`;
 const doc = (body: string, head = "") => `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fswiss\\fcharset0 Arial;}{\\f1\\fnil\\fcharset2 Wingdings;}{\\f2\\froman\\fcharset2 Symbol;}{\\f3\\fnil\\fcharset2 Wingdings 2;}{\\f4\\froman\\fcharset204 Times New Roman Cyr;}}{\\colortbl;\\red255\\green0\\blue0;\\red217\\green226\\blue243;}${head}\n${body}}`;
-const convert = (rtf: string, opts: Partial<{ maxBytes: number; maxDepth: number; maxBlocks: number; maxInlines: number }> = {}): RtfConversionResult =>
+const convert = (rtf: string, opts: Partial<{ maxBytes: number; maxDepth: number; maxBlocks: number; maxInlines: number; maxTextBytes: number; maxInputBytes: number }> = {}): RtfConversionResult =>
   convertRtfToDocx(enc(rtf), { maxBytes: MAX, ...opts });
 
 function part(docx: Uint8Array, name: string): string {
@@ -428,8 +428,10 @@ test("giant input: linear time, block and size limits, the upload limit for the 
   assert.equal(rtfError(() => convert(`{\\rtf1 \\trowd\\cellx100 ${"\\intbl x\\cell\\row ".repeat(140_000)}}`)).code, "RTF_TOO_COMPLEX");
   assert.ok(Date.now() - started < 4000, `refusals took ${Date.now() - started} ms`);
 
-  // Lots of formatting groups on small text pieces: limited by pieces.
-  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`, { maxInlines: 100_000 })).code, "RTF_TOO_COMPLEX");
+  // Lots of formatting groups on small text pieces: limited by pieces. (2.6 MB: the converter's own size rule –
+  // 10/2026, 2.5 MB besides pictures – would refuse it first, so it is lifted here to reach the piece limit.)
+  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`, { maxInlines: 100_000, maxTextBytes: 3 * 1024 * 1024 })).code, "RTF_TOO_COMPLEX");
+  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`)).code, "RTF_TOO_LARGE", "…and by default refused as too large");
 
   // A converted file over the upload limit.
   assert.equal(rtfError(() => convert(doc("Some text\\par".repeat(200)), { maxBytes: 4000 })).code, "RTF_TOO_LARGE");

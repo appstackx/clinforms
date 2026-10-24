@@ -272,6 +272,8 @@ export const PROBLEM_CODES = [
   // Fix wave 2: the Studio page's sign-in changed (store); answers drafted in another clinician's voice (sign).
   "SIGN_IN_CHANGED",
   "SIGNER_NOT_AUTHOR",
+  // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
+  "TRIAL_ENDED",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 

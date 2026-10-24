@@ -5,10 +5,30 @@ import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
 import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
+import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
+import { emailProviderName } from "@/server/email";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction } from "./actions";
-import { CreateClinicForm } from "./forms";
+import { CreateClinicForm, OwnerResetForm, TrialForms } from "./forms";
+import type { ClinicOverview } from "@/server/admin/platform-console";
+
+const UK_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/** The clinic's trial in a few words (10/2026). */
+function trialText(c: ClinicOverview): string {
+  const a = c.access;
+  if (a.state === "trial") return a.pending ? `${a.daysLeft}-day trial, starts at the owner's first sign-in` : `Trial, ${a.daysLeft} ${a.daysLeft === 1 ? "day" : "days"} left (ends ${UK_DAY.format(new Date(a.endsAt ?? ""))})`;
+  if (a.state === "trial_ended") return `Trial ended ${UK_DAY.format(new Date(a.endedAt))}`;
+  return a.plan === "paid" ? "Full account (trial converted)" : "–";
+}
+
+function limitsText(c: ClinicOverview): string {
+  const m = c.plan?.livePerMinute;
+  const d = c.plan?.livePerDay;
+  if (!m && !d) return "Default";
+  return `${m ? `${m}/min` : "default/min"} · ${d ? `${d.toLocaleString("en-GB")}/day` : "default/day"}`;
+}
 
 /**
  * /app/platform – ClinForms staff only (emails in CLINFORMS_PLATFORM_ADMINS, signed in with two-step verification;
@@ -29,6 +49,8 @@ export default async function PlatformPage() {
     listPlatformActivity({ db }, 20),
   ]);
   const open = requests.filter((r) => !r.contactedAt).length;
+  const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const emailOn = emailProviderName() !== "none";
 
   return (
     <>
@@ -60,7 +82,19 @@ export default async function PlatformPage() {
         />
 
         <Panel title="Create a clinic" description="Creates the clinic account and an invitation for its owner. Do this once the data processing agreement is signed." className="mb-6">
-          <CreateClinicForm />
+          <CreateClinicForm emailOn={emailOn} />
+        </Panel>
+
+        <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
+          <TrialForms clinics={openClinics} />
+        </Panel>
+
+        <Panel
+          title="Owner password reset"
+          description="For a clinic owner who cannot reset their password by email and has no other owner or administrator to create a link for them. The link is not emailed: it is shown here once, for you to pass on after confirming who you are speaking to. It is recorded here and in the clinic's own activity. For a lost authenticator app as well, use the two-step reset script (docs/auth.md)."
+          className="mb-6"
+        >
+          <OwnerResetForm clinics={openClinics} />
         </Panel>
 
         <Panel
@@ -130,6 +164,8 @@ export default async function PlatformPage() {
                     <th className={TH}>Members</th>
                     <th className={TH}>Open invitations</th>
                     <th className={TH}>Last activity</th>
+                    <th className={TH}>Trial</th>
+                    <th className={TH}>Drafting limits</th>
                     <th className={TH}>Status</th>
                   </tr>
                 </thead>
@@ -145,6 +181,8 @@ export default async function PlatformPage() {
                       </td>
                       <td className={TD}>{c.pendingInvitations}</td>
                       <td className={`${TD} whitespace-nowrap text-slate-600`}>{c.lastActivityAt ? activityTime(c.lastActivityAt) : "–"}</td>
+                      <td className={`${TD} text-slate-700`}>{trialText(c)}</td>
+                      <td className={`${TD} whitespace-nowrap text-slate-700`}>{limitsText(c)}</td>
                       <td className={TD}>
                         {c.offboardedAt ? (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Closed {activityTime(c.offboardedAt)}</span>

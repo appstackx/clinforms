@@ -118,7 +118,13 @@ export function OriginalFormPreview(props: OriginalFormPreviewProps) {
 
 function docxAnchorBlocks(anchor: FormAnchor): string[] {
   if (anchor.kind !== "docx") return [];
-  const ids = [anchor.blockId, ...(anchor.optionGlyphs ?? []).map((g) => g.blockId)];
+  const ids = [
+    anchor.blockId,
+    ...(anchor.optionGlyphs ?? []).map((g) => g.blockId),
+    // 10/2026: the cells a "mark the column" question marks, the lines of a "delete as necessary" list.
+    ...(anchor.optionCells ?? []).map((c) => c.blockId),
+    ...(anchor.optionTexts ?? []).map((o) => o.blockId),
+  ];
   return Array.from(new Set(ids));
 }
 

@@ -104,6 +104,7 @@ const CALLS: Record<string, unknown[][]> = {
   "server.access.otherVoiceDetail": [["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07"]], ["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07", "F-08"]]],
   "server.access.storeLimitDetail": [[30]],
   "server.access.importLimitDetail": [[30]],
+  "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
 };
 

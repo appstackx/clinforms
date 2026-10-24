@@ -435,6 +435,14 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   passcode while `clinic_profile.drafting_enabled` (fix wave 2: no profile, or a profile that cannot be read = OFF –
   fail closed; the host's `loadClinicProfile` passes read errors on): prefer "live" with it off → 403
   `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
+  *10/2026:* a clinic's own limits set by ClinForms staff (`ClinicProfile.draftingLimits`, the host's `clinic_plan`,
+  e.g. 30 a minute / 1,500 a day) replace those defaults for that clinic only (`ai/live-gate.ts effectiveTenantLimits`;
+  out-of-range values ignored; a profile that cannot be read → the defaults). **Trials (10/2026):**
+  `ClinicProfile.trial` (`pending` | `running` | `ended`); once ended, `auth/clinic-access.ts assertClinicMayCreate`
+  answers 403 `TRIAL_ENDED` ("Your trial has ended … Existing reports and forms can still be opened and downloaded …
+  contact us at …") on POST /drafts, /forms/analyse, the three file-import endpoints, POST /store/files and its
+  chunks, a store PUT that CREATES a report or form map, and POST /launch – updates, approvals, renders and reads
+  are unchanged. The public demo is never affected. Tests: `scripts/medreport/clinic-trial.test.ts`.
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
   `UNSUPPORTED_MEDIA_TYPE`.
@@ -737,7 +745,8 @@ engine parses it (`buildDocxOutline` / `readPdfForm`) and Claude proposes a **fo
 (`FormDefinition`, status `proposed`): every question as a `FormField` with its label, the form's own
 section heading, plain-English guidance, `answerType`, options, an **anchor** (where the answer goes in
 the original file: `DocxAnchor` table_cell / after_paragraph / replace_placeholder / content_control /
-checkbox_glyph / legacy_form_field by block ID; `PdfFieldAnchor` by AcroForm field name;
+checkbox_glyph / legacy_form_field / mark_cell / delete_options by block ID (the last two 10/2026, see "Choice
+layouts of clinic templates"); `PdfFieldAnchor` by AcroForm field name;
 `PdfOverlayAnchor` by page box) and a **fill source** (`registration` path → code; `computed_fact` →
 code; `notes_narrative` → Claude from the notes, cited; `clinician_opinion` → only an opinion a
 clinician recorded, attributed, else blank + gap; `signoff` → the approval receipt; `leave_blank`).
@@ -785,6 +794,14 @@ same calls per patient.
   (`MISSING_PLACEHOLDER`, blocking); an optional one gives a warning that it will be left blank on the form.
 - **Data scope:** employer AND case-manager forms withhold past medical and social history from the AI
   and flag it if it appears in an answer (`formScope()`), as the built-in employer template does.
+  *Fix 10/2026 (P3, scope by question):* `formScope(type, form)` – history a form explicitly ASKS for ("Past medical
+  history", "Relevant medical history", "Social history" – a drafted question's printed label or section) is no
+  longer withheld for case-manager referrers (an EMPLOYER's own form keeps the full minimisation whatever it asks –
+  verify fix 10/2026: the report goes to the employer): its note field and terms are sent for drafting, and
+  `TemplateScope.confineTerms` keeps those terms to the asking questions (SCOPE_TERM, blocking, in any other answer;
+  the form block tells the drafting call "Only in the answer to F-07 …"). Return-to-work / fitness-for-work forms
+  (title or a question) and forms that do not ask keep the full minimisation (Kingsway unchanged). Tests:
+  `scripts/medreport/scope-by-question.test.ts`.
 - **References from another organisation:** when the form's referrer is not the organisation on the
   referral (`referrerNamesMatch()`, the same conservative rule as the form picker) and the question asks
   for the referrer's OWN reference (`asksForReferralPartyReference()`), the referral's reference is NOT
@@ -1461,8 +1478,17 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   (`/store/files`) and every other caller refuse RTF exactly as before (the Studio stores the converted .docx).
 - **UI:** pickers accept `.rtf`; hint "Word (.docx), PDF or RTF"; the mapping screen shows **"Converted from RTF"**
   with the notes, and "Download Word version" saves "Report.docx"; completed forms download as `.docx`.
-- **Limits:** input ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores pictures as hex text, so a template with a large
-  logo can exceed it although the converted file would be small; East Asian double-byte text only where the
+- **Limits:** *(10/2026)* input ≤ `MAX_RTF_FILE_BYTES` (12 MB) as long as everything except picture / object / binary
+  data stays ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores logos as hex text (Dell's largest template is 6.2 MB with
+  0.09 MB of text). `core/rtf/prescan.ts` measures that in ONE linear pass that mirrors exactly what the reader skips
+  (`\pict`, `\shppict`, `\nonshppict`, `\object`, `\objdata`, `\themedata`, `\colorschememapping`, `\datastore`,
+  `\fontemb`, `\fontfile`, `\blipuid` groups and `\binN` runs; an invalid `\'` is read as the reader reads it, so a
+  picture cannot "end early" past the check); `assertRtfWithinLimits()` runs inside `convertRtfToDocx`, so the browser,
+  the server and the admin scripts apply the same rule. Control words inside skipped groups take a fast path in the
+  reader (and its per-word helpers are module-level), so 12 MB of picture data converts in well under a second;
+  every earlier limit (depth, blocks, inlines, cell definitions, output size) still applies to the text part. Through
+  the partner API the request limit (`MAX_FORM_REQUEST_BYTES`, 4.4 MB of base64) still caps the RTF at ~3.2 MB; the
+  Studio converts in the browser, so the 12 MB rule applies there. Earlier: input ≤ 2.5 MB; East Asian double-byte text only where the
   platform's TextDecoder knows the code page; frames/absolute positions become ordinary paragraphs; rules-mode
   reading may put an answer box in the lower half of a vertically merged cell (same as for a Word form).
 - **Tests:** `core/rtf/rtf.test.ts` (constructs, code pages, tables, fields, tick boxes, headers, breaks, malformed
@@ -1501,3 +1527,101 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   in the public demo) and `scripts/e2e/compare-form-outputs.ts` (two runs' downloads compared part by part / page
   text).
 
+
+## Choice layouts of clinic templates (10/2026, branch `feat/blue-heart-forms`, product gaps P17 / P18)
+
+Report templates kept in a practice system (Blue Heart's TM3 templates) answer choices in three ways the Word engine
+now completes – each on the ORIGINAL layout, and never in the wrong place:
+
+- **Typed tick boxes** – "[ ]", "[]", "[x]", "[X]", "[✓]" typed as text: `forms/docx-dom.ts` `glyphSlots()` counts
+  them as tick boxes (also when Word split one over runs), so they are `checkbox_glyph` options like ☐/☒; they are no
+  longer "[…]" fill-in placeholders (`findPlaceholders`). The fill writes the form's own style: "[ ]" → "[x]", a
+  ticked default "[x]" → "[ ]" when another option is chosen ("[]" stays "[]"). A form without typed boxes gives
+  exactly the slots and bytes it always gave (all tick-box text changes are applied per text element from the end,
+  on offsets read on the untouched document). **Verify fix (24/10):** a ticked "[x]"/"[X]" inside running text ("attended
+  [X] sessions", "Dear [X],", "Prognosis: [x] months" – a word or "label:" before it, a lower-case word or , ; . )
+  straight after) is still the template's fill-in PLACEHOLDER, as before 10/2026, unless the same line also prints an
+  unticked typed box (a checklist "[x] yes [ ] no") – `bracketBoxMatches()`. Reading boxes and placeholders is linear
+  in the paragraph (one paragraph of 160,000 boxes or "[a]" placeholders: ~1.5 s; the per-match scans took 25–30 s).
+  A Yes / No answer also picks a printed "Y" / "N" (`core/forms.ts` `yesNoOption()`), and one that no printed option
+  stands for blocks approval (`choice-marks`, tick boxes included) instead of printing blank. A blank printed INSIDE
+  a "delete as necessary" item ("Max lift … kg", its "…" a separate question): the lists are processed first, an
+  answer whose blank was deleted with its item is not printed anywhere else (warning), and a KEPT item's unanswered
+  blank blocks approval. A table row of exact height (RTF templates) becomes "at least" that height once an answer is
+  written in it, so Word never clips it (Pages still clips some long cells on screen – a Pages limit).
+- **"Mark the column" tables** – `mark_cell` (`DocxAnchor.optionCells` [{option, blockId}], optional `mark`, default
+  "X"): one question per row (Yes | No, None | Mild | Severe, a scale, a grade column); the chosen option's cell
+  gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark – x X ✓ ✔ √ ✗ ✘ ☒ ☑ × ✕
+  ✖: that mark again; a
+  cell that prints the option itself, e.g. "40%": the mark after it), and a mark-only cell of every other option is
+  CLEARED – a printed default never stays in the wrong column. A "tick all that apply" row (body areas) is a
+  `short_text` question whose answer names the options ("Neck, Back", or "None"): `core/forms.ts` `namedOptions()`
+  matches whole printed options; anything else marks nothing.
+- **"Delete as necessary" lists** – `delete_options`: only the chosen option is KEPT, the others are REMOVED (not
+  struck through – chosen 24/10: removal reads cleanly on a printed or emailed form). An inline list
+  ("Daily/Weekly/Monthly", "…any medication? Yes/No") is `placeholderText` and is replaced by the chosen option as
+  printed (its formatting kept); one option per line is `optionTexts` [{option, blockId, text}] – the others' text is
+  removed and a line left empty is removed (a cell keeps its last paragraph). A single item (a list to "delete any
+  that do not apply") is a `checkbox` question: kept when ticked, removed when not.
+- **Printed details that must never go out / labels without an answer space** (replace_placeholder options):
+  `clearPlaceholder` – the printed text is REMOVED while the question has no answer yet, a DRAFT copy included (e.g. one
+  named physiotherapist's HCPC/CSP numbers typed into a clinic's template, replaced by the approver's own at approval);
+  `writeAfter` – the answer is written AFTER the printed text, which stays ("Job Role:", "Initial Assessment Date:", a
+  numbered slot "01."); a merge code is never cleared by a `writeAfter` question.
+- **Never a guess:** an unanswered question, an "unknown" answer ("Not recorded") or one that matches no printed
+  option leaves every box, mark and option as printed (fill warning). Approval is blocked
+  (`core/validation/choice-marks.ts`, MISSING_PLACEHOLDER) when a marked-cell / kept-option answer is not one of the
+  printed options; `checkFormDefinition` checks the places, options and answer type; `admin:load-forms` checks every
+  cell and option line against the file.
+- **Readings:** the rules reading (`ai/form-choice-rules.ts`) proposes typed boxes across cells (and down a column),
+  mark-the-column rows (a heading row of options over rows with empty cells; a "…? | Yes | No" row) and
+  delete-as-necessary lists (inline, answer cells holding only a list, lines under "Delete as necessary"); the live
+  reading's prompt `form-analysis-5` (output schema: anchor targets `mark_cell`, `delete_options`) says how to map
+  each, and that a printed default answer is REPLACED, never answered beside. Post-validation checks every cell and
+  option line and keeps the form's own mark ("x").
+- Tests: `forms/docx-choices.test.ts` (fictional fixtures for every pattern). The bundled forms and the RTF fixtures
+  are byte-identical (forms-regression.cjs 5/5 IDENTICAL, rtf-forms.cjs 2/2 IDENTICAL, practice-codes.cjs all parts
+  identical vs `fix/blue-heart-verify`), and the rules reading of the bundled forms is unchanged (reading baseline).
+
+## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
+
+Blue Heart keeps each provider's report form as a TM3 letter template: upper-case codes in double angle brackets –
+`<<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>>`, `<<P_DOB>>`, `<<P_ADDRESS1>>…<<P_ADDRESS5>>`, `<<P_POSTCODE>>`,
+`<<P_GROUPREF>>`, `<<P_ALTERNATE_REF1>>`, `<<P_CONSNAME>>`, `<<DATE>>`, `<<P_LOCATION_NAME>>`,
+`<<P_LOCATION_ADDRESS1>>…`, `<<P_LOCATION_POSTCODE>>`, `<<P_EMPLOYER>>`, `<<P_HOMETEL>>`, `<<P_HOSP_NUM>>`… The
+dictionary is `core/practice-merge-codes.ts` (every code in the 19 templates Dell sent is in it – names only; the
+templates themselves are gitignored and never committed).
+
+- **Kept, not blanked:** the RTF converter keeps such codes in the body as printed (`RTF_CONVERTER_VERSION`
+  `rtf-docx-2`; only files with these codes convert to different bytes – the four earlier fixtures are byte-identical
+  to `rtf-docx-1`, pinned in `scripts/medreport/practice-codes.test.ts`). Codes in a page header/footer, «Name»,
+  mixed-case `<<Referral_Date>>` and MERGEFIELD fields are answer spaces exactly as before. A Word form (.docx) with
+  typed codes reads the same way.
+- **Bound at reading** (`ai/practice-merge-binding.ts`, after post-validation, live and rules readings, Word forms
+  only): one question per code that REPLACES exactly that code (`replace_placeholder`), answered from the record –
+  `registration` paths for name parts, DOB, telephone, employer, the referrer's reference (`<<P_GROUPREF>>`), the
+  treating clinician (`<<P_CONSNAME>>`), the report date (`<<DATE>>`), the clinic's name; `<<P_ALTERNATE_REF1>>` by
+  the form's label (e.g. "Date of Accident" → `incident.date`). *Verify fix 10/2026:* the clinic system prints the
+  LETTER's date for `<<DATE>>` wherever the template puts it – beside the accident's label ("Accident date: <<DATE>>")
+  it is bound to `incident.date` (medium, noted); beside any other date's label (the label part nearest the code:
+  e.g. a first visit, an assessment, a discharge or a request) it stays
+  `report.date` but is LOW confidence with a note, so staff choose the source in the mapping review. A section's
+  `blankFromRecords` counts (approval checks, merge-code check, forms engine) only for an address line 2+
+  (`isBlankByDesign`). **Addresses:** codes on lines of their own are spread
+  over those lines (`part: {index, of}` on the registration fill source – the record's lines in order, the last printed
+  line takes any left over, a line the address does not have is left empty: `ReportSection.blankFromRecords`, and the
+  fill removes the code); codes on one line (`<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>`) are ONE answer (the full
+  address). `<<P_LOCATION_…>>` use the clinic's address from its settings (new paths `clinic.addressLines`,
+  `clinic.postcode`). The reading's own question for the same place is replaced; another question on such a line is
+  kept and flagged.
+- **For staff:** a code the record does not hold (`<<P_HOSP_NUM>>`, `<<P_WORKTEL>>`, `<<P_INJURY>>`…) or the dictionary
+  does not know is a question with the path `staff.entry` (never filled by code: a gap staff answer on each report),
+  low confidence, its note naming the code. The new paths are not offered to the live analysis (its output schema is
+  unchanged: `ANALYSIS_REGISTRATION_PATHS`).
+- **Safety block unchanged:** approval stays blocked while any code is left on the form (core/merge-fields.ts); a
+  FINAL render with one is refused.
+- Tests: `scripts/medreport/practice-codes.test.ts` (fictional template `fixtures/rtf/practice-codes-report.rtf`,
+  "Larkfield Rehabilitation Network (fictional)", Megan Hart `sim-pat-001`); e2e `scripts/e2e/practice-codes.cjs`.
+- Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
+  its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
+  per report when another site treated the patient).

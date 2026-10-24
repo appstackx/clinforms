@@ -27,7 +27,7 @@ import { createId } from "../core/ids";
 import { REFERRER_TO_BE_CONFIRMED } from "../core/labels";
 import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
-import { buildDocxOutline } from "../forms/docx-outline";
+import { assertReadableOutline, buildDocxOutline } from "../forms/docx-outline";
 import type { DecodedFormFile } from "../forms/file";
 import { readPdfForm } from "../forms/pdf-outline";
 import { findSampleBySha256, listSampleForms } from "../forms/samples/registry";
@@ -37,6 +37,7 @@ import type { AnalysisOutput } from "./form-analysis-schema";
 import { asksForBlockCapitals } from "./form-boxes";
 import { chunkParsedForm, summariseParsedForm, type ParsedForm } from "./form-outline";
 import { postValidateFields } from "./form-postvalidate";
+import { bindPracticeMergeCodes } from "./practice-merge-binding";
 import { guessTitle, proposeFieldsByRules } from "./form-rules";
 import { prefilledWarning, redactParsedForm } from "./form-redact";
 import { demoAssetNotice, getRecordedFormAnalysis } from "./recorded-forms";
@@ -94,6 +95,7 @@ export async function parseFormFile(file: DecodedFormFile): Promise<ParsedForm> 
     return { kind, pdf: outline, warnings: [...warnings, ...extra] };
   }
   const outline = buildDocxOutline(file.bytes);
+  assertReadableOutline(outline); // security fix 24/10/2026: at most MAX_READ_BLOCKS paragraphs and cells to read
   return { kind: "docx", blocks: outline.blocks, warnings: outline.warnings };
 }
 
@@ -297,6 +299,21 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
     ms: Date.now() - t,
     detail: `${checked.fields.length} questions kept${checked.repaired ? `, ${checked.repaired} corrected` : ""}${checked.dropped ? `, ${checked.dropped} left out` : ""}`,
   });
+  // 10/2026: a clinic system's letter merge codes (<<P_SURNAME>>, <<DATE>>…) – one question each, from the record
+  // where it holds the detail, otherwise for staff (ai/practice-merge-binding.ts). Word forms only; nothing changes
+  // for a form without such codes.
+  t = Date.now();
+  const merge = bindPracticeMergeCodes(parsed, checked.fields);
+  if (merge.fromRecords + merge.forStaff > 0) {
+    checked.fields = merge.fields;
+    checked.warnings.push(...merge.warnings);
+    trace.push({
+      label: "Matched the clinic system's merge codes to the record",
+      status: merge.forStaff ? "warning" : "ok",
+      ms: Date.now() - t,
+      detail: `${merge.fromRecords} from the record${merge.forStaff ? `, ${merge.forStaff} for staff to enter` : ""}`,
+    });
+  }
   if (!live && !liveError) {
     trace.splice(1, 0, { label: "Proposed the form map", status: "ok", ms: 0, detail: clinic ? WORDING.server.analysis.clinicRulesOnlyTrace : WORDING.server.analysis.rulesOnlyTrace });
   }

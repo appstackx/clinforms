@@ -156,6 +156,13 @@ export interface RtfStats {
   mergeFields: number;
   /** Their names, distinct, in order (at most 50). */
   mergeFieldNames: string[];
+  /**
+   * 10/2026: a clinic system's own letter codes (<<P_SURNAME>>, <<DATE>> – upper case in double angle brackets) kept
+   * as printed in the body, for the form reading to fill from the record (core/practice-merge-codes.ts).
+   */
+  practiceCodes: number;
+  /** Their names, distinct, in order (at most 50). */
+  practiceCodeNames: string[];
   /** Text that looks like another system's fill-in token ([Name], {Name}, $Name$, %Name%) – kept, noted. */
   otherTokens: number;
   /** Up to three of them as printed. */
@@ -230,6 +237,8 @@ export function emptyStats(): RtfStats {
     cells: 0,
     mergeFields: 0,
     mergeFieldNames: [],
+    practiceCodes: 0,
+    practiceCodeNames: [],
     otherTokens: 0,
     otherTokenExamples: [],
     formTextFields: 0,

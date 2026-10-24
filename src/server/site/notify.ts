@@ -83,7 +83,11 @@ export function mailerSendSettingsFromEnv(env: Readonly<Record<string, string | 
 }
 
 /** Sends the access-request notification (throws on failure; the caller keeps the stored request). */
-export async function sendAccessRequestNotification(settings: MailerSendSettings, request: NotificationPayload): Promise<void> {
+export async function sendAccessRequestNotification(
+  settings: MailerSendSettings,
+  request: NotificationPayload,
+  client?: Pick<MailerSend, "email">,
+): Promise<void> {
   const email = accessRequestEmail(request);
   const params = new EmailParams()
     .setFrom(new Sender(settings.fromEmail, PRODUCT.name))
@@ -91,8 +95,10 @@ export async function sendAccessRequestNotification(settings: MailerSendSettings
     .setReplyTo(new Recipient(request.email, oneLine(request.contactName, 100)))
     .setSubject(email.subject)
     .setText(email.text)
-    .setHtml(email.html);
-  const mailer = new MailerSend({ apiKey: settings.apiKey });
+    .setHtml(email.html)
+    // Security fix 24/10/2026 (D1): no click, open or content tracking (the message holds the requester's details).
+    .setSettings({ track_clicks: false, track_opens: false, track_content: false });
+  const mailer = client ?? new MailerSend({ apiKey: settings.apiKey });
   const response = await mailer.email.send(params);
   if (response.statusCode >= 300) throw new Error(`MailerSend answered ${response.statusCode}`);
 }

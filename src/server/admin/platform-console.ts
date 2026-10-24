@@ -12,10 +12,20 @@
  */
 import type { Kysely } from "kysely";
 import { isPlatformAdmin } from "../auth/config";
-import { createClinic, listClinics, type ClinicSummary, type CreateClinicInput, type CreatedClinic } from "../auth/platform";
+import {
+  createClinic,
+  createOwnerResetLink,
+  listClinics,
+  type ClinicSummary,
+  type CreateClinicInput,
+  type CreatedClinic,
+  type OwnerResetLink,
+  type OwnerResetLinkInput,
+} from "../auth/platform";
 import { RESERVED_TENANT_SLUGS } from "../auth/tenant";
 import type { Database } from "../db/schema";
 import { listAccessRequests, setAccessRequestContacted, type AccessRequest } from "../repos/access-requests";
+import { clinicAccessOf, readClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
 import { appendAudit, listAudit, type AuditEntry } from "../repos/audit";
 import { RepoInputError, type DbContext } from "../repos/context";
 
@@ -102,6 +112,10 @@ export async function markAccessRequest(ctx: DbContext, admin: PlatformAdmin, id
 export interface ClinicOverview extends ClinicSummary {
   /** The newest audit entry of the clinic (any member, any action), or null. */
   lastActivityAt: string | null;
+  /** The clinic's trial and own drafting limits (10/2026), or null (no trial, default limits). */
+  plan: ClinicPlan | null;
+  /** What the plan means now. */
+  access: ClinicAccess;
 }
 
 /**
@@ -125,8 +139,12 @@ export async function lastActivityByTenant(db: Kysely<Database>): Promise<Map<st
 }
 
 export async function listClinicsOverview(db: Kysely<Database>, now = new Date()): Promise<ClinicOverview[]> {
-  const [clinics, last] = await Promise.all([listClinics(db, now), lastActivityByTenant(db)]);
-  return clinics.map((c) => ({ ...c, lastActivityAt: last.get(c.tenantId) ?? null }));
+  const [clinics, last, plans] = await Promise.all([listClinics(db, now), lastActivityByTenant(db), readClinicPlans({ db })]);
+  const planOf = new Map(plans.map((p) => [p.tenantId, p] as const));
+  return clinics.map((c) => {
+    const plan = planOf.get(c.tenantId) ?? null;
+    return { ...c, lastActivityAt: last.get(c.tenantId) ?? null, plan, access: clinicAccessOf(plan, now) };
+  });
 }
 
 /** createClinic() (organization + clinic profile + owner invitation, link returned once), audited as the admin. */
@@ -137,6 +155,25 @@ export async function createClinicAsPlatform(db: Kysely<Database>, admin: Platfo
     targetType: "organization",
     targetId: created.organizationId,
     detail: { tenantId: created.tenantId, emailStatus: created.email.status },
+  });
+  return created;
+}
+
+/**
+ * A one-time password reset link for a clinic owner (never emailed: shown once to the administrator), audited for
+ * the platform (naming the administrator) and, by createOwnerResetLink(), under the owner's clinics.
+ */
+export async function createOwnerResetLinkAsPlatform(
+  db: Kysely<Database>,
+  admin: PlatformAdmin,
+  input: Omit<OwnerResetLinkInput, "isPlatformAdminEmail"> & { isPlatformAdminEmail?: (email: string) => boolean },
+): Promise<OwnerResetLink> {
+  const created = await createOwnerResetLink(db, { ...input, isPlatformAdminEmail: input.isPlatformAdminEmail ?? ((email) => isPlatformAdmin(email)) });
+  await appendPlatformAudit({ db }, admin, {
+    action: "platform.owner_reset_link",
+    targetType: "user",
+    targetId: created.userId,
+    detail: { tenantId: String(input.tenantId).trim() },
   });
   return created;
 }

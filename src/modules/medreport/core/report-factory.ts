@@ -296,7 +296,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
     if (src.kind === "registration" || src.kind === "computed_fact" || src.kind === "fixed") {
       const resolved: ResolvedFormValue | null =
         src.kind === "registration"
-          ? resolveRegistrationValue(src.path, ctx, field.answerType)
+          ? resolveRegistrationValue(src.path, ctx, field.answerType, src.part)
           : src.kind === "computed_fact"
             ? resolveComputedFactValue(src.factId, src.format, ctx, field.answerType)
             : resolveFixedValue(field, src.value);
@@ -321,6 +321,11 @@ export function createFormReport(input: CreateFormReportInput): Report {
       if (withheld) {
         sections.push({ ...base, status: field.required ? "needs_input" : "complete", paragraphs: [], ...(answer && { answer: { kind: answer.kind, value: null } }) });
         if (field.required) gaps.push(withheld.gap);
+        continue;
+      }
+      if (resolved?.blank) {
+        // 10/2026: an address line the record does not have – answered as nothing (the merge code is removed).
+        sections.push({ ...base, status: "complete", paragraphs: [], blankFromRecords: true });
         continue;
       }
       if (usable && resolved) {

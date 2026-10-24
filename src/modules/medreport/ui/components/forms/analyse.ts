@@ -1,7 +1,8 @@
 /**
  * Upload → analyse → store a referrer's form (browser side of POST /forms/analyse).
  *
- * 1. Check the file locally (type from the bytes, size ≤ MAX_FORM_FILE_BYTES, old .doc rejected) and
+ * 1. Check the file locally (type from the bytes, size ≤ MAX_FORM_FILE_BYTES – an RTF template ≤ MAX_RTF_FILE_BYTES
+ *    when the excess is pictures (10/2026) –, old .doc rejected) and
  *    fingerprint it (SHA-256), so a form already in the library is offered instead of re-analysed.
  *    An RTF file (10/2026) is converted to Word here first (core/rtf, the same converter the server uses);
  *    from then on it IS a Word form – the file name stays "….rtf", the bytes and SHA-256 are the .docx's –
@@ -13,7 +14,7 @@
  * Owner: studio-a agent.
  */
 import type { FormsAnalyseResponse } from "../../../api/contract";
-import { MAX_FORM_FILE_BYTES } from "../../../config.public";
+import { MAX_FORM_FILE_BYTES, MAX_RTF_FILE_BYTES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
 import { nowIso } from "../../../core/dates";
 import { isRtfBytes } from "../../../core/rtf/sniff";
@@ -61,8 +62,10 @@ async function convertLocalRtf(fileName: string, bytes: Uint8Array): Promise<Loc
   let docx: Uint8Array;
   let notes: string[];
   try {
-    ({ docx, notes } = convertRtfToDocx(bytes, { maxBytes: MAX_FORM_FILE_BYTES }));
+    // 10/2026: up to MAX_RTF_FILE_BYTES in all, at most MAX_FORM_FILE_BYTES besides pictures (the converter checks).
+    ({ docx, notes } = convertRtfToDocx(bytes, { maxBytes: MAX_FORM_FILE_BYTES, maxInputBytes: MAX_RTF_FILE_BYTES, maxTextBytes: MAX_FORM_FILE_BYTES }));
   } catch (err) {
+    if (err instanceof RtfConversionError && err.code === "RTF_TOO_LARGE") throw new FormFileError(`“${fileName}”: ${err.message}`);
     if (err instanceof RtfConversionError) throw new FormFileError(`“${fileName}” could not be converted from RTF. ${err.message}`);
     throw new FormFileError(`“${fileName}” could not be converted from RTF. Open it in Word, save it as a Word Document (.docx) and upload that file.`);
   }
@@ -77,14 +80,15 @@ async function convertLocalRtf(fileName: string, bytes: Uint8Array): Promise<Loc
 
 /** Read and check a picked file. */
 export async function readFormFile(file: File | { name: string; bytes: Uint8Array }): Promise<LocalFormFile> {
+  const tooLarge = (size: number, limit: number) =>
+    new FormFileError(`“${file.name}” is ${formatBytes(size)}; the limit is ${formatBytes(limit)}. Remove large images or logos and try again.`);
+  // Nothing larger than the largest RTF template is read at all (10/2026: RTF may be up to MAX_RTF_FILE_BYTES).
+  if (file instanceof Blob && file.size > MAX_RTF_FILE_BYTES) throw tooLarge(file.size, /\.rtf$/i.test(file.name) ? MAX_RTF_FILE_BYTES : MAX_FORM_FILE_BYTES);
   const bytes = file instanceof Blob ? new Uint8Array(await file.arrayBuffer()) : file.bytes;
   if (bytes.byteLength === 0) throw new FormFileError(`“${file.name}” is empty.`);
-  if (bytes.byteLength > MAX_FORM_FILE_BYTES) {
-    throw new FormFileError(
-      `“${file.name}” is ${formatBytes(bytes.byteLength)}; the limit is ${formatBytes(MAX_FORM_FILE_BYTES)}. Remove large images or logos and try again.`,
-    );
-  }
+  // An RTF template's pictures are hex text: the converter applies the RTF size rules (core/rtf assertRtfWithinLimits).
   if (isRtfBytes(bytes)) return convertLocalRtf(file.name, bytes);
+  if (bytes.byteLength > MAX_FORM_FILE_BYTES) throw tooLarge(bytes.byteLength, MAX_FORM_FILE_BYTES);
   const mimeType = sniffFormType(bytes, file.name);
   return { fileName: file.name, mimeType, bytes, sha256: await sha256HexBytes(bytes) };
 }

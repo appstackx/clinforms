@@ -34,7 +34,21 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Clinic account",
-    actions: ["clinic.create", "clinic.update", "clinic.offboard", "api_key.create", "api_key.revoke", "audit.export"],
+    actions: [
+      "clinic.create",
+      "clinic.update",
+      "clinic.offboard",
+      "clinic.trial_set",
+      "clinic.trial_started",
+      "clinic.trial_extended",
+      "clinic.trial_ended",
+      "clinic.trial_converted",
+      "clinic.limits_set",
+      "clinic.forms_loaded",
+      "api_key.create",
+      "api_key.revoke",
+      "audit.export",
+    ],
   },
   {
     label: "Forms",
@@ -76,6 +90,13 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.create": "Clinic account opened",
   "clinic.update": "Clinic details updated",
   "clinic.offboard": "Clinic account closed",
+  "clinic.trial_set": "Trial set up by ClinForms",
+  "clinic.trial_started": "Trial started",
+  "clinic.trial_extended": "Trial extended by ClinForms",
+  "clinic.trial_ended": "Trial ended by ClinForms",
+  "clinic.trial_converted": "Trial converted to a full account",
+  "clinic.limits_set": "Drafting limits changed by ClinForms",
+  "clinic.forms_loaded": "Forms added to the library by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
@@ -103,6 +124,12 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.clinic_create": "Clinic created",
   "platform.access_request_contacted": "Access request marked as contacted",
   "platform.access_request_reopened": "Access request marked as not contacted",
+  "platform.trial_set": "Trial set up",
+  "platform.trial_extended": "Trial extended",
+  "platform.trial_ended": "Trial ended",
+  "platform.trial_converted": "Trial converted to a full account",
+  "platform.limits_set": "Drafting limits changed",
+  "platform.owner_reset_link": "Owner password reset link created",
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -191,6 +218,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "auth.session_revoke":
       return SESSION_SCOPES[String(detail.scope)] ?? null;
     case "auth.password_reset_link":
+      if (detail.delivery === "platform") return "Created by ClinForms support for the owner";
       return detail.delivery === "sent" ? "Emailed to the member" : "Shown to the administrator to pass on";
     case "auth.password_reset_link_refused":
       return RESET_REFUSALS[String(detail.reason)] ?? null;
@@ -219,10 +247,51 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "report.store_signed":
       return typeof detail.rev === "number" ? `Version ${detail.rev}` : null;
     case "platform.clinic_create":
+    case "platform.owner_reset_link":
       return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}` : null;
+    case "clinic.trial_set":
+    case "platform.trial_set": {
+      const days = typeof detail.days === "number" ? `${detail.days} ${detail.days === 1 ? "day" : "days"}` : null;
+      const start = detail.start === "first_sign_in" ? "starts when the owner first signs in" : typeof detail.endsAt === "string" ? `ends ${ukDateTime(detail.endsAt)}` : null;
+      return withClinic(action, detail, [days, start].filter(Boolean).join(", ") || null);
+    }
+    case "clinic.forms_loaded":
+      return typeof detail.forms === "number" ? `${detail.forms} ${detail.forms === 1 ? "form" : "forms"} to check and confirm` : null;
+    case "clinic.trial_started":
+      return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
+    case "clinic.trial_extended":
+    case "platform.trial_extended":
+      return withClinic(
+        action,
+        detail,
+        typeof detail.days === "number" ? `${detail.days} more ${detail.days === 1 ? "day" : "days"}${typeof detail.endsAt === "string" ? `, now ends ${ukDateTime(detail.endsAt)}` : ""}` : null,
+      );
+    case "clinic.trial_ended":
+    case "platform.trial_ended":
+    case "clinic.trial_converted":
+    case "platform.trial_converted":
+      return withClinic(action, detail, null);
+    case "clinic.limits_set":
+    case "platform.limits_set": {
+      const per = (v: unknown, unit: string) => (typeof v === "number" ? `${v.toLocaleString("en-GB")} a ${unit}` : `default a ${unit}`);
+      return withClinic(action, detail, `${per(detail.perMinute, "minute")}, ${per(detail.perDay, "day")}`);
+    }
     default:
       return null;
   }
+}
+
+/** "24 October 2026, 10:15" (UK time). */
+function ukDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+/** Platform rows name the clinic they changed; a clinic's own rows do not need to. */
+function withClinic(action: string, detail: Record<string, unknown>, text: string | null): string | null {
+  if (!action.startsWith("platform.") || typeof detail.tenantId !== "string") return text;
+  return [`Clinic id ${detail.tenantId}`, text].filter(Boolean).join(" · ");
 }
 
 /** Names of the people and things an entry points at, for display. */
