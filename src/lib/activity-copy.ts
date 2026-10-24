@@ -44,6 +44,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.trial_ended",
       "clinic.trial_converted",
       "clinic.limits_set",
+      "clinic.forms_loaded",
       "api_key.create",
       "api_key.revoke",
       "audit.export",
@@ -95,6 +96,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.trial_ended": "Trial ended by ClinForms",
   "clinic.trial_converted": "Trial converted to a full account",
   "clinic.limits_set": "Drafting limits changed by ClinForms",
+  "clinic.forms_loaded": "Forms added to the library by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
@@ -250,6 +252,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const start = detail.start === "first_sign_in" ? "starts when the owner first signs in" : typeof detail.endsAt === "string" ? `ends ${ukDateTime(detail.endsAt)}` : null;
       return withClinic(action, detail, [days, start].filter(Boolean).join(", ") || null);
     }
+    case "clinic.forms_loaded":
+      return typeof detail.forms === "number" ? `${detail.forms} ${detail.forms === 1 ? "form" : "forms"} to check and confirm` : null;
     case "clinic.trial_started":
       return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
     case "clinic.trial_extended":

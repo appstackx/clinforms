@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { Kysely } from "kysely";
 import { defineAdminSuite } from "../../../src/server/admin/testing/admin-suite";
 import { defineClinicPlanSuite } from "../../../src/server/admin/testing/clinic-plan-suite";
+import { defineLoadFormsSuite } from "../../../src/server/admin/testing/load-forms-suite";
 import { D1HttpDialect } from "../../../src/server/db/dialects/d1-http";
 import type { Database } from "../../../src/server/db/schema";
 import { handleRequest } from "../src/index";
@@ -71,6 +72,42 @@ defineClinicPlanSuite("D1 via the gateway (in-process Worker, node:sqlite D1 sta
 });
 
 defineClinicPlanSuite(
+  "real local D1 (workerd via wrangler, wrangler-applied migrations)",
+  async () => {
+    const { proxy, dir } = await startLocalD1();
+    const db = gatewayDb(proxy.env.DB);
+    return {
+      db,
+      close: async () => {
+        await db.destroy();
+        await proxy.dispose();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  },
+  { skip: !available && "wrangler not installed in workers/data-gateway" },
+);
+
+// admin:load-forms (10/2026): encrypted form files and proposed maps through the D1 gateway (stand-in and real local D1).
+defineLoadFormsSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)", async () => {
+  const d1 = new FakeD1();
+  const db = new Kysely<Database>({
+    dialect: new D1HttpDialect({
+      url: "https://gateway.test",
+      secret: SECRET,
+      fetch: (url, init) => handleRequest(new Request(url, init), { DB: d1, GATEWAY_SECRET: SECRET }),
+    }),
+  });
+  return {
+    db,
+    close: async () => {
+      await db.destroy();
+      d1.close();
+    },
+  };
+});
+
+defineLoadFormsSuite(
   "real local D1 (workerd via wrangler, wrangler-applied migrations)",
   async () => {
     const { proxy, dir } = await startLocalD1();

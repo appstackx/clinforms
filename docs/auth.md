@@ -157,6 +157,26 @@ is set, it starts at once (they have signed in already). ClinForms staff can als
   from the platform page, `platform.*` naming the administrator.
 - Needs migration `0006_clinic_plan` on the target database (docs/database.md §3).
 
+### Load a clinic's own form templates (onboarding, 10/2026)
+For a clinic that sends its referrers' templates (Blue Heart: 19 TM3 letter templates – RTF, one .docx, one .doc), load
+them into its forms library with PROPOSED maps, so its own staff check and confirm each map once:
+```bash
+npm run admin:load-forms -- --env production --slug blue-heart --dir ~/secure/blue-heart-templates \
+  --maps ~/secure/blue-heart-maps.json [--read-missing [--referrer "…" --referrer-type mlc]]     # preview: nothing stored
+npm run admin:load-forms -- … --confirm --yes                                                     # store (Khuram's go)
+```
+- Each file is checked as an upload is (type from the bytes, RTF converted with the 12 MB rule, an old .doc refused –
+  convert it to .docx or RTF first); its map comes from the maps JSON (`{"<file name>": {title, referrer, fields,
+  file?: {sha256}}}`) and is refused when it does not fit the file (SHA-256, every anchor's place and placeholder), or
+  with `--read-missing` from the layout-rules reading (no drafting service), including the clinic-system merge codes.
+- Stored encrypted for that clinic only (`form_files` + chunks, `forms`), status **proposed**, never confirmed by the
+  script; the file's mail-merge fields are recorded on the map, so approval stays blocked while one is left.
+- Audited as ClinForms: `file.upload` and `form.create` per form (`detail.via: "onboarding"`) and one `clinic.forms_loaded`.
+- Prints file names and counts only. Templates are third-party material: keep them out of the repository (the Blue
+  Heart set is in the gitignored `demo-assets/blue-heart-templates/`).
+- Logic and tests: `src/server/admin/load-forms.ts`, `src/server/admin/testing/load-forms-suite.ts` (node:sqlite, PGlite,
+  D1 stand-in and real local D1). **Not run against preview or production yet.**
+
 ### List clinics
 `npm run admin:list-clinics -- --env production`
 
