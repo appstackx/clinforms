@@ -21,6 +21,7 @@ import { D1HttpDialect } from "../../src/server/db/dialects/d1-http";
 import { pgConnectionConfig, sessionPostgresConfigFromEnv } from "../../src/server/db/dialects/postgres";
 import { openSqliteDatabase, type SqliteDatabaseLike } from "../../src/server/db/dialects/sqlite-local";
 import type { PgMigrationClient } from "../../src/server/db/migrations";
+import { PMS_TIMESTAMP_COLUMNS } from "../../src/server/db/pms-schema";
 import { PRIMARY_KEYS, TABLES_IN_FK_ORDER, type Database, type TableName } from "../../src/server/db/schema";
 import { pgMigrationClient } from "./migrate";
 import { readSecretsFile } from "./provision-gateway-secrets";
@@ -47,6 +48,8 @@ const TIMESTAMP_COLUMNS = new Set([
   "accessTokenExpiresAt",
   "refreshTokenExpiresAt",
   "lockedUntil",
+  // The clinic system's own (src/server/db/pms-schema/<module>.ts *_TIMESTAMP_COLUMNS).
+  ...PMS_TIMESTAMP_COLUMNS,
 ]);
 /** Rows per page when reading (file chunks are ~700 KB each, so 2 at a time). */
 const PAGE_SIZE: Partial<Record<TableName, number>> = { form_file_chunks: 2 };

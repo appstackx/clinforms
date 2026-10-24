@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRODUCT } from "@/modules/medreport/config.public";
+import { PUBLIC_SITE_BRAND } from "@/lib/brand";
 
 /** The ClinForms mark (same glyph as src/app/icon.svg) and name, linking home. */
 export function LogoMark({ className = "h-8 w-8" }: { className?: string }) {
@@ -13,14 +13,14 @@ export function LogoMark({ className = "h-8 w-8" }: { className?: string }) {
   );
 }
 
-export function Logo() {
+export function Logo({ name = PUBLIC_SITE_BRAND.productName }: { name?: string }) {
   return (
     <Link
       href="/"
       className="flex items-center gap-2 rounded-lg text-lg font-semibold tracking-tight text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2"
     >
       <LogoMark />
-      <span>{PRODUCT.name}</span>
+      <span>{name}</span>
     </Link>
   );
 }

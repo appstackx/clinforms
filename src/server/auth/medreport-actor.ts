@@ -11,13 +11,17 @@
  *                                   session to such an account after the second factor, and turning it on
  *                                   revokes every older session (create-auth.ts), so every live session of
  *                                   such an account passed it.
- * A session without an active clinic, or whose member row is gone, gives null.
+ * A session without an active clinic, or whose member row is gone, gives null – and so does a clinic whose
+ * Reports package is switched off (a clinic-system-only clinic never reaches the Report API or the drafting
+ * service). No row = Reports on, and a package table that cannot be read counts as on, so ClinForms behaves as
+ * before for every clinic that has not been switched off.
  */
 import type { Kysely } from "kysely";
 import type { AuthContext, ClinicProfile } from "../../modules/medreport/api/deps";
 import type { Database } from "../db/schema";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { getMemberProfile } from "../repos/member-profile";
+import { isPackageOn } from "../repos/pms/entitlements";
 import type { Auth } from "./create-auth";
 import { findMembership } from "./membership";
 
@@ -52,7 +56,11 @@ export async function resolveMedreportCaller(auth: Auth, db: Kysely<Database>, h
   if (!organizationId) return { kind: "no_clinic", userId: session.user.id };
   const membership = await findMembership(db, organizationId, session.user.id);
   if (!membership) return { kind: "no_clinic", userId: session.user.id };
-  const profile = await getMemberProfile({ db }, organizationId, session.user.id);
+  const [profile, reports] = await Promise.all([
+    getMemberProfile({ db }, organizationId, session.user.id),
+    isPackageOn({ db }, membership.tenantId, "reports").catch(() => true),
+  ]);
+  if (!reports) return { kind: "no_clinic", userId: session.user.id };
   const clinician =
     profile && (profile.hcpcNumber || profile.jobTitle || profile.canSign)
       ? {

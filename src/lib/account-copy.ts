@@ -5,7 +5,9 @@
  * terms as src/modules/medreport/core/wording.ts.
  */
 
-export const PRODUCT_NAME = "ClinForms";
+import { CLINFORMS_NAME } from "./brand";
+
+export const PRODUCT_NAME = CLINFORMS_NAME;
 export const COMPANY_NAME = "AppstackX Ltd";
 
 export const ROLE_LABELS = {

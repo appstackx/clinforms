@@ -76,6 +76,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -150,6 +158,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -230,6 +246,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -304,6 +328,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -384,6 +416,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -461,6 +501,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -535,6 +583,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -618,6 +674,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -705,6 +769,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -786,6 +858,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -873,6 +953,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -954,6 +1042,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -1041,6 +1137,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1120,6 +1224,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -1232,6 +1344,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1338,6 +1458,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -1450,6 +1578,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1556,6 +1692,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -1668,6 +1812,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1774,6 +1926,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -1886,6 +2046,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -1992,6 +2160,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -2104,6 +2280,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2210,6 +2394,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -2322,6 +2514,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2431,6 +2631,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2523,6 +2731,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -2621,6 +2837,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2713,6 +2937,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -2811,6 +3043,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2906,6 +3146,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../../../../../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -2994,6 +3242,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -3102,6 +3358,14 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
@@ -3204,6 +3468,14 @@
                   "posthog-js/*"
                 ],
                 "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
               },
               {
                 "group": [
@@ -3312,9 +3584,1837 @@
               },
               {
                 "group": [
+                  "@/modules/pms",
+                  "@/modules/pms/*",
+                  "**/modules/pms/*"
+                ],
+                "message": "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together."
+              },
+              {
+                "group": [
                   "../../*"
                 ],
                 "message": "Relative imports may not leave src/modules/medreport (use the module's own files; host UI via ui/primitives.ts)."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              },
+              {
+                "group": [
+                  "server-only",
+                  "node:*",
+                  "@anthropic-ai/sdk",
+                  "@anthropic-ai/sdk/*",
+                  "docx",
+                  "docxtemplater",
+                  "pizzip",
+                  "@react-pdf/renderer",
+                  "@react-pdf/*",
+                  "@xmldom/xmldom",
+                  "pdf-lib",
+                  "kysely",
+                  "kysely/*",
+                  "pg",
+                  "@electric-sql/pglite",
+                  "@electric-sql/pglite/*",
+                  "better-auth",
+                  "better-auth/*",
+                  "!better-auth/react",
+                  "!better-auth/client",
+                  "!better-auth/client/*",
+                  "mailersend",
+                  "mailersend/*"
+                ],
+                "message": "core/, templates/, ui/, config.public.ts, api/contract.ts and api/store-contract.ts run in the browser: no server-only code, Node built-ins, Anthropic SDK, docx, docxtemplater, pizzip, react-pdf, @xmldom/xmldom or pdf-lib here (forms are read and filled on the server, in forms/)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/modules/pms/*/*/*/*/*/*/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/modules/medreport",
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/lib",
+                  "@/lib/*"
+                ],
+                "message": "The clinic-system module may not import src/lib (host code): keep it pure, pass values in."
+              },
+              {
+                "group": [
+                  "@/components",
+                  "@/components/*"
+                ],
+                "message": "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic."
+              },
+              {
+                "group": [
+                  "@/sandbox",
+                  "@/sandbox/*",
+                  "**/sandbox/*"
+                ],
+                "message": "The module may not import the simulated TM3 sandbox; they talk over HTTP only (src/app glue wires them)."
+              },
+              {
+                "group": [
+                  "@/app",
+                  "@/app/*"
+                ],
+                "message": "The module may not import the app (src/app). Receive what you need via MedreportDeps or HostHooks."
+              },
+              {
+                "group": [
+                  "@/server",
+                  "@/server/*"
+                ],
+                "message": "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)."
+              },
+              {
+                "group": [
+                  "posthog-js",
+                  "posthog-js/*"
+                ],
+                "message": "Analytics goes through src/components/analytics (consent-gated, allow-listed track()). The medreport module receives it via HostHooks; server code never imports the browser library."
+              },
+              {
+                "group": [
+                  "@/modules/medreport/ai",
+                  "@/modules/medreport/ai/**",
+                  "@/modules/medreport/api",
+                  "@/modules/medreport/api/**",
+                  "@/modules/medreport/auth",
+                  "@/modules/medreport/auth/**",
+                  "@/modules/medreport/config.public",
+                  "@/modules/medreport/config.server",
+                  "@/modules/medreport/connectors/file-import",
+                  "@/modules/medreport/connectors/file-import/**",
+                  "@/modules/medreport/connectors/handler-support",
+                  "@/modules/medreport/connectors/registry",
+                  "@/modules/medreport/connectors/tm3",
+                  "@/modules/medreport/connectors/tm3/**",
+                  "@/modules/medreport/connectors/tm3-sim",
+                  "@/modules/medreport/connectors/tm3-sim/**",
+                  "@/modules/medreport/core",
+                  "@/modules/medreport/core/**",
+                  "@/modules/medreport/docgen",
+                  "@/modules/medreport/docgen/**",
+                  "@/modules/medreport/forms",
+                  "@/modules/medreport/forms/**",
+                  "@/modules/medreport/templates",
+                  "@/modules/medreport/templates/**",
+                  "@/modules/medreport/ui",
+                  "@/modules/medreport/ui/**"
+                ],
+                "message": "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type)."
+              },
+              {
+                "group": [
+                  "../../../../../../../*"
+                ],
+                "message": "Relative imports may not leave src/modules/pms."
+              },
+              {
+                "group": [
+                  "docx-preview",
+                  "docx-preview/*"
+                ],
+                "message": "docx-preview renders Word files in the browser: import it only in ui/ (dynamically, in a client component)."
+              },
+              {
+                "group": [
+                  "pdfjs-dist",
+                  "pdfjs-dist/*"
+                ],
+                "message": "pdfjs-dist: the browser preview imports it in ui/; server-side PDF text extraction goes through forms/pdfjs.ts."
               },
               {
                 "group": [

@@ -2,8 +2,11 @@ import { AppNav, type NavItem } from "@/components/account/app-nav";
 import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { CLINIC_SYSTEM_NAME } from "@/lib/brand";
 import { isManager } from "@/server/auth/roles";
 import { requireAppContext } from "@/server/auth/session";
+import { currentBrand } from "@/server/brand";
+import { clinicPackages } from "@/server/pms/entitlements";
 import { SignOutForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +14,13 @@ export const dynamic = "force-dynamic";
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireAppContext();
   const manager = isManager(membership.role);
+  // Packages (src/server/pms/entitlements.ts): a clinic without the clinic system sees exactly what it saw before.
+  const packages = await clinicPackages(membership.tenantId);
+  const brand = currentBrand();
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
-    { href: "/app/studio", label: "Studio" },
+    ...(packages.clinic ? [{ href: "/app/clinic", label: CLINIC_SYSTEM_NAME }] : []),
+    ...(packages.reports ? [{ href: "/app/studio", label: "Studio" }] : []),
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
@@ -26,7 +33,7 @@ export default async function ClinicLayout({ children }: { children: React.React
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <BrandMark compact />
+            <BrandMark compact name={brand.productName} />
             <span className="hidden text-slate-300 sm:inline" aria-hidden>
               /
             </span>

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { getAuth } from "@/server/auth/auth";
 import { currentPath, requestHeaders } from "@/server/auth/session";
 import { resolveStudioAccess } from "@/server/auth/studio-access";
 import { getDb } from "@/server/db";
+import { hasPackage } from "@/server/pms/entitlements";
 import { TenantHost } from "./tenant-host";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +19,15 @@ export const metadata: Metadata = {
  * /app/studio – a clinic's own Studio: the same screens as the public demo at /reports, in tenant mode
  * (src/app/app/studio/tenant-host.tsx). Checked on the server on every request
  * (src/server/auth/studio-access.ts): no session → /login, no two-step verification → /two-factor, no
- * active clinic → /app/select-clinic. The Edge middleware only redirects requests without a session cookie.
+ * active clinic → /app/select-clinic; Reports package switched off → the 404 page. The Edge middleware only
+ * redirects requests without a session cookie.
  */
 export default async function TenantStudioLayout({ children }: { children: React.ReactNode }) {
   const access = await resolveStudioAccess({ auth: getAuth(), db: getDb(), headers: requestHeaders(), path: currentPath() });
   if (access.kind === "redirect") redirect(access.to);
   const { context } = access;
+  // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
+  if (!(await hasPackage(context.tenantId, "reports"))) notFound();
   return (
     <TenantHost
       clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}

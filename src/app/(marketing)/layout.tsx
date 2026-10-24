@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { PUBLIC_SITE_BRAND } from "@/lib/brand";
 
-/** The public website (/, /request-access, /security and the legal pages): indexable. */
+/**
+ * The public website (/, /request-access, /security and the legal pages): indexable. Static, so it is built for one
+ * brand – the public site's (src/lib/brand.ts); hosts of a brand without a public site are sent to sign-in by the
+ * middleware.
+ */
 export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
@@ -16,11 +21,11 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
       >
         Skip to content
       </a>
-      <SiteHeader />
+      <SiteHeader brand={PUBLIC_SITE_BRAND} />
       <main id="main" className="flex-1">
         {children}
       </main>
-      <SiteFooter />
+      <SiteFooter brand={PUBLIC_SITE_BRAND} />
     </div>
   );
 }

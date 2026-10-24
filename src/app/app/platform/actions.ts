@@ -6,7 +6,8 @@
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
 import { platformActionAdmin } from "@/server/admin/guards";
-import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
+import { isPackageId } from "@/modules/pms/core/entitlements";
+import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest, setClinicPackageAsPlatform } from "@/server/admin/platform-console";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
 import { TenantSlugError } from "@/server/auth/tenant";
@@ -63,6 +64,20 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
     await markAccessRequest({ db: getDb() }, admin, String(form.get("id") ?? ""), form.get("contacted") === "1");
   } catch {
     // unknown or malformed id: nothing to do
+  }
+  revalidatePath(PLATFORM_PATH);
+}
+
+/** Switches a clinic's package on or off (package = reports | clinic, on = 1 | 0). Nothing is deleted. */
+export async function setClinicPackageAction(form: FormData): Promise<void> {
+  const admin = await platformActionAdmin();
+  if (!admin) return;
+  const pkg = String(form.get("package") ?? "");
+  if (!isPackageId(pkg)) return;
+  try {
+    await setClinicPackageAsPlatform(getDb(), admin, { tenantId: String(form.get("tenantId") ?? ""), package: pkg, on: form.get("on") === "1" });
+  } catch (err) {
+    if (!(err instanceof RepoInputError)) logAuthEvent("platform.set_package_failed", { error: err instanceof Error ? err.name : "error" });
   }
   revalidatePath(PLATFORM_PATH);
 }

@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
-import { config, middleware } from "../../middleware";
+import { PUBLIC_SITE_PATHS, config, middleware } from "../../middleware";
 import { createSqliteTestDb } from "../db/testing/databases";
 import { createAuth } from "./create-auth";
 import { createClinic } from "./platform";
 import { CookieJar } from "./testing/cookie-jar";
+
+const m = () => config.matcher as readonly string[];
 
 describe("middleware", () => {
   it("redirects /app without a session cookie to /login?next=…", () => {
@@ -28,6 +30,24 @@ describe("middleware", () => {
     const m = config.matcher;
     for (const p of ["/app", "/app/:path*", "/login", "/two-factor", "/accept-invite", "/reset-password"]) assert.ok(m.includes(p), p);
     assert.ok(!m.some((p) => p.startsWith("/api") || p.startsWith("/reports") || p.startsWith("/pms-sandbox") || p === "/:path*"));
+  });
+  it("public pages pass through untouched on ClinForms' hosts (no redirect, no noindex)", () => {
+    for (const host of ["clinforms.co.uk", "www.clinforms.co.uk", "localhost:3180", "clinforms-abc-team.vercel.app"]) {
+      for (const p of PUBLIC_SITE_PATHS) {
+        const res = middleware(new NextRequest(`https://${host}${p}`, { headers: { host } }));
+        assert.equal(res.status, 200, `${host}${p}`);
+        assert.equal(res.headers.get("location"), null);
+        assert.equal(res.headers.get("x-robots-tag"), null, `${host}${p} stays indexable`);
+        assert.ok(m().includes(p), `the matcher covers ${p}`);
+      }
+    }
+  });
+  it("public pages on an app-only brand's host go to sign-in (or the app start page when signed in)", () => {
+    const res = middleware(new NextRequest("http://clinic.localhost:3180/", { headers: { host: "clinic.localhost:3180" } }));
+    assert.equal(res.status, 307);
+    assert.equal(res.headers.get("location"), "http://clinic.localhost:3180/login?next=%2Fapp%2Fclinic");
+    const signedIn = middleware(new NextRequest("http://clinic.localhost:3180/privacy", { headers: { host: "clinic.localhost:3180", cookie: `${SESSION_COOKIE_NAMES[0]}=a.b` } }));
+    assert.equal(signedIn.headers.get("location"), "http://clinic.localhost:3180/app/clinic");
   });
   it("the cookie names match what Better Auth sets (secure and plain)", async () => {
     for (const [url, expected] of [

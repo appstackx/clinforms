@@ -1,0 +1,103 @@
+/**
+ * Who is acting in the clinic system. EVERY clinic-system page, server action and route handler starts here
+ * (docs/clinic-system/contract.md §6):
+ *
+ *   pages / layouts:  const actor = await requireClinicActor({ permission: "patients.view" });
+ *   server actions:   const actor = await clinicActionActor({ permission: "patients.edit" });
+ *                     if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+ *
+ * Both re-read the session from the database (past the 5-minute cookie cache), require two-step verification,
+ * membership of the active clinic AND the "clinic" package, then the role's permission. Pages answer the 404
+ * page when the package or the permission is missing.
+ */
+import "server-only";
+import { notFound } from "next/navigation";
+import { pmsCan, pmsPermissionsOf, type PmsPermission } from "../../modules/pms/core/permissions";
+import type { PmsActor } from "../../modules/pms/core/types";
+import { actionContext, type AppContext } from "../auth/session";
+import type { MemberRole } from "../auth/roles";
+import { getDataCipher } from "../crypto";
+import { getDb } from "../db";
+import type { RepoContext } from "../repos/context";
+import { findPractitionerByUser } from "../repos/pms/directory";
+import { hasPackage, requireEntitlement } from "./entitlements";
+
+export interface ClinicActor {
+  tenantId: string;
+  organizationId: string;
+  clinicName: string;
+  userId: string;
+  sessionId: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  permissions: readonly PmsPermission[];
+  can: (permission: PmsPermission) => boolean;
+  /** Who did it, for the repositories' audit rows. */
+  actor: PmsActor;
+  /** The repositories' context (database + data cipher). */
+  repo: () => RepoContext;
+}
+
+function toActor(ctx: AppContext): ClinicActor {
+  const role = ctx.membership.role;
+  return {
+    tenantId: ctx.membership.tenantId,
+    organizationId: ctx.membership.organizationId,
+    clinicName: ctx.membership.clinicName,
+    userId: ctx.session.user.id,
+    sessionId: ctx.session.session.id,
+    name: ctx.session.user.name,
+    email: ctx.session.user.email,
+    role,
+    permissions: pmsPermissionsOf(role),
+    can: (permission) => pmsCan(role, permission),
+    actor: { userId: ctx.session.user.id, sessionId: ctx.session.session.id },
+    repo: () => ({ db: getDb(), cipher: getDataCipher() }),
+  };
+}
+
+/** For pages and layouts under /app/clinic. */
+export async function requireClinicActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor> {
+  const ctx = await requireEntitlement("clinic");
+  const actor = toActor(ctx);
+  if (!actor.can(options.permission ?? "clinic.view")) notFound();
+  return actor;
+}
+
+export type ClinicActorError = "signed_out" | "forbidden" | "no_clinic" | "not_entitled";
+
+/** For server actions and route handlers: the actor, or an error code (nothing done). */
+export async function clinicActionActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor | { error: ClinicActorError }> {
+  const ctx = await actionContext();
+  if ("error" in ctx) return { error: ctx.error };
+  if (!(await hasPackage(ctx.membership.tenantId, "clinic"))) return { error: "not_entitled" };
+  const actor = toActor(ctx);
+  if (!actor.can(options.permission ?? "clinic.view")) return { error: "forbidden" };
+  return actor;
+}
+
+/** Plain-English message for an actor error (forms show it). */
+export function actorErrorMessage(error: ClinicActorError): string {
+  switch (error) {
+    case "signed_out":
+      return "You have been signed out. Sign in again to carry on.";
+    case "no_clinic":
+      return "Choose a clinic first.";
+    case "not_entitled":
+      return "This clinic does not use this part of the system.";
+    default:
+      return "You do not have permission to do that.";
+  }
+}
+
+/** HTTP status for an actor error (route handlers). */
+export function actorErrorStatus(error: ClinicActorError): number {
+  return error === "signed_out" ? 401 : error === "no_clinic" ? 409 : 403;
+}
+
+/** The practitioner row of the signed-in member, if they are one (diary "my day", note signing). */
+export async function currentPractitionerId(actor: ClinicActor): Promise<string | null> {
+  const p = await findPractitionerByUser(actor.repo(), actor.tenantId, actor.userId);
+  return p?.id ?? null;
+}

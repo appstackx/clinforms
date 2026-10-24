@@ -22,6 +22,7 @@ import { getFormFile, listFormFiles } from "../repos/form-files";
 import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
+import { countPmsRows, deletePmsQueries, exportPmsData } from "../pms/offboard";
 import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID, invitationRef } from "./create-auth";
 import { inviteLink } from "./invite-token";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
@@ -309,6 +310,8 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     partnerKeys: keys.length,
     memberProfiles: profiles.length,
     auditRows: await countRows(db, "audit_log", tenantId),
+    // The clinic system's rows (patients, cases, diary…), all tables together; per table in the export.
+    clinicSystemRows: Object.values(await countPmsRows(db, tenantId)).reduce((a, b) => a + b, 0),
   };
   const plan: OffboardPlan = { organizationId: org.id, tenantId, counts, usersToDelete: deleteUserIds.length, usersKept: keep.size };
   if (input.releaseSlug && counts.auditRows > 0) {
@@ -325,6 +328,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
   const reports = await exportEncrypted(db, cipher, "reports", tenantId);
   const files = await listFormFiles(ctx, tenantId);
   const audit = await exportAudit(db, tenantId);
+  const clinicSystem = counts.clinicSystemRows > 0 ? await exportPmsData(db, cipher, tenantId) : null;
 
   // 1. Export (decrypted) and verify it before anything is deleted.
   if (!input.exportDir) throw new RepoInputError("--export-dir is required with --confirm.");
@@ -357,6 +361,8 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     ["clinic.json", clinic],
     ["forms.json", forms],
     ["reports.json", reports],
+    // Patients, cases, the diary and every other clinic-system record, decrypted, by table.
+    ...(clinicSystem ? ([["clinic-system.json", clinicSystem]] as [string, unknown][]) : []),
   ];
   for (const [name, value] of outputs) {
     writePrivate(path.join(dir, name), JSON.stringify(value, null, 2));
@@ -371,6 +377,8 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
   // 2. Delete the tenant's data, memberships and the accounts that belong to no other clinic – one atomic batch.
   const now = new Date().toISOString();
   const queries: BatchQuery[] = [
+    // The clinic system's rows first (children before parents), then ClinForms' own.
+    ...deletePmsQueries(db, tenantId),
     db.deleteFrom("reports").where("tenant_id", "=", tenantId),
     db.deleteFrom("forms").where("tenant_id", "=", tenantId),
     db.deleteFrom("form_file_chunks").where("tenant_id", "=", tenantId),

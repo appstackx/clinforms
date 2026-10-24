@@ -4,11 +4,12 @@ import { cn } from "@/lib/utils";
 import { PRODUCT_NAME } from "@/lib/account-copy";
 import { LogoMark } from "@/components/marketing/logo";
 
-export function BrandMark({ className, compact = false }: { className?: string; compact?: boolean }) {
+/** The mark and the product name (default ClinForms; the brand of the request where a page knows it – src/lib/brand.ts). */
+export function BrandMark({ className, compact = false, name = PRODUCT_NAME }: { className?: string; compact?: boolean; name?: string }) {
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-2 font-semibold text-slate-900", className)}>
       <LogoMark className="h-7 w-7" />
-      {compact ? <span className="sr-only sm:not-sr-only">{PRODUCT_NAME}</span> : PRODUCT_NAME}
+      {compact ? <span className="sr-only sm:not-sr-only">{name}</span> : name}
     </span>
   );
 }

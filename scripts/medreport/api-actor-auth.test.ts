@@ -4,8 +4,8 @@
  * the app's own getDb()/getAuth() (local SQLite file, CLINFORMS_DB set so the shared state is the database).
  *
  * invite → accept → (no two-step yet: 403) → two-step on → file import stamped with the clinic and its
- * profile → approval signed as the member (profile HCPC) with an audit row → sign-out: the cookie no longer
- * acts (401, never the demo). The public demo keeps working through the same glue without a cookie, and its
+ * profile → approval signed as the member (profile HCPC) with an audit row → Reports package off: refused, back
+ * on: answered → sign-out: the cookie no longer acts (401, never the demo). The public demo keeps working through the same glue without a cookie, and its
  * launch-link replay guard lands in launch_token_uses. Fictional data only.
  */
 import { after, before, test } from "node:test";
@@ -48,6 +48,7 @@ import { getDb } from "@/server/db";
 import { setEmailProviderForTests } from "@/server/email";
 import { listAudit } from "@/server/repos/audit";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
+import { setEntitlement } from "@/server/repos/pms/entitlements";
 import { completedSampleReport } from "./form-sample-answers";
 import { demoSessionToken } from "./test-actors";
 
@@ -155,6 +156,16 @@ test("with two-step on: file import is the clinic's, approval is signed as the m
   const row = rows.find((r) => r.action === "report.sign");
   assert.ok(row, "audit row in the clinic's trail");
   assert.equal(row.userId, ownerId);
+
+  // Packages: with Reports switched off (a clinic-system-only clinic) the Report API refuses the member; back on, it
+  // answers again. No row at all (every clinic so far) = on – the requests above ran that way.
+  await setEntitlement({ db: getDb() }, TENANT, "reports", { status: "paused" }, { userId: ownerId, sessionId: null });
+  const off = await validate(req("/validate", { jar: ownerJar, body: { report } }), { params: {} });
+  assert.equal(off.status, 403);
+  assert.equal(await codeOf(off), "NO_CLINIC");
+  await setEntitlement({ db: getDb() }, TENANT, "reports", { status: "active" }, { userId: ownerId, sessionId: null });
+  const on = await validate(req("/validate", { jar: ownerJar, body: { report } }), { params: {} });
+  assert.notEqual(on.status, 403);
 
   // Sign out: the same cookie no longer acts for the clinic, and never as the demo.
   await auth.api.signOut({ headers: ownerJar.headers() });

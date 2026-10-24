@@ -38,7 +38,11 @@ export interface AuditEntry {
 
 const ACTION = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
 
-export async function appendAudit(ctx: DbContext, tenantId: string, input: AuditEntryInput): Promise<AuditEntry> {
+/**
+ * The audit row for an entry, validated, plus the INSERT that writes it – not executed, so a caller can send it
+ * in the same atomic batch as the write it records (runBatch; the clinic-system repositories do).
+ */
+export function auditInsertQuery(ctx: DbContext, tenantId: string, input: AuditEntryInput) {
   assertTenantId(tenantId);
   if (typeof input.action !== "string" || !ACTION.test(input.action)) {
     throw new RepoInputError("Audit action must match [a-z0-9_.:-] (≤ 64 characters).");
@@ -55,20 +59,23 @@ export async function appendAudit(ctx: DbContext, tenantId: string, input: Audit
     detail: input.detail ?? null,
     at,
   };
-  await ctx.db
-    .insertInto("audit_log")
-    .values({
-      id: entry.id,
-      tenant_id: tenantId,
-      user_id: entry.userId,
-      session_id: entry.sessionId,
-      action: entry.action,
-      target_type: entry.targetType,
-      target_id: entry.targetId,
-      detail_json: jsonOrNull(entry.detail, "Audit detail", 4096),
-      at,
-    })
-    .execute();
+  const query = ctx.db.insertInto("audit_log").values({
+    id: entry.id,
+    tenant_id: tenantId,
+    user_id: entry.userId,
+    session_id: entry.sessionId,
+    action: entry.action,
+    target_type: entry.targetType,
+    target_id: entry.targetId,
+    detail_json: jsonOrNull(entry.detail, "Audit detail", 4096),
+    at,
+  });
+  return { entry, query };
+}
+
+export async function appendAudit(ctx: DbContext, tenantId: string, input: AuditEntryInput): Promise<AuditEntry> {
+  const { entry, query } = auditInsertQuery(ctx, tenantId, input);
+  await query.execute();
   return entry;
 }
 

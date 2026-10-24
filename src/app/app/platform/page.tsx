@@ -4,10 +4,11 @@ import { SubmitButton } from "@/components/account/form-controls";
 import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
 import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
-import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
+import { PACKAGE_LABELS } from "@/lib/brand";
+import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicPackages, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
 import { getDb } from "@/server/db";
 import { SignOutForm } from "../session-forms";
-import { setAccessRequestContactedAction } from "./actions";
+import { setAccessRequestContactedAction, setClinicPackageAction } from "./actions";
 import { CreateClinicForm } from "./forms";
 
 /**
@@ -29,6 +30,8 @@ export default async function PlatformPage() {
     listPlatformActivity({ db }, 20),
   ]);
   const open = requests.filter((r) => !r.contactedAt).length;
+  const live = clinics.filter((c) => !c.offboardedAt);
+  const packages = await listClinicPackages(db, live.map((c) => c.tenantId));
 
   return (
     <>
@@ -154,6 +157,65 @@ export default async function PlatformPage() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          title="Packages"
+          description={`What each open clinic can use. ${PACKAGE_LABELS.reports} is on for every clinic unless switched off here; ${PACKAGE_LABELS.clinic} is off until switched on. Switching off hides and blocks that part – nothing is deleted.`}
+          className="mb-6"
+        >
+          {live.length === 0 ? (
+            <p className="text-sm text-slate-600">No open clinics.</p>
+          ) : (
+            <div className="-mx-3 overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className={TH}>Clinic id</th>
+                    <th className={TH}>Name</th>
+                    <th className={TH}>{PACKAGE_LABELS.reports}</th>
+                    <th className={TH}>{PACKAGE_LABELS.clinic}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {live.map((c) => {
+                    const p = packages.get(c.tenantId);
+                    return (
+                      <tr key={c.organizationId}>
+                        <td className={`${TD} font-mono text-xs`}>{c.tenantId}</td>
+                        <td className={TD}>{c.name}</td>
+                        {(["reports", "clinic"] as const).map((pkg) => {
+                          const on = p ? p[pkg] : pkg === "reports";
+                          return (
+                            <td key={pkg} className={TD}>
+                              <form action={setClinicPackageAction} className="flex flex-wrap items-center gap-2">
+                                <input type="hidden" name="tenantId" value={c.tenantId} />
+                                <input type="hidden" name="package" value={pkg} />
+                                <input type="hidden" name="on" value={on ? "0" : "1"} />
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${on ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-700"}`}>{on ? "On" : "Off"}</span>
+                                <SubmitButton
+                                  variant="secondary"
+                                  className="h-8 px-2.5 text-xs"
+                                  pendingText="Saving…"
+                                  confirmText={on ? `Switch ${PACKAGE_LABELS[pkg]} off for ${c.name}? Its screens are hidden and blocked; nothing is deleted.` : undefined}
+                                >
+                                  {on ? "Switch off" : "Switch on"}
+                                  <span className="sr-only">
+                                    {" "}
+                                    {PACKAGE_LABELS[pkg]} for {c.name}
+                                  </span>
+                                </SubmitButton>
+                              </form>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

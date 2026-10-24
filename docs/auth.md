@@ -49,7 +49,7 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 | `/app/settings/security` | member | Two-step status, new backup codes (password), **Support** contact for a lost phone and backup codes, signed-in devices (sign one out, or all others) |
 | `/app/settings/api-keys` | owner/admin | Partner API keys: create (shown once), list (last 4 characters), revoke. **No connection uses them yet** |
 | `/app/settings/activity` | member (whole clinic: owner/admin) | The audit trail, newest first, 50 per page (cursor: Older / Newer), filter by action and (owners/administrators) by person; clinicians and staff see only their own entries, whatever the URL asks. **Download these entries (CSV)** = exactly the entries on the page (`from`/`to` ids, inclusive), columns `id, at, action, user_id, target_type, target_id` only; each download is audited (`audit.export`). Labels: `src/lib/activity-copy.ts` |
-| `/app/platform` | ClinForms staff (`CLINFORMS_PLATFORM_ADMINS`, two-step on) | **404 for everyone else.** Create a clinic + owner invitation (the same `createClinic()` as the script; link shown once), access requests newest first (mark as contacted / undo), clinics (id, created, members, open invitations, last recorded activity, closed), the last 20 platform actions. Every action is audited under the pseudo-tenant `platform` (reserved, never a clinic id) with the administrator's user and session ids; `clinic.create` is also written under the new clinic |
+| `/app/platform` | ClinForms staff (`CLINFORMS_PLATFORM_ADMINS`, two-step on) | **404 for everyone else.** Create a clinic + owner invitation (the same `createClinic()` as the script; link shown once), access requests newest first (mark as contacted / undo), clinics (id, created, members, open invitations, last recorded activity, closed), **packages** per open clinic (Reports / Clinic system on or off – `docs/clinic-system/contract.md` §5; also `npm run admin:set-entitlement`), the last 20 platform actions. Every action is audited under the pseudo-tenant `platform` (reserved, never a clinic id) with the administrator's user and session ids; `clinic.create` is also written under the new clinic |
 | `/app/select-clinic` | signed in | Pick a clinic when a member of several; open invitations; "no clinic" message |
 | `/api/auth/*` | – | Better Auth's HTTP API (switched-off paths: sign-up, two-step disable, organization create/update/delete/check-slug, delete-user, change-email, *fix wave 2:* update-user – a member's name is the signer's name on approvals, never self-edited) |
 
@@ -141,7 +141,8 @@ npm run admin:offboard-clinic -- --env production --slug riverside-physio --conf
   --export-dir ~/secure/riverside-physio-export
 ```
 1. Exports the clinic's data **decrypted** (clinic profile, settings, members, invitations, member profiles, API key
-   metadata, audit trail, forms, reports, form files) to a folder **outside the repository** (0700, files 0600) and
+   metadata, audit trail, forms, reports, form files – and, for a clinic that used the clinic system, every
+   clinic-system row by table in `clinic-system.json`) to a folder **outside the repository** (0700, files 0600) and
    checks it.
 2. Then, in one atomic batch: deletes reports, forms, files, settings, the clinic profile and member profiles; revokes
    API keys; deletes invitations and memberships; deletes the accounts that belong to no other clinic (their

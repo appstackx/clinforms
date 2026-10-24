@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRODUCT } from "@/modules/medreport/config.public";
+import { PUBLIC_SITE_BRAND, type Brand } from "@/lib/brand";
 import { COMPANY, companyRegistrationLine } from "@/lib/site";
 import { CookieSettingsButton } from "../consent/cookie-settings-button";
 import { LogoMark } from "./logo";
@@ -30,7 +30,7 @@ const COLUMNS = [
 ] as const;
 
 /** Public site footer: links, legal, cookie settings, company line, contact. */
-export function SiteFooter() {
+export function SiteFooter({ brand = PUBLIC_SITE_BRAND }: { brand?: Brand }) {
   const registration = companyRegistrationLine();
   return (
     <footer className="border-t border-slate-200 bg-white">
@@ -38,7 +38,7 @@ export function SiteFooter() {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
             <LogoMark className="h-7 w-7" />
-            {PRODUCT.name}
+            {brand.productName}
           </div>
           <p className="max-w-sm text-sm text-slate-600">
             Completes each referrer&rsquo;s own report form from your clinic notes, ready for your clinician to
@@ -74,7 +74,7 @@ export function SiteFooter() {
       <div className="border-t border-slate-200">
         <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-5 text-xs text-slate-600 sm:px-6 lg:px-8">
           <p>
-            {PRODUCT.name} is a product of {COMPANY.legalName}. © {new Date().getFullYear()} {COMPANY.legalName}.
+            {brand.productName} is a product of {COMPANY.legalName}. © {new Date().getFullYear()} {COMPANY.legalName}.
           </p>
           {registration ? <p>{registration}</p> : null}
         </div>

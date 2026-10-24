@@ -1,5 +1,6 @@
 /**
- * Regenerates the medreport module's import boundary in .eslintrc.json (keeps "extends").
+ * Regenerates the module import boundaries in .eslintrc.json (keeps "extends"): the medreport module (ClinForms)
+ * and the pms module (the clinic system: src/modules/pms – docs/clinic-system/contract.md §2).
  * Run: npm run medreport:eslint-boundary (= node scripts/medreport/gen-eslint-boundary.mjs)
  *
  * Why generated: ESLint overrides REPLACE (not merge) a rule's options, and relative escapes out of the
@@ -9,6 +10,7 @@
 import fs from "node:fs";
 
 const M = "src/modules/medreport";
+const PMS = "src/modules/pms";
 const MAX_DEPTH = 6;
 const ext = "{ts,tsx}";
 
@@ -104,8 +106,30 @@ const HOST_UI_SERVER_ONLY = {
   ],
   message: "src/components may run in the browser: no src/server, server-only, Node built-ins, database, sign-in server or email libraries here (call an API route or pass data from a server component).",
 };
+// The two modules stay apart: medreport never imports the clinic system; the clinic system may import only
+// medreport's public connector types (the host-side native connector, src/server/pms, implements them).
+const NO_PMS = {
+  group: ["@/modules/pms", "@/modules/pms/*", "**/modules/pms/*"],
+  message: "The medreport module never imports the clinic system (src/modules/pms). Host code wires them together.",
+};
+// Every medreport entry except connectors/types.ts, listed from the folder (gitignore-style negations cannot
+// re-allow a file under a banned folder). A new medreport folder needs a regeneration – the boundary test
+// (scripts/pms/contract.test.ts) fails until then.
+const medreportEntries = (dir, prefix) =>
+  fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() || /\.(ts|tsx)$/.test(e.name))
+    .map((e) => ({ name: e.name.replace(/\.(ts|tsx)$/, ""), dir: e.isDirectory() }))
+    .filter((e) => !(prefix === "connectors/" && e.name === "types"))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap((e) => (e.name === "connectors" && prefix === "" ? medreportEntries(`${dir}/connectors`, "connectors/") : [`@/modules/medreport/${prefix}${e.name}`, ...(e.dir ? [`@/modules/medreport/${prefix}${e.name}/**`] : [])]));
+const PMS_MEDREPORT_MESSAGE =
+  "The clinic system may import only medreport's public connector types (@/modules/medreport/connectors/types, with import type).";
+const PMS_MEDREPORT = { group: medreportEntries(M, ""), message: PMS_MEDREPORT_MESSAGE };
+// The bare specifier goes through `paths`: as a pattern it would also match every subpath (gitignore semantics).
+const PMS_MEDREPORT_BARE = { name: "@/modules/medreport", message: PMS_MEDREPORT_MESSAGE };
 const rule = (patterns, paths) => ({ "no-restricted-imports": ["error", paths ? { paths, patterns } : { patterns }] });
-const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, POSTHOG, escape(d)];
+const core = (d) => [LIB, COMPONENTS, SANDBOX, APP, SERVER, POSTHOG, NO_PMS, escape(d)];
 const base = (d) => [...core(d), DOCX_PREVIEW, PDFJS];
 
 const overrides = [];
@@ -148,10 +172,32 @@ overrides.push({
     APP,
     SERVER,
     POSTHOG,
+    NO_PMS,
     escape(1),
     CLIENT_UNSAFE,
   ]),
 });
+// 4b. The clinic-system module (src/modules/pms): pure, browser-safe domain code – types, zod schemas, rules,
+//     navigation and audit labels. No host code (src/lib, src/components, src/server, src/app), no sandbox, no
+//     server-only libraries, no relative escapes, and from medreport only its public connector types. Tests
+//     (node:test) may use Node built-ins.
+const PMS_LIB = { group: ["@/lib", "@/lib/*"], message: "The clinic-system module may not import src/lib (host code): keep it pure, pass values in." };
+const PMS_COMPONENTS = { group: ["@/components", "@/components/*"], message: "The clinic-system module holds no UI: components live in src/components/pms and pages in src/app/app/clinic." };
+const PMS_SERVER = { group: ["@/server", "@/server/*"], message: "The clinic-system module may not import src/server: repositories and services are host code (src/server/repos/pms, src/server/pms)." };
+const pmsEscape = (d) => ({
+  group: ["../".repeat(d + 1) + "*"],
+  message: "Relative imports may not leave src/modules/pms.",
+});
+const pmsCore = (d) => [PMS_LIB, PMS_COMPONENTS, SANDBOX, APP, PMS_SERVER, POSTHOG, PMS_MEDREPORT, pmsEscape(d), DOCX_PREVIEW, PDFJS];
+for (let d = 0; d <= MAX_DEPTH; d++) {
+  overrides.push({ files: [`${PMS}/${"*/".repeat(d)}*.${ext}`], rules: rule(pmsCore(d), [PMS_MEDREPORT_BARE]) });
+  overrides.push({
+    files: [`${PMS}/${"*/".repeat(d)}*.${ext}`],
+    excludedFiles: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: rule([...pmsCore(d), CLIENT_UNSAFE], [PMS_MEDREPORT_BARE]),
+  });
+}
+
 // 5. The sandbox may not import the module at all.
 overrides.push({
   files: [`src/sandbox/**/*.${ext}`],
