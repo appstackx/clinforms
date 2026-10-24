@@ -140,6 +140,8 @@ interface Ctx {
   usedLegacy: Set<XmlElement>;
   /** Tick-box changes inside text (☐ → ☒, "[ ]" → "[x]"), applied together once every tick box is decided (10/2026). */
   glyphEdits: Map<XmlElement, Array<{ offset: number; length: number; text: string }>>;
+  /** Paragraphs a "delete as necessary" answer removed printed text from (10/2026 verify). */
+  deletedParas: Set<XmlElement>;
 }
 
 function where(field: FormField): string {
@@ -605,6 +607,12 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   const paras = blockParagraphs(ref);
   let needle = anchor?.placeholderText ?? "";
   let occ = needle ? occurrences(paras, needle) : [];
+  // 10/2026 verify: the blank was printed inside an option a "delete as necessary" answer removed (a "Max lift … kg"
+  // restriction deleted, its "…" answered): the answer belongs to the deleted option, so it is not printed anywhere else.
+  if (occ.length === 0 && paras.some((p) => ctx.deletedParas.has(p))) {
+    if (!skip) ctx.warn(`${where(field)}: “${needle}” was deleted with the printed option it belongs to, so this answer is not printed.`);
+    return;
+  }
   if (occ.length === 0) {
     // The exact text is not there: fall back to the block's detected blanks.
     const detected = paras.flatMap((p) => findPlaceholders(segmentsText(paragraphSegments(p))).map((m) => ({ p, ...m })));
@@ -1090,7 +1098,10 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
       if (chosen.size === 0 && !replaceRange(target.p, target.index, target.index + target.length, () => [])) {
         ctx.warn(`${where(field)}: “${list}” could not be removed.`);
       }
-      if (chosen.size === 0) removeIfBlank(target.p);
+      if (chosen.size === 0) {
+        ctx.deletedParas.add(target.p);
+        removeIfBlank(target.p);
+      }
       else addSkip(ctx, ref.el, list);
       return;
     }
@@ -1103,6 +1114,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     const printed = target.text;
     const at = findWord(printed, keep);
     const kept = at >= 0 ? printed.slice(at, at + keep.trim().length) : keep;
+    ctx.deletedParas.add(target.p);
     if (!replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => [makeRun(ctx, [kept], styleRPr, "answer")])) {
       ctx.warn(`${where(field)}: the options “${list}” could not be changed, so every option was left as printed.`);
     }
@@ -1140,6 +1152,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
   }
   const drop = located.filter((l) => !chosen.has(l.option)).sort((a, b) => (a.p === b.p ? b.index - a.index : 0));
   for (const l of drop) {
+    ctx.deletedParas.add(l.p);
     if (!replaceRange(l.p, l.index, l.index + l.length, () => [])) ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
   }
   for (const p of Array.from(new Set(drop.map((l) => l.p)))) removeIfBlank(p);
@@ -1207,6 +1220,7 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     usedControls: new Set(),
     usedLegacy: new Set(),
     glyphEdits: new Map(),
+    deletedParas: new Set(),
   };
 
   // 1. Resolve every anchor on the untouched document.
@@ -1242,8 +1256,10 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
   flushGlyphEdits(ctx);
   for (const m of markJobs) fillMarkCells(ctx, m.field, m.answer, m.targets);
 
-  // 3. Text answers, in form order.
-  for (const job of jobs) {
+  // 3. Text answers, in form order – "delete as necessary" lists first (10/2026 verify), so a blank printed inside a
+  //    deleted option is known to be gone, and one inside a kept option is filled whatever the questions' order.
+  const isDelete = (j: Job) => j.field.anchor.kind === "docx" && j.field.anchor.target === "delete_options";
+  for (const job of [...jobs.filter(isDelete), ...jobs.filter((j) => !isDelete(j))]) {
     const { field } = job;
     const anchor = field.anchor.kind === "docx" ? field.anchor : null;
     if (!anchor) continue;

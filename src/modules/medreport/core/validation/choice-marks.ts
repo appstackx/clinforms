@@ -7,7 +7,8 @@
  * - a "tick all that apply" row answered as text ("Neck, Back") that names something not printed as an option;
  * - a choice (yes / no, one of several, a tick box) whose answer matches none of the printed options;
  * - (10/2026 verify) a Yes / No answer where the form prints no "Yes" / "No" (or "Y" / "N") option – on tick boxes
- *   too – which would otherwise tick or mark nothing and go out blank.
+ *   too – which would otherwise tick or mark nothing and go out blank;
+ * - (10/2026 verify) an unanswered blank inside a printed item that a "delete as necessary" answer keeps.
  *
  * Unanswered questions are placeholders.ts's. Pure.
  */
@@ -23,10 +24,49 @@ function printedOptions(field: FormField): string[] {
   return (field.anchor.optionTexts ?? []).map((o) => o.option);
 }
 
-export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
+/** The cell (or paragraph) a block ID belongs to: "t2.r2.c2.p0" → "t2.r2.c2". */
+const placeOf = (blockId: string) => blockId.replace(/\.p\d+$/, "");
+
+/**
+ * 10/2026 verify: a printed item KEPT by a "delete as necessary" answer that holds another question's blank (a
+ * restriction such as "Max lift … kg", its "…" a separate question) – that question must be answered too, or "…" goes
+ * out on the report. Blocking on the blank's question.
+ */
+function keptItemBlanks(input: ValidatorInput): ReportFlag[] {
   const form = input.form;
   if (!form) return [];
   const flags: ReportFlag[] = [];
+  const sectionOf = (id: string) => input.report.sections.find((s) => s.key === id);
+  for (const item of form.fields) {
+    if (item.anchor.kind !== "docx" || item.anchor.target !== "delete_options" || !item.anchor.placeholderText) continue;
+    const kept = sectionOf(item.id);
+    const value = kept && isSectionAnswered(kept) && kept.answer && kept.answer.kind !== "text" ? kept.answer.value : null;
+    if (value !== true || (item.options ?? []).length > 1) continue;
+    const printed = item.anchor.placeholderText;
+    for (const blank of form.fields) {
+      if (blank === item || blank.anchor.kind !== "docx" || blank.anchor.target !== "replace_placeholder" || blank.anchor.writeAfter) continue;
+      const needle = blank.anchor.placeholderText ?? "";
+      if (!needle || needle === printed || printed.indexOf(needle) < 0 || placeOf(blank.anchor.blockId) !== placeOf(item.anchor.blockId)) continue;
+      const section = sectionOf(blank.id);
+      if (!section || isSectionAnswered(section)) continue;
+      flags.push(
+        makeFlag({
+          code: "MISSING_PLACEHOLDER",
+          severity: "blocking",
+          sectionKey: section.key,
+          evidence: needle,
+          message: `“${item.options?.[0] ?? item.label}” is kept on the form, so answer “${section.title}” – or delete that item – before approving; otherwise “${needle}” is printed.`,
+        }),
+      );
+    }
+  }
+  return flags;
+}
+
+export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
+  const form = input.form;
+  if (!form) return [];
+  const flags: ReportFlag[] = keptItemBlanks(input);
   for (const field of form.fields) {
     if (field.anchor.kind !== "docx") continue;
     const target = field.anchor.target;

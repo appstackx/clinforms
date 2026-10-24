@@ -1544,7 +1544,11 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
   unticked typed box (a checklist "[x] yes [ ] no") – `bracketBoxMatches()`. Reading boxes and placeholders is linear
   in the paragraph (one paragraph of 160,000 boxes or "[a]" placeholders: ~1.5 s; the per-match scans took 25–30 s).
   A Yes / No answer also picks a printed "Y" / "N" (`core/forms.ts` `yesNoOption()`), and one that no printed option
-  stands for blocks approval (`choice-marks`, tick boxes included) instead of printing blank.
+  stands for blocks approval (`choice-marks`, tick boxes included) instead of printing blank. A blank printed INSIDE
+  a "delete as necessary" item ("Max lift … kg", its "…" a separate question): the lists are processed first, an
+  answer whose blank was deleted with its item is not printed anywhere else (warning), and a KEPT item's unanswered
+  blank blocks approval. A table row of exact height (RTF templates) becomes "at least" that height once an answer is
+  written in it, so Word never clips it (Pages still clips some long cells on screen – a Pages limit).
 - **"Mark the column" tables** – `mark_cell` (`DocxAnchor.optionCells` [{option, blockId}], optional `mark`, default
   "X"): one question per row (Yes | No, None | Mild | Severe, a scale, a grade column); the chosen option's cell
   gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark – x X ✓ ✔ √ ✗ ✘ ☒ ☑ × ✕

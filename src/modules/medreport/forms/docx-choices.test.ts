@@ -537,3 +537,23 @@ test("a table row of exact height (RTF templates) grows to fit a written answer;
   assert.match(rows[0], /<w:trHeight w:val="284" w:hRule="atLeast"\/>/, "the answered row may grow");
   assert.match(rows[1], /<w:trHeight w:val="284" w:hRule="exact"\/>/, "an unanswered row keeps its exact height");
 });
+
+test("a blank printed inside a “delete as necessary” item: filled when kept, never printed elsewhere when deleted; a kept item's blank must be answered", () => {
+  const file = docx(tbl(tr(cell("No overhead lifting"), cell("Max lift … kg (fictional)"))));
+  const item = field("F-01", "Lifting restriction", { kind: "docx", target: "delete_options", blockId: "t0.r0.c1", placeholderText: "Max lift … kg (fictional)" }, { answerType: "checkbox", options: ["Max lift … kg (fictional)"] });
+  const kg = field("F-02", "Lifting limit (kg)", { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c1", placeholderText: "…" }, { required: false });
+  for (const order of [[item, kg], [kg, item]]) {
+    const f = form(order);
+    const kept = texts(fillDocx(file, f, { "F-01": { text: "Yes", value: true }, "F-02": { text: "15" } }, { draft: false }));
+    assert.equal(kept["t0.r0.c1"], "Max lift 15 kg (fictional)", `kept (${order.map((x) => x.id).join(",")})`);
+    const warnings: string[] = [];
+    const deleted = texts(fillDocx(file, f, { "F-01": { text: "No", value: false }, "F-02": { text: "15" } }, { draft: false, onWarning: (w) => warnings.push(w) }));
+    assert.equal(deleted["t0.r0.c1"], "", `deleted: no stray “15” (${order.map((x) => x.id).join(",")})`);
+    assert.ok(warnings.some((w) => /deleted with the printed option/.test(w)), warnings.join(" | "));
+  }
+  const input = (answers: Parameters<typeof reportWith>[0]) => ({ report: reportWith(answers), form: form([item, kg]) }) as unknown as ValidatorInput;
+  const flags = validateChoiceMarks(input({ "F-01": { kind: "checkbox", value: true }, "F-02": { kind: "text" } }));
+  assert.deepEqual(flags.map((x) => [x.sectionKey, x.severity]), [["F-02", "blocking"]]);
+  assert.deepEqual(validateChoiceMarks(input({ "F-01": { kind: "checkbox", value: false }, "F-02": { kind: "text" } })), [], "a deleted item's blank needs no answer");
+  assert.deepEqual(validateChoiceMarks(input({ "F-01": { kind: "checkbox", value: true }, "F-02": { kind: "text", text: "15" } })), []);
+});
