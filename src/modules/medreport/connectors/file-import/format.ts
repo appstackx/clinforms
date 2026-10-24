@@ -267,6 +267,9 @@ export const TEXT_HEADER_KEYS: ReadonlyArray<{ key: string; synonyms: string[]; 
   { key: "Date of birth", synonyms: ["DOB"], required: true, example: "14/09/1984" },
   { key: "Sex", synonyms: ["Gender"], required: false, example: "female" },
   { key: "Occupation", synonyms: [], required: false, example: "Teacher" },
+  // P5 (10/2026): read into the record (registration address); a separate postcode line is added to it.
+  { key: "Address", synonyms: ["Home address", "Patient address"], required: false, example: "1 Example Street (fictional), Exampletown" },
+  { key: "Postcode", synonyms: ["Post code"], required: false, example: "ZZ1 1ZZ" },
   { key: "Instructing party", synonyms: ["Solicitor", "Insurer", "Case manager", "Instructed by"], required: true, example: "Calder & Moss Solicitors (fictional)" },
   { key: "Instructing party type", synonyms: ["Referral type"], required: false, example: "solicitor" },
   { key: "Reference", synonyms: ["Ref", "Instructing reference"], required: false, example: "CM/PI/0815" },

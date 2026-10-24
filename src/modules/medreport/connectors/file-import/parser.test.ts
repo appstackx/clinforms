@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseImport, parseCsvRecords, toIsoDate, extractScores } from "./parser";
+import { parseImport, parseCsvRecords, textAddress, toIsoDate, extractScores } from "./parser";
+import { TEXT_HEADER_KEYS } from "./format";
 import { PRIYA_NAIR_IMPORT, SAMPLE_IMPORT_FILES, buildSampleCsv } from "./samples";
 import { computeFacts } from "../../core/computed-facts";
 import { runDataChecks } from "../../core/validation/data-checks";
@@ -174,4 +175,20 @@ test("helpers: dates, CSV records, score extraction", () => {
     { instrument: "QuickDASH", value: 52 },
     { instrument: "ODI", value: 30 },
   ]);
+});
+
+test("P5 (10/2026): Address and Postcode lines at the top of pasted / printed notes reach the record", () => {
+  const head = (lines: string[]) =>
+    [...lines, "Date of birth: 02/01/1990", "Instructing party: Example Solicitors (fictional)", "18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)", "S: Neck pain."].join("\n");
+  const one = parseOk({ format: "text", content: head(["Patient: Alex Example", "Address: 1 Example Street (fictional), Exampletown", "Postcode: zz1 1zz"]) });
+  assert.equal(one.bundle.registration.addressSummary, "1 Example Street (fictional), Exampletown, ZZ1 1ZZ");
+  const synonyms = parseOk({ format: "text", content: head(["Home address: 2 Sample Road (fictional), Testville, ZZ2 2ZZ", "Post code: ZZ2 2ZZ"]) });
+  assert.equal(synonyms.bundle.registration.addressSummary, "2 Sample Road (fictional), Testville, ZZ2 2ZZ", "a postcode already at the end is not repeated");
+  const postcodeOnly = parseOk({ format: "text", content: head(["Postcode: ZZ3 3ZZ"]) });
+  assert.equal(postcodeOnly.bundle.registration.addressSummary, "ZZ3 3ZZ");
+  const none = parseOk({ format: "text", content: head([]) });
+  assert.equal(none.bundle.registration.addressSummary, "", "no address given: none recorded");
+  assert.ok(TEXT_HEADER_KEYS.some((k) => k.key === "Address") && TEXT_HEADER_KEYS.some((k) => k.key === "Postcode"), "documented in the format guide");
+  assert.equal(textAddress(" 3 Lane (fictional) , Town ,", "zz9 9zz"), "3 Lane (fictional) , Town, ZZ9 9ZZ");
+  assert.equal(textAddress(null, null), null);
 });

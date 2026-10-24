@@ -595,6 +595,9 @@ const TEXT_KEYS: Record<string, string> = {
   "date of birth": "dob", dob: "dob",
   sex: "sex", gender: "sex",
   occupation: "occupation",
+  // P5 (10/2026): the patient's address and postcode, as clinic systems print them at the top of the notes.
+  address: "address", "home address": "address", "patient address": "address", "patient's address": "address",
+  postcode: "postcode", "post code": "postcode", "patient postcode": "postcode",
   "instructing party": "party", "instructed by": "party", solicitor: "party:solicitor", insurer: "party:insurer", "case manager": "party:case_manager",
   "instructing party type": "partyType", "referral type": "partyType",
   reference: "reference", ref: "reference", "instructing reference": "reference",
@@ -606,6 +609,19 @@ const TEXT_KEYS: Record<string, string> = {
   "episode status": "status", status: "status",
   title: "title", episode: "title", condition: "title",
 };
+
+/**
+ * P5 (10/2026): "Address:" and "Postcode:" header lines → the patient's address as one line, the postcode last
+ * (added only when the address line does not already end with it). Null when neither is given.
+ */
+export function textAddress(address: string | null | undefined, postcode: string | null | undefined): string | null {
+  const a = (address ?? "").replace(/\s+/g, " ").trim().replace(/[,\s]+$/, "");
+  const p = (postcode ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!a && !p) return null;
+  if (!p) return a;
+  if (!a) return p;
+  return a.toUpperCase().replace(/\s+/g, "").endsWith(p.replace(/\s+/g, "")) ? a : `${a}, ${p}`;
+}
 
 function parseClinician(text: string): { name: string; hcpc: string } | null {
   const match = /^\s*([^()]+?)\s*\(([^()]+)\)\s*$/.exec(text);
@@ -793,6 +809,7 @@ function readText(content: string, ctx: BuildContext): { doc: ImportDocument } |
       date_of_birth: dob as string,
       sex: sexRaw === "female" || sexRaw === "f" ? "female" : sexRaw === "male" || sexRaw === "m" ? "male" : sexRaw === "other" ? "other" : "not_recorded",
       occupation: h("occupation"),
+      ...(textAddress(h("address"), h("postcode")) ? { address: textAddress(h("address"), h("postcode")) as string } : {}),
     },
     episode: {
       id: "pasted-episode",
