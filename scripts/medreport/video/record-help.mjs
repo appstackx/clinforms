@@ -2492,7 +2492,7 @@ async function record() {
       const cancel = inv.getByRole("button", { name: "Cancel" });
       await d.at(d.w("cancel") - 0.6);
       const b = await cancel.boundingBox();
-      if (b) await d.moveTo(b.x - 40, b.y + b.height / 2, 600);
+      if (b) await d.moveTo(b.x + b.width + 36, b.y + b.height / 2, 600); // beside "Cancel", away from "Copy link"
     });
 
     /* ======================= Chapter 8 – Help (Dell) ======================= */
