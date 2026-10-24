@@ -17,6 +17,11 @@ name ("AppStackX Reports") and the earlier file names. Re-running the recorder p
 |---|---|
 | `record-demo.mjs` | Drives the Studio and the Simulated TM3 sandbox with Playwright, captures frames, assembles the MP4s and the other outputs |
 | `captions.json` | Every caption, chapter chip, question card, answer line, card and suggested voice-over line. Edit the wording here, not in the script |
+| `video-kit.mjs` | Shared machinery for both recorders: overlay (cursor, ripple, heartbeat, optional chapter bar and captions), screencast `Cast`, `BaseDirector` (cursor moves, scrolling, clicks, typing, cuts), banned-term patterns, ffmpeg frame concat, SRT helpers, card styles |
+| `record-outreach.mjs` | The generic 89 s outreach video for UK private physiotherapy clinics (see below) |
+| `outreach-captions.json` | Its lines (caption + voice-over, timed), shots (actions, locators), cards and teaser. Edit the wording and timings here |
+| `check-outreach-captions.mjs` | Self-check of `outreach-captions.json` (banned terms, caption length, narration fit, continuity) |
+| `mix-outreach.mjs` | Puts the narration clips under the outreach picture (holds/trims at still frames, small speed-ups, -16 LUFS) and builds the outreach deliverables (master, e-mail MP4, SRT, poster, teaser, README) |
 
 ## What it produces
 
@@ -137,3 +142,131 @@ see or download (`src/modules/medreport/core/wording.ts`). The recorder enforces
   patients and referrers are fictional. A direct TM3 connection is "subject to TM3 providing access";
   today's route is a TM3 export.
 - Make no time-saving claims, and do not use real MLC or insurer branding.
+
+## Help video for a trial clinic (branch `sales/help-video`, 10/2026)
+
+The help video sent with a trial clinic's welcome email is recorded against a **local production build** of `main`
+with a **local SQLite database** set up exactly like the live clinic – never against clinforms.co.uk, and no account is
+ever created or signed in on production.
+
+- Server: `next start -p 3240` (ports 3240–3249 only) with `CLINFORMS_DB=sqlite`, `CLINFORMS_SQLITE_PATH` outside the
+  repo, a throwaway local `CLINFORMS_DATA_KEYS`/`CLINFORMS_DATA_KEY_ID` and `BETTER_AUTH_SECRET`,
+  `BETTER_AUTH_URL=http://localhost:3240`, `CLINFORMS_EMAIL_PROVIDER=log` (emailed invitations are printed to the
+  server log, which therefore stays outside the repo), `MEDREPORT_AI_MODE=auto`, and `NEXT_PUBLIC_POSTHOG_KEY` empty at
+  build time (a local build must never report to the production analytics project).
+- Clinic: the admin scripts **without `--env`** (`admin:create-clinic`, `admin:set-trial`, `admin:set-limits`,
+  `admin:load-forms` dry run then `--confirm`) with the same arguments as the live clinic, except the owner address
+  (`@example.com`). The owner's invitation link is kept in a local file outside the repo.
+- Run the recorder with `BASE=http://localhost:3240` and `NODE_PATH` pointing at a `node_modules` that has Playwright.
+- Never commit the clinic's templates, maps, recordings, invitation links or keys. Record the page only (no address
+  bar); cover the two-step QR code and secret and any invitation or reset link.
+
+## Outreach video (`record-outreach.mjs`)
+
+A generic 90 s video for cold outreach to UK private physiotherapy clinics: title card, a montage of the five bundled
+fictional blank forms (the problem), 65 s of the Studio (the Meridian form uploaded and its mapping confirmed once,
+Megan Hart on the Harrow & Pike form from the simulated clinic system to the approved Word form and the portal answers),
+then an end card whose call to action fades in with its line. Working files live outside the repo in
+`marketing/clinforms/outreach-video-v1-src/` (`voice/`, `work/`, storyboard, narration script); the files that are
+sent or hosted go to `marketing/clinforms/outreach-video-v1/`. Demo mode only: the server must report
+`aiMode: "demo"`; no keys are needed.
+
+```bash
+npm run build && PORT=3310 MEDREPORT_AI_MODE=demo npm run start &      # .env.local with only MEDREPORT_AI_MODE=demo
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/record-outreach.mjs \
+  --src ~/Projects/Appstackx/marketing/clinforms/outreach-video-v1-src [--review /tmp/frames]
+# Re-render cards and captions and re-encode from work/timeline.json (no recording):
+NODE_PATH=... node scripts/medreport/video/record-outreach.mjs --src ... --assemble-only
+# Render the montage page and the cards and screenshot them (no take):
+NODE_PATH=... node scripts/medreport/video/record-outreach.mjs --src ... --preview-montage --review /tmp/m
+```
+
+How it differs from the walkthrough recorder:
+
+- **Clock from the narration.** The line starts in `outreach-captions.json` are planned from the measured narration
+  clips (`voice/lines.json`: each clip, then a 0.35–0.6 s pause), and every action is scheduled relative to its line
+  (`L(id, dt)` = line start, `LE(id, dt)` = end of the spoken line). A screen that belongs to the next line is cut to
+  only after the current line has been spoken; screens a line introduces itself are listed in its `shotsDuring`.
+  Video time is wall time minus cut time, so each voice line lands at its planned start; an action that runs late is
+  logged as `drift` in `work/timeline.json`. Re-plan the starts whenever a narration clip changes.
+- **Montage.** Page 1 of each bundled fictional form is rendered (Word via `docx-preview` in a browser page, PDF via
+  `pdftoppm`) into `work/montage/`, and `work/cards/montage.html` animates them (forms fly in with their referrer type
+  and file type; then the clinic notes card, a "Same notes" chip flying to each form and a "Typed again" badge). The
+  page is recorded by the same screencast; it has no cursor.
+- **Hard cuts only.** Page loads, the drafting, the remaining clinician answers and filling the approval dialog happen
+  inside cuts. Nothing is sped up and no wait is labelled or timed. Her opinion (F-14) is entered and committed inside
+  a 0.3 s cut: while a paragraph is being typed the card shows a transient red "Missing field" state.
+- **Captions in post.** Caption pills are rendered as PNGs (the Studio's own Inter font) and overlaid by ffmpeg at the
+  recorded line times, so `work/picture-clean.mp4` has no captions (teaser source) and captions can be re-timed with
+  `--assemble-only`. A small "Fictional data" tag sits top left on every recorded frame (right of "← Reports" inside a
+  punch-in).
+- **Presentation only (no app code changed).** The Studio footer (version string, sandbox link) is hidden; on
+  "Complete a form" the page intro and the "Launch from the patient record" card are hidden, the simulated picker is
+  labelled "Clinic system (simulated)" and its label "Simulated TM3 sandbox – demo data, not affiliated with TM3." is
+  kept verbatim and enlarged; only the first four rows of the unfiltered patient list show (the sixth names a real
+  insurer); on the approved form "Completed form (PDF)" (no Word-to-PDF converter on the live site) and "Save to
+  clinic record" (needs a live clinic-system connection) are hidden; the upload dialog's grid column is held to the
+  dialog width; dialogs sit higher and end above the caption band. The portal step stays on the approved "Copy
+  answers" panel (punch-in), because the answer cards still tag their paragraphs "Draft" after approval. The final
+  form is scrolled so the signed declaration ends above the caption band and the page footer (whose page-number fields
+  the preview leaves blank) stays out of view.
+- **Framing guard.** A sampler in the page (every 150 ms) aborts the recording, naming the shot, if a frame outside a
+  cut shows legible "TM3" without a readable "Simulated TM3" label (a label half under a caption pill does not count),
+  or a real insurer's name. The Studio names TM3 on its registration answers, so S05c and S06 are punched in (about
+  1.27×) to a 16:9 crop of the full content width; the first registration card is pushed below the crop with a
+  presentation-only margin and the toast stack is moved into the crop. The banned-term guard of the walkthrough
+  recorder runs at every shot and caption, on the cards, captions, SRT, the montage forms and the downloaded final
+  Word file.
+- **Busy machine.** The take waits until the 1-minute load is below `MAX_LOAD` (default 12) and aborts with
+  "MACHINE BUSY" if it rises above `ABORT_LOAD` (default 30) mid-take: a loaded machine gives late actions and
+  dropped frames. Late actions are listed as `drift` in the timeline.
+- **Headless** at a 1600×900 window and device scale 1.2 (native 1920×1080 frames); the browser context grants
+  clipboard read/write so the "Copy" toasts work.
+
+Outputs (under `<src>/work`, not in git): `picture.mp4` (silent master with captions), `picture-clean.mp4`,
+`picture.srt`, `timeline.json` (recorded line, shot and punch-in times in `final`), `teaser-source.mp4` +
+`teaser-source.json` (caption-free T0–T5 cut, 20 s), `teaser.mp4` / `teaser.gif` / `teaser-1080.mp4` (the teaser
+with its big captions and the large "Fictional data" tag; GIF 800×450; frame 0 is the teaser title card with a play
+badge, for mail apps that show only the first frame), `cards/` (title, end card with and without the call to action,
+teaser title, montage page), `montage/`, `captions/`, `poster.png`.
+
+## Narration mix and outreach deliverables (`mix-outreach.mjs`)
+
+Runs after `record-outreach.mjs` and the narration step (one levelled clip per line in `voice/trimmed/`, described by
+`voice/lines.json`; provenance in `voice/generation.json`). It reads `--src` and writes only the files that are sent or
+hosted into `--out`: `ClinForms-demo.mp4` (master, 1920×1080, narration + burned-in captions), `ClinForms-demo-email.mp4`
+(≤ 18 MB, CRF 26 `-tune stillimage`, AAC stereo 96 kb/s; steps to CRF 28 / 1600×900 if it is too big),
+`ClinForms-demo.srt` (the narration word for word at its real times, ≤ 2 × 42 characters per cue),
+`ClinForms-demo-poster.png` (title card + play button + length, 1280×720), `ClinForms-teaser.gif` / `.mp4` (from the
+recorder's teaser) and `README.md` (internal notes for the sender: files, outreach use, narration, checks, voice
+provenance; a reviewer's notes in `<src>/work/mix/review.md` are included verbatim).
+
+```bash
+NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-outreach.mjs \
+  --src ~/Projects/Appstackx/marketing/clinforms/outreach-video-v1-src --out ~/Projects/Appstackx/marketing/clinforms/outreach-video-v1 \
+  [--frames /tmp/check] [--plan-only] [--target 90] [--title <s>]
+```
+
+- **Placement.** Each clip starts at its caption's recorded start (`work/timeline.json` → `final.lines`) and ends at
+  least 0.22 s before the next line (0.35 s before the call to action). With the narration-driven plan no edit is
+  normally needed; otherwise an over-long line first gets a speed-up of at most ×1.08, then a **picture hold** (a frame
+  repeated in the middle of the longest run of identical frames inside that line's slot, found on
+  `work/picture-clean.mp4`); on the end card, the card simply stays up longer. Only a slot with no still run gets more
+  speed, and never beyond ×1.15.
+- **Length.** If the result is over `--target` (default 90 s), still frames are taken out of the slots with the most
+  spare time. `--title` shortens the title card (default: as recorded).
+- **Picture.** Re-composed from the recorder's sources (title card, `work/clips/app-clean.mp4`, the end card with the call
+  to action fading in just before the last line, caption PNGs and the corner tags with their times moved by the edits)
+  and encoded once at CRF 18, H.264 High level 4.0 with 4 reference frames (older phones and mail previews refuse
+  higher levels). It is converted to limited-range BT.709, while the recorder's own files are full-range BT.601. The
+  master muxes this picture with `-c:v copy`. `work/mix/picture-mixed.mp4` is reused when the edits have not changed.
+- **Sound.** Clips are placed with 12 ms fades in and 15 ms fades out. A static gain brings them to -16 LUFS, two-stage
+  compression (2:1 over the speech, 4:1 with a fast attack on the peaks) and a second static gain follow, a look-ahead
+  limiter at -2.3 dBFS catches the last few transients (its largest gain reduction is measured and reported), and a
+  two-pass loudnorm then runs in **linear** mode (the script fails if loudnorm falls back to dynamic mode). The
+  master's audio is AAC stereo 160 kb/s; the e-mail file is stereo too, so both play at -16 LUFS.
+- **Checks.** Silence detection confirms every line starts where it was planned; each line's first screen is checked to
+  appear only after the previous line has been spoken (`junctions` in `plan.json`). ffprobe confirms the streams, levels
+  and sizes, the GIF's first frame is written to `work/mix/gif-frame0.png`, and the metadata, SRT, poster and README are
+  scanned for banned terms. Verification frames are written every 3 s and 0.35 s after each line starts, with 2×2 contact
+  sheets, to `--frames` (default `<src>/work/mix/frames`). Read them. Everything is recorded in `work/mix/plan.json`.
