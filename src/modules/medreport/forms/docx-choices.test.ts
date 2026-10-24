@@ -406,3 +406,38 @@ test("post-validation keeps a live reading's marked cells and kept options, and 
   assert.equal(fields[1].anchor.kind === "docx" && fields[1].anchor.mark, "x", "the form's own printed mark is used");
   assert.ok(warnings.some((w) => /“Elsewhere” were not found/.test(w)));
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Printed details that must never go out (clearPlaceholder)
+ * ----------------------------------------------------------------------------------------------*/
+
+test("a printed detail marked clearPlaceholder never prints: replaced by the answer, removed while unanswered (DRAFT too)", () => {
+  const file = docx(tbl(tr(cell("Registration:"), tc(p(r("Degree (fictional)")), p(r("HCPC: XX00000")), p(r("Society no: 000000"))))));
+  const f = form([
+    field("F-01", "HCPC number", { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c1", placeholderText: "XX00000", clearPlaceholder: true }, { fillSource: { kind: "signoff", part: "hcpc" }, answerType: "hcpc_number" }),
+    field("F-02", "Society number", { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c1", placeholderText: "000000", clearPlaceholder: true }, { fillSource: { kind: "registration", path: "staff.entry" } }),
+  ]);
+  const draft = texts(fillDocx(file, f, {}, { draft: true }));
+  assert.equal(draft["t0.r0.c1"], "Degree (fictional)\nHCPC:\nSociety no:", "the printed numbers are removed (the outline drops trailing spaces)");
+  const review = texts(fillDocx(file, f, {}, { draft: true, reviewMarkers: true }));
+  assert.doesNotMatch(review["t0.r0.c1"], /XX00000|000000(?!\d)/);
+  const final = texts(fillDocx(file, f, { "F-01": { text: "PH-DEMO-01", value: "PH-DEMO-01" }, "F-02": { text: "SOC-DEMO-01" } }, { draft: false }));
+  assert.equal(final["t0.r0.c1"], "Degree (fictional)\nHCPC: PH-DEMO-01\nSociety no: SOC-DEMO-01");
+  // Without the flag an unanswered placeholder stays as printed (unchanged behaviour).
+  const plain = form(f.fields.map((x) => ({ ...x, anchor: { ...x.anchor, clearPlaceholder: undefined } as FormAnchor })));
+  assert.equal(texts(fillDocx(file, plain, {}, { draft: true }))["t0.r0.c1"], "Degree (fictional)\nHCPC: XX00000\nSociety no: 000000");
+});
+
+test("writeAfter: the answer goes after a printed label that has no answer space; the label stays", () => {
+  const file = docx([p(r("Name: Ann Example (fictional) Job Role:")), p(r("01.") + `<w:r><w:tab/></w:r>` + r("07.")), p(r("Society no:"))].join(""));
+  const f = form([
+    field("F-01", "Job role", { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "Job Role:", writeAfter: true }),
+    field("F-02", "Session 1", { kind: "docx", target: "replace_placeholder", blockId: "p1", placeholderText: "01.", writeAfter: true }, { answerType: "date" }),
+    field("F-03", "Session 7", { kind: "docx", target: "replace_placeholder", blockId: "p1", placeholderText: "07.", writeAfter: true }, { answerType: "date", required: false }),
+    field("F-04", "Society number", { kind: "docx", target: "replace_placeholder", blockId: "p2", placeholderText: "Society no:", writeAfter: true, clearPlaceholder: true }, { required: false }),
+  ]);
+  const t = texts(fillDocx(file, f, { "F-01": { text: "Office administrator" }, "F-02": { text: "25/03/2026", value: "2026-03-25" } }, { draft: false }));
+  assert.equal(t.p0, "Name: Ann Example (fictional) Job Role: Office administrator");
+  assert.equal(t.p1, "01. 25/03/2026 07.", "the unanswered slot keeps its printed number");
+  assert.equal(t.p2, "Society no:", "a label is never removed, even with clearPlaceholder");
+});

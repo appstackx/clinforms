@@ -20,6 +20,7 @@ import "server-only";
  *   delete_options       (10/2026) a "delete as necessary" list: only the chosen option is kept – the others are
  *                        REMOVED (inline list replaced by the chosen option; option lines removed, an emptied line too).
  *   Typed tick boxes ("[ ]", "[x]") are tick boxes for checkbox_glyph: "[ ]" → "[x]", and "[x]" → "[ ]".
+ *   replace_placeholder with clearPlaceholder (10/2026): an unanswered question's printed text is removed (DRAFT too).
  *
  * Answers come from core/forms.ts buildFormAnswers(report, form, {receipt}). Anchors are resolved on the
  * ORIGINAL document before anything changes, so every block ID means what the outline said. Text is
@@ -628,7 +629,8 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   const p = target.p;
   const fullText = segmentsText(paragraphSegments(p));
   const paraList = toParagraphs(text);
-  const label = isBareLabel(target.text);
+  // A bare "Answer:" label, or (10/2026) a printed label the map says to write after: the answer goes after it.
+  const label = isBareLabel(target.text) || Boolean(anchor?.writeAfter);
   const before = fullText[target.index - 1] ?? "";
   const afterText = fullText.slice(target.index + target.length);
   const atLineEnd = afterText.trim() === "";
@@ -1242,10 +1244,16 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     // placeholder (a clinic system's merge code) is removed, never left or marked.
     const blank = text === "" && job.answer.blank === true;
     if (blank) {
-      if (anchor.target === "replace_placeholder") clearPlaceholder(ctx, job);
+      if (anchor.target === "replace_placeholder" && !anchor.writeAfter) clearPlaceholder(ctx, job);
       continue;
     }
     const unanswered = text === "";
+    // 10/2026: printed text that must never go out (e.g. a named clinician's numbers in a template) is removed while
+    // its question has no answer yet – the review copy's marker replaces it anyway.
+    if (unanswered && anchor.target === "replace_placeholder" && anchor.clearPlaceholder && !anchor.writeAfter && !opts.reviewMarkers) {
+      clearPlaceholder(ctx, job);
+      continue;
+    }
     const kind: RunKind = unanswered ? "unanswered" : "answer";
     const marker = field.fillSource.kind === "signoff" ? `[${field.id} – completed on approval]` : `[${field.id} – not answered yet]`;
     const skip = unanswered && !opts.reviewMarkers;

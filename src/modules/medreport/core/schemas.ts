@@ -820,6 +820,17 @@ export const DocxAnchorSchema = z.object({
   mark: z.string().min(1).max(3).optional(),
   /** delete_options with one option per line (additive, 10/2026): where each option is printed. */
   optionTexts: z.array(OptionTextSchema).optional(),
+  /**
+   * replace_placeholder (additive, 10/2026): the printed text is REMOVED whenever the question has no answer yet – a
+   * DRAFT copy included – instead of being left as printed. For printed details that must never go out on a report,
+   * e.g. one named clinician's registration numbers typed into a clinic's template (replaced by the approver's own).
+   */
+  clearPlaceholder: z.boolean().optional(),
+  /**
+   * replace_placeholder (additive, 10/2026): the answer is written AFTER `placeholderText`, which stays printed – a
+   * printed label with no answer space of its own ("Job Role:", "Initial Assessment Date:", a numbered slot "01.").
+   */
+  writeAfter: z.boolean().optional(),
 });
 
 /**

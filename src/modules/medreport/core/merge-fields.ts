@@ -91,7 +91,8 @@ export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "f
         const blocks = docxAnchorBlockIds(f.anchor);
         if (!blocks.some((b) => inBlock(b, blockId))) continue;
         near ??= f.id;
-        if (f.anchor.target === "replace_placeholder" && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0 && answeredOrSignoff(f, report)) cleared += 1;
+        // (A question that writes AFTER the printed text – writeAfter, 10/2026 – leaves the code there.)
+        if (f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0 && answeredOrSignoff(f, report)) cleared += 1;
       }
     } else if (!g.fixed && g.fieldName) {
       for (const f of form.fields) {

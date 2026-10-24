@@ -66,7 +66,9 @@ export function describeAnchor(anchor: FormAnchor): string {
         case "after_paragraph":
           return `New line after ${where.toLowerCase()}`;
         case "replace_placeholder":
-          return `Replaces “${anchor.placeholderText ?? "…"}” – ${where}`;
+          return anchor.writeAfter
+            ? `After the printed “${anchor.placeholderText ?? "…"}” – ${where}`
+            : `Replaces “${anchor.placeholderText ?? "…"}”${anchor.clearPlaceholder ? " (never printed, even before it is answered)" : ""} – ${where}`;
         case "content_control":
           return `Content control – ${where}`;
         case "checkbox_glyph": {
@@ -136,6 +138,7 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           return `On the lines under ${q}`;
         case "replace_placeholder": {
           const ph = (a.placeholderText ?? "").trim();
+          if (a.writeAfter) return `After the printed “${ph.length > 40 ? `${ph.slice(0, 38)}…` : ph}”`;
           return /^[_.…\s-]+$/.test(ph) || !ph ? `On the blank line for ${q}` : `In place of “${ph.length > 40 ? `${ph.slice(0, 38)}…` : ph}”`;
         }
         case "content_control":

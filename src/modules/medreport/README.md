@@ -1552,6 +1552,11 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
   printed (its formatting kept); one option per line is `optionTexts` [{option, blockId, text}] – the others' text is
   removed and a line left empty is removed (a cell keeps its last paragraph). A single item (a list to "delete any
   that do not apply") is a `checkbox` question: kept when ticked, removed when not.
+- **Printed details that must never go out / labels without an answer space** (replace_placeholder options):
+  `clearPlaceholder` – the printed text is REMOVED while the question has no answer yet, a DRAFT copy included (e.g. one
+  named physiotherapist's HCPC/CSP numbers typed into a clinic's template, replaced by the approver's own at approval);
+  `writeAfter` – the answer is written AFTER the printed text, which stays ("Job Role:", "Initial Assessment Date:", a
+  numbered slot "01."); a merge code is never cleared by a `writeAfter` question.
 - **Never a guess:** an unanswered question, an "unknown" answer ("Not recorded") or one that matches no printed
   option leaves every box, mark and option as printed (fill warning). Approval is blocked
   (`core/validation/choice-marks.ts`, MISSING_PLACEHOLDER) when a marked-cell / kept-option answer is not one of the
