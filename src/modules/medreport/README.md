@@ -745,7 +745,8 @@ engine parses it (`buildDocxOutline` / `readPdfForm`) and Claude proposes a **fo
 (`FormDefinition`, status `proposed`): every question as a `FormField` with its label, the form's own
 section heading, plain-English guidance, `answerType`, options, an **anchor** (where the answer goes in
 the original file: `DocxAnchor` table_cell / after_paragraph / replace_placeholder / content_control /
-checkbox_glyph / legacy_form_field by block ID; `PdfFieldAnchor` by AcroForm field name;
+checkbox_glyph / legacy_form_field / mark_cell / delete_options by block ID (the last two 10/2026, see "Choice
+layouts of clinic templates"); `PdfFieldAnchor` by AcroForm field name;
 `PdfOverlayAnchor` by page box) and a **fill source** (`registration` path → code; `computed_fact` →
 code; `notes_narrative` → Claude from the notes, cited; `clinician_opinion` → only an opinion a
 clinician recorded, attributed, else blank + gap; `signoff` → the approval receipt; `leave_blank`).
@@ -1526,6 +1527,45 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   in the public demo) and `scripts/e2e/compare-form-outputs.ts` (two runs' downloads compared part by part / page
   text).
 
+
+## Choice layouts of clinic templates (10/2026, branch `feat/blue-heart-forms`, product gaps P17 / P18)
+
+Report templates kept in a practice system (Blue Heart's TM3 templates) answer choices in three ways the Word engine
+now completes – each on the ORIGINAL layout, and never in the wrong place:
+
+- **Typed tick boxes** – "[ ]", "[]", "[x]", "[X]", "[✓]" typed as text: `forms/docx-dom.ts` `glyphSlots()` counts
+  them as tick boxes (also when Word split one over runs), so they are `checkbox_glyph` options like ☐/☒; they are no
+  longer "[…]" fill-in placeholders (`findPlaceholders`). The fill writes the form's own style: "[ ]" → "[x]", a
+  ticked default "[x]" → "[ ]" when another option is chosen ("[]" stays "[]"). A form without typed boxes gives
+  exactly the slots and bytes it always gave (all tick-box text changes are applied per text element from the end,
+  on offsets read on the untouched document).
+- **"Mark the column" tables** – `mark_cell` (`DocxAnchor.optionCells` [{option, blockId}], optional `mark`, default
+  "X"): one question per row (Yes | No, None | Mild | Severe, a scale, a grade column); the chosen option's cell
+  gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark: that mark again; a
+  cell that prints the option itself, e.g. "40%": the mark after it), and a mark-only cell of every other option is
+  CLEARED – a printed default never stays in the wrong column. A "tick all that apply" row (body areas) is a
+  `short_text` question whose answer names the options ("Neck, Back", or "None"): `core/forms.ts` `namedOptions()`
+  matches whole printed options; anything else marks nothing.
+- **"Delete as necessary" lists** – `delete_options`: only the chosen option is KEPT, the others are REMOVED (not
+  struck through – chosen 24/10: removal reads cleanly on a printed or emailed form). An inline list
+  ("Daily/Weekly/Monthly", "…any medication? Yes/No") is `placeholderText` and is replaced by the chosen option as
+  printed (its formatting kept); one option per line is `optionTexts` [{option, blockId, text}] – the others' text is
+  removed and a line left empty is removed (a cell keeps its last paragraph). A single item (a list to "delete any
+  that do not apply") is a `checkbox` question: kept when ticked, removed when not.
+- **Never a guess:** an unanswered question, an "unknown" answer ("Not recorded") or one that matches no printed
+  option leaves every box, mark and option as printed (fill warning). Approval is blocked
+  (`core/validation/choice-marks.ts`, MISSING_PLACEHOLDER) when a marked-cell / kept-option answer is not one of the
+  printed options; `checkFormDefinition` checks the places, options and answer type; `admin:load-forms` checks every
+  cell and option line against the file.
+- **Readings:** the rules reading (`ai/form-choice-rules.ts`) proposes typed boxes across cells (and down a column),
+  mark-the-column rows (a heading row of options over rows with empty cells; a "…? | Yes | No" row) and
+  delete-as-necessary lists (inline, answer cells holding only a list, lines under "Delete as necessary"); the live
+  reading's prompt `form-analysis-5` (output schema: anchor targets `mark_cell`, `delete_options`) says how to map
+  each, and that a printed default answer is REPLACED, never answered beside. Post-validation checks every cell and
+  option line and keeps the form's own mark ("x").
+- Tests: `forms/docx-choices.test.ts` (fictional fixtures for every pattern). The bundled forms and the RTF fixtures
+  are byte-identical (forms-regression.cjs 5/5 IDENTICAL, rtf-forms.cjs 2/2 IDENTICAL, practice-codes.cjs all parts
+  identical vs `fix/blue-heart-verify`), and the rules reading of the bundled forms is unchanged (reading baseline).
 
 ## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
 

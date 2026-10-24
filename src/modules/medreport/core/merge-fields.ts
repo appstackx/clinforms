@@ -19,7 +19,7 @@
  *
  * Browser-safe and pure.
  */
-import { formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
+import { docxAnchorBlockIds, formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
 import type { FormDefinition, FormField, FormMergeField, Report } from "./types";
 
 const TOKEN = "«[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}»|<<[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}>>|\\bMERGEFIELD\\b";
@@ -88,7 +88,7 @@ export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "f
       const blockId = g.blockId;
       for (const f of form.fields) {
         if (f.anchor.kind !== "docx") continue;
-        const blocks = f.anchor.target === "checkbox_glyph" ? (f.anchor.optionGlyphs ?? []).map((o) => o.blockId) : [f.anchor.blockId];
+        const blocks = docxAnchorBlockIds(f.anchor);
         if (!blocks.some((b) => inBlock(b, blockId))) continue;
         near ??= f.id;
         if (f.anchor.target === "replace_placeholder" && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0 && answeredOrSignoff(f, report)) cleared += 1;

@@ -25,7 +25,7 @@ import path from "node:path";
 import type { Kysely } from "kysely";
 import { analyseFormFile, parseFormFile } from "../../modules/medreport/ai/analyse-form";
 import { storedFormFileName } from "../../modules/medreport/api/store-contract";
-import { checkFormDefinition, parseBlockId } from "../../modules/medreport/core/forms";
+import { checkFormDefinition, docxAnchorBlockIds, parseBlockId } from "../../modules/medreport/core/forms";
 import { createId } from "../../modules/medreport/core/ids";
 import { FormFieldSchema, ReferrerInfoSchema } from "../../modules/medreport/core/schemas";
 import type { FormDefinition, FormField, ReferrerInfo } from "../../modules/medreport/core/types";
@@ -148,12 +148,19 @@ async function anchorProblems(file: DecodedFormFile, fields: FormField[]): Promi
     const blockOf = (id: string) => blocks.get(id) ?? blocks.get(id.replace(/\.p\d+$/, ""));
     for (const f of fields) {
       if (f.anchor.kind !== "docx") continue;
-      const ids = f.anchor.target === "checkbox_glyph" ? (f.anchor.optionGlyphs ?? []).map((g) => g.blockId) : [f.anchor.blockId];
-      for (const id of ids) {
+      const ids = docxAnchorBlockIds(f.anchor);
+      for (const id of Array.from(new Set([...ids, f.anchor.blockId]))) {
         const block = parseBlockId(id) ? blockOf(id) : undefined;
         if (!block) problems.push(`${f.id} (“${f.label}”): the place ${id} is not in this file.`);
-        else if (f.anchor.target === "replace_placeholder" && f.anchor.placeholderText && block.text.indexOf(f.anchor.placeholderText) < 0) {
+        else if ((f.anchor.target === "replace_placeholder" || f.anchor.target === "delete_options") && f.anchor.placeholderText && block.text.indexOf(f.anchor.placeholderText) < 0) {
           problems.push(`${f.id} (“${f.label}”): “${f.anchor.placeholderText}” is not printed at ${id}.`);
+        }
+      }
+      // 10/2026: every option line of a "delete as necessary" list is printed where the map says.
+      if (f.anchor.target === "delete_options" && !f.anchor.placeholderText) {
+        for (const o of f.anchor.optionTexts ?? []) {
+          const block = parseBlockId(o.blockId) ? blockOf(o.blockId) : undefined;
+          if (block && block.text.indexOf(o.text) < 0) problems.push(`${f.id} (“${f.label}”): “${o.text}” is not printed at ${o.blockId}.`);
         }
       }
     }

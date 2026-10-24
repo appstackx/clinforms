@@ -21,6 +21,7 @@ import "server-only";
  * Pure (no I/O): a function of the outline and the proposed questions.
  */
 import { findPracticeCodes, practiceCode, type PracticeCode } from "../core/practice-merge-codes";
+import { docxAnchorBlockIds } from "../core/forms";
 import { FormFieldSchema } from "../core/schemas";
 import type { AnswerType, FillSource, FormField, OutlineBlock, RegistrationPath } from "../core/types";
 import type { ParsedForm } from "./form-outline";
@@ -352,7 +353,7 @@ function addressProposals(units: Unit[], byId: Map<string, OutlineBlock>): Propo
 /** Document position of a field's anchor (its block's place in the outline). */
 function fieldOrder(field: FormField, order: Map<string, number>): number {
   if (field.anchor.kind !== "docx") return Number.MAX_SAFE_INTEGER;
-  const ids = field.anchor.target === "checkbox_glyph" ? (field.anchor.optionGlyphs ?? []).map((g) => g.blockId) : [field.anchor.blockId];
+  const ids = docxAnchorBlockIds(field.anchor);
   const at = ids.map((id) => order.get(id) ?? order.get(id.replace(/\.p\d+$/, "")) ?? Number.MAX_SAFE_INTEGER);
   return at.length ? Math.min(...at) : Number.MAX_SAFE_INTEGER;
 }
@@ -399,7 +400,8 @@ export function bindPracticeMergeCodes(parsed: ParsedForm, fields: FormField[]):
   const kept: FormField[] = [];
   const sectionAt = new Map<string, string>();
   for (const f of fields) {
-    if (f.anchor.kind !== "docx" || f.anchor.target === "checkbox_glyph") {
+    // Tick boxes, marked cells and kept options write no text where a code is printed (10/2026).
+    if (f.anchor.kind !== "docx" || f.anchor.target === "checkbox_glyph" || f.anchor.target === "mark_cell" || f.anchor.target === "delete_options") {
       kept.push(f);
       continue;
     }

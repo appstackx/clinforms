@@ -173,8 +173,16 @@ export const FormAnalysisModeSchema = z.enum(["live", "demo_recorded", "demo_pre
  * - after_paragraph: a new paragraph after the question paragraph `blockId` ("p12").
  * - replace_placeholder: replace `placeholderText` (e.g. "[Insert prognosis]", "………", "____") in `blockId`.
  * - content_control: the w:sdt content control containing `blockId`.
- * - checkbox_glyph: tick the ☐ glyph(s) listed in `optionGlyphs` (☐ → ☒).
+ * - checkbox_glyph: tick the ☐ glyph(s) listed in `optionGlyphs` (☐ → ☒). Typed tick boxes count as glyphs too
+ *   (10/2026): "[ ]" / "[]" → "[x]", and a typed "[x]" is cleared to "[ ]" when another option is chosen.
  * - legacy_form_field: the legacy FORMTEXT / FORMCHECKBOX field in `blockId`.
+ * - mark_cell (additive, 10/2026): a "mark the column" table – rows of items, columns of options (Yes | No, a scale):
+ *   the chosen option's cell in `optionCells` gets the mark (`mark`, default "X"); a mark printed in another option's
+ *   cell (a pre-printed default) is removed, so the mark is never left in the wrong column.
+ * - delete_options (additive, 10/2026): a "delete as necessary" list – only the chosen option is kept, the others are
+ *   REMOVED from the form (not struck through): an inline list ("Daily / Weekly / Monthly") printed exactly as
+ *   `placeholderText` in `blockId`, or one option per line (`optionTexts`). A single printed item (a restriction
+ *   "delete any that do not apply") is a tick-box question: kept when ticked, removed when not.
  */
 export const DocxAnchorTargetSchema = z.enum([
   "table_cell",
@@ -183,6 +191,8 @@ export const DocxAnchorTargetSchema = z.enum([
   "content_control",
   "checkbox_glyph",
   "legacy_form_field",
+  "mark_cell",
+  "delete_options",
 ]);
 export const PdfFieldTypeSchema = z.enum(["text", "checkbox", "radio", "dropdown"]);
 /**
@@ -776,14 +786,40 @@ export const OptionGlyphSchema = z.object({
   glyphIndex: z.number().int().nonnegative(),
 });
 
+/** mark_cell (additive, 10/2026): the cell that is marked when this option is chosen. */
+export const OptionCellSchema = z.object({
+  /** The option as printed (the column heading, or the option printed in that cell). */
+  option: z.string(),
+  /** The cell to mark ("t2.r3.c1"), or one paragraph of it ("t2.r3.c1.p0"). */
+  blockId: BlockIdSchema,
+});
+
+/** delete_options with one option per line (additive, 10/2026): where an option is printed. */
+export const OptionTextSchema = z.object({
+  option: z.string(),
+  /** The paragraph or cell that prints it. */
+  blockId: BlockIdSchema,
+  /** The option's text exactly as printed there (removed when another option is chosen). */
+  text: z.string().min(1).max(400),
+});
+
 export const DocxAnchorSchema = z.object({
   kind: z.literal("docx"),
   target: DocxAnchorTargetSchema,
   blockId: BlockIdSchema,
-  /** replace_placeholder: the exact text to replace (e.g. "[Insert prognosis]", "……", "_____"). */
+  /**
+   * replace_placeholder: the exact text to replace (e.g. "[Insert prognosis]", "……", "_____").
+   * delete_options (inline list): the whole list exactly as printed, e.g. "Daily/Weekly/Monthly".
+   */
   placeholderText: z.string().optional(),
   /** checkbox_glyph (and yes_no / single_choice): where each option's ☐ is. */
   optionGlyphs: z.array(OptionGlyphSchema).optional(),
+  /** mark_cell (additive, 10/2026): the cell to mark for each option, in the order of the question's options. */
+  optionCells: z.array(OptionCellSchema).optional(),
+  /** mark_cell: the mark written in the chosen cell (default "X"; e.g. "x" or "✓" to match the form). */
+  mark: z.string().min(1).max(3).optional(),
+  /** delete_options with one option per line (additive, 10/2026): where each option is printed. */
+  optionTexts: z.array(OptionTextSchema).optional(),
 });
 
 /**

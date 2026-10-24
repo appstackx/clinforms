@@ -11,7 +11,8 @@
  * form-answers.ts for drafted date/number answers on a referrer's form), TERM_NOT_IN_SOURCE (terms.ts),
  * OPINION_LANGUAGE (opinion-language.ts), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
  * MISSING_PLACEHOLDER (placeholders.ts; merge-fields.ts for mail-merge fields left in an answer or on the
- * referrer's form – 10/2026, pass `form` to validateReport), DATA_CHECK (data-checks.ts, by the integration agent).
+ * referrer's form – 10/2026, pass `form` to validateReport; choice-marks.ts for a marked cell or a kept printed option
+ * that matches no printed option – 10/2026), DATA_CHECK (data-checks.ts, by the integration agent).
  *
  * Known limit, stated openly: a paraphrase error that cites a valid note is not caught (terms.ts catches
  * one kind: a corrupted glossary term such as "whale-associated disorder" for WAD). Click-to-source
@@ -37,6 +38,7 @@ import { dedupeFlags, makeFlag } from "./context";
 import { runDataChecks } from "./data-checks";
 import { validateFigures } from "./figures";
 import { validateFormAnswers } from "./form-answers";
+import { validateChoiceMarks } from "./choice-marks";
 import { validateGaps } from "./gaps";
 import { validateMergeFields } from "./merge-fields";
 import { validateOpinionLanguage } from "./opinion-language";
@@ -68,6 +70,7 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "citations", run: validateCitations },
   { name: "figures", run: validateFigures },
   { name: "form-answers", run: validateFormAnswers },
+  { name: "choice-marks", run: validateChoiceMarks },
   { name: "terms", run: validateTerms },
   { name: "opinion-language", run: validateOpinionLanguage },
   { name: "scope-terms", run: validateScopeTerms },

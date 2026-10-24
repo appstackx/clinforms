@@ -146,7 +146,7 @@ export function withSourceMarkers(answers: FormFillAnswers, report: Pick<Report,
     // Only drafted / reviewed text answers: identifiers, numbers and dates stay exactly as on the record.
     if (field.fillSource.kind !== "notes_narrative" && field.fillSource.kind !== "clinician_opinion") continue;
     if (field.answerType !== "long_text" && field.answerType !== "short_text") continue;
-    if (field.anchor.kind === "docx" && field.anchor.target === "checkbox_glyph") continue;
+    if (field.anchor.kind === "docx" && (field.anchor.target === "checkbox_glyph" || field.anchor.target === "mark_cell" || field.anchor.target === "delete_options")) continue;
     const answer = out[field.id];
     if (!answer?.text) continue;
     const section = report.sections.find((s) => s.key === field.id);

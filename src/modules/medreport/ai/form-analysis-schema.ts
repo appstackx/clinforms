@@ -39,6 +39,9 @@ export const ANCHOR_TARGETS = [
   "content_control",
   "checkbox_glyph",
   "legacy_form_field",
+  // form-analysis-5 (10/2026): a "mark the column" table cell, a "delete as necessary" list.
+  "mark_cell",
+  "delete_options",
   "pdf_field",
   "pdf_overlay",
 ] as const;
@@ -67,8 +70,10 @@ export const AnalysisAnswerTypeSchema = AnswerTypeSchema.exclude(["table"]);
 
 export const AnalysisOptionAnchorSchema = z.object({
   option: z.string().describe("The option exactly as printed."),
-  ref: z.string().describe("Word: the block ID holding this option's ☐. Fillable PDF: the check box field name for this option."),
-  glyphIndex: z.number().int().describe("Word: 0-based index of this option's ☐ among the ☐/☒ glyphs in that block. PDF: 0."),
+  ref: z
+    .string()
+    .describe("Word checkbox_glyph: the block ID holding this option's tick box. mark_cell: the cell ID to mark for this option. delete_options (one option per line): the block ID printing this option. Fillable PDF: the check box field name for this option."),
+  glyphIndex: z.number().int().describe("Word checkbox_glyph: 0-based index of this option's tick box among the tick boxes in that block. Otherwise 0."),
 });
 
 const AnalysisFieldOutputBaseSchema = z.object({
@@ -81,8 +86,12 @@ const AnalysisFieldOutputBaseSchema = z.object({
   anchorRef: z
     .string()
     .describe('Word: the block ID of the answer space (see the rules). Fillable PDF: the field name exactly as listed. Flat PDF: "".'),
-  placeholderText: z.string().describe('replace_placeholder: the placeholder exactly as it appears in that block. "" otherwise.'),
-  optionAnchors: z.array(AnalysisOptionAnchorSchema).describe("checkbox_glyph (and PDF tick boxes per option): one entry per option, same order as options. [] otherwise."),
+  placeholderText: z
+    .string()
+    .describe('replace_placeholder: the placeholder exactly as it appears in that block. delete_options on one line: the whole list exactly as printed. "" otherwise.'),
+  optionAnchors: z
+    .array(AnalysisOptionAnchorSchema)
+    .describe("checkbox_glyph, mark_cell, delete_options with one option per line (and PDF tick boxes per option): one entry per option, same order as options. [] otherwise."),
   overlay: z
     .object({ page: z.number().int(), x: z.number(), y: z.number(), width: z.number(), height: z.number() })
     .describe("pdf_overlay only: the answer box in PDF points, origin bottom-left, page 1-based. All zeros otherwise."),

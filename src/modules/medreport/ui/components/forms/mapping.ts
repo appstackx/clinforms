@@ -31,6 +31,8 @@ export const DOCX_TARGET_LABELS: Record<DocxAnchorTarget, string> = {
   content_control: "Into a Word content control",
   checkbox_glyph: "Ticking a ☐ box",
   legacy_form_field: "Into a legacy Word form field",
+  mark_cell: "Marking a cell of a table",
+  delete_options: "Keeping one printed option, deleting the others",
 };
 
 export const FACT_OPTIONS: ReadonlyArray<{ id: FactId; label: string }> = [
@@ -73,6 +75,14 @@ export function describeAnchor(anchor: FormAnchor): string {
         }
         case "legacy_form_field":
           return `Word form field – ${where}`;
+        case "mark_cell": {
+          const cells = anchor.optionCells ?? [];
+          return `Marks “${anchor.mark ?? "X"}” in one cell (${cells.map((c) => `${c.option}: ${describeBlock(c.blockId).toLowerCase()}`).join(" / ")})`;
+        }
+        case "delete_options":
+          return anchor.placeholderText
+            ? `Keeps one of “${anchor.placeholderText}”, deletes the others – ${where}`
+            : `Keeps one printed option, deletes the others (${(anchor.optionTexts ?? []).map((o) => o.option).join(" / ")}) – ${where}`;
       }
       return where;
     }
@@ -136,6 +146,15 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
         }
         case "legacy_form_field":
           return `In the form field for ${q}`;
+        case "mark_cell": {
+          const opts = a.optionCells?.map((c) => `“${c.option}”`) ?? [];
+          return opts.length > 1 ? `Marks the cell of one of ${opts.join(" / ")}` : `Marks the cell for ${opts[0] ?? q}`;
+        }
+        case "delete_options": {
+          const opts = (a.optionTexts?.length ? a.optionTexts.map((o) => o.option) : []).map((o) => `“${o}”`);
+          if (a.placeholderText) return `Keeps one of “${a.placeholderText.length > 40 ? `${a.placeholderText.slice(0, 38)}…` : a.placeholderText}” and deletes the others`;
+          return opts.length > 1 ? `Keeps one of ${opts.join(" / ")} and deletes the others` : `Keeps ${opts[0] ?? q} when it applies, deletes it when not`;
+        }
       }
       return `For ${q}`;
     case "pdf_field":

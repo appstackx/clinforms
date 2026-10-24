@@ -753,6 +753,36 @@ export function matchOption(options: readonly string[] | undefined, text: string
   return prefixes.length === 1 ? options[prefixes[0].i] : null;
 }
 
+/** An answer that says no printed option applies ("None", "Nil", "N/A"): nothing is marked (10/2026). */
+const NONE_OF_THEM = /^(?:none|nil|no|n\/a|not applicable|none of (?:them|these|the above))\.?$/i;
+
+/**
+ * The printed options a TEXT answer names (10/2026: a "tick all that apply" row of a mark-the-column table, answered as
+ * text such as "Neck, Back"): every option is matched whole (case-insensitive, longest first, so "None or N/A"
+ * stays one option); `unmatched` is whatever else the answer says. "None" / "Nil" / "N/A" name no option and leave
+ * nothing unmatched. Pure.
+ */
+export function namedOptions(options: readonly string[] | undefined, text: string): { matched: string[]; unmatched: string } {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t || NONE_OF_THEM.test(t)) return { matched: [], unmatched: "" };
+  let rest = t;
+  const matched: string[] = [];
+  const byLength = (options ?? []).map((o, i) => ({ o: o.trim(), i })).filter((x) => x.o).sort((a, b) => b.o.length - a.o.length);
+  for (const { o, i } of byLength) {
+    const re = new RegExp(`(^|[^A-Za-z0-9])${o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z0-9])`, "i");
+    const m = re.exec(rest);
+    if (!m) continue;
+    matched.push((options ?? [])[i]);
+    rest = `${rest.slice(0, m.index)}${m[1]} ${rest.slice(m.index + m[0].length)}`;
+  }
+  const unmatched = rest
+    .replace(/\b(?:and|or|both|also)\b/gi, " ")
+    .replace(/[\s,;/&+.:()-]+/g, " ")
+    .trim();
+  const order = new Map((options ?? []).map((o, i) => [o, i] as const));
+  return { matched: matched.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)), unmatched };
+}
+
 /** Convert a resolved value into the structured answer for a field (null value when it does not fit). */
 export function toFormAnswer(field: FormField, resolved: ResolvedFormValue | null): FormAnswer {
   const kind = answerKindFor(field.answerType);
@@ -1016,12 +1046,30 @@ export function parseBlockId(id: string): ParsedBlockId | null {
  * Answer-space identity (comparing two maps of the same file)
  * ----------------------------------------------------------------------------------------------*/
 
+/**
+ * Every Word block an anchor writes into (10/2026): the tick boxes' blocks, the cells a mark_cell question marks, the
+ * lines of a one-option-per-line delete_options list – otherwise its own block. For ordering, highlighting the
+ * answer space, the merge-code checks and the load checks.
+ */
+export function docxAnchorBlockIds(anchor: Extract<FormField["anchor"], { kind: "docx" }>): string[] {
+  if (anchor.target === "checkbox_glyph" && anchor.optionGlyphs?.length) return Array.from(new Set(anchor.optionGlyphs.map((g) => g.blockId)));
+  if (anchor.target === "mark_cell" && anchor.optionCells?.length) return Array.from(new Set(anchor.optionCells.map((c) => c.blockId)));
+  if (anchor.target === "delete_options" && anchor.optionTexts?.length && !anchor.placeholderText) return Array.from(new Set(anchor.optionTexts.map((o) => o.blockId)));
+  return [anchor.blockId];
+}
+
 /** Where an anchor writes, as a comparable string (block / placeholder / glyphs / PDF field / box). */
 export function formAnchorKey(anchor: FormField["anchor"]): string {
   switch (anchor.kind) {
     case "docx":
       if (anchor.target === "checkbox_glyph") {
         return `glyph:${(anchor.optionGlyphs ?? []).map((g) => `${g.blockId}#${g.glyphIndex}`).join(",")}`;
+      }
+      if (anchor.target === "mark_cell") return `cells:${(anchor.optionCells ?? []).map((c) => c.blockId).join(",")}`;
+      if (anchor.target === "delete_options") {
+        return anchor.placeholderText
+          ? `delete:${anchor.blockId}|${anchor.placeholderText}`
+          : `delete:${(anchor.optionTexts ?? []).map((o) => `${o.blockId}|${o.text}`).join(",")}`;
       }
       return `docx:${anchor.target === "replace_placeholder" ? `${anchor.blockId}|${anchor.placeholderText ?? ""}` : anchor.blockId}`;
     case "pdf_field": {
@@ -1123,6 +1171,30 @@ export function checkFormDefinition(form: FormDefinition): string[] {
       }
       if (field.anchor.target === "checkbox_glyph" && !field.anchor.optionGlyphs?.length) {
         problems.push(`${where}: no tick boxes are linked to this question.`);
+      }
+      // 10/2026: "mark the column" tables and "delete as necessary" lists.
+      if (field.anchor.target === "mark_cell") {
+        const cells = field.anchor.optionCells ?? [];
+        if (!cells.length) problems.push(`${where}: no cells to mark are linked to this question.`);
+        if (cells.some((c) => !c.option.trim() || !parseBlockId(c.blockId))) problems.push(`${where}: every cell to mark needs its option and a valid place.`);
+        if (new Set(cells.map((c) => c.blockId)).size !== cells.length) problems.push(`${where}: a cell is linked to more than one option.`);
+        if (field.answerType !== "yes_no" && field.answerType !== "single_choice" && field.answerType !== "checkbox" && field.answerType !== "short_text") {
+          problems.push(`${where}: a marked cell answers a choice, so the answer type must be yes / no, a single choice, a tick box, or short text naming every option that applies.`);
+        }
+        if (field.anchor.mark !== undefined && !field.anchor.mark.trim()) problems.push(`${where}: say which mark to write.`);
+      }
+      if (field.anchor.target === "delete_options") {
+        const list = field.anchor.placeholderText ?? "";
+        const lines = field.anchor.optionTexts ?? [];
+        if (!list && !lines.length) problems.push(`${where}: say where the options to keep or delete are printed.`);
+        if (lines.some((o) => !o.option.trim() || !o.text.trim() || !parseBlockId(o.blockId))) problems.push(`${where}: every printed option needs its option, its text and a valid place.`);
+        if (list && !(field.options ?? []).length) problems.push(`${where}: list the options printed in “${list}”.`);
+        if (list && (field.options ?? []).some((o) => !list.toLowerCase().includes(o.trim().toLowerCase()))) {
+          problems.push(`${where}: every option must be printed in “${list}”.`);
+        }
+        if (field.answerType !== "yes_no" && field.answerType !== "single_choice" && field.answerType !== "checkbox") {
+          problems.push(`${where}: keeping one printed option answers a choice, so the answer type must be yes / no, a single choice or a tick box.`);
+        }
       }
       if (!parseBlockId(field.anchor.blockId)) problems.push(`${where}: the location “${field.anchor.blockId}” is not valid.`);
     }
