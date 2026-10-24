@@ -36,6 +36,7 @@ import {
 } from "../store-contract";
 import type { TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -122,6 +123,8 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
   };
   // The daily new-data allowance: a new form map in full, and (fix wave 3) the growth of an update.
   const bytes = new TextEncoder().encode(JSON.stringify(form)).byteLength;
+  // 10/2026: a clinic whose trial has ended keeps (and may still change) what it has, but creates nothing new.
+  if (ifMatch === null) await assertClinicMayCreate(t.actor, deps, "form");
   if (ifMatch === null) await takeNewData(deps, t, bytes);
   else {
     const previous = await t.store.getForm(t.tenantId, id);

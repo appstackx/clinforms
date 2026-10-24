@@ -297,6 +297,9 @@ export interface AccessWording {
   /** POST /passcode/check from a clinic's Studio: the passcode belongs to the public demo only. */
   passcodeDemoOnlyTitle: string;
   passcodeDemoOnlyDetail: string;
+  /** 10/2026: the clinic's trial has ended – nothing new can be created; existing records stay available. */
+  trialEndedTitle: string;
+  trialEnded(what: string, contactEmail?: string): string;
 }
 
 /** The access wording is the same under every disclosure setting: it never names a technology. */
@@ -354,6 +357,9 @@ const ACCESS: AccessWording = {
   importLimitDetail: (seconds) => `Too many notes were uploaded or checked in a short time. Try again in ${seconds} s.`,
   passcodeDemoOnlyTitle: "No passcode needed",
   passcodeDemoOnlyDetail: "The passcode belongs to the public demo. In your clinic's Studio, drafting follows your clinic's settings.",
+  trialEndedTitle: "Your trial has ended",
+  trialEnded: (what, contactEmail) =>
+    `Your clinic's trial has ended, so ${what} is not available. Existing reports and forms can still be opened and downloaded. To carry on, contact us${contactEmail ? ` at ${contactEmail}` : ""}.`,
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

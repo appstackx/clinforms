@@ -8,7 +8,25 @@ import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicsOvervi
 import { getDb } from "@/server/db";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction } from "./actions";
-import { CreateClinicForm } from "./forms";
+import { CreateClinicForm, TrialForms } from "./forms";
+import type { ClinicOverview } from "@/server/admin/platform-console";
+
+const UK_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/** The clinic's trial in a few words (10/2026). */
+function trialText(c: ClinicOverview): string {
+  const a = c.access;
+  if (a.state === "trial") return a.pending ? `${a.daysLeft}-day trial, starts at the owner's first sign-in` : `Trial, ${a.daysLeft} ${a.daysLeft === 1 ? "day" : "days"} left (ends ${UK_DAY.format(new Date(a.endsAt ?? ""))})`;
+  if (a.state === "trial_ended") return `Trial ended ${UK_DAY.format(new Date(a.endedAt))}`;
+  return a.plan === "paid" ? "Full account (trial converted)" : "–";
+}
+
+function limitsText(c: ClinicOverview): string {
+  const m = c.plan?.livePerMinute;
+  const d = c.plan?.livePerDay;
+  if (!m && !d) return "Default";
+  return `${m ? `${m}/min` : "default/min"} · ${d ? `${d.toLocaleString("en-GB")}/day` : "default/day"}`;
+}
 
 /**
  * /app/platform – ClinForms staff only (emails in CLINFORMS_PLATFORM_ADMINS, signed in with two-step verification;
@@ -61,6 +79,14 @@ export default async function PlatformPage() {
 
         <Panel title="Create a clinic" description="Creates the clinic account and an invitation for its owner. Do this once the data processing agreement is signed." className="mb-6">
           <CreateClinicForm />
+        </Panel>
+
+        <Panel
+          title="Trials and drafting limits"
+          description="A trial lets a clinic try ClinForms with made-up or anonymised notes before its data processing agreement is signed. When it ends, the clinic can still open and download its records but cannot create anything new. Drafting limits replace the defaults for one clinic. Every change is recorded here and in the clinic's own activity."
+          className="mb-6"
+        >
+          <TrialForms clinics={clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }))} />
         </Panel>
 
         <Panel
@@ -130,6 +156,8 @@ export default async function PlatformPage() {
                     <th className={TH}>Members</th>
                     <th className={TH}>Open invitations</th>
                     <th className={TH}>Last activity</th>
+                    <th className={TH}>Trial</th>
+                    <th className={TH}>Drafting limits</th>
                     <th className={TH}>Status</th>
                   </tr>
                 </thead>
@@ -145,6 +173,8 @@ export default async function PlatformPage() {
                       </td>
                       <td className={TD}>{c.pendingInvitations}</td>
                       <td className={`${TD} whitespace-nowrap text-slate-600`}>{c.lastActivityAt ? activityTime(c.lastActivityAt) : "–"}</td>
+                      <td className={`${TD} text-slate-700`}>{trialText(c)}</td>
+                      <td className={`${TD} whitespace-nowrap text-slate-700`}>{limitsText(c)}</td>
                       <td className={TD}>
                         {c.offboardedAt ? (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Closed {activityTime(c.offboardedAt)}</span>

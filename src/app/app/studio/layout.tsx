@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { TrialBannerBar } from "@/components/account/trial-banner";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { getAuth } from "@/server/auth/auth";
 import { currentPath, requestHeaders } from "@/server/auth/session";
@@ -25,20 +26,23 @@ export default async function TenantStudioLayout({ children }: { children: React
   if (access.kind === "redirect") redirect(access.to);
   const { context } = access;
   return (
-    <TenantHost
-      clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}
-      member={{
-        name: context.member.name,
-        userId: context.member.userId,
-        role: context.member.role,
-        email: context.member.email,
-        roleLabel: context.member.roleLabel,
-        hcpc: context.member.hcpc,
-        jobTitle: context.member.jobTitle,
-        canSign: context.member.canSign,
-      }}
-    >
-      <StudioShell>{children}</StudioShell>
-    </TenantHost>
+    <>
+      <TrialBannerBar access={context.trial} />
+      <TenantHost
+        clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}
+        member={{
+          name: context.member.name,
+          userId: context.member.userId,
+          role: context.member.role,
+          email: context.member.email,
+          roleLabel: context.member.roleLabel,
+          hcpc: context.member.hcpc,
+          jobTitle: context.member.jobTitle,
+          canSign: context.member.canSign,
+        }}
+      >
+        <StudioShell>{children}</StudioShell>
+      </TenantHost>
+    </>
   );
 }

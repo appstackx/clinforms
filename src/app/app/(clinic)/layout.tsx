@@ -3,7 +3,10 @@ import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
 import { isManager } from "@/server/auth/roles";
+import { TrialBannerBar } from "@/components/account/trial-banner";
+import { noteClinicVisit } from "@/server/admin/clinic-plan";
 import { requireAppContext } from "@/server/auth/session";
+import { getDb } from "@/server/db";
 import { SignOutForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +14,8 @@ export const dynamic = "force-dynamic";
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const { session, membership } = await requireAppContext();
   const manager = isManager(membership.role);
+  // 10/2026: the clinic's trial – an owner's first visit starts a trial that waits for it; the banner says what is left.
+  const trial = await noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role });
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
     { href: "/app/studio", label: "Studio" },
@@ -46,6 +51,7 @@ export default async function ClinicLayout({ children }: { children: React.React
           <AppNav items={items} />
         </div>
       </header>
+      <TrialBannerBar access={trial} />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </>
   );

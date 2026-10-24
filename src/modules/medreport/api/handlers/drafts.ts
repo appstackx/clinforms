@@ -39,6 +39,7 @@ import { hasDemoDraft } from "../../ai/draft-demo";
 import { DraftGenerationError, generateDraftGroup, type DraftErrorCode } from "../../ai/generate";
 import { chooseAiModeForActor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { MAX_SECTIONS_PER_DRAFT } from "../../config.public";
 import { computeFacts } from "../../core/computed-facts";
 import { formIdFromTemplateId } from "../../core/forms";
@@ -73,6 +74,7 @@ const ERROR_TITLE: Record<DraftErrorCode, string> = {
 
 export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "draft"); // 10/2026: nothing new once a clinic's trial has ended
   const parsed = await parseBody(req, DraftsRequestSchema, { maxBytes: MAX_DRAFT_BODY_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;

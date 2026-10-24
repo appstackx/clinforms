@@ -144,6 +144,27 @@ export interface ClinicProfileTable {
   updated_at: IsoTimestamp;
 }
 
+/**
+ * `clinic_plan` (migration 0006) – a clinic's trial and its own drafting limits, written by ClinForms staff only
+ * (platform page, admin scripts). One row per clinic; no row = no trial, default limits.
+ */
+export interface ClinicPlanTable {
+  tenant_id: string;
+  /** "standard" (no trial: a row for its own limits only) | "trial" | "paid" (converted). */
+  status: string;
+  trial_days: number | null;
+  /** 0/1: the trial starts when an owner first opens the clinic area. */
+  start_on_first_sign_in: WithDefault<number>;
+  trial_starts_at: IsoTimestamp | null;
+  trial_ends_at: IsoTimestamp | null;
+  owner_first_sign_in_at: IsoTimestamp | null;
+  ended_at: IsoTimestamp | null;
+  live_calls_per_minute: number | null;
+  live_calls_per_day: number | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 /** `member_profile` – the signer identity of a member of an organization. */
 export interface MemberProfileTable {
   organization_id: string;
@@ -276,6 +297,7 @@ export interface Database {
   invitation: AuthInvitationTable;
   rateLimit: AuthRateLimitTable;
   clinic_profile: ClinicProfileTable;
+  clinic_plan: ClinicPlanTable;
   member_profile: MemberProfileTable;
   forms: FormsTable;
   form_files: FormFilesTable;
@@ -306,6 +328,7 @@ export const AUTH_TABLES_IN_FK_ORDER = [
 export const TABLES_IN_FK_ORDER = [
   ...AUTH_TABLES_IN_FK_ORDER,
   "clinic_profile",
+  "clinic_plan",
   "member_profile",
   "tenant_settings",
   "forms",
@@ -333,6 +356,7 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   invitation: ["id"],
   rateLimit: ["id"],
   clinic_profile: ["tenant_id"],
+  clinic_plan: ["tenant_id"],
   member_profile: ["organization_id", "user_id"],
   tenant_settings: ["tenant_id"],
   forms: ["tenant_id", "id"],
@@ -347,6 +371,7 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
 };
 
 export type ClinicProfileRow = Selectable<ClinicProfileTable>;
+export type ClinicPlanRow = Selectable<ClinicPlanTable>;
 export type MemberProfileRow = Selectable<MemberProfileTable>;
 export type FormRow = Selectable<FormsTable>;
 export type FormFileRow = Selectable<FormFilesTable>;

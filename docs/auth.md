@@ -131,6 +131,32 @@ signs in and accepts; everyone else creates their account from the link and sets
    `src/server/auth/platform-admin-identity.test.ts`. **Only list an address whose account you created this way** (an
    account that already existed under that address may have come from a clinic's invitation).
 
+### Trials and drafting limits (10/2026)
+A clinic can be given a **trial** (e.g. 3 days for Blue Heart's set-up): while it runs (or waits to start) the clinic
+works as usual and every page of `/app` and `/app/studio` shows "Trial – N days left. Use made-up or anonymised notes
+until your data processing agreement is signed."; once it has ended the clinic can still open, preview and download its
+records (and finish existing drafts), but **nothing new** is created – the Report API answers 403 `TRIAL_ENDED` ("Your
+trial has ended … contact us at khuram@appstackx.co.uk") for a new report or form map, uploads (form files, notes),
+drafting, form readings and launch links (`src/modules/medreport/auth/clinic-access.ts`), and the banner says so.
+By default the trial starts when an **owner first opens the clinic area** after signing in (the moment is recorded once in
+`clinic_plan.owner_first_sign_in_at`, audited `clinic.trial_started`); if the clinic already has an owner when the trial
+is set, it starts at once (they have signed in already). ClinForms staff can also set a clinic's own **drafting limits**
+(e.g. 30 a minute, 1,500 a day; empty = the defaults `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` / `_PER_DAY`, 10 / 400).
+
+- **Platform page:** panel "Trials and drafting limits" (set up a trial: days + "when the owner first signs in" / "now";
+  extend; convert to a full account; end now; limits; back to defaults). The clinics table shows each clinic's trial and
+  limits.
+- **Scripts** (production needs `--yes` and Khuram's go):
+  ```bash
+  npm run admin:set-trial -- --env production --slug blue-heart --days 3 [--start-on-first-sign-in | --start-now] --yes
+  npm run admin:set-trial -- --env production --slug blue-heart --extend-days 3 | --convert-to-paid | --end-now | --show
+  npm run admin:set-limits -- --env production --slug blue-heart --per-minute 30 --per-day 1500 [--default] --yes
+  ```
+- **Audit:** every change writes `clinic.trial_set` / `clinic.trial_extended` / `clinic.trial_ended` /
+  `clinic.trial_converted` / `clinic.limits_set` under the clinic (by "ClinForms support", shown on its activity page) and,
+  from the platform page, `platform.*` naming the administrator.
+- Needs migration `0006_clinic_plan` on the target database (docs/database.md §3).
+
 ### List clinics
 `npm run admin:list-clinics -- --env production`
 

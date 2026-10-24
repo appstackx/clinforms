@@ -16,6 +16,7 @@ import { runBatch, type BatchQuery } from "../db/batch";
 import { authBool, type Database } from "../db/schema";
 import { deliverEmail, emailProviderName, invitationEmail, type DeliveryResult } from "../email";
 import { appendAudit, listAudit } from "../repos/audit";
+import { getClinicPlan } from "../repos/clinic-plan";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { RepoInputError, assertText } from "../repos/context";
 import { getFormFile, listFormFiles } from "../repos/form-files";
@@ -345,6 +346,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     tenantId,
     organization: { id: org.id, name: org.name, createdAt: org.createdAt },
     clinicProfile: await getClinicProfile(ctx, tenantId),
+    clinicPlan: await getClinicPlan(ctx, tenantId),
     tenantSettings: await getTenantSettings(ctx, tenantId),
     members: members.map((m) => ({ memberId: m.id, userId: m.userId, name: m.name, email: m.email, role: m.role, joinedAt: m.createdAt })),
     memberProfiles: profiles,
@@ -377,6 +379,7 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     db.deleteFrom("form_files").where("tenant_id", "=", tenantId),
     db.deleteFrom("tenant_settings").where("tenant_id", "=", tenantId),
     db.deleteFrom("clinic_profile").where("tenant_id", "=", tenantId),
+    db.deleteFrom("clinic_plan").where("tenant_id", "=", tenantId),
     db.deleteFrom("member_profile").where("organization_id", "=", org.id),
     db.updateTable("partner_keys").set({ revoked_at: now }).where("tenant_id", "=", tenantId).where("revoked_at", "is", null),
     db.deleteFrom("invitation").where("organizationId", "=", org.id),

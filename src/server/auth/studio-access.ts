@@ -17,7 +17,9 @@
 import "server-only";
 import type { Kysely } from "kysely";
 import { roleLabel } from "../../lib/account-copy";
+import { noteClinicVisit } from "../admin/clinic-plan";
 import type { Database } from "../db/schema";
+import type { ClinicAccess } from "../repos/clinic-plan";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { getMemberProfile } from "../repos/member-profile";
 import { safeNextPath } from "./config";
@@ -32,6 +34,11 @@ export interface TenantStudioContext {
   tenantId: string;
   clinicName: string;
   draftingEnabled: boolean;
+  /**
+   * The clinic's trial (10/2026; only when the clinic has a plan row): the Studio's banner. Opening the Studio as an
+   * owner for the first time starts a trial that waits for it (admin/clinic-plan.ts noteClinicVisit).
+   */
+  trial?: ClinicAccess;
   /** Members other than staff (and anyone with an HCPC number): name and HCPC number. No e-mail addresses or ids. */
   clinicians: Array<{ name: string; hcpc?: string }>;
   member: {
@@ -54,7 +61,7 @@ export function studioLoginRedirect(path: string | null | undefined): string {
   return `/login?next=${encodeURIComponent(safeNextPath(path, STUDIO_BASE_PATH))}`;
 }
 
-export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Database>; headers: Headers; path?: string | null }): Promise<StudioAccess> {
+export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Database>; headers: Headers; path?: string | null; now?: () => Date }): Promise<StudioAccess> {
   const session = await deps.auth.api.getSession({ headers: deps.headers, query: { disableCookieCache: true } }).catch(() => null);
   if (!session) return { kind: "redirect", to: studioLoginRedirect(deps.path) };
   if ((session.user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled !== true) return { kind: "redirect", to: "/two-factor" };
@@ -62,10 +69,11 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
   if (!organizationId) return { kind: "redirect", to: "/app/select-clinic" };
   const membership = await findMembership(deps.db, organizationId, session.user.id);
   if (!membership) return { kind: "redirect", to: "/app/select-clinic" };
-  const [clinic, profile, members] = await Promise.all([
+  const [clinic, profile, members, trial] = await Promise.all([
     getClinicProfile({ db: deps.db }, membership.tenantId).catch(() => null),
     getMemberProfile({ db: deps.db }, organizationId, session.user.id).catch(() => null),
     listClinicMembers(deps.db, organizationId).catch(() => []),
+    noteClinicVisit(deps.db, { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }, deps.now?.()),
   ]);
   const clinicians = members
     .filter((m) => m.name.trim() && (m.role !== "staff" || Boolean(m.hcpcNumber)))
@@ -77,6 +85,7 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
       tenantId: membership.tenantId,
       clinicName: clinic?.displayName || membership.clinicName,
       draftingEnabled: clinic?.draftingEnabled === true,
+      ...(trial ? { trial } : {}),
       clinicians,
       member: {
         name: session.user.name,

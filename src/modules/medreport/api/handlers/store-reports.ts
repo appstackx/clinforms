@@ -39,6 +39,7 @@ import {
 } from "../store-contract";
 import type { StoredReportMeta, TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -150,6 +151,8 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
   // The clinic's daily new-data allowance counts a new report in full and (fix wave 3) the growth of an update – a
   // record created small and saved again at full size is counted too.
   const bytes = new TextEncoder().encode(JSON.stringify(report)).byteLength;
+  // 10/2026: a clinic whose trial has ended keeps (and may still change) what it has, but creates nothing new.
+  if (ifMatch === null) await assertClinicMayCreate(t.actor, deps, "report");
   if (ifMatch === null) await takeNewData(deps, t, bytes);
   else if (before?.storedBytes !== undefined && bytes - before.storedBytes > 1024) await takeNewData(deps, t, bytes - before.storedBytes);
   const result = ifMatch === null ? await t.store.createReport(t.tenantId, row) : await t.store.updateReport(t.tenantId, row, ifMatch);

@@ -5,6 +5,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
 import { platformActionAdmin } from "@/server/admin/guards";
 import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
@@ -65,4 +66,90 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
     // unknown or malformed id: nothing to do
   }
   revalidatePath(PLATFORM_PATH);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Trials and drafting limits (10/2026) – every change audited (src/server/admin/clinic-plan.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+export type PlanActionResult = ActionResult<{ message: string }>;
+
+const UK_DATE_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function intField(form: FormData, name: string): number | null {
+  const text = String(form.get(name) ?? "").trim();
+  if (text === "") return null;
+  const n = Number(text);
+  return Number.isInteger(n) ? n : NaN;
+}
+
+/** Runs a plan change for an administrator already checked by the action itself; errors become messages. */
+async function runPlanChange(run: () => Promise<string>): Promise<PlanActionResult> {
+  try {
+    const message = await run();
+    revalidatePath(PLATFORM_PATH);
+    return { ok: true, message };
+  } catch (err) {
+    if (err instanceof RepoInputError) return { ok: false, error: err.message };
+    logAuthEvent("platform.plan_change_failed", { error: err instanceof Error ? err.name : "error" });
+    return { ok: false, error: ACCOUNT_ERRORS.generic };
+  }
+}
+
+/** Sets (or restarts) a trial: days, starting when the owner first signs in (default) or now. */
+export async function setTrialAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const days = intField(form, "days") ?? 3;
+    const start = form.get("start") === "now" ? "now" : "first_sign_in";
+    const r = await setTrial(getDb(), { kind: "platform", admin }, tenantId, { days, start });
+    if (!r.plan.trialEndsAt) return `${tenantId}: a ${days}-day trial starts when the owner first signs in.`;
+    return `${tenantId}: the ${days}-day trial ${r.startedNow ? "started now (the owner has already signed in)" : "started now"} and ends ${UK_DATE_TIME.format(new Date(r.plan.trialEndsAt))}.`;
+  });
+}
+
+/** Extend / convert / end now, by the button pressed ("what"). */
+export async function changeTrialAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    const actor = { kind: "platform" as const, admin };
+    if (what === "extend") {
+      const days = intField(form, "days");
+      if (days === null || Number.isNaN(days)) throw new RepoInputError("Enter how many days to add.");
+      const plan = await extendTrial(getDb(), actor, tenantId, days);
+      return plan.trialEndsAt
+        ? `${tenantId}: the trial now ends ${UK_DATE_TIME.format(new Date(plan.trialEndsAt))}.`
+        : `${tenantId}: the trial is now ${plan.trialDays} days, starting when the owner first signs in.`;
+    }
+    if (what === "paid") {
+      await endTrial(getDb(), actor, tenantId, "paid");
+      return `${tenantId}: the trial was converted to a full account.`;
+    }
+    if (what === "end") {
+      await endTrial(getDb(), actor, tenantId, "now");
+      return `${tenantId}: the trial has ended. The clinic can still open and download its records, but cannot create anything new.`;
+    }
+    throw new RepoInputError("Choose what to do with the trial.");
+  });
+}
+
+/** The clinic's own drafting limits; empty = the default. */
+export async function setLimitsAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const reset = form.get("what") === "default";
+    const perMinute = reset ? null : intField(form, "perMinute");
+    const perDay = reset ? null : intField(form, "perDay");
+    if (Number.isNaN(perMinute) || Number.isNaN(perDay)) throw new RepoInputError("Limits are whole numbers (leave empty for the default).");
+    const plan = await setDraftingLimits(getDb(), { kind: "platform", admin }, tenantId, { perMinute, perDay });
+    const text = (v: number | null, unit: string) => (v === null ? `the default a ${unit}` : `${v.toLocaleString("en-GB")} a ${unit}`);
+    return `${tenantId}: drafting limits are ${text(plan.livePerMinute, "minute")} and ${text(plan.livePerDay, "day")}.`;
+  });
 }

@@ -51,6 +51,16 @@ export interface ClinicProfile {
   email?: string;
   retentionDays: number;
   draftingEnabled: boolean;
+  /**
+   * The clinic's trial (10/2026, the host's clinic_plan), when it has one; absent = no trial. "pending" = it starts
+   * when an owner first opens the clinic area; "ended" = nothing new can be created (reports, drafts, uploads,
+   * form readings – auth/clinic-access.ts), existing records stay readable and downloadable.
+   */
+  trial?: { state: "pending" | "running" | "ended"; endsAt?: string; daysLeft?: number };
+  /** The clinic's own drafting limits (10/2026, set by ClinForms staff); absent = the deployment's defaults. */
+  draftingLimits?: { perMinute?: number; perDay?: number };
+  /** Where the clinic asks about its account (shown when the trial has ended). */
+  contactEmail?: string;
 }
 
 /** One fixed window of a shared counter (rate_limits). */

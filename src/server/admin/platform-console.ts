@@ -16,6 +16,7 @@ import { createClinic, listClinics, type ClinicSummary, type CreateClinicInput, 
 import { RESERVED_TENANT_SLUGS } from "../auth/tenant";
 import type { Database } from "../db/schema";
 import { listAccessRequests, setAccessRequestContacted, type AccessRequest } from "../repos/access-requests";
+import { clinicAccessOf, listClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
 import { appendAudit, listAudit, type AuditEntry } from "../repos/audit";
 import { RepoInputError, type DbContext } from "../repos/context";
 
@@ -102,6 +103,10 @@ export async function markAccessRequest(ctx: DbContext, admin: PlatformAdmin, id
 export interface ClinicOverview extends ClinicSummary {
   /** The newest audit entry of the clinic (any member, any action), or null. */
   lastActivityAt: string | null;
+  /** The clinic's trial and own drafting limits (10/2026), or null (no trial, default limits). */
+  plan: ClinicPlan | null;
+  /** What the plan means now. */
+  access: ClinicAccess;
 }
 
 /**
@@ -125,8 +130,12 @@ export async function lastActivityByTenant(db: Kysely<Database>): Promise<Map<st
 }
 
 export async function listClinicsOverview(db: Kysely<Database>, now = new Date()): Promise<ClinicOverview[]> {
-  const [clinics, last] = await Promise.all([listClinics(db, now), lastActivityByTenant(db)]);
-  return clinics.map((c) => ({ ...c, lastActivityAt: last.get(c.tenantId) ?? null }));
+  const [clinics, last, plans] = await Promise.all([listClinics(db, now), lastActivityByTenant(db), listClinicPlans({ db })]);
+  const planOf = new Map(plans.map((p) => [p.tenantId, p] as const));
+  return clinics.map((c) => {
+    const plan = planOf.get(c.tenantId) ?? null;
+    return { ...c, lastActivityAt: last.get(c.tenantId) ?? null, plan, access: clinicAccessOf(plan, now) };
+  });
 }
 
 /** createClinic() (organization + clinic profile + owner invitation, link returned once), audited as the admin. */

@@ -32,6 +32,7 @@ import "server-only";
 import { analyseFormFile } from "../../ai/analyse-form";
 import { chooseAiModeForActor, takeLiveCallsFor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, auditActor, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { DraftGenerationError } from "../../ai/types";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { decodeFormFile } from "../../forms/file";
@@ -43,6 +44,7 @@ import { json, logEvent, parseBody, problem, type MedreportHandler } from "../ht
 
 export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "analyse"); // 10/2026: nothing new once a clinic's trial has ended
   const parsed = await parseBody(req, FormsAnalyseRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
