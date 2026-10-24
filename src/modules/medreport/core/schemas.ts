@@ -509,6 +509,12 @@ export const TemplateScopeSchema = z.object({
   excludeFields: z.array(ScopeFieldSchema),
   /** Case-insensitive terms that must not appear in drafted text (SCOPE_TERM, blocking). */
   excludeTerms: z.array(z.string()),
+  /**
+   * Additive (10/2026, scope by question – core/forms.ts formScope): history a referrer's form explicitly ASKS for
+   * (e.g. "Past medical history") is sent for drafting, but its terms belong only in the answers to those questions
+   * (`sectionKeys`): anywhere else they are SCOPE_TERM, blocking.
+   */
+  confineTerms: z.array(z.object({ terms: z.array(z.string()), sectionKeys: z.array(z.string()) })).optional(),
 });
 
 export const ReportTemplateSchema = z.object({

@@ -108,6 +108,10 @@ export function buildFormBlock(form: FormDefinition, template: ReportTemplate): 
     excluded.length
       ? `Out of scope – never mention, even if it appears in the record: ${excluded.join("; ")}.`
       : "Out of scope: nothing beyond the rules.",
+    // 10/2026 (scope by question): history the form asks for, confined to the asking questions.
+    ...(template.scope.confineTerms ?? []).map(
+      (g) => `Only in the answer to ${g.sectionKeys.join(", ")} (the form asks for it there) – never anywhere else: ${g.terms.join("; ")}.`,
+    ),
     `Questions filled from the records by code (context only – never answer them): ${list(byCode)}.`,
     `Questions completed by the approving clinician at sign-off: ${list(signoff)}.`,
     "Questions you may be asked to answer:",

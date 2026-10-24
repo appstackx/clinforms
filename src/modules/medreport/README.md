@@ -785,6 +785,13 @@ same calls per patient.
   (`MISSING_PLACEHOLDER`, blocking); an optional one gives a warning that it will be left blank on the form.
 - **Data scope:** employer AND case-manager forms withhold past medical and social history from the AI
   and flag it if it appears in an answer (`formScope()`), as the built-in employer template does.
+  *Fix 10/2026 (P3, scope by question):* `formScope(type, form)` – history a form explicitly ASKS for ("Past medical
+  history", "Relevant medical history", "Social history" – a drafted question's printed label or section) is no
+  longer withheld for employer / case-manager referrers: its note field and terms are sent for drafting, and
+  `TemplateScope.confineTerms` keeps those terms to the asking questions (SCOPE_TERM, blocking, in any other answer;
+  the form block tells the drafting call "Only in the answer to F-07 …"). Return-to-work / fitness-for-work forms
+  (title or a question) and forms that do not ask keep the full minimisation (Kingsway unchanged). Tests:
+  `scripts/medreport/scope-by-question.test.ts`.
 - **References from another organisation:** when the form's referrer is not the organisation on the
   referral (`referrerNamesMatch()`, the same conservative rule as the form picker) and the question asks
   for the referrer's OWN reference (`asksForReferralPartyReference()`), the referral's reference is NOT

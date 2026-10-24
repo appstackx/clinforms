@@ -138,6 +138,10 @@ export const PREFILL_ATTESTATIONS = [
 
 const NO_SCOPE: TemplateScope = { excludeFields: [], excludeTerms: [] };
 
+/** Terms of the past medical history and of the social history (withheld together with their note fields). */
+const PMH_TERMS = ["past medical history", "previous medical history", "medical history", "PMH"];
+const SOCIAL_TERMS = ["social history", "smoker", "smoking", "alcohol", "units per week", "recreational drugs"];
+
 /**
  * Employer and case-manager referrers: fitness-for-work scope (same rules as the built-in employer
  * template). Case managers' return-to-work forms usually reach the employer, so unrelated past medical
@@ -160,9 +164,41 @@ const EMPLOYER_SCOPE: TemplateScope = {
   ],
 };
 
-/** Data scope applied before drafting a form for this kind of referrer. */
-export function formScope(referrerType: ReferrerType): TemplateScope {
-  return referrerType === "employer" || referrerType === "case_manager" ? EMPLOYER_SCOPE : NO_SCOPE;
+/** A question that asks for the past medical history ("Past medical history", "Relevant medical history", "PMH"). */
+const ASKS_PMH = /\b(?:past|previous|relevant|pre-?existing)\s+medical\s+history\b|^\s*(?:\d+[.)]\s*)?medical\s+history\b|\bPMH\b|\bco-?morbidit/i;
+/** A question that asks for the social history (or smoking / alcohol). */
+const ASKS_SOCIAL = /\bsocial\s+history\b|\bsmok(?:er|ing)\b|\balcohol\b/i;
+/** A return-to-work / fitness-for-work form: it reaches the employer, so history stays withheld whatever it asks. */
+const RETURN_TO_WORK = /\breturn(?:ing)?\s+to\s+(?:work|normal\s+duties)\b|\bfit(?:ness)?\s+(?:for|to)\s+(?:work|return|normal\s+duties|modified\s+duties)\b|\bRTW\b|\bphased\s+return\b|\bmodified\s+(?:or\s+restricted\s+)?duties\b|\bwork\s+capacity\b/i;
+
+/**
+ * Data scope applied before drafting a form for this kind of referrer.
+ *
+ * Fix 10/2026 (P3, scope by question): for an employer or case-manager referrer, history the form explicitly ASKS for
+ * is no longer withheld – a personal-injury rehabilitation network's initial assessment form asks for the past
+ * medical history, and its question was left blank as "outside the scope of this form". Such a question's history
+ * (its note field and terms) is sent for drafting and its terms are confined to the answers of the asking questions
+ * (TemplateScope.confineTerms: SCOPE_TERM anywhere else). Minimisation is kept for return-to-work / fitness-for-work
+ * forms (they usually reach the employer) and for forms that do not ask. Other referrers: no scope, as before.
+ */
+export function formScope(referrerType: ReferrerType, form?: Pick<FormDefinition, "title" | "fields">): TemplateScope {
+  if (referrerType !== "employer" && referrerType !== "case_manager") return NO_SCOPE;
+  if (!form) return EMPLOYER_SCOPE;
+  const drafted = form.fields.filter((f) => f.fillSource.kind === "notes_narrative" || f.fillSource.kind === "clinician_opinion");
+  const printed = (f: FormField) => `${f.section ?? ""}\n${f.label}`;
+  if (RETURN_TO_WORK.test(form.title) || form.fields.some((f) => RETURN_TO_WORK.test(printed(f)))) return EMPLOYER_SCOPE;
+  const pmh = drafted.filter((f) => ASKS_PMH.test(f.label) || ASKS_PMH.test(f.section ?? ""));
+  const social = drafted.filter((f) => ASKS_SOCIAL.test(f.label) || ASKS_SOCIAL.test(f.section ?? ""));
+  if (pmh.length === 0 && social.length === 0) return EMPLOYER_SCOPE;
+  const asked = new Set<string>([...(pmh.length ? PMH_TERMS : []), ...(social.length ? SOCIAL_TERMS : [])].map((t) => t.toLowerCase()));
+  return {
+    excludeFields: EMPLOYER_SCOPE.excludeFields.filter((f) => !(f === "note.pastMedicalHistory" && pmh.length) && !(f === "note.socialHistory" && social.length)),
+    excludeTerms: EMPLOYER_SCOPE.excludeTerms.filter((t) => !asked.has(t.toLowerCase())),
+    confineTerms: [
+      ...(pmh.length ? [{ terms: PMH_TERMS, sectionKeys: pmh.map((f) => f.id) }] : []),
+      ...(social.length ? [{ terms: SOCIAL_TERMS, sectionKeys: social.map((f) => f.id) }] : []),
+    ],
+  };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -322,7 +358,7 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
       ? `${form.referrer.name}'s portal questions, answered for entry in the portal.`
       : `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
-    scope: formScope(form.referrer.type),
+    scope: formScope(form.referrer.type, form),
     sections,
     declarationText: "",
     declarationNote: isQuestionSet(form)
