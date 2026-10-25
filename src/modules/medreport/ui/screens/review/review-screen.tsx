@@ -65,7 +65,6 @@ import {
   answeredByPerson,
   createAmendedVersion,
   ownVoiceCandidates,
-  blockingLines as toBlockingLines,
   buildQuestionGroups,
   citationsBySource,
   countStatuses,
@@ -77,6 +76,7 @@ import {
   type QuestionStatus,
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
+import { optionalBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
 import { useReviewActions } from "../../components/review/use-review-actions";
 import { useReviewState } from "../../components/review/use-review-state";
 
@@ -289,7 +289,10 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     return map;
   }, [questions, flagsBySection, report.gaps, personAnswered]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
+  // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
+  const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
+  const blankCandidates = useMemo(() => (signed ? [] : optionalBlankCandidates(report, { template, form })), [report, template, form, signed]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
@@ -299,6 +302,14 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const reportRef = useRef(report);
   reportRef.current = report;
   const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
+  const leaveBlank = useCallback(
+    (keys: string[], reason: string) => {
+      if (!template || keys.length === 0) return;
+      dispatch({ type: "leaveOptionalBlank", keys, reason, actor, template, form });
+      toast({ tone: "success", title: `${keys.length} optional box${keys.length === 1 ? "" : "es"} left blank`, detail: "Each is recorded with your reason in the Activity tab." });
+    },
+    [template, form, actor, dispatch, toast],
+  );
 
   const actions = useReviewActions({ report, form, template, file, actor, hooks, dispatch, commit, validateNow, toast });
   const answersCopy = useAnswersCopy({ report, form, actor, dispatch, toast });
@@ -451,9 +462,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         </TabsTrigger>
         <TabsTrigger value="flags" className="h-8 px-1 text-xs sm:text-[13px]">
           Flags
-          {blocking.length > 0 && !signed && (
-            <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white" aria-label={`${blocking.length} blocking`}>
-              {blocking.length}
+          {items.count > 0 && !signed && (
+            <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white" aria-label={`${items.count} blocking`}>
+              {items.count}
             </span>
           )}
         </TabsTrigger>
@@ -481,7 +492,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           <FlagsPanel
             report={report}
             bundle={bundle}
-            blockingCount={blocking.length}
+            items={items}
+            blankCandidates={blankCandidates}
+            onLeaveBlank={leaveBlank}
             readOnly={signed}
             validating={validating}
             actor={actor}
@@ -511,8 +524,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         generation={generation}
         saveState={saveState}
         savedAt={savedAt}
-        blockingLines={toBlockingLines(blocking, report)}
-        blockingCount={blocking.length}
+        blockingLines={reviewItemLines(items, report)}
+        blockingCount={items.count}
         canApprove={canApprove}
         approveUnavailable={approveUnavailable}
         onApprove={() => setApproveOpen(true)}
@@ -677,6 +690,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   status={statuses.get(q.key) ?? "pending"}
                   flags={flagsBySection.get(q.key) ?? EMPTY}
                   gaps={gapsBySection.get(q.key) ?? EMPTY}
+                  box={signed ? undefined : items.boxes.get(q.key)}
+                  hiddenFlagIds={items.coveredIds}
                   bundle={bundle}
                   connectorId={report.episodeRef.connectorId}
                   referrerName={report.form?.referrer.name ?? null}
@@ -741,9 +756,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                 >
                   <b.Icon className="h-5 w-5" aria-hidden />
                   {b.label}
-                  {b.tab === "flags" && blocking.length > 0 && !signed && (
+                  {b.tab === "flags" && items.count > 0 && !signed && (
                     <span className="absolute right-[22%] top-0.5 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white">
-                      {blocking.length}
+                      {items.count}
                       <span className="sr-only"> blocking</span>
                     </span>
                   )}

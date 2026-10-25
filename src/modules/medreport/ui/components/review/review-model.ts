@@ -194,7 +194,8 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
 
 /**
  * - pending: not drafted yet;
- * - signoff / blank: filled on approval / left for the referrer;
+ * - signoff / blank: filled on approval / left for the referrer – or an optional box a person chose to leave blank
+ *   (its gap or its "no answer" warning acknowledged, nothing open on it: fix 10/2026);
  * - needs_input: no answer yet (an opinion nobody recorded, a value the record lacks);
  * - confirm: a person has answered it and only its gap is still open (one click: "Mark resolved");
  * - blocked: answered, but a blocking check or an open gap remains;
@@ -212,7 +213,7 @@ export function questionStatus(
   if (section.kind === "declaration" && section.fieldId) return "signoff";
   if (section.status === "pending" && !isSectionAnswered(section)) return "pending";
   const answered = isSectionAnswered(section);
-  if (!answered) return "needs_input";
+  if (!answered) return q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps) ? "blank" : "needs_input";
   const blockingFlags = flags.filter((f) => f.sectionKey === section.key && isOpenBlocking(f, gaps));
   const openGap = gaps.some((g) => g.sectionKey === section.key && !g.resolution);
   // Answered by a person and only the gap itself is open: not a failed check, just confirm it.
@@ -222,6 +223,13 @@ export function questionStatus(
   if (origins.every((o) => o === "from_records")) return section.kind === "from_records" || origins.length > 0 ? "records" : "clinician";
   if (origins.some((o) => o === "ai" || o === "edited")) return "drafted";
   return "clinician";
+}
+
+/** Nothing open on the box, and a person acknowledged its gap or its "optional and has no answer" warning. */
+function leftBlankOnPurpose(key: string, flags: readonly ReportFlag[], gaps: readonly Gap[]): boolean {
+  const own = gaps.filter((g) => g.sectionKey === key);
+  if (own.some((g) => !g.resolution) || flags.some((f) => f.sectionKey === key && isOpenBlocking(f, gaps))) return false;
+  return own.some((g) => g.resolution?.kind === "acknowledged") || flags.some((f) => f.sectionKey === key && f.evidence === "optional field blank" && Boolean(f.acknowledged));
 }
 
 export interface StatusCounts {
