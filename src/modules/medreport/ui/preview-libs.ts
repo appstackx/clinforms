@@ -105,6 +105,7 @@ export function tableIndentsOf(documentXml: string): Array<number | null> {
 
 interface PreviewNode {
   type?: string;
+  className?: string;
   cssStyle?: Record<string, string>;
   children?: PreviewNode[];
 }
@@ -226,8 +227,10 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
     // as docx-preview draws it
   }
   // Fix round 2 (B1-22): a drawing anchored to the page, its margin or its column where Word puts it – positioned on its
-  // page (docx-preview places it by the text around it, so the TPN logo overhung the page edge). Best effort: a part
+  // page (docx-preview places it by the text around it, so the TPN logo overhung the page edge). docx-preview draws
+  // every drawing "position: relative", so each is tagged with a class here and placed once drawn. Best effort: a part
   // whose drawings do not line up with its XML is drawn as before.
+  const placed: AnchorPlacement[] = [];
   try {
     const xml = (await doc._package?.load("word/document.xml", "string")) ?? "";
     const page = pageGeometryOf(xml);
@@ -240,9 +243,9 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
       if (placements.length !== drawings.length) continue;
       drawings.forEach((d, i) => {
         const at = placements[i];
-        if (!at || !d.cssStyle) return;
-        delete d.cssStyle["float"];
-        Object.assign(d.cssStyle, { position: "absolute", display: "block", margin: "0", left: `${at.left}pt`, top: `${at.top}pt`, width: `${at.width}pt`, height: `${at.height}pt` });
+        if (!at) return;
+        d.className = `${d.className ? `${d.className} ` : ""}${ANCHOR_CLASS}${placed.length}`;
+        placed.push(at);
       });
     }
   } catch {
@@ -251,7 +254,21 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
   const nodes = await lib.renderDocument(doc as never, options);
   host.innerHTML = "";
   for (const n of nodes) host.appendChild(n);
+  placeAnchoredDrawings(host, placed);
   sanitizeDocxPreview(host);
+}
+
+const ANCHOR_CLASS = "mr-anchor-";
+
+/** Each tagged drawing on its page (its section), at the placement its tag names (fix round 2, B1-22). */
+function placeAnchoredDrawings(host: HTMLElement, placed: readonly AnchorPlacement[]): void {
+  if (placed.length === 0) return;
+  host.querySelectorAll<HTMLElement>(`[class*="${ANCHOR_CLASS}"]`).forEach((el) => {
+    const n = new RegExp(`(?:^|\\s)${ANCHOR_CLASS}(\\d+)(?:\\s|$)`).exec(el.className)?.[1];
+    const at = n === undefined ? undefined : placed[Number(n)];
+    if (!at) return;
+    Object.assign(el.style, { position: "absolute", display: "block", float: "none", margin: "0", left: `${at.left}pt`, top: `${at.top}pt`, width: `${at.width}pt`, height: `${at.height}pt`, zIndex: "2" });
+  });
 }
 
 /**
