@@ -1625,3 +1625,47 @@ templates themselves are gitignored and never committed).
 - Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
   its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
   per report when another site treated the patient).
+
+## Work and activity status is not a recovery opinion (10/2026, branch `fix/bh-opinion-guard`)
+
+- **Bug (Blue Heart test run, 10Bridge Initial Assessment, F-37 on time off work):** the drafted "…took 3 days off
+  work, then returned to normal duties with breaks from the desk" (note: "Took 3 days off work, then back on normal
+  duties…") was blocked as OPINION_LANGUAGE "(recovery) 'returned to normal'" in every live take. On drafted text
+  that flag cannot be acknowledged, so the physio had to rewrite a faithful answer. Cause: the recovery pattern
+  `(back|returned) to (his|her|their)? normal` matched the first three words of a work status, and that exact
+  phrase is not in the note.
+- **Fix** (`core/validation/opinion-language.ts`, code only – maps already loaded on a clinic need no change):
+  - "Back / returned to (all) (his) normal or pre-injury <work or activity>" ("normal duties", "his normal working
+    hours", "normal daily activities", "normal driving") is its own pattern, "return to normal work or activity". Only
+    a few plain describing words may stand between "normal" and the noun (daily, working, work, gym, training,
+    exercise, sporting, social, leisure, household, "12-hour"); any other word ("returned to normal during work",
+    "normal pain-free activities") keeps the phrase on the recovery pattern.
+  - It passes only when a cited note records the same **return** as a fact: "back on / to / at / in", "returned to",
+    "resumed" or "now on", then a full level (normal, full, usual, regular, all, pre-injury), then the same thing –
+    any word for the job counts (duties, work, role), otherwise the same noun; a specific describing word must be in
+    the note too ("12-hour shifts"). "<doing> normally" counts for that activity only ("driving normally" → "normal
+    driving", never "pre-accident activities").
+  - It still blocks when the note says the opposite or something else: no return verb ("off normal duties", "pain
+    with all activities", "difficulty with normal daily activities", "fit for full duties", "usual training with the
+    team"); a lower level ("light duties"); a hedge, negation, modal or plan in the same sentence, before ("not yet",
+    "nearly", "previously", "pre-injury:", "keen to get back to") or after ("- not yet", "would be premature", "is the
+    goal", "?"); straight after it a date, limit or time span ("from 01/10/2026", "in 2 weeks", "for 2 hours a day",
+    "but avoiding lifting"); or only the note's history fields.
+  - A drafted "has not yet returned to her normal 12-hour shifts" passes when the note records the same negation
+    ("not yet back on 12-hour shifts"); "can't return to normal duties" is a fitness opinion and needs a recorded return.
+  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match); "worked on balance" / "focused on
+    strengthening and on balance" is exercise when a cited note records balance work ("single-leg balance"), never
+    the standard of proof; "drills caused mild discomfort" reports a note's "drills cause mild discomfort" (same word
+    before and after).
+  - `OpinionPattern.allow(hit, source)` holds these rules; every other pattern, and the exact-quote rule, is
+    unchanged. Recovery wording ("returned to normal", "resolved", "full recovery") still needs the note's own words.
+  - Not covered, as before: "returned to full duties" / "can return to full activities" match no pattern (only
+    "normal" and "pre-injury" do), so the drafting brief (rule 5) and the signer's review are the guard there.
+- **Unchanged on purpose:** OPINION_LANGUAGE on drafted text still cannot be acknowledged (`docs/plan.md` §7, D6:
+  opinions only if a clinician recorded them) – the clinician edits the wording, and edited text can then be
+  acknowledged with a reason (stored on the paragraph, in the activity log, on the approved report). The drafting
+  prompt stays `forms-7`.
+- Tests: `core/validation/validation.test.ts` (the F-37 sentence and note; "symptoms returned to normal during work"
+  citing the same note stays a blocking recovery flag; faithful work, activity, restriction, balance and provocation
+  paraphrases; notes that say the opposite or name another activity; a table of unrecorded opinions that still block;
+  the new flag cannot be acknowledged on drafted text).
