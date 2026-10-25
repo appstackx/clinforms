@@ -51,7 +51,7 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, firstQuestionToCheck, mayConfirmForms, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { anchorFromPick, firstQuestionToCheck, listedInOrder, mayConfirmForms, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -235,7 +235,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     }
   };
 
-  const visible = draft.fields.filter((f) =>
+  // Fix round 1 (B0-29): numbered questions in a table's columns by their number ("date 1, 2, 3…", not "1, 7, 2, 8").
+  const visible = listedInOrder(draft.fields).filter((f) =>
     filter === "all" ? true : filter === "check" ? f.confidence !== "high" : f.fillSource.kind === filter,
   );
   const groups: Array<{ section: string; fields: FormField[] }> = [];

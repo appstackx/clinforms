@@ -96,7 +96,8 @@ const ENTRIES: PracticeCode[] = [
       choices: [{ label: /(?:accident|injury|incident|onset|occurrence)\b[\s\S]{0,20}\bdate|\bdate\b[\s\S]{0,20}\b(?:of\s+)?(?:the\s+)?(?:accident|injury|incident|onset)/i, path: "incident.date", answerType: "date" }],
     },
     meaning: "the clinic system's alternative reference 1 (some clinics keep the date of the accident there)",
-    plain: "alternative reference 1 (where some clinics keep the date of the accident)",
+    // Fix round 1 (B0-29): no aside about what other clinics keep there (a JJ Physio "Shoulder No" read oddly).
+    plain: "alternative reference 1",
   },
   { code: "P_INS_NUM", label: "Insurance membership number", binding: rec("referral.membershipNumber"), meaning: "the patient's insurance membership number" },
   { code: "P_HOSP_NUM", label: "Hospital number", binding: { kind: "not_held" }, meaning: "the patient's hospital number" },

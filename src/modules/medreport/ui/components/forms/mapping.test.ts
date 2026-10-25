@@ -114,3 +114,24 @@ test("fix round 1 (B0-9, B0-25): staff never get Confirm, Edit or Remove on a co
   for (const role of ["owner", "admin", "clinician"] as const) assert.equal(mayConfirmForms({ role }), true, role);
   assert.equal(mayConfirmForms(undefined), true, "the public demo acts as a clinician");
 });
+
+test("fix round 1 (B0-29): a code's place is described by what really goes there; table dates by number; the review opens on a required clinical question", async () => {
+  const { listedInOrder } = await import("./mapping");
+  const anchor = { kind: "docx" as const, target: "replace_placeholder" as const, blockId: "p3", placeholderText: "<<DATE>>" };
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Initial Assessment Date", fillSource: { kind: "registration", path: "episode.firstSeen" } }),
+    "The first appointment's date, in place of the code that usually prints the date of the report",
+  );
+  assert.equal(plainAnchorDescription({ anchor, label: "Date of report", fillSource: { kind: "registration", path: "report.date" } }), "In place of the merge code for the date of the report");
+  const dates = [1, 7, 2, 8, 3, 9].map((n) => ({ id: `F-${10 + n}`, label: `Treatment date ${n}` }));
+  assert.deepEqual(listedInOrder([{ id: "F-01", label: "Name" }, ...dates]).map((f) => f.label), ["Name", ...[1, 2, 3, 7, 8, 9].map((n) => `Treatment date ${n}`)]);
+  const staff = { kind: "registration" as const, path: "staff.entry" as const };
+  assert.equal(
+    firstQuestionToCheck([
+      { id: "F-07", confidence: "medium", required: false, fillSource: staff },
+      { id: "F-31", confidence: "medium", required: true, fillSource: { kind: "clinician_opinion" } },
+    ]),
+    "F-31",
+    "Medcare EOTS opens on its clinical YES/NO, not an optional session time",
+  );
+});
