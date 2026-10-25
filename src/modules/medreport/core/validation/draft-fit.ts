@@ -83,7 +83,9 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
     const more = MORE_THAN_THE_VALUE.test(field?.guidance ?? "");
     const datesAsked = /\bdates?\b/i.test(`${field?.label ?? ""} ${field?.guidance ?? ""}`);
     const long = place === "narrow" || more;
-    if (place && ((DATED.test(p.text) && !datesAsked) || ATTRIBUTED.test(p.text) || (!long && words(p.text).length > 12))) {
+    // (A trailing "; no pain score recorded" is commentary – flagged below – not an attribution to shorten.)
+    const attributed = ATTRIBUTED.test(p.text.replace(TRAILING_ABSENCE, ""));
+    if (place && ((DATED.test(p.text) && !datesAsked) || attributed || (!long && words(p.text).length > 12))) {
       flags.push(
         makeFlag({
           code: "DRAFT_FIT",

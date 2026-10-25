@@ -305,6 +305,8 @@ test("fix round 2 (B1-3): no “Past medical history: that…” or “On 15/07/
     ["On 15/07/2026 I recorded in my plan that I explained the diagnosis and the expected course.", "Plan on 15/07/2026: I explained the diagnosis and the expected course."],
     ["On 15/07/2026 I recorded in my plan about 6 sessions over 8 weeks.", "Plan on 15/07/2026: about 6 sessions over 8 weeks."],
     ["On 15/07/2026 I recorded a home exercise programme of chin tucks and neck rotations, 10 of each 3 times a day.", "Home exercise programme on 15/07/2026: chin tucks and neck rotations, 10 of each 3 times a day."],
+    // Found live (10Bridge IA, Jordan, F-47): a relative clause is not the programme's content.
+    ["On 15/07/2026 I recorded a plan that included a home exercise programme and advice on posture.", "On 15/07/2026, the plan included a home exercise programme and advice on posture."],
     // Unchanged rules.
     ["On 01/10/2026 I recorded that 1 pre-authorised session remained.", "On 01/10/2026, 1 pre-authorised session remained."],
     ["On 01/09/2026 I recorded an assessment of a right rotator cuff strain.", "Assessment on 01/09/2026: a right rotator cuff strain."],

@@ -109,6 +109,7 @@ test("B1-13: a trailing “no … recorded” is commentary about the notes; att
   const form = formOf("Initial Assessment Report", [f("F-18", "Symptoms at the initial assessment – area 2: pain VAS and symptoms", { target: "table_cell", blockId: "t0.r3.c1" }, { guidance: "The pain score out of 10 and the symptoms for this area, in one or two lines." })]);
   const comment = fit(form, { "F-18": ["Headaches 3–4 times a week; no pain score recorded for the headaches", "N-001"] }).filter((x) => x.evidence === "comment");
   assert.deepEqual(comment.map((x) => x.message), ["Remove the comment about the notes (“no pain score recorded for the headaches”): it would be printed on the form."]);
+  assert.deepEqual(fit(form, { "F-18": ["Headaches 3–4 times a week; no pain score recorded", "N-001"] }).filter((x) => x.evidence === "shorten"), [], "its “recorded” is the comment's, not an attribution");
   // A finding is not commentary.
   assert.deepEqual(fit(form, { "F-18": ["No headaches recorded at the assessment, and neck pain 6/10", "N-001"] }).filter((x) => x.evidence === "comment"), []);
   // "attended 5 of 6 appointments, with 1 did not attend on 22/09/2026" (the portal answer, approved and copied).

@@ -123,10 +123,11 @@ function plainRecordedBody(body: string, lead: string, date: string): string {
   // "in my assessment mild travel anxiety…" / "in my plan that I explained…" / "in my plan about 6 sessions…".
   if ((m = /^in (?:my|the|her|his) (?:initial |clinical )?assessment,?\s+(?:that,?\s+)?([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
   if ((m = /^in (?:my|the|her|his) (?:treatment |management )?plan,?\s+(?:that,?\s+)?([\s\S]*)$/.exec(b))) return `Plan${on}: ${m[1]}`;
-  // "a home exercise programme of chin tucks…" → "Home exercise programme on 15/07/2026: chin tucks…".
-  if ((m = /^(?:a|an) ((?:[a-z-]+ ){0,3}(?:programme|program|plan|regime|regimen|routine|course|referral))(?: (?:of|with|for|including|comprising))? ([\s\S]+)$/.exec(b))) {
-    return `${capitalise(m[1])}${on}: ${m[2]}`;
-  }
+  // "a home exercise programme of chin tucks…" → "Home exercise programme on 15/07/2026: chin tucks…"; "a plan that
+  // included…" → "On 15/07/2026, the plan included…".
+  const plan = "((?:[a-z-]+ ){0,3}(?:programme|program|plan|regime|regimen|routine|course|referral))";
+  if ((m = new RegExp(`^(?:a|an|the|my) ${plan} (?:that|which) ([\\s\\S]+)$`).exec(b))) return `${leadComma}the ${m[1]} ${m[2]}`;
+  if ((m = new RegExp(`^(?:a|an) ${plan}(?: (?:of|with|for|including|comprising)| ?:) ([\\s\\S]+)$`).exec(b))) return `${capitalise(m[1])}${on}: ${m[2]}`;
   if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
   if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
   // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
