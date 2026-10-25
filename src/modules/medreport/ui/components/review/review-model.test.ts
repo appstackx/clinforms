@@ -531,3 +531,12 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     assert.equal(validateReport(fixed, template, { form }).flags.some((f) => f.code === "OTHER_CLINICIAN_VOICE"), false);
   });
 });
+
+describe("fix round 1 (B0-26): a staff member's draft says what is left", () => {
+  it("“Ready for a signing clinician” only once nothing blocks approval", async () => {
+    const { staffApprovalNote } = await import("./review-model");
+    assert.equal(staffApprovalNote(5), "5 items to resolve – then a clinician with signing details approves.");
+    assert.equal(staffApprovalNote(1), "1 item to resolve – then a clinician with signing details approves.");
+    assert.match(staffApprovalNote(0), /^Ready for a signing clinician/);
+  });
+});

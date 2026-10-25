@@ -392,7 +392,7 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
             : "This browser would not store the original file, so you will need to upload it again after closing the tab."}
         </Notice>
       ) : null}
-      <p className="text-sm text-slate-600">Nothing is used for patients until a member of staff checks and confirms the mapping.</p>
+      <p className="text-sm text-slate-600">Nothing is used for patients until your clinic checks the mapping and an owner, administrator or clinician confirms it.</p>
     </div>
   );
 }
