@@ -304,14 +304,15 @@ function noteContinuousSheet(host: HTMLElement, page: PageGeometry, appPages: nu
   const r = pages[0].getBoundingClientRect();
   const pageHeight = (r.width / page.width) * page.height;
   if (!(pageHeight > 0) || r.height < pageHeight * 1.25) return;
-  addContinuousNote(pages[0], appPages ?? Math.ceil(r.height / pageHeight));
+  addContinuousNote(pages[0], appPages);
 }
 
-function addContinuousNote(sheet: HTMLElement | undefined, pages: number): void {
+/** The note above a continuous sheet – with the page count when Word saved one (an estimate could contradict its footer). */
+function addContinuousNote(sheet: HTMLElement | undefined, pages: number | null): void {
   if (!sheet?.parentElement) return;
   const note = document.createElement("p");
   note.className = CONTINUOUS_CLASS;
-  note.textContent = `Shown as one continuous sheet – Word prints this form on ${pages} pages.`;
+  note.textContent = pages ? `Shown as one continuous sheet – Word prints this form on ${pages} pages.` : "Shown as one continuous sheet – Word splits this form into pages when it prints it.";
   note.setAttribute("style", "margin:0 0 8px;font:12px/1.4 system-ui,sans-serif;color:#475569;");
   sheet.parentElement.insertBefore(note, sheet);
 }
