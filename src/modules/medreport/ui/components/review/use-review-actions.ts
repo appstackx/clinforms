@@ -298,7 +298,7 @@ export function useReviewActions(opts: {
       const current = reportRef.current;
       if (!template || current.status === "signed") return;
       const wanted = new Set(keys ?? current.sections.filter((s) => s.status === "pending").map((s) => s.key));
-      const groups = planDraftGroups(current, template)
+      const groups = planDraftGroups(current, template, { form })
         .map((g) => g.filter((k) => wanted.has(k)))
         .filter((g) => g.length > 0);
       if (groups.length === 0) return;

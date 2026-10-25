@@ -17,12 +17,12 @@ import "server-only";
  *
  * Owner: ai agent.
  */
-import { answerableFields, reportKindOf, scopeForDraftCall } from "../core/forms";
+import { answerableFields, compactPlace, reportKindOf, scopeForDraftCall } from "../core/forms";
 import { formatUkDate } from "../core/dates";
 import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../core/labels";
 import { applyScope, initialAssessmentView, scopeExcludeTerms } from "../core/scope";
 import { conditionText, factCondition } from "../core/conditions";
-import { compactPlace } from "../core/validation/draft-fit";
+import { currentStateForm } from "../core/validation/draft-fit";
 import type {
   Clinician,
   ComputedFact,
@@ -48,7 +48,7 @@ The user message contains a <form> (the referrer's questions), an <episode> hold
 1. Use the record only. Do not use outside knowledge about the patient, the incident, the clinicians or typical recovery.
 2. Cite. Every paragraph lists in sourceIds every source it relies on: "REG", note ids and fact ids exactly as given. Never cite appointment ids (A-…), outcome series ids (OM-…) or anything not in the episode.
 3. Attribute every statement: what the patient reported ("[CLAIMANT] reported…") versus what a clinician observed, measured or assessed ("On 18/03/2026 Sarah Reid, physiotherapist, recorded…"). When notes are written by more than one clinician, name the clinician whose note you rely on. Set basis to patient_reported, clinician_observed, clinician_opinion_recorded or record. The one exception is a compact answer (its question says "Where it goes": a table cell, or a blank inside a sentence printed on the form): it is the value alone, and its sourceIds and basis carry who recorded it.
-   Voice: the form is the signing clinician's own report. When the final instruction names the author who will sign it, write what THAT clinician recorded in THEIR OWN notes – the final instruction lists which notes are theirs – in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my" – the patient told the clinician who wrote the note, and the opinion is that clinician's ("On 13/10/2026 Tom Ellis, physiotherapist, recorded that in his opinion…", "[CLAIMANT] told Tom Ellis…", "Tom Ellis's assessment on 08/09/2026 was…"). When the final instruction names no author, or none of the notes is theirs, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note.
+   Voice: the form is the signing clinician's own report. When the final instruction names the author who will sign it, write what THAT clinician recorded in THEIR OWN notes – the final instruction lists which notes are theirs – in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my" – the patient told the clinician who wrote the note, and the opinion is that clinician's ("On 13/10/2026 Tom Ellis, physiotherapist, recorded that in his opinion…", "[CLAIMANT] told Tom Ellis…", "Tom Ellis's assessment on 08/09/2026 was…"). When the final instruction names no author, or none of the notes is theirs, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note. A count in the first person ("I treated [CLAIMANT] for 6 sessions") covers only the sessions in the author's own notes; for the whole episode make the patient the subject ("[CLAIMANT] attended 7 sessions").
 4. Keep the clinician's meaning and certainty. Hedged wording stays hedged ("consistent with", "approximately", "reported"). Do not turn an assessment into a diagnosis, add a diagnosis, or describe a finding more strongly than the note does. Words that firm up a finding or an opinion – "diagnosed", "diagnosis", "confirmed", "resolved", "recovered", "chronic", "long-term", "permanent" – may appear only when a note you cite uses the same word; otherwise keep the note's own wording and verbs ("recorded", "assessed", "noted", "advised"), including for what another professional, such as a GP, recorded.
 5. Never add an opinion. Do not write causation, prognosis, predictions of recovery, permanence, timeframes, fitness for work, restrictions, treatment recommendations or "balance of probabilities" wording unless you are quoting it from a note you cite. Do not comment on liability, credibility or consistency.
 6. Figures. Copy every date, score, measurement and duration exactly as it appears in a cited source. Never calculate: no differences, totals, averages, percentages, ages or durations of your own. For attendance and outcome scores, quote the FACT entries and cite them. Every date and number you write must appear in a source you cite – for a span of dates ("between 18/03/2026 and 07/07/2026"), cite the notes that hold both ends.
@@ -86,7 +86,7 @@ const DRAFT_KIND: Record<"notes_narrative" | "clinician_opinion", string> = {
   clinician_opinion: "recorded opinion only",
 };
 
-function renderQuestion(field: FormField, fields?: readonly FormField[]): string {
+function renderQuestion(field: FormField, fields?: readonly FormField[], current: "discharge" | "progress" | null = null): string {
   const kind = field.fillSource.kind === "clinician_opinion" ? DRAFT_KIND.clinician_opinion : DRAFT_KIND.notes_narrative;
   const section = field.section?.trim() ? ` section="${attr(formText(field.section))}"` : "";
   const lines = [
@@ -97,10 +97,18 @@ function renderQuestion(field: FormField, fields?: readonly FormField[]): string
   lines.push(`Answer type: ${ANSWER_TYPE_LABELS[field.answerType]}${field.required ? "" : " (optional on the form)"}.`);
   if (field.options?.length) lines.push(`Options as printed: ${field.options.map((o) => `"${formText(o)}"`).join("; ")}.`);
   // Fix round 1 (B0-5, B0-7): a compact place takes the value alone; a conditional question says what it depends on.
-  const place = compactPlace(field);
-  if (place === "cell") lines.push("Where it goes: a cell of a table – give only the value.");
+  // Fix round 2 (B1-12): an answer on a new line inside a table cell that shares its row is a cell too; a long answer
+  // there, or a short one whose guidance asks for more than the value, keeps its words without a date lead.
+  const place = compactPlace(field, fields ?? []);
+  const more = /\b(?:one or two lines|two lines|a sentence or two|and the symptoms|with (?:the )?(?:reason|details|symptoms))\b/i.test(field.guidance);
+  if (place === "cell" && !more) lines.push("Where it goes: a cell of a table – give only the value.");
+  if ((place === "cell" && more) || place === "narrow") lines.push("Where it goes: a narrow table cell – give what the referrer wants in a line or two, with no date lead and no attribution (sourceIds and basis carry who recorded it).");
   if (place === "blank" && field.anchor.kind === "docx") {
     lines.push(`Where it goes: it fills "${formText(field.anchor.placeholderText ?? "")}" inside a sentence printed on the form – give only the words that complete that sentence.`);
+  }
+  // Fix round 2 (B1-6): a bare value on a discharge or progress form is the patient's position now.
+  if (current && (place === "cell" || place === "blank")) {
+    lines.push(`It states the position ${current === "discharge" ? "at discharge" : "now"}: give the value from the latest note that records it; if only an earlier note records it, leave it empty and raise a gap that says which note and when.`);
   }
   const condition = fields ? conditionText(fields, field.id) : null;
   if (condition) lines.push(`Condition: answer it only if ${condition}; otherwise leave it empty with no gap.`);
@@ -132,7 +140,7 @@ export function buildFormBlock(form: FormDefinition, template: ReportTemplate): 
     `Questions filled from the records by code (context only – never answer them): ${list(byCode)}.`,
     `Questions completed by the approving clinician at sign-off: ${list(signoff)}.`,
     "Questions you may be asked to answer:",
-    ...draftable.map((f) => renderQuestion(f, fields)),
+    ...draftable.map((f) => renderQuestion(f, fields, currentStateForm(form.title))),
     "</form>",
   ].join("\n");
 }
@@ -170,7 +178,11 @@ export function buildFormFinalInstruction(
             : ` Their own notes: ${own.join(", ")} – only these are written in the first person. ${others.join(", ")} ${others.length === 1 ? "was" : "were"} written by another clinician: name that clinician, never "I", "me" or "my".`;
     by = ` The author who will sign this form: ${formText(author.name)}${author.hcpc ? ` (${formText(author.hcpc)})` : ""}.${whose}`;
   }
-  return `Answer form fields: ${items.join(", ")}.${by}`;
+  // Fix round 2 (B1-4): the numbered rows of one table, asked together.
+  const numbered = fieldIds.map((id) => /^(.*?)\b(\d{1,2})\b\D*$/.exec(form.fields.find((x) => x.id === id)?.label.trim() ?? "")).filter((m): m is RegExpExecArray => m !== null);
+  const rowsOfOne = numbered.some((a) => numbered.some((b) => a[1] === b[1] && a[2] !== b[2]));
+  const rows = rowsOfOne ? " These are the numbered rows of one table: each row takes a different item, in the order the notes record them; the later rows stay empty when there are no more items." : "";
+  return `Answer form fields: ${items.join(", ")}.${rows}${by}`;
 }
 
 /** Everything a live form-drafting call sends, built from the UNSCOPED bundle (scope is applied here). */

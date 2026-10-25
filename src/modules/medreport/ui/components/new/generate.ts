@@ -179,7 +179,7 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
   input.onReport?.(report);
 
   const titleOf = (key: string) => template.sections.find((s) => s.key === key)?.title ?? key;
-  const groups: DraftGroupProgress[] = planDraftGroups(report, template).map((keys, index) => ({
+  const groups: DraftGroupProgress[] = planDraftGroups(report, template, { form }).map((keys, index) => ({
     index,
     keys,
     labels: keys.map(titleOf),

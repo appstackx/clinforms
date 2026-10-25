@@ -124,6 +124,17 @@ function attendanceFact(bundle: EpisodeBundle): ComputedFact | null {
       `First attended appointment ${formatUkDate(att[0].date)}; last attended appointment ${formatUkDate(att[att.length - 1].date)}.`,
     );
   }
+  // Fix round 2 (B1-13): a ready sentence to quote ("5 of 6 appointments were attended; 1 was missed (did not attend)
+  // on 22/09/2026"), so a draft never reads "with 1 did not attend".
+  if (counted.length > 0 && extras.length > 0) {
+    const on = (list: Appointment[]) => list.map((a) => formatUkDate(a.date)).join(list.length === 2 ? " and " : ", ");
+    const words = [
+      `${att.length} of ${counted.length} appointments ${att.length === 1 ? "was" : "were"} attended`,
+      dna.length ? `${dna.length} ${dna.length === 1 ? "was" : "were"} missed (did not attend) on ${on(dna)}` : "",
+      lcn.length ? `${lcn.length} ${lcn.length === 1 ? "was a late cancellation" : "were late cancellations"} on ${on(lcn)}` : "",
+    ].filter(Boolean);
+    parts.push(`In words: ${words.join("; ")}.`);
+  }
 
   return { id: "FACT-attendance", label: "Attendance", value, detail: parts.join(" ") };
 }

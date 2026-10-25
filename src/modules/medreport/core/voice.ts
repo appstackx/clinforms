@@ -118,7 +118,15 @@ function plainRecordedBody(body: string, lead: string, date: string): string {
   if ((m = /^(?:my|the|an) assessment that,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my assessment, ${m[1]}`;
   if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
   if ((m = /^a (?:further )?treatment request(?: to (?:the insurer|[A-Z][\w&'’.-]*(?: [A-Z][\w&'’.-]*)*))?(?: for| of)? ([\s\S]*)$/.exec(b))) return `Further treatment requested${on}: ${m[1]}`;
-  if ((m = /^(?:in the |the |a )?past medical history(?: of| as)?,?\s+([\s\S]*)$/.exec(b))) return `Past medical history: ${m[1]}`;
+  // Fix round 2 (B1-3): "in the past medical history that Mr Ellery was fit and well…" loses its "that".
+  if ((m = /^(?:in the |the |a )?past medical history(?: of| as)?,?\s+(?:that,?\s+)?([\s\S]*)$/.exec(b))) return `Past medical history: ${m[1]}`;
+  // "in my assessment mild travel anxiety…" / "in my plan that I explained…" / "in my plan about 6 sessions…".
+  if ((m = /^in (?:my|the|her|his) (?:initial |clinical )?assessment,?\s+(?:that,?\s+)?([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
+  if ((m = /^in (?:my|the|her|his) (?:treatment |management )?plan,?\s+(?:that,?\s+)?([\s\S]*)$/.exec(b))) return `Plan${on}: ${m[1]}`;
+  // "a home exercise programme of chin tucks…" → "Home exercise programme on 15/07/2026: chin tucks…".
+  if ((m = /^(?:a|an) ((?:[a-z-]+ ){0,3}(?:programme|program|plan|regime|regimen|routine|course|referral))(?: (?:of|with|for|including|comprising))? ([\s\S]+)$/.exec(b))) {
+    return `${capitalise(m[1])}${on}: ${m[2]}`;
+  }
   if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
   if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
   // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
@@ -224,6 +232,8 @@ const SHORTHAND: Array<[RegExp, string | ((...m: string[]) => string)]> = [
   [/(^|[\s(])<\s?(?=\d)/g, "$1less than "],
   [/(^|[\s(])≥\s?(?=\d)/g, "$1at least "],
   [/(^|[\s(])≤\s?(?=\d)/g, "$1no more than "],
+  // Fix round 2 (B1-13): "attended 5 of 6 appointments, with 1 did not attend on 22/09/2026" (DNA written out).
+  [/\bwith (\d+) did not attend\b/g, (_m, n: string) => `with ${n} missed appointment${n === "1" ? "" : "s"}`],
   [/\bHR\/OH\b/g, "HR and occupational health"],
   [/\bHR\/occupational health\b/g, "HR and occupational health"],
 ];
@@ -536,6 +546,48 @@ export function otherCliniciansInFirstPerson(
   if (!cited.some((n) => own(n.author))) return others;
   const unnamed = others.filter((name) => !namesPerson(p.text, name));
   return unnamed.length > 0 ? unnamed : null;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A first-person count of sessions (fix round 2, B1-14)
+ * ----------------------------------------------------------------------------------------------*/
+
+const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+const TITLED = "(?:Mr|Mrs|Ms|Miss|Dr|Mx)\\.? [A-Z][\\w'’-]+";
+const FIRST_PERSON_COUNT = new RegExp(
+  `\\bI (?:have )?(?:treated|saw|have seen|have treated|assessed and treated|provided (?:physiotherapy|treatment) (?:to|for))\\s+(${TITLED}|him|her|them|the (?:client|patient|claimant|employee))\\s+(?:for|over|in|across|on)\\s+(\\d{1,2}|${Object.keys(COUNT_WORDS).join("|")})\\s+((?:treatment |physiotherapy )?(?:sessions?|appointments?|treatments?|occasions?)(?: of physiotherapy)?)`,
+  "i",
+);
+
+/** "I treated Mr Ellery for 7 sessions…" → { count: 7, phrase } – a first-person count of sessions – or null. */
+export function firstPersonSessionCount(text: string): { count: number; phrase: string } | null {
+  const m = FIRST_PERSON_COUNT.exec(text);
+  if (!m) return null;
+  const count = /^\d+$/.test(m[2]) ? Number(m[2]) : COUNT_WORDS[m[2].toLowerCase()];
+  return count ? { count, phrase: m[0] } : null;
+}
+
+/**
+ * How many attended sessions the author saw the patient for: attended appointments whose note (or clinician) is the
+ * author's. Null when the record does not say who saw the patient at its appointments.
+ */
+export function authorsAttendedSessions(bundle: Pick<EpisodeBundle, "appointments" | "notes">, author: Pick<Clinician, "name"> & { hcpc?: string | null }): { own: number; others: Array<{ date: string; name: string }> } | null {
+  const attended = bundle.appointments.filter((a) => a.status === "ATT");
+  const who = attended.map((a) => a.clinician ?? bundle.notes.find((n) => n.id === a.noteId)?.author ?? null);
+  if (attended.length === 0 || who.some((w) => w === null)) return null;
+  const others = attended.flatMap((a, i) => (who[i] && !sameClinician(who[i] as Clinician, author) ? [{ date: a.date, name: (who[i] as Clinician).name }] : []));
+  return { own: attended.length - others.length, others };
+}
+
+/**
+ * "I treated Mr Ellery for 7 sessions of physiotherapy between…" → "Mr Ellery attended 7 sessions of physiotherapy
+ * between…": the patient as the subject of a count that includes sessions with other clinicians. Null when the
+ * patient is not named in it ("I treated him for 7 sessions").
+ */
+export function attendedInstead(text: string): string | null {
+  const m = FIRST_PERSON_COUNT.exec(text);
+  if (!m || !new RegExp(`^${TITLED}$`).test(m[1])) return null;
+  return text.replace(m[0], `${m[1]} attended ${m[2]} ${m[3]}`);
 }
 
 /** Text outside quotations ("…", “…”) through `fn`; quoted note wording stays as written. */

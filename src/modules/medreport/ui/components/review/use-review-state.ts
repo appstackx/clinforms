@@ -21,6 +21,7 @@ import {
   markNotApplicable,
   nameCliniciansInstead,
   overrideRecordValue,
+  patientAttendedInstead,
   recordConsent,
   removeAbsenceSentences,
   removeParagraph,
@@ -62,7 +63,9 @@ export type ReviewAction =
   | { type: "overrideRecord"; key: string; actor: string }
   | { type: "removeAbsence"; key: string; actor: string }
   /** Mark a question whose own condition does not hold as not applicable, or take the mark off (fix round 2, B1-5). */
-  | { type: "markNotApplicable"; key: string; on: boolean; actor: string };
+  | { type: "markNotApplicable"; key: string; on: boolean; actor: string }
+  /** "Make the patient the subject" on a first-person session count (fix round 2, B1-14). */
+  | { type: "patientAttended"; flag: ReportFlag; actor: string };
 
 function locked(report: Report): boolean {
   return report.status === "signed";
@@ -100,6 +103,8 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       return removeAbsenceSentences(report, action.key, action.actor);
     case "markNotApplicable":
       return markNotApplicable(report, action.key, action.on, action.actor);
+    case "patientAttended":
+      return patientAttendedInstead(report, action.flag, action.actor);
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":

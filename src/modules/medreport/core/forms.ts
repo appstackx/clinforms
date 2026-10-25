@@ -1072,6 +1072,47 @@ export function reportKindOf(title: string | undefined): ReportKind | null {
   return null;
 }
 
+/**
+ * Where an answer drafted from the notes goes when that is a compact place (fix round 1, B0-5; fix round 2, B1-12):
+ * - "cell": a short answer in a table cell – the cell itself, or "on a new line after the question" inside a cell that
+ *   shares its table row with another answer (JJ Physio's problem list); a long answer only in such a shared row
+ *   ("narrow", 10Bridge's pre-existing conditions beside their comments);
+ * - "blank": a short answer that fills a blank inside the form's printed sentence ("To return to …").
+ * Null otherwise. Pass the form's fields to tell a shared row.
+ */
+export function compactPlace(field: FormField | undefined, fields: readonly FormField[] = []): "cell" | "blank" | "narrow" | null {
+  if (!field || field.fillSource.kind !== "notes_narrative" || field.anchor.kind !== "docx") return null;
+  if (field.answerType !== "short_text" && field.answerType !== "long_text") return null;
+  const a = field.anchor;
+  const short = field.answerType === "short_text";
+  if (short && a.target === "replace_placeholder" && !a.writeAfter && (a.placeholderText ?? "").trim().length > 0 && (a.placeholderText ?? "").trim().length <= 4) return "blank";
+  if (short && a.target === "table_cell") return "cell";
+  // Another answer in another cell of the same table row: the cell is one column of several.
+  const cellOf = (blockId: string) => /^(.*t\d+\.r\d+)\.(c\d+)/.exec(blockId);
+  const own = cellOf(a.blockId);
+  if (!own) return null;
+  const shared = fields.some((f) => {
+    if (f.id === field.id || f.anchor.kind !== "docx" || f.fillSource.kind === "leave_blank") return false;
+    const other = cellOf(f.anchor.blockId);
+    return other !== null && other[1] === own[1] && other[2] !== own[2];
+  });
+  if (!shared) return null;
+  return short ? "cell" : "narrow";
+}
+
+/**
+ * Fix round 2 (B1-12): a bare value that fills a blank inside a printed sentence reads on in it – "To return to walking
+ * the dog daily", not "To return to Walking…" – unless it starts with a name, a title or an acronym.
+ */
+export function inPrintedSentence(text: string): string {
+  const m = /^([A-Z])([a-z]+)\b(\s+\S+)?/.exec(text);
+  if (!m) return text;
+  const word = `${m[1]}${m[2]}`;
+  if (/^(?:I|Mr|Mrs|Ms|Miss|Dr|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|English|Pilates)$/.test(word)) return text;
+  if (m[3] && /^\s+[A-Z][a-z]/.test(m[3])) return text; // "Five Ways Gym", "Ellis Road"
+  return `${m[1].toLowerCase()}${text.slice(1)}`;
+}
+
 /** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */
 const OPTIONAL_BLANK_EVIDENCE = "optional field blank";
 
@@ -1186,7 +1227,9 @@ export function buildFormAnswers(
       answers[field.id] = { text, rows: structured };
       continue;
     }
-    answers[field.id] = structured === undefined ? { text } : { text, value: structured };
+    // Fix round 2 (B1-12): a value filling a printed sentence's blank ("To return to …") reads on in that sentence.
+    const sentence = structured === undefined && field.anchor.kind === "docx" && /^[.…_\s]+$/.test(field.anchor.placeholderText ?? "x") && compactPlace(field) === "blank";
+    answers[field.id] = structured === undefined ? { text: sentence ? inPrintedSentence(text) : text } : { text, value: structured };
   }
   return answers;
 }

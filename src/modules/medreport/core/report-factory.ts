@@ -6,7 +6,7 @@
  * Owner: ai agent (content of the from-records paragraphs may be refined). Signatures are final.
  * Baseline implementation by the foundation.
  */
-import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { MAX_FORM_FIELDS_PER_DRAFT, MAX_FORM_ROW_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
 import { bundleClinic } from "./clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
@@ -151,18 +151,33 @@ export function createReport(input: CreateReportInput): Report {
  * (neighbouring questions of one form section are drafted together), where a long narrative answer
  * drafted from the notes counts double – it is most of a call's output, and two of them already take
  * ~20 s – so every call stays well inside the route's time limit.
+ *
+ * Fix round 2 (B1-4): with `form` – a clinic's own form, not a bundled sample (whose recordings keep their groups) – the
+ * numbered rows of one table ("Activity 1"… "Activity 2 – comments", up to MAX_FORM_ROW_FIELDS_PER_DRAFT short cells)
+ * are drafted in one call, so each row takes a different item.
  */
-export function planDraftGroups(report: Report, template: ReportTemplate): string[][] {
+export function planDraftGroups(report: Report, template: ReportTemplate, opts: { form?: Pick<FormDefinition, "fields" | "builtIn" | "sampleId"> | null } = {}): string[][] {
   // Fix round 2 (B1-11): a numbered session the record does not have is not drafted (no gap, nothing printed).
   const present = new Set(report.sections.filter((s) => !isFormReport(report) || !notApplicable(report, s.key)).map((s) => s.key));
   const specs = template.sections.filter((s) => isDraftableKind(s.kind) && present.has(s.key));
   const keys = specs.map((s) => s.key);
   if (isFormReport(report)) {
     const weight = (s: TemplateSection) => (s.kind === "ai_narrative" && s.answerType === "long_text" ? 2 : 1);
+    const runs = opts.form && !opts.form.builtIn && !opts.form.sampleId ? numberedRowRuns(specs, opts.form.fields) : new Map<string, string[]>();
     const groups: string[][] = [];
     let current: string[] = [];
     let load = 0;
-    for (const spec of specs) {
+    for (let i = 0; i < specs.length; i += 1) {
+      const spec = specs[i];
+      const run = runs.get(spec.key);
+      if (run) {
+        if (current.length > 0) groups.push(current);
+        groups.push(run);
+        current = [];
+        load = 0;
+        i += run.length - 1;
+        continue;
+      }
       const w = weight(spec);
       if (current.length > 0 && load + w > MAX_FORM_FIELDS_PER_DRAFT) {
         groups.push(current);
@@ -185,6 +200,39 @@ export function planDraftGroups(report: Report, template: ReportTemplate): strin
     start += take;
   }
   return groups;
+}
+
+/** The table a Word anchor writes into ("t4.r2.c0" → "t4", "t0.r25.c0.t0.r2.c1" → "t0.r25.c0.t0"), or null. */
+function tableOfAnchor(field: Pick<FormField, "anchor"> | undefined): string | null {
+  if (!field || field.anchor.kind !== "docx") return null;
+  return /^(.*t\d+)\.r\d+\.c\d+(?:\.p\d+)?$/.exec(field.anchor.blockId)?.[1] ?? null;
+}
+
+/**
+ * Runs of draftable questions, consecutive in the form, that are the numbered rows of one table ("Activity 1",
+ * "Activity 1 – frequency", "Activity 2"…): at least two row numbers, short answers, at most
+ * MAX_FORM_ROW_FIELDS_PER_DRAFT questions. Keyed by the run's first question.
+ */
+function numberedRowRuns(specs: readonly TemplateSection[], fields: readonly FormField[]): Map<string, string[]> {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const rowOf = (spec: TemplateSection) => {
+    const field = byId.get(spec.key);
+    const n = /^.*?\b(\d{1,2})\b\D*$/.exec(spec.title.trim())?.[1];
+    const table = tableOfAnchor(field);
+    return n && table && field?.answerType === "short_text" ? { table, n: Number(n) } : null;
+  };
+  const out = new Map<string, string[]>();
+  let i = 0;
+  while (i < specs.length) {
+    const first = rowOf(specs[i]);
+    let j = i + 1;
+    if (first) while (j < specs.length && rowOf(specs[j])?.table === first.table) j += 1;
+    const run = specs.slice(i, j);
+    const numbers = new Set(run.map((s) => rowOf(s)?.n));
+    if (first && numbers.size >= 2 && run.length <= MAX_FORM_ROW_FIELDS_PER_DRAFT) out.set(run[0].key, run.map((s) => s.key));
+    i = j;
+  }
+  return out;
 }
 
 /**

@@ -64,6 +64,7 @@ import { ApprovedBanner, ReviewHeader } from "../../components/review/review-hea
 import {
   answerChangedByClinician,
   answeredByPerson,
+  enteredByOf,
   createAmendedVersion,
   ownVoiceCandidates,
   buildQuestionGroups,
@@ -726,6 +727,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
                   notApplicableBecause={personAnswered.has(q.key) ? null : (notApplicable(report, q.key)?.because ?? null)}
+                  enteredBy={personAnswered.has(q.key) ? enteredByOf(report, q.key) : null}
                   onDraft={
                     draftingUnavailable
                       ? undefined

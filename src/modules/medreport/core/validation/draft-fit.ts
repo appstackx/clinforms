@@ -7,32 +7,50 @@
  *   opinion keeps its attribution).
  * - "comment" (B0-23): commentary about the notes inside an answer ("The notes are written by…", "so I can only
  *   describe…") – it would be printed on the form.
- * - "repeat" (B0-16): a numbered row (Activity 2) that repeats an earlier row of the same table (Activity 1).
+ * - "repeat" (B0-16; fix round 2, B1-4): a numbered row whose name cell ("Activity 2") repeats an earlier row's name
+ *   ("Activity 1") – the same item drafted twice. Rows are compared by their name cell only: two rows may well share a
+ *   frequency or a status ("Stopped since the accident"). Blocking, acknowledged with a reason.
  * - "later note" (B0-6): on an initial assessment form, a paragraph citing a note dated after that assessment.
+ * - "earlier note" (fix round 2, B1-6): on a discharge or progress form, a bare measure (a score or percentage in a
+ *   compact place, no date) citing only notes older than the latest one – "Overall improvement 60%" from a month before
+ *   discharge.
+ * - "wording" (fix round 2, B1-3): a fragment the first-person rewrite left – "On 15/07/2026: that…", "On 15/07/2026: in
+ *   my assessment…", "Past medical history: that…" – would be printed as it is.
  *
  * Owner: ai agent.
  */
 import { formatUkDate } from "../dates";
-import { reportKindOf } from "../forms";
+import { compactPlace, reportKindOf } from "../forms";
 import { initialAssessmentView } from "../scope";
 import type { FormField, ReportFlag } from "../types";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
 
-/** Where a short answer goes when that is a compact place: a table cell, or a blank inside a printed sentence. */
-export function compactPlace(field: FormField | undefined): "cell" | "blank" | null {
-  if (!field || field.answerType !== "short_text" || field.fillSource.kind !== "notes_narrative" || field.anchor.kind !== "docx") return null;
-  const a = field.anchor;
-  if (a.target === "table_cell") return "cell";
-  if (a.target === "replace_placeholder" && !a.writeAfter && (a.placeholderText ?? "").trim().length > 0 && (a.placeholderText ?? "").trim().length <= 4) return "blank";
-  return null;
-}
+// compactPlace moved to core/forms.ts (fix round 2, B1-12: the forms engine needs it too); kept here for imports.
+export { compactPlace } from "../forms";
 
 const DATED = /\b\d{2}\/\d{2}\/\d{4}\b/;
 const ATTRIBUTED = /\b(?:recorded|reported|told|noted|stated|described|assessed)\b/i;
 const COMMENTARY = /\b(?:the notes (?:are|were) (?:all )?written by|(?:so )?i can only (?:describe|say|give)|the (?:record|notes) (?:does|do) not (?:set out|say|state|record)|it is not possible to (?:say|tell) from the (?:notes|record))\b/i;
+/** Fix round 2 (B1-13): a trailing "; no pain score recorded for the headaches" – what the notes lack is the gap's to say. */
+const TRAILING_ABSENCE = /[;,–—]\s*(?:but |and |with )?(?:no|not) (?:[\w/-]+ ){0,6}?(?:was |were |is |are |has been |have been )?(?:recorded|documented|stated)\b(?: (?:for|in|at|about|on) [^.;]*)?\s*(?=[.;]|$)/i;
+
+/** Guidance that asks for more than the value alone (fix round 2, B1-12). */
+const MORE_THAN_THE_VALUE = /\b(?:one or two lines|two lines|a sentence or two|and the symptoms|with (?:the )?(?:reason|details|symptoms))\b/i;
+
+/** "discharge" for a discharge or final report, "progress" for an interim or progress report, else null. */
+export function currentStateForm(title: string): "discharge" | "progress" | null {
+  if (reportKindOf(title) === "discharge") return "discharge";
+  return /\b(?:interim|progress|review)\b/i.test(title) ? "progress" : null;
+}
+
+/** A lead left without its sentence (fix round 2, B1-3). */
+const FRAGMENT = /^On \d{2}\/\d{2}\/\d{4}: (?:in (?:my|the)|that)\b|: that\b|\bwith \d+ did not attend\b/;
 
 const words = (s: string) => s.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+
+/** The first `n` characters of `text`, ending at a whole word. */
+const excerpt = (text: string, n: number) => (text.length <= n ? text : text.slice(0, n).replace(/\s+\S*$/, "")).replace(/[\s.,;:]+$/, "");
 
 /** Two row answers that say the same thing: one's words all in the other's, or most of them shared. */
 function repeats(a: string, b: string): boolean {
@@ -51,11 +69,21 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
   const noteDate = new Map(input.bundle.notes.map((n) => [n.id, n.date]));
   const firstText = new Map<string, string>();
 
+  const formFields = input.form?.fields ?? [];
+  // Fix round 2 (B1-6): on a discharge or progress form a bare value states the patient's position now.
+  const current = input.report.form ? currentStateForm(input.report.form.title) : null;
+  const latestNote = input.bundle.notes.map((n) => n.date).sort().pop() ?? null;
+
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (p.origin !== "ai" || !hasText(p)) continue;
     const field = fields.get(section.key);
-    const place = section.paragraphs[0] === p ? compactPlace(field) : null;
-    if (place && (DATED.test(p.text) || ATTRIBUTED.test(p.text) || words(p.text).length > 12)) {
+    const place = section.paragraphs[0] === p ? compactPlace(field, formFields) : null;
+    // Fix round 2 (B1-12): the guidance may ask for more than the value ("the pain score and the symptoms, in one or
+    // two lines") or for dates; a long answer in a narrow column is only kept free of the date lead and attribution.
+    const more = MORE_THAN_THE_VALUE.test(field?.guidance ?? "");
+    const datesAsked = /\bdates?\b/i.test(`${field?.label ?? ""} ${field?.guidance ?? ""}`);
+    const long = place === "narrow" || more;
+    if (place && ((DATED.test(p.text) && !datesAsked) || ATTRIBUTED.test(p.text) || (!long && words(p.text).length > 12))) {
       flags.push(
         makeFlag({
           code: "DRAFT_FIT",
@@ -64,14 +92,47 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
           paragraphId: p.id,
           evidence: "shorten",
           message:
-            place === "cell"
-              ? "Shorten for the box: this answer goes in a table cell, so it should be the value alone (for example “Dog walking”, “Daily”, “6/10”, “Lower back”) – no date and no “recorded” or “told”. Its citation keeps the source."
-              : "Shorten for the box: this answer fills a blank inside the form's printed sentence, so it should be the words that complete it – no date and no “recorded” or “told”. Its citation keeps the source.",
+            place === "blank"
+              ? "Shorten for the box: this answer fills a blank inside the form's printed sentence, so it should be the words that complete it – no date and no “recorded” or “told”. Its citation keeps the source."
+              : long
+                ? "Shorten for the box: this answer goes in a narrow table cell – keep what the form asks for, without a date lead or “recorded” / “told”. Its citation keeps the source."
+                : "Shorten for the box: this answer goes in a table cell, so it should be the value alone (for example “Dog walking”, “Daily”, “6/10”, “Lower back”) – no date and no “recorded” or “told”. Its citation keeps the source.",
         }),
       );
     }
-    const comment = COMMENTARY.exec(p.text);
-    if (comment) {
+    // Fix round 2 (B1-6): a bare value from an earlier note is printed as the patient's position now.
+    const cited = p.sourceIds.map((id) => noteDate.get(id)).filter((d): d is string => Boolean(d)).sort();
+    // A measure (a score, a percentage) – an area or an activity named at the assessment is still that area.
+    const measure = /\d/.test(p.text) && words(p.text).length <= 6;
+    if (current && latestNote && (place === "cell" || place === "blank") && measure && !DATED.test(p.text) && cited.length > 0 && cited[cited.length - 1] < latestNote) {
+      flags.push(
+        makeFlag({
+          code: "DRAFT_FIT",
+          severity: "warning",
+          sectionKey: section.key,
+          paragraphId: p.id,
+          evidence: `earlier note ${cited[cited.length - 1]}`,
+          message: `From an earlier note (${formatUkDate(cited[cited.length - 1])}) – check it is still right ${current === "discharge" ? "at discharge" : "now"}: the latest note is of ${formatUkDate(latestNote)}.`,
+        }),
+      );
+    }
+    const fragment = FRAGMENT.exec(p.text);
+    if (fragment) {
+      flags.push(
+        makeFlag({
+          code: "DRAFT_FIT",
+          severity: "warning",
+          sectionKey: section.key,
+          paragraphId: p.id,
+          evidence: "wording",
+          message: `Check the wording: “${excerpt(p.text, fragment.index + fragment[0].length + 30)}…” is not a whole sentence – it would be printed as it is.`,
+        }),
+      );
+    }
+    const lead = COMMENTARY.exec(p.text);
+    const trailing = lead ? null : TRAILING_ABSENCE.exec(p.text);
+    const said = lead ? `${lead[0]}…` : trailing ? trailing[0].replace(/^[;,–—]\s*/, "").trim() : null;
+    if (said) {
       flags.push(
         makeFlag({
           code: "DRAFT_FIT",
@@ -79,7 +140,7 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
           sectionKey: section.key,
           paragraphId: p.id,
           evidence: "comment",
-          message: `Remove the comment about the notes (“${comment[0]}…”): it would be printed on the form.`,
+          message: `Remove the comment about the notes (“${said}”): it would be printed on the form.`,
         }),
       );
     }
@@ -103,12 +164,12 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
     if (printed && section.paragraphs[0] === p && !firstText.has(section.key)) firstText.set(section.key, p.text);
   }
 
-  // Numbered rows of one table: "Activity 2" repeating "Activity 1" (same words before and after the number).
+  // Numbered rows of one table: "Activity 2" repeating "Activity 1" – the name cells (nothing after the number) only.
   const rows = new Map<string, Array<{ key: string; n: number; title: string }>>();
   for (const s of input.report.sections ?? []) {
     const m = /^(.*?)(\d+)(\D*)$/.exec(s.title.trim());
-    if (!m || !firstText.has(s.key)) continue;
-    const id = `${m[1]}#${m[3]}`;
+    if (!m || m[3].trim() !== "" || !firstText.has(s.key)) continue;
+    const id = m[1];
     rows.set(id, [...(rows.get(id) ?? []), { key: s.key, n: Number(m[2]), title: s.title.trim() }]);
   }
   rows.forEach((list) => {
@@ -120,11 +181,11 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
       flags.push(
         makeFlag({
           code: "DRAFT_FIT",
-          severity: "warning",
+          severity: "blocking",
           sectionKey: row.key,
           ...(p && { paragraphId: p.id }),
           evidence: `repeat ${earlier.key}`,
-          message: `This repeats “${earlier.title}” (${earlier.key}) – give the next item the notes record, or leave it blank.`,
+          message: `This repeats “${earlier.title}” (${earlier.key}) – the same item would be printed twice. Give the next item the notes record, or leave this row blank; acknowledge it with a reason if both rows are right.`,
         }),
       );
     });

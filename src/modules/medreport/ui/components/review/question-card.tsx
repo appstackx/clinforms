@@ -17,7 +17,7 @@ import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue
 import { factCondition } from "../../../core/conditions";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
-import { nameClinicianInstead } from "../../../core/voice";
+import { attendedInstead, nameClinicianInstead } from "../../../core/voice";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
@@ -85,6 +85,8 @@ export interface QuestionCardProps {
   copyable?: boolean;
   /** Fix round 1 (B0-7): why this conditional question does not apply ("“ANY FURTHER TREATMENT…?” is “NO”"), or null. */
   notApplicableBecause?: string | null;
+  /** Fix round 2 (B1-7): who last typed or chose this answer (the activity log), for "Typed in by …". */
+  enteredBy?: string | null;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -107,8 +109,11 @@ function ParagraphEditor({
   canAcknowledge,
   onFocused,
   staffEntry = false,
+  enteredBy = null,
 }: {
   staffEntry?: boolean;
+  /** Who typed a staff entry (fix round 2, B1-7: the activity log's name, not always "staff"). */
+  enteredBy?: string | null;
   paragraph: Paragraph;
   index: number;
   total: number;
@@ -184,7 +189,7 @@ function ParagraphEditor({
           <span className="text-[11px] font-medium text-red-700">No source cited</span>
         )}
         {paragraph.origin === "clinician" && (
-          <span className="text-[11px] text-slate-500">{staffEntry ? "Typed in by staff – kept in the activity log" : "Your own words – no citation needed"}</span>
+          <span className="text-[11px] text-slate-500">{staffEntry ? `Typed in by ${enteredBy ?? "staff"} – kept in the activity log` : "Your own words – no citation needed"}</span>
         )}
         {!readOnly && (paragraph.origin === "edited" || paragraph.origin === "clinician") && paragraph.originalText !== undefined && (
           <button
@@ -214,7 +219,10 @@ function ParagraphEditor({
         <div className="space-y-1.5">
           {flags.map((f) => {
             // "Name Tom Ellis instead" (fix round 1): another clinician's note written as "I" / "my".
-            const named = f.code === "OTHER_CLINICIAN_VOICE" && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
+            const count = f.code === "OTHER_CLINICIAN_VOICE" && /^sessions \d+$/.test(f.evidence ?? "");
+            const named = f.code === "OTHER_CLINICIAN_VOICE" && !count && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
+            // Fix round 2 (B1-14): "Mr Ellery attended 7 sessions" for a first-person count with another clinician's sessions.
+            const attended = count ? attendedInstead(paragraph.text) : null;
             return (
               <FlagItem
                 key={f.id}
@@ -224,6 +232,7 @@ function ParagraphEditor({
                 canAck={canAcknowledge(f)}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
                 {...(named && { fix: { label: `Name ${f.evidence} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+                {...(attended && { fix: { label: "Make the patient the subject", onFix: () => dispatch({ type: "patientAttended", flag: f, actor }) } })}
               />
             );
           })}
@@ -402,13 +411,11 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const statusLabel =
     status === "blank" && blankWording
       ? blankWording.chip
-      : staffEntered && status === "clinician"
-        ? "Entered by staff"
-        : status === "needs_input" && section?.kind === "from_records"
-          ? recordSource === "physio_choice"
-            ? "To be chosen by the physiotherapist"
-            : "To be entered by staff"
-          : meta.label;
+      : status === "needs_input" && section?.kind === "from_records"
+        ? recordSource === "physio_choice"
+          ? "To be chosen by the physiotherapist"
+          : "To be entered by staff"
+        : meta.label;
   const answered = section ? isSectionAnswered(section) : false;
 
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
@@ -494,6 +501,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           canAcknowledge={canAcknowledge}
           onFocused={clearFocus}
           staffEntry={isRecords}
+          enteredBy={props.enteredBy ?? null}
         />
       ))}
       {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && (
@@ -717,7 +725,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
         {renderParagraphs({
           emptyPlaceholder: isOpinion
             ? "Write your clinical opinion here. It is marked as your own (Clinician) and needs no citation."
-            : "Write the answer here. It is marked as your own (Clinician).",
+            : isRecords
+              ? "Type it here. It is marked as entered by staff."
+              : "Write the answer here. It is marked as your own (Clinician).",
           supporting: false,
         })}
       </div>

@@ -686,3 +686,41 @@ describe("fix round 1 (B0-7): a conditional question's gaps follow the answer be
     assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
   });
 });
+
+describe("fix round 2 (B1-7): who entered an answer is said the same way everywhere", () => {
+  it("a date typed, a box ticked or a value typed in a staff-entry question is “Entered by staff”; a physiotherapist's choice is the clinician's – never “Filled from records”", async () => {
+    const { QUESTION_STATUS_META, enteredByOf, resolutionOptionsFor } = await import("./review-model");
+    n = 100;
+    const form: FormDefinition = {
+      ...testForm(),
+      fields: [
+        field({ label: "Date of referral", answerType: "date", fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Entered by staff on each report." }),
+        field({ label: "Restriction required – lifting limit", answerType: "checkbox", fillSource: { kind: "registration", path: "staff.entry" } }),
+        field({ label: "Body part affected", answerType: "single_choice", options: ["Upper Limb", "Lower Limb"], fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report: the other options are deleted from the form." }),
+        field({ label: "Our Ref", answerType: "short_text", fillSource: { kind: "registration", path: "staff.entry" } }),
+      ],
+    };
+    const bundle = testBundle();
+    let report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), now: new Date(AT), id: "rpt_b17" });
+    const [date, tick, choice, ref] = form.fields.map((f) => f.id);
+    report = setStructuredAnswer(report, date, "2026-08-26", "Sarah Reid");
+    report = setStructuredAnswer(report, tick, true, "Pat Morgan");
+    report = setStructuredAnswer(report, choice, "Lower Limb", "Sarah Reid");
+    report = addClinicianParagraph(report, ref, "SAMPLE-REF-01").report;
+    report = { ...report, gaps: [] };
+    const groups = buildQuestionGroups(report, form, formToTemplate(form));
+    const status = (key: string) => {
+      const q = flattenQuestions(groups).find((x) => x.key === key)!;
+      return questionStatus({ ...q, section: report.sections.find((s) => s.key === key)! }, [], [], answeredByPerson(report, key), true, report);
+    };
+    assert.equal(status(date), "staff");
+    assert.equal(status(tick), "staff");
+    assert.equal(status(choice), "clinician", "chosen by the physiotherapist");
+    assert.equal(status(ref), "staff");
+    assert.equal(QUESTION_STATUS_META.staff.label, "Entered by staff");
+    assert.equal(enteredByOf(report, tick), "Pat Morgan", "the card's “Typed in by …” names who did it");
+    // A typed provider reference resolves its gap as "Entered by …" – where it came from is the person's to add.
+    const gap = { id: "gap-F-104-referrer", sectionKey: ref, issue: "Enter the referrer's own reference.", suggestedQuestion: "?", relatedNoteIds: [] };
+    assert.equal(resolutionOptionsFor({ own: true, opinion: false, gap, actor: "Sarah Reid" }).prefill, "Entered by Sarah Reid.");
+  });
+});

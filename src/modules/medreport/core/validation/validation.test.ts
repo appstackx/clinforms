@@ -264,6 +264,31 @@ test("opinion: the F-37 work status passes – \"returned to normal duties\" fro
   assert.deepEqual(findUnsupportedOpinionPhrases(F37_DRAFT, normaliseForMatch(F37_NOTE)), []);
 });
 
+test("fix round 2 (B1-2): a narrated “before returning to normal duties” states the return the note records; future and planned returns still block", () => {
+  // Proclaim final report F-10 (Jordan, printed notes) as drafted, citing N-001 – no flag, so no forced rewrite.
+  const note = "Took 3 days off work, then back on normal duties with breaks from the desk.";
+  const draft = "Mr Ellery was the driver of a car hit from behind on 12/07/2026, and reported neck pain the next morning, taking 3 days off work before returning to normal duties.";
+  assert.deepEqual(opinionLabels(draft, note), []);
+  const { report, p } = f37Report(draft);
+  assert.deepEqual(of(run(report, SOL), "OPINION_LANGUAGE", p.id), []);
+  for (const ok of ["He took 3 days off, then returning to normal duties.", "After returning to normal duties he had no further time off.", "On returning to normal duties he took breaks from the desk."]) {
+    assert.deepEqual(opinionLabels(ok, note), [], ok);
+  }
+  // Not a stated return: a present or future "returning", a plan, an aim – or a note that does not record it.
+  const blocked: Array<[draft: string, note: string]> = [
+    ["He is returning to normal duties.", note],
+    ["He will be returning to normal duties.", note],
+    ["He took 3 days off before returning to normal duties next week.", note],
+    ["He took 3 days off before returning to normal duties from Monday.", note],
+    ["The aim of returning to normal duties was agreed.", note],
+    ["He plans a week off before returning to normal duties.", note],
+    ["He should rest for a week before returning to normal duties.", note],
+    ["He is returning to his normal work.", note],
+    ["He took 3 days off before returning to normal duties.", "Off work since the accident."],
+  ];
+  for (const [d, n] of blocked) assert.deepEqual(opinionLabels(d, n), ["return to normal work or activity"], d);
+});
+
 test("opinion: symptoms back to normal \"during work\" stay a recovery opinion, even citing the F-37 note", () => {
   const { report, p } = f37Report("Mr Ellery told me on 15/07/2026 that his symptoms returned to normal during work.");
   const [flag, ...rest] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
@@ -683,5 +708,47 @@ test("fix round 1: a dated, attributed sentence in a table cell, a repeated row,
   assert.match(by("F-32", "repeat")?.message ?? "", /^This repeats “Activity 1” \(F-28\)/);
   assert.match(by("F-40", "comment")?.message ?? "", /^Remove the comment about the notes \(“The notes are written by/);
   assert.match(by("F-40", "later note")?.message ?? "", /^From a later note of 06\/05\/2026 – check it belongs on an initial assessment \(18\/03\/2026\)\.$/);
-  assert.ok(flags.every((f) => f.severity === "warning"), "never blocking");
+  assert.ok(flags.filter((f) => !(f.evidence ?? "").startsWith("repeat")).every((f) => f.severity === "warning"), "never blocking");
+  // Fix round 2 (B1-4): the same item drafted in two rows blocks (acknowledgeable) – see the test below.
+  assert.equal(by("F-32", "repeat")?.severity, "blocking");
+});
+
+test("fix round 2 (B1-4): rows are compared by their name cell – a repeated item blocks, equal frequencies or statuses never flag", () => {
+  const bundle = testBundle();
+  const cell = (id: string, label: string) => ({ id, label, guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "table_cell", blockId: `t4.r${id.slice(2)}.c0` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+  const labels: Array<[string, string]> = [
+    ["F-28", "Activity 1"],
+    ["F-29", "Activity 1 – frequency before the injury"],
+    ["F-30", "Activity 1 – frequency since the injury"],
+    ["F-32", "Activity 2"],
+    ["F-33", "Activity 2 – frequency before the injury"],
+    ["F-34", "Activity 2 – frequency since the injury"],
+  ];
+  const fields = labels.map(([id, l]) => cell(id, l));
+  const template = { ...SOL, sections: labels.map(([key, title]) => ({ key, title, kind: "ai_narrative", required: false, guidance: "" })) } as unknown as ReportTemplate;
+  const flagsFor = (texts: Record<string, string>) => {
+    const sections = labels.map(([key, title]) => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: texts[key] ? [{ id: `${key}-p1`, text: texts[key], sourceIds: ["N-001"], origin: "ai" as const }] : [] }));
+    const report = { ...testReport(SOL, bundle), sections } as unknown as Report;
+    return runValidators({ report, bundle, template, computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }), form: { analysis: { mode: "rules", promptVersion: "t", at: "2026-10-25T09:00:00.000Z", warnings: [] }, fields } as never }).filter((f) => f.code === "DRAFT_FIT" && (f.evidence ?? "").startsWith("repeat"));
+  };
+  // Reuben (10Bridge IA): running drafted twice, football missing.
+  const reuben = flagsFor({ "F-28": "Running", "F-29": "Twice a week, 10 km", "F-32": "Running", "F-33": "Twice a week (10 km)" });
+  assert.deepEqual(reuben.map((f) => [f.sectionKey, f.severity, f.evidence]), [["F-32", "blocking", "repeat F-28"]], "the name cell blocks; its frequency cell is not flagged on its own");
+  assert.equal(canAcknowledge(reuben[0]), true, "acknowledged with a reason when both rows are right");
+  // Jordan (10Bridge IA): two activities that really both stopped.
+  assert.deepEqual(flagsFor({ "F-28": "Driving", "F-30": "Stopped since the accident", "F-32": "Gym", "F-34": "Stopped since the accident" }), []);
+});
+
+test("fix round 2 (B1-3): a fragment the first-person rewrite left gets a “Check the wording” warning", () => {
+  const ps = [
+    para("On 15/07/2026: that he was fit and well before the accident.", ["N-001"]),
+    para("Past medical history: that he was fit and well.", ["N-001"]),
+    para("On 15/07/2026: in my plan about 6 sessions over 8 weeks.", ["N-001"]),
+    para("On 18/03/2026: a painful arc of movement when bending.", ["N-001"]),
+  ];
+  const report = withSection(testReport(SOL), "presenting_complaints", ps);
+  const flags = run(report, SOL).filter((f) => f.code === "DRAFT_FIT" && f.evidence === "wording");
+  assert.deepEqual(flags.map((f) => f.paragraphId), ps.slice(0, 3).map((p) => p.id), "a finding after its date is a whole entry");
+  assert.ok(flags.every((f) => f.severity === "warning"));
+  assert.match(flags[0].message, /^Check the wording: “On 15\/07\/2026: that he was fit and well before…” is not a whole sentence – it would be printed as it is\.$/);
 });

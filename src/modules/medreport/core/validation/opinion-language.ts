@@ -93,6 +93,13 @@ const NOT_A_FACT_DRAFT =
 /** A symptom or body part as the drafted subject makes it recovery: "his symptoms have returned to normal activity levels". */
 const RECOVERY_SUBJECT =
   /\b(?:symptoms?|pain|stiffness|swelling|function(?:ing)?|movement|mobility|range|strength|sleep|mood|headaches?|neck|knee|shoulder|hip|ankle|wrist|elbow|spine|(?:his|her|their|the) back) (?:has |have |had |is |are |was |were )?(?:now |fully |also )?$/;
+/**
+ * Fix round 2 (B1-2): a past narrative that runs on into the return – "taking 3 days off work before returning to normal
+ * duties", "then returning to …", "after / since / on returning to …" – states the return as a fact. Only "returning",
+ * only straight after one of these words, and only with no modal, plan or future time in its clause ("he is returning",
+ * "returning next week", "the aim of returning" stay opinions).
+ */
+const PAST_NARRATIVE_BEFORE = /\b(?:before|after|then|since|on) $/;
 /** A note's current status that records being back at work in full: "working full time with no restrictions" (full time alone: hours). */
 const WORKING_IN_FULL = "(?:working|at work) full[- ]time (?:with no|without) (?:restrictions?|limitations?)";
 
@@ -143,7 +150,8 @@ function textAfter(text: string, index: number, stop: RegExp): string {
  * from Monday" and a history field do not. Any word for the job counts as the same thing (duties, work, role).
  * A drafted "has not yet returned to her normal shifts" needs the note's "not yet back on … shifts".
  *
- * The drafted side must state that return too: only "returned" or "back" can, and not after a modal, an ability word,
+ * The drafted side must state that return too: only "returned" or "back" can (or a narrated "before / then returning",
+ * fix round 2), and not after a modal, an ability word,
  * advice or a plan ("he can return", "I recommend a graded return", "he should be back to", "he never returned"), and
  * not with a symptom or body part as the subject ("his neck is back to normal work-wise" is recovery).
  */
@@ -151,7 +159,8 @@ function statusRecorded(hit: OpinionHit, source: string): boolean {
   const m = new RegExp(`\\b(?:(${DESCRIBER}) )?(${WORK}|${ACTIVITY})$`).exec(hit.phrase);
   if (!m) return false;
   const negated = NOT_RETURNED_DRAFT.test(hit.before);
-  if (!negated && (/^return(?:s|ing)?\b/.test(hit.phrase) || NOT_A_FACT_DRAFT.test(hit.before))) return false;
+  const narrated = /^returning\b/.test(hit.phrase) && PAST_NARRATIVE_BEFORE.test(hit.before) && !NOT_A_FACT_AFTER.test(hit.after);
+  if (!negated && ((/^return(?:s|ing)?\b/.test(hit.phrase) && !narrated) || NOT_A_FACT_DRAFT.test(hit.before))) return false;
   if (RECOVERY_SUBJECT.test(hit.before)) return false;
   const [, describer, noun] = m;
   const job = new RegExp(`^${JOB}$`).test(noun);

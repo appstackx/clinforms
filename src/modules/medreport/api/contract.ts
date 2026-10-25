@@ -43,7 +43,7 @@ import {
   SignReceiptSchema,
   TraceEntrySchema,
 } from "../core/schemas";
-import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { MAX_FORM_FIELDS_PER_DRAFT, MAX_FORM_ROW_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
 
 /* ------------------------------------------------------------------------------------------------
  * Bases, headers, content types
@@ -423,9 +423,10 @@ export const DraftsRequestSchema = z
     instructingParty: InstructingPartySchema,
     /**
      * One group of draftable section keys (spec: "sections"): 1–MAX_SECTIONS_PER_DRAFT for a built-in
-     * template, 1–MAX_FORM_FIELDS_PER_DRAFT form field IDs ("F-07") when `form` is sent.
+     * template, 1–MAX_FORM_FIELDS_PER_DRAFT form field IDs ("F-07") when `form` is sent – or up to
+     * MAX_FORM_ROW_FIELDS_PER_DRAFT for the numbered rows of one table (fix round 2).
      */
-    sectionKeys: z.array(SectionKeySchema).min(1).max(Math.max(MAX_SECTIONS_PER_DRAFT, MAX_FORM_FIELDS_PER_DRAFT)),
+    sectionKeys: z.array(SectionKeySchema).min(1).max(Math.max(MAX_SECTIONS_PER_DRAFT, MAX_FORM_FIELDS_PER_DRAFT, MAX_FORM_ROW_FIELDS_PER_DRAFT)),
     /** "auto" (default): live when available and a passcode is sent, otherwise demo. */
     prefer: z.enum(["auto", "live", "demo"]).optional(),
     /** Override the server's effort setting (rehearsal/testing). */

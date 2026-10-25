@@ -7,10 +7,10 @@
  *
  * Owner: studio-b agent.
  */
-import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
+import { attendedInstead, inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
-import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, sectionHeadings } from "../../../core/forms";
+import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, recordSourceOf, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
 import { NOTICES } from "../../../config.public";
 import { TENANT_COPY } from "../../studio-copy";
@@ -155,6 +155,8 @@ export type QuestionStatus =
   | "records"
   | "drafted"
   | "clinician"
+  /** Fix round 2 (B1-7): a value a person typed, ticked or chose in a staff-entry or record question. */
+  | "staff"
   | "needs_input"
   | "confirm"
   | "blocked"
@@ -169,6 +171,7 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
   drafted: { label: "Drafted from the notes", short: "Drafted", dot: "bg-sky-500", text: "text-sky-800" },
   clinician: { label: "Answered by the clinician", short: "Clinician", dot: "bg-indigo-500", text: "text-indigo-800" },
+  staff: { label: "Entered by staff", short: "Staff", dot: "bg-violet-500", text: "text-violet-800" },
   needs_input: { label: "Needs clinician input", short: "Needs input", dot: "bg-amber-500", text: "text-amber-800" },
   confirm: { label: "Answered – confirm the gap", short: "Confirm", dot: "bg-amber-400 ring-2 ring-amber-200", text: "text-amber-800" },
   blocked: { label: "Blocked – check required", short: "Blocked", dot: "bg-red-600", text: "text-red-700" },
@@ -180,7 +183,7 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "staff", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -211,7 +214,9 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
  * - left_blank: the report was approved without an answer here, so nothing is waiting for anyone;
  * - confirm: a person has answered it and only its gap is still open (one click: "Mark resolved");
  * - blocked: answered, but a blocking check or an open gap remains;
- * - records / drafted / clinician: answered and clear, by where the answer came from.
+ * - records / drafted / clinician / staff: answered and clear, by where the answer came from. Fix round 2 (B1-7): an
+ *   answer a person typed, ticked or chose is never "records" – a staff-entry or record question says "staff", any
+ *   other (a physiotherapist's choice included) "clinician"; the card, the approved summary and the counts agree.
  */
 export function questionStatus(
   q: Pick<ReviewQuestion, "section" | "field">,
@@ -242,6 +247,7 @@ export function questionStatus(
   if (openGap && byPerson && blockingFlags.every((f) => f.code === "OPEN_GAP")) return "confirm";
   if (blockingFlags.length > 0 || openGap) return "blocked";
   const origins = section.paragraphs.filter((p) => p.text.trim()).map((p) => p.origin);
+  if (byPerson && section.kind === "from_records") return q.field && recordSourceOf(q.field) === "physio_choice" ? "clinician" : "staff";
   if (origins.every((o) => o === "from_records")) return section.kind === "from_records" || origins.length > 0 ? "records" : "clinician";
   if (origins.some((o) => o === "ai" || o === "edited")) return "drafted";
   return "clinician";
@@ -260,7 +266,7 @@ export interface StatusCounts {
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, staff: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
@@ -655,6 +661,15 @@ export function markNotApplicable(report: Report, key: string, on: boolean, acto
   }, now);
 }
 
+/** Fix round 2 (B1-7): who last typed, edited or chose this question's answer, from the activity log – or null. */
+export function enteredByOf(report: Pick<Report, "activity">, key: string): string | null {
+  for (let i = report.activity.length - 1; i >= 0; i--) {
+    const a = report.activity[i];
+    if ((a.action === "answer_set" || a.action === "edited" || a.action === "paragraph_added") && a.detail.startsWith(`${key}:`) && a.actor.trim() && a.actor !== "System") return a.actor;
+  }
+  return null;
+}
+
 /** True when the clinician has changed this question's structured answer (see setStructuredAnswer). */
 export function answerChangedByClinician(report: Pick<Report, "activity">, key: string): boolean {
   return report.activity.some((a: ActivityEntry) => a.action === "answer_set" && a.detail.startsWith(`${key}:`));
@@ -717,9 +732,8 @@ export function gapResolutionOptions(report: Pick<Report, "sections" | "activity
 export function resolutionOptionsFor(input: { own: boolean; opinion: boolean; gap: Gap; actor: string }): GapResolutionOptions {
   const { own, gap, actor } = input;
   if (own) {
-    const prefill = gap.id.endsWith("-referrer")
-      ? `Entered by ${actor} from the referrer's instruction letter.`
-      : `Answered on the form by ${actor}.`;
+    // Fix round 2 (B1-7): where a typed reference came from is the person's to say (they can add it to the text).
+    const prefill = gap.id.endsWith("-referrer") ? `Entered by ${actor}.` : `Answered on the form by ${actor}.`;
     return { canResolve: true, prefill, minLength: 3, hint: null };
   }
   if (input.opinion) {
@@ -1024,6 +1038,28 @@ export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapsh
   if (!others || others.length !== 1) return null;
   const text = nameClinicianInstead(p.text, others[0]);
   return text ? { name: others[0], text } : null;
+}
+
+/**
+ * Fix round 2 (B1-14): the one-click rewrite on a first-person count that includes other clinicians' sessions – "I
+ * treated Mr Ellery for 7 sessions" → "Mr Ellery attended 7 sessions" – or null.
+ */
+export function attendedFix(report: Pick<Report, "sections">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId" | "evidence">): { text: string } | null {
+  if (flag.code !== "OTHER_CLINICIAN_VOICE" || !/^sessions \d+$/.test(flag.evidence ?? "") || !flag.sectionKey || !flag.paragraphId) return null;
+  const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
+  const text = p ? attendedInstead(p.text) : null;
+  return text ? { text } : null;
+}
+
+/** Apply attendedFix() to one flagged paragraph: it becomes "edited" (revertable), with one activity entry. */
+export function patientAttendedInstead(report: Report, flag: ReportFlag, actor: string, now?: Date): Report {
+  const fix = attendedFix(report, flag);
+  if (!fix || !flag.sectionKey || !flag.paragraphId) return report;
+  return appendActivity(
+    editParagraph(report, flag.sectionKey, flag.paragraphId, fix.text, now),
+    { actor, action: "edited", detail: `${flag.sectionKey}: the session count now has the patient as its subject (it includes another clinician's sessions).` },
+    now,
+  );
 }
 
 /** Apply nameClinicianFix() to the flagged paragraphs (by flag ID): each becomes "edited" (revertable); one activity entry each. */

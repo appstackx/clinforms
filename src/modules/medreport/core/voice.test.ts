@@ -296,3 +296,55 @@ test("fix round 1 (B0-23): gap wording names whose note it is – never “my no
   assert.equal(notesNamedByAuthor("Check your records for the date.", notes), "Check your records for the date.", "not a note");
   assert.equal(notesNamedByAuthor("Does your clinic have no notes of it?", notes), "Does your clinic have no notes of it?", "not someone's note");
 });
+
+test("fix round 2 (B1-3): no “Past medical history: that…” or “On 15/07/2026: in my assessment…” fragments – deterministic and idempotent", () => {
+  const cases: Array<[drafted: string, plain: string]> = [
+    // 10Bridge IA (Jordan) F-21, F-42 – printed on the form – and F-49, F-51 (supporting text); 10Bridge EOTS F-19.
+    ["On 15/07/2026 I recorded in the past medical history that Mr Ellery was fit and well before the accident, with no previous neck problems.", "Past medical history: Mr Ellery was fit and well before the accident, with no previous neck problems."],
+    ["On 15/07/2026 I recorded in my assessment mild travel anxiety when driving. He drives to work.", "Assessment on 15/07/2026: mild travel anxiety when driving. He drives to work."],
+    ["On 15/07/2026 I recorded in my plan that I explained the diagnosis and the expected course.", "Plan on 15/07/2026: I explained the diagnosis and the expected course."],
+    ["On 15/07/2026 I recorded in my plan about 6 sessions over 8 weeks.", "Plan on 15/07/2026: about 6 sessions over 8 weeks."],
+    ["On 15/07/2026 I recorded a home exercise programme of chin tucks and neck rotations, 10 of each 3 times a day.", "Home exercise programme on 15/07/2026: chin tucks and neck rotations, 10 of each 3 times a day."],
+    // Unchanged rules.
+    ["On 01/10/2026 I recorded that 1 pre-authorised session remained.", "On 01/10/2026, 1 pre-authorised session remained."],
+    ["On 01/09/2026 I recorded an assessment of a right rotator cuff strain.", "Assessment on 01/09/2026: a right rotator cuff strain."],
+  ];
+  for (const [drafted, plain] of cases) {
+    assert.equal(plainClinicalWording(drafted), plain, drafted);
+    assert.equal(plainClinicalWording(plainClinicalWording(drafted)), plain, `idempotent: ${drafted}`);
+  }
+});
+
+test("fix round 2 (B1-14): a first-person count of sessions that includes another clinician's is flagged, with a one-click rewrite", async () => {
+  const { attendedInstead, authorsAttendedSessions, firstPersonSessionCount } = await import("./voice");
+  const { runValidators, canAcknowledge } = await import("./validation");
+  const { computeFacts } = await import("./computed-facts");
+  const { SOLICITOR_RTA_TEMPLATE } = await import("../templates/registry");
+  const { TEST_FACTS_DATE, testBundle, testReport, withSection } = await import("./validation/test-fixtures");
+  const text = "I treated Mr Testcase for 2 sessions of physiotherapy between 18/03/2026 and 06/05/2026.";
+  assert.deepEqual(firstPersonSessionCount(text), { count: 2, phrase: "I treated Mr Testcase for 2 sessions of physiotherapy" });
+  assert.equal(attendedInstead(text), "Mr Testcase attended 2 sessions of physiotherapy between 18/03/2026 and 06/05/2026.");
+  assert.equal(attendedInstead("I treated him for 2 sessions."), null, "no name to make the subject");
+  // The test record: Sarah Reid's assessment (N-001) and Tom Ellis's discharge (N-002), both attended.
+  const bundle = testBundle();
+  const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01" };
+  assert.deepEqual(authorsAttendedSessions(bundle, sarah), { own: 1, others: [{ date: "2026-05-06", name: "Tom Ellis" }] });
+  const p = { id: "c1", text, sourceIds: ["N-001", "FACT-attendance"], origin: "ai" as const, basis: "record" as const };
+  const report = { ...withSection(testReport(SOLICITOR_RTA_TEMPLATE, bundle), "presenting_complaints", [p]), author: sarah };
+  const flag = runValidators({ report, bundle, template: SOLICITOR_RTA_TEMPLATE, computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }) }).find((f) => f.code === "OTHER_CLINICIAN_VOICE" && f.paragraphId === "c1");
+  assert.equal(flag?.severity, "blocking");
+  assert.equal(flag?.evidence, "sessions 2");
+  assert.match(flag?.message ?? "", /^This answer says “I treated Mr Testcase for 2 sessions of physiotherapy”, but one of them was with another clinician – Tom Ellis \(06\/05\/2026\)\./);
+  assert.equal(canAcknowledge(flag!, report), false, "drafted text: rewrite it");
+  // Counting only her own session, or with the patient as the subject: nothing to flag.
+  for (const ok of ["I treated Mr Testcase for 1 session on 18/03/2026.", "Mr Testcase attended 2 sessions of physiotherapy between 18/03/2026 and 06/05/2026."]) {
+    const r = { ...withSection(testReport(SOLICITOR_RTA_TEMPLATE, bundle), "presenting_complaints", [{ ...p, text: ok }]), author: sarah };
+    assert.equal(runValidators({ report: r, bundle, template: SOLICITOR_RTA_TEMPLATE, computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }) }).filter((f) => f.code === "OTHER_CLINICIAN_VOICE").length, 0, ok);
+  }
+  // The review's one click.
+  const { patientAttendedInstead } = await import("../ui/components/review/review-model");
+  const fixed = patientAttendedInstead(report, flag!, "Sarah Reid");
+  const after = fixed.sections.find((s) => s.key === "presenting_complaints")!.paragraphs[0];
+  assert.equal(after.text, "Mr Testcase attended 2 sessions of physiotherapy between 18/03/2026 and 06/05/2026.");
+  assert.equal(after.origin, "edited");
+});

@@ -113,6 +113,7 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
  * - warnings: yes;
  * - FIGURE_NOT_IN_SOURCE (dates): yes – the signer confirms the date from their own knowledge;
  * - TERM_NOT_IN_SOURCE: yes – the signer confirms the wording is right;
+ * - DRAFT_FIT (a repeated numbered row blocks – fix round 2): yes – the signer confirms both rows are right;
  * - NOT_APPLICABLE_ANSWERED: on a person's answer, yes – the signer wants it printed although the box does not apply;
  *   on a drafted answer whose supporting text says its condition does not hold, no;
  * - OPINION_LANGUAGE and OTHER_CLINICIAN_VOICE: only on "edited" text (the clinician's own words); never on AI text;
@@ -124,6 +125,8 @@ export function canAcknowledge(flag: ReportFlag, report?: Pick<Report, "sections
   switch (flag.code) {
     case "FIGURE_NOT_IN_SOURCE":
     case "TERM_NOT_IN_SOURCE":
+    // A numbered row repeating an earlier one (fix round 2, B1-4): the clinician may keep both with a reason.
+    case "DRAFT_FIT":
       return true;
     case "NOT_APPLICABLE_ANSWERED":
       // A person's answer in a box that does not apply – not a drafted answer whose own text says it does not hold.

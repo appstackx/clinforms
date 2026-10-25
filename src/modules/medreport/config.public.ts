@@ -51,6 +51,12 @@ export const MAX_SECTIONS_PER_DRAFT = 2;
 export const MAX_FORM_FIELDS_PER_DRAFT = 4;
 
 /**
+ * Fix round 2 (B1-4): the numbered rows of one table on a clinic's own form ("Activity 1", "Activity 1 – frequency"…
+ * "Activity 2 – comments") are drafted in one call of up to this many short cells, so each row takes a different item.
+ */
+export const MAX_FORM_ROW_FIELDS_PER_DRAFT = 8;
+
+/**
  * Largest referrer form file (.docx or .pdf, decoded bytes) accepted by /forms/analyse,
  * /forms/fill-preview and /render. 2.5 MB of file is ~3.5 MB of base64, which leaves ~0.9 MB for the
  * report (with its bundle snapshot) and the form map under Vercel's 4.5 MB request limit. The client

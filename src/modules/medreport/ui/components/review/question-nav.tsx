@@ -12,7 +12,7 @@ import { cn } from "../../primitives";
 
 export function ProgressSummary({ counts, className }: { counts: StatusCounts; className?: string }) {
   const answerable = counts.total - counts.counts.blank - counts.counts.signoff;
-  const done = counts.counts.records + counts.counts.drafted + counts.counts.clinician;
+  const done = counts.counts.records + counts.counts.drafted + counts.counts.clinician + counts.counts.staff;
   const pct = answerable > 0 ? Math.round((done / answerable) * 100) : 100;
   return (
     <div className={cn("space-y-2", className)}>
