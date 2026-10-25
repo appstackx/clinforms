@@ -1616,8 +1616,15 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
   prints one there); PDF forms are unchanged. Hostile sizes (security review 25/10: removing 40,000 emptied lines one
   by one was quadratic, 7.5 s against 0.4 s, reachable through the public demo's `/forms/fill-preview`): a line with
   more than 20 instructions, or a form with more than 200 (`MAX_INSTRUCTIONS_PER_FORM`; Blue Heart's have at most 6),
-  is left as printed, read before anything changes; at most 500 rows are left off per form; the whole-line rules read
-  the line without its trailing spaces and dots (a plain loop, no backtracking). Tests:
+  is left as printed, read before anything changes; at most 500 rows are left off per form; a line or row is only
+  removed where its parent holds at most 2,000 children; the whole-line rules read the line without its trailing
+  spaces and dots (a plain loop, no backtracking). Inside a line (integration review 25/10: one run of 40,000 text
+  pieces beside "(delete as appropriate)" took 39 s through `/forms/fill-preview`, against 0.2 s on main): a run's
+  colour is read once, not once per text piece; a line of more than 2,000 runs or text pieces is left as printed; an
+  instruction's words are at most 10 spaces apart, so one instruction never spans thousands of runs. An emptied line
+  that keeps a table apart from the next table, or from the end of its cell or of the document, stays (Word would join
+  the tables or call the file damaged; this also covers main's option lists). Only the form's printed text counts as
+  a box's label, never an answer written above it. Tests:
   `core/template-instructions.test.ts`, `scripts/medreport/template-instructions.test.ts` (fixture
   `fixtures/rtf/repeat-rows-report.rtf`, "Fernhurst Medical Reporting (fictional)"; hostile files timed against the
   same file in neutral words).

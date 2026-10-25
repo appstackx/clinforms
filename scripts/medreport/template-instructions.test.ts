@@ -408,3 +408,59 @@ test("completed form: a repeat row still printing a merge code, or holding a box
   const ticks = Array.from(out.xml.matchAll(/[☐☒] Needed/g), (m) => m[0]);
   assert.deepEqual(ticks, ["☒ Needed", "☐ Needed"], "the box answered “No” keeps its row; only the unmapped third row goes");
 });
+
+test("hostile sizes: inside one line – thousands of text pieces, one instruction spread over thousands of runs, wide lines – about as fast as neutral text (integration review 25/10)", () => {
+  // Before: each text piece re-read its run's properties (40,000 pieces beside "(delete as appropriate)": 39 s through
+  // the public demo's /forms/fill-preview, against 0.2 s), an instruction's words could be any number of runs apart and
+  // were removed one by one (60,000 runs: 17 s), and 200 notes on lines of 40,000 runs took 25 s (neutral: 4.4 s).
+  const pieces = (word: string) => `<w:p><w:r>${"<w:t>x</w:t>".repeat(20_000)}</w:r>${run(` (${word} this note)`)}</w:p>`;
+  const spaced = (word: string) => `<w:p>${run(`(${word}`)}${run(" ").repeat(40_000)}${run("unused cells)")}</w:p>`;
+  const wide = (word: string) => `<w:p>${run("x").repeat(20_000)}${run(` (${word} this note)`).repeat(20)}</w:p>`.repeat(10);
+  const lone = (word: string) => `<w:p><w:r>${"<w:t>x</w:t>".repeat(20_000)}</w:r>${run(` ${word}`)}</w:p>`;
+  for (const [label, make, word, neutral, kept, times] of [
+    ["text pieces", pieces, "Delete", "Circle", "(Delete this note)", 1],
+    ["spread over runs", spaced, "Delete", "Circle", "unused cells)", 1],
+    ["wide lines", wide, "Delete", "Circle", "(Delete this note)", 200],
+    ["the word alone", lone, "delete", "dilute", " delete", 1],
+  ] as const) {
+    const plain = fillTimed(make(neutral));
+    const hostile = fillTimed(make(word));
+    assert.ok(aboutAsFast(hostile.ms, plain.ms), `${label}: ${hostile.ms} ms (neutral text: ${plain.ms} ms)`);
+    // A line of more than 2,000 runs or text pieces is left as printed.
+    assert.deepEqual(hostile.leftOff, [], label);
+    assert.equal(count(hostile.xml, kept), times, label);
+  }
+});
+
+test("completed form: a line left off never leaves two tables touching, or a cell or the document ending in a table (review 25/10)", () => {
+  const table = `<w:tbl><w:tr><w:tc><w:p>${run("Row")}</w:p></w:tc></w:tr></w:tbl>`;
+  const note = `<w:p>${red("Delete unused cells")}</w:p>`;
+  const shapes: Array<[label: string, body: string]> = [
+    ["between two tables", `${table}${note}${table}<w:p/>`],
+    ["after a nested table, ending its cell", `<w:tbl><w:tr><w:tc><w:p>${run("Label")}</w:p>${table}${note}</w:tc></w:tr></w:tbl><w:p/>`],
+    ["after the last table of the document", `<w:p>${run("Title")}</w:p>${table}${note}`],
+  ];
+  for (const [label, body] of shapes) {
+    const out = fillTimed(body);
+    assert.ok(!out.xml.includes("Delete unused cells"), `${label}: the instruction goes`);
+    assert.ok(!/<\/w:tbl><w:tbl>/.test(out.xml), `${label}: no tables touching`);
+    assert.ok(!/<\/w:tbl><\/w:tc>/.test(out.xml), `${label}: no cell ends in a table`);
+    assert.ok(!/<\/w:tbl><w:sectPr/.test(out.xml), `${label}: the document does not end in a table`);
+  }
+  // A line between a table and more text still goes.
+  const free = fillTimed(`${table}${note}<w:p>${run("Signed")}</w:p>`);
+  assert.ok(/<\/w:tbl><w:p><w:r><w:t xml:space="preserve">Signed/.test(free.xml));
+});
+
+test("completed form: an answer written above a coloured “Please give … in this box” never makes it read as an instruction (review 25/10)", () => {
+  // The cell's only printed line is the question itself, in navy, below a blank line the answer is written after.
+  const navy = (text: string) => `<w:r><w:rPr><w:color w:val="1F497D"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const question = "Please give details of any treatment to date in this box";
+  const body = `<w:tbl><w:tr><w:tc><w:p/><w:p>${navy(question)}</w:p></w:tc></w:tr></w:tbl><w:p/>`;
+  for (const anchor of [docx({ kind: "docx", target: "after_paragraph", blockId: "t0.r0.c0.p0" }), docx({ kind: "docx", target: "table_cell", blockId: "t0.r0.c0" })]) {
+    const out = fillTimed(body, [field("F-01", "Treatment", anchor, { answerType: "long_text" })], { "F-01": { text: "Six sessions (fictional)." } });
+    assert.equal(count(out.xml, question), 1, `${anchor.target}: the question stays`);
+    assert.ok(out.xml.includes("Six sessions (fictional)."));
+    assert.deepEqual(out.leftOff, [], anchor.target);
+  }
+});

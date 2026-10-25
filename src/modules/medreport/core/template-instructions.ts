@@ -25,9 +25,10 @@
  * the start of a line – the spaces after it. A label's ":" or a full stop ending the referrer's words stays.
  *
  * Hostile sizes (security review 25/10/2026): a line with more than MAX_INSTRUCTIONS_PER_LINE matches, or a form with
- * more than MAX_INSTRUCTIONS_PER_FORM, is not a template's notes: it is left as printed, so the fill's work stays
- * bounded. Browser-safe and pure; linear in the text (the whole-line rules read the line without its trailing spaces
- * and dots, cut off by a plain loop – never a backtracking `[.\s]*$`).
+ * more than MAX_INSTRUCTIONS_PER_FORM, is not a template's notes: it is left as printed. An instruction's words are at
+ * most 10 spaces apart, so one never spans thousands of runs; the fill's own limits on a line's runs and a parent's
+ * children are in forms/docx-fill.ts. Browser-safe and pure; linear in the text (the whole-line rules read the line
+ * without its trailing spaces and dots, cut off by a plain loop – never a backtracking `[.\s]*$`).
  */
 
 /** Real templates print one or two per line; a line with more is left alone (hostile sizes). */
@@ -65,16 +66,17 @@ export function instructionColour(colour: string | null | undefined): string {
   return /^(?:|auto|#?0{3}|#?0{6}|black|rgb\(0,0,0\)|windowtext)$/.test(c) ? "" : c;
 }
 
+/** Between the words of an instruction: a few spaces or a tab, never any number (one instruction spanning thousands of runs). */
 const WHAT_TO_DELETE = [
-  String.raw`unused\s+(?:cells?|rows?|lines?|boxes|box|spaces?|sections?|options?|columns?|fields?|items?)`,
-  String.raw`as\s+(?:necessary|appropriate|applicable|required)`,
-  String.raw`(?:the\s+)?(?:other|unwanted|inapplicable)\s+(?:choices?|options?|answers?|responses?|rows?|cells?|lines?|boxes|words?)`,
-  String.raw`(?:those|any|options?|choices?|rows?|cells?|lines?|boxes|items?|ones?)\s+(?:which|that)\s+(?:are\s+not|is\s+not|do\s+not|does\s+not|don['’]t|doesn['’]t|aren['’]t)\s+(?:required|apply|applicable|relevant|needed|used)`,
-  String.raw`(?:if|where|when)\s+not\s+(?:applicable|required|relevant|needed|used|appropriate)`,
-  String.raw`whichever\s+(?:is\s+not\s+applicable|is\s+inapplicable|does\s+not\s+apply|doesn['’]t\s+apply)`,
-  String.raw`(?:this|these)\s+(?:text|notes?|instructions?|guidance)(?:\s+before\s+(?:sending|submitting|returning|issuing)(?:\s+(?:the|this)\s+(?:form|report))?)?`,
+  String.raw`unused\s{1,10}(?:cells?|rows?|lines?|boxes|box|spaces?|sections?|options?|columns?|fields?|items?)`,
+  String.raw`as\s{1,10}(?:necessary|appropriate|applicable|required)`,
+  String.raw`(?:the\s{1,10})?(?:other|unwanted|inapplicable)\s{1,10}(?:choices?|options?|answers?|responses?|rows?|cells?|lines?|boxes|words?)`,
+  String.raw`(?:those|any|options?|choices?|rows?|cells?|lines?|boxes|items?|ones?)\s{1,10}(?:which|that)\s{1,10}(?:are\s{1,10}not|is\s{1,10}not|do\s{1,10}not|does\s{1,10}not|don['’]t|doesn['’]t|aren['’]t)\s{1,10}(?:required|apply|applicable|relevant|needed|used)`,
+  String.raw`(?:if|where|when)\s{1,10}not\s{1,10}(?:applicable|required|relevant|needed|used|appropriate)`,
+  String.raw`whichever\s{1,10}(?:is\s{1,10}not\s{1,10}applicable|is\s{1,10}inapplicable|does\s{1,10}not\s{1,10}apply|doesn['’]t\s{1,10}apply)`,
+  String.raw`(?:this|these)\s{1,10}(?:text|notes?|instructions?|guidance)(?:\s{1,10}before\s{1,10}(?:sending|submitting|returning|issuing)(?:\s{1,10}(?:the|this)\s{1,10}(?:form|report))?)?`,
 ];
-const DELETE_RE = new RegExp(String.raw`\b(?:please\s+)?(?:delete|remove)\s+(?:${WHAT_TO_DELETE.join("|")})\b`, "gi");
+const DELETE_RE = new RegExp(String.raw`\b(?:please\s{1,10})?(?:delete|remove)\s{1,10}(?:${WHAT_TO_DELETE.join("|")})\b`, "gi");
 const UNUSED_ROWS_RE = /\bunused\s+(?:cells?|rows?|lines?)\b/i;
 const THIS_NOTE_RE = /\b(?:this|these)\s+(?:text|notes?|instructions?|guidance)\b/i;
 // Whole-line rules, matched on the line without the spaces around it and its trailing dots (lineCore).

@@ -162,3 +162,11 @@ test("instructions: linear on long lines and many colour changes; a line with mo
   assert.equal(findTemplateInstructions(plain("Yes/No (delete as appropriate) ".repeat(MAX_INSTRUCTIONS_PER_LINE))).length, MAX_INSTRUCTIONS_PER_LINE);
   assert.deepEqual(findTemplateInstructions(plain("Yes/No (delete as appropriate) ".repeat(MAX_INSTRUCTIONS_PER_LINE + 1))), []);
 });
+
+test("instructions: a few spaces or a tab between an instruction's words, never any number (integration review 25/10)", () => {
+  assert.deepEqual(findTemplateInstructions(red("Delete  unused\tcells")).map((f) => f.text), ["Delete unused cells"]);
+  assert.deepEqual(findTemplateInstructions(red(`Delete${" ".repeat(10)}unused cells`)).map((f) => f.text), ["Delete unused cells"]);
+  // One instruction spread over thousands of one-space runs would be removed run by run: not an instruction.
+  assert.deepEqual(findTemplateInstructions(red(`Delete${" ".repeat(11)}unused cells`)), []);
+  assert.deepEqual(findTemplateInstructions(red(`(Delete${" ".repeat(60_000)}unused cells)`)), []);
+});

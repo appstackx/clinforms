@@ -1099,11 +1099,30 @@ function findWord(text: string, needle: string, from = 0): number {
   return -1;
 }
 
+const BLOCKS = ["p", "tbl", "sdt", "sectPr"];
+
+/** The nearest block (paragraph, table, control or section end) before / after `el` among its siblings. */
+function siblingBlock(el: XmlElement, dir: "previousSibling" | "nextSibling"): XmlElement | null {
+  for (let n = el[dir]; n; n = n[dir]) if (isElement(n) && BLOCKS.some((b) => isW(n, b))) return n;
+  return null;
+}
+
+/**
+ * A line just after a table that a table, or the end of its cell or of the body, follows: without it Word joins the
+ * two tables, or finds a cell (or the document) ending in a table and may call the file damaged (review 25/10/2026).
+ */
+function keepsTableApart(p: XmlElement): boolean {
+  if (!isW(siblingBlock(p, "previousSibling"), "tbl")) return false;
+  const next = siblingBlock(p, "nextSibling");
+  return !next || isW(next, "tbl") || isW(next, "sectPr");
+}
+
 function removeIfBlank(p: XmlElement): void {
   if (segmentsText(paragraphSegments(p)).trim() !== "") return;
   const cell = ancestorW(p, "tc");
   if (cell && wChildren(cell, "p").length <= 1) return; // a cell keeps its last paragraph
   if (firstW(firstW(p, "pPr"), "sectPr")) return;
+  if (keepsTableApart(p)) return;
   remove(p);
 }
 
@@ -1226,27 +1245,46 @@ function runColour(run: XmlElement | null): string {
   return instructionColour(wAttr(firstW(firstW(run, "rPr"), "color"), "val"));
 }
 
+/** The form's own printed text in a paragraph: what this fill wrote is left out (an answer is never a box's label). */
+function printedText(p: XmlElement): string {
+  return paragraphSegments(p)
+    .filter((seg) => !isWritten(seg.run))
+    .map((seg) => seg.text)
+    .join("");
+}
+
 /** A paragraph of a table cell with a line of printed text above it in the cell (the box's own label; 10 lines up at most). */
 function belowLabelInCell(p: XmlElement): boolean {
   if (!isW(p.parentNode, "tc")) return false;
   let lines = 0;
   for (let n = p.previousSibling; n && lines < 10; n = n.previousSibling) {
     if (!isW(n, "p")) continue;
-    if (paragraphText(n).trim()) return true;
+    if (printedText(n).trim()) return true;
     lines += 1;
   }
   return false;
 }
 
-/** The form's own instructions in a paragraph (core/template-instructions.ts) – never one touching a written run. */
+/**
+ * The form's own instructions in a paragraph (core/template-instructions.ts) – never one touching a written run. A line
+ * of more than MAX_SIBLINGS_TO_LEAVE_OFF runs or text pieces is left as printed: leaving text off splits and removes
+ * them one by one, and xmldom re-indexes the line each time (hostile sizes, integration review 25/10/2026).
+ */
 function instructionsIn(p: XmlElement): TemplateInstruction[] {
   if (!mayHoldInstruction(p.textContent ?? "")) return [];
+  if (descendantsW(p, "r").length > MAX_SIBLINGS_TO_LEAVE_OFF || descendantsW(p, "t").length > MAX_SIBLINGS_TO_LEAVE_OFF) return [];
   let text = "";
   const colours: Array<{ at: number; colour: string }> = [];
   const written: Array<[number, number]> = [];
+  let colourOf: XmlElement | null | undefined;
+  let colour = "";
   for (const seg of paragraphSegments(p)) {
     if (seg.kind === "text" && seg.text) {
-      const colour = runColour(seg.run);
+      // Once per run, not per text piece: finding a run's properties walks its children.
+      if (seg.run !== colourOf) {
+        colourOf = seg.run;
+        colour = runColour(seg.run);
+      }
       if (colours[colours.length - 1]?.colour !== colour) colours.push({ at: text.length, colour });
     }
     if (isWritten(seg.run)) written.push([text.length, text.length + seg.text.length]);
