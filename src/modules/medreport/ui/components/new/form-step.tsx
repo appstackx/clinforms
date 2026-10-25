@@ -19,7 +19,7 @@ import { useStudioPaths } from "../../routes";
 import { Skeleton, cn } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
 import { breakdownText, FormKindBadge, Notice, questionBreakdown } from "../shared/ui-bits";
-import { getRememberedFormId, matchReasonLabel, matchReferrerForm, type FormMatch } from "./referrer-match";
+import { formChoiceNote, getRememberedFormId, matchReasonLabel, matchReferrerForm, type FormMatch, type ReportKind } from "./referrer-match";
 
 export type TargetChoice = { kind: "form"; formId: string } | { kind: "template"; templateId: string } | null;
 
@@ -33,15 +33,17 @@ export interface FormStepProps {
   onTemplates(templates: ReportTemplate[]): void;
   /** Preferred form from the URL (?form=…). */
   preferredFormId?: string;
+  /** Fix round 1 (B0-20): what the notes cover (an initial assessment, or a discharge) – the form remembered for that. */
+  kind?: ReportKind | null;
 }
 
-export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId }: FormStepProps) {
+export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId, kind = null }: FormStepProps) {
   const paths = useStudioPaths();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const proposed = useMemo(() => forms.filter((f) => f.status !== "confirmed"), [forms]);
   const match: FormMatch | null = useMemo(
-    () => (formsReady ? matchReferrerForm(party, confirmed, getRememberedFormId(party.name)) : null),
-    [formsReady, party, confirmed],
+    () => (formsReady ? matchReferrerForm(party, confirmed, getRememberedFormId(party.name, kind), kind) : null),
+    [formsReady, party, confirmed, kind],
   );
   const [showBuiltIn, setShowBuiltIn] = useState(choice?.kind === "template");
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
@@ -101,11 +103,7 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {match && (choice?.kind !== "form" || choice.formId === match.form.id)
-            ? `“${match.form.title}” is selected: ${matchReasonLabel(match.reason).toLowerCase()}.`
-            : match && choice?.kind === "form"
-              ? `“${confirmed.find((f) => f.id === choice.formId)?.title ?? "Another form"}” is selected – not ${party.name}'s own form (theirs is “${match.form.title}”).`
-              : "No form in the library is linked to this referrer yet. Choose the form they sent – it will be remembered for them."}
+          {formChoiceNote({ party, match, selected: choice?.kind === "form" ? (confirmed.find((f) => f.id === choice.formId) ?? null) : null, kind })}
         </p>
       </div>
 
