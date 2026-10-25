@@ -12,6 +12,7 @@ import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
 import { NOTICES } from "../../../config.public";
+import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 import type {
   ActivityEntry,
@@ -763,6 +764,14 @@ export function answerText(section: ReportSection): string {
 /** Filing entries in the activity log (Save to clinic record). */
 export function filedEntries(report: Pick<Report, "activity">): ActivityEntry[] {
   return report.activity.filter((a) => a.action === "filed");
+}
+
+/**
+ * The review header's line for a staff member (fix round 1, B0-26): what is still open first ("5 items to resolve – then a
+ * clinician with signing details approves."); "Ready for a signing clinician" only once nothing blocks approval.
+ */
+export function staffApprovalNote(openItems: number): string {
+  return openItems > 0 ? `${openItems} item${openItems === 1 ? "" : "s"} to resolve – ${TENANT_COPY.review.staffThenApproves}` : TENANT_COPY.review.staffCannotApprove;
 }
 
 /** Plain-English list of what still blocks approval (for the tooltip and the dialog). */

@@ -356,6 +356,24 @@ export function saveFormDurable(form: FormDefinition): Promise<boolean> {
   return srv().formSettled(form.id);
 }
 
+/**
+ * Fix round 1 (B0-9): delete a form map and wait for the clinic's storage to answer (true once deleted). A refusal
+ * (a confirmed map, for a role that may not change it) puts the form back; formWriteError() says why.
+ */
+export function deleteFormDurable(id: string): Promise<boolean> {
+  if (!server()) {
+    browser.deleteForm(id);
+    return Promise.resolve(true);
+  }
+  srv().deleteForm(id);
+  return srv().formSettled(id);
+}
+
+/** Why the latest save or delete of a form map was refused, in plain words (server mode), or null. */
+export function formWriteError(id: string): string | null {
+  return server() ? srv().formError(id) : null;
+}
+
 const IDLE: StoreSyncState = { pending: 0, failed: false };
 
 /** The save status now (non-hook; e.g. a beforeunload guard). Browser mode: always idle. */

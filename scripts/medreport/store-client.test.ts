@@ -457,3 +457,32 @@ test("fix wave 2: the Studio's host scope reaches the server store through ui/st
   off();
   mode.setStoreScope(null);
 });
+
+test("fix round 1 (B0-9): staff editing or removing a confirmed form – the server's 403 is reported, the clinic's copy comes back, nothing looks saved", async () => {
+  const store = createMemoryTenantStore();
+  const deps = storeDeps(store, { a: member(A), pat: member(A, { userId: "user-pat", authSessionId: "sess-pat", role: "staff" }) });
+  const seed = tab(deps);
+  const confirmed = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Sarah Reid", "2026-10-01T09:00:00.000Z");
+  seed.client.saveForm(confirmed);
+  assert.equal(await seed.client.flush(), true);
+
+  const pat = tab(deps, "pat");
+  await pat.client.hydrate();
+  // "Save changes" as Pat: the edited copy is a proposal of a confirmed map – refused (403 ROLE_NOT_ALLOWED).
+  const edited: FormDefinition = { ...confirmed, status: "proposed", title: `${confirmed.title} (edited)`, updatedAt: "2026-10-25T15:00:00.000Z" };
+  delete edited.confirmed;
+  assert.equal(pat.client.saveForm(edited), true);
+  assert.equal(await pat.client.formSettled(confirmed.id), false, "the durable save says it was not saved");
+  assert.ok(pat.log.some((l) => l.method === "PUT" && l.status === 403));
+  assert.match(pat.client.formError(confirmed.id) ?? "", /Only a clinician, an administrator or the owner can change or delete a confirmed form mapping/);
+  assert.equal(pat.client.getForm(confirmed.id)?.status, "confirmed", "the clinic's confirmed copy is back in this tab");
+  assert.equal(pat.client.getForm(confirmed.id)?.title, confirmed.title);
+  // Remove as Pat: refused, and the form is back in the library.
+  pat.client.deleteForm(confirmed.id);
+  assert.equal(await pat.client.formSettled(confirmed.id), false);
+  assert.ok(pat.log.some((l) => l.method === "DELETE" && l.status === 403));
+  assert.equal(pat.client.getForm(confirmed.id)?.status, "confirmed", "the card comes back");
+  assert.equal((await store.getForm(A, confirmed.id))?.payload && ((await store.getForm(A, confirmed.id))?.payload as FormDefinition).status, "confirmed");
+  // A refusal for the role is final: it is not kept waiting for a new sign-in.
+  assert.equal(pat.client.syncState().pending, 0);
+});

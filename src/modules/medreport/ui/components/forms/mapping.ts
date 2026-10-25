@@ -23,6 +23,7 @@ import type {
   RegistrationPath,
   SignoffPart,
 } from "../../../core/types";
+import type { StudioMember } from "../../host-hooks";
 import type { PreviewPick } from "../shared/original-form-preview";
 
 export const DOCX_TARGET_LABELS: Record<DocxAnchorTarget, string> = {
@@ -366,4 +367,13 @@ export function withOptionLabel(anchor: Extract<FormAnchor, { kind: "pdf_field" 
   const { optionLabels: _old, ...rest } = anchor;
   void _old;
   return labels.some((l) => l.trim()) ? { ...rest, optionLabels: labels } : rest;
+}
+
+/**
+ * Fix round 1 (B0-9, B0-25): whether this member may confirm a form mapping, or change or remove a confirmed one – an
+ * owner, administrator or clinician (the server's CONFIRM_ROLES; staff prepare reports and check proposed maps). The
+ * public demo (no member) acts as a clinician. The server decides in the end; this only stops offering what it refuses.
+ */
+export function mayConfirmForms(member: Pick<StudioMember, "role"> | undefined): boolean {
+  return member?.role !== "staff";
 }

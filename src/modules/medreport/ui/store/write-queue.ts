@@ -168,6 +168,11 @@ export class WriteQueue<P> {
     this.changed();
   }
 
+  /** The problem the latest write of `key` met (null when it was saved, or nothing was sent). */
+  errorOf(key: string): string | null {
+    return this.slots.get(key)?.error ?? null;
+  }
+
   /** Forget a stale problem for `key` (e.g. after a reload that the user has seen). */
   clearError(key: string): void {
     const slot = this.slots.get(key);

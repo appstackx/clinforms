@@ -33,7 +33,7 @@ import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
-import { getSession, saveForm, saveFormDurable, useForm } from "../../store";
+import { formWriteError, getSession, saveFormDurable, useForm } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
 import { formEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
@@ -51,7 +51,7 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, firstQuestionToCheck, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { anchorFromPick, firstQuestionToCheck, mayConfirmForms, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -131,6 +131,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // Fix round 1 (B0-9): the server's refusal of a save, shown instead of "Changes saved".
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Fix round 1 (B0-9, B0-25): staff check proposed maps; an owner, administrator or clinician confirms and changes them.
+  const mayConfirm = mayConfirmForms(hooks.member);
   // 10/2026: the form author's instructions for whoever completes it, as found in the preview (left off the completed form).
   const [instructions, setInstructions] = useState<PreviewInstructions>({ found: [], rows: false });
   // A portal question set has no file: its questions are shown instead, and nothing is picked in a file.
@@ -194,9 +199,17 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     // A question set's placeholder file is the hash of its questions (core/question-set.ts): keep it current.
     const next: FormDefinition = await withQuestionSetFile({ ...draft, status: "proposed", updatedAt: nowIso() });
     delete next.confirmed;
-    if (saveForm(next)) {
+    // Fix round 1 (B0-9): "Changes saved" only once the clinic's storage holds them – never on a refusal.
+    setSaving(true);
+    setSaveError(null);
+    setSavedNotice(null);
+    const ok = await saveFormDurable(next);
+    setSaving(false);
+    if (ok) {
       setSavedNotice("Changes saved. Confirm the mapping before using this form for patients.");
       setDraft(next);
+    } else {
+      setSaveError(formWriteError(next.id) ?? "The changes could not be saved. Please try again.");
     }
   };
   /**
@@ -261,10 +274,12 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           </Button>
           {saved.status === "confirmed" && !editing ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
-                Edit mapping
-              </Button>
+              {mayConfirm ? (
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
+                  Edit mapping
+                </Button>
+              ) : null}
               <Button asChild size="sm">
                 <Link href={paths.newReportWithForm(saved.id)}>
                   <FilePlus2 className="mr-1.5 h-4 w-4" aria-hidden />
@@ -276,11 +291,16 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </>
       }
     >
-      {savedNotice ? (
+      {saveError ? (
+        <Notice tone="error" title="Not saved">
+          {saveError}
+        </Notice>
+      ) : savedNotice ? (
         <Notice tone="success" title={savedNotice} />
       ) : saved.status === "confirmed" && saved.confirmed && !editing ? (
         <Notice tone="success" icon={ShieldCheck} title={`Confirmed by ${saved.confirmed.by} on ${formatUkDate(saved.confirmed.at.slice(0, 10))}`}>
-          This mapping is used every time this form is completed for a patient. Editing it sends it back for confirmation.
+          This mapping is used every time this form is completed for a patient.{" "}
+          {mayConfirm ? "Editing it sends it back for confirmation." : TENANT_COPY.forms.confirmedLocked}
         </Notice>
       ) : (
         <Notice tone="warning" title="Proposed mapping – check it once, then confirm">
@@ -499,7 +519,10 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                   ? "Unsaved changes"
                   : saved.status === "confirmed"
                     ? "No changes"
-                    : "Ready to confirm"}
+                    : mayConfirm
+                      ? "Ready to confirm"
+                      : "Ready for an owner, administrator or clinician to confirm"}
+              {!mayConfirm ? <span className="block text-[11px] text-slate-500">{TENANT_COPY.forms.confirmRole}</span> : null}
             </p>
             <div className="flex flex-wrap gap-2">
               {saved.status === "confirmed" ? (
@@ -515,11 +538,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                   Cancel
                 </Button>
               ) : null}
-              <Button variant="outline" size="sm" disabled={!dirty} onClick={() => void saveAsProposed()}>
-                <Save className="mr-1.5 h-4 w-4" aria-hidden />
-                Save changes
+              <Button variant="outline" size="sm" disabled={!dirty || saving} onClick={() => void saveAsProposed()}>
+                {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <Save className="mr-1.5 h-4 w-4" aria-hidden />}
+                {saving ? "Saving…" : "Save changes"}
               </Button>
-              <Button size="sm" onClick={() => setConfirmOpen(true)}>
+              <Button size="sm" disabled={!mayConfirm} title={mayConfirm ? undefined : TENANT_COPY.forms.confirmRole} onClick={() => setConfirmOpen(true)}>
                 <ShieldCheck className="mr-1.5 h-4 w-4" aria-hidden />
                 Confirm mapping
               </Button>

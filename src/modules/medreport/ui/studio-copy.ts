@@ -70,6 +70,8 @@ export const TENANT_COPY = {
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
     staffCannotApprove: "Ready for a signing clinician: staff prepare forms, and a clinician with signing details approves them.",
+    /** Fix round 1 (B0-26): a staff member's draft with items still open ("5 items to resolve – then …"). */
+    staffThenApproves: "then a clinician with signing details approves.",
     noSigningDetails:
       "You cannot approve yet: your clinic profile has no HCPC number or permission to sign. Ask an administrator (Settings → Members), or a signing clinician to approve.",
     otherVoicePrefix: "Drafted in another clinician's voice:",
@@ -94,6 +96,9 @@ export const TENANT_COPY = {
     analysisRecorded: "Stored reading of this form",
     analysisPrewritten: "Pre-written map",
     analysisRules: "Found from the layout – check every question",
+    /** Fix round 1 (B0-9, B0-25): who confirms a mapping and changes a confirmed one (auth/actor.ts CONFIRM_ROLES). */
+    confirmedLocked: "Only an owner, administrator or clinician can change or remove a confirmed form.",
+    confirmRole: "An owner, administrator or clinician confirms forms.",
   },
   /** Fix wave 2: where answers come from, in a clinic's Studio (its notes upload – never a practice-system link). */
   sources: {

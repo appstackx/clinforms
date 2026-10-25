@@ -73,6 +73,7 @@ import {
   generationSummary,
   groupBySection,
   questionStatus,
+  staffApprovalNote,
   wordFormPdfNote,
   type QuestionStatus,
 } from "../../components/review/review-model";
@@ -328,7 +329,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   // Fix wave 2: who may approve in a clinic's Studio, and drafted answers that speak as another clinician.
   const tenantSignProblem = useMemo((): string | null => {
     if (!tenant || signed || !member) return null;
-    if (member.role === "staff") return TENANT_COPY.review.staffCannotApprove;
+    // Fix round 1 (B0-26): "Ready for a signing clinician" only once nothing blocks approval; else what is left first.
+    if (member.role === "staff") return staffApprovalNote(items.count);
     if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
     const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
     if (!voice) {
@@ -338,7 +340,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     }
     const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
     return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
-  }, [tenant, signed, member, report, questions]);
+  }, [tenant, signed, member, report, questions, items.count]);
   const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
 
   const startAmendment = useCallback(async () => {

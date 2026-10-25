@@ -107,3 +107,10 @@ test("places that are clinic-system merge codes are described in plain words; th
   assert.equal(plainAnchorDescription({ anchor: at("____"), label: "Name" }), "On the blank line for “Name”", "unchanged for ordinary blanks");
   assert.equal(describeAnchor(at("<<P_FIRSTNAM>>")), "Replaces “<<P_FIRSTNAM>>” – Paragraph 5", "the code as printed, under “Edit the location by hand”");
 });
+
+test("fix round 1 (B0-9, B0-25): staff never get Confirm, Edit or Remove on a confirmed mapping; other roles and the demo do", async () => {
+  const { mayConfirmForms } = await import("./mapping");
+  assert.equal(mayConfirmForms({ role: "staff" }), false);
+  for (const role of ["owner", "admin", "clinician"] as const) assert.equal(mayConfirmForms({ role }), true, role);
+  assert.equal(mayConfirmForms(undefined), true, "the public demo acts as a clinician");
+});

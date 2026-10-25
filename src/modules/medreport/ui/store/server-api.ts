@@ -82,9 +82,13 @@ const MESSAGES = {
   rejected: "The change could not be saved.",
 } as const;
 
+/** Fix round 1 (B0-9): refusals for the member's role – signing in again changes nothing, so they are final. */
+export const ROLE_REFUSED_CODES: readonly string[] = ["ROLE_NOT_ALLOWED"];
+
 export function classifyStatus(status: number, code?: unknown): FailureKind {
   // A change made under another sign-in (another clinic or member) is refused for good, never kept for sign-in.
   if (status === 403 && typeof code === "string" && SIGN_IN_CHANGED_CODES.includes(code)) return "rejected";
+  if (status === 403 && typeof code === "string" && ROLE_REFUSED_CODES.includes(code)) return "rejected";
   if (status === 401 || status === 403) return "blocked";
   if (status === 404) return "not_found";
   if (status === 409) return "conflict";

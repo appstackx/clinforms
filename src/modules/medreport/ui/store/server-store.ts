@@ -301,6 +301,10 @@ export function createServerStore(options: ServerStoreOptions = {}) {
         if (res.kind === "rejected" && !formRevs.has(id) && queue.pendingPayload(formKey(id)) === null && forms.get(id) === op.form) {
           forms.delete(id);
           notify();
+        } else if (res.kind === "rejected" && formRevs.has(id) && queue.pendingPayload(formKey(id)) === null && forms.get(id) === op.form) {
+          // Fix round 1 (B0-9): a refused change to a stored map (a staff member editing a confirmed one) is not kept
+          // here as if saved – the clinic's copy comes back.
+          await restoreForm(id);
         }
         return { kind: res.kind, message: res.message };
       }
@@ -312,6 +316,8 @@ export function createServerStore(options: ServerStoreOptions = {}) {
           broadcast("form", op.id, null);
           return { kind: "ok" };
         }
+        // Fix round 1 (B0-9): refused (a confirmed map, for a staff member): the form is put back in the library.
+        if (res.kind === "rejected" || res.kind === "blocked") await restoreForm(op.id);
         return { kind: res.kind === "conflict" || res.kind === "not_found" ? "gone" : res.kind, message: res.message };
       }
       case "put-settings": {
@@ -330,6 +336,16 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     reports.delete(id);
     reportRevs.delete(id);
     reportSummaries.delete(id);
+  }
+
+  /** The clinic's stored copy of a form map, back in this tab (after the server refused a change to it). */
+  async function restoreForm(id: string): Promise<void> {
+    const current = await api.getForm(id).catch(() => null);
+    if (!current) return;
+    forms.set(id, current.form);
+    formRevs.set(id, current.rev);
+    formSummaries.set(id, formSummaryOf(current.form, current.rev));
+    notify();
   }
 
   function dropForm(id: string): void {
@@ -607,6 +623,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     /* Durable writes */
     reportSettled: (id: string) => queue.settled(reportKey(id)),
     formSettled: (id: string) => queue.settled(formKey(id)),
+    formError: (id: string) => queue.errorOf(formKey(id)),
     flush: (opts: { keepalive?: boolean } = {}) => queue.flush(opts),
     retryFailed: () => queue.retryFailed(),
 
