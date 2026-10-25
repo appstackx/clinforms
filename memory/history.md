@@ -158,6 +158,13 @@ Times UTC from commits, file times, the production audit log and Vercel. Workflo
 | ~15:00 | main d433d49 + 93f643a pushed after full chain (728/277/110/81/145) → deployment clinforms-j5mootjoh Ready; health/smoke ok; reset route 404 |
 | ~15:12 | Clinic blue-heart created (owner invite printed once, private file), trial + limits set, 17 forms loaded (9 provider runs, dry run then confirm) |
 
+### Sun 2026-10-25 (desktop – help video, usage/packages live)
+| Time (UTC) | Event |
+|---|---|
+| 24/10 ~16:10 – 25/10 ~11:50 | Help video for Dell (wf_e8d5365e-f51): end-to-end test run on a local mirror of the live trial clinic (owner sign-up + TOTP, physio invite, confirm 10Bridge IA, import sample notes, live drafting, approve, Word; portal questions; team invite) → 5:02 video, 9 chapters, voice Beth (`marketing/clinforms/blue-heart-help-video-v1/`, private only). Found: F-37 opinion flag false positive (high), "Delete unused cells" left in Word output (medium), 24–28 blocking items, stacked Case Reference warnings, raw merge codes, Sarah twice, Draft tags after approval, dead PDF button, Saved. out of sight, invite expiry across the clocks change |
+| ~12:30 | Khuram: fix every issue before the email to Dell goes out → workflow bh-trial-fixes (wf_f6b079c8-f05): 6 fix branches → release/bh-trial-fixes, all 17 forms verified live, review, final |
+| ~13:50–14:45 | Packages + usage + demo clinics deployed (D71): preview migrations + browser smoke, production migrations + gates, main `2030885` (chain 751/338/115/83/189), deployment a5u2hvzvt Ready, packages set, test clinic appstackx-test + 17 forms |
+
 ## 2. Workflow runs (cloud; journals not preserved)
 | Run | Window | Purpose | Outcome |
 |---|---|---|---|
