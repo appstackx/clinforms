@@ -530,6 +530,27 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     assert.match(fixed.activity[fixed.activity.length - 1].detail, /^F-03: named Tom Ellis, who wrote the cited note, instead of “I” or “my”/);
     assert.equal(validateReport(fixed, template, { form }).flags.some((f) => f.code === "OTHER_CLINICIAN_VOICE"), false);
   });
+
+  it("offers no one-click rewrite when the paragraph names the clinician already, and says to rewrite it", async () => {
+    const { nameClinicianFix } = await import("./review-model");
+    const { report: base, form } = drafted();
+    const text = "On 05/08/2026 Tom Ellis, physiotherapist, covered my leave and recorded mobilisations and soft tissue release.";
+    const report: Report = {
+      ...base,
+      author: { name: "Sarah Reid", hcpc: "PH-DEMO-01" },
+      sections: base.sections.map((s) => (s.key === "F-03" ? { ...s, paragraphs: [{ ...s.paragraphs[0], text, sourceIds: ["N-002"] }] } : s)),
+    };
+    const template = formToTemplate(form);
+    const checked = { ...report, flags: validateReport(report, template, { form }).flags };
+    const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+    assert.ok(flag, "still checked: the cited note is Tom Ellis's");
+    assert.equal(flag.severity, "blocking");
+    assert.equal(nameClinicianFix(checked, flag), null, "“covered Tom Ellis's leave” would be false");
+    assert.doesNotMatch(flag.message, /Name Tom Ellis instead/);
+    assert.match(flag.message, /names Tom Ellis/);
+    // Unchanged by the bulk action.
+    assert.equal(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text, text);
+  });
 });
 
 describe("fix round 1 (B0-26): a staff member's draft says what is left", () => {

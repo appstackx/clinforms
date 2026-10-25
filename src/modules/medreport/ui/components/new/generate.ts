@@ -30,6 +30,7 @@ import type {
 } from "../../../core/types";
 import type { ApiClient } from "../../api-client";
 import { WORDING } from "../../wording";
+import { settleConditionalGaps } from "../review/review-model";
 import { runPool } from "../shared/pool";
 import { errorMessage } from "../shared/format";
 
@@ -292,6 +293,13 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
     });
     if (failedGroups > 0) {
       emit();
+      input.onReport?.(report);
+    }
+    // Fix round 1 (B0-7): a conditional question the drafted answers rule out ("If not back at work…" after "Yes") has
+    // its gaps settled as not applicable (audited) – as the review does after each answer – so it does not block approval.
+    const settled = settleConditionalGaps(report, "System", now());
+    if (settled !== report) {
+      report = settled;
       input.onReport?.(report);
     }
 

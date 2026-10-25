@@ -504,7 +504,7 @@ export function otherClinicianVoice(
  * ----------------------------------------------------------------------------------------------*/
 
 /** Whether `text` names `name` (case, spaces and a trailing possessive ignored). */
-function namesPerson(text: string, name: string): boolean {
+export function namesPerson(text: string, name: string): boolean {
   const n = name.trim();
   return n !== "" && new RegExp(`\\b${escapeRe(n).replace(/ /g, "\\s+")}\\b`, "i").test(text);
 }
@@ -549,11 +549,12 @@ function outsideQuotes(text: string, fn: (s: string) => string): string {
  * "Name Tom Ellis instead": the inverse of rewriteInFirstPerson() for a paragraph that reports one other clinician's
  * notes in the first person – "told me" → "told Tom Ellis", "My assessment" → "Tom Ellis's assessment", "in my
  * opinion" → "in Tom Ellis's opinion", "I also advised" → "Tom Ellis also advised". Quotations, dates and figures are
- * untouched. Returns null when anything first-person is left (the clinician rewrites it instead).
+ * untouched. Returns null when anything first-person is left, or when the text names the clinician already – then
+ * the "I" or "my" may be the signer's own ("Tom Ellis covered my leave") – and the clinician rewrites it instead.
  */
 export function nameClinicianInstead(text: string, clinicianName: string): string | null {
   const name = clinicianName.trim();
-  if (!name || /\bI['\u2019](?:m|ve|d|ll)\b/.test(text)) return null;
+  if (!name || /\bI['\u2019](?:m|ve|d|ll)\b/.test(text) || namesPerson(text, name)) return null;
   const possessive = `${name}'s`;
   const out = outsideQuotes(text, (s) =>
     s
