@@ -536,3 +536,26 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
     assert.ok(ticked.activity.some((a) => a.action === "answer_set" && /set to Moderate/.test(a.detail)));
   });
 });
+
+describe("fix round 1 (B0-15): appointment times are record values", () => {
+  it("the first attended appointment's time, and the Nth attended appointment's date and time; a session the record does not have is left empty", async () => {
+    const { resolveRegistrationValue } = await import("../../../core/forms");
+    const { ANALYSIS_REGISTRATION_PATHS } = await import("../../../ai/form-analysis-schema");
+    const bundle = testBundle(); // attended 18/03/2026 09:00 (N-001) and 06/05/2026 09:00 (N-002); 01/04/2026 not attended
+    const ctx = { bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), reportDate: "2026-10-06" };
+    assert.deepEqual(resolveRegistrationValue("episode.firstSeenTime", ctx), { text: "09:00", value: "09:00", sourceIds: ["N-001"] });
+    assert.equal(resolveRegistrationValue("episode.attendedDate", ctx, "date", { index: 2, of: 8 })?.value, "2026-05-06", "the 2nd ATTENDED one, not the missed one");
+    assert.equal(resolveRegistrationValue("episode.attendedTime", ctx, "short_text", { index: 2, of: 8 })?.text, "09:00");
+    assert.equal(resolveRegistrationValue("episode.attendedTime", ctx, "short_text", { index: 7, of: 8 })?.blank, true, "session 7 of a 2-session episode prints nothing");
+    // A Medcare-like form: session 7's time is answered by design (nothing to type), session 2's from the record.
+    const base = testForm();
+    const time = (id: string, n: number): FormField => field(id, { label: `Session ${n} – time`, answerType: "short_text", fillSource: { kind: "registration", path: "episode.attendedTime", part: { index: n, of: 8 } }, required: false });
+    const form: FormDefinition = { ...base, fields: [...base.fields, time("F-13", 2), time("F-14", 7)] };
+    const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: ctx.computedFacts, now: new Date(AT), id: "rpt_session_times" });
+    assert.equal(report.sections.find((s) => s.key === "F-13")?.paragraphs[0]?.text, "09:00");
+    assert.equal(report.sections.find((s) => s.key === "F-14")?.blankFromRecords, true);
+    assert.equal(report.gaps.some((g) => g.sectionKey === "F-13" || g.sectionKey === "F-14"), false, "staff no longer retype times the notes hold");
+    // The live form reading is offered exactly the paths it was before.
+    assert.equal((ANALYSIS_REGISTRATION_PATHS as readonly string[]).includes("episode.attendedTime"), false);
+  });
+});
