@@ -348,6 +348,18 @@ test("demo answers for a form are matched by answer space, never by field ID alo
 
 /* Fix round 1 (B0-1): the first person is the signer's own notes only. */
 
+test("fix round 1 (B0-23): gap wording names whose note it is, never “your note” or “my note”", () => {
+  const res = assemble(
+    {
+      sections: [{ sectionKey: "F-05", answer: "", paragraphs: [] }],
+      gaps: [{ sectionKey: "F-05", issue: "My note of 06/05/2026 records no prognosis.", suggestedQuestion: "Your discharge note of 06/05/2026 says the pain eased – what is your prognosis?", relatedNoteIds: ["N-002"] }],
+    },
+    ["F-05"],
+  );
+  assert.equal(res.gaps[0].issue, "Tom Ellis's note of 06/05/2026 records no prognosis.");
+  assert.equal(res.gaps[0].suggestedQuestion, "Tom Ellis's discharge note of 06/05/2026 says the pain eased – what is your prognosis?");
+});
+
 test("fix round 1: 'I recorded' about another clinician's note keeps its first person and is flagged; the signer's own note gets plain wording", () => {
   const bundle = testBundle(); // N-001 Sarah Reid, N-002 Tom Ellis
   const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" };

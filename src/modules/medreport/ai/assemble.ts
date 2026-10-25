@@ -46,7 +46,7 @@ import type {
 import { runValidators } from "../core/validation";
 import { makeFlag } from "../core/validation/context";
 import { buildSourceTexts } from "../core/validation/sources";
-import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, plainClinicalWording, sameClinician } from "../core/voice";
+import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, notesNamedByAuthor, plainClinicalWording, sameClinician } from "../core/voice";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -208,8 +208,9 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
       .map((g, i) => ({
         id: `gap-${key}-${seed}-${i + 1}`,
         sectionKey: key,
-        issue: readable(g.issue),
-        suggestedQuestion: readable(String(g.suggestedQuestion ?? "")) || "Can you add this from your own knowledge of the case?",
+        // Fix round 1 (B0-23): "your discharge note of 16/09/2026" → "Sarah Reid's discharge note of 16/09/2026".
+        issue: notesNamedByAuthor(readable(g.issue), bundle.notes),
+        suggestedQuestion: notesNamedByAuthor(readable(String(g.suggestedQuestion ?? "")), bundle.notes) || "Can you add this from your own knowledge of the case?",
         relatedNoteIds: Array.from(new Set((g.relatedNoteIds ?? []).filter((x) => isNoteId(x) && sourceIds.has(x)))),
         raisedBy: "ai" as const,
       }));

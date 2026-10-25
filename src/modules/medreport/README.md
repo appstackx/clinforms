@@ -1796,7 +1796,8 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
   the signer's own notes only. A report with no author is checked against the signer at `/sign`.
 - **Prompt `forms-8`**: the final instruction lists the author's own notes; compact places ("Where it goes: a cell of a
   table", "it fills “…” inside a sentence") take the value alone; conditional questions and numbered rows; gaps never say
-  "my note"; an initial assessment form is drafted from the record as at that assessment (`core/scope.ts
+  "my note" (and `core/voice.ts notesNamedByAuthor` names the note's author when one does); an initial assessment form is
+  drafted from the record as at that assessment (`core/scope.ts
   initialAssessmentView`).
 - **Left blank prints nothing that reads as an answer** (`core/forms.ts buildFormAnswers` → `leftBlank`;
   `forms/docx-fill.ts`): a printed tick or mark is cleared, a "delete as necessary" list and a printed default ("30
