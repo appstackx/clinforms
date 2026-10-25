@@ -337,7 +337,8 @@ describe("clinic-system codes in plain words", () => {
       assert.equal(practiceCodeInWords(`<<${code}>>`), `your clinic system's placeholder for ${practiceCodeWords(code)}`, code);
       assert.doesNotMatch(humaniseMergeCodes(`Seen in <<${code}>>.`), /<<|>>/, code);
     }
-    assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1 (where some clinics keep the date of the accident)");
+    // Fix round 1 (B0-29): no aside about what some clinics keep there.
+    assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1");
   });
 });
 

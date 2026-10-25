@@ -6,7 +6,8 @@
  */
 import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
-import { humaniseMergeCodes, practiceCodesInWords } from "../../../core/practice-merge-codes";
+import { findPracticeCodes, humaniseMergeCodes, practiceCode, practiceCodeWords, practiceCodesInWords } from "../../../core/practice-merge-codes";
+import { REGISTRATION_PATH_LABELS } from "../../../core/labels";
 import { nextQuestionAnchor, questionAnchor } from "../../../core/question-set";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
@@ -135,7 +136,48 @@ function quotePrinted(text: string): string {
  * technical location (block, table, row, cell) is shown only under "Edit the location by hand" – the only
  * place a clinic-system code is shown as printed (“In place of the merge code for the patient's first name”).
  */
-export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label">): string {
+/** What a question is filled with, in words (fix round 1, B0-29: said when it is not what the code usually prints). */
+const FILLED_WITH: Partial<Record<RegistrationPath, string>> = {
+  "episode.firstSeen": "the first appointment's date",
+  "episode.lastSeen": "the last appointment's date",
+  "episode.dischargeDate": "the discharge date",
+  "incident.date": "the date of the accident",
+  "report.date": "the date of the report",
+  "staff.entry": "what staff type in on each report",
+};
+
+function filledWith(source: FillSource): string {
+  switch (source.kind) {
+    case "registration":
+      return FILLED_WITH[source.path] ?? `the record's “${REGISTRATION_PATH_LABELS[source.path]}”`;
+    case "computed_fact":
+      return "a figure worked out from the record";
+    case "notes_narrative":
+      return "an answer from the notes";
+    case "clinician_opinion":
+      return "the clinician's own answer";
+    case "signoff":
+      return "the approval";
+    default:
+      return "its answer";
+  }
+}
+
+/**
+ * Whether a clinic-system code is filled with what it usually prints: its own record field, or a line of the address /
+ * postcode it stands for. Else the place is described by what the question is really filled with.
+ */
+function fillsCodeAsUsual(code: string, source: FillSource | undefined): boolean {
+  const binding = practiceCode(code.slice(2, -2))?.binding;
+  if (!binding || !source) return true;
+  if (binding.kind === "record") return source.kind === "registration" && source.path === binding.path;
+  if (binding.kind === "address_line") return source.kind === "registration" && source.path === `${binding.family}.addressLines`;
+  if (binding.kind === "postcode") return source.kind === "registration" && source.path === `${binding.family}.postcode`;
+  if (binding.kind === "not_held") return source.kind === "registration" && source.path === "staff.entry";
+  return true; // decided by the form's label
+}
+
+export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"> & Partial<Pick<FormField, "fillSource">>): string {
   const a = field.anchor;
   const q = quoteLabel(humaniseMergeCodes(field.label));
   switch (a.kind) {
@@ -150,6 +192,12 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           const codes = practiceCodesInWords(ph);
           if (a.writeAfter) return `After the printed ${codes ?? quotePrinted(ph)}`;
           if (/^[_.…\s-]+$/.test(ph) || !ph) return `On the blank line for ${q}`;
+          // Fix round 1 (B0-29): "the merge code for the date of the report" only when that is what goes there.
+          const found = findPracticeCodes(ph);
+          if (codes && found.length === 1 && field.fillSource && !fillsCodeAsUsual(found[0].text, field.fillSource)) {
+            const usual = practiceCodeWords(found[0].code);
+            return `${capitalise(filledWith(field.fillSource))}, in place of the code that usually prints ${usual ?? "something else"}`;
+          }
           return codes ? `In place of the ${codes}` : `In place of ${quotePrinted(ph)}`;
         }
         case "content_control":
@@ -204,8 +252,44 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
  * The question the mapping review opens on: the first that needs a decision – “Needs review” before “Check”,
  * each in the form's order – or the first question when none does.
  */
-export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence">>): string | null {
-  return (fields.find((f) => f.confidence === "low") ?? fields.find((f) => f.confidence !== "high") ?? fields[0])?.id ?? null;
+/**
+ * The question the mapping review opens on: one to check ("Needs review" before "Check") – and (fix round 1, B0-29) of
+ * those, a required one before an optional one, and a clinical question before a detail staff type in; else the first.
+ */
+export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource">>>): string | null {
+  const staffEntry = (f: (typeof fields)[number]) => f.fillSource?.kind === "registration" && f.fillSource.path === "staff.entry";
+  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.required === false ? 1 : 0, staffEntry(f) ? 1 : 0, f.confidence === "low" ? 0 : 1];
+  const before = (a: number[], b: number[]) => {
+    const i = a.findIndex((v, k) => v !== b[k]);
+    return i >= 0 && a[i] < b[i];
+  };
+  let best: { id: string; r: number[] } | null = null;
+  for (const f of fields) {
+    const r = rank(f);
+    if (!best || before(r, best.r)) best = { id: f.id, r };
+  }
+  return best?.id ?? null;
+}
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * The mapping page's list order (fix round 1, B0-29): numbered questions printed in a table's columns ("Treatment
+ * date 1", "Treatment date 7", "Treatment date 2"…) are listed by their number; everything else in the form's order.
+ */
+export function listedInOrder<T extends Pick<FormField, "id" | "label">>(fields: readonly T[]): T[] {
+  const stem = (f: T) => /^(.*?)(\d+)(\D*)$/.exec(f.label.trim());
+  const out: T[] = [];
+  let i = 0;
+  while (i < fields.length) {
+    const m = stem(fields[i]);
+    let j = i + 1;
+    if (m) while (j < fields.length && stem(fields[j])?.[1] === m[1] && stem(fields[j])?.[3] === m[3]) j += 1;
+    const run = fields.slice(i, j);
+    out.push(...(run.length > 2 ? run.slice().sort((x, y) => Number(stem(x)![2]) - Number(stem(y)![2])) : run));
+    i = j;
+  }
+  return out;
 }
 
 /** Next free field ID ("F-23"). */
