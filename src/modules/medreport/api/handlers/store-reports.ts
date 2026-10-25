@@ -20,7 +20,8 @@ import "server-only";
  *        approved record can never be deleted and re-created as a draft by another role.
  * Every change writes an audit row (ids, revision and status only). Patient data is encrypted at rest by the host.
  * Usage (25/10/2026): a report created here is counted as started for the clinic (an amended version names the report
- * it amends, so it never counts as a new report).
+ * it amends, so it never counts as a new report – only an approved report of the same patient, episode and form,
+ * by the server's fingerprint of this report: api/usage.ts usageEpisodeFp).
  *
  * Owner: store slice (wave 2).
  */
@@ -42,7 +43,7 @@ import {
 import type { StoredReportMeta, TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
-import { recordUsage } from "../usage";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../usage";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -178,7 +179,14 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
     targetId: id,
     detail: { rev: result.rev, status: report.status, version: report.version ?? 1 },
   });
-  if (created) await recordUsage(deps, t.actor, { kind: "report_started", reportId: id, ...(report.amends ? { amendsReportId: report.amends.reportId } : {}) });
+  if (created) {
+    await recordUsage(deps, t.actor, {
+      kind: "report_started",
+      reportId: id,
+      ...(report.amends ? { amendsReportId: report.amends.reportId } : {}),
+      episodeFp: usageEpisodeFp(t.tenantId, usageEpisodeOfReport(report)),
+    });
+  }
   const body: StoreReportResponse = { rev: result.rev, updatedAt: result.updatedAt, report };
   return jsonWithRev(body, result.rev, { status: created ? 201 : 200 });
 };

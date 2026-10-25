@@ -280,7 +280,13 @@ export function PackageForm({ clinics, today }: { clinics: PlanClinicOption[]; t
         </div>
         <Field label="Monthly price (£, ex VAT)" name="monthlyPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.monthlyPricePence)} />
         <Field label="Reports included a month" name="reportsIncluded" type="number" inputMode="numeric" required defaultValue={PACKAGE_PRESETS.practice.reportsIncluded ?? 0} />
-        <Field label="Extra report price (£ each)" name="extraReportPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.extraReportPence)} />
+        <Field
+          label="Extra report price (£ each)"
+          name="extraReportPrice"
+          inputMode="decimal"
+          defaultValue={pounds(PACKAGE_PRESETS.practice.extraReportPence)}
+          hint="Leave empty while it is not agreed: extra reports are still counted and shown, with no price."
+        />
         <Field label="Starts on" name="startsOn" type="date" defaultValue={today} />
         <Field label="Founding price (£ a month)" name="foundingPrice" inputMode="decimal" placeholder="None" hint="Optional. Fixed for 12 months unless an end date is given." />
         <Field label="Founding price until" name="foundingUntil" type="date" hint="Optional (inclusive)." />

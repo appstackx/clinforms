@@ -226,7 +226,8 @@ export async function packageAction(_prev: PlanActionResult | null, form: FormDa
       package: id,
       monthlyPricePence: poundsField(form, "monthlyPrice", "the monthly price", true) as number,
       reportsIncluded: reports,
-      extraReportPence: poundsField(form, "extraReportPrice", "the price of an extra report", true) as number,
+      // Empty = not agreed yet (a Custom deal before its extra price is settled): extra reports are counted, shown without a price.
+      extraReportPence: poundsField(form, "extraReportPrice", "the price of an extra report", false),
       foundingPricePence: poundsField(form, "foundingPrice", "the founding price", false),
       foundingUntil: String(form.get("foundingUntil") ?? "").trim() || null,
       setupFeePence: poundsField(form, "setupFee", "the set-up fee", false),
@@ -235,7 +236,7 @@ export async function packageAction(_prev: PlanActionResult | null, form: FormDa
       notes: String(form.get("notes") ?? ""),
     });
     const founding = saved.foundingPricePence !== null ? `, founding ${formatPence(saved.foundingPricePence)} until ${saved.foundingUntil}` : "";
-    return `${tenantId}: ${packageLabel(saved.package)} – ${formatPence(saved.monthlyPricePence)} a month, ${reportsText(saved.reportsIncluded)}, extra ${formatPence(saved.extraReportPence)} each${founding}; from ${saved.startsOn}.`;
+    return `${tenantId}: ${packageLabel(saved.package)} – ${formatPence(saved.monthlyPricePence)} a month, ${reportsText(saved.reportsIncluded)}, extra ${saved.extraReportPence === null ? "not set yet" : `${formatPence(saved.extraReportPence)} each`}${founding}; from ${saved.startsOn}.`;
   });
 }
 

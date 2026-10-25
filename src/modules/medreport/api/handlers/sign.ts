@@ -35,7 +35,9 @@ import "server-only";
  *
  * Usage (25/10/2026): a clinic's approval is counted (api/usage.ts recordUsage): the report's first approval, and – when
  * nothing was drafted for it – it counts towards the clinic's allowance now. Approving the same report again, or an
- * amended version of an approved report (report.amends), never counts again. The public demo never counts.
+ * amended version of an approved report (report.amends), never counts again – "amends" is taken only for an approved
+ * report of the same patient, episode and form (the server's fingerprint of this report, api/usage.ts usageEpisodeFp);
+ * any other "amends" counts as a new report. The public demo never counts.
  *
  * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
  */
@@ -61,7 +63,7 @@ import { WORDING } from "../../core/wording";
 import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { requireAttestedForm, resolveTemplate } from "../resolve-template";
-import { recordUsage } from "../usage";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../usage";
 
 const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 const normaliseHcpc = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
@@ -196,6 +198,11 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
       ...(demoClinic ? { demoClinic: true, ...(demoNumber ? { demoNumber } : {}) } : {}),
     },
   });
-  await recordUsage(deps, actor, { kind: "report_approved", reportId: report.id, ...(report.amends ? { amendsReportId: report.amends.reportId } : {}) });
+  await recordUsage(deps, actor, {
+    kind: "report_approved",
+    reportId: report.id,
+    ...(report.amends ? { amendsReportId: report.amends.reportId } : {}),
+    episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfReport(report)),
+  });
   return json(body);
 };

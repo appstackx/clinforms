@@ -183,7 +183,8 @@ export interface ClinicPackageTable {
   package: string;
   monthly_price_pence: number;
   reports_included: number;
-  extra_report_pence: number;
+  /** null = the price of an extra report is not agreed yet. */
+  extra_report_pence: number | null;
   founding_price_pence: number | null;
   /** "YYYY-MM-DD" (inclusive), or null. */
   founding_until: string | null;
@@ -233,6 +234,12 @@ export interface ClinicUsageTable {
 export interface UsageReportTable {
   tenant_id: string;
   report_id: string;
+  /**
+   * The module's keyed fingerprint of what the report is about (episode, template or form, patient – it identifies
+   * nobody); "" when an event carried none. Part of the key: the same report id for another patient or form is
+   * another row (fix 25/10/2026).
+   */
+  episode_fp: WithDefault<string>;
   /** The first version of an amended report (= report_id for a report that is not an amendment). */
   root_report_id: string;
   started_at: IsoTimestamp | null;
@@ -463,7 +470,7 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   clinic_plan: ["tenant_id"],
   clinic_package: ["tenant_id"],
   clinic_usage: ["tenant_id", "period"],
-  usage_report: ["tenant_id", "report_id"],
+  usage_report: ["tenant_id", "report_id", "episode_fp"],
   usage_event: ["id"],
   member_profile: ["organization_id", "user_id"],
   tenant_settings: ["tenant_id"],

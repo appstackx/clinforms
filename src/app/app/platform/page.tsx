@@ -30,7 +30,7 @@ function trialText(c: ClinicOverview): string {
 /** The clinic's package in a few words (25/10/2026). */
 function packageText(p: ClinicPackage | undefined): string {
   if (!p) return "–";
-  return `${packageLabel(p.package)} · ${formatPence(p.monthlyPricePence)} · ${reportsText(p.reportsIncluded)} · extra ${formatPence(p.extraReportPence)}${
+  return `${packageLabel(p.package)} · ${formatPence(p.monthlyPricePence)} · ${reportsText(p.reportsIncluded)} · extra ${p.extraReportPence === null ? "not set" : formatPence(p.extraReportPence)}${
     p.foundingPricePence !== null ? ` · founding ${formatPence(p.foundingPricePence)} to ${p.foundingUntil}` : ""
   }`;
 }

@@ -21,7 +21,7 @@ import { handleSign } from "../../src/modules/medreport/api/handlers/sign";
 import { bindHandler, type MedreportHandler } from "../../src/modules/medreport/api/http";
 import { storeApiPaths } from "../../src/modules/medreport/api/store-contract";
 import { createMemoryTenantStore } from "../../src/modules/medreport/api/store-memory";
-import { USAGE_WAIT_MS, recordUsage } from "../../src/modules/medreport/api/usage";
+import { USAGE_WAIT_MS, recordUsage, usageEpisodeFp, usageEpisodeOfBundle, usageEpisodeOfReport, usageReportKey } from "../../src/modules/medreport/api/usage";
 import { overrideClaudeClientForTests, type ClaudeClient } from "../../src/modules/medreport/ai/claude";
 import { generateDraftGroup } from "../../src/modules/medreport/ai/generate";
 import { withAttestedConfirmation } from "../../src/modules/medreport/auth/attestations";
@@ -32,7 +32,7 @@ import type { EpisodeBundle, FormDefinition, Report } from "../../src/modules/me
 import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "../../src/modules/medreport/forms/samples/maps/harrow-pike";
 import { getSampleForm } from "../../src/modules/medreport/forms/samples/registry";
 import { createSqliteTestDb } from "../../src/server/db/testing/databases";
-import { getUsageMonths, getUsageReport } from "../../src/server/repos/usage";
+import { getUsageMonths, getUsageReport, listUsageReportRows } from "../../src/server/repos/usage";
 import { ukPeriodOf } from "../../src/server/repos/usage-period";
 import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
@@ -54,6 +54,33 @@ const USAGE = { input_tokens: 4000, output_tokens: 900, cache_read_input_tokens:
 function reportOf(id: string, extra: Partial<Report> = {}): Report {
   const r = completedSampleReport("megan-hart", FORM, { id });
   return { ...r, tenantId: A, bundleSnapshot: { ...r.bundleSnapshot, tenantId: A }, ...extra };
+}
+
+/** The server's usage fingerprints (api/usage.ts): of the bundle drafted, and of a report approved or stored. */
+const fpOfBundle = (bundle: EpisodeBundle = BUNDLE) => usageEpisodeFp(A, usageEpisodeOfBundle(bundle, formTemplateId(FORM.id)));
+const fpOfReport = (report: Report) => usageEpisodeFp(A, usageEpisodeOfReport(report));
+
+/** Another FICTIONAL patient and episode (the exploit tests draft them under ids that already counted). */
+const OTHER: EpisodeBundle = {
+  ...BUNDLE,
+  source: { ...BUNDLE.source, externalPatientId: "sim-pat-099", externalEpisodeId: "sim-ep-099" },
+  registration: {
+    ...BUNDLE.registration,
+    externalPatientId: "sim-pat-099",
+    firstName: "Dana",
+    lastName: "Other (fictional)",
+    fullName: "Dana Other (fictional)",
+    dob: "1980-02-02",
+  },
+};
+function otherReportOf(id: string, extra: Partial<Report> = {}): Report {
+  const r = reportOf(id, extra);
+  return {
+    ...r,
+    patientLabel: OTHER.registration.fullName,
+    episodeRef: { connectorId: OTHER.source.connectorId, patientId: OTHER.source.externalPatientId, episodeId: OTHER.source.externalEpisodeId },
+    bundleSnapshot: OTHER,
+  };
 }
 
 /** The first narrative question of the form, drafted by the recorded answers (the fake client returns those). */
@@ -153,6 +180,7 @@ describe("usage recorded by the Report API handlers", () => {
         event: {
           kind: "drafting_call",
           reportId: "rpt_usage_1",
+          episodeFp: fpOfBundle(),
           succeeded: true,
           model: "claude-sonnet-5-5",
           usage: { inputTokens: 4000, outputTokens: 900, cacheReadInputTokens: 1200, cacheCreationInputTokens: 300 },
@@ -166,6 +194,7 @@ describe("usage recorded by the Report API handlers", () => {
       kind: "drafting_call",
       reportId: "rpt_usage_1",
       amendsReportId: "rpt_prev",
+      episodeFp: fpOfBundle(),
       succeeded: false,
       usage: { inputTokens: 4000, outputTokens: 900, cacheReadInputTokens: 1200, cacheCreationInputTokens: 300 },
       model: "claude-sonnet-5-5",
@@ -211,14 +240,19 @@ describe("usage recorded by the Report API handlers", () => {
       signBody(reportOf("rpt_sign_1", { amends: { reportId: "rpt_sign_0", version: 1, approvedAt: "2026-10-20T10:00:00.000Z" }, version: 2 })),
     );
     assert.equal(signed.status, 200, await signed.clone().text());
-    assert.deepEqual(c.events.at(-1)?.event, { kind: "report_approved", reportId: "rpt_sign_1", amendsReportId: "rpt_sign_0" });
+    assert.deepEqual(c.events.at(-1)?.event, {
+      kind: "report_approved",
+      reportId: "rpt_sign_1",
+      amendsReportId: "rpt_sign_0",
+      episodeFp: fpOfReport(reportOf("rpt_sign_1")),
+    });
     const created = await t.as(storeApiPaths.report("rpt_store_1"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ report: reportOf("rpt_store_1", { status: "draft", receipt: undefined }) }),
     });
     assert.equal(created.status, 201, await created.clone().text());
-    assert.deepEqual(c.events.at(-1)?.event, { kind: "report_started", reportId: "rpt_store_1" });
+    assert.deepEqual(c.events.at(-1)?.event, { kind: "report_started", reportId: "rpt_store_1", episodeFp: fpOfReport(reportOf("rpt_store_1")) });
     const file = Buffer.from(await getSampleForm("harrow-pike-treating-physio")!.loadFile()).toString("base64");
     const read = await call(t.deps, handleFormsAnalyse, "/forms/analyse", { fileBase64: file, fileName: "form.pdf", prefer: "demo" });
     assert.equal(read.status, 200, await read.clone().text());
@@ -251,7 +285,7 @@ describe("usage recorded by the Report API handlers", () => {
     const demoDeps: MedreportDeps = { ...t.deps, clinicProfile: async (tenant) => (tenant === A ? { ...PROFILE, demoClinic: true } : null) };
     const signed = await call(demoDeps, handleSign, "/sign", demoSign("rpt_demo_clinic_1"));
     assert.equal(signed.status, 200, await signed.clone().text());
-    assert.deepEqual(c.events, [{ tenantId: A, event: { kind: "report_approved", reportId: "rpt_demo_clinic_1" } }]);
+    assert.deepEqual(c.events, [{ tenantId: A, event: { kind: "report_approved", reportId: "rpt_demo_clinic_1", episodeFp: fpOfReport(reportOf("rpt_demo_clinic_1")) } }]);
     // The same made-up number in a real clinic: refused before anything is counted.
     const refused = await call(t.deps, handleSign, "/sign", demoSign("rpt_demo_clinic_2"));
     assert.equal(refused.status, 403);
@@ -277,6 +311,108 @@ describe("usage recorded by the Report API handlers", () => {
       assert.equal(m.costMicroUsd, 3 * (4000 * 2 + 900 * 10 + 1200 * 0.2 + 300 * 2 * 1.25));
       assert.equal((await getUsageReport({ db: db.db }, A, "rpt_e2e"))?.billable_via, "drafted");
     } finally {
+      await db.close();
+    }
+  });
+
+  test("the fingerprint is the server's: the same for the Studio's drafting and its approval of one report, different for another patient; 22 characters, no patient data", () => {
+    const drafted = fpOfBundle();
+    assert.match(drafted, /^[A-Za-z0-9_-]{22}$/);
+    assert.equal(fpOfReport(reportOf("rpt_any")), drafted, "drafting (bundle) and approval (report) of one report agree");
+    assert.equal(fpOfReport(reportOf("rpt_other_id")), drafted, "the report id is not part of it");
+    assert.notEqual(fpOfBundle(OTHER), drafted);
+    assert.equal(fpOfReport(otherReportOf("rpt_x")), fpOfBundle(OTHER));
+    assert.notEqual(usageEpisodeFp("another-clinic", usageEpisodeOfBundle(BUNDLE, formTemplateId(FORM.id))), drafted);
+    assert.notEqual(usageEpisodeFp(A, usageEpisodeOfBundle(BUNDLE, "pi-report")), drafted, "another form or template");
+    for (const s of [BUNDLE.registration.fullName, BUNDLE.registration.dob, BUNDLE.source.externalPatientId]) assert.ok(!drafted.includes(s));
+    // Report ids: the Studio's as they are; anything else as a keyed hash.
+    assert.equal(usageReportKey("rpt_0123456789abcdef"), "rpt_0123456789abcdef");
+    assert.match(usageReportKey("sam@example.com") ?? "", /^h_[A-Za-z0-9_-]{32}$/);
+    assert.equal(usageReportKey("sam@example.com"), usageReportKey("sam@example.com"));
+  });
+
+  test("FIX (security review 25/10/2026): ids chosen by the browser no longer keep reports out of the allowance – real handlers, real counters", async () => {
+    resetMemoryLimits();
+    const db = createSqliteTestDb();
+    try {
+      const store = createMemoryTenantStore();
+      const deps: MedreportDeps = {
+        ...storeDeps(store, { a: CLIN }),
+        // Generous limits for this test only (it makes ~20 live calls to the fake client).
+        clinicProfile: async (t) => (t === A ? { ...PROFILE, draftingLimits: { perMinute: 500, perDay: 5000 } } : null),
+        usage: dbUsageRecorder(() => db.db),
+      };
+      const month = async () => (await getUsageMonths({ db: db.db }, A, [ukPeriodOf(new Date())]))[0];
+      const draft = async (extra: Record<string, unknown>) => {
+        const res = await call(deps, handleDrafts, "/drafts", draftBody({ prefer: "live", ...extra }));
+        assert.equal(res.status, 200, await res.clone().text());
+      };
+      const sign = async (report: Report) => {
+        const res = await call(deps, handleSign, "/sign", signBody(report));
+        assert.equal(res.status, 200, await res.clone().text());
+      };
+      fake = "ok";
+
+      // Baseline: rpt_first drafted live and approved = 1 report.
+      await draft({ reportId: "rpt_first" });
+      await sign(reportOf("rpt_first"));
+      let m = await month();
+      assert.equal(m.billableReports, 1);
+
+      // V1 – another patient drafted 5 times under the counted report's id: ONE new report (it was free before).
+      for (let i = 0; i < 5; i++) await draft({ reportId: "rpt_first", bundle: OTHER, instructingParty: OTHER.referral });
+      m = await month();
+      assert.equal(m.billableReports, 2);
+      assert.equal(m.draftingCalls, 6);
+      assert.equal((await listUsageReportRows({ db: db.db }, A, "rpt_first")).length, 2, "one row per fingerprint");
+
+      // V2 – five new reports of another patient, each claiming to amend the approved one: each counts (free before).
+      for (let i = 0; i < 5; i++) await draft({ reportId: `rpt_new_${i}`, amendsReportId: "rpt_first", bundle: OTHER, instructingParty: OTHER.referral });
+      m = await month();
+      assert.equal(m.billableReports, 7);
+
+      // V3 – a records-only report of another patient approved with a made-up report.amends: counts at approval.
+      await sign(otherReportOf("rpt_records_forged", { amends: { reportId: "rpt_first", version: 1, approvedAt: "2026-10-20T10:00:00.000Z" }, version: 2 }));
+      m = await month();
+      assert.equal(m.billableReports, 8);
+      assert.equal(m.billableOnApproval, 1);
+      assert.equal(m.amendmentsApproved, 0);
+
+      // The Studio's own amendment (same patient, episode and form): drafted again and approved – never counts.
+      const v2 = reportOf("rpt_first_v2", { amends: { reportId: "rpt_first", version: 1, approvedAt: "2026-10-20T10:00:00.000Z" }, version: 2 });
+      await draft({ reportId: "rpt_first_v2", amendsReportId: "rpt_first" });
+      await sign(v2);
+      m = await month();
+      assert.equal(m.billableReports, 8);
+      assert.equal(m.amendmentsApproved, 1);
+
+      // Honest re-drafting and re-approving of one report: still once.
+      for (let i = 0; i < 2; i++) await draft({ reportId: "rpt_honest" });
+      for (let i = 0; i < 2; i++) await sign(reportOf("rpt_honest"));
+      m = await month();
+      assert.equal(m.billableReports, 9);
+
+      // An odd report id approved without drafting: it counts (it counted nothing before), once, under a hashed key.
+      await sign(reportOf("rpt odd id"));
+      await sign(reportOf("rpt odd id"));
+      await draft({ reportId: "rpt odd id" });
+      m = await month();
+      assert.equal(m.billableReports, 10);
+      assert.equal(await getUsageReport({ db: db.db }, A, "rpt odd id"), null, "never stored as sent");
+
+      // A refused live call used tokens: its report counts; the retry that works does not count it again.
+      fake = "refusal";
+      const refused = await call(deps, handleDrafts, "/drafts", draftBody({ prefer: "live", reportId: "rpt_refused" }));
+      assert.equal(refused.status, 502);
+      m = await month();
+      assert.equal(m.billableReports, 11);
+      fake = "ok";
+      await draft({ reportId: "rpt_refused" });
+      m = await month();
+      assert.equal(m.billableReports, 11);
+      assert.equal(m.failedCalls, 1);
+    } finally {
+      fake = "ok";
       await db.close();
     }
   });

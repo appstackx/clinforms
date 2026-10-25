@@ -84,7 +84,8 @@ export interface ClinicPlanUsageManagerView {
     foundingPricePence: number | null;
     foundingUntil: string | null;
     reportsIncluded: number;
-    extraReportPence: number;
+    /** null = not agreed yet. */
+    extraReportPence: number | null;
     setupFeePence: number | null;
     setupFeeStatus: SetupFeeStatus | null;
     startsOn: string;
@@ -258,7 +259,14 @@ export interface PlatformUsage {
   periodLabel: string;
   rate: number;
   rows: PlatformUsageRow[];
+  /**
+   * Totals of every row – except the money a clinic pays (price, extra reports and their charge), which leaves out demo
+   * clinics (made-up packages) and clinics on a Trial package (nobody pays for either). The margin = that money − the
+   * drafting cost of EVERY clinic (those drafting costs are real).
+   */
   totals: Omit<PlatformUsageRow, "tenantId" | "name" | "closed" | "demoClinic" | "package" | "packageLabel" | "reportsIncluded" | "extraReportPence">;
+  /** The demo clinics' share: how many rows, and their (real) drafting cost – included in the cost total. */
+  demo: { rows: number; costPence: number; costMicroUsd: number };
   /** False when migration 0007 is not applied (everything reads as empty). */
   available: boolean;
 }
@@ -381,16 +389,37 @@ export async function platformUsage(db: Kysely<Database>, period: string, rate: 
       marginPence: (t.pricePence ?? 0) + extra * (t.extraReportPence ?? 0) - costPence,
     });
   }
-  const totals = Object.fromEntries(SUMMED.map((k) => [k, rows.reduce((n, r) => n + r[k], 0)])) as PlatformUsage["totals"];
+  const PAID = new Set<(typeof SUMMED)[number]>(["pricePence", "extra", "extraChargePence"]);
+  // Nobody pays for a demo clinic or during a trial: their package price and extra reports stay out of the money totals.
+  const unpaid = (r: PlatformUsageRow) => r.demoClinic || r.package === "trial";
+  const totals = Object.fromEntries(SUMMED.map((k) => [k, rows.reduce((n, r) => (PAID.has(k) && unpaid(r) ? n : n + r[k]), 0)])) as PlatformUsage["totals"];
+  totals.marginPence = totals.pricePence + totals.extraChargePence - totals.costPence;
+  const demoRows = rows.filter((r) => r.demoClinic);
   return {
     period,
     periodLabel: periodLabel(period),
     rate,
     rows,
     totals,
+    demo: {
+      rows: demoRows.length,
+      costPence: demoRows.reduce((n, r) => n + r.costPence, 0),
+      costMicroUsd: demoRows.reduce((n, r) => n + r.costMicroUsd, 0),
+    },
     available,
   };
 }
+
+/**
+ * Live drafting calls (successful and failed) per counted report, or null when nothing counted. A clinic far above
+ * HIGH_CALLS_PER_REPORT drafts a lot without new reports counting (many re-drafts, amendments – or report ids being
+ * reused): worth a look. Built-in reports draft 2 sections a call and forms up to 4 questions a call.
+ */
+export function callsPerCountedReport(r: Pick<PlatformUsageRow, "draftingCalls" | "failedCalls" | "counted">): number | null {
+  return r.counted > 0 ? (r.draftingCalls + r.failedCalls) / r.counted : null;
+}
+
+export const HIGH_CALLS_PER_REPORT = 40;
 
 export const PLATFORM_USAGE_CSV_COLUMNS = [
   "period",

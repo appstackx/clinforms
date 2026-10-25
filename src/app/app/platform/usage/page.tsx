@@ -6,15 +6,17 @@ import { formatPence, formatPenceExact, periodLabel } from "@/lib/packages";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { getDb } from "@/server/db";
 import { recentPeriods, ukPeriodOf } from "@/server/repos/usage-period";
-import { platformUsage, type PlatformUsageRow } from "@/server/usage/view";
+import { HIGH_CALLS_PER_REPORT, callsPerCountedReport, platformUsage, type PlatformUsageRow } from "@/server/usage/view";
 import { SignOutForm } from "../../session-forms";
 import { usageQuery } from "./params";
 
 /**
  * /app/platform/usage – ClinForms staff only (as /app/platform: everyone else gets the ordinary 404). Every clinic's
- * month: package, allowance, reports counted (a report counts when its answers are first drafted, or when it is
- * approved if nothing needed drafting), approvals, extra reports and what they would be charged, live calls, tokens,
- * the estimated drafting cost (list prices, converted at the rate shown) and the estimated margin. CSV download.
+ * month: package, allowance, reports counted (a report counts the first time drafting runs for it – successful, or
+ * failed after using tokens – or when it is approved if nothing needed drafting), approvals, extra reports and what they
+ * would be charged, live calls (and calls per counted report, amber when high), tokens, the estimated drafting cost
+ * (list prices, converted at the rate shown) and the estimated margin. Demo clinics' made-up prices stay out of the
+ * money totals; their real drafting costs stay in. CSV download.
  */
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Usage – Platform" };
@@ -26,6 +28,18 @@ const TOKENS = `${TD} min-w-[9rem] text-right tabular-nums`;
 
 const count = (n: number) => n.toLocaleString("en-GB");
 const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
+
+/** "12 per counted report" under the drafting calls; amber when it is high (see HIGH_CALLS_PER_REPORT). */
+function CallsPerReport({ r }: { r: Pick<PlatformUsageRow, "draftingCalls" | "failedCalls" | "counted"> }) {
+  const n = callsPerCountedReport(r);
+  if (n === null) return r.draftingCalls + r.failedCalls > 0 ? <span className="block text-xs font-normal text-amber-800">none counted yet</span> : null;
+  const high = n > HIGH_CALLS_PER_REPORT;
+  return (
+    <span className={`block text-xs font-normal ${high ? "font-medium text-amber-800" : "text-slate-500"}`} data-usage-calls-per-report={high ? "high" : "ok"}>
+      {n.toLocaleString("en-GB", { maximumFractionDigits: 1 })} per counted report{high ? " – worth a look" : ""}
+    </span>
+  );
+}
 
 function Tokens({ r }: { r: Pick<PlatformUsageRow, "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens"> }) {
   const total = r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens;
@@ -82,7 +96,7 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
       <main className="mx-auto max-w-[100rem] px-4 py-8">
         <PageHeader
           title={`Usage – ${usage.periodLabel}`}
-          description="Every clinic's month (UK calendar month). A report counts once: when its answers are first drafted, or when it is approved if nothing needed drafting. Costs are estimates from list prices; prices exclude VAT."
+          description="Every clinic's month (UK calendar month). A report counts once: the first time drafting runs for it (even if it is never approved, and also when the attempt failed after using tokens), or when it is approved if nothing needed drafting. Costs are estimates from list prices; prices exclude VAT."
         />
 
         <Panel className="mb-6">
@@ -217,7 +231,7 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
                       <td className={NUM}>{count(r.countedNotApproved)}</td>
                       <td className={NUM}>{r.reportsIncluded === null ? "–" : count(r.extra)}</td>
                       <td className={NUM}>
-                        {r.extraReportPence === null ? "–" : formatPenceExact(r.extraChargePence)}
+                        {r.extraReportPence === null ? (r.package ? <span data-usage-extra-unset>not set</span> : "–") : formatPenceExact(r.extraChargePence)}
                         {r.extraReportPence !== null ? <span className="block text-xs text-slate-500">at {formatPence(r.extraReportPence)}</span> : null}
                       </td>
                       <td className={NUM}>
@@ -228,6 +242,7 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
                       <td className={NUM}>
                         {count(r.draftingCalls)}
                         {r.failedCalls ? <span className="block text-xs text-amber-800">+{count(r.failedCalls)} failed</span> : null}
+                        <CallsPerReport r={r} />
                       </td>
                       <td className={NUM}>
                         {count(r.formsRead)}
@@ -273,8 +288,17 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
               </table>
             </div>
           )}
-          {usage.rows.some((r) => r.demoClinic) ? (
-            <p className="mt-3 text-xs text-slate-500">Demo clinics (made-up data only) are counted like any clinic and are included in the totals: their drafting costs are real.</p>
+          {usage.demo.rows > 0 ? (
+            <p className="mt-3 text-xs text-slate-500" data-usage-demo-note>
+              Demo clinics (made-up data only) are counted like any clinic. Their drafting costs are real and are in the cost total ({formatPenceExact(usage.demo.costPence)}{" "}
+              of it); their made-up package price and extra reports are left out of the price, extra and margin totals.
+            </p>
+          ) : null}
+          {usage.rows.some((r) => r.package === "trial") ? (
+            <p className="mt-1 text-xs text-slate-500" data-usage-trial-note>
+              Clinics on a Trial package pay nothing yet: their price and extra reports are left out of the price, extra and margin totals (their drafting
+              costs stay in).
+            </p>
           ) : null}
         </Panel>
         <p className="mt-4 text-sm">

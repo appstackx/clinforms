@@ -35,7 +35,10 @@ import "server-only";
  * Usage (25/10/2026): every LIVE drafting call of a clinic is counted (api/usage.ts recordUsage → the host's
  * counters): a successful one with its tokens – the report it drafts counts towards the clinic's allowance at its
  * first live drafting (never again for the same report) – and a failed one (refused, cut off, timed out, or replaced
- * by the recorded answers) as a failed call, with its tokens when the service answered. Demo answers never count.
+ * by the recorded answers) as a failed call, with its tokens when the service answered; a failed call that used
+ * tokens counts its report too (Khuram, 25/10/2026: drafting costs money whether or not the report is completed).
+ * Which report: the body's reportId / amendsReportId bound to the server's fingerprint of the bundle and form drafted
+ * (api/usage.ts usageEpisodeFp). Demo answers never count.
  *
  * Owner: ai agent.
  */
@@ -55,7 +58,7 @@ import { DraftsRequestSchema, type ProblemIssue } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { requireAttestedForm, resolveTemplate } from "../resolve-template";
-import { recordUsage, usageOfError } from "../usage";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfBundle, usageOfError } from "../usage";
 
 /** /drafts bodies carry a whole bundle; allow up to the platform limit. */
 const MAX_DRAFT_BODY_BYTES = 4_000_000;
@@ -129,8 +132,14 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
 
   const computedFacts = computeFacts(body.bundle);
   const started = Date.now();
-  // The report a live call counts for (usage): the Studio always names it.
-  const usageReport = { ...(body.reportId ? { reportId: body.reportId } : {}), ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}) };
+  // The report a live call counts for (usage): the Studio always names it. The ids are the browser's, so the event also
+  // carries the server's fingerprint of what is drafted (patient, episode, form – api/usage.ts): another patient or
+  // form under a report id that already counted, or an "amends" naming an unrelated report, counts as a new report.
+  const usageReport = {
+    ...(body.reportId ? { reportId: body.reportId } : {}),
+    ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}),
+    episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfBundle(body.bundle, body.templateId)),
+  };
   let failedCallCounted = false;
   const countFailedCall = async (err: unknown) => {
     if (failedCallCounted) return;

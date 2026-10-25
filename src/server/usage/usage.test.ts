@@ -120,7 +120,10 @@ describe("usage pages: guards, scoping and wording (source checks)", () => {
     const page = read("src/app/app/platform/usage/page.tsx");
     assert.match(page, /const admin = await requirePlatformAdmin\(\);/);
     const route = read("src/app/app/platform/usage/export/route.ts");
-    assert.match(route, /const admin = await platformActionAdmin\(\);\n\s+if \(!admin\) return new Response\("Not found", \{ status: 404/);
+    assert.match(route, /const notFound = \(\) => new Response\("Not found", \{ status: 404/);
+    // Fix 25/10/2026: a cross-site request is refused first (no audit row), then the administrator check.
+    assert.match(route, /if \(isCrossSiteRequest\(request\.headers\)\) return notFound\(\);\n\s+const admin = await platformActionAdmin\(\);\n\s+if \(!admin\) return notFound\(\);/);
+    assert.ok(route.indexOf("isCrossSiteRequest(request.headers)") < route.indexOf("appendPlatformAudit("), "checked before the audit row");
     assert.match(route, /appendPlatformAudit\(\{ db \}, admin, \{\s+action: "platform\.usage_export"/);
     const actions = read("src/app/app/platform/actions.ts");
     const at = actions.indexOf("export async function packageAction");
@@ -159,7 +162,7 @@ describe("usage pages: guards, scoping and wording (source checks)", () => {
       PLAN_COPY.wouldBeCharged(2, "£1.50", "£3.00"),
     ];
     for (const text of texts) for (const re of BANNED_TERM_PATTERNS) assert.doesNotMatch(text, re, text);
-    assert.equal(PLAN_COPY.rule, "A report counts when its answers are first drafted, or when it is approved if nothing needed drafting.");
+    assert.equal(PLAN_COPY.rule, "A report counts the first time drafting runs for it, whether or not it is approved, or when it is approved if nothing needed drafting.");
     assert.equal(PLAN_COPY.shortLine(12, 500), "This month: 12 of 500 reports.");
     assert.equal(PLAN_COPY.chargingLater, "Charging for extra reports starts once billing is set up.");
   });

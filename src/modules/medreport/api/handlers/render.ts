@@ -41,7 +41,7 @@ import { createFileToken, formConfirmationProblem, formMapSha256, sha256HexOf, v
 import { verifyReceipt } from "../../auth/sign-receipt";
 import { MAX_TEMPLATE_DOCX_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
-import { demoOutputNotice } from "../../core/demo-clinic";
+import { demoOutputNotice, isDemoHcpc } from "../../core/demo-clinic";
 import { reportFingerprint } from "../../core/fingerprint";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
@@ -237,7 +237,10 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   if (parsed.data.requireFinal && !decision.final && decision.refusal) return decision.refusal;
   const final = decision.final;
   // A demo clinic's outputs all carry the demonstration notice (undefined everywhere else; read on the server).
-  const demoClinic = await actorInDemoClinic(deps, actor);
+  // Fix 25/10/2026: a FINAL document approved with a made-up PH-DEMO number (only possible in a demo clinic – the
+  // receipt's signer is covered by its MAC, verified above) keeps the notice after the clinic is switched back to real.
+  const madeUpApproval = actor.via !== "demo" && final && isDemoHcpc(receipt?.signer.hcpc);
+  const demoClinic = (await actorInDemoClinic(deps, actor)) || madeUpApproval;
   const notice = demoClinic ? demoOutputNotice(formDef, true) : undefined;
   const contentSha256 = await reportFingerprint(report);
   const baseHeaders: Record<string, string> = {

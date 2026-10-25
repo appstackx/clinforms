@@ -512,7 +512,7 @@ async function api(page, method, url, body) {
       assert.match(plan0, /Up to 1 report a month/);
       assert.match(plan0, /Extra reports £1\.50 each/);
       assert.match(plan0, /This month \([A-Z][a-z]+ 20\d\d\) 0 of 1 report/);
-      assert.match(plan0, /A report counts when its answers are first drafted, or when it is approved if nothing needed drafting\./);
+      assert.match(plan0, /A report counts the first time drafting runs for it, whether or not it is approved, or when it is approved if nothing needed drafting\./);
       assert.doesNotMatch(plan0, /would be charged/);
     });
   } catch (err) {
@@ -703,6 +703,21 @@ async function runFlow(newPage) {
     assert.match(line, new RegExp(`,${CLINIC.slug},ZZ Usage Clinic \\(fictional\\),Custom,300\\.00,1,2,1,0,1,1,1\\.50,1\\.50,`));
     assert.ok(!lines.some((l) => /(^|,)[=+@]/.test(l)));
   });
+  // Fix 25/10/2026: another site making the administrator's browser open the CSV gets the ordinary 404 and writes no
+  // audit row (the session cookies are SameSite=Lax, so a top-level navigation would carry them).
+  const exportRows = () => db.prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'platform.usage_export'").get().n;
+  const exportsBefore = exportRows();
+  const crossSite = await admin.context().request.get(`${BASE}/app/platform/usage/export`, {
+    headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document", referer: "https://elsewhere.example/" },
+    maxRedirects: 0,
+  });
+  const sameSite = await admin.context().request.get(`${BASE}/app/platform/usage/export`, { headers: { "sec-fetch-site": "same-origin" }, maxRedirects: 0 });
+  const exportsAfter = exportRows();
+  check("6e", "the CSV: a cross-site request gets the ordinary 404 and writes no audit row; a same-origin one is served and recorded", () => {
+    assert.equal(crossSite.status(), 404);
+    assert.equal(sameSite.status(), 200);
+    assert.equal(exportsAfter, exportsBefore + 1, "only the same-origin download is recorded");
+  });
   const anon = (await fetch(`${BASE}/app/platform/usage/export`, { redirect: "manual" })).status;
   const ownerTry = await owner.evaluate(async () => (await fetch("/app/platform/usage")).status);
   check("6d", "the usage page and CSV are for platform administrators only (404 otherwise)", () => {
@@ -746,7 +761,7 @@ async function seededUsage() {
         [m.counted, m.approved, m["counted, not approved"], m.extra, m["extra × rate"], m["est. drafting cost"], m["est. margin"]],
         ["2", "1 +1 amended", "1", "1", "£1.50 at £1.50", "£0.06 $0.07", "£301.44"],
       );
-      assert.match(m["drafting calls"], /^5 \+1 failed$/);
+      assert.match(m["drafting calls"], /^5 \+1 failed 3 per counted report$/);
       assert.match(m["form readings"], /^3 4 live calls$/);
       assert.equal(m.tokens, "44,200 in 1,200 · out 3,000 cache 25,000 read · 15,000 write");
       assert.ok(marginRight <= width, `margin column ends at ${Math.round(marginRight)} px`);

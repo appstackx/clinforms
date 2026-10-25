@@ -92,7 +92,9 @@ function ManagerView({ view }: { view: ClinicPlanUsageManagerView }) {
           {pkg ? (
             <ul className="mt-3 space-y-1 text-sm text-slate-700">
               <li>Up to {reportsText(pkg.reportsIncluded)} a month</li>
-              {pkg.id !== "trial" ? <li>Extra reports {formatPence(pkg.extraReportPence)} each</li> : null}
+              {pkg.id !== "trial" ? (
+                <li data-package-extra>{pkg.extraReportPence === null ? PLAN_COPY.extraNotSet : `Extra reports ${formatPence(pkg.extraReportPence)} each`}</li>
+              ) : null}
               {pkg.foundingPricePence !== null && pkg.foundingUntil ? (
                 <li>
                   Founding price {formatPence(pkg.foundingPricePence)} a month, fixed until {ukDateLabel(pkg.foundingUntil)}
@@ -134,6 +136,10 @@ function ManagerView({ view }: { view: ClinicPlanUsageManagerView }) {
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-usage-extra>
               <p className="font-medium">{PLAN_COPY.wouldBeCharged(m.extra, formatPence(m.extraReportPence), formatPenceExact(m.extraChargePence))}</p>
               <p className="mt-1">{PLAN_COPY.chargingLater}</p>
+            </div>
+          ) : m.extra > 0 && pkg?.id !== "trial" ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-usage-extra>
+              <p className="font-medium">{PLAN_COPY.extraWithoutPrice(m.extra)}</p>
             </div>
           ) : null}
           <p className="mt-3 text-sm text-slate-600">{PLAN_COPY.rule}</p>

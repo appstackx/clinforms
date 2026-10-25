@@ -3,9 +3,10 @@
  * Shows what it WOULD save unless --confirm is given (and --yes as well on production – Khuram's go).
  *
  *   npm run admin:set-package -- --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50
+ *   npm run admin:set-package -- --slug blue-heart-clinics --package trial --price 300 --reports 500 --extra none  # extra not agreed yet
  *   npm run admin:set-package -- --slug riverside --package practice                       # the price list's Practice
  *   npm run admin:set-package -- --slug riverside --package practice --founding-price 149   # fixed 12 months
- *       [--founding-until 2027-10-24] [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-11-01]
+ *       [--founding-until 2027-10-24] [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-10-01]
  *       [--notes "internal note"]
  *   npm run admin:set-package -- --slug riverside --remove
  *   npm run admin:set-package -- --slug riverside --show                                   # read only
@@ -50,10 +51,13 @@ export function packageCommand(args: Map<string, string | true>): PackageCommand
   if (!isPackageId(id)) throw new CliError(`--package must be one of ${PACKAGE_IDS.join(", ")}.`);
   const preset = PACKAGE_PRESETS[id];
   const price = pounds(args, "price") ?? preset.monthlyPricePence;
-  const extra = pounds(args, "extra") ?? preset.extraReportPence;
+  // --extra none: the price of an extra report is not agreed yet (extra reports are counted and shown without a price).
+  const extraUnset = str(args, "extra")?.trim().toLowerCase() === "none";
+  const extra = extraUnset ? null : (pounds(args, "extra") ?? preset.extraReportPence);
   const reportsRaw = str(args, "reports");
   const reports = reportsRaw === undefined ? preset.reportsIncluded : Number(reportsRaw);
-  if (price === null || extra === null || reports === null) throw new CliError("A custom package needs --price, --reports and --extra.");
+  if (price === null || (extra === null && !extraUnset) || reports === null)
+    throw new CliError("A custom package needs --price, --reports and --extra (or --extra none while the extra price is not agreed).");
   if (!Number.isInteger(reports) || reports < 0) throw new CliError("--reports must be a whole number.");
   const status = str(args, "setup-status");
   if (status !== undefined && (SETUP_FEE_STATUSES as readonly string[]).indexOf(status) < 0) throw new CliError("--setup-status must be due, paid or waived.");
@@ -80,7 +84,7 @@ export function describePackage(p: ClinicPackage | PackageInput | null): string[
     `  package:          ${packageLabel(p.package)}`,
     `  price:            ${formatPence(p.monthlyPricePence)} a month (ex VAT)`,
     `  reports included: ${reportsText(p.reportsIncluded)} a month`,
-    `  extra report:     ${formatPence(p.extraReportPence)} each`,
+    `  extra report:     ${p.extraReportPence === null || p.extraReportPence === undefined ? "not set yet (counted, no price)" : `${formatPence(p.extraReportPence)} each`}`,
   ];
   if (p.foundingPricePence !== null && p.foundingPricePence !== undefined)
     lines.push(`  founding price:   ${formatPence(p.foundingPricePence)} until ${p.foundingUntil ?? "12 months from the start"}`);

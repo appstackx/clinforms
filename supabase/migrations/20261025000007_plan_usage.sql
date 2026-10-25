@@ -9,7 +9,7 @@ create table if not exists public.clinic_package (
   package text not null check (package in ('starter', 'practice', 'group', 'group_plus', 'custom', 'trial')),
   monthly_price_pence integer not null check (monthly_price_pence >= 0 and monthly_price_pence <= 100000000),
   reports_included integer not null check (reports_included >= 0 and reports_included <= 1000000),
-  extra_report_pence integer not null check (extra_report_pence >= 0 and extra_report_pence <= 10000000),
+  extra_report_pence integer check (extra_report_pence is null or (extra_report_pence >= 0 and extra_report_pence <= 10000000)),
   founding_price_pence integer check (founding_price_pence is null or (founding_price_pence >= 0 and founding_price_pence <= 100000000)),
   founding_until text,
   setup_fee_pence integer check (setup_fee_pence is null or (setup_fee_pence >= 0 and setup_fee_pence <= 100000000)),
@@ -51,6 +51,7 @@ create table if not exists public.clinic_usage (
 create table if not exists public.usage_report (
   tenant_id text not null,
   report_id text not null,
+  episode_fp text not null default '',
   root_report_id text not null,
   started_at timestamptz,
   first_drafted_at timestamptz,
@@ -65,7 +66,7 @@ create table if not exists public.usage_report (
   billable_event text,
   created_at timestamptz not null,
   updated_at timestamptz not null,
-  primary key (tenant_id, report_id)
+  primary key (tenant_id, report_id, episode_fp)
 );
 
 create index if not exists usage_report_billable on public.usage_report (tenant_id, billable_period);

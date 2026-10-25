@@ -8,9 +8,10 @@
  *   founding prices are fixed for 12 months.
  *
  * What counts (Khuram, 25/10/2026 – drafting costs money whether or not the report is completed): a report counts
- * towards the allowance ONCE, when its answers are first drafted from the notes, or – when nothing needed drafting –
- * when it is first approved. Drafting the same report again, regenerating answers or approving it again never counts
- * again; an amended version of an approved report is the same report. The public demo never counts.
+ * towards the allowance ONCE, the first time drafting from the notes runs for it (a successful draft, or an attempt
+ * that failed after using tokens), or – when nothing needed drafting – when it is first approved. Drafting the same
+ * report again, regenerating answers or approving it again never counts again; an amended version of an approved
+ * report (same patient, episode and form) is the same report. The public demo never counts.
  */
 
 export const PACKAGE_IDS = ["starter", "practice", "group", "group_plus", "custom", "trial"] as const;
@@ -132,7 +133,7 @@ export function extraReports(billable: number, included: number | null | undefin
 
 /** Customer-facing wording of the clinic's "Plan & usage" page (neutral: no technology or vendor names). */
 export const PLAN_COPY = {
-  rule: "A report counts when its answers are first drafted, or when it is approved if nothing needed drafting.",
+  rule: "A report counts the first time drafting runs for it, whether or not it is approved, or when it is approved if nothing needed drafting.",
   again: "Drafting a report again or approving it again does not count again, and nor does an amended version of an approved report.",
   chargingLater: "Charging for extra reports starts once billing is set up.",
   exVat: "Prices exclude VAT.",
@@ -142,4 +143,8 @@ export const PLAN_COPY = {
   wouldBeCharged: (extra: number, each: string, total: string) => `${extra} extra ${extra === 1 ? "report" : "reports"} × ${each} = ${total} would be charged.`,
   managersOnly: "Your clinic's owner and administrators can see the package and the full usage.",
   inProgress: "Counted but not approved yet",
+  /** 25/10/2026: a package whose extra-report price is not agreed yet (Custom deals). */
+  extraNotSet: "Extra reports: price to be agreed",
+  extraWithoutPrice: (extra: number) =>
+    `${extra} extra ${extra === 1 ? "report" : "reports"} this month. The price of extra reports is still to be agreed – nothing is charged until it is.`,
 } as const;

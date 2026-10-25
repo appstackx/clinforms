@@ -308,7 +308,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const name = PACKAGE_NAMES[String(detail.package)] ?? null;
       const price = typeof detail.monthlyPricePence === "number" ? `${pounds(detail.monthlyPricePence)} a month` : null;
       const reports = typeof detail.reportsIncluded === "number" ? `${detail.reportsIncluded.toLocaleString("en-GB")} ${detail.reportsIncluded === 1 ? "report" : "reports"}` : null;
-      const extra = typeof detail.extraReportPence === "number" ? `extra ${pounds(detail.extraReportPence)} each` : null;
+      const extra =
+        typeof detail.extraReportPence === "number" ? `extra ${pounds(detail.extraReportPence)} each` : detail.extraReportPence === null ? "extra report price not set yet" : null;
       return withClinic(action, detail, [name, price, reports, extra].filter(Boolean).join(", ") || null);
     }
     case "clinic.package_removed":

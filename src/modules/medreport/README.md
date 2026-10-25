@@ -459,7 +459,13 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   live reading via `AnalyseFormFileResult.liveFailure`); `report_started` from a store create; `question_set_created`
   from a question set's first store. POST /drafts takes an optional `amendsReportId` (the Studio sends
   `report.amends.reportId`) so drafting an amended version never counts as a new report. How a report counts is the
-  host's rule (src/server/repos/usage.ts). Tests: `scripts/medreport/usage-recording.test.ts` (a fake drafting client via
+  host's rule (src/server/repos/usage.ts). **Fix 25/10/2026:** the report ids and "amends" are the browser's, so every
+  report event also carries `episodeFp` – `api/usage.ts usageEpisodeFp`, worked out on the server from what is actually
+  drafted / approved / stored (clinic, connector + patient + episode ids, template or form, the patient's name and date
+  of birth; HMAC with `signingKey("usage-episode")`, 22 characters, identifies nobody). The host keys a report by
+  (id, fingerprint) and takes "amends" only for an approved report with the same fingerprint, so another patient or form
+  under a counted id, or an "amends" of an unrelated report, counts. Ids that are not the Studio's (`rpt_…`) are stored
+  as `h_` + an HMAC (`usageReportKey`). Tests: `scripts/medreport/usage-recording.test.ts` (a fake drafting client via
   `ai/claude.ts overrideClaudeClientForTests`, tests only).
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415

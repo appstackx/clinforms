@@ -8,7 +8,8 @@
 --   package               starter | practice | group | group_plus | custom | trial
 --   monthly_price_pence   the list price a month
 --   reports_included      reports a month within the package
---   extra_report_pence    the price of each report above the allowance (charging comes later)
+--   extra_report_pence    the price of each report above the allowance (charging comes later), NULL = not
+--                         agreed yet (extra reports are still counted and shown, with no price)
 --   founding_price_pence  optional founding price a month, fixed until founding_until (inclusive)
 --   setup_fee_pence / setup_fee_status   optional one-off set-up fee and whether it is due, paid or waived
 --   starts_on             the package's start date
@@ -24,9 +25,12 @@
 --   *_tokens, cost_micro_usd   token totals and the estimated cost of every live call (micro US dollars)
 --
 -- usage_report - one row per report that was started, drafted or approved, so a report counts once only
---   (re-drafting and re-approving never count again). root_report_id = the first version of an amended
---   report (an amendment of an approved report never counts again). The *_event columns name the usage
---   event that made each first transition (the counters read them in the same batch).
+--   (re-drafting and re-approving never count again). Keyed by report_id AND episode_fp - the server's keyed
+--   fingerprint of what the report is about (episode, template or form, patient - an HMAC that identifies
+--   nobody, '' when an event carried none) - so the same report id used for another patient or form counts on
+--   its own. root_report_id = the first version of an amended report (an amendment of an approved report
+--   with the same fingerprint never counts again). The *_event columns name the usage event that made each
+--   first transition (the counters read them in the same batch).
 --
 -- usage_event - which usage events have been applied (by id), so a retried write never counts twice.
 --   Kept for a week by the retention job.
@@ -35,7 +39,7 @@ CREATE TABLE IF NOT EXISTS clinic_package (
   package TEXT NOT NULL CHECK (package IN ('starter', 'practice', 'group', 'group_plus', 'custom', 'trial')),
   monthly_price_pence INTEGER NOT NULL CHECK (monthly_price_pence >= 0 AND monthly_price_pence <= 100000000),
   reports_included INTEGER NOT NULL CHECK (reports_included >= 0 AND reports_included <= 1000000),
-  extra_report_pence INTEGER NOT NULL CHECK (extra_report_pence >= 0 AND extra_report_pence <= 10000000),
+  extra_report_pence INTEGER CHECK (extra_report_pence IS NULL OR (extra_report_pence >= 0 AND extra_report_pence <= 10000000)),
   founding_price_pence INTEGER CHECK (founding_price_pence IS NULL OR (founding_price_pence >= 0 AND founding_price_pence <= 100000000)),
   founding_until TEXT,
   setup_fee_pence INTEGER CHECK (setup_fee_pence IS NULL OR (setup_fee_pence >= 0 AND setup_fee_pence <= 100000000)),
@@ -77,6 +81,7 @@ CREATE TABLE IF NOT EXISTS clinic_usage (
 CREATE TABLE IF NOT EXISTS usage_report (
   tenant_id TEXT NOT NULL,
   report_id TEXT NOT NULL,
+  episode_fp TEXT NOT NULL DEFAULT '',
   root_report_id TEXT NOT NULL,
   started_at TEXT,
   first_drafted_at TEXT,
@@ -91,7 +96,7 @@ CREATE TABLE IF NOT EXISTS usage_report (
   billable_event TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, report_id)
+  PRIMARY KEY (tenant_id, report_id, episode_fp)
 );
 
 CREATE INDEX IF NOT EXISTS usage_report_billable ON usage_report (tenant_id, billable_period);

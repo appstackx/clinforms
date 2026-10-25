@@ -100,15 +100,17 @@ Rules for new migrations:
 - *Packages and usage (25/10/2026, branch `feat/plan-usage`):* `0007_plan_usage` (Postgres `20261025000007_plan_usage`) adds
   four tables, no patient data in any of them: **`clinic_package`** (one row per clinic, ClinForms staff only: package
   starter | practice | group | group_plus | custom | trial, `monthly_price_pence`, `reports_included`,
-  `extra_report_pence`, optional `founding_price_pence` + `founding_until`, optional `setup_fee_pence` +
+  `extra_report_pence` (NULL = not agreed yet), optional `founding_price_pence` + `founding_until`, optional `setup_fee_pence` +
   `setup_fee_status` due | paid | waived, `starts_on`, internal `notes`; money in pence ex VAT, dates `YYYY-MM-DD` text in
   both dialects); **`clinic_usage`** (PK tenant_id + period `YYYY-MM` = UK calendar month: the package as it applied to
   the month – `package`, `plan_price_pence`, `plan_reports_included`, `plan_extra_report_pence` – and counters
   `reports_started`, `reports_drafted`, `reports_approved`, `amendments_approved`, `billable_reports`,
   `billable_on_approval`, `forms_read`, `question_sets`, `drafting_calls`, `failed_calls`, `reading_calls`, token totals
-  and `cost_micro_usd`; never touched by report retention); **`usage_report`** (PK tenant_id + report_id: each report
-  counts once – first drafted / approved, billable period and how, the root of an amended report, and the event that
-  made each first transition); **`usage_event`** (the events already applied – a retried write never counts twice; the
+  and `cost_micro_usd`; never touched by report retention); **`usage_report`** (PK tenant_id + report_id + `episode_fp`
+  – the module's keyed fingerprint of the report's episode, template or form and patient, `''` when an event carried
+  none (fix 25/10/2026: the same report id for another patient or form is another row, and an amendment needs the same
+  fingerprint): each report counts once – first drafted / approved, billable period and how, the root of an amended
+  report, and the event that made each first transition); **`usage_event`** (the events already applied – a retried write never counts twice; the
   retention job keeps a week). Each usage event is ONE atomic `runBatch` with conditions in SQL (no reads in between):
   report transitions are conditional UPDATEs naming the event, counters add "(SELECT count(*) … WHERE billable_event =
   <event>)" guarded by "event not applied yet", and the event row goes last (`src/server/repos/usage.ts`). Repositories

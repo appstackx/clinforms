@@ -189,12 +189,25 @@ drafting limits. Clinicians and staff see only "This month: X of N reports". No 
 clinic. A clinic without a package works exactly as before (usage is counted, no allowance is shown).
 
 **What counts (Khuram, 25/10/2026 – drafting costs money whether or not the report is completed):** a report counts
-towards the allowance **once** – when its answers are first drafted (its first successful live drafting call), or, if
-nothing was ever drafted for it (records-only / prefilled forms), when it is first approved. Re-drafting, regenerating
-or approving the same report again never counts again (the extra calls and tokens are still counted internally); an
-amended version of a report this clinic approved never counts. Failed live calls count no report but their tokens are
-recorded. The public demo and demo (prepared) answers never count. Fair use against endless re-drafting = the clinic's
-drafting limits above. Period = calendar month in UK time.
+towards the allowance **once** – the first time live drafting runs for it and costs money (a successful call, or a
+failed one that still used tokens: refused, cut off, unreadable), whether or not it is ever approved; or, if nothing
+was ever drafted for it (records-only / prefilled forms), when it is first approved. Re-drafting, regenerating or
+approving the same report again never counts again (the extra calls and tokens are still counted internally); an
+amended version of a report this clinic approved – **same patient, episode and form** – never counts. A failed call
+that used no tokens (time-out, unreachable) counts no report. Form readings (`POST /forms/analyse`) are set-up work:
+calls, tokens and cost on the platform page, never a report. The public demo and demo (prepared) answers never count.
+Fair use against endless re-drafting = the clinic's drafting limits above, plus the platform page's "per counted
+report" figure (amber above 40 calls a report). Period = calendar month in UK time; a package applies to the whole
+month it is saved in (a start date in a later month is refused – set it in the month it starts).
+
+**Which report (fix 25/10/2026, security review):** report ids and "amends" come from the browser. Each report event
+therefore carries the server's keyed fingerprint of what it is about (clinic, episode ids, template or form, patient
+name and date of birth – an HMAC, no patient data; `src/modules/medreport/api/usage.ts`), and `usage_report` is keyed
+by (clinic, report id, fingerprint): the same id for another patient or form counts on its own, and an "amends" is
+accepted only for an approved report with the same fingerprint. Ids that are not the Studio's own are stored as a keyed
+hash. What it cannot catch: a member who scripts the API to keep one patient's ids, name and date of birth while
+drafting another patient's notes (the drafts would then be labelled with the wrong patient) – the daily drafting limit
+and the "per counted report" figure on the platform page are the backstop.
 
 - **Platform page:** panel "Packages" (clinic, preset Starter £99/25 · Practice £199/100 · Group £349/250 · Group Plus
   £549/500 · Custom · Trial – a preset fills in the price list; extra £1.50, Group £1.25; founding price fixed 12 months
@@ -203,16 +216,24 @@ drafting limits above. Period = calendar month in UK time.
   administrators only): month selector, every clinic's package, price, allowance, reports counted, approved, counted but
   not approved, extra, extra × rate, drafting calls (+ failed), form readings, tokens (in / out / cache read / cache
   write), estimated drafting cost (list prices in `src/server/usage/pricing.ts`, £ at `CLINFORMS_USD_GBP_RATE`, default
-  0.79, or the page's rate field) and estimated margin (price + extra − cost), totals, **CSV** (`/app/platform/usage/export`,
-  formula-injection safe, audited `platform.usage_export`).
+  0.79, or the page's rate field) and estimated margin (price + extra − cost), totals (demo clinics' made-up price and
+  extra reports left out of the money totals; their real drafting cost kept in), drafting calls per counted report
+  (amber above 40), **CSV** (`/app/platform/usage/export`, formula-injection safe, audited `platform.usage_export`; a
+  cross-site request – `Sec-Fetch-Site` – gets the ordinary 404 and writes no audit row).
 - **Script** (shows a PREVIEW and saves nothing unless `--confirm`; production also needs `--yes` and Khuram's go):
   ```bash
   npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50   # preview
   npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50 --confirm --yes
   npm run admin:set-package -- --slug riverside --package practice [--founding-price 149 [--founding-until 2027-10-24]] \
-      [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-11-01] [--notes "…"]
+      [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-10-01] [--notes "…"]
   npm run admin:set-package -- --slug riverside --remove | --show
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package trial --price 300 --reports 500 --extra none --confirm --yes
   ```
+  `--extra none` (or an empty "Extra report price" on the platform page) = the extra price is **not agreed yet**: extra
+  reports are still counted and shown ("Extra reports: price to be agreed"; the platform page says "not set"), nothing is
+  priced or charged. A **Trial** package may carry the deal's terms (e.g. £300 / 500): the clinic sees "Trial" and the
+  allowance, never the price; the platform page shows the price but leaves Trial packages (and demo clinics) out of the
+  money totals – nobody pays for them.
 - **Audit:** `clinic.package_set` / `clinic.package_removed` under the clinic (by "ClinForms support") and, from the
   platform page, `platform.package_set` / `platform.package_removed` naming the administrator.
 - Needs migration `0007_plan_usage` on the target database (docs/database.md §3). Before it is applied the pages read

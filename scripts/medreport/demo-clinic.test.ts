@@ -366,6 +366,25 @@ describe("outputs – the demonstration notice", () => {
     (await pagesText(new Uint8Array(await preview.arrayBuffer()))).forEach((text, i) => assert.ok(hasNotice(text), `preview page ${i + 1}`));
   });
 
+  test("fix: a final document approved with a made-up number keeps the notice after the clinic is switched back to real", async () => {
+    const fileBase64 = await sampleBase64("northfield-rehab-progress");
+    const report = reportOf(D, "rpt_demo_then_real");
+    const receipt = await sign("sarah-d", report, northfieldOf(D), SARAH);
+    const signed: Report = { ...report, status: "signed", receipt };
+    await setClinicDemoFlag({ db }, D, false);
+    try {
+      const res = await call(handleRender, "/render?format=original", { report: signed, receipt, form: northfieldOf(D), fileBase64, requireFinal: true }, { member: "sarah-d" });
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.equal(res.headers.get(HEADERS.renderKind), "final");
+      const pages = await pagesText(new Uint8Array(await res.arrayBuffer()));
+      pages.forEach((text, i) => assert.ok(hasNotice(text), `page ${i + 1} still carries the notice: ${text.slice(-200)}`));
+      const finalRow = (await listAudit({ db }, D)).find((r) => r.action === "report.render_final" && r.targetId === report.id);
+      assert.equal(finalRow?.detail?.demoClinic, true, "the trail says it was marked as a demonstration");
+    } finally {
+      await setClinicDemoFlag({ db }, D, true);
+    }
+  });
+
   test("a real clinic's PDF form: no notice anywhere, and its final row has no demo flag", async () => {
     const fileBase64 = await sampleBase64("northfield-rehab-progress");
     const report = reportOf(A, "rpt_real_render");

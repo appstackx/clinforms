@@ -9,7 +9,9 @@
  * works exactly as before (usage is still counted, nothing is shown as an allowance).
  *
  * Setting a package also refreshes the CURRENT month's usage row (clinic_usage.package / plan_*), in the same atomic
- * batch, so this month is measured against the new package; earlier months keep the package they had.
+ * batch, so this month is measured against the new package; earlier months keep the package they had. So a package
+ * applies to the whole UK month it is saved in (no part-month pricing) and its start date may not be in a later month
+ * (refused: a future package would otherwise re-price this month at once – set it in the month it starts).
  *
  * Pure database code (no Next imports); the clock comes from ctx.now (tests pin it).
  */
@@ -23,7 +25,8 @@ export interface ClinicPackage {
   package: PackageId;
   monthlyPricePence: number;
   reportsIncluded: number;
-  extraReportPence: number;
+  /** null = not agreed yet (extra reports are counted and shown, with no price). */
+  extraReportPence: number | null;
   foundingPricePence: number | null;
   /** "YYYY-MM-DD" inclusive, or null. */
   foundingUntil: string | null;
@@ -47,7 +50,7 @@ type PackageRow = {
   package: string;
   monthly_price_pence: number;
   reports_included: number;
-  extra_report_pence: number;
+  extra_report_pence: number | null;
   founding_price_pence: number | null;
   founding_until: string | null;
   setup_fee_pence: number | null;
@@ -66,7 +69,7 @@ function toPackage(row: PackageRow): ClinicPackage {
     package: isPackageId(row.package) ? row.package : "custom",
     monthlyPricePence: toInt(row.monthly_price_pence),
     reportsIncluded: toInt(row.reports_included),
-    extraReportPence: toInt(row.extra_report_pence),
+    extraReportPence: row.extra_report_pence === null ? null : toInt(row.extra_report_pence),
     foundingPricePence: row.founding_price_pence === null ? null : toInt(row.founding_price_pence),
     foundingUntil: row.founding_until,
     setupFeePence: row.setup_fee_pence === null ? null : toInt(row.setup_fee_pence),
@@ -114,7 +117,8 @@ export interface PackageInput {
   package: PackageId;
   monthlyPricePence: number;
   reportsIncluded: number;
-  extraReportPence: number;
+  /** null = not agreed yet. */
+  extraReportPence: number | null;
   foundingPricePence?: number | null;
   /** Default with a founding price: FOUNDING_MONTHS from the start, less a day. */
   foundingUntil?: string | null;
@@ -160,12 +164,17 @@ export function foundingEnd(startsOn: string, months = FOUNDING_MONTHS): string 
 export function normalisePackageInput(input: PackageInput, now: Date): Omit<ClinicPackage, "tenantId" | "createdAt" | "updatedAt"> {
   if (!isPackageId(input.package)) throw new RepoInputError("Choose a package: Starter, Practice, Group, Group Plus, Custom or Trial.");
   const monthly = wholePence(input.monthlyPricePence, "The monthly price", MAX_MONTHLY_PENCE);
-  const extra = wholePence(input.extraReportPence, "The price of an extra report", MAX_EXTRA_PENCE);
+  const extra = input.extraReportPence === null ? null : wholePence(input.extraReportPence, "The price of an extra report", MAX_EXTRA_PENCE);
   const included = input.reportsIncluded;
   if (typeof included !== "number" || !Number.isInteger(included) || included < 0 || included > MAX_REPORTS_INCLUDED) {
     throw new RepoInputError(`Reports included must be a whole number from 0 to ${MAX_REPORTS_INCLUDED.toLocaleString("en-GB")}.`);
   }
   const startsOn = input.startsOn ? assertUkDate(input.startsOn, "The start date") : ukDateOf(now);
+  // Fix 25/10/2026: a package applies to the whole UK month it is saved in (it replaces the clinic's package and
+  // re-measures this month), so it cannot start in a later month – set it in the month it starts.
+  if (startsOn.slice(0, 7) > ukPeriodOf(now)) {
+    throw new RepoInputError("A package can start this month at the latest: it applies to the whole month it is saved in. Set a later package in the month it starts.");
+  }
   const founding =
     input.foundingPricePence === null || input.foundingPricePence === undefined
       ? null

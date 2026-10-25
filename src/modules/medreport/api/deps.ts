@@ -116,15 +116,21 @@ export interface VerifiedPartnerKey {
  * A usage event of a clinic (25/10/2026 – packages and usage): what the counters of the clinic's month record. Ids,
  * counts and token totals only – never patient data. The host decides how a report counts (once: at its first live
  * drafting, or at its first approval when nothing was drafted – src/server/repos/usage.ts).
+ *
+ * `episodeFp` (fix 25/10/2026): the report's usage fingerprint, worked out by the module on the server (api/usage.ts
+ * usageEpisodeFp – clinic, episode, template or form, the patient's name and date of birth; a keyed hash that identifies
+ * nobody). The host counts a report per (report id, fingerprint) and accepts `amendsReportId` only for an approved report
+ * with the same fingerprint. Absent = "" (hosts and tests that predate it).
  */
 export type UsageEvent =
   /** A new report was stored for the clinic (POST/PUT create in the clinic's storage). */
-  | { kind: "report_started"; reportId: string; amendsReportId?: string }
+  | { kind: "report_started"; reportId: string; amendsReportId?: string; episodeFp?: string }
   /**
    * One live drafting call (POST /drafts in live mode), successful (answers drafted) or not. `reportId` = the report
-   * being drafted (the Studio always sends it); `usage`/`model` when the drafting service answered.
+   * being drafted (the Studio always sends it); `usage`/`model` when the drafting service answered – a failed call that
+   * still used tokens counts its report too (drafting cost money).
    */
-  | { kind: "drafting_call"; reportId?: string; amendsReportId?: string; succeeded: boolean; model?: string; usage?: TokenUsage }
+  | { kind: "drafting_call"; reportId?: string; amendsReportId?: string; episodeFp?: string; succeeded: boolean; model?: string; usage?: TokenUsage }
   /**
    * A referrer form reading (POST /forms/analyse): `read` = a proposed map came back; `liveCalls` = successful live
    * calls (a long form is read in parallel parts), `failedCalls` = live calls that failed (the reading then fell back
@@ -132,7 +138,7 @@ export type UsageEvent =
    */
   | { kind: "form_read"; read: boolean; liveCalls: number; failedCalls: number; model?: string; usage?: TokenUsage }
   /** A report was approved (POST /sign issued a receipt). */
-  | { kind: "report_approved"; reportId: string; amendsReportId?: string }
+  | { kind: "report_approved"; reportId: string; amendsReportId?: string; episodeFp?: string }
   /** A portal question set was stored for the clinic for the first time. */
   | { kind: "question_set_created"; formId: string };
 

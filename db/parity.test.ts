@@ -246,6 +246,32 @@ describe("migration parity (SQLite/D1 vs Postgres/Supabase)", () => {
     await pglite.query("delete from public.clinic_plan where tenant_id = 'zz-demo-check'");
   });
 
+  it("usage_report (0007) is keyed by tenant, report id AND episode_fp (NOT NULL, default ''), on both: one row per fingerprint", async () => {
+    assert.deepEqual(sqliteConstraints(sqlite, "usage_report").primaryKey, ["tenant_id", "report_id", "episode_fp"]);
+    assert.deepEqual((await postgresConstraints(pglite)).get("usage_report")?.primaryKey, ["tenant_id", "report_id", "episode_fp"]);
+    const col = (sqlite.prepare('SELECT type, "notnull" AS nn, dflt_value AS d FROM pragma_table_info(?) WHERE name = ?').all("usage_report", "episode_fp") as Row[])[0];
+    assert.deepEqual({ type: col?.type, nn: Number(col?.nn), d: String(col?.d) }, { type: "TEXT", nn: 1, d: "''" });
+    const pgCol = await pglite.query<Row>(
+      "select data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = 'usage_report' and column_name = 'episode_fp'",
+    );
+    assert.deepEqual(pgCol.rows, [{ data_type: "text", is_nullable: "NO", column_default: "''::text" }]);
+    // The same report id with two fingerprints is two rows; a row written without one reads ''.
+    const at = "2026-10-25T00:00:00.000Z";
+    for (const fp of ["fp_aaaaaaaaaaaaaaaa", "fp_bbbbbbbbbbbbbbbb"]) {
+      sqlite.prepare("INSERT INTO usage_report (tenant_id, report_id, episode_fp, root_report_id, created_at, updated_at) VALUES ('zz-fp', 'rpt_x', ?, 'rpt_x', ?, ?)").run(fp, at, at);
+      await pglite.query("insert into public.usage_report (tenant_id, report_id, episode_fp, root_report_id, created_at, updated_at) values ('zz-fp', 'rpt_x', $1, 'rpt_x', $2, $2)", [fp, at]);
+    }
+    sqlite.prepare("INSERT INTO usage_report (tenant_id, report_id, root_report_id, created_at, updated_at) VALUES ('zz-fp', 'rpt_y', 'rpt_y', ?, ?)").run(at, at);
+    await pglite.query("insert into public.usage_report (tenant_id, report_id, root_report_id, created_at, updated_at) values ('zz-fp', 'rpt_y', 'rpt_y', $1, $1)", [at]);
+    assert.throws(() => sqlite.prepare("INSERT INTO usage_report (tenant_id, report_id, episode_fp, root_report_id, created_at, updated_at) VALUES ('zz-fp', 'rpt_x', 'fp_aaaaaaaaaaaaaaaa', 'rpt_x', ?, ?)").run(at, at), /UNIQUE|PRIMARY/i);
+    assert.equal((sqlite.prepare("SELECT count(*) AS n FROM usage_report WHERE tenant_id = 'zz-fp' AND report_id = 'rpt_x'").all() as Row[])[0]?.n, 2);
+    assert.equal((sqlite.prepare("SELECT episode_fp AS f FROM usage_report WHERE tenant_id = 'zz-fp' AND report_id = 'rpt_y'").all() as Row[])[0]?.f, "");
+    assert.equal((await pglite.query<Row>("select count(*)::int as n from public.usage_report where tenant_id = 'zz-fp' and report_id = 'rpt_x'")).rows[0]?.n, 2);
+    assert.equal((await pglite.query<Row>("select episode_fp as f from public.usage_report where tenant_id = 'zz-fp' and report_id = 'rpt_y'")).rows[0]?.f, "");
+    sqlite.exec("DELETE FROM usage_report WHERE tenant_id = 'zz-fp'");
+    await pglite.query("delete from public.usage_report where tenant_id = 'zz-fp'");
+  });
+
   it("only a file holding one lone ADD COLUMN statement is exempt from re-running cleanly", () => {
     assert.equal(isLoneAddColumn("-- why\nALTER TABLE access_requests ADD COLUMN contacted_at TEXT;\n"), true);
     assert.equal(isLoneAddColumn("ALTER TABLE t ADD c TEXT"), true);

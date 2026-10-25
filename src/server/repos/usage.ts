@@ -4,13 +4,22 @@
  *
  * What counts towards a clinic's allowance (Khuram, 25/10/2026: drafting costs money whether or not the report is
  * completed): a report counts ONCE –
- *   - at its first SUCCESSFUL live drafting call (its answers were first drafted), or
+ *   - at its first live drafting call that cost money: a successful one (its answers were first drafted), or a failed
+ *     one that still used tokens (refused, cut off, unreadable – the service answered), or
  *   - at its first approval, when nothing was ever drafted for it (records-only or prefilled forms).
  * Re-drafting, regenerating or approving the same report again never counts again (the extra calls and tokens are
  * still counted as calls and cost). An amended version of an approved report (report.amends naming a report this
- * clinic approved) is the same report: root_report_id points at the first version and it never counts. A live call
- * without a report id (the Studio always sends one) counts as a report of its own – it cost money and cannot be
- * linked. The public demo never reaches this code (the module skips it).
+ * clinic approved, for the same patient, episode and form) is the same report: root_report_id points at the first
+ * version and it never counts. A live call without a report id (the Studio always sends one) counts as a report of its
+ * own – it cost money and cannot be linked. A failed call that used no tokens (time-out, unreachable) counts no report.
+ * The public demo never reaches this code (the module skips it).
+ *
+ * Which report (fix 25/10/2026): the report id and "amends" come from the browser, so each report event also carries
+ * the module's server-side fingerprint of what it is about (`episode_fp`: clinic, episode, template or form, patient –
+ * a keyed hash, src/modules/medreport/api/usage.ts usageEpisodeFp). A report's row is keyed by (tenant_id, report_id,
+ * episode_fp): the same report id used for another patient or another form is another row and counts on its own, and
+ * an amendment is accepted only when the amended report was approved with the SAME fingerprint. Events without one
+ * (older callers, tests) use "".
  *
  * Every event is ONE atomic batch (D1: env.DB.batch(); Postgres / SQLite: a transaction), with no reads in between:
  *   1. the report's row is made if missing, then its first transitions are set by conditional UPDATEs that name the
@@ -21,8 +30,10 @@
  *   4. the event is recorded as applied (last).
  * So a retry of the same event (same id) never counts twice, and concurrent events of the same report count it once.
  *
- * Ids, counts, prices and token totals only – never patient data. Tenant id in every WHERE clause and key.
+ * Ids, counts, prices, token totals and keyed fingerprints only – never patient data. Tenant id in every WHERE clause
+ * and key.
  */
+import { createHash } from "node:crypto";
 import { sql, type RawBuilder } from "kysely";
 import type { UsageEvent } from "../../modules/medreport/api/deps";
 import { runBatch, type BatchQuery } from "../db/batch";
@@ -33,13 +44,31 @@ import { isMissingUsageTable, noteMissingUsageTables, ukPeriodOf } from "./usage
 /** Report ids as the Studio makes them (and the store accepts): printable, no spaces, ≤ 128 characters. */
 const REPORT_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/;
 const EVENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
+/** The module's fingerprint (base64url, 22 characters); anything else reads as "" (no binding). */
+const EPISODE_FP = /^[A-Za-z0-9_-]{16,64}$/;
 
 export function newUsageEventId(): string {
   return `ue_${ulid()}`;
 }
 
+/**
+ * The key a report id is counted under: as it is when it looks like a store id, else a stable hash of it (the module
+ * already keys ids that are not the Studio's – api/usage.ts usageReportKey; this covers any other caller), so an odd id
+ * still counts once – at its approval too – and is never stored as sent.
+ */
 function validReportId(id: string | undefined): string | null {
-  return typeof id === "string" && REPORT_ID.test(id) ? id : null;
+  if (typeof id !== "string" || id === "") return null;
+  return REPORT_ID.test(id) ? id : `x_${createHash("sha256").update(id, "utf8").digest("hex").slice(0, 32)}`;
+}
+
+function validEpisodeFp(fp: string | undefined): string {
+  return typeof fp === "string" && EPISODE_FP.test(fp) ? fp : "";
+}
+
+/** True when a call used tokens (the drafting service answered): it cost money. */
+function usedTokens(usage: Parameters<typeof cleanUsage>[0]): boolean {
+  const t = cleanUsage(usage);
+  return t.input + t.output + t.cacheRead + t.cacheWrite > 0;
 }
 
 const notApplied = (eventId: string) => sql<boolean>`not exists (select 1 from usage_event where id = ${eventId})`;
@@ -47,11 +76,12 @@ const notApplied = (eventId: string) => sql<boolean>`not exists (select 1 from u
 const madeBy = (
   tenantId: string,
   reportId: string,
+  fp: string,
   column: "started_event" | "drafted_event" | "approved_event" | "billable_event",
   eventId: string,
   extra?: "first" | "amendment",
 ) =>
-  sql<number>`(select count(*) from usage_report where tenant_id = ${tenantId} and report_id = ${reportId} and ${sql.ref(column)} = ${eventId}${
+  sql<number>`(select count(*) from usage_report where tenant_id = ${tenantId} and report_id = ${reportId} and episode_fp = ${fp} and ${sql.ref(column)} = ${eventId}${
     extra === "first" ? sql` and root_report_id = report_id` : extra === "amendment" ? sql` and root_report_id <> report_id` : sql``
   })`;
 const plus = (column: string, value: RawBuilder<number> | number) => sql<number>`${sql.ref(column)} + ${value}`;
@@ -78,19 +108,25 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
   const db = ctx.db;
   const queries: BatchQuery[] = [];
 
-  // The report this event is about, and the report it amends (an approved one of this clinic, checked in SQL).
+  // The report this event is about, and the report it amends (an approved one of this clinic with the same
+  // fingerprint, checked in SQL).
   let reportId: string | null = null;
   let amends: string | null = null;
+  let fp = "";
+  // A drafting call counts its report when it cost money: it succeeded, or it failed after using tokens.
+  const callCounts = event.kind === "drafting_call" && (event.succeeded || usedTokens(event.usage));
   if (event.kind === "report_started" || event.kind === "report_approved" || event.kind === "drafting_call") {
     reportId = validReportId(event.reportId);
     amends = validReportId(event.amendsReportId);
-    if (event.kind === "drafting_call" && !event.succeeded)
-      reportId = null; // a failed call counts no report
+    fp = validEpisodeFp(event.episodeFp);
+    if (event.kind === "drafting_call" && !callCounts)
+      reportId = null; // a failed call that used no tokens counts no report
     else if (!reportId && event.kind === "drafting_call") reportId = `unlinked-${eventId}`;
+    if (amends === reportId) amends = null;
   }
   if (reportId) {
     const approvedRoot = amends
-      ? sql<string>`(select root_report_id from usage_report where tenant_id = ${tenantId} and report_id = ${amends} and first_approved_at is not null)`
+      ? sql<string>`(select root_report_id from usage_report where tenant_id = ${tenantId} and report_id = ${amends} and episode_fp = ${fp} and first_approved_at is not null)`
       : null;
     queries.push(
       db
@@ -98,11 +134,12 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
         .values({
           tenant_id: tenantId,
           report_id: reportId,
+          episode_fp: fp,
           root_report_id: approvedRoot ? sql<string>`coalesce(${approvedRoot}, ${reportId})` : reportId,
           created_at: at,
           updated_at: at,
         })
-        .onConflict((oc) => oc.columns(["tenant_id", "report_id"]).doNothing()),
+        .onConflict((oc) => oc.columns(["tenant_id", "report_id", "episode_fp"]).doNothing()),
     );
     if (approvedRoot) {
       // A row made before the amendment was known (an older Studio): it becomes the amendment it is, while uncounted.
@@ -112,8 +149,8 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
           .set({ root_report_id: sql<string>`coalesce(${approvedRoot}, root_report_id)`, updated_at: at })
           .where("tenant_id", "=", tenantId)
           .where("report_id", "=", reportId)
-          .where("billable_period", "is", null)
-          .where("report_id", "<>", amends as string),
+          .where("episode_fp", "=", fp)
+          .where("billable_period", "is", null),
       );
     }
   }
@@ -123,6 +160,7 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
       .set({ ...set, updated_at: at })
       .where("tenant_id", "=", tenantId)
       .where("report_id", "=", reportId as string)
+      .where("episode_fp", "=", fp)
       .where(column, "is", null);
   const billable = (via: "drafted" | "approved") =>
     db
@@ -130,6 +168,7 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
       .set({ billable_period: period, billable_at: at, billable_via: via, billable_event: eventId, updated_at: at })
       .where("tenant_id", "=", tenantId)
       .where("report_id", "=", reportId as string)
+      .where("episode_fp", "=", fp)
       .where("billable_period", "is", null)
       .where(sql<boolean>`root_report_id = report_id`);
 
@@ -149,28 +188,30 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
     case "report_started": {
       if (!reportId) return { eventId, period, reportId: null };
       queries.push(transition({ started_at: at, started_event: eventId }, "started_at"));
-      add.reports_started = madeBy(tenantId, reportId, "started_event", eventId, "first");
+      add.reports_started = madeBy(tenantId, reportId, fp, "started_event", eventId, "first");
       break;
     }
     case "drafting_call": {
-      if (event.succeeded) {
+      if (callCounts) {
         const id = reportId as string;
-        queries.push(transition({ first_drafted_at: at, drafted_event: eventId }, "first_drafted_at"));
+        if (event.succeeded) queries.push(transition({ first_drafted_at: at, drafted_event: eventId }, "first_drafted_at"));
         queries.push(billable("drafted"));
-        queries.push(
-          db
-            .updateTable("usage_report")
-            .set({ drafting_calls: sql<number>`drafting_calls + 1`, updated_at: at })
-            .where("tenant_id", "=", tenantId)
-            .where("report_id", "=", id)
-            .where(notApplied(eventId)),
-        );
-        add.drafting_calls = 1;
-        add.reports_drafted = madeBy(tenantId, id, "drafted_event", eventId, "first");
-        add.billable_reports = madeBy(tenantId, id, "billable_event", eventId);
-      } else {
-        add.failed_calls = 1;
+        if (event.succeeded) {
+          queries.push(
+            db
+              .updateTable("usage_report")
+              .set({ drafting_calls: sql<number>`drafting_calls + 1`, updated_at: at })
+              .where("tenant_id", "=", tenantId)
+              .where("report_id", "=", id)
+              .where("episode_fp", "=", fp)
+              .where(notApplied(eventId)),
+          );
+        }
+        if (event.succeeded) add.reports_drafted = madeBy(tenantId, id, fp, "drafted_event", eventId, "first");
+        add.billable_reports = madeBy(tenantId, id, fp, "billable_event", eventId);
       }
+      if (event.succeeded) add.drafting_calls = 1;
+      else add.failed_calls = 1;
       tokens(event.usage, event.model);
       break;
     }
@@ -178,10 +219,10 @@ export async function recordUsageEvent(ctx: DbContext, tenantId: string, event: 
       if (!reportId) return { eventId, period, reportId: null };
       queries.push(transition({ first_approved_at: at, approved_event: eventId }, "first_approved_at"));
       queries.push(billable("approved"));
-      add.reports_approved = madeBy(tenantId, reportId, "approved_event", eventId, "first");
-      add.amendments_approved = madeBy(tenantId, reportId, "approved_event", eventId, "amendment");
-      add.billable_reports = madeBy(tenantId, reportId, "billable_event", eventId);
-      add.billable_on_approval = madeBy(tenantId, reportId, "billable_event", eventId);
+      add.reports_approved = madeBy(tenantId, reportId, fp, "approved_event", eventId, "first");
+      add.amendments_approved = madeBy(tenantId, reportId, fp, "approved_event", eventId, "amendment");
+      add.billable_reports = madeBy(tenantId, reportId, fp, "billable_event", eventId);
+      add.billable_on_approval = madeBy(tenantId, reportId, fp, "billable_event", eventId);
       break;
     }
     case "form_read": {
@@ -378,10 +419,18 @@ export async function countCountedNotApprovedByTenant(ctx: DbContext, period: st
   return new Map(rows.map((r) => [r.tenant_id, toInt(r.n)] as const));
 }
 
-/** The report's usage row (tests, support). */
-export async function getUsageReport(ctx: DbContext, tenantId: string, reportId: string) {
+/** The report's usage row (tests, support): the first one made, or the one with this fingerprint. */
+export async function getUsageReport(ctx: DbContext, tenantId: string, reportId: string, episodeFp?: string) {
   assertTenantId(tenantId);
-  return (await ctx.db.selectFrom("usage_report").selectAll().where("tenant_id", "=", tenantId).where("report_id", "=", reportId).executeTakeFirst()) ?? null;
+  let q = ctx.db.selectFrom("usage_report").selectAll().where("tenant_id", "=", tenantId).where("report_id", "=", reportId);
+  if (episodeFp !== undefined) q = q.where("episode_fp", "=", episodeFp);
+  return (await q.orderBy("created_at").orderBy("episode_fp").executeTakeFirst()) ?? null;
+}
+
+/** Every usage row of the report id (one per fingerprint – tests, support). */
+export async function listUsageReportRows(ctx: DbContext, tenantId: string, reportId: string) {
+  assertTenantId(tenantId);
+  return ctx.db.selectFrom("usage_report").selectAll().where("tenant_id", "=", tenantId).where("report_id", "=", reportId).orderBy("created_at").orderBy("episode_fp").execute();
 }
 
 /** getUsageMonths for the app's pages: a database before migration 0007 reads as "no usage". */

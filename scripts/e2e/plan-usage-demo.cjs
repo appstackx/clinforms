@@ -19,6 +19,8 @@
  *      and the database agrees; the activity trail (demo switch, packages, PH-DEMO approvals).
  *   8. The package becomes the Blue Heart-style deal – Custom £300, 500 reports, £0.50 extra: the month is
  *      re-measured ("3 of 500 reports", nothing extra) on both pages.
+ *   8b. (fix 25/10/2026) The extra price left empty (not agreed yet), 2 reports: "Extra reports: price to be agreed",
+ *      "3 of 2 reports", 1 extra report shown without a price; the platform row says "not set".
  *
  *   npm run build
  *   NODE_PATH=<node_modules with playwright> node scripts/e2e/plan-usage-demo.cjs   [PORT=3256] [E2E_OUT=…] [MAX_LIVE_CALLS=12]
@@ -676,8 +678,25 @@ async function runFlow() {
     assert.ok(Number(m.tokens.split(" ")[0].replace(/,/g, "")) > 0, `tokens ${m.tokens}`);
     assert.match(m["est. drafting cost"], /^£\d+\.\d\d \$\d+\.\d\d$/);
     assert.match(m["est. margin"], /^£30\d\.\d\d$/);
-    assert.match(usageText, /Demo clinics \(made-up data only\) are counted like any clinic and are included in the totals/);
+    assert.match(usageText, /Demo clinics \(made-up data only\) are counted like any clinic\. Their drafting costs are real and are in the cost total/);
     return m;
+  });
+  // Fix 25/10/2026: the demo clinic's made-up price and extra reports stay out of the money totals; its cost stays in.
+  const totals = await admin.evaluate(() => {
+    const cells = (tr) => Array.from(tr.querySelectorAll("td")).map((td) => td.innerText.replace(/\s+/g, " ").trim());
+    const rows = Array.from(document.querySelectorAll("[data-usage-row]")).map((tr) => ({ demo: Boolean(tr.querySelector("[data-usage-demo]")), cells: cells(tr) }));
+    const total = cells(document.querySelector("[data-usage-totals]"));
+    return { rows, total };
+  });
+  const pounds = (t) => (t === "–" || !t ? 0 : Number(String(t).split(" ")[0].replace(/[£,]/g, "")));
+  check("7a2", "totals: price and extra charge leave the demo clinic out; the cost total includes it", () => {
+    const real = totals.rows.filter((r) => !r.demo);
+    // td columns: package, price, allowance, counted, approved, not approved, extra, extra × rate, cost, margin, …
+    assert.equal(pounds(totals.total[1]), real.reduce((n, r) => n + pounds(r.cells[1]), 0), `price total ${totals.total[1]}`);
+    assert.equal(pounds(totals.total[7]), real.reduce((n, r) => n + pounds(r.cells[7]), 0), `extra charge total ${totals.total[7]}`);
+    const allCost = totals.rows.reduce((n, r) => n + pounds(r.cells[8]), 0);
+    assert.ok(Math.abs(pounds(totals.total[8]) - allCost) < 0.015, `cost total ${totals.total[8]} vs ${allCost}`);
+    return { total: totals.total.slice(0, 10) };
   });
   check("7b", "the database agrees: A and B counted when drafted, C counted though never approved; every call's tokens", () => {
     assert.equal(u.billable_reports, 3);
@@ -735,5 +754,29 @@ async function runFlow() {
     assert.match(plan500, /3 of 500 reports/);
     assert.doesNotMatch(plan500, /would be charged/);
     assert.deepEqual([m500.allowance, m500.counted, m500.extra, m500["extra × rate"]], ["500", "3", "0", "£0.00 at £0.50"]);
+  });
+
+  /* 8b – (fix 25/10/2026) the extra price not agreed yet: the field left empty – counted, shown without a price */
+  await admin.goto(`${BASE}/app/platform`);
+  const pkgForm2 = admin.locator("form[aria-label='Clinic package']");
+  await pkgForm2.locator("select[name=tenantId]").selectOption(CLINIC.slug);
+  await pkgForm2.locator("select[name=package]").selectOption("custom");
+  await pkgForm2.locator("input[name=monthlyPrice]").fill("300");
+  await pkgForm2.locator("input[name=reportsIncluded]").fill("2");
+  await pkgForm2.locator("input[name=extraReportPrice]").fill("");
+  await pkgForm2.locator("button:has-text('Save package')").click();
+  await admin.waitForSelector(`text=${CLINIC.slug}: Custom – £300 a month, 2 reports, extra not set yet`, { timeout: 30000 });
+  await owner.goto(`${BASE}/app/settings/plan`);
+  const planUnset = await visibleText(owner);
+  await shot(owner, "09-plan-extra-not-set");
+  await admin.goto(`${BASE}/app/platform/usage`);
+  const mUnset = await usageRow(admin, CLINIC.slug);
+  await shot(admin, "10-platform-usage-extra-not-set");
+  check("8b", "extra price left empty: 'price to be agreed', 1 extra report counted with no price, nothing charged; the platform says 'not set'", () => {
+    assert.match(planUnset, /Extra reports: price to be agreed/);
+    assert.match(planUnset, /3 of 2 reports/);
+    assert.match(planUnset, /1 extra report this month\. The price of extra reports is still to be agreed – nothing is charged until it is\./);
+    assert.doesNotMatch(planUnset, /would be charged/);
+    assert.deepEqual([mUnset.allowance, mUnset.counted, mUnset.extra, mUnset["extra × rate"]], ["2", "3", "1", "not set"]);
   });
 }

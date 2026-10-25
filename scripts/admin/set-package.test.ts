@@ -33,6 +33,12 @@ test("set-package: a preset fills in the price list; custom needs every amount; 
   assert.equal(blueHeart.input.setupFeePence, 25000);
   assert.equal(blueHeart.input.setupFeeStatus, "waived");
   assert.equal(blueHeart.input.startsOn, "2026-11-01");
+  // --extra none: the extra price is not agreed yet (Blue Heart's trial on the deal's terms).
+  const unset = packageCommand(args("--slug blue-heart-clinics --package trial --price 300 --reports 500 --extra none"));
+  assert.ok(unset.kind === "set" && unset.input.extraReportPence === null && unset.input.monthlyPricePence === 30000 && unset.input.reportsIncluded === 500);
+  const customUnset = packageCommand(args("--slug x --package custom --price 300 --reports 500 --extra none"));
+  assert.ok(customUnset.kind === "set" && customUnset.input.extraReportPence === null);
+  assert.ok(describePackage(customUnset.input).includes("  extra report:     not set yet (counted, no price)"));
   const founding = packageCommand(args("--slug x --package practice --founding-price 149"));
   assert.ok(founding.kind === "set" && founding.input.foundingPricePence === 14900 && founding.input.monthlyPricePence === 19900);
   assert.deepEqual(packageCommand(args("--slug x --show")), { kind: "show" });
