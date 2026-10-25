@@ -620,6 +620,16 @@ export interface GapResolutionOptions {
   minLength: number;
   /** Why "Resolve" is not offered, or what resolving means here. */
   hint: string | null;
+  /**
+   * Fix round 1 (B0-3): "Acknowledge with a reason" is offered (default). Not on a required question with no answer yet:
+   * acknowledging would not let the form be approved without its answer.
+   */
+  canAcknowledge?: boolean;
+}
+
+/** gapResolutionOptions() for a gap in a required question that has no answer yet: answer it first (fix round 1, B0-3). */
+export function requiredAnswerFirst(options: GapResolutionOptions): GapResolutionOptions {
+  return { ...options, canAcknowledge: false, hint: "This form requires an answer here: give it, then mark the gap resolved." };
 }
 
 /**

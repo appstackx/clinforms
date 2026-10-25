@@ -228,8 +228,13 @@ function describeBox(box: BoxItem, section: ReportSection, field: FormField | un
       : { heading: "Optional – needs your opinion", instruction: `Only you can answer this: ${opinion}, or acknowledge the gap with a reason to leave it blank.` };
   }
   const effect = field ? leftBlankEffect(field) : null;
+  // Fix round 1 (B0-3): a required question is answered, never "acknowledged" blank – say so up front, with its options.
+  const options = field?.options?.length && answerKindFor(field.answerType) === "choice" ? field.options : null;
   return box.required
-    ? { heading: "Required – no answer yet", instruction: `${verb} yourself – the notes do not settle it.` }
+    ? {
+        heading: "Required – no answer yet",
+        instruction: options ? `This form requires an answer – choose one of ${options.join(" / ")}.` : `${verb} yourself – the notes do not settle it.`,
+      }
     : { heading: "Optional – no answer yet", instruction: `Answer it if you can, or leave it blank${effect ? ` (${effect})` : ""}.` };
 }
 
