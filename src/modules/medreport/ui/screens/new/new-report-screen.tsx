@@ -39,7 +39,7 @@ import { DataStep, importedSummary } from "../../components/new/data-step";
 import { DraftProgress } from "../../components/new/draft-progress";
 import { FormStep, type TargetChoice } from "../../components/new/form-step";
 import { generateReport, instructingPartyOf, type DraftGroupProgress, type GenerateTarget } from "../../components/new/generate";
-import { rememberFormForReferrer } from "../../components/new/referrer-match";
+import { notesReportKind, rememberFormForReferrer } from "../../components/new/referrer-match";
 import { SourceStep, type SourceResult } from "../../components/new/source-step";
 
 type Step = 1 | 2 | 3 | 4;
@@ -154,6 +154,8 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
   }, []);
 
   const party = useMemo(() => (data ? instructingPartyOf(data.bundle) : null), [data]);
+  // Fix round 1 (B0-20): an initial assessment or a discharge – the form remembered for this referrer for that kind.
+  const notesKind = useMemo(() => (data ? notesReportKind(data.bundle) : null), [data]);
   const chosenForm: FormDefinition | undefined = choice?.kind === "form" ? forms.find((f) => f.id === choice.formId) : undefined;
   const chosenTemplate = choice?.kind === "template" ? templates.find((t) => t.id === choice.templateId) : undefined;
   const canGenerate = Boolean(data && (chosenForm?.status === "confirmed" || chosenTemplate));
@@ -162,7 +164,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
     if (!data || !party) return;
     const target: GenerateTarget | null = chosenForm ? { kind: "form", form: chosenForm } : chosenTemplate ? { kind: "template", template: chosenTemplate } : null;
     if (!target) return;
-    if (target.kind === "form") rememberFormForReferrer(party.name, target.form.id);
+    if (target.kind === "form") rememberFormForReferrer(party.name, target.form.id, notesKind);
     const controller = new AbortController();
     abortRef.current = controller;
     setStep(4);
@@ -314,6 +316,7 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
               onChoice={setChoice}
               onTemplates={setTemplates}
               preferredFormId={initialFormId}
+              kind={notesKind}
             />
             <NavBar
               back={{ label: "Back", onClick: () => setStep(2) }}
