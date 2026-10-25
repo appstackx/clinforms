@@ -116,3 +116,24 @@ test("fix round 1: a Word form that was not converted from RTF is written exactl
   assert.doesNotMatch(problem, /1F497D/);
   assert.doesNotMatch(rPrOf(xml, "Second paragraph (fictional)."), /1F497D/);
 });
+
+test("fix round 2 (B1-8): an answer on a new line after an uncoloured instruction in a cell takes the navy of the cell's label – every paragraph", () => {
+  // JJ Physio IA "Clinical Impression": a bold navy label, then the instruction paragraph "Please give clinical details
+  // in this box" with no colour on its mark or its run; the answer goes on a new line after the instruction.
+  const body = `<w:tbl><w:tr>${cell(
+    para(`<w:rPr>${CALIBRI}<w:b/><w:bCs/>${BLUE}${SZ22}</w:rPr>`, run("Clinical Impression:", `${CALIBRI}<w:b/><w:bCs/>${BLUE}${SZ22}`)),
+    para(`<w:rPr>${CALIBRI}${SZ22}</w:rPr>`, run("Please give clinical details in this box", `${CALIBRI}${SZ22}`)),
+  )}${cell(para("", run("Upper Limb / Lower Limb", `${CALIBRI}${BLUE}${SZ22}`)))}</w:tr></w:tbl>`;
+  const jj: FormDefinition = { ...form("(JJ Physio) - IA -.rtf"), fields: [field("F-10", { kind: "docx", target: "after_paragraph", blockId: "t0.r0.c0.p1" })] };
+  const answers = { "F-10": { text: "Right knee pain on the inner side after a twist (fictional).\n\nStairs and squatting provoke it (fictional)." } };
+  const xml = xmlOf(fillDocx(docx(body), jj, answers, { draft: false }));
+  for (const text of ["Right knee pain on the inner side after a twist (fictional).", "Stairs and squatting provoke it (fictional)."]) {
+    const rPr = rPrOf(xml, text);
+    assert.match(rPr, /<w:color w:val="1F497D"\/>/, `navy like the form: ${text}`);
+    assert.doesNotMatch(rPr, /<w:b\/>/, "not the label's bold");
+    assert.match(rPr, /w:ascii="Calibri"/);
+  }
+  // Any other Word form: as before.
+  const plain = xmlOf(fillDocx(docx(body), { ...jj, file: { ...jj.file, fileName: "referrer-form.docx" } }, answers, { draft: false }));
+  assert.doesNotMatch(rPrOf(plain, "Stairs and squatting provoke it (fictional)."), /1F497D/);
+});

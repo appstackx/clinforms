@@ -23,7 +23,7 @@ import { formAnchorPdfFieldNames } from "../../../core/forms";
 import { INSTRUCTION_PREVIEW_TITLE } from "../../../core/template-instructions";
 import type { FormAnchor, FormMimeType, PdfFieldType } from "../../../core/types";
 import { cn } from "../../primitives";
-import { DOCX_PAGE_OVERFLOW_CSS, DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { indexDocxDom, type DocxIndex } from "./docx-index";
 import { INSTRUCTION_CLASS, markTemplateInstructions, type PreviewInstructions } from "./docx-instructions";
 import { Spinner } from "./ui-bits";
@@ -74,7 +74,7 @@ const HL_CSS = `
 .mr-picking [data-mr-block]{cursor:crosshair;}
 .mr-picking [data-mr-block]:hover{outline:2px dashed #0D9488;outline-offset:-2px;background-color:rgba(13,148,136,.08);}
 .mr-preview .${INSTRUCTION_CLASS}{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6;}
-.mr-preview ${DOCX_PAGE_OVERFLOW_CSS}
+${docxPageCss(".mr-preview")}
 `;
 
 function ensureStyles(): void {
