@@ -246,9 +246,17 @@ export const RegistrationPathSchema = z.enum([
   "clinic.addressLines",
   "clinic.postcode",
   "staff.entry",
+  // Additive (fix round 1, B0-15): appointment times are in the record – the first attended appointment's time, and the
+  // date and time of the Nth attended appointment (the fill source's `part.index` = N; a session the record does not
+  // have is written as nothing).
+  "episode.firstSeenTime",
+  "episode.attendedDate",
+  "episode.attendedTime",
 ]);
 /** Registration paths only the clinic-system merge codes use (kept out of the live form analysis's choices). */
 export const MERGE_CODE_ONLY_PATHS = ["clinic.addressLines", "clinic.postcode", "staff.entry"] as const;
+/** Registration paths staff choose in the mapping (fix round 1) – also kept out of the live form analysis's choices. */
+export const MAPPING_ONLY_PATHS = ["episode.firstSeenTime", "episode.attendedDate", "episode.attendedTime"] as const;
 /**
  * How a computed fact is written into a form answer (default "summary" = the fact's value).
  * first_score / latest_score: an outcome measure's first or latest recorded score with its date
@@ -995,7 +1003,8 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
      * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
      * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
      * last line taking any that are left; a line the record does not have is written as nothing. Only for
-     * "patient.addressLines" and "clinic.addressLines".
+     * "patient.addressLines" and "clinic.addressLines" – and (fix round 1) "episode.attendedDate" / "episode.attendedTime",
+     * where `index` is which attended appointment (1 = the first) and `of` how many the form prints.
      */
     part: z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) }).optional(),
   }),

@@ -567,6 +567,19 @@ export function resolveRegistrationValue(
       const first = attended[0]?.date ?? notes[0]?.date;
       return first ? dateValue(first, episodeIds(notes[0]?.id)) : null;
     }
+    // Fix round 1 (B0-15): the appointments' times are in the record (Check the notes shows them).
+    case "episode.firstSeenTime":
+      return attended[0]?.time ? textValue(attended[0].time, attended[0].noteId ? [attended[0].noteId] : episodeIds()) : null;
+    case "episode.attendedDate":
+    case "episode.attendedTime": {
+      const n = Math.max(1, Math.floor(part?.index ?? 1));
+      const appt = attended[n - 1];
+      // A session the record does not have (the 7th of 6) is written as nothing; the first must be there.
+      if (!appt) return n >= 2 && attended.length > 0 ? { text: "", value: "", sourceIds: episodeIds(), blank: true } : null;
+      const ids = appt.noteId ? [appt.noteId] : episodeIds();
+      if (path === "episode.attendedDate") return dateValue(appt.date, ids);
+      return appt.time ? textValue(appt.time, ids) : null;
+    }
     case "episode.lastSeen": {
       const last = attended[attended.length - 1]?.date ?? notes[notes.length - 1]?.date;
       return last ? dateValue(last, episodeIds(notes[notes.length - 1]?.id)) : null;
@@ -906,7 +919,8 @@ export function answerToText(section: Pick<ReportSection, "paragraphs" | "answer
 export function isBlankByDesign(section: Pick<ReportSection, "blankFromRecords"> | null | undefined, field: Pick<FormField, "fillSource"> | null | undefined): boolean {
   if (!section?.blankFromRecords || !field || field.fillSource.kind !== "registration") return false;
   const { path, part } = field.fillSource;
-  return Boolean(part && part.index >= 2 && (path === "patient.addressLines" || path === "clinic.addressLines"));
+  // (Fix round 1: and the 2nd, 3rd… attended appointment's date or time, for a session the record does not have.)
+  return Boolean(part && part.index >= 2 && (path === "patient.addressLines" || path === "clinic.addressLines" || path === "episode.attendedDate" || path === "episode.attendedTime"));
 }
 
 export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "answer"> & { blankFromRecords?: boolean }): boolean {
