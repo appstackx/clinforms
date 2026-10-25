@@ -20,12 +20,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileWarning, MousePointerClick } from "lucide-react";
 import { formAnchorPdfFieldNames } from "../../../core/forms";
-import { INSTRUCTION_PREVIEW_TITLE, type TemplateInstruction } from "../../../core/template-instructions";
+import { INSTRUCTION_PREVIEW_TITLE } from "../../../core/template-instructions";
 import type { FormAnchor, FormMimeType, PdfFieldType } from "../../../core/types";
 import { cn } from "../../primitives";
 import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { indexDocxDom, type DocxIndex } from "./docx-index";
-import { INSTRUCTION_CLASS, markTemplateInstructions } from "./docx-instructions";
+import { INSTRUCTION_CLASS, markTemplateInstructions, type PreviewInstructions } from "./docx-instructions";
 import { Spinner } from "./ui-bits";
 
 export interface PreviewFile {
@@ -57,9 +57,9 @@ export interface OriginalFormPreviewProps {
   onPick?(pick: PreviewPick): void;
   /**
    * Word (10/2026): the form author's instructions for whoever completes the form, struck through in the preview, once
-   * per rendered file (forms/docx-fill.ts leaves them off every completed form).
+   * per rendered file (forms/docx-fill.ts leaves them off the completed form).
    */
-  onInstructions?(found: TemplateInstruction[]): void;
+  onInstructions?(found: PreviewInstructions): void;
   /** Accessible name of the preview region. */
   label?: string;
   className?: string;

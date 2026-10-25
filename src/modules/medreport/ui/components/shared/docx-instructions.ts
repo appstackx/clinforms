@@ -1,13 +1,30 @@
 /**
  * The form author's instructions for whoever completes the form ("Delete unused cells", "Delete as necessary"), found
- * in a Word form rendered by docx-preview and struck through, so staff checking the mapping see what every completed
- * form leaves off (forms/docx-fill.ts removes them; the rule is core/template-instructions.ts). DOM-only (no React).
+ * in a Word form rendered by docx-preview and struck through, so staff checking the mapping see what a completed form
+ * leaves off (forms/docx-fill.ts removes them; the rule is core/template-instructions.ts). DOM-only (no React).
+ *
+ * Read like the fill reads the file (review 25/10/2026): the page body only (docx-preview's `article`) – never the page
+ * headers and footers, which the fill leaves as printed – and nothing at all on a form printing more than
+ * MAX_INSTRUCTIONS_PER_FORM (the fill leaves such a form as printed).
  *
  * Owner: studio-a agent.
  */
-import { findTemplateInstructions, instructionColour, mayHoldInstruction, type TemplateInstruction } from "../../../core/template-instructions";
+import {
+  MAX_INSTRUCTIONS_PER_FORM,
+  findTemplateInstructions,
+  instructionColour,
+  mayHoldInstruction,
+  type TemplateInstruction,
+} from "../../../core/template-instructions";
 
 export const INSTRUCTION_CLASS = "mr-instruction";
+
+export interface PreviewInstructions {
+  /** In document order. */
+  found: TemplateInstruction[];
+  /** A "Delete unused cells" sits where table rows can go (rowsCanGo) – so the notice can say the rows go too. */
+  rows: boolean;
+}
 
 /** The colour docx-preview gave a text node (its nearest inline colour); "" for the default. */
 function colourOf(node: Text, p: Element): string {
@@ -57,10 +74,37 @@ function strikeThrough(nodes: Text[], starts: number[], start: number, end: numb
   });
 }
 
-/** Strikes through every template instruction in the rendered form; returns them in document order. */
-export function markTemplateInstructions(root: HTMLElement, title: string): TemplateInstruction[] {
-  const found: TemplateInstruction[] = [];
-  for (const p of Array.from(root.querySelectorAll("section.docx p"))) {
+/** A rendered table row's text cell by cell, struck-through instructions left out; null with a merged cell. */
+function renderedRowText(tr: Element): { key: string; blank: boolean } | null {
+  const parts: string[] = [];
+  for (const td of Array.from(tr.children)) {
+    if (!(td instanceof HTMLTableCellElement)) continue;
+    if (td.rowSpan > 1 || td.style.display === "none") return null;
+    const copy = td.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll(`.${INSTRUCTION_CLASS}`).forEach((el) => el.remove());
+    parts.push((copy.textContent ?? "").trim());
+  }
+  return { key: JSON.stringify(parts), blank: parts.every((t) => !t) };
+}
+
+/**
+ * Where forms/docx-fill.ts can leave table rows off for a "Delete unused cells" in `p` (best effort, on the page): its
+ * row is blank once the instruction is left out and the table has another row, or it prints like the row above.
+ */
+function rowsCanGo(p: Element): boolean {
+  const tr = p.closest("tr");
+  const own = tr ? renderedRowText(tr) : null;
+  if (!tr || !own) return false;
+  if (own.blank) return Array.from(tr.parentElement?.children ?? []).filter((el) => el.tagName === "TR").length > 1;
+  const above = tr.previousElementSibling;
+  return above?.tagName === "TR" && renderedRowText(above)?.key === own.key;
+}
+
+/** Strikes through every template instruction in the rendered form's body. */
+export function markTemplateInstructions(root: HTMLElement, title: string): PreviewInstructions {
+  const lines: Array<{ p: Element; nodes: Text[]; starts: number[]; text: string; here: TemplateInstruction[] }> = [];
+  let count = 0;
+  for (const p of Array.from(root.querySelectorAll("section.docx > article p"))) {
     if (!mayHoldInstruction(p.textContent ?? "")) continue;
     const nodes = textNodes(p);
     let text = "";
@@ -75,12 +119,21 @@ export function markTemplateInstructions(root: HTMLElement, title: string): Temp
       text += node.data;
     }
     const here = findTemplateInstructions({ text, colours, belowLabelInCell: belowLabelInCell(p) });
-    // From the end, so earlier offsets still hold; the spaces before an instruction are not struck through.
-    for (const f of here.slice().reverse()) {
-      const lead = text.slice(f.start, f.end).search(/\S/);
-      strikeThrough(nodes, starts, f.start + Math.max(0, lead), f.end, title);
-    }
-    found.push(...here);
+    if (here.length === 0) continue;
+    count += here.length;
+    if (count > MAX_INSTRUCTIONS_PER_FORM) return { found: [], rows: false };
+    lines.push({ p, nodes, starts, text, here });
   }
-  return found;
+  for (const { nodes, starts, text, here } of lines) {
+    // From the end, so earlier offsets still hold; the spaces around an instruction are not struck through.
+    for (const f of here.slice().reverse()) {
+      const printed = text.slice(f.start, f.end);
+      const lead = Math.max(0, printed.search(/\S/));
+      strikeThrough(nodes, starts, f.start + lead, f.start + Math.max(lead, printed.trimEnd().length), title);
+    }
+  }
+  return {
+    found: lines.flatMap((l) => l.here),
+    rows: lines.some((l) => l.here.some((f) => f.kind === "delete_unused") && rowsCanGo(l.p)),
+  };
 }
