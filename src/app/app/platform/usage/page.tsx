@@ -200,6 +200,11 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
                           {r.tenantId}
                           {r.closed ? " · closed" : ""}
                         </span>
+                        {r.demoClinic ? (
+                          <span className="mt-1 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900" data-usage-demo>
+                            Demo clinic
+                          </span>
+                        ) : null}
                       </th>
                       <td className={TD}>{r.packageLabel}</td>
                       <td className={NUM}>{r.package ? formatPence(r.pricePence) : "–"}</td>
@@ -268,6 +273,9 @@ export default async function PlatformUsagePage({ searchParams }: { searchParams
               </table>
             </div>
           )}
+          {usage.rows.some((r) => r.demoClinic) ? (
+            <p className="mt-3 text-xs text-slate-500">Demo clinics (made-up data only) are counted like any clinic and are included in the totals: their drafting costs are real.</p>
+          ) : null}
         </Panel>
         <p className="mt-4 text-sm">
           <Link href="/app/platform" className="font-medium text-teal-700 underline-offset-4 hover:underline">

@@ -17,7 +17,7 @@ import { isManager, type MemberRole } from "../auth/roles";
 import type { Database } from "../db/schema";
 import { csvCell } from "../admin/activity";
 import { readClinicPackage, readClinicPackages, type ClinicPackage } from "../repos/clinic-package";
-import { clinicAccessOf, readClinicPlan, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
+import { clinicAccessOf, readClinicPlan, readClinicPlans, type ClinicAccess, type ClinicPlan } from "../repos/clinic-plan";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { countCountedNotApprovedByTenant, emptyUsageMonth, listUsageForPeriod, readCountedNotApproved, readUsageMonths, type UsageMonth } from "../repos/usage";
 import { isMissingUsageTable, noteMissingUsageTables, recentPeriods, ukPeriodOf } from "../repos/usage-period";
@@ -224,6 +224,8 @@ export interface PlatformUsageRow {
   tenantId: string;
   name: string;
   closed: boolean;
+  /** A demo clinic (migration 0008, made-up data only): counted like any clinic – its drafting costs are real. */
+  demoClinic: boolean;
   package: PackageId | null;
   packageLabel: string;
   pricePence: number;
@@ -256,7 +258,7 @@ export interface PlatformUsage {
   periodLabel: string;
   rate: number;
   rows: PlatformUsageRow[];
-  totals: Omit<PlatformUsageRow, "tenantId" | "name" | "closed" | "package" | "packageLabel" | "reportsIncluded" | "extraReportPence">;
+  totals: Omit<PlatformUsageRow, "tenantId" | "name" | "closed" | "demoClinic" | "package" | "packageLabel" | "reportsIncluded" | "extraReportPence">;
   /** False when migration 0007 is not applied (everything reads as empty). */
   available: boolean;
 }
@@ -297,7 +299,8 @@ export async function platformUsage(db: Kysely<Database>, period: string, rate: 
     noteMissingUsageTables();
     available = false;
   }
-  const [clinics, packages] = await Promise.all([listClinics(db, now), readClinicPackages(ctx)]);
+  const [clinics, packages, plans] = await Promise.all([listClinics(db, now), readClinicPackages(ctx), readClinicPlans(ctx)]);
+  const demo = new Set(plans.filter((p) => p.demoClinic).map((p) => p.tenantId));
   const monthOf = new Map(months.map((m) => [m.tenantId, m] as const));
   const pkgOf = new Map(packages.map((p) => [p.tenantId, p] as const));
   const rows: PlatformUsageRow[] = [];
@@ -314,6 +317,7 @@ export async function platformUsage(db: Kysely<Database>, period: string, rate: 
       tenantId: c.tenantId,
       name: c.name,
       closed: Boolean(c.offboardedAt),
+      demoClinic: demo.has(c.tenantId),
       package: t.package,
       packageLabel: packageLabel(t.package),
       pricePence,
@@ -350,6 +354,7 @@ export async function platformUsage(db: Kysely<Database>, period: string, rate: 
       tenantId: m.tenantId,
       name: "(no longer listed)",
       closed: true,
+      demoClinic: false,
       package: t.package,
       packageLabel: packageLabel(t.package),
       pricePence: t.pricePence ?? 0,
@@ -415,6 +420,7 @@ export const PLATFORM_USAGE_CSV_COLUMNS = [
   "est_cost_gbp",
   "est_margin_gbp",
   "usd_gbp_rate",
+  "demo_clinic",
 ] as const;
 
 const gbp = (pence: number | null) => (pence === null ? "" : (pence / 100).toFixed(2));
@@ -460,6 +466,7 @@ export function platformUsageCsv(usage: PlatformUsage): string {
           gbp(r.costPence),
           gbp(r.marginPence),
           String(usage.rate),
+          r.demoClinic ? "1" : "0",
         ].map(numCell),
       ].join(","),
     );

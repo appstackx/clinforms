@@ -19,7 +19,7 @@ import { PLATFORM_AUDIT_TENANT, type PlatformAdmin } from "../../admin/platform-
 import { listAudit } from "../../repos/audit";
 import { getClinicPackage, readClinicPackage, setClinicPackage } from "../../repos/clinic-package";
 import { upsertClinicProfile } from "../../repos/clinic-profile";
-import { setClinicDraftingLimits } from "../../repos/clinic-plan";
+import { setClinicDemoFlag, setClinicDraftingLimits } from "../../repos/clinic-plan";
 import { RepoInputError } from "../../repos/context";
 import { purgeExpiredReports } from "../../repos/maintenance";
 import {
@@ -424,6 +424,20 @@ export function defineUsageSuite(label: string, factory: () => Promise<UsageSuit
       // An empty month lists every open clinic with zeros.
       const empty = await platformUsage(t.db, "2026-01", 0.8, now());
       assert.ok(empty.rows.some((r) => r.tenantId === A && r.counted === 0 && r.package === null));
+      // A demo clinic (0008) is counted like any clinic and marked on the row and in the CSV's last column.
+      assert.equal(a.demoClinic, false);
+      assert.equal(b.demoClinic, false);
+      await setClinicDemoFlag(ctx(), B, true);
+      const withDemo = await platformUsage(t.db, "2026-10", 0.8, now());
+      const bDemo = withDemo.rows.find((r) => r.tenantId === B);
+      assert.ok(bDemo?.demoClinic === true && bDemo.counted === b.counted && bDemo.costMicroUsd === b.costMicroUsd);
+      assert.equal(withDemo.rows.find((r) => r.tenantId === A)?.demoClinic, false);
+      assert.equal(withDemo.totals.counted, usage.totals.counted, "a demo clinic stays in the totals");
+      const demoLines = platformUsageCsv(withDemo).trim().split("\r\n");
+      assert.ok(demoLines[0].endsWith(",usd_gbp_rate,demo_clinic"));
+      assert.ok((demoLines.find((l) => l.includes(B)) ?? "").endsWith(",1"));
+      assert.ok((demoLines.find((l) => l.includes(A)) ?? "").endsWith(",0"));
+      await setClinicDemoFlag(ctx(), B, false);
     });
 
     it("removing a package: audited; the current month no longer names one", async () => {

@@ -238,6 +238,27 @@ describe("usage recorded by the Report API handlers", () => {
     assert.ok(Date.now() - started >= USAGE_WAIT_MS - 50 && Date.now() - started < USAGE_WAIT_MS + 1000);
   });
 
+  test("a demo clinic (made-up data) counts like any clinic: its PH-DEMO approval is recorded; a refused made-up number records nothing", async () => {
+    resetMemoryLimits();
+    const demoMember = member(A, {
+      role: "clinician",
+      name: "Sarah Reid",
+      clinician: { name: "Sarah Reid", hcpc: "PH-DEMO-01", jobTitle: "Physiotherapist", canSign: true },
+    });
+    const demoSign = (id: string) => ({ ...signBody(reportOf(id)), signer: { name: "Sarah Reid", hcpc: "PH-DEMO-01" }, typedSignature: "Sarah Reid" });
+    const c = capture();
+    const t = setup(c.recorder, { a: demoMember });
+    const demoDeps: MedreportDeps = { ...t.deps, clinicProfile: async (tenant) => (tenant === A ? { ...PROFILE, demoClinic: true } : null) };
+    const signed = await call(demoDeps, handleSign, "/sign", demoSign("rpt_demo_clinic_1"));
+    assert.equal(signed.status, 200, await signed.clone().text());
+    assert.deepEqual(c.events, [{ tenantId: A, event: { kind: "report_approved", reportId: "rpt_demo_clinic_1" } }]);
+    // The same made-up number in a real clinic: refused before anything is counted.
+    const refused = await call(t.deps, handleSign, "/sign", demoSign("rpt_demo_clinic_2"));
+    assert.equal(refused.status, 403);
+    assert.equal(((await refused.json()) as { code?: string }).code, "DEMO_NUMBER_NOT_ALLOWED");
+    assert.equal(c.events.length, 1);
+  });
+
   test("end to end on the host's counters: drafted twice, re-drafted and approved twice = ONE report; tokens of every call", async () => {
     resetMemoryLimits();
     const db = createSqliteTestDb();
