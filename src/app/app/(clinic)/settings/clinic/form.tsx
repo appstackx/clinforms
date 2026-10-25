@@ -1,7 +1,7 @@
 "use client";
 import { useFormState } from "react-dom";
-import { Field, Notice } from "@/components/account/shell";
-import { SubmitButton } from "@/components/account/form-controls";
+import { Field } from "@/components/account/shell";
+import { FormResult, SubmitButton } from "@/components/account/form-controls";
 import { DRAFTING_COPY, RETENTION_COPY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { saveClinicProfile } from "./actions";
@@ -22,8 +22,6 @@ export function ClinicProfileForm({ values, editable, trial = false }: { values:
   const [state, action] = useFormState(saveClinicProfile, null as ActionResult | null);
   return (
     <form action={action} className="space-y-4">
-      {state?.ok === true ? <Notice tone="success">Saved.</Notice> : null}
-      {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
       <fieldset disabled={!editable} className="space-y-4 disabled:opacity-80">
         <Field label="Clinic name" name="displayName" defaultValue={values.displayName} required maxLength={200} hint="Written on the forms you complete." />
         <Field label="Legal name" name="legalName" defaultValue={values.legalName} maxLength={200} hint="If different, for example a limited company." />
@@ -80,7 +78,12 @@ export function ClinicProfileForm({ values, editable, trial = false }: { values:
           </div>
         </div>
       </fieldset>
-      {editable ? <SubmitButton pendingText="Saving…">Save clinic details</SubmitButton> : null}
+      {editable ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <SubmitButton pendingText="Saving…">Save clinic details</SubmitButton>
+          <FormResult state={state} />
+        </div>
+      ) : null}
     </form>
   );
 }
