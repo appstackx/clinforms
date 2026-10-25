@@ -262,10 +262,10 @@ test("fix round 1: nameClinicianInstead – the inverse of the first-person rewr
     nameClinicianInstead("My assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.", "Tom Ellis"),
     "Tom Ellis's assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.",
   );
-  assert.equal(
-    nameClinicianInstead("On 13/10/2026, in my opinion, she should be able to return to full duties within 4 weeks. I requested 3 further sessions.", "Tom Ellis"),
-    "On 13/10/2026, in Tom Ellis's opinion, she should be able to return to full duties within 4 weeks. Tom Ellis requested 3 further sessions.",
-  );
+  // Fix round 3 (B2-1): an opinion in the first person is never moved onto another clinician by a click (it was: "in Tom
+  // Ellis's opinion, she should be able…") – whose opinion it is, and whether they recorded it, is the clinician's to say.
+  assert.equal(nameClinicianInstead("On 13/10/2026, in my opinion, she should be able to return to full duties within 4 weeks. I requested 3 further sessions.", "Tom Ellis"), null);
+  assert.equal(nameClinicianInstead("On 13/10/2026 I requested 3 further sessions.", "Tom Ellis"), "On 13/10/2026 Tom Ellis requested 3 further sessions.", "a past action is still named");
   assert.equal(nameClinicianInstead("She said “my back aches”, and I advised heat.", "Tom Ellis"), "She said “my back aches”, and Tom Ellis advised heat.", "quotations untouched");
   assert.equal(nameClinicianInstead("He was graded WAD I and I advised rest.", "Tom Ellis"), "He was graded WAD I and Tom Ellis advised rest.", "a numeral stays");
   assert.equal(nameClinicianInstead("I'm told she improved.", "Tom Ellis"), null, "a contraction: rewritten by hand");

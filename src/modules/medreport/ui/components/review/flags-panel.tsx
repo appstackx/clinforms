@@ -16,7 +16,7 @@ import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
-import { MIN_GAP_REASON, attendedFix, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
+import { MIN_GAP_REASON, attendedFix, canRecordConsent, draftFitFix, gapResolutionOptions, nameClinicianFix } from "./review-model";
 import type { ReviewAction } from "./use-review-state";
 
 export function FlagsPanel({
@@ -87,6 +87,8 @@ export function FlagsPanel({
   const flagItem = (f: ReportFlag) => {
     const named = nameClinicianFix(report, f);
     const attended = attendedFix(report, f);
+    // Fix round 3 (B2-7, B2-16, B2-17): remove a repeated sentence or a comment, or keep the value only, in one click.
+    const wording = draftFitFix(report, f);
     return (
       <div key={f.id} className="space-y-1.5">
         <FlagItem
@@ -95,15 +97,16 @@ export function FlagsPanel({
           canAck={canAcknowledge(f)}
           onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
           {...jumpProps(f.sectionKey)}
-          {...(named && { fix: { label: `Name ${named.name} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+          {...(named && { fix: { label: named.label, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
           {...(attended && { fix: { label: "Make the patient the subject", onFix: () => dispatch({ type: "patientAttended", flag: f, actor }) } })}
+          {...(wording && { fix: { label: wording.label, onFix: () => dispatch({ type: "draftFitFix", flag: f, actor }) } })}
         />
         {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
       </div>
     );
   };
   // Every "I" / "my" answer that reports one other clinician's note, named in one step (fix round 1, B0-1).
-  const voiceFixes = readOnly ? [] : report.flags.filter((f) => !f.acknowledged && nameClinicianFix(report, f));
+  const voiceFixes = readOnly ? [] : report.flags.filter((f) => !f.acknowledged && /^Name .* instead$/.test(nameClinicianFix(report, f)?.label ?? ""));
   const boxItem = (box: BoxItem) => (
     <BoxIssue
       key={`box-${box.key}`}

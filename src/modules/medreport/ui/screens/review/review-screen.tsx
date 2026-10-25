@@ -29,7 +29,7 @@ import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } fr
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
-import { possessive } from "../../../core/possessive";
+import { namedThing } from "../../../core/possessive";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -63,18 +63,24 @@ import { SourcesPanel } from "../../components/review/sources-panel";
 import { ProgressSummary, QuestionJump, QuestionNav } from "../../components/review/question-nav";
 import { ApprovedBanner, ReviewHeader } from "../../components/review/review-header";
 import {
+  amendmentStartedEntry,
+  amendmentState,
   answerChangedByClinician,
+  answerReplacedDraft,
   answeredByPerson,
   enteredByOf,
   createAmendedVersion,
   ownVoiceCandidates,
   buildQuestionGroups,
   citationsBySource,
+  clinicOverrideUntyped,
   countStatuses,
+  draftFitFix,
   filedEntries,
   flattenQuestions,
   generationSummary,
   groupBySection,
+  nameClinicianFix,
   questionStatus,
   staffApprovalNote,
   wordFormPdfNote,
@@ -307,11 +313,15 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
   const editedAnswers = useMemo(() => new Set(questions.filter((q) => answerChangedByClinician(report, q.key)).map((q) => q.key)), [questions, report]);
+  const replacedAnswers = useMemo(() => new Set(questions.filter((q) => answerReplacedDraft(report, q.key)).map((q) => q.key)), [questions, report]);
   const labelOf = useCallback((key: string) => questions.find((q) => q.key === key)?.label ?? key, [questions]);
 
   const reportRef = useRef(report);
   reportRef.current = report;
   const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
+  // Fix round 3 (B2-1 to B2-3, B2-7, B2-16, B2-17): the one-click rewrites a check offers – the same rule as the Flags tab.
+  const voiceFix = useCallback((flag: ReportFlag) => nameClinicianFix(reportRef.current, flag), []);
+  const wordingFix = useCallback((flag: ReportFlag) => draftFitFix(reportRef.current, flag), []);
   const leaveBlank = useCallback(
     (keys: string[], reason: string, opinionKeys: string[] = []) => {
       const n = keys.length + opinionKeys.length;
@@ -360,14 +370,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       toast({ tone: "error", title: "The amended version could not be saved. Please try again." });
       return;
     }
-    dispatch({
-      type: "activity",
-      action: "superseded",
-      actor,
-      detail: `Amended version ${amended.version} started (${id}). This approval is superseded once the amended version is approved.`,
-    });
+    // Fix round 3 (B2-25): this approval is superseded only once the amended version is approved (use-review-actions.ts).
+    dispatch({ type: "activity", ...amendmentStartedEntry(amended, actor) });
     router.push(paths.report(id));
   }, [report, actor, toast, dispatch, router, paths]);
+  const amendment = useMemo(() => (signed ? amendmentState(report) : null), [signed, report]);
 
   const approveUnavailable: string | null = signed
     ? null
@@ -559,13 +566,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           title={tenant ? `The form map for “${formInfo.title}” is not in your clinic's library` : `The form map for “${formInfo.title}” is not in this browser`}
           action={<Link className="font-medium underline" href={paths.forms}>Open the forms library</Link>}
         >
-          You can read the answers, but previewing, checking and approving need {possessive(formInfo.referrer.name)} form map and file. Add the form to the forms
+          You can read the answers, but previewing, checking and approving need {namedThing(formInfo.referrer.name, "form map and file")}. Add the form to the forms
           library again (the same file), then reopen this report.
         </InlineAlert>
       )}
       {formProblem === "mismatch" && formInfo && (
         <InlineAlert tone="warning" title="A different version of this form is in the library">
-          This report was started from another version of {possessive(formInfo.referrer.name)} form file. Start a new report from the current form, or add the original file back to the library.
+          This report was started from another version of {namedThing(formInfo.referrer.name, "form file")}. Start a new report from the current form, or add the original file back to the library.
         </InlineAlert>
       )}
       {form && form.status !== "confirmed" && !signed && (
@@ -673,7 +680,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           fileMissing={isForm && !questionSet && file.status === "missing"}
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
-          onAmend={startAmendment}
+          onAmend={amendment ? undefined : startAmendment}
+          amendment={amendment ? { ...amendment, href: paths.report(amendment.reportId) } : null}
           prefillFor={prefillFor}
         />
       )}
@@ -695,10 +703,12 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </div>
           )}
           {groups.map((g) => (
-            <section key={g.id} aria-labelledby={`${g.id}-title`} className="space-y-3">
-              <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {g.title}
-              </h2>
+            <section key={g.id} {...(g.title ? { "aria-labelledby": `${g.id}-title` } : { "aria-label": "Questions" })} className="space-y-3">
+              {g.title ? (
+                <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {g.title}
+                </h2>
+              ) : null}
               {g.questions.map((q) => (
                 <QuestionCard
                   key={q.key}
@@ -713,6 +723,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   referrerName={report.form?.referrer.name ?? null}
                   readOnly={signed}
                   answerEdited={editedAnswers.has(q.key)}
+                  answerReplaced={replacedAnswers.has(q.key)}
+                  signerName={report.author?.name ?? null}
+                  clinicOverrideUntyped={clinicOverrideUntyped(report, q.key)}
                   answeredByPerson={personAnswered.has(q.key)}
                   referralValue={q.field?.fillSource.kind === "registration" ? referralValueForPath(q.field.fillSource.path, report) : null}
                   referralFallback={
@@ -725,6 +738,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   dispatch={dispatch}
                   onOpenSource={onOpenSource}
                   canAcknowledge={canAck}
+                  voiceFix={voiceFix}
+                  wordingFix={wordingFix}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
                   notApplicableBecause={personAnswered.has(q.key) ? null : (notApplicable(report, q.key)?.because ?? null)}

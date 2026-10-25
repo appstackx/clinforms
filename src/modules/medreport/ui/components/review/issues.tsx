@@ -12,12 +12,12 @@
 import { useId, useState } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
-import { DATA_CHECK_LABELS, FLAG_CODE_LABELS } from "../../../core/labels";
+import { DATA_CHECK_LABELS, FLAG_CODE_LABELS, tidyPunctuation } from "../../../core/labels";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
 import type { BoxItem } from "./box-items";
-import { requiredAnswerFirst, type GapResolutionOptions } from "./review-model";
+import { flagEvidenceText, requiredAnswerFirst, type GapResolutionOptions } from "./review-model";
 import { CitationChip } from "./review-ui";
 
 const MIN_REASON = 3;
@@ -121,8 +121,9 @@ export function FlagItem({
   const blocking = flag.severity === "blocking" && !acked;
   const Icon = acked ? CheckCircle2 : blocking ? AlertOctagon : AlertTriangle;
   const dataCheck = flag.code === "DATA_CHECK" && flag.evidence && flag.evidence in DATA_CHECK_LABELS ? DATA_CHECK_LABELS[flag.evidence as DataCheckCode] : null;
-  // A mail-merge field's evidence is the code as found (<<P_GROUPREF>>): the message already says it in plain words.
-  const showEvidence = flag.evidence && !dataCheck && !/^(empty section|optional field blank|validator .*|mail-merge field .*)$/.test(flag.evidence);
+  // A mail-merge field's evidence is the code as found (<<P_GROUPREF>>): the message already says it in plain words. Fix
+  // round 3 (B2-15): nor an internal code ("shorten", "repeat F-28", ISO dates) – review-model.ts flagEvidenceText.
+  const evidence = dataCheck ? null : flagEvidenceText(flag);
   return (
     <div
       className={cn(
@@ -137,10 +138,10 @@ export function FlagItem({
           <span className="sr-only">{acked ? " (acknowledged)" : blocking ? " (blocks approval)" : " (warning)"}</span>
           {!compact && flag.sectionKey && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{flag.sectionKey}</span>}
         </p>
-        <p className="mt-0.5 leading-relaxed">{humaniseMergeCodes(flag.message)}</p>
-        {showEvidence && (
+        <p className="mt-0.5 leading-relaxed">{tidyPunctuation(humaniseMergeCodes(flag.message))}</p>
+        {evidence && (
           <p className="mt-1 text-xs opacity-80">
-            Found: <q className="font-medium">{flag.evidence}</q>
+            Found: <q className="font-medium">{evidence}</q>
           </p>
         )}
         {flag.acknowledged && (
@@ -237,12 +238,12 @@ function GapBody({
       {!hideIssue && (
         <p className={cn("leading-relaxed", issueLabel ? "mt-1.5" : "mt-0.5")}>
           {issueLabel && <span className="font-medium">{issueLabel}: </span>}
-          {humaniseMergeCodes(gap.issue)}
+          {tidyPunctuation(humaniseMergeCodes(gap.issue))}
         </p>
       )}
       {!done && !hideQuestion && !hideIssue && gap.suggestedQuestion && (
         <p className="mt-1 text-xs">
-          <span className="font-medium">Ask:</span> {humaniseMergeCodes(gap.suggestedQuestion)}
+          <span className="font-medium">Ask:</span> {tidyPunctuation(humaniseMergeCodes(gap.suggestedQuestion))}
         </p>
       )}
       {gap.relatedNoteIds.length > 0 && !hideIssue && (

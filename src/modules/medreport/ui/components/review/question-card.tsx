@@ -15,10 +15,10 @@ import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, recordSourceOf, signoffValuesFromReceipt } from "../../../core/forms";
 import { factCondition } from "../../../core/conditions";
-import { possessive } from "../../../core/possessive";
+import { NamedThing, namedThing } from "../../../core/possessive";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS, recordSourceLong, staffEntryVerb } from "../../../core/labels";
-import { attendedInstead, nameClinicianInstead } from "../../../core/voice";
+import { attendedInstead } from "../../../core/voice";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
@@ -32,6 +32,7 @@ import { rowsOf } from "./table-answer-model";
 import {
   QUESTION_STATUS_META,
   answerOptions,
+  needsClinicianText,
   nextClinicianParagraphId,
   originLabel,
   resolutionOptionsFor,
@@ -60,6 +61,12 @@ export interface QuestionCardProps {
   readOnly: boolean;
   /** The clinician changed the structured answer (activity "answer_set"). */
   answerEdited: boolean;
+  /** Fix round 3 (B2-20): that change replaced a drafted value (else it was the first answer given). */
+  answerReplaced?: boolean;
+  /** The clinician who signs (report.author), for wording whose opinion a gap quotes (fix round 3, B2-23). */
+  signerName?: string | null;
+  /** Fix round 3 (B2-22): "Change it for this patient's site" was clicked, but the clinic's value is still unchanged. */
+  clinicOverrideUntyped?: boolean;
   /** A person (not the drafting step) has answered this question (review-model.ts answeredByPerson). */
   answeredByPerson: boolean;
   /**
@@ -88,6 +95,9 @@ export interface QuestionCardProps {
   notApplicableBecause?: string | null;
   /** Fix round 2 (B1-7): who last typed or chose this answer (the activity log), for "Typed in by …". */
   enteredBy?: string | null;
+  /** Fix round 3: the one-click rewrites a check offers on a paragraph (stable callbacks over the current report). */
+  voiceFix?: (flag: ReportFlag) => { label: string } | null;
+  wordingFix?: (flag: ReportFlag) => { label: string } | null;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -111,7 +121,16 @@ function ParagraphEditor({
   onFocused,
   staffEntry = false,
   enteredBy = null,
+  clinicUntyped = false,
+  voiceFix,
+  wordingFix,
 }: {
+  /** The clinic's value copied in to change for this site, not typed over yet (fix round 3, B2-22). */
+  clinicUntyped?: boolean;
+  /** The one-click rewrite an OTHER_CLINICIAN_VOICE check offers (review-model.ts nameClinicianFix), or null. */
+  voiceFix?: (flag: ReportFlag) => { label: string } | null;
+  /** The one-click wording fix a DRAFT_FIT check offers (review-model.ts draftFitFix), or null. */
+  wordingFix?: (flag: ReportFlag) => { label: string } | null;
   staffEntry?: boolean;
   /** Who typed a staff entry (fix round 2, B1-7: the activity log's name, not always "staff"). */
   enteredBy?: string | null;
@@ -178,7 +197,7 @@ function ParagraphEditor({
       <div className="flex flex-wrap items-center gap-1.5">
         <OriginPill
           origin={paragraph.origin}
-          label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
+          label={clinicUntyped ? "From your Clinic details" : staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
         />
         {paragraph.basis && paragraph.origin !== "from_records" && (
           <span className="text-[11px] text-slate-500">{PARAGRAPH_BASIS_LABELS[paragraph.basis]}</span>
@@ -190,7 +209,9 @@ function ParagraphEditor({
           <span className="text-[11px] font-medium text-red-700">No source cited</span>
         )}
         {paragraph.origin === "clinician" && (
-          <span className="text-[11px] text-slate-500">{staffEntry ? `Typed in by ${enteredBy ?? "staff"} – kept in the activity log` : "Your own words – no citation needed"}</span>
+          <span className="text-[11px] text-slate-500">
+            {clinicUntyped ? "Type this site's details over it – it prints instead, on this report only" : staffEntry ? `Typed in by ${enteredBy ?? "staff"} – kept in the activity log` : "Your own words – no citation needed"}
+          </span>
         )}
         {!readOnly && (paragraph.origin === "edited" || paragraph.origin === "clinician") && paragraph.originalText !== undefined && (
           <button
@@ -219,11 +240,13 @@ function ParagraphEditor({
       {flags.length > 0 && (
         <div className="space-y-1.5">
           {flags.map((f) => {
-            // "Name Tom Ellis instead" (fix round 1): another clinician's note written as "I" / "my".
+            // "Name Tom Ellis instead" (fix round 1): another clinician's note written as "I" / "my" – on drafted wording
+            // only (fix round 3, B2-1); "Use my name" and "Name Priya Shah" (B2-3, B2-2). One rule with the Flags tab.
             const count = f.code === "OTHER_CLINICIAN_VOICE" && /^sessions \d+$/.test(f.evidence ?? "");
-            const named = f.code === "OTHER_CLINICIAN_VOICE" && !count && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
+            const named = f.code === "OTHER_CLINICIAN_VOICE" && !count && voiceFix ? voiceFix(f) : null;
             // Fix round 2 (B1-14): "Mr Ellery attended 7 sessions" for a first-person count with another clinician's sessions.
             const attended = count ? attendedInstead(paragraph.text) : null;
+            const wording = f.code === "DRAFT_FIT" && wordingFix ? wordingFix(f) : null;
             return (
               <FlagItem
                 key={f.id}
@@ -232,8 +255,9 @@ function ParagraphEditor({
                 readOnly={readOnly}
                 canAck={canAcknowledge(f)}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
-                {...(named && { fix: { label: `Name ${f.evidence} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+                {...(named && { fix: { label: named.label, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
                 {...(attended && { fix: { label: "Make the patient the subject", onFix: () => dispatch({ type: "patientAttended", flag: f, actor }) } })}
+                {...(wording && { fix: { label: wording.label, onFix: () => dispatch({ type: "draftFitFix", flag: f, actor }) } })}
               />
             );
           })}
@@ -422,7 +446,8 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
   // its "required and empty" check is listed in the Flags tab rather than repeated here.
   // (A question that does not apply asks nobody for an opinion – fix round 2.)
-  const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section) && !notApplicableBecause;
+  // (Nor once the box was left blank on purpose – fix round 3, B2-23.)
+  const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section) && !notApplicableBecause && status !== "blank";
   const box = props.box;
   const hidden = props.hiddenFlagIds;
   const sectionFlags = flags.filter(
@@ -440,10 +465,19 @@ function QuestionCardImpl(props: QuestionCardProps) {
       : tenant && recordPath?.startsWith("episode.")
         ? { long: TENANT_COPY.sources.episodeLong, locked: TENANT_COPY.sources.episodeLocked }
         : null;
-  const fillSourceText = staffEntered
+  // Fix round 3 (B2-22): the source line follows who fills it – a reference withheld on another organisation's form is
+  // typed in by staff; any record value a person entered (a date, a choice too) is theirs; the clinic's details changed
+  // for this site say so only once something was typed.
+  const referenceToType = isRecordsSection(section) && field?.fillSource.kind === "registration" && field.fillSource.path.startsWith("referral.") && !section?.paragraphs.some((p) => p.origin === "from_records") && !section?.blankFromRecords;
+  const clinicUntyped = Boolean(staffEntered && recordSource === "clinic" && props.clinicOverrideUntyped);
+  const fillSourceText = clinicUntyped
+    ? "From your Clinic details – change it here for this patient's site"
+    : staffEntered || (isRecordsSection(section) && props.answeredByPerson)
     ? recordSource === "clinic"
-      ? "Entered by staff for this report – not from your Clinic details (see the Activity tab)"
-      : "Typed in by staff – not from the clinic record (see the Activity tab)"
+      ? `Entered by ${props.enteredBy ?? "staff"} for this report – not from your Clinic details (see the Activity tab)`
+      : `Typed in by ${props.enteredBy ?? "staff"} – not from the clinic record (see the Activity tab)`
+    : referenceToType
+      ? "Typed in by staff from the referrer's letter"
     : field
       ? recordSource
         ? recordSourceLong(recordSource, field.answerType)
@@ -511,7 +545,10 @@ function QuestionCardImpl(props: QuestionCardProps) {
           canAcknowledge={canAcknowledge}
           onFocused={clearFocus}
           staffEntry={isRecords}
-          enteredBy={props.enteredBy ?? null}
+          enteredBy={clinicUntyped ? null : (props.enteredBy ?? null)}
+          clinicUntyped={clinicUntyped}
+          voiceFix={props.voiceFix}
+          wordingFix={props.wordingFix}
         />
       ))}
       {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && (
@@ -522,7 +559,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           aria-label={`Answer to “${q.label}”`}
           value=""
           minRows={isOpinion ? 3 : 2}
-          placeholder={isRecords && referrerField ? `${props.referrerName ? possessive(props.referrerName) : "The referrer's"} reference` : opts.emptyPlaceholder}
+          placeholder={isRecords && referrerField ? (props.referrerName ? NamedThing(props.referrerName, "reference") : "The referrer's reference") : opts.emptyPlaceholder}
           onChange={(e) => startClinicianText(e.target.value)}
         />
       )}
@@ -613,10 +650,11 @@ function QuestionCardImpl(props: QuestionCardProps) {
     const value = Array.isArray(raw) ? null : raw;
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
     const facts = structuredKind === "yes_no" && !isRecords ? factCondition(q.label) : null;
-    const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
+    // Fix round 3 (B2-20): "Answer changed" only when a drafted value was replaced; a first answer is the clinician's.
+    const proposedBy = isRecords ? null : props.answerEdited ? (props.answerReplaced ? "edited" : value !== null ? "clinician" : null) : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (
       <div className="space-y-3">
-        {isOpinion && value === null && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
+        {isOpinion && value === null && !readOnly && !notApplicableBecause && status !== "blank" && <NeedsClinician gaps={gaps} bundle={bundle} signerName={props.signerName} />}
         {recordsLocked ? (
           <LockedRecordsAnswer
             text={paragraphs[0]?.text ?? String(value ?? "")}
@@ -658,7 +696,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
                   <Pill className="border-sky-200 bg-sky-50 text-sky-800">{readOnly ? WORDING.origin.answerDraftedApproved : WORDING.origin.answerDrafted}</Pill>
                 )}
                 {proposedBy === "edited" && <Pill className="border-violet-200 bg-violet-50 text-violet-800">Answer changed by the clinician</Pill>}
-                {proposedBy === "clinician" && <Pill className="border-indigo-200 bg-indigo-50 text-indigo-800">Clinician</Pill>}
+                {proposedBy === "clinician" && <Pill className="border-indigo-200 bg-indigo-50 text-indigo-800">Answered by the clinician</Pill>}
               </div>
             )}
           </div>
@@ -684,14 +722,14 @@ function QuestionCardImpl(props: QuestionCardProps) {
   } else {
     body = (
       <div className="space-y-3">
-        {isOpinion && !answered && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
+        {isOpinion && !answered && !readOnly && !notApplicableBecause && status !== "blank" && <NeedsClinician gaps={gaps} bundle={bundle} signerName={props.signerName} />}
         {referrerNotice ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
               {props.referralValue
                 ? `${props.referrerName ?? "The referrer"} uses its own reference here, so the referral's reference has not been copied in. `
                 : `${props.referrerName ?? "The referrer"} asks for its own reference here, and the record holds none. `}
-              Enter {props.referrerName ? possessive(props.referrerName) : "their"} reference from their instruction letter – it is marked as entered by staff.
+              Enter {props.referrerName ? namedThing(props.referrerName, "reference", "of") : "their reference"} from their instruction letter – it is marked as entered by staff.
               {!q.required && " This box is optional – leave it blank if you do not have it."}
             </p>
             {props.referralValue && referrerGap && (
@@ -752,7 +790,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
       aria-labelledby={headingId}
       className={cn(
         "scroll-mt-40 rounded-2xl border bg-white p-4 shadow-sm transition-shadow sm:p-5 lg:scroll-mt-28",
-        status === "blocked" ? "border-red-200" : status === "needs_input" ? "border-amber-200" : "border-slate-200",
+        status === "blocked" ? "border-red-200" : status === "needs_input" || status === "staff_entry" ? "border-amber-200" : "border-slate-200",
       )}
     >
       <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
@@ -857,16 +895,18 @@ function QuestionCardImpl(props: QuestionCardProps) {
   );
 }
 
-function NeedsClinician({ gaps }: { gaps: Gap[] }) {
+function isRecordsSection(section: ReviewQuestion["section"]): boolean {
+  return section?.kind === "from_records";
+}
+
+function NeedsClinician({ gaps, bundle, signerName }: { gaps: Gap[]; bundle: EpisodeBundle; signerName?: string | null }) {
   const open = gaps.find((g) => !g.resolution);
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-[13px] text-amber-950">
       <p className="flex items-center gap-1.5 font-medium">
         <UserRound className="h-4 w-4 text-amber-700" aria-hidden /> Needs clinician input
       </p>
-      <p className="mt-0.5 leading-relaxed">
-        No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed. Only the treating clinician can answer it.
-      </p>
+      <p className="mt-0.5 leading-relaxed">{needsClinicianText(gaps, bundle, signerName)}</p>
       {open?.suggestedQuestion && (
         <p className="mt-1">
           <span className="font-medium">Suggested question:</span> {open.suggestedQuestion}

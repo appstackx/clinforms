@@ -119,7 +119,8 @@ describe("one item per question", () => {
     const f01 = items.boxes.get("F-01");
     assert.ok(f01);
     assert.equal(f01.heading, "Required – no answer yet");
-    assert.equal(f01.instruction, `Type ${REFERRER}'s reference from their letter.`);
+    // Fix round 3 (B2-32): the referrer's name ends in "(fictional)", so no "'s" after the bracket.
+    assert.equal(f01.instruction, `Type the reference of ${REFERRER} from their letter.`);
     assert.deepEqual(f01.gaps.map((g) => g.id), ["gap-F-01-referrer"]);
     assert.deepEqual(f01.covered.map((f) => f.evidence).sort(), ["empty section", "mail-merge field <<P_GROUPREF>> in paragraph 2"]);
     assert.equal(items.required.filter((it) => it.key === "F-01").length, 1, "listed once");

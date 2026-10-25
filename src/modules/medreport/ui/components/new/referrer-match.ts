@@ -12,7 +12,7 @@
  */
 import { STORAGE_PREFIX } from "../../../config.public";
 import { distinctiveTokens, normaliseOrgName, reportKindOf, type ReportKind } from "../../../core/forms";
-import { possessive } from "../../../core/possessive";
+import { namedThing, possessive } from "../../../core/possessive";
 import type { EpisodeBundle, FormDefinition, InstructingParty } from "../../../core/types";
 import { getStoreMode, getStoredReferrerLinks, saveReferrerLinks } from "../../store";
 
@@ -142,14 +142,14 @@ export function formChoiceNote(input: {
   kind: ReportKind | null;
 }): string {
   const { party, match, selected, kind } = input;
-  const named = (f: FormDefinition) => `${possessive(f.referrer.name)} “${f.title}”`;
+  const named = (f: FormDefinition) => (/\)$/.test(f.referrer.name.trim()) ? `“${f.title}” from ${f.referrer.name.trim()}` : `${possessive(f.referrer.name)} “${f.title}”`);
   const covers = kind === "discharge" ? " These notes run to discharge." : kind === "initial" ? " These notes cover the initial assessment." : "";
   if (!match) {
     return selected
       ? `${named(selected)} is selected. It will be remembered for ${party.name}.${covers}`
       : `No form in the library is linked to this referrer yet. Choose the form they sent – it will be remembered for them.${covers}`;
   }
-  const why = match.reason === "remembered" ? `Last time, ${possessive(party.name)} case used ${named(match.form)}.` : `${named(match.form)}: ${matchReasonLabel(match.reason).toLowerCase()}.`;
+  const why = match.reason === "remembered" ? `Last time, ${namedThing(party.name, "case")} used ${named(match.form)}.` : `${named(match.form)}: ${matchReasonLabel(match.reason).toLowerCase()}.`;
   if (!selected || selected.id === match.form.id) return `${why}${covers}`;
   return `${why} You have chosen ${named(selected)} this time.${covers}`;
 }

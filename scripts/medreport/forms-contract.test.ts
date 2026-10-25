@@ -277,7 +277,8 @@ test("a proposed map that sends the referral's reference to both reference blank
   assert.deepEqual(report.sections.find((x) => x.key === own.id)?.paragraphs, []);
   const gap = report.gaps.find((g) => g.sectionKey === own.id);
   assert.match(gap?.issue ?? "", /Kingsway Case Management \(fictional\) uses its own reference/);
-  assert.match(gap?.suggestedQuestion ?? "", /What is Kingsway Case Management \(fictional\)'s own reference/);
+  // Fix round 3 (B2-32): no "'s" after a closing bracket (it was "Kingsway Case Management (fictional)'s own reference").
+  assert.match(gap?.suggestedQuestion ?? "", /What is the reference Kingsway Case Management \(fictional\) uses for this case\?/);
 });
 
 test("draft groups for a form report hold up to MAX_FORM_FIELDS_PER_DRAFT fields", () => {

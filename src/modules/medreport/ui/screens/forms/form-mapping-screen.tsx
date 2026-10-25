@@ -51,7 +51,7 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, firstQuestionToCheck, listedInOrder, mayConfirmForms, needsReviewNotice, newField, opinionNeedText, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { anchorFromPick, distinctAnalysisNotes, firstQuestionToCheck, listedInOrder, mayConfirmForms, needsReviewNotice, newField, opinionNeedText, plainAnchorDescription, sameMapping, showsMapNote } from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -242,9 +242,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const groups: Array<{ section: string; fields: FormField[] }> = [];
   // Fix round 1 (B0-21): questions with no section inside a section keep it (core/forms.ts sectionHeadings).
   const headings = sectionHeadings(draft.fields);
-  const sectionOf = new Map(draft.fields.map((f, i) => [f.id, headings[i] || "Other questions"]));
+  // Fix round 3 (B2-29): no heading at all (a portal question set) – none shown.
+  const other = headings.every((h) => !h) ? "" : "Other questions";
+  const sectionOf = new Map(draft.fields.map((f, i) => [f.id, headings[i] || other]));
   for (const f of visible) {
-    const section = sectionOf.get(f.id) ?? "Other questions";
+    const section = sectionOf.get(f.id) ?? other;
     const last = groups[groups.length - 1];
     if (last && last.section === section) last.fields.push(f);
     else groups.push({ section, fields: [f] });
@@ -254,7 +256,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   // A form converted from RTF when it was added: its conversion notes get their own note (not the analysis list).
   const fromRtf = !questionSet && isConvertedFromRtf(draft.file);
   const rtfNotes = fromRtf ? a.warnings.filter(isRtfConversionNote) : [];
-  const analysisNotes = fromRtf ? a.warnings.filter((w) => !isRtfConversionNote(w)) : a.warnings;
+  const analysisNotes = distinctAnalysisNotes(fromRtf ? a.warnings.filter((w) => !isRtfConversionNote(w)) : a.warnings);
 
   return (
     <StudioShell
@@ -430,8 +432,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           ) : null}
 
           {groups.map((group, gi) => (
-            <section key={`${group.section}-${gi}`} aria-label={group.section} className="space-y-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.section}</h2>
+            <section key={`${group.section}-${gi}`} aria-label={group.section || "Questions"} className="space-y-2">
+              {group.section ? <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.section}</h2> : null}
               <ul className="space-y-2">
                 {group.fields.map((field) => {
                   const active = field.id === selected;
@@ -587,12 +589,13 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
 }
 
 function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
+  const mode = useStudioMode();
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(currentGuidance(field.guidance))}</p> : null}
+      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(currentGuidance(field.guidance, field))}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
       <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
-      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
+      {field.note && showsMapNote(field.note, mode) ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
     </div>
   );
 }

@@ -18,7 +18,7 @@
  * Pure and browser-safe (type-only imports plus core/dates), so the UI, core and server can all use it.
  */
 import { formatUkDate, formatUkDateTime } from "./dates";
-import { possessive } from "./possessive";
+import { namedThing } from "./possessive";
 import type { FormAnalysisMode, GenerationMode } from "./types";
 
 export type Disclosure = "neutral" | "ai-assisted";
@@ -438,7 +438,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   panelTitlePortal: "Answers for the portal",
   panelIntro: "Copy an answer, or all of them, as plain text – for a portal, an e-mail or a letter. Dates are DD/MM/YYYY and ticks are written as the option chosen.",
   panelIntroPortal: (referrer) =>
-    `Copy each answer into ${possessive(referrer)} portal, question by question, or copy them all at once. Dates are DD/MM/YYYY and ticks are written as the option chosen.`,
+    `Copy each answer into ${namedThing(referrer, "portal", "of")}, question by question, or copy them all at once. Dates are DD/MM/YYYY and ticks are written as the option chosen.`,
   draftNotice: "Not approved yet: copied text is marked “Draft – not yet approved”. Approve the answers before entering them anywhere.",
   approvedNotice: "Approved: copied text is the approved answers.",
   copyAll: "Copy all answers",

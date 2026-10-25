@@ -4,7 +4,7 @@
  *
  * Owner: studio-a agent.
  */
-import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
+import { formAnchorPdfFieldNames, parseBlockId, recordSourceOf } from "../../../core/forms";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
 import { findPracticeCodes, humaniseMergeCodes, practiceCode, practiceCodeWords, practiceCodesInWords } from "../../../core/practice-merge-codes";
 import { REGISTRATION_PATH_LABELS } from "../../../core/labels";
@@ -262,9 +262,12 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
  * one first, then “Needs review” before “Check”, then a clinical question before a detail staff type in, each in the
  * form's order; else the first question.
  */
-export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource">>>): string | null {
-  const staffEntry = (f: (typeof fields)[number]) => f.fillSource?.kind === "registration" && f.fillSource.path === "staff.entry";
-  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.required === false ? 1 : 0, f.confidence === "low" ? 0 : 1, staffEntry(f) ? 1 : 0];
+export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource" | "answerType" | "guidance" | "label">>>): string | null {
+  // Fix round 3 (B2-30): a staff entry as recordSourceOf says (a physiotherapist's choice is clinical), and the sign-off
+  // (signature, name, HCPC number, date signed) after everything else to check.
+  const staffEntry = (f: (typeof fields)[number]) => Boolean(f.fillSource) && recordSourceOf({ fillSource: f.fillSource as FormField["fillSource"], guidance: f.guidance ?? "", answerType: f.answerType, label: f.label }) === "staff_entry";
+  const signoff = (f: (typeof fields)[number]) => f.fillSource?.kind === "signoff" || ["clinician_name", "hcpc_number", "date_signed", "signature"].indexOf(f.answerType ?? "") >= 0;
+  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, signoff(f) ? 1 : 0, f.required === false ? 1 : 0, f.confidence === "low" ? 0 : 1, staffEntry(f) ? 1 : 0];
   const before = (a: number[], b: number[]) => {
     const i = a.findIndex((v, k) => v !== b[k]);
     return i >= 0 && a[i] < b[i];
@@ -480,4 +483,28 @@ export function opinionNeedText(n: number): string {
 /** "1 question still marked “Needs review”. Confirming accepts it as it is." / "…accepts them as they are." */
 export function needsReviewNotice(n: number): string {
   return `${n} question${n === 1 ? "" : "s"} still marked “Needs review”. Confirming accepts ${n === 1 ? "it as it is" : "them as they are"}.`;
+}
+
+/**
+ * Fix round 3 (B2-12, code-only interim): the analysis notes a mapping page lists, without a second "prepared by
+ * ClinForms – check each question" note that says what the first already says.
+ */
+export function distinctAnalysisNotes(notes: readonly string[]): string[] {
+  const prepared = (n: string) => /\bprepared by ClinForms\b/i.test(n) && /\bcheck each question\b/i.test(n);
+  let seen = false;
+  return notes.filter((n) => {
+    if (!prepared(n)) return true;
+    if (seen) return false;
+    seen = true;
+    return true;
+  });
+}
+
+/**
+ * Fix round 3 (B2-12, code-only interim): a field's stored map note is written for whoever prepares the map ("Verify
+ * 24/10: …", "Ask Dell…"), not for the clinic's staff – a clinic's Studio shows the guidance only.
+ */
+export function showsMapNote(note: string, mode: "demo" | "tenant" | string): boolean {
+  // (The RTF converter's own note – "From the clinic system's merge code …" – says where a value comes from: it stays.)
+  return mode !== "tenant" || /^From the clinic system['’]s merge code\b/.test(note.trim());
 }

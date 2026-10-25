@@ -47,7 +47,10 @@ import type {
 import { runValidators } from "../core/validation";
 import { makeFlag } from "../core/validation/context";
 import { buildSourceTexts } from "../core/validation/sources";
-import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, notesNamedByAuthor, plainClinicalWording, sameClinician } from "../core/voice";
+import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, notesNamedByAuthor, plainClinicalWording, pronounForRepeatedName, sameClinician } from "../core/voice";
+import { compactPlace } from "../core/forms";
+import { printedLeadOf, valueOnly, withoutPrintedVerb, yesNoInWords } from "../core/validation/draft-fit";
+import { bandFor } from "../core/duration-bands";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -92,9 +95,20 @@ function stringsOf(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-/** Short label for gap wording: the template title without a trailing "(…)". */
+/**
+ * Fix round 3 (B2-9): drafted wording that shows the drafting's own reasoning or this prompt's terms – "… wait, the 4th
+ * attended session…", "actually,", "These are recorded-opinion questions." – is never shown to the clinician or printed.
+ */
+const META_WORDING =
+  /\.{3}\s*wait\b|(?:^|[.;:!?]\s+|\(\s*)(?:wait|actually|hmm|hold on|on second thoughts?)[,.!:]|\brecorded[- ]opinion(?:[- ]only)?\b|\bnarrative from the record\b|^these are [\w -]*questions\b/i;
+
+export function hasMetaWording(text: string): boolean {
+  return META_WORDING.test(text.trim());
+}
+
+/** Short label for gap wording: the template title without a trailing "(…)" – or a closing full stop (fix round 3, B2-33). */
 function shortTitle(spec: TemplateSection): string {
-  return spec.title.replace(/\s*\(.*\)\s*$/, "").trim() || spec.title;
+  return (spec.title.replace(/\s*\(.*\)\s*$/, "").trim() || spec.title).replace(/\s*[.:;]+$/, "");
 }
 
 function emptySectionGap(key: string, seed: string, spec: TemplateSection, field: FormField | undefined): Gap {
@@ -166,7 +180,8 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
     return Boolean(voiceOwner?.name.trim()) && notes.length > 0 && notes.every((n) => n !== undefined && sameClinician(n.author, voiceOwner as Clinician));
   };
   const readable = (raw: string, plain = true) => {
-    let text = describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts });
+    // Fix round 3 (B2-18): "[CLAIMANT] told me … that [CLAIMANT] was working" – the second mention as "he" / "she".
+    let text = describeSourceIds(pronounForRepeatedName(reidentify(raw.trim(), name), name, bundle.registration.title), { notes: bundle.notes, facts: input.computedFacts });
     if (otherInsurer) text = withoutOtherInsurerName(text, otherInsurer);
     text = keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional);
     return plain ? plainClinicalWording(text) : text;
@@ -181,11 +196,18 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
     const field = form?.fields.find((f) => f.id === key);
     const outSections = (output.sections ?? []).filter((s) => s.sectionKey === key);
     const paragraphs: Paragraph[] = [];
+    // Fix round 3 (B2-8, B2-16): a compact place takes the value alone – without restating the verb printed before its
+    // blank ("To return to returning to work") or a trailing attribution of a measure (", as recorded by Priya Shah…");
+    // the citation keeps who recorded it. A recorded opinion keeps its attribution (B2-2).
+    const place = field && form ? compactPlace(field, form.fields) : null;
+    const lead = place === "blank" ? printedLeadOf(field) : null;
     for (const out of outSections) {
       for (const p of out.paragraphs ?? []) {
         const ids = Array.from(new Set((p.sourceIds ?? []).map((x) => String(x).trim()).filter(Boolean)));
-        const text = readable(String(p.text ?? ""), ownNotes(ids));
-        if (!text) continue;
+        let text = readable(String(p.text ?? ""), ownNotes(ids));
+        if (!text || hasMetaWording(text)) continue;
+        if (lead) text = withoutPrintedVerb(text, lead);
+        if ((place === "cell" || place === "blank") && p.basis !== "clinician_opinion_recorded") text = valueOnly(text);
         const id = `${key}-${seed}-p${paragraphs.length + 1}`;
         const valid = ids.filter((x) => sourceIds.has(x));
         for (const bad of ids.filter((x) => !sourceIds.has(x))) {
@@ -206,15 +228,36 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
 
     const sectionGaps: Gap[] = (output.gaps ?? [])
       .filter((g) => g.sectionKey === key && String(g.issue ?? "").trim() !== "")
-      .map((g, i) => ({
-        id: `gap-${key}-${seed}-${i + 1}`,
-        sectionKey: key,
+      .map((g, i) => {
         // Fix round 1 (B0-23): "your discharge note of 16/09/2026" → "Sarah Reid's discharge note of 16/09/2026".
-        issue: notesNamedByAuthor(readable(g.issue), bundle.notes),
-        suggestedQuestion: notesNamedByAuthor(readable(String(g.suggestedQuestion ?? "")), bundle.notes) || "Can you add this from your own knowledge of the case?",
-        relatedNoteIds: Array.from(new Set((g.relatedNoteIds ?? []).filter((x) => isNoteId(x) && sourceIds.has(x)))),
-        raisedBy: "ai" as const,
-      }));
+        const issue = notesNamedByAuthor(readable(g.issue), bundle.notes);
+        const question = notesNamedByAuthor(readable(String(g.suggestedQuestion ?? "")), bundle.notes);
+        // Fix round 3 (B2-9): reasoning or internal terms in the gap – the plain system gap instead.
+        const plainGap = hasMetaWording(issue) || hasMetaWording(question) ? emptySectionGap(key, seed, spec, field) : null;
+        return {
+          id: `gap-${key}-${seed}-${i + 1}`,
+          sectionKey: key,
+          issue: plainGap ? plainGap.issue : issue,
+          suggestedQuestion: (plainGap ? plainGap.suggestedQuestion : question) || "Can you add this from your own knowledge of the case?",
+          relatedNoteIds: Array.from(new Set((g.relatedNoteIds ?? []).filter((x) => isNoteId(x) && sourceIds.has(x)))),
+          raisedBy: "ai" as const,
+        };
+      });
+
+    // Fix round 3 (B2-5): a yes-or-no question answered in words ("Is there any evidence of psychosocial factors…? – or
+    // “No”") drafted as a list of facts, with no "Yes" or "No": nobody recorded them as such, so the clinician answers it.
+    if (field && yesNoInWords(field) && paragraphs.length > 0 && !/^(?:yes|no)\b/i.test(paragraphs[0].text)) {
+      const drafted = paragraphs[0].text;
+      paragraphs.length = 0;
+      sectionGaps.unshift({
+        id: `gap-${key}-${seed}-yesno`,
+        sectionKey: key,
+        issue: `“${shortTitle(spec)}” is answered Yes or No. The notes record related details (“${drafted.length > 120 ? `${drafted.slice(0, 120).replace(/\s+\S*$/, "")}…` : drafted}”), but no clinician recorded them as such, so nothing has been entered.`,
+        suggestedQuestion: `Is the answer to “${shortTitle(spec)}” Yes or No? If Yes, write what you found.`,
+        relatedNoteIds: Array.from(new Set((outSections.flatMap((o) => o.paragraphs ?? []).flatMap((p) => p.sourceIds ?? [])).filter((x) => isNoteId(x) && sourceIds.has(x)))),
+        raisedBy: "system",
+      });
+    }
 
     // Referrer forms: the structured answer (yes/no, tick box, choice, date, number).
     let answer: FormAnswer | undefined;
@@ -282,6 +325,19 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
             suggestedAnswer: option,
           });
         }
+      }
+    }
+
+    // Fix round 3 (B2-10): a duration recorded in weeks against printed time bands ("4–6 weeks" and "0-3 MONTHS") – the
+    // band that contains it is offered (one click, the clinician's choice), never a band that cannot contain it.
+    if (field?.answerType === "single_choice" && answer?.value === null) {
+      for (const gap of sectionGaps) {
+        const band = bandFor(field.options, `${gap.issue} ${paragraphs.map((p) => p.text).join(" ")}`);
+        if (!band) continue;
+        const kept = (gap.issue.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [gap.issue]).filter((x) => !/\b(?:does|do|did) not (?:match|fit|correspond)|\bcannot be (?:chosen|matched|ticked)|\bnone of the (?:printed )?options\b|\bnot (?:one of|among) the (?:printed )?options\b/i.test(x));
+        gap.issue = `${kept.join(" ").trim()} ${band.duration} is within the printed “${band.option}”.`.trim();
+        gap.suggestedQuestion = `Is “${band.option}” the right option? The note records ${band.duration}, which is within it – tick it if that is your opinion, or choose another option.`;
+        gap.suggestedAnswer = band.option;
       }
     }
 

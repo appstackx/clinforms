@@ -21,7 +21,7 @@ import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
 import { useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
-import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, placeDocxDrawings, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
 import { DemoNoticeBar } from "../shared/demo-notice";
 import { WORDING } from "../../wording";
@@ -73,6 +73,7 @@ function DocxView({ blob, width, label, onError }: { blob: Blob; width: number; 
       const stage = stageRef.current;
       if (cancelled || !stage) return;
       stage.replaceChildren(host);
+      placeDocxDrawings(host);
       setNatural({ w: Math.max(stage.scrollWidth, 1), h: Math.max(stage.scrollHeight, 1) });
     })().catch(() => {
       if (!cancelled) onError("The Word preview could not be drawn in this browser. Download the draft to view it.");

@@ -7,7 +7,7 @@
  *
  * Owner: studio-b agent.
  */
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -274,12 +274,17 @@ export const ApprovedBanner = forwardRef<
     questionSet?: boolean;
     /** A form the clinic only prefills: who completes and signs it. */
     prefillFor?: string | null;
+    /** Fix round 3 (B2-25): an amended version is being prepared, or was approved and supersedes this one. */
+    amendment?: { kind: "open" | "superseded"; version: number; approvedOn?: string; href: string } | null;
   }
 >(function ApprovedBanner(props, ref) {
   const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet, prefillFor } = props;
   const tenant = useStudioMode() === "tenant";
+  const [confirmAmend, setConfirmAmend] = useState(false);
   const receipt = report.receipt;
   if (!receipt) return null;
+  const superseded = props.amendment?.kind === "superseded" ? props.amendment : null;
+  const was = superseded ? " – superseded" : "";
   const isForm = Boolean(report.form);
   const lastFiled = filed[filed.length - 1];
   const spin = (k: DownloadKind) => (downloading === k ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Download className="mr-2 h-4 w-4" aria-hidden />);
@@ -292,7 +297,9 @@ export const ApprovedBanner = forwardRef<
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="text-base font-semibold text-teal-950">
-            {questionSet
+            {superseded
+              ? `Superseded by version ${superseded.version}${superseded.approvedOn ? ` (approved ${superseded.approvedOn})` : ""} – this approval is no longer the current form`
+              : questionSet
               ? WORDING.questionSet.approvedTitle
               : prefillFor
                 ? `Prefill approved – ready for ${prefillFor} to complete and sign`
@@ -331,7 +338,7 @@ export const ApprovedBanner = forwardRef<
           <>
             {isWordForm && (
               <Button type="button" onClick={() => onDownload("original")} disabled={downloading !== null || fileMissing}>
-                {spin("original")} Completed form (Word)
+                {spin("original")} Completed form (Word){was}
               </Button>
             )}
             {(isPdfForm || pdfUnavailable === null) && (
@@ -341,7 +348,7 @@ export const ApprovedBanner = forwardRef<
                 onClick={() => onDownload(isPdfForm ? "original" : "pdf")}
                 disabled={downloading !== null || fileMissing}
               >
-                {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
+                {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}{was}
               </Button>
             )}
           </>
@@ -386,12 +393,32 @@ export const ApprovedBanner = forwardRef<
             File again
           </button>
         )}
-        {onAmend && (
-          <button type="button" onClick={onAmend} className="inline-flex items-center gap-1 font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 hover:no-underline">
+        {props.amendment && (
+          <Link href={props.amendment.href} className="inline-flex items-center gap-1 font-medium text-teal-800 underline underline-offset-2 hover:no-underline">
+            Open version {props.amendment.version}
+            {props.amendment.kind === "open" ? " (being amended)" : ""}
+          </Link>
+        )}
+        {onAmend && !confirmAmend && (
+          <button type="button" onClick={() => setConfirmAmend(true)} className="inline-flex items-center gap-1 font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 hover:no-underline">
             <PenLine className="h-3 w-3" aria-hidden /> Create amended version
           </button>
         )}
       </div>
+      {onAmend && confirmAmend && (
+        // Fix round 3 (B2-25): a new version is started only once confirmed.
+        <div role="group" aria-label="Create an amended version" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700">
+          <p className="min-w-0 flex-1 basis-64">
+            Start version {(report.version ?? 1) + 1} to correct or update this form? This approval stays final until version {(report.version ?? 1) + 1} is approved.
+          </p>
+          <Button type="button" size="sm" className="h-8" onClick={() => { setConfirmAmend(false); onAmend(); }}>
+            Start version {(report.version ?? 1) + 1}
+          </Button>
+          <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setConfirmAmend(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
 
       {!canFile && (
         <p className="mt-2 text-[12px] text-slate-600">

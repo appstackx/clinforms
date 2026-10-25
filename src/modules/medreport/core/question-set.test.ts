@@ -293,7 +293,8 @@ test("map checks for question sets: virtual anchors only, one place each", async
 test("a question set's template: portal wording and its own attestations; file forms unchanged", async () => {
   const form = await createQuestionSet({ referrer: REFERRER, questions: parsePortalQuestions("Current symptoms\nPrognosis").questions, now: NOW });
   const t = formToTemplate(form);
-  assert.equal(t.description, "Northbridge Health Insurance (fictional)'s portal questions, answered for entry in the portal.");
+  // Fix round 3 (B2-32): a name ending in a bracket takes "from" (it was "… (fictional)'s portal questions").
+  assert.equal(t.description, "The portal questions from Northbridge Health Insurance (fictional), answered for entry in the portal.");
   assert.deepEqual(t.attestations, [...QUESTION_SET_ATTESTATIONS]);
   assert.deepEqual(t.attestations.slice(0, 3), FORM_ATTESTATIONS.slice(0, 3));
   assert.match(t.attestations[3], /entered in the referrer's portal/);

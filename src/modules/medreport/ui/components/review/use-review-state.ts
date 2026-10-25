@@ -10,12 +10,14 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
+import { withReportConditions } from "../../../core/conditions";
 import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
   acknowledgeFlag,
   addClinicianParagraph,
+  applyDraftFitFix,
   editParagraph,
   markApproved,
   markNotApplicable,
@@ -55,7 +57,7 @@ export type ReviewAction =
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
   | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
-  | { type: "activity"; action: string; detail: string; actor: string }
+  | { type: "activity"; action: string; detail: string; actor: string; reportId?: string }
   | { type: "writeInOwnVoice"; authorName: string; actor: string }
   /** "Name Tom Ellis instead" on OTHER_CLINICIAN_VOICE flags (fix round 1, B0-1). */
   | { type: "nameClinicians"; flags: ReportFlag[]; actor: string }
@@ -65,7 +67,11 @@ export type ReviewAction =
   /** Mark a question whose own condition does not hold as not applicable, or take the mark off (fix round 2, B1-5). */
   | { type: "markNotApplicable"; key: string; on: boolean; actor: string }
   /** "Make the patient the subject" on a first-person session count (fix round 2, B1-14). */
-  | { type: "patientAttended"; flag: ReportFlag; actor: string };
+  | { type: "patientAttended"; flag: ReportFlag; actor: string }
+  /** A DRAFT_FIT one-click wording fix: remove a repeated sentence or a comment, keep the value only (fix round 3). */
+  | { type: "draftFitFix"; flag: ReportFlag; actor: string }
+  /** Fix round 3 (B2-4): the conditions the form map's headings and guidance carry, for a report drafted without them. */
+  | { type: "formConditions"; form: FormDefinition };
 
 function locked(report: Report): boolean {
   return report.status === "signed";
@@ -78,7 +84,7 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
   // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft –
   // first, so an answer given to a question that applies again settles its reopened gaps below (fix round 2).
-  if (action.type === "setAnswer" || action.type === "applyDraft" || action.type === "markNotApplicable") next = settleConditionalGaps(next, actor || "System");
+  if (action.type === "setAnswer" || action.type === "applyDraft" || action.type === "markNotApplicable" || action.type === "formConditions") next = settleConditionalGaps(next, actor || "System");
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
   if (key && actor && ["editParagraph", "revertParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
     next = settleGapsByAnswer(report, next, key, actor);
@@ -88,7 +94,7 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
 
 function applyReviewAction(report: Report, action: ReviewAction): Report {
   if (action.type === "replace") return action.report;
-  if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor });
+  if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor, ...(action.reportId ? { reportId: action.reportId } : {}) });
   if (action.type === "approved") return markApproved(action.sent, action.receipt, action.flags, { isForm: action.isForm });
   // Everything below changes content: a signed report is read-only.
   if (locked(report)) return report;
@@ -105,6 +111,10 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       return markNotApplicable(report, action.key, action.on, action.actor);
     case "patientAttended":
       return patientAttendedInstead(report, action.flag, action.actor);
+    case "draftFitFix":
+      return applyDraftFitFix(report, action.flag, action.actor);
+    case "formConditions":
+      return withReportConditions(report, action.form);
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":
@@ -122,7 +132,11 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
     }
     case "logEdit": {
       const section = report.sections.find((s) => s.key === action.key);
-      const logged = appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      // Fix round 3 (B2-20): the first answer typed into an empty box is entered, not edited.
+      const first =
+        !(section?.paragraphs ?? []).some((p) => p.origin !== "clinician") &&
+        !report.activity.some((a) => a.action === "edited" && a.detail.startsWith(`${action.key}: `) && / the answer to “/.test(a.detail));
+      const logged = appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: ${first ? "entered" : "edited"} the answer to “${section?.title ?? action.key}”.` });
       return supersedeAcknowledgedGaps(logged, action.key, action.actor);
     }
     case "setAnswer":
@@ -210,6 +224,12 @@ export function useReviewState(initial: Report, stored: Report | null, template:
     if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
     rawDispatch(action);
   }, []);
+
+  // Fix round 3 (B2-4): a report drafted before conditions were kept through drafting takes them from its form map
+  // (not a change by a person: stored with their next change).
+  useEffect(() => {
+    if (form && withReportConditions(reportRef.current, form) !== reportRef.current) rawDispatch({ type: "formConditions", form });
+  }, [form, report]);
 
   // A newer copy saved elsewhere (another tab, background drafting) replaces the working copy.
   useEffect(() => {

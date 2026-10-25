@@ -186,3 +186,40 @@ test("fix round 2 (B1-17): the opened panel words a place as the row does; no ac
   ];
   assert.equal(firstQuestionToCheck(jj), "F-04");
 });
+
+test("fix round 3 (B2-30): the mapping page opens on a clinical question – not a staff entry (as recordSourceOf says) and not the sign-off", () => {
+  const staff = { kind: "registration", path: "staff.entry" } as FormField["fillSource"];
+  // JJ IA: F-04 "Shoulder No" (typed by staff) and F-11 "Body part affected" (the physiotherapist's choice), both to check.
+  assert.equal(
+    firstQuestionToCheck([
+      { id: "F-04", confidence: "medium", required: true, fillSource: staff, answerType: "short_text", label: "Shoulder No", guidance: "JJ Physio's “Shoulder No”, entered on each report." },
+      { id: "F-11", confidence: "medium", required: true, fillSource: staff, answerType: "single_choice", label: "Body part affected", guidance: "Chosen by the physiotherapist on each report." },
+    ]),
+    "F-11",
+  );
+  // Physio-Link IA: a required signature to check comes after any other question to check.
+  assert.equal(
+    firstQuestionToCheck([
+      { id: "F-13", confidence: "medium", required: false, fillSource: { kind: "clinician_opinion" }, answerType: "long_text", label: "Treatment plan" },
+      { id: "F-18", confidence: "medium", required: true, fillSource: { kind: "signoff", part: "signature" } as never, answerType: "signature", label: "Signed" },
+    ]),
+    "F-13",
+  );
+  assert.equal(firstQuestionToCheck([{ id: "F-18", confidence: "medium", required: true, fillSource: { kind: "signoff", part: "signature" } as never, answerType: "signature", label: "Signed" }]), "F-18", "only the sign-off to check");
+});
+
+test("fix round 3 (B2-12, interim): a clinic's Studio shows no map notes written for whoever prepared the map, and one “prepared by ClinForms” note", async () => {
+  const { distinctAnalysisNotes, showsMapNote } = await import("./mapping");
+  assert.equal(showsMapNote("Verify 24/10: from the approval, so the therapist named here is always the one who approves.", "tenant"), false);
+  assert.equal(showsMapNote("Open point for Dell: what “Shoulder No” is.", "tenant"), false);
+  assert.equal(showsMapNote("From the clinic system's merge code <<P_DOB>> (the patient's date of birth): filled from the record.", "tenant"), true, "the converter's own note says where a value comes from");
+  assert.equal(showsMapNote("Verify 24/10: …", "demo"), true);
+  assert.deepEqual(
+    distinctAnalysisNotes([
+      "Prepared by ClinForms when your account was set up – check each question against your form and confirm the mapping once.",
+      "Corrected proposed map prepared by ClinForms for Blue Heart's 3-day trial – check each question once against your form.",
+      "The form's footer holds a page number.",
+    ]),
+    ["Prepared by ClinForms when your account was set up – check each question against your form and confirm the mapping once.", "The form's footer holds a page number."],
+  );
+});

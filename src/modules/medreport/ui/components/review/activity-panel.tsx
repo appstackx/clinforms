@@ -10,6 +10,7 @@ import type { ActivityEntry } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { neutralLegacyText } from "../../wording";
+import { tidyPunctuation } from "../../../core/labels";
 
 /** Every action the Studio records (core/report-factory.ts KNOWN_ACTIVITY_ACTIONS) has a label; any other reads "Updated". */
 export const ACTION_LABELS: Record<string, string> = {
@@ -35,8 +36,12 @@ export const ACTION_LABELS: Record<string, string> = {
   superseded: "Replaced by a newer version",
 };
 
-/** The label of an activity action – "Updated" for one without a label, never the raw code. */
-export function activityLabel(action: string): string {
+/**
+ * The label of an activity action – "Updated" for one without a label, never the raw code. Fix round 3 (B2-20): a
+ * structured answer given where there was none ("… (was blank).") is entered, not changed.
+ */
+export function activityLabel(action: string, detail = ""): string {
+  if (action === "answer_set" && /\(was blank\)\.?$/.test(detail)) return "Answer entered";
   return ACTION_LABELS[action] ?? "Updated";
 }
 
@@ -62,10 +67,10 @@ export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
           <li key={`${a.at}-${i}`} className="relative">
             <span aria-hidden className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${ACTION_DOT[a.action] ?? "bg-slate-400"}`} />
             <p className="text-[13px] font-medium text-slate-900">
-              {activityLabel(a.action)}
+              {activityLabel(a.action, a.detail)}
               <span className="ml-1.5 font-normal text-slate-500">· {a.actor}</span>
             </p>
-            <p className="text-[12px] leading-relaxed text-slate-600">{neutralLegacyText(a.detail)}</p>
+            <p className="text-[12px] leading-relaxed text-slate-600">{tidyPunctuation(neutralLegacyText(a.detail))}</p>
             <p className="text-[11px] tabular-nums text-slate-500">{formatUkDateTime(a.at)}</p>
           </li>
         ))}

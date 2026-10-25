@@ -17,7 +17,7 @@ import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
-import { flushStore } from "../../store";
+import { flushStore, getReport, saveReportDurable } from "../../store";
 import type { HostHooks } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { downloadFormat, reportEventProps } from "../../studio-events";
@@ -25,7 +25,7 @@ import { WORDING } from "../../wording";
 import { sessionTokenFor } from "../shared/session";
 import type { ApproveInput, ApproveResult } from "./approve-dialog";
 import type { FormFileState } from "./preview-panel";
-import { markApproved } from "./review-model";
+import { amendmentState, markApproved, markSupersededBy } from "./review-model";
 import type { Toast } from "./review-ui";
 import type { ReviewAction } from "./use-review-state";
 
@@ -97,6 +97,9 @@ export function useReviewActions(opts: {
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
+        // Fix round 3 (B2-25): the version it amends is superseded now – and says so.
+        const earlier = approved.amends ? getReport(approved.amends.reportId) : null;
+        if (saved && earlier && earlier.status === "signed" && amendmentState(earlier)?.kind !== "superseded") await saveReportDurable(markSupersededBy(earlier, approved));
         hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",

@@ -748,7 +748,9 @@ test("fix round 2 (B1-3): a fragment the first-person rewrite left gets a “Che
   ];
   const report = withSection(testReport(SOL), "presenting_complaints", ps);
   const flags = run(report, SOL).filter((f) => f.code === "DRAFT_FIT" && f.evidence === "wording");
-  assert.deepEqual(flags.map((f) => f.paragraphId), ps.slice(0, 3).map((p) => p.id), "a finding after its date is a whole entry");
+  // Fix round 3 (B2-6): a lower-case finding after a date lead and a colon is a fragment too (it was “a whole entry”) – the
+  // rewrite now writes “On 18/03/2026, I recorded a painful arc…”.
+  assert.deepEqual(flags.map((f) => f.paragraphId), ps.map((p) => p.id));
   assert.ok(flags.every((f) => f.severity === "warning"));
   assert.match(flags[0].message, /^Check the wording: “On 15\/07\/2026: that he was fit and well before…” is not a whole sentence – it would be printed as it is\.$/);
 });

@@ -448,3 +448,23 @@ export function figureInIndex(f: Figure, index: FigureIndex): boolean {
       return index.levels.has(f.key);
   }
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Content words (fix round 3, B2-1, B2-7)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Words that carry no content of their own (articles, pronouns, auxiliaries, prepositions, conjunctions, titles). */
+const FUNCTION_WORDS = new Set(
+  (
+    "a an the and or but nor so yet of to in on at by for with from as into onto over under about after before since until " +
+    "up down out off than then also very just only even still too not no nor is was were are be been being am has have had " +
+    "do does did can could may might will would should shall must it its this that these those there here which who whom " +
+    "whose what when where while i me my we our us you your he him his she her they them their mr mrs ms miss dr mx " +
+    "if because although though whether all any some such each every both either neither other more most own same"
+  ).split(" "),
+);
+
+/** The content words of `text`, in order: lower case, a date such as 18/03/2026 one word, function words left out. */
+export function contentWords(text: string): string[] {
+  return ((text ?? "").toLowerCase().match(/\d{1,2}\/\d{1,2}\/\d{2,4}|[a-z0-9]+(?:['’][a-z]+)?/g) ?? []).filter((w) => !FUNCTION_WORDS.has(w.replace(/['’]s$/, "")));
+}

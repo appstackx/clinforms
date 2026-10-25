@@ -21,7 +21,7 @@
  */
 import type { ReportSection } from "./types";
 
-type Wants = "yes" | "no" | "other" | "option" | "not_option";
+type Wants = "yes" | "no" | "other" | "option" | "not_option" | "filled";
 
 /** What a condition asks of the answer(s) it depends on. */
 export interface Wanted {
@@ -76,6 +76,9 @@ export function conditionWanted(title: string): Wanted | null {
   if (/\bif (?:the )?(?:employee|client|patient|claimant) is not (?:on|back on|back to) (?:full|normal) (?:duties|role)\b/i.test(t)) {
     return { wants: "not_option", anyOfAbove: false, titled: /\bwork status\b|\bemployment status\b|\bduties\b/i, option: /\b(?:normal role|full duties|normal duties)\b/i, optionLabel: "the normal role (full duties)" };
   }
+  // Fix round 3 (B2-13): "Only when an activity is still restricted" – the row's activity cell names one (not "None").
+  const still = /^only (?:when|if) (?:an? |the )?([a-z][a-z -]*?) (?:is|are) still (?:restricted|limited|affected|impaired)\b/i.exec(t);
+  if (still && nameWords(still[1]).length > 0) return { wants: "filled", anyOfAbove: false, names: nameWords(still[1]) };
   // "Only when the lifting restriction is kept: …" (map guidance) – the tick or yes/no it names is ticked / Yes.
   const onlyWhen = /^only (?:when|if)\s+([^:;.]+)/i.exec(t);
   if (onlyWhen && !/\bother\b/i.test(onlyWhen[1]) && nameWords(onlyWhen[1]).length > 0) return { wants: "yes", anyOfAbove: false, names: nameWords(onlyWhen[1]) };
@@ -109,12 +112,40 @@ export function conditionTextOf(
 ): string | null {
   const guidance = (field.guidance ?? "").replace(/\s+/g, " ").trim();
   if (/^(?:only (?:when|if)|if)\b/i.test(guidance) || /\bafter the (?:initial )?assessment\b/i.test(guidance)) return guidance.slice(0, 400);
+  // Fix round 3 (B2-13): an "Only when …" sentence later in the guidance ("Restricted or Unable to perform – the other
+  // is deleted. Only when an activity is still restricted.").
+  const later = /(?:^|[.;]\s+)(only (?:when|if)\b[^.;]*)/i.exec(guidance);
+  if (later) return later[1].trim().slice(0, 400);
   const heading = (field.section ?? "").replace(/\s+/g, " ").trim();
   if (/^if\b/i.test(heading) && !fields.some((f) => f.label.trim().toLowerCase() === heading.toLowerCase())) return heading.slice(0, 400);
   return null;
 }
 
-type Section = Pick<ReportSection, "key" | "title" | "answer"> & Partial<Pick<ReportSection, "condition" | "markedNotApplicable">>;
+type Section = Pick<ReportSection, "key" | "title" | "answer"> & Partial<Pick<ReportSection, "condition" | "markedNotApplicable" | "paragraphs">>;
+
+/** withFormConditions() on a whole report (the same report when nothing is added). */
+export function withReportConditions<R extends { sections: ReportSection[] }>(report: R, form: { fields: ReadonlyArray<{ id: string; label: string; guidance?: string; section?: string | null }> } | null | undefined): R {
+  if (!form) return report;
+  const sections = withFormConditions(report.sections, form.fields);
+  return sections === report.sections ? report : { ...report, sections };
+}
+
+/**
+ * Fix round 3 (B2-4): sections with the condition their form field carries (conditionTextOf) put back where a section has
+ * none – a report drafted before the condition was kept through drafting. Returns `sections` itself when nothing is added.
+ */
+export function withFormConditions<S extends Section>(sections: readonly S[], fields: ReadonlyArray<{ id: string; label: string; guidance?: string; section?: string | null }>): S[] {
+  let changed = false;
+  const out = sections.map((s) => {
+    if (s.condition) return s;
+    const field = fields.find((f) => f.id === s.key);
+    const condition = field ? conditionTextOf(field, fields) : null;
+    if (!condition) return s;
+    changed = true;
+    return { ...s, condition };
+  });
+  return changed ? out : (sections as S[]);
+}
 
 /** The question as the condition rules read it: its printed title, its kind and the condition it carries elsewhere. */
 interface Item {
@@ -134,6 +165,42 @@ const itemOf = (s: Section): Item => ({
 /** The question's condition: from its own label first, else from the heading or guidance it carries. */
 function wantedOf(item: Item): Wanted | null {
   return conditionWanted(item.title) ?? (item.condition ? conditionWanted(item.condition) : null);
+}
+
+/** "Barriers to recovery – details" → "Barriers to recovery"; null for any other label. */
+function detailsOf(title: string): string | null {
+  return /^(.+?)\s+[–—-]\s+(?:details?|comments?|please (?:give details|specify)|specify)\s*:?$/i.exec(title.trim())?.[1].trim() ?? null;
+}
+
+/**
+ * Fix round 3 (B2-5, B2-13): a "<X> – details" question with no condition of its own belongs to the question straight
+ * before it when that one is about the same X:
+ * - a yes/no that names X ("Is there evidence of any barriers to recovery?" before "Barriers to recovery – details"):
+ *   it applies only on "Yes" – "No" makes it not applicable, and it prints blank;
+ * - a question of the same row ("Restrictions on daily living – status" before "… – details") that has a condition:
+ *   it applies when that one does.
+ * Returns the index of that question and how it depends on it, or null.
+ */
+function detailsController(items: readonly Item[], i: number): { j: number; wanted: Wanted | "same" } | null {
+  const x = detailsOf(items[i].title);
+  const j = i - 1;
+  if (!x || j < 0) return null;
+  const prev = items[j];
+  const words = nameWords(x);
+  if (prev.kind === "yes_no" && words.length > 0 && nameScore(words, prev.title) === words.length) return { j, wanted: { wants: "yes", anyOfAbove: false, names: words } };
+  const prevRow = /^(.+?)\s+[–—-]\s+/.exec(prev.title.trim())?.[1].trim().toLowerCase();
+  if (prevRow === x.toLowerCase() && wantedOf(prev)) return { j, wanted: "same" };
+  return null;
+}
+
+/** "None", "N/A", "nil", "nothing", "no restrictions" – a cell that names nothing. */
+const NAMES_NOTHING = /^(?:none(?: reported| recorded)?|n\/?a|nil|nothing|not applicable|no(?:ne)? restrictions?|no restriction)\.?$/i;
+
+/** The text a question holds (its paragraphs, or a structured value), trimmed. */
+function heldText(s: Section): string {
+  const v = s.answer?.value;
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return (s.paragraphs ?? []).map((p) => p.text).join(" ").trim();
 }
 
 /** The letter a lettered question starts with ("b. Has the client…" → "b"), or null. */
@@ -157,6 +224,11 @@ function controllersOf(items: readonly Item[], i: number, wanted: Wanted): numbe
     const run: number[] = [];
     for (let j = i - 1; j >= 0 && structured(j); j--) run.unshift(j);
     return wanted.lastTwo ? run.slice(-2) : run;
+  }
+  if (wanted.wants === "filled") {
+    // The nearest text question at most 3 before it whose label names the same thing ("… – activity").
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) if (items[j].kind === null && nameScore(wanted.names ?? [], items[j].title) > 0) return [j];
+    return [];
   }
   if (wanted.names) {
     let best = -1;
@@ -212,11 +284,17 @@ export interface Condition {
  */
 export function conditionOf(sections: readonly Section[], key: string): Condition | null {
   const i = sections.findIndex((s) => s.key === key);
-  // A choice question answers its own condition ("5. If not, are they fit for modified duties?" prints "Not applicable").
-  if (i < 0 || sections[i].answer?.kind === "choice") return null;
+  if (i < 0) return null;
   const items = sections.map(itemOf);
-  const wanted = wantedOf(items[i]);
-  if (!wanted) return null;
+  let wanted = wantedOf(items[i]);
+  if (!wanted) {
+    const details = detailsController(items, i);
+    if (details?.wanted === "same") return conditionOf(sections, sections[details.j].key);
+    wanted = details?.wanted ?? null;
+  }
+  // A choice question answers its own condition ("5. If not, are they fit for modified duties?" prints "Not applicable") –
+  // except one that depends on a cell naming something (fix round 3, B2-13: "Restricted / Unable to perform").
+  if (!wanted || (sections[i].answer?.kind === "choice" && wanted.wants !== "filled")) return null;
   // A question it depends on that itself does not apply (marked so by a person) does not count.
   const controllers = controllersOf(items, i, wanted)
     .map((j) => sections[j])
@@ -228,6 +306,12 @@ export function conditionOf(sections: readonly Section[], key: string): Conditio
     return String(v ?? "");
   };
   const said = (s: Section) => `“${s.title.trim()}” is “${valueText(s)}”`;
+  if (wanted.wants === "filled") {
+    const held = heldText(controllers[0]);
+    if (!held) return { controllers, applies: null, because: "" };
+    const nothing = NAMES_NOTHING.test(held);
+    return { controllers, applies: !nothing, because: nothing ? `“${controllers[0].title.trim()}” is “${held.replace(/\.$/, "")}”` : "" };
+  }
   if (wanted.wants === "other" || wanted.wants === "option" || wanted.wants === "not_option") {
     const v = controllers[0].answer?.value;
     if (v === null || v === undefined || v === "") return { controllers, applies: null, because: "" };
@@ -316,14 +400,20 @@ type FieldLike = { id: string; label: string; answerType: string; guidance?: str
  */
 export function conditionText(fields: ReadonlyArray<FieldLike>, id: string): string | null {
   const i = fields.findIndex((f) => f.id === id);
-  if (i < 0 || fields[i].answerType === "single_choice") return null;
+  if (i < 0) return null;
   const kindOf = (t: string): Item["kind"] => (t === "yes_no" ? "yes_no" : t === "checkbox" ? "checkbox" : t === "single_choice" ? "choice" : null);
   const items: Item[] = fields.map((f) => {
     const condition = conditionTextOf(f, fields);
     return { key: f.id, title: f.label, kind: kindOf(f.answerType), ...(condition ? { condition } : {}) };
   });
-  const wanted = wantedOf(items[i]);
-  if (!wanted) return null;
+  let wanted = wantedOf(items[i]);
+  if (!wanted) {
+    // Fix round 3 (B2-5, B2-13): "<X> – details" after the question about X.
+    const details = detailsController(items, i);
+    if (details?.wanted === "same") return conditionText(fields, fields[details.j].id);
+    wanted = details?.wanted ?? null;
+  }
+  if (!wanted || (fields[i].answerType === "single_choice" && wanted.wants !== "filled")) return null;
   const controllers = controllersOf(items, i, wanted);
   if (controllers.length === 0) return null;
   const name = (j: number) => `${fields[j].id} (“${fields[j].label.trim()}”)`;
@@ -334,6 +424,7 @@ export function conditionText(fields: ReadonlyArray<FieldLike>, id: string): str
     return wanted.wants === "yes" ? "Yes" : "No";
   };
   if (wanted.wants === "not_option") return `${name(controllers[0])} is not ${wanted.optionLabel ?? "that option"}`;
+  if (wanted.wants === "filled") return `${name(controllers[0])} names one (not “None”)`;
   if (controllers.length === 1) return `${name(controllers[0])} is ${value(controllers[0])}`;
   const listed = controllers.map(name);
   return `any of ${listed.slice(0, -1).join(", ")} or ${listed[listed.length - 1]} is ${value(controllers[0])}`;

@@ -15,7 +15,7 @@ import { Loader2, PenLine, ShieldCheck } from "lucide-react";
 import { signoffValuesFromReceipt } from "../../../core/forms";
 import { SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
-import { possessive } from "../../../core/possessive";
+import { namedThing, possessive } from "../../../core/possessive";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, cn } from "../../primitives";
@@ -155,7 +155,7 @@ export function ApproveDialog({
             {prefillFor ? "Approve the prefilled form" : isForm ? "Approve the completed form" : "Sign the report"}
           </DialogTitle>
           <DialogDescription>
-            {report.patientLabel} · {isForm ? `${possessive(referrer)} “${report.form?.title}”` : template.name}. Nothing is issued until you approve it.
+            {report.patientLabel} · {isForm ? (/\)$/.test(referrer.trim()) ? `“${report.form?.title}” from ${referrer}` : `${possessive(referrer)} “${report.form?.title}”`) : template.name}. Nothing is issued until you approve it.
           </DialogDescription>
         </DialogHeader>
 
@@ -175,7 +175,7 @@ export function ApproveDialog({
               <>
                 {signoffFields.length > 0 ? (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[13px] text-slate-700">On approval these fields on {possessive(referrer)} form are completed from your approval:</p>
+                    <p className="text-[13px] text-slate-700">On approval these fields on {namedThing(referrer, "form")} are completed from your approval:</p>
                     <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-[auto_1fr]">
                       {signoffFields.map((f) => {
                         const part = f.fillSource.kind === "signoff" ? f.fillSource.part : "signature";
@@ -202,7 +202,7 @@ export function ApproveDialog({
                 )}
                 <Check id={`${ids}-statement`} checked={statement} onChange={setStatement}>
                   {questionSet
-                    ? `I confirm that these answers are accurate to the best of my knowledge and belief, and I approve them for entry in ${possessive(referrer)} portal.`
+                    ? `I confirm that these answers are accurate to the best of my knowledge and belief, and I approve them for entry in ${namedThing(referrer, "portal", "of")}.`
                     : prefillFor
                       ? `I confirm that the details the clinic has prefilled on this form are accurate to the best of my knowledge and belief, and that the form is ready for ${prefillFor} to complete and sign.`
                       : `I confirm that the answers on this completed form are accurate to the best of my knowledge and belief, and I approve it for issue to ${referrer}.`}

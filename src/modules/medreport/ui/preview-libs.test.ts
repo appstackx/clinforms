@@ -39,3 +39,32 @@ test("fix round 2 (B1-22): drawings anchored to the page or its margins are plac
   assert.match(css, /^\.mr-preview section\.docx \{ overflow: hidden !important; \}/);
   assert.match(css, /\.mr-preview \.docx, \.mr-preview \.docx \* \{ hyphens: manual !important;/);
 });
+
+test("fix round 3 (B2-27): TPN's first-page banner (margin, centred, wider than the text column) is placed inside the page", async () => {
+  const { anchorPlacementsOf, pageGeometryOf } = await import("./preview-libs");
+  const page = pageGeometryOf('<w:sectPr><w:pgSz w:w="11900" w:h="16840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="0" w:footer="0" w:gutter="0"/><w:titlePg/></w:sectPr>')!;
+  const banner = '<w:hdr><w:p><w:r><w:drawing><wp:anchor simplePos="0"><wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH><wp:positionV relativeFrom="page"><wp:align>top</wp:align></wp:positionV><wp:extent cx="6413500" cy="1524000"/></wp:anchor></w:drawing></w:r></w:p></w:hdr>';
+  const [at] = anchorPlacementsOf(banner, page);
+  assert.deepEqual(at, { left: 45, top: 0, width: 505, height: 120 });
+  assert.ok(at!.left >= 0 && at!.left + at!.width <= page.width, "it ran from 150 px to 867 px on a 793 px page");
+  // The review's Preview draws into a host not yet on the page: the placing waits until it is (placeDocxDrawings).
+  const { placeDocxDrawings } = await import("./preview-libs");
+  assert.doesNotThrow(() => placeDocxDrawings({ isConnected: false } as unknown as HTMLElement), "nothing pending: a no-op");
+});
+
+test("fix round 3 (B2-28): page-number fields, the page count Word saved, and tab stops as Word sets them", async () => {
+  const { NUMPAGES_TOKEN, PAGE_TOKEN, nextTabStop, pageFieldToken, pagesOfAppXml } = await import("./preview-libs");
+  assert.equal(pageFieldToken(" PAGE "), PAGE_TOKEN);
+  assert.equal(pageFieldToken("NUMPAGES  \\* Arabic"), NUMPAGES_TOKEN);
+  assert.equal(pageFieldToken(" DATE \\@ dd/MM/yyyy"), null);
+  assert.equal(pagesOfAppXml("<Properties><Pages>4</Pages></Properties>"), 4);
+  assert.equal(pagesOfAppXml("<Properties/>"), null);
+  // Physio-Link's schedule: "05." at the left, a custom tab at 216 pt for the second column. Word clears the default
+  // stops left of a custom tab, so "11." lines up under "07.", never at the first default stop (36 pt).
+  const stops = [{ pos: 216, style: "left" }];
+  assert.equal(nextTabStop(20, stops, 36), 216);
+  assert.equal(nextTabStop(150, stops, 36), 216);
+  assert.equal(nextTabStop(230, stops, 36), 252, "past the last custom stop: the next default one");
+  assert.equal(nextTabStop(10, [], 36), 36, "no custom stops: the defaults");
+  assert.equal(nextTabStop(10, [{ pos: 100, style: "clear" }], 36), 36, "a cleared stop is no stop");
+});

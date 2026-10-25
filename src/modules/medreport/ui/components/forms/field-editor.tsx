@@ -31,7 +31,7 @@ import { WORDING } from "../../wording";
 import { FieldLabel, Select, Textarea, useFillSourceLabels } from "../shared/ui-bits";
 import { useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
-import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription } from "./mapping";
+import { DOCX_TARGET_LABELS, FACT_OPTIONS, describeAnchor, fillSourceOfKind, parseOptions, plainAnchorDescription, showsMapNote } from "./mapping";
 import { PdfAnchorFields } from "./pdf-anchor-fields";
 import { AnchorJsonEditor, AppointmentColumnsEditor } from "./table-anchor-editor";
 
@@ -355,7 +355,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
           Remove question
         </Button>
       </div>
-      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
+      {field.note && showsMapNote(field.note, tenant ? "tenant" : "demo") ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
     </fieldset>
   );
 }

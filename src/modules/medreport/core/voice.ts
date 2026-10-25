@@ -131,18 +131,33 @@ function plainRecordedBody(body: string, lead: string, date: string): string {
   if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
   if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
   // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
-  if ((m = /^((?:the|my|an?)\s+[a-z][a-z' -]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
+  // Fix round 3 (B2-6): the noun phrase may hold capitals and numerals ("the whiplash-associated disorder grade II as now
+  // largely resolved" → "… grade II was now largely resolved").
+  if ((m = /^((?:the|my|an?)\s+[A-Za-z][\w'’ –-]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][\w'’ –-]{1,40}?|(?:right|left)\s+[a-z][\w'’ –-]{1,60}?) as (?!follows|part of\b|well\b|such\b|a result\b)([\s\S]+)$/.exec(b))) {
     return `${leadComma}${m[1]} ${beFor(m[1])} ${m[2]}`;
   }
   // "right shoulder active range of movement: flexion 120°…" → "Right shoulder active range of movement on 01/09/2026: …"
   if ((m = /^([a-z][a-z' -]{2,60}?):\s+([\s\S]+)$/.exec(b)) && !/\b(?:that|was|were|is|are)\b/.test(m[1])) return `${m[1]}${on}: ${m[2]}`;
   if ((m = /^that,?\s+([\s\S]*)$/.exec(b))) {
+    // Fix round 3 (B2-6): a clause with its own event date ("that Mr Ellery saw his GP on 07/07/2026") keeps "I recorded
+    // that" – "On 15/07/2026, Mr Ellery saw his GP on 07/07/2026" reads as two clashing dates.
+    if (lead && /\bon \d{2}\/\d{2}\/\d{4}\b/.test(m[1].replace(/\([^()]*\)/g, ""))) return `${lead}, I recorded that ${m[1].replace(/ and that,? /, " and ")}`;
     // "I recorded that she provided education…" – the recorder is the one who provided it.
-    const clause = m[1].replace(new RegExp(`^(?:she|he) (${OWN_ACTION_VERBS})\\b`), "I $1").replace(/ and that,? /, " and ");
+    const clause = m[1]
+      .replace(new RegExp(`^(?:she|he) (${OWN_ACTION_VERBS})\\b`), "I $1")
+      .replace(/ and that,? /, " and ")
+      // Fix round 3 (B2-6): "…, and noted mild travel anxiety" shared the recorder as its subject – it keeps one.
+      .replace(/,? and (also )?(noted|recorded|observed|documented|found)\b/g, ", and I $1$2");
     return `${leadComma}${clause}`;
   }
-  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems."
-  return `${lead ? `${lead}: ` : ""}${b.replace(/, and that,? /, ", and ")}`;
+  // A finding rather than a clause. Fix round 3 (B2-6): only a negative finding ("No previous shoulder problems.") or one
+  // after a capitalised name or score ("On 01/10/2026: QuickDASH 29.5…") stands without a verb; any other keeps "I
+  // recorded" ("I recorded full, pain-free cervical active range of movement…", "On 15/07/2026, I recorded gentle
+  // cervical mobilisations…").
+  const finding = b.replace(/, and that,? /, ", and ");
+  if (/^no\b/i.test(finding)) return `${lead ? `${lead}: ` : ""}${finding}`;
+  if (lead && /^[A-Z0-9]/.test(finding)) return `${lead}: ${finding}`;
+  return `${leadComma}I recorded ${finding}`;
 }
 
 /** What a clinician does in a session ("she recorded that she provided education…" is the clinician). */
@@ -166,8 +181,10 @@ export function plainClinicalWording(text: string): string {
   s = s.replace(/(\b(?:and|but|where|when|which|while),? )I (?:also )?recorded that,? /g, "$1");
   // Sentence starts.
   const re = new RegExp(`(^|[.!?]\\s+|\\n\\s*)${LEAD}I (?:also |then |later )?(?:recorded|documented)\\s+${REST}`, "g");
-  s = s.replace(re, (_m, pre: string, lead: string | undefined, d1: string | undefined, d2: string | undefined, body: string) => {
+  s = s.replace(re, (whole: string, pre: string, lead: string | undefined, d1: string | undefined, d2: string | undefined, body: string) => {
     const out = plainRecordedBody(body, lead ?? "", d1 ?? d2 ?? "");
+    // Fix round 3 (B2-6): a sentence kept as "I recorded …" stays exactly as drafted (idempotent).
+    if (/^I recorded /.test(out) && !lead) return whole;
     return `${pre}${out.startsWith("[CLAIMANT]") ? out : capitalise(out)}`;
   });
   return s;
@@ -591,6 +608,32 @@ export function attendedInstead(text: string): string | null {
   return text.replace(m[0], `${m[1]} attended ${m[2]} ${m[3]}`);
 }
 
+/**
+ * The first person forming or giving an opinion (fix round 3, B2-1): "in my opinion / view", "my assessment that", "I
+ * expect / think / believe / feel / recommend / anticipate / consider…" (present tense – a past "I recommended" reports
+ * what was recorded).
+ */
+export const OWN_OPINION =
+  /\b(?:in my (?:clinical |professional )?(?:opinion|view)|my (?:clinical |professional )?(?:opinion|view|assessment|impression|expectation) (?:is |was )?that|I (?:also |would |do |still )?(?:expect|think|believe|feel|recommend|anticipate|consider|suspect|predict|estimate|foresee)(?![\w-]))/i;
+
+/** Past-tense verbs that do not end in "-ed" (for "I saw" → "Tom Ellis saw"). */
+const IRREGULAR_PAST =
+  "saw|gave|took|told|found|made|felt|thought|taught|sent|kept|met|wrote|did|had|was|began|ran|put|set|got|left|brought|heard|held|knew|led|lost|meant|paid|read|said|showed|spent|stood|understood|went|withdrew|became|chose|drew|drove|fell|forgot|hurt|let|sat|spoke|struck|swam|threw|woke|won";
+
+/** Every "I" outside quotations is followed by a past-tense verb (an adverb may come between), so naming someone in its place stays grammatical. */
+function firstPersonVerbsInPast(text: string): boolean {
+  const plain = text.replace(/“[^”]*”/g, " ").replace(/"[^"]*"/g, " ");
+  const re = /\bI\b(?![-–/.]\w)\s*(\S*)\s*(\S*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain))) {
+    if (NUMERAL_BEFORE_I.test(plain.slice(Math.max(0, m.index - 16), m.index))) continue;
+    const adverb = /^(?:also|then|later|again|further|initially|subsequently|previously|first|last|next|once|briefly|only|personally)$/i.test(m[1]);
+    const verb = (adverb ? m[2] : m[1]).replace(/[^A-Za-z]/g, "");
+    if (!new RegExp(`^(?:[a-z]+ed|${IRREGULAR_PAST})$`, "i").test(verb)) return false;
+  }
+  return true;
+}
+
 /** Text outside quotations ("…", “…”) through `fn`; quoted note wording stays as written. */
 function outsideQuotes(text: string, fn: (s: string) => string): string {
   return text
@@ -609,6 +652,11 @@ function outsideQuotes(text: string, fn: (s: string) => string): string {
 export function nameClinicianInstead(text: string, clinicianName: string): string | null {
   const name = clinicianName.trim();
   if (!name || /\bI['\u2019](?:m|ve|d|ll)\b/.test(text) || namesPerson(text, name)) return null;
+  // Fix round 3 (B2-1): an opinion or prognosis in the first person ("In my opinion\u2026", "I expect these to ease") is never
+  // moved onto another clinician by a click \u2013 whose opinion it is, and whether they recorded it, is the clinician's to
+  // settle. Nor is a present-tense "I expect" turned into "Tom Ellis expect".
+  if (OWN_OPINION.test(text.replace(/\u201C[^\u201D]*\u201D|"[^"]*"/g, " "))) return null;
+  if (!firstPersonVerbsInPast(text)) return null;
   const possessive = `${name}'s`;
   const out = outsideQuotes(text, (s) =>
     s
@@ -660,6 +708,57 @@ export function notesNamedByAuthor(text: string, notes: ReadonlyArray<{ date: st
       if (authors.length === 1) return `${authors[0]}'s${rest}${tail ?? ""}`;
       const start = (offset ?? 0) === 0 || /[.!?]\s+$/.test((whole ?? "").slice(0, offset));
       return `${start ? "The" : "the"}${rest}${tail ?? ""}`;
+    }),
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Another clinician's recorded opinion named (fix round 3, B2-2) and the patient's name repeated (B2-18)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Whether `text` names `name`, in full or by title and surname ("Ms Shah"). */
+export function namesClinician(text: string, name: string): boolean {
+  if (namesPerson(text, name)) return true;
+  const surname = name.trim().split(/\s+/).pop() ?? "";
+  return surname.length > 1 && new RegExp(`\\b(?:Dr|Mr|Mrs|Ms|Miss|Mx)\\.? ${escapeRe(surname)}\\b`).test(text);
+}
+
+/**
+ * "Name Priya Shah": a recorded opinion or diagnosis from another clinician's note, drafted without their name into a
+ * compact place, gets a short attribution in front – "Priya Shah's assessment (01/09/2026): grade I–II sprain…". The
+ * text after it reads on in lower case unless it starts with a name, an acronym or "I".
+ */
+export function withOpinionAttribution(text: string, name: string, isoDate: string | null, noun: "assessment" | "opinion"): string {
+  const t = text.trim();
+  const first = /^(\S+)/.exec(t)?.[1] ?? "";
+  const keep = /^[A-Z]{2,}|^[A-Z][a-z]+[A-Z]|^I$|^(?:Mr|Mrs|Ms|Miss|Dr|Mx)\.?$/.test(first) || /^[A-Z][a-z]+ [A-Z][a-z]/.test(t);
+  const body = keep ? t : `${t.charAt(0).toLowerCase()}${t.slice(1)}`;
+  return `${name.trim()}'s ${noun}${isoDate ? ` (${formatUkDate(isoDate)})` : ""}: ${body}`;
+}
+
+/**
+ * The patient's name written again where a pronoun belongs – "[CLAIMANT] told me on 16/09/2026 that [CLAIMANT] was
+ * working…" once the name is put back ("Mr Ellery told me … that Mr Ellery was working") – becomes "he" / "him" (from the
+ * title: Mr → he, Mrs / Ms / Miss → she). Only a later mention in the same sentence, as the subject of a reported clause
+ * or the object of a clinician's verb; the first mention, quotations and every other mention stay. Without a gendered
+ * title the text is unchanged (validation/draft-fit.ts then asks for a check).
+ */
+export function pronounForRepeatedName(text: string, displayName: string, title: string | null | undefined): string {
+  const name = displayName.trim();
+  const t = (title ?? "").trim().replace(/\.$/, "");
+  const p = t === "Mr" ? { subj: "he", obj: "him" } : /^(?:Mrs|Ms|Miss)$/.test(t) ? { subj: "she", obj: "her" } : null;
+  if (!p || !name || text.split(name).length < 3) return text;
+  const N = escapeRe(name);
+  return outsideQuotes(text, (part) =>
+    eachSentence(part, (sentence) => {
+      const first = sentence.indexOf(name);
+      if (first < 0) return sentence;
+      const head = sentence.slice(0, first + name.length);
+      const tail = sentence
+        .slice(first + name.length)
+        .replace(new RegExp(`\\b(that|and|but|because|as|so|when|while|although|whether|if) ${N}(?=\\s+(?:had|has|was|were|is|would|could|felt|found|reported|said|described|wanted|planned|needed|continued|walked|drove|worked|did|kept|could|still|now|also|no longer|took|managed|returned|started|stopped)\\b)`, "g"), `$1 ${p.subj}`)
+        .replace(new RegExp(`\\b(advised|told|asked|reminded|encouraged|referred|discharged|reassured|taught|showed|gave|helped|allowed|instructed|saw|treated|assessed|examined) ${N}\\b`, "g"), `$1 ${p.obj}`);
+      return head + tail;
     }),
   );
 }

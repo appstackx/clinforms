@@ -11,7 +11,8 @@ import { StatusDot } from "./review-ui";
 import { cn } from "../../primitives";
 
 export function ProgressSummary({ counts, className }: { counts: StatusCounts; className?: string }) {
-  const answerable = counts.total - counts.counts.blank - counts.counts.signoff;
+  // Fix round 3 (B2-24): a question that does not apply is not one to answer (as "Copy answers" counts them).
+  const answerable = counts.total - counts.counts.blank - counts.counts.signoff - counts.counts.not_applicable;
   const done = counts.counts.records + counts.counts.drafted + counts.counts.clinician + counts.counts.staff;
   const pct = answerable > 0 ? Math.round((done / answerable) * 100) : 100;
   return (
@@ -70,7 +71,7 @@ export function QuestionNav({
                     className={cn(
                       "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]",
                       active ? "bg-teal-50 text-teal-950" : "text-slate-700 hover:bg-slate-100",
-                      status === "blank" && "text-slate-500",
+                      (status === "blank" || status === "not_applicable") && "text-slate-500",
                     )}
                   >
                     <StatusDot status={status} className="mt-1" />
@@ -116,7 +117,7 @@ export function QuestionJump({
           <optgroup key={g.id} label={g.title}>
             {g.questions.map((q) => {
               const status = statuses.get(q.key) ?? "pending";
-              const mark = status === "blocked" ? "⛔ " : status === "needs_input" ? "⚠ " : status === "pending" ? "○ " : "";
+              const mark = status === "blocked" ? "⛔ " : status === "needs_input" || status === "staff_entry" ? "⚠ " : status === "pending" ? "○ " : "";
               return (
                 <option key={q.key} value={q.key}>
                   {mark}

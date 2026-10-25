@@ -522,7 +522,8 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     const checked = { ...report, flags: validateReport(report, template, { form }).flags };
     const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
     assert.ok(flag);
-    assert.deepEqual(nameClinicianFix(checked, flag), { name: "Tom Ellis", text: "On 06/05/2026 he told Tom Ellis that his back pain was 2/10 at worst after shifts." });
+    const fix = nameClinicianFix(checked, flag);
+    assert.deepEqual(fix && { name: fix.name, text: fix.text, label: fix.label }, { name: "Tom Ellis", text: "On 06/05/2026 he told Tom Ellis that his back pain was 2/10 at worst after shifts.", label: "Name Tom Ellis instead" });
     const fixed = reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" });
     const p = fixed.sections.find((s) => s.key === "F-03")?.paragraphs[0];
     assert.equal(p?.origin, "edited");
@@ -545,11 +546,13 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
     assert.ok(flag, "still checked: the cited note is Tom Ellis's");
     assert.equal(flag.severity, "blocking");
-    assert.equal(nameClinicianFix(checked, flag), null, "“covered Tom Ellis's leave” would be false");
+    // Fix round 3 (B2-3): never "covered Tom Ellis's leave" (false) – the signer's own "my" is named instead: "Use my name".
+    const fix = nameClinicianFix(checked, flag);
+    assert.equal(fix?.label, "Use my name (Sarah Reid)");
+    assert.equal(fix?.text, "On 05/08/2026 Tom Ellis, physiotherapist, covered Sarah Reid's leave and recorded mobilisations and soft tissue release.");
     assert.doesNotMatch(flag.message, /Name Tom Ellis instead/);
     assert.match(flag.message, /names Tom Ellis/);
-    // Unchanged by the bulk action.
-    assert.equal(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text, text);
+    assert.doesNotMatch(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text ?? "", /Tom Ellis's leave/);
   });
 });
 
@@ -681,7 +684,8 @@ describe("fix round 1 (B0-7): a conditional question's gaps follow the answer be
     assert.equal(gap?.resolution?.notApplicable, true);
     assert.ok(no.activity.some((a) => a.detail.startsWith("F-06: resolved gap “No detail is recorded.” – Not applicable")));
     const q = flattenQuestions(buildQuestionGroups(no, testForm(), formToTemplate(testForm()))).find((x) => x.key === "F-06")!;
-    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "blank");
+    // Fix round 3 (B2-24): said as "Not applicable" (it was "blank", counted as left blank).
+    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "not_applicable");
     const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: "Sarah Reid" });
     assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
   });

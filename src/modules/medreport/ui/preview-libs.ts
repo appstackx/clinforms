@@ -252,11 +252,228 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
   } catch {
     // as docx-preview draws it
   }
+  // Fix round 3 (B2-28): page-number fields drawn ("Page  of" when the form holds no number yet), and a paragraph's own
+  // tab stops kept (docx-preview writes every tab as one wide space, so a schedule's columns did not line up).
+  let tabs: TabbedParagraphs = { stops: [], defaultStop: 36 };
+  let appPages: number | null = null;
+  try {
+    markPageFields(doc);
+    tabs = markTabbedParagraphs(doc);
+    appPages = pagesOfAppXml((await doc._package?.load("docProps/app.xml", "string")) ?? "");
+  } catch {
+    // as docx-preview draws it
+  }
   const nodes = await lib.renderDocument(doc as never, options);
   host.innerHTML = "";
   for (const n of nodes) host.appendChild(n);
-  if (page) placeAnchoredDrawings(host, placed, page);
+  fillPageFields(host, appPages);
+  // Fix round 3 (B2-27): the drawings are moved by measuring them as drawn, which needs the host on the page. The
+  // review's Preview draws into a host not yet on the page (it is made inert first): there the placing waits for
+  // placeDocxDrawings(), called once the host is shown – it was skipped, so TPN's first-page banner stayed cut off.
+  if (page) {
+    const pending = { placed, page, tabs };
+    if (host.isConnected) placeMeasured(host, pending);
+    else pendingPlacements.set(host, pending);
+  }
   sanitizeDocxPreview(host);
+}
+
+interface PendingPlacement {
+  placed: AnchorPlacement[];
+  page: PageGeometry;
+  tabs: TabbedParagraphs;
+}
+
+const pendingPlacements = new WeakMap<HTMLElement, PendingPlacement>();
+
+function placeMeasured(host: HTMLElement, pending: PendingPlacement): void {
+  placeAnchoredDrawings(host, pending.placed, pending.page);
+  try {
+    layoutTabStops(host, pending.tabs, pending.page);
+  } catch {
+    // tabs as docx-preview draws them
+  }
+}
+
+/** Place the anchored drawings (and tab stops) of a preview drawn into a host that was not on the page yet (renderDocxPreview). */
+export function placeDocxDrawings(host: HTMLElement): void {
+  const pending = pendingPlacements.get(host);
+  if (!pending || !host.isConnected) return;
+  pendingPlacements.delete(host);
+  placeMeasured(host, pending);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 3 (B2-28): page numbers, one continuous sheet, tab stops
+ * ----------------------------------------------------------------------------------------------*/
+
+interface FieldNode extends PreviewNode {
+  charType?: string;
+  instruction?: string;
+  text?: string;
+  fieldRun?: boolean;
+  tabs?: Array<{ position?: string; style?: string }>;
+}
+
+export const PAGE_TOKEN = "\u2060#PAGE#\u2060";
+export const NUMPAGES_TOKEN = "\u2060#NUMPAGES#\u2060";
+
+/** The token a page-number field instruction (" PAGE ", "NUMPAGES \\* Arabic") is drawn as, or null. */
+export function pageFieldToken(instruction: string | undefined): string | null {
+  const m = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i.exec(instruction ?? "");
+  return m ? (m[1].toUpperCase() === "PAGE" ? PAGE_TOKEN : NUMPAGES_TOKEN) : null;
+}
+
+/** Every paragraph of the parsed document (body, headers, footers). */
+function paragraphsOf(node: PreviewNode | undefined, out: FieldNode[] = []): FieldNode[] {
+  if (!node) return out;
+  if (node.type === "paragraph") out.push(node as FieldNode);
+  for (const child of node.children ?? []) paragraphsOf(child, out);
+  return out;
+}
+
+type ParsedDoc = { documentPart?: { body?: PreviewNode }; parts?: Array<{ rootElement?: PreviewNode; body?: PreviewNode }>; settingsPart?: { settings?: { defaultTabStop?: string } } };
+
+function allParagraphs(doc: ParsedDoc): FieldNode[] {
+  const roots = [doc.documentPart?.body, ...(doc.parts ?? []).map((p) => p.rootElement ?? p.body)];
+  const seen = new Set<PreviewNode>();
+  const out: FieldNode[] = [];
+  for (const r of roots) {
+    if (!r || seen.has(r)) continue;
+    seen.add(r);
+    paragraphsOf(r, out);
+  }
+  return Array.from(new Set(out));
+}
+
+/**
+ * A PAGE / NUMPAGES field whose result the file does not hold (Bodycare's "Page  of") – or a simple field, which
+ * docx-preview does not draw – gets a token in its place, filled with the page's number once drawn (fillPageFields).
+ */
+function markPageFields(doc: ParsedDoc): void {
+  for (const p of allParagraphs(doc)) {
+    const runs = (p.children ?? []) as FieldNode[];
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i];
+      // <w:fldSimple w:instr="PAGE">
+      const simple = (run.children ?? []).findIndex((c) => (c as FieldNode).type === "simpleField" && pageFieldToken((c as FieldNode).instruction));
+      if (run.type === "simpleField" && pageFieldToken(run.instruction)) {
+        runs[i] = { type: "run", children: [{ type: "text", text: pageFieldToken(run.instruction) } as FieldNode] };
+        continue;
+      }
+      if (simple >= 0) {
+        const c = (run.children as FieldNode[])[simple];
+        (run.children as FieldNode[])[simple] = { type: "text", text: pageFieldToken(c.instruction) ?? "" } as FieldNode;
+      }
+      // begin → instruction → separate → result runs → end
+      const begin = (run.children ?? []).some((c) => (c as FieldNode).type === "complexField" && (c as FieldNode).charType === "begin");
+      if (!begin) continue;
+      let j = i + 1;
+      let instruction = "";
+      while (j < runs.length && !(runs[j].children ?? []).some((c) => (c as FieldNode).type === "complexField" && /separate|end/.test((c as FieldNode).charType ?? ""))) {
+        for (const c of (runs[j].children ?? []) as FieldNode[]) if (c.type === "instruction") instruction += c.text ?? "";
+        j += 1;
+      }
+      const token = pageFieldToken(instruction);
+      if (!token || j >= runs.length || !(runs[j].children ?? []).some((c) => (c as FieldNode).charType === "separate")) continue;
+      let k = j + 1;
+      let hasText = false;
+      while (k < runs.length && !(runs[k].children ?? []).some((c) => (c as FieldNode).charType === "end")) {
+        if (!runs[k].fieldRun && (runs[k].children ?? []).some((c) => (c as FieldNode).type === "text" && ((c as FieldNode).text ?? "").trim())) hasText = true;
+        k += 1;
+      }
+      if (hasText) continue;
+      runs.splice(j + 1, 0, { type: "run", children: [{ type: "text", text: token } as FieldNode] });
+      i = k + 1;
+    }
+  }
+}
+
+/** The pages Word counted when it last saved the file (docProps/app.xml), or null. */
+export function pagesOfAppXml(appXml: string): number | null {
+  const n = Number(/<Pages>(\d+)<\/Pages>/.exec(appXml)?.[1] ?? NaN);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export const CONTINUOUS_CLASS = "mr-continuous-note";
+
+/**
+ * Page-number tokens filled with each drawn page's number and the page count. A form drawn as one continuous sheet that
+ * Word prints on several pages (docx-preview breaks pages only where the file does) is said to be so above the sheet.
+ */
+export function fillPageFields(host: HTMLElement, appPages: number | null): void {
+  const pages = Array.from(host.querySelectorAll<HTMLElement>("section.docx"));
+  const continuous = pages.length === 1 && appPages !== null && appPages > 1;
+  const total = continuous ? (appPages as number) : Math.max(1, pages.length);
+  pages.forEach((page, i) => {
+    const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.nodeValue || n.nodeValue.indexOf("\u2060#") < 0) continue;
+      n.nodeValue = n.nodeValue.split(PAGE_TOKEN).join(continuous ? "1" : String(i + 1)).split(NUMPAGES_TOKEN).join(String(total));
+    }
+  });
+  if (continuous && pages[0]?.parentElement && !host.querySelector(`.${CONTINUOUS_CLASS}`)) {
+    const note = document.createElement("p");
+    note.className = CONTINUOUS_CLASS;
+    note.textContent = `Shown as one continuous sheet – Word prints this form on ${appPages} pages.`;
+    note.setAttribute("style", "margin:0 0 8px;font:12px/1.4 system-ui,sans-serif;color:#475569;");
+    pages[0].parentElement.insertBefore(note, pages[0]);
+  }
+}
+
+interface TabbedParagraphs {
+  /** The custom tab stops (points, sorted) of each tagged paragraph. */
+  stops: Array<Array<{ pos: number; style: string }>>;
+  /** The document's default tab stop, in points. */
+  defaultStop: number;
+}
+
+const TABS_CLASS = "mr-tabs-";
+
+/** Paragraphs with tab stops of their own, tagged for layoutTabStops(). */
+function markTabbedParagraphs(doc: ParsedDoc): TabbedParagraphs {
+  const out: TabbedParagraphs = { stops: [], defaultStop: parseFloat(doc.settingsPart?.settings?.defaultTabStop ?? "") || 36 };
+  for (const p of allParagraphs(doc)) {
+    const own = (p.tabs ?? []).map((t) => ({ pos: parseFloat(t.position ?? ""), style: t.style ?? "left" })).filter((t) => Number.isFinite(t.pos)).sort((a, b) => a.pos - b.pos);
+    if (own.length === 0) continue;
+    p.className = `${p.className ? `${p.className} ` : ""}${TABS_CLASS}${out.stops.length}`;
+    out.stops.push(own);
+  }
+  return out;
+}
+
+/**
+ * The next tab stop after `at` (points from the column's left edge): a custom stop of the paragraph, else a default stop
+ * after the last custom one – Word clears the default stops left of a custom tab.
+ */
+export function nextTabStop(at: number, stops: ReadonlyArray<{ pos: number; style: string }>, defaultStop: number): number {
+  const custom = stops.find((t) => t.style !== "clear" && t.pos > at + 0.5);
+  if (custom) return custom.pos;
+  const last = stops.filter((t) => t.style !== "clear").reduce((m, t) => Math.max(m, t.pos), 0);
+  const from = Math.max(at, last);
+  return (Math.floor(from / defaultStop + 1e-6) + 1) * defaultStop;
+}
+
+/** Each tab of a tagged paragraph widened to its stop – measured as drawn, so a zoomed preview is laid out in proportion. */
+function layoutTabStops(host: HTMLElement, tabs: TabbedParagraphs, page: PageGeometry): void {
+  if (tabs.stops.length === 0) return;
+  host.querySelectorAll<HTMLElement>(`p[class*="${TABS_CLASS}"]`).forEach((p) => {
+    const n = new RegExp(`(?:^|\\s)${TABS_CLASS}(\\d+)(?:\\s|$)`).exec(p.className)?.[1];
+    const stops = n === undefined ? undefined : tabs.stops[Number(n)];
+    const section = p.closest("section");
+    if (!stops || !section) return;
+    const pxPerPt = section.getBoundingClientRect().width / page.width;
+    if (!(pxPerPt > 0)) return;
+    const origin = p.getBoundingClientRect().left - (parseFloat(getComputedStyle(p).marginLeft) || 0) * pxPerPt * (72 / 96);
+    const spans = Array.from(p.querySelectorAll<HTMLElement>("span")).filter((s) => s.childElementCount === 0 && s.textContent === "\u2003");
+    for (const span of spans) {
+      const at = (span.getBoundingClientRect().left - origin) / pxPerPt;
+      const width = nextTabStop(at, stops, tabs.defaultStop) - at;
+      span.textContent = "";
+      span.style.display = "inline-block";
+      span.style.width = `${Math.max(1, Math.round(width * 10) / 10)}pt`;
+    }
+  });
 }
 
 const ANCHOR_CLASS = "mr-anchor-";

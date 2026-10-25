@@ -1246,9 +1246,26 @@ function removeIfBlank(p: XmlElement): void {
   if (descendantsW(p, "drawing").length > 0 || descendantsW(p, "pict").length > 0) return; // a picture (a logo) stays
   const cell = ancestorW(p, "tc");
   if (cell && wChildren(cell, "p").length <= 1) return; // a cell keeps its last paragraph
+  if (cell && keepsLineBesideLabel(cell, p)) return;
   if (firstW(firstW(p, "pPr"), "sectPr")) return;
   if (keepsTableApart(p)) return;
   remove(p);
+}
+
+/**
+ * Fix round 3 (B2-31): a line in a cell whose row prints its labels line by line in the cell beside it ("Address:" … then
+ * "Postcode:" five lines down, CLM's form) stays, empty, while a later line of its cell still holds text: removing it
+ * would move that text (the postcode) up, away from its label.
+ */
+function keepsLineBesideLabel(cell: XmlElement, p: XmlElement): boolean {
+  const filled = (x: XmlElement) => segmentsText(paragraphSegments(x)).trim() !== "";
+  const lines = wChildren(cell, "p");
+  const at = lines.indexOf(p);
+  const row = ancestorW(cell, "tr");
+  if (!row || at < 0) return false;
+  // A later line of this cell that sits beside a label of the next cell along (not its first line): "Postcode:".
+  const labels = wChildren(row, "tc").filter((c) => c !== cell).map((c) => wChildren(c, "p"));
+  return lines.some((x, k) => k > at && filled(x) && labels.some((l) => k > 0 && k < l.length && filled(l[k]) && l.filter(filled).length >= 2));
 }
 
 /** `removeAll` (fix round 1, B0-2): the question was left blank – every printed option is removed, none kept. */

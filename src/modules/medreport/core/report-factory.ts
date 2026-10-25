@@ -13,6 +13,7 @@ import {
   answerKindFor,
   answerableFields,
   formRefOf,
+  reportKindOf,
   formToTemplate,
   isFormReport,
   isSectionAnswered,
@@ -25,9 +26,9 @@ import {
   type ResolvedFormValue,
 } from "./forms";
 import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
-import { conditionTextOf, notApplicable } from "./conditions";
+import { conditionTextOf, notApplicable, sessionNotInRecord, sessionNumberOf } from "./conditions";
 import { buildAppointmentsTableSection } from "./form-tables";
-import { possessive } from "./possessive";
+import { namedThing, possessive } from "./possessive";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, staffEntryVerb, type RecordSource } from "./labels";
@@ -162,7 +163,8 @@ export function createReport(input: CreateReportInput): Report {
  */
 export function planDraftGroups(report: Report, template: ReportTemplate, opts: { form?: Pick<FormDefinition, "fields" | "builtIn" | "sampleId"> | null } = {}): string[][] {
   // Fix round 2 (B1-11): a numbered session the record does not have is not drafted (no gap, nothing printed).
-  const present = new Set(report.sections.filter((s) => !isFormReport(report) || !notApplicable(report, s.key)).map((s) => s.key));
+  // Fix round 3 (B2-19): nor a question filled by code at creation (the attended session dates).
+  const present = new Set(report.sections.filter((s) => !isFormReport(report) || (!notApplicable(report, s.key) && s.kind !== "from_records")).map((s) => s.key));
   const specs = template.sections.filter((s) => isDraftableKind(s.kind) && present.has(s.key));
   const keys = specs.map((s) => s.key);
   if (isFormReport(report)) {
@@ -252,6 +254,10 @@ export function applyDraftResult(report: Report, draft: DraftResultLike, opts: {
     if (!drafted) return s;
     const merged: ReportSection = { ...drafted, title: s.title, kind: s.kind };
     if (s.fieldId) merged.fieldId = s.fieldId;
+    // Fix round 3 (B2-4): the condition it carries in its heading or guidance, and a person's "not applicable" mark, stay
+    // with the question when it is drafted (they were dropped, so "Only when the lifting restriction is kept" never held).
+    if (s.condition) merged.condition = s.condition;
+    if (s.markedNotApplicable) merged.markedNotApplicable = s.markedNotApplicable;
     const answer = drafted.answer ?? s.answer;
     if (answer) merged.answer = answer;
     return merged;
@@ -331,6 +337,8 @@ export function createFormReport(input: CreateFormReportInput): Report {
 
   const sections: ReportSection[] = [];
   const gaps: Gap[] = [];
+  // Fix round 3 (B2-24): numbered sessions the record does not have, by why – one activity entry says so.
+  const noSessions = new Map<string, string[]>();
   for (const field of answerableFields(form)) {
     const kind = sectionKindForFillSource(field.fillSource);
     if (!kind) continue;
@@ -346,6 +354,10 @@ export function createFormReport(input: CreateFormReportInput): Report {
     // Fix round 2 (B1-11): a numbered session the record does not have ("Session date 7" after 5 attended) – nothing to
     // ask anyone (no gap), nothing printed; not drafted (planDraftGroups).
     const noSuchSession = notApplicable({ sections: [{ ...base }], bundleSnapshot: bundle }, field.id) !== null;
+    if (noSuchSession) {
+      const why = sessionNotInRecord(base, bundle) ?? "";
+      noSessions.set(why, [...(noSessions.get(why) ?? []), field.id]);
+    }
     const structured = answerKindFor(field.answerType) !== "text";
     const src = field.fillSource;
 
@@ -418,6 +430,15 @@ export function createFormReport(input: CreateFormReportInput): Report {
       continue;
     }
 
+    // Fix round 3 (B2-19): the attended session dates the record holds ("Session date 4", "Dates of the treatment
+    // sessions") are filled by code from the appointments, in date order – never drafted (one was left out, a list was
+    // out of order). Not on an initial assessment form (the record is as at that assessment).
+    const byCode = !noSuchSession && src.kind === "notes_narrative" && reportKindOf(form.title) !== "initial" ? sessionDatesByCode(field, bundle, input.computedFacts, condition) : null;
+    if (byCode) {
+      sections.push({ ...base, kind: "from_records", status: "complete", paragraphs: [recordParagraph(field.id, 0, byCode.text, byCode.sourceIds)], ...(byCode.answer && { answer: byCode.answer }) });
+      continue;
+    }
+
     // notes_narrative / clinician_opinion → drafted by POST /drafts (a session the record does not have: never).
     sections.push({
       ...base,
@@ -450,14 +471,50 @@ export function createFormReport(input: CreateFormReportInput): Report {
         at,
         actor: input.actor ?? "System",
         action: "created",
-        detail: `Started completing ${possessive(form.referrer.name)} form "${form.title}" from ${bundle.source.label ?? bundle.source.connectorId}.`,
+        detail: `Started completing ${namedThing(form.referrer.name, `form "${form.title}"`)} from ${bundle.source.label ?? bundle.source.connectorId}.`,
       },
+      ...Array.from(noSessions.entries()).map(([why, keys]) => ({
+        at,
+        actor: "System",
+        action: "edited",
+        detail: `Not applicable: ${keys.join(", ")}${why ? ` – ${why}` : ""}, so nothing is printed there.`,
+      })),
     ],
     createdAt: at,
     updatedAt: at,
     form: formRefOf(form),
     ...(authorOf(input) ? { author: authorOf(input) as Clinician } : {}),
   };
+}
+
+/**
+ * Fix round 3 (B2-19): a session-date question the record answers – the Nth attended session's date ("Session date 4",
+ * "Treatment date 2", "Session 3 – date"; counted after the assessment when its guidance says so) or every attended
+ * session's date in order ("Dates of the treatment sessions", "Treatment session dates") – or null (not such a
+ * question, or the record has no such session).
+ */
+export function sessionDatesByCode(
+  field: Pick<FormField, "label" | "guidance" | "answerType">,
+  bundle: Pick<EpisodeBundle, "appointments">,
+  facts: readonly ComputedFact[],
+  condition: string | null = null,
+): { text: string; sourceIds: string[]; answer?: ReportSection["answer"] } | null {
+  const attended = bundle.appointments.filter((a) => a.status === "ATT").sort(compareIsoDateTime);
+  if (attended.length === 0) return null;
+  const after = /\bafter the (?:initial )?assessment\b/i.test(`${field.guidance ?? ""} ${condition ?? ""}`);
+  const sessions = after ? attended.slice(1) : attended;
+  const cite = (list: typeof attended) => {
+    const notes = Array.from(new Set(list.map((a) => a.noteId).filter((id): id is string => Boolean(id))));
+    return notes.length > 0 ? notes : facts.some((f) => f.id === "FACT-attendance") ? ["FACT-attendance"] : [];
+  };
+  const n = sessionNumberOf(field.label);
+  if (n !== null && field.answerType === "date" && /\bdate\b/i.test(field.label)) {
+    const appt = sessions[n - 1];
+    return appt ? { text: formatUkDate(appt.date), sourceIds: cite([appt]), answer: { kind: "date", value: appt.date } } : null;
+  }
+  const list = /^(?:(?:the )?dates? of (?:the |all |every )?(?:attended )?(?:treatment )?(?:sessions?|treatments?)|(?:attended )?treatment session dates?)\b/i.test(field.label.trim());
+  if (!list || (field.answerType !== "long_text" && field.answerType !== "short_text") || sessions.length === 0) return null;
+  return { text: sessions.map((a) => formatUkDate(a.date)).join(", "), sourceIds: cite(sessions) };
 }
 
 function authorOf(input: Pick<CreateFormReportInput, "clinician" | "author">): Clinician | undefined {
@@ -477,9 +534,9 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
     id: `gap-${field.id}-referrer`,
     sectionKey: field.id,
     issue: value
-      ? `${formFrom} uses its own reference for “${field.label}”. The referral from ${referralFrom} gives “${value}”, which is ${possessive(referralFrom)} reference, so it has not been copied in.`
+      ? `${formFrom} uses its own reference for “${field.label}”. The referral from ${referralFrom} gives “${value}”, which is ${namedThing(referralFrom, "reference", "of")}, so it has not been copied in.`
       : `${formFrom} uses its own reference for “${field.label}”, and the clinic record does not hold it.`,
-    suggestedQuestion: `What is ${possessive(formFrom)} own reference for this case? It is usually on their instruction letter.${value ? ` If they asked for the referral's reference, use “${value}”.` : ""}`,
+    suggestedQuestion: `What is ${/\)$/.test(formFrom.trim()) ? `the reference ${formFrom} uses` : `${possessive(formFrom)} own reference`} for this case? It is usually on their instruction letter.${value ? ` If they asked for the referral's reference, use “${value}”.` : ""}`,
     relatedNoteIds: [],
     raisedBy: "system",
   };
@@ -500,7 +557,8 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
       id: `gap-${field.id}-record`,
       sectionKey: field.id,
       issue: discharge ? `The notes have no discharge, so “${field.label}” has been left blank.` : `The appointments in the notes do not give “${field.label}”, so it has been left blank.`,
-      suggestedQuestion: discharge ? "Enter the date treatment was completed – or leave it blank if treatment is still going on." : `What should be entered for “${field.label}”? Check the appointments in the notes.`,
+      // Fix round 3 (B2-26): a required box cannot be left blank – "N/A" is the answer while treatment goes on.
+      suggestedQuestion: discharge ? "Type the date treatment was completed, or N/A if treatment is still going on." : `What should be entered for “${field.label}”? Check the appointments in the notes.`,
       relatedNoteIds: [],
       raisedBy: "system",
     };

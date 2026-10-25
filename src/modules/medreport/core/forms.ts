@@ -25,11 +25,11 @@
  * Owner: ai agent (contract-stage baseline; exported signatures are contract).
  */
 import { bundleClinic } from "./clinic";
-import { notApplicable } from "./conditions";
+import { notApplicable, withFormConditions } from "./conditions";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel, prefillSigners, prefillSignersText } from "./parties";
-import { possessive } from "./possessive";
+import { NamedThing, possessive } from "./possessive";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS, type RecordSource } from "./labels";
 import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
 import { isQuestionAnchor, isQuestionSet } from "./question-set";
@@ -399,8 +399,8 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
     documentTitle: form.title,
     audience: form.referrer.type,
     description: isQuestionSet(form)
-      ? `${possessive(form.referrer.name)} portal questions, answered for entry in the portal.`
-      : `${possessive(form.referrer.name)} own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
+      ? `${NamedThing(form.referrer.name, "portal questions")}, answered for entry in the portal.`
+      : `${/\)$/.test(form.referrer.name.trim()) ? `The ${FORM_KIND_LABELS[form.kind].toLowerCase()} from ${form.referrer.name.trim()}` : `${possessive(form.referrer.name)} own ${FORM_KIND_LABELS[form.kind].toLowerCase()}`}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
     scope: formScope(form.referrer.type, form),
     sections,
@@ -1056,10 +1056,26 @@ export function recordSourceOf(field: Pick<FormField, "fillSource" | "guidance">
  * run of them continues the heading before it (CLM's form starts under no heading, so its sectionless questions further
  * down stay with the heading above them instead of opening "Other questions" again).
  */
-export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section"> & Partial<Pick<FormField, "label">>>): string[] {
+export const SIGNOFF_HEADING = "Sign-off";
+
+const SIGNOFF_TYPES = new Set(["clinician_name", "hcpc_number", "date_signed", "signature"]);
+
+export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section"> & Partial<Pick<FormField, "label" | "answerType" | "fillSource">>>): string[] {
   const raw = fields.map((f) => f.section?.trim() ?? "");
-  const own = raw.map((h, i) => (h && raw.filter((x) => x === h).length === 1 && h.toLowerCase() === (fields[i].label ?? "").trim().toLowerCase() ? "" : h));
+  const signoff = (i: number) => fields[i].fillSource?.kind === "signoff" || SIGNOFF_TYPES.has(fields[i].answerType ?? "");
+  // Fix round 3 (B2-29): a sign-off question with no heading of its own does not take the heading of the questions
+  // before it (10Bridge's therapist's name under "Treatment Plan") unless that heading holds sign-off questions too
+  // (Medcare's "Statement of Truth"): it is in a "Sign-off" group.
+  const heldBySignoff = new Set(raw.filter((h, i) => h && signoff(i)));
+  const inheritsSignoff = (i: number, h: string) => !raw[i] && signoff(i) && !heldBySignoff.has(h);
+  const own = raw.map((h, i) => (h && raw.filter((x) => x === h).length === 1 && h.toLowerCase() === (fields[i].label ?? "").trim().toLowerCase() ? "" : !h && signoff(i) ? SIGNOFF_HEADING : h));
   const out = own.map((h, i) => {
+    if (h === SIGNOFF_HEADING) {
+      // The heading it would have taken, when that heading holds sign-off questions of its own.
+      let prev = "";
+      for (let j = i - 1; j >= 0 && !prev; j--) prev = raw[j];
+      return prev && !inheritsSignoff(i, prev) ? prev : h;
+    }
     if (h) return h;
     let before = "";
     for (let j = i - 1; j >= 0 && !before; j--) before = own[j];
@@ -1067,13 +1083,19 @@ export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section">
     for (let j = i + 1; j < own.length && !after; j++) after = own[j];
     return before && before === after ? before : "";
   });
-  // The first run under no heading keeps its own group; any later run joins the heading before it.
+  // The first run under no heading keeps its own group; any later run joins the heading before it – unless that heading
+  // is a run of tick boxes ("Please indicate which treatment modalities have been used:") and this run is not (fix round
+  // 3, B2-29: CLM's further assessment, psychosocial and findings questions), or the sign-off.
+  const tickOrBlank = (j: number) => fields[j].answerType === "checkbox" || fields[j].fillSource?.kind === "leave_blank";
   let seenUntitled = false;
   for (let i = 0; i < out.length; i++) {
     if (out[i]) continue;
     let end = i;
     while (end < out.length && !out[end]) end += 1;
-    if (seenUntitled && i > 0) out.fill(out[i - 1], i, end);
+    const before = i > 0 ? out[i - 1] : "";
+    const ticksBefore = before !== "" && out.every((h, j) => h !== before || j >= i || tickOrBlank(j));
+    const ticksHere = Array.from({ length: end - i }, (_, k) => i + k).every(tickOrBlank);
+    if (seenUntitled && i > 0 && before !== SIGNOFF_HEADING && (!ticksBefore || ticksHere)) out.fill(before, i, end);
     seenUntitled = true;
     i = end - 1;
   }
@@ -1141,12 +1163,31 @@ export function inPrintedSentence(text: string): string {
  * blank removes what is printed there. Applied where guidance is shown and sent to drafting, so maps stored on a
  * clinic's account read right without being changed.
  */
-export function currentGuidance(text: string): string {
-  if (!/\bunanswered\b/i.test(text)) return text;
-  return text
-    .replace(/\bunanswered[:,]\s*the printed default stays\b/gi, "left blank, the printed default is removed")
-    .replace(/\bunanswered[:,]\s*(“[^”]+”)\s*stays\b/gi, "left blank, the printed $1 is removed")
-    .replace(/\bunanswered:\s*kept as printed\b/gi, "left blank: it is deleted too");
+export function currentGuidance(
+  text: string,
+  field?: Pick<FormField, "fillSource"> & Partial<Pick<FormField, "answerType" | "options" | "label" | "guidance">>,
+  opts: { withheldReference?: boolean } = {},
+): string {
+  let out = !/\bunanswered\b/i.test(text)
+    ? text
+    : text
+        .replace(/\bunanswered[:,]\s*the printed default stays\b/gi, "left blank, the printed default is removed")
+        .replace(/\bunanswered[:,]\s*(“[^”]+”)\s*stays\b/gi, "left blank, the printed $1 is removed")
+        .replace(/\bunanswered:\s*kept as printed\b/gi, "left blank: it is deleted too");
+  if (!field) return out;
+  // Fix round 3 (B2-22): "Filled from the record" said by where the value really comes from – typed in by staff (a staff
+  // entry, or a reference withheld on another organisation's form) or the clinic's own details.
+  const source = opts.withheldReference ? "referrer" : recordSourceOf({ ...field, guidance: field.guidance ?? text });
+  const from = source === "referrer" ? "Typed in by staff from the referrer's letter" : source === "staff_entry" ? "Entered by staff on each report" : source === "clinic" ? "From your Clinic details" : null;
+  if (from) out = out.replace(/\bFilled from the record\b/g, from).replace(/\bfilled from the record\b/g, from.charAt(0).toLowerCase() + from.slice(1));
+  // Fix round 3 (B2-34): a tick box's option as printed ("Ticked when TENS was provided", "joint mobilisations were").
+  const option = field.answerType === "checkbox" && field.options?.length === 1 ? field.options[0].trim() : "";
+  if (option) {
+    const printed = /^[A-Z0-9]{2,}(?:\s[A-Z0-9]{2,})*$/.test(option) ? option : option.toLowerCase();
+    const plural = printed === printed.toLowerCase() && /[^s]s$/.test(printed);
+    out = out.replace(new RegExp(`\\b(when (?:the (?:treatment )?plan includes )?|includes )${option.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b( was provided)?`, "i"), (_m, pre: string, was: string | undefined) => `${pre}${printed}${was ? (plural ? " were provided" : " was provided") : ""}`);
+  }
+  return out;
 }
 
 /** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */
@@ -1235,6 +1276,9 @@ export function buildFormAnswers(
   const signoff = opts.receipt ? signoffValuesFromReceipt(opts.receipt) : null;
   const approved = Boolean(opts.receipt) || report.status === "signed";
   const answers: FormFillAnswers = {};
+  // Fix round 3 (B2-4): the conditions the form's headings and guidance carry, for a report drafted without them.
+  const withConditions = withFormConditions(report.sections, form.fields);
+  if (withConditions !== report.sections) report = { ...report, sections: withConditions };
   for (const field of answerableFields(form)) {
     if (field.fillSource.kind === "signoff") {
       answers[field.id] = signoffAnswer(field.fillSource.part, signoff);

@@ -1797,3 +1797,36 @@ Not fixed in code (production data, for Khuram): Dell's stored map notes written
 B0-12); his RTF forms re-loaded to gain their logos (B0-14); switching Medcare / Ascenti time questions to the new record
 values (B0-15); the duplicate "Blue Heart Clinics" before the site code on two forms (B0-4) and whether WAD grade stays
 required (B0-3) are Dell's call.
+
+## Blue Heart fix round 3 (10/2026, branch `release/bh-trial-fixes`)
+
+The round-2 test run (all 17 forms × 3 fictional patients, drafted, reviewed, approved and downloaded) left 35 bugs; each
+code-level one is fixed here with a regression test (`*-round3.test.ts`, `forms/docx-postcode.test.ts`, and additions to
+`preview-libs.test.ts` and `forms/mapping.test.ts`). The rules that carry the most weight:
+
+- **Whose opinion a printed answer gives** (`core/validation/voice.ts`, `core/voice.ts`):
+  - "Name Tom Ellis instead" never moves an opinion ("in my opinion", "I expect …") onto another clinician, and is offered
+    on drafted wording only; the clinician's own words typed over a draft count as theirs (`draftWordsKept`, content words
+    in order).
+  - Another clinician's recorded opinion printed without their name blocks (`unattributed …`), with one click: "Priya
+    Shah's assessment (01/09/2026): …".
+  - "Tom Ellis … while covering my annual leave" may be acknowledged on drafted text (`named …`), or "Use my name".
+  - OPINION_LANGUAGE knows "in Tom Ellis's opinion" and "expect … to ease"; a narrated "before going back to normal
+    duties" is a fact; a sentence about what the notes do not hold is commentary.
+- **Conditions survive drafting** (`applyDraftResult`), and a report drafted before takes them from its form map
+  (`withReportConditions`: validation, forms engine, Copy answers, review). "<X> – details" follows the question about X;
+  "Only when an activity is still restricted" follows the activity cell (`wants: "filled"`).
+- **Session dates the record holds are filled by code** (`sessionDatesByCode`), never drafted.
+- **Prompt `forms-10`**: attribution in compact places, the signer by name beside another clinician, say each thing
+  once, barriers and psychosocial boxes, printed time bands (`core/duration-bands.ts`), gap wording without reasoning.
+  Assembly also takes off a restated printed verb and a trailing attribution of a measure, drops reasoning wording, puts
+  "he" / "she" for a repeated name and holds back a yes-or-no question drafted as a list of facts.
+- **Review**: statuses `staff_entry` and `not_applicable`; who answered (a choice a person set is theirs; "Answer
+  changed" only over a drafted value); source lines by provenance; internal evidence codes never shown; possessives
+  after a bracket ("the reference from TPN (The Physiotherapy Network)"); amended versions superseded only once
+  approved (`ActivityEntry.reportId`); headings with a sign-off group.
+- **Preview**: anchored drawings placed once the review's host is on the page; page-number fields; a continuous sheet
+  said so; a paragraph's own tab stops. **Completed forms**: CLM's postcode stays beside "Postcode:".
+
+Not fixed in code (production data, for Khuram): Dell's stored map notes (B0-12 – a clinic's Studio no longer shows
+them, interim) and his RTF forms re-loaded for their logos (B0-14); the earlier rounds' list stands.

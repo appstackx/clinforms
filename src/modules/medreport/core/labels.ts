@@ -241,3 +241,20 @@ export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {
   INCIDENT_DATE_MISSING: "Incident date missing",
   MULTIPLE_CLINICIANS: "Notes written by more than one clinician",
 };
+
+/**
+ * Fix round 3 (B2-33): punctuation doubled where a printed label or option that ends in a full stop or colon is quoted
+ * or listed before more punctuation – "brief details.”." → "brief details”.", "current symptoms.." → "current
+ * symptoms.", "comments.:" → "comments:". An ellipsis ("…", "...") is kept.
+ */
+export function tidyPunctuation(text: string): string {
+  return text
+    .replace(/([.;:])([”"’])([.,;:!?])/g, "$2$3")
+    .replace(/(?<!\.)\.\.(?!\.)/g, ".")
+    .replace(/(?<!\.)\.([:;,])/g, "$1");
+}
+
+/** A printed label or option without the full stop, colon or semicolon it ends with ("…brief details." → "…brief details"). */
+export function withoutEndPunctuation(label: string): string {
+  return label.trim().replace(/\s*[.:;]+$/, "");
+}

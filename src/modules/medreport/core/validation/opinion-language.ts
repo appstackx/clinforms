@@ -100,6 +100,8 @@ const RECOVERY_SUBJECT =
  * "returning next week", "the aim of returning" stay opinions).
  */
 const PAST_NARRATIVE_BEFORE = /\b(?:before|after|then|since|on) $/;
+/** Fix round 3 (B2-11): the same with "going / getting / coming back to …" ("3 days off work before going back to normal duties"). */
+const NARRATED_BACK_BEFORE = /\b(?:before|after|then|since|on) (?:going|getting|coming) $/;
 /** A note's current status that records being back at work in full: "working full time with no restrictions" (full time alone: hours). */
 const WORKING_IN_FULL = "(?:working|at work) full[- ]time (?:with no|without) (?:restrictions?|limitations?)";
 
@@ -160,8 +162,11 @@ function statusRecorded(hit: OpinionHit, source: string): boolean {
   if (!m) return false;
   const negated = NOT_RETURNED_DRAFT.test(hit.before);
   const narrated = /^returning\b/.test(hit.phrase) && PAST_NARRATIVE_BEFORE.test(hit.before) && !NOT_A_FACT_AFTER.test(hit.after);
-  if (!negated && ((/^return(?:s|ing)?\b/.test(hit.phrase) && !narrated) || NOT_A_FACT_DRAFT.test(hit.before))) return false;
-  if (RECOVERY_SUBJECT.test(hit.before)) return false;
+  const narratedBack = /^back\b/.test(hit.phrase) && NARRATED_BACK_BEFORE.test(hit.before) && !NOT_A_FACT_AFTER.test(hit.after);
+  // ("going" before "back" is a narrated past there, not a plan: the rest of the clause is checked as for "returned".)
+  const before = narratedBack ? hit.before.replace(/(?:going|getting|coming) $/, "") : hit.before;
+  if (!negated && ((/^return(?:s|ing)?\b/.test(hit.phrase) && !narrated) || NOT_A_FACT_DRAFT.test(before))) return false;
+  if (RECOVERY_SUBJECT.test(before)) return false;
   const [, describer, noun] = m;
   const job = new RegExp(`^${JOB}$`).test(noun);
   const same = job ? JOB : `${noun.replace(/(?:ies|y|s)$/, "")}(?:ies|y|s)?`;
@@ -250,6 +255,25 @@ function sameCausalWording(hit: OpinionHit, source: string): boolean {
   return new RegExp(`\\b${escapeRegExp(prev)} caus(?:e|es|ed|ing) ${escapeRegExp(next)}\\b`).test(source);
 }
 
+/** Fix round 3 (B2-1): "in Tom Ellis's opinion" passes only when a cited note records an opinion ("in my opinion", "in his view"). */
+function noteGivesOpinion(_hit: OpinionHit, source: string): boolean {
+  return /\bin (?:my|his|her|their) (?:clinical |professional )?(?:opinion|view)\b|\bopinion (?:is|was) that\b/.test(source);
+}
+
+/** Fix round 3 (B2-1): "expect … to ease" passes only when a cited note records the same expectation ("expect it to ease"). */
+function sameExpectation(hit: OpinionHit, source: string): boolean {
+  const verb = /to ([a-z]+)$/.exec(hit.phrase)?.[1];
+  if (!verb) return false;
+  const stem = verb.replace(/(?:es|s|ed|ing)$/, "").slice(0, 5);
+  return new RegExp(`\\bexpect\\w*\\b(?: [a-z0-9'-]+){0,8}? to ${escapeRegExp(stem)}`).test(source);
+}
+
+/**
+ * Fix round 3 (B2-17): a whole sentence about what the notes do not hold – "No restrictions on duties or hours were
+ * recorded in her notes." – is commentary (validation/draft-fit.ts flags it for removal), not an opinion of its own.
+ */
+export const NOTES_ABSENCE_SENTENCE = /(?:^|(?<=[.!?]\s{1,3}))(?:There (?:was|were|is|are) )?[Nn]o [^.!?]{1,140}? (?:was|were|is|are|has been|have been) (?:recorded|documented|stated|noted|given|reported)(?: (?:in|at|on|for|during|by) [^.!?]{0,80})?\.(?=\s|$)/g;
+
 /** The phrase list. Order matters only for the order of flags. */
 export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   // Recovery and prognosis
@@ -272,6 +296,8 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "prediction", re: /\b(?:should|would) (?:recover|resolve|settle|improve|heal)\w*/g },
   { label: "prediction", re: /\b(?:should|would|could|may|might) (?:now )?be (?:able|fit|ready|back)\b/g },
   { label: "prediction", re: /\b(?:expected|anticipated|predicted) to\b/g },
+  // Fix round 3 (B2-1): "I expect these to ease steadily", "he expects it to settle".
+  { label: "prediction", re: /\bexpect(?:s|ed|ing)?\b(?: [a-z0-9'-]+){0,8}? to (?:ease|settle|resolve|improve|recover|reduce|subside|heal|return|lessen)\w*/g, allow: sameExpectation },
   { label: "prediction", re: /\b(?:is|are|was|were|seems?|appears?|remains?) (?:highly |very |most |quite )?(?:un)?likely\b/g },
   { label: "prediction", re: /\b(?:most|highly|very) likely\b/g },
   { label: "prediction", re: /\blikelihood\b/g },
@@ -307,6 +333,9 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "balance of probabilities", re: /\bmore (?:likely|probable) than not\b/g },
   { label: "balance of probabilities", re: /\bon balance\b/g, allow: exerciseOnBalance },
   { label: "balance of probabilities", re: /\bin all (?:likelihood|probability)\b/g },
+
+  // Whose opinion it is. Fix round 3 (B2-1): "In Tom Ellis's opinion …" names an opinion – the cited note must record one.
+  { label: "opinion", re: /\bin (?:his|her|their|[a-z][a-z'-]*(?: [a-z][a-z'-]*)?'s) (?:clinical |professional )?(?:opinion|view)\b/g, allow: noteGivesOpinion },
 
   // Fitness for work and restrictions
   { label: "fitness for work", re: /\b(?:un)?fit (?:for|to)\b[^.;:!?]{0,80}?\b(?:work|duties|duty|employment|job|role|shifts?)\b/g },
@@ -374,7 +403,7 @@ export function validateOpinionLanguage(input: ValidatorInput): ReportFlag[] {
     const cited = ctx.cited(p);
     // Fix round 1 (B0-11): "no restrictions" on a daily-living question is about restrictions, not fitness for work.
     const aboutWork = /\b(?:work|duties|duty|employ\w*|job|occupation\w*|fit(?:ness)?)\b/i.test(`${section.title} ${ctx.input.form?.fields.find((f) => f.id === section.key)?.label ?? ""}`);
-    for (const match of findUnsupportedOpinionPhrases(p.text, cited.normalisedText)) {
+    for (const match of findUnsupportedOpinionPhrases(p.text.replace(NOTES_ABSENCE_SENTENCE, " "), cited.normalisedText)) {
       const evidence = originalSpan(p.text, match.phrase);
       if (match.label === "fitness for work" && !aboutWork) match.label = "restrictions";
       const flag = makeFlag({

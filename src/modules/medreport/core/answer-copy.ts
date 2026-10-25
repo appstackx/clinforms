@@ -23,6 +23,7 @@
 import { formatUkDate, isValidIsoDate, todayIso } from "./dates";
 import { answerToText, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt, suppressedAsNotApplicable } from "./forms";
 import { WORDING } from "./wording";
+import { withFormConditions } from "./conditions";
 import type { FormDefinition, FormField, Report, ReportSection, SignReceipt } from "./types";
 
 export type CopyEntryStatus = "answered" | "to_complete" | "on_approval" | "not_applicable";
@@ -55,7 +56,7 @@ export interface AnswersCopy {
   text: string;
 }
 
-type CopyField = Pick<FormField, "id" | "label" | "section" | "answerType" | "options" | "fillSource">;
+type CopyField = Pick<FormField, "id" | "label" | "section" | "answerType" | "options" | "fillSource"> & Partial<Pick<FormField, "guidance">>;
 
 /** The printed option for a yes/no value ("Yes – see notes" when the form prints it), else Yes/No. */
 function yesNoText(field: Pick<FormField, "answerType" | "options"> | null, value: boolean): string {
@@ -110,7 +111,8 @@ export function copyAnswerValue(
 /** "Is the patient fit for work?" / "Date of birth:" – a question as it starts its copied block. */
 export function questionLead(question: string): string {
   const q = question.replace(/\s+/g, " ").trim();
-  return /[?:]$/.test(q) ? q : `${q}:`;
+  // Fix round 3 (B2-33): "47. Any additional comments.:" → "47. Any additional comments:".
+  return /[?:]$/.test(q) ? q : `${q.replace(/\s*[.;]+$/, "")}:`;
 }
 
 /** The text shown for a question without an answer. */
@@ -138,6 +140,8 @@ export function copyEntries(
   form: { fields: readonly CopyField[] } | null,
 ): CopyEntry[] {
   const receipt = report.status === "signed" ? report.receipt ?? null : null;
+  // Fix round 3 (B2-4): the same conditions as the forms engine, for a report drafted without them.
+  if (form) report = { ...report, sections: withFormConditions(report.sections, form.fields) };
   const sections = new Map(report.sections.map((s) => [s.key, s]));
   const out: CopyEntry[] = [];
   if (form) {

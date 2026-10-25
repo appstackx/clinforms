@@ -68,10 +68,11 @@ test("fix round 1 (B0-20): remembered per referrer and kind of report; the note 
   assert.deepEqual(matchReferrerForm(party, forms, "mc-ia", null), { form: medcareIa, reason: "remembered" });
   // The provider is named; another form chosen this time is said plainly, not as a warning.
   const match = { form: medcareIa, reason: "remembered" as const };
-  assert.equal(formChoiceNote({ party, match, selected: medcareIa, kind: "initial" }), "Last time, Harbourside Case Management (fictional)'s case used Medcare's “Initial Assessment Report”. These notes cover the initial assessment.");
+  // Fix round 3 (B2-32): no "'s" after a closing bracket (it was "Harbourside Case Management (fictional)'s case").
+  assert.equal(formChoiceNote({ party, match, selected: medcareIa, kind: "initial" }), "Last time, the case from Harbourside Case Management (fictional) used Medcare's “Initial Assessment Report”. These notes cover the initial assessment.");
   assert.equal(
     formChoiceNote({ party, match, selected: tenBridgeIa, kind: null }),
-    "Last time, Harbourside Case Management (fictional)'s case used Medcare's “Initial Assessment Report”. You have chosen 10Bridge's “Initial Assessment Report” this time.",
+    "Last time, the case from Harbourside Case Management (fictional) used Medcare's “Initial Assessment Report”. You have chosen 10Bridge's “Initial Assessment Report” this time.",
   );
   assert.doesNotMatch(formChoiceNote({ party, match, selected: medcareEots, kind: "discharge" }), /not .*own form/);
 });

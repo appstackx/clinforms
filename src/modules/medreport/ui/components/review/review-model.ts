@@ -7,11 +7,14 @@
  *
  * Owner: studio-b agent.
  */
-import { attendedInstead, inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
+import { attendedInstead, inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson, withOpinionAttribution } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, currentGuidance, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, recordSourceOf, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
+import { contentWords } from "../../../core/validation/text";
+import { repeatedDraftSentences, valueOnly } from "../../../core/validation/draft-fit";
+import { NOTES_ABSENCE_SENTENCE } from "../../../core/validation/opinion-language";
 import { NOTICES } from "../../../config.public";
 import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
@@ -106,6 +109,8 @@ export function buildQuestionGroups(
   let current: ReviewGroup | null = null;
   // Fix round 1 (B0-21): questions with no heading inside a section keep it (core/forms.ts sectionHeadings).
   const headings = sectionHeadings(form.fields);
+  // Fix round 3 (B2-29): a form (or portal set) with no heading at all shows none.
+  const untitled = headings.every((h) => !h) ? "" : UNTITLED_GROUP;
   form.fields.forEach((field, i) => {
     const heading = headings[i];
     const parentGroup = heading ? groupOfLabel.get(heading.toLowerCase()) : undefined;
@@ -117,7 +122,7 @@ export function buildQuestionGroups(
     } else if (heading) {
       group = current && current.title === heading ? current : { id: `g-${groups.length + 1}`, title: heading, questions: [] };
     } else {
-      group = current && current.title === UNTITLED_GROUP ? current : { id: `g-${groups.length + 1}`, title: UNTITLED_GROUP, questions: [] };
+      group = current && current.title === untitled ? current : { id: `g-${groups.length + 1}`, title: untitled, questions: [] };
     }
     if (groups.indexOf(group) < 0) groups.push(group);
     current = group;
@@ -130,8 +135,9 @@ export function buildQuestionGroups(
       spec,
       label: field.label,
       context,
-      // Fix round 2 (B1-16): what a box left blank prints now, not a stored map's "unanswered: … stays".
-      guidance: currentGuidance(field.guidance),
+      // Fix round 2 (B1-16): what a box left blank prints now, not a stored map's "unanswered: … stays". Fix round 3
+      // (B2-22, B2-34): where the value comes from, and a tick box's option as printed.
+      guidance: currentGuidance(field.guidance, field, { withheldReference: withheldReference(field, section) }),
       answerType: field.answerType,
       required: field.required,
       number: i + 1,
@@ -139,6 +145,12 @@ export function buildQuestionGroups(
     groupOfLabel.set(field.label.trim().toLowerCase(), group);
   });
   return groups;
+}
+
+/** Fix round 3 (B2-22): a referral value the record holds but that was not copied onto this form – staff type it in. */
+function withheldReference(field: FormField, section: ReportSection | null): boolean {
+  if (field.fillSource.kind !== "registration" || !field.fillSource.path.startsWith("referral.") || !section || section.kind !== "from_records") return false;
+  return !section.paragraphs.some((p) => p.origin === "from_records") && !section.blankFromRecords;
 }
 
 /** Every question of the groups, in order. */
@@ -166,7 +178,11 @@ export type QuestionStatus =
   | "blank"
   | "left_blank"
   /** Fix round 1 (B0-22): a record line the record leaves empty on purpose (an address line it does not have). */
-  | "record_empty";
+  | "record_empty"
+  /** Fix round 3 (B2-21): a staff entry (a reference, a record value the record lacks) nobody has typed in yet. */
+  | "staff_entry"
+  /** Fix round 3 (B2-24): a question that does not apply (the answer before it rules it out) – not left blank. */
+  | "not_applicable";
 
 export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short: string; dot: string; text: string }> = {
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
@@ -181,10 +197,12 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
   left_blank: { label: "Left blank on approval", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-600" },
   record_empty: { label: "Left blank – nothing in the record", short: "Left blank (nothing in the record)", dot: "border border-dashed border-teal-500 bg-white", text: "text-slate-600" },
+  staff_entry: { label: "To be entered by staff", short: "Staff to enter", dot: "bg-violet-300", text: "text-violet-800" },
+  not_applicable: { label: "Not applicable", short: "Not applicable", dot: "border border-slate-300 bg-slate-100", text: "text-slate-500" },
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "staff", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "staff", "left_blank", "record_empty", "not_applicable", "staff_entry", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -235,13 +253,18 @@ export function questionStatus(
   if (section.kind === "declaration" && section.fieldId) return "signoff";
   // Fix round 1 (B0-7): not asked – the answer before it says it does not apply (fix round 2, B1-1: unless a person
   // answered it – then its own check says so, and it is printed once that is acknowledged).
-  if (conditionSections && !byPerson && notApplicable(conditionSections, section.key)) return approved ? "left_blank" : "blank";
+  // Fix round 3 (B2-24): said as "Not applicable" – not counted as left blank, and left out of the share answered.
+  if (conditionSections && !byPerson && notApplicable(conditionSections, section.key)) return "not_applicable";
   // Fix round 1 (B0-22): counted as left blank (as "Copy answers" says), not as filled from the records.
   if (isBlankByDesign(section, q.field) && !section.paragraphs.some((p) => p.text.trim() !== "")) return "record_empty";
   const answered = isSectionAnswered(section);
   if (!answered && approved) return "left_blank";
   if (section.status === "pending" && !answered) return "pending";
-  if (!answered) return q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps) ? "blank" : "needs_input";
+  if (!answered) {
+    if (q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps)) return "blank";
+    // Fix round 3 (B2-21): a value staff type in (not the physiotherapist's choice) is not waiting for the clinician.
+    return section.kind === "from_records" && (!q.field || recordSourceOf(q.field) !== "physio_choice") ? "staff_entry" : "needs_input";
+  }
   const blockingFlags = flags.filter((f) => f.sectionKey === section.key && isOpenBlocking(f, gaps));
   const openGap = gaps.some((g) => g.sectionKey === section.key && !g.resolution);
   // Answered by a person and only the gap itself is open: not a failed check, just confirm it.
@@ -249,8 +272,13 @@ export function questionStatus(
   if (blockingFlags.length > 0 || openGap) return "blocked";
   const origins = section.paragraphs.filter((p) => p.text.trim()).map((p) => p.origin);
   if (byPerson && section.kind === "from_records") return q.field && recordSourceOf(q.field) === "physio_choice" ? "clinician" : "staff";
+  // Fix round 3 (B2-20): a yes/no, tick, choice, date or number a person set is theirs, whatever drafted supporting text
+  // (not printed) is kept beside it.
+  if (byPerson && section.answer && section.answer.kind !== "text" && section.answer.kind !== "rows") return "clinician";
   if (origins.every((o) => o === "from_records")) return section.kind === "from_records" || origins.length > 0 ? "records" : "clinician";
-  if (origins.some((o) => o === "ai" || o === "edited")) return "drafted";
+  // Fix round 3 (B2-1): an edited paragraph the clinician acknowledged as their own account is theirs.
+  const own = (p: Paragraph) => p.origin === "edited" && flags.some((f) => f.paragraphId === p.id && f.code === "OTHER_CLINICIAN_VOICE" && Boolean(f.acknowledged));
+  if (section.paragraphs.some((p) => p.text.trim() && (p.origin === "ai" || (p.origin === "edited" && !own(p))))) return "drafted";
   return "clinician";
 }
 
@@ -267,7 +295,7 @@ export interface StatusCounts {
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, staff: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, staff: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0, staff_entry: 0, not_applicable: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
@@ -482,24 +510,37 @@ function mapSection(report: Report, key: string, fn: (s: ReportSection) => Repor
  * acknowledgement reason (the clinician re-acknowledges the new wording). From-records text is locked.
  */
 /**
- * Fix round 1 (B0-11): how much of the drafted wording an edit keeps – the share of the draft's words still in the text
- * (0…1). Below OWN_WORDS_BELOW the clinician has written their own answer over the draft.
+ * Fix round 1 (B0-11): how much of the drafted wording an edit keeps (0…1). Below OWN_WORDS_BELOW the clinician has
+ * written their own answer over the draft.
+ * Fix round 3 (B2-1): measured on content words in their order (pairs of neighbouring content words once both texts have
+ * eight or more; a date is one word), so the function words and the few facts any answer about the patient repeats ("Mrs Whitlock", "30 minutes")
+ * no longer make the clinician's own opinion typed over a draft count as an edit of it – it kept the draft's citation and
+ * offered to put that opinion under the note's author. The larger of two shares: of the draft's wording kept, and of
+ * the text that is the draft's wording – a draft cut down to one sentence is still the draft.
  */
 export function draftWordsKept(original: string, text: string): number {
-  const words = (s: string) => s.toLowerCase().match(/[a-z0-9]+(?:['’][a-z]+)?/g) ?? [];
-  const drafted = words(original);
-  if (drafted.length === 0) return 1;
-  const left = new Map<string, number>();
-  for (const w of words(text)) left.set(w, (left.get(w) ?? 0) + 1);
-  let kept = 0;
-  for (const w of drafted) {
-    const n = left.get(w) ?? 0;
-    if (n > 0) {
-      kept += 1;
-      left.set(w, n - 1);
+  const a = contentWords(original);
+  const b = contentWords(text);
+  if (a.length === 0) return 1;
+  if (b.length === 0) return 0;
+  // (Pairs on longer texts only: in a sentence of a few words, one word changed would break every pair.)
+  const units = (ws: string[]) => (a.length < 8 || b.length < 8 ? ws : ws.slice(1).map((w, i) => `${ws[i]} ${w}`));
+  const share = (from: string[], within: string[]) => {
+    const left = new Map<string, number>();
+    for (const w of within) left.set(w, (left.get(w) ?? 0) + 1);
+    let kept = 0;
+    for (const w of from) {
+      const n = left.get(w) ?? 0;
+      if (n > 0) {
+        kept += 1;
+        left.set(w, n - 1);
+      }
     }
-  }
-  return kept / drafted.length;
+    return kept / from.length;
+  };
+  const ua = units(a);
+  const ub = units(b);
+  return Math.max(share(ua, ub), share(ub, ua));
 }
 
 /** An edit keeping less than this share of the drafted words is the clinician's own wording. */
@@ -565,6 +606,20 @@ export function overrideRecordValue(report: Report, key: string, actor: string, 
     paragraphs: [{ id: nextClinicianParagraphId(s), text: s.paragraphs.map((p) => p.text).join("\n"), sourceIds: [], origin: "clinician" }],
   }));
   return appendActivity(touch(report, sections, now), { actor, action: "edited", detail: `${key}: “${section.title}” changed for this report only (was “${was}” from the Clinic details) – entered by staff.` }, now);
+}
+
+/**
+ * Fix round 3 (B2-22): "Change it for this patient's site" was clicked, but the value is still the one copied from the
+ * Clinic details – nobody has typed another site's details yet (so the card does not say "Typed in by …").
+ */
+export function clinicOverrideUntyped(report: Pick<Report, "sections" | "activity">, key: string): boolean {
+  const section = report.sections.find((s) => s.key === key);
+  if (!section || section.kind !== "from_records" || section.paragraphs.length === 0 || !section.paragraphs.every((p) => p.origin === "clinician")) return false;
+  const entry = [...report.activity].reverse().find((a) => a.action === "edited" && a.detail.startsWith(`${key}: `) && /changed for this report only \(was “/.test(a.detail));
+  const was = entry ? /\(was “([\s\S]*)” from the Clinic details\)/.exec(entry.detail)?.[1] : undefined;
+  if (was === undefined) return false;
+  const norm = (t: string) => t.replace(/[\s,]+/g, " ").trim();
+  return norm(section.paragraphs.map((p) => p.text).join(", ")) === norm(was);
 }
 
 /** The ID the next clinician paragraph of this section gets ("F-14-c1", "F-14-c2"…). */
@@ -676,6 +731,15 @@ export function enteredByOf(report: Pick<Report, "activity">, key: string): stri
 /** True when the clinician has changed this question's structured answer (see setStructuredAnswer). */
 export function answerChangedByClinician(report: Pick<Report, "activity">, key: string): boolean {
   return report.activity.some((a: ActivityEntry) => a.action === "answer_set" && a.detail.startsWith(`${key}:`));
+}
+
+/**
+ * Fix round 3 (B2-20): whether a person's structured answer replaced a drafted value – the first "answer_set" entry for
+ * the question was not "(was blank)" – rather than being the first answer given ("Answered by the clinician").
+ */
+export function answerReplacedDraft(report: Pick<Report, "activity">, key: string): boolean {
+  const first = report.activity.find((a: ActivityEntry) => a.action === "answer_set" && a.detail.startsWith(`${key}:`));
+  return Boolean(first) && !/\(was blank\)\.?$/.test(first?.detail ?? "");
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1040,14 +1104,35 @@ export function writeInOwnVoice(report: Report, authorName: string, actor: strin
  * with the one other clinician whose note it cites named instead of "I" / "me" / "my" – or null (two clinicians, or
  * wording the rewrite cannot settle: the clinician edits it).
  */
-export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId">): { name: string; text: string } | null {
+export function nameClinicianFix(
+  report: Pick<Report, "sections" | "bundleSnapshot" | "author">,
+  flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId"> & Partial<Pick<ReportFlag, "evidence">>,
+): { name: string; text: string; label: string; detail: string } | null {
   if (flag.code !== "OTHER_CLINICIAN_VOICE" || !flag.sectionKey || !flag.paragraphId) return null;
-  const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
-  if (!p) return null;
+  const section = report.sections.find((s) => s.key === flag.sectionKey);
+  const p = section?.paragraphs.find((x) => x.id === flag.paragraphId);
+  // Fix round 3 (B2-1): only on drafted wording – never on words the clinician typed (their own opinion, perhaps).
+  if (!section || !p || p.origin !== "ai") return null;
+  const evidence = flag.evidence ?? "";
+  // Fix round 3 (B2-3): the signer's own account beside a colleague's – "Use my name" turns their "I" / "my" into their name.
+  if (/^named /.test(evidence)) {
+    const signer = report.author?.name.trim() ?? "";
+    const text = signer ? nameClinicianInstead(p.text, signer) : null;
+    return text ? { name: signer, text, label: `Use my name (${signer})`, detail: `wrote ${signer} instead of “I” or “my” beside the clinician it names (citations unchanged).` } : null;
+  }
+  // Fix round 3 (B2-2): another clinician's recorded opinion without their name – "Priya Shah's assessment (01/09/2026): …".
+  if (/^unattributed /.test(evidence)) {
+    const notes = p.sourceIds.map((id) => report.bundleSnapshot.notes.find((n) => n.id === id)).filter((n): n is EpisodeBundle["notes"][number] => Boolean(n));
+    const names = Array.from(new Set(notes.map((n) => n.author.name.trim())));
+    if (names.length !== 1) return null;
+    const date = notes.map((n) => n.date).sort().pop() ?? null;
+    const noun = /\b(?:prognos|recover|expect|return|fit|restrict|recommend|duties|work)/i.test(section.title) ? "opinion" : "assessment";
+    return { name: names[0], text: withOpinionAttribution(p.text, names[0], date, noun), label: `Name ${names[0]}`, detail: `named ${names[0]}, whose recorded ${noun} it is (citations unchanged).` };
+  }
   const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, report.author);
   if (!others || others.length !== 1) return null;
   const text = nameClinicianInstead(p.text, others[0]);
-  return text ? { name: others[0], text } : null;
+  return text ? { name: others[0], text, label: `Name ${others[0]} instead`, detail: `named ${others[0]}, who wrote the cited note, instead of “I” or “my” (citations unchanged).` } : null;
 }
 
 /**
@@ -1078,13 +1163,52 @@ export function nameCliniciansInstead(report: Report, flags: readonly ReportFlag
   for (const flag of flags) {
     const fix = nameClinicianFix(next, flag);
     if (!fix || !flag.sectionKey || !flag.paragraphId) continue;
-    next = appendActivity(
-      editParagraph(next, flag.sectionKey, flag.paragraphId, fix.text, now),
-      { actor, action: "edited", detail: `${flag.sectionKey}: named ${fix.name}, who wrote the cited note, instead of “I” or “my” (citations unchanged).` },
-      now,
-    );
+    next = appendActivity(editParagraph(next, flag.sectionKey, flag.paragraphId, fix.text, now), { actor, action: "edited", detail: `${flag.sectionKey}: ${fix.detail}` }, now);
   }
   return next;
+}
+
+/**
+ * Fix round 3 (B2-7, B2-16, B2-17): the one-click wording fixes a DRAFT_FIT check offers on drafted text – the new text
+ * of its paragraph ("" removes the paragraph), with the button's label and the activity entry – or null:
+ * - "repeats F-xx": the sentences another box already prints taken out ("Remove the repeated sentence");
+ * - "shorten": a compact value without its trailing attribution ("Use the value only (6/10 at worst…)");
+ * - "comment": the sentence or clause about the notes taken out ("Remove it").
+ */
+export function draftFitFix(report: Pick<Report, "sections">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId" | "evidence">): { text: string; label: string; detail: string } | null {
+  if (flag.code !== "DRAFT_FIT" || !flag.sectionKey || !flag.paragraphId) return null;
+  const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
+  if (!p || p.origin !== "ai") return null;
+  const evidence = flag.evidence ?? "";
+  const tidy = (t: string) => t.replace(/\s{2,}/g, " ").replace(/\s+([.,;])/g, "$1").replace(/^[\s;,]+/, "").trim();
+  if (/^repeats /.test(evidence)) {
+    const of = evidence.slice("repeats ".length);
+    const repeated = repeatedDraftSentences(report.sections).filter((r) => r.paragraphId === p.id && r.of === of);
+    if (repeated.length === 0) return null;
+    const text = tidy(repeated.reduce((t, r) => t.replace(r.sentence, ""), p.text));
+    return { text, label: "Remove the repeated sentence", detail: `removed ${repeated.length === 1 ? "a sentence" : `${repeated.length} sentences`} ${of} already prints.` };
+  }
+  if (evidence === "shorten") {
+    const value = valueOnly(p.text);
+    return value !== p.text ? { text: value, label: `Use the value only (${value.length > 40 ? `${value.slice(0, 40).replace(/\s+\S*$/, "")}…` : value})`, detail: "kept the value only – who recorded it stays in its citation." } : null;
+  }
+  if (evidence === "comment") {
+    const absence = new RegExp(NOTES_ABSENCE_SENTENCE.source).exec(p.text);
+    const trailing = /[;,–—]\s*(?:but |and |with )?(?:no|not) (?:[\w/-]+ ){0,6}?(?:was |were |is |are |has been |have been )?(?:recorded|documented|stated)\b(?: (?:for|in|at|about|on) [^.;]*)?\s*(?=[.;]|$)/i.exec(p.text);
+    const sentence = (p.text.match(/[^.!?]+(?:[.!?]+|$)/g) ?? []).find((x) => /\b(?:the notes (?:are|were) (?:all )?written by|i can only (?:describe|say|give)|the (?:record|notes) (?:does|do) not|it is not possible to (?:say|tell) from)\b/i.test(x));
+    const cut = absence?.[0] ?? trailing?.[0] ?? sentence;
+    if (!cut) return null;
+    return { text: tidy(p.text.replace(cut, absence || sentence ? " " : "")), label: "Remove it", detail: "removed the comment about the notes." };
+  }
+  return null;
+}
+
+/** Apply draftFitFix() to one flagged paragraph: it becomes "edited" (revertable) – or is removed when nothing is left – with one activity entry. */
+export function applyDraftFitFix(report: Report, flag: ReportFlag, actor: string, now?: Date): Report {
+  const fix = draftFitFix(report, flag);
+  if (!fix || !flag.sectionKey || !flag.paragraphId) return report;
+  const next = fix.text ? editParagraph(report, flag.sectionKey, flag.paragraphId, fix.text, now) : removeParagraph(report, flag.sectionKey, flag.paragraphId, now);
+  return appendActivity(next, { actor, action: "edited", detail: `${flag.sectionKey}: ${fix.detail}` }, now);
 }
 
 /** Sentences of drafted text that only say something was NOT recorded. */
@@ -1144,4 +1268,69 @@ export function createAmendedVersion(approved: Report, actor: string, newId: str
     },
     now,
   );
+}
+
+/**
+ * Fix round 3 (B2-23): worded from the box's gap – when the opinion it quotes is in the signer's own notes, the signer
+ * recorded one (it was not ticked for them because it does not settle the printed options); otherwise nobody did.
+ */
+export function needsClinicianText(gaps: readonly Gap[], bundle: Pick<EpisodeBundle, "notes">, signerName: string | null | undefined): string {
+  const open = gaps.find((g) => !g.resolution);
+  const notes = (open?.relatedNoteIds ?? []).map((id) => bundle.notes.find((n) => n.id === id)).filter((n): n is EpisodeBundle["notes"][number] => Boolean(n));
+  const signer = signerName?.trim();
+  const own = Boolean(signer) && notes.length > 0 && notes.every((n) => n.author.name.trim() === signer) && /\b(?:opinion|recorded|records)\b/i.test(open?.issue ?? "");
+  return own
+    ? "Your own note records an opinion on this (see the gap below), but it does not settle the printed answer, so nothing was chosen for you. Choose the answer that fits what you recorded."
+    : "No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed. Only the treating clinician can answer it.";
+}
+
+/**
+ * Fix round 3 (B2-15): the "Found: “…”" line under a check – the words it found in the answer – or null when its
+ * evidence is an internal code ("shorten", "repeat F-28", "sessions 7", "not applicable", "named Tom Ellis") the message
+ * already says in plain words. Never an ISO date.
+ */
+export function flagEvidenceText(flag: Pick<ReportFlag, "code" | "evidence">): string | null {
+  const evidence = flag.evidence?.trim();
+  if (!evidence) return null;
+  if (["DRAFT_FIT", "NOT_APPLICABLE_ANSWERED", "OTHER_CLINICIAN_VOICE", "DATA_CHECK", "OPEN_GAP"].indexOf(flag.code) >= 0) return null;
+  if (/^(?:empty section|optional field blank|validator .*|mail-merge field .*)$/.test(evidence)) return null;
+  return evidence.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, "$3/$2/$1");
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Amended versions (fix round 3, B2-25)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The entry the approved version gets when an amended version is started: no raw ID in the words, and not "superseded" yet. */
+export function amendmentStartedEntry(amended: Pick<Report, "id" | "version">, actor: string): Omit<ActivityEntry, "at"> {
+  const v = amended.version ?? 2;
+  return { actor, action: "amendment_started", detail: `Amended version ${v} started. This approval stays final until version ${v} is approved.`, reportId: amended.id };
+}
+
+/** The earlier version once the amended version is approved: superseded, with who approved it and when. */
+export function markSupersededBy(earlier: Report, amended: Pick<Report, "id" | "version" | "receipt">, now?: Date): Report {
+  const v = amended.version ?? 2;
+  const by = amended.receipt ? ` – approved by ${amended.receipt.signer.name} on ${formatUkDate(amended.receipt.signedAt.slice(0, 10))}` : "";
+  return appendActivity(earlier, { actor: "System", action: "superseded", detail: `Superseded by version ${v}${by}.`, reportId: amended.id }, now);
+}
+
+export interface AmendmentState {
+  /** "open": an amended version is being prepared; "superseded": it was approved and replaces this one. */
+  kind: "open" | "superseded";
+  reportId: string;
+  version: number;
+  /** "25/10/2026" – when the amended version was approved. */
+  approvedOn?: string;
+}
+
+/** Where an approved report stands with its amended version, from its activity – or null when none was started. */
+export function amendmentState(report: Pick<Report, "activity">): AmendmentState | null {
+  for (let i = report.activity.length - 1; i >= 0; i--) {
+    const a = report.activity[i];
+    if (!a.reportId || (a.action !== "superseded" && a.action !== "amendment_started")) continue;
+    const version = Number(/\bversion (\d+)\b/.exec(a.detail)?.[1] ?? 2);
+    if (a.action === "superseded") return { kind: "superseded", reportId: a.reportId, version, ...(/on (\d{2}\/\d{2}\/\d{4})/.exec(a.detail) ? { approvedOn: /on (\d{2}\/\d{2}\/\d{4})/.exec(a.detail)?.[1] } : {}) };
+    return { kind: "open", reportId: a.reportId, version };
+  }
+  return null;
 }

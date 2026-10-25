@@ -725,6 +725,8 @@ export const ActivityEntrySchema = z.object({
   actor: z.string(),
   action: z.string(),
   detail: z.string(),
+  /** Fix round 3 (B2-25): the other version of this report an amendment entry is about (never shown – the detail says it in words). */
+  reportId: z.string().min(1).max(80).optional(),
 });
 
 /** Server-HMAC'd sign-off receipt. `mac` covers every other field (canonical JSON). */

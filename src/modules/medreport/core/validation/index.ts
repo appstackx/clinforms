@@ -24,7 +24,7 @@
  * Owner: ai agent (runValidators). `canSign` keeps the foundation's signature.
  */
 import { computeFacts } from "../computed-facts";
-import { notApplicable } from "../conditions";
+import { notApplicable, withReportConditions } from "../conditions";
 import { todayIso } from "../dates";
 import type {
   ComputedFact,
@@ -116,7 +116,9 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
  * - DRAFT_FIT (a repeated numbered row blocks – fix round 2): yes – the signer confirms both rows are right;
  * - NOT_APPLICABLE_ANSWERED: on a person's answer, yes – the signer wants it printed although the box does not apply;
  *   on a drafted answer whose supporting text says its condition does not hold, no;
- * - OPINION_LANGUAGE and OTHER_CLINICIAN_VOICE: only on "edited" text (the clinician's own words); never on AI text;
+ * - OPINION_LANGUAGE and OTHER_CLINICIAN_VOICE: only on "edited" text (the clinician's own words); never on AI text –
+ *   except (fix round 3, B2-3) a paragraph that names the clinician whose note it cites and says "I" or "my" without an
+ *   opinion (evidence "named …"): the signer's own account beside a colleague's ("while covering my annual leave");
  * - UNCITED_PARAGRAPH, SCOPE_TERM, MISSING_PLACEHOLDER, blocking DATA_CHECK: no – fix the text or the record;
  * - OPEN_GAP: no – resolve or acknowledge the gap itself.
  */
@@ -133,6 +135,7 @@ export function canAcknowledge(flag: ReportFlag, report?: Pick<Report, "sections
       return flag.evidence === "not applicable";
     case "OPINION_LANGUAGE":
     case "OTHER_CLINICIAN_VOICE": {
+      if (flag.code === "OTHER_CLINICIAN_VOICE" && /^named /.test(flag.evidence ?? "")) return true;
       if (!report || !flag.paragraphId) return false;
       for (const s of report.sections) {
         const p = s.paragraphs.find((x) => x.id === flag.paragraphId);
@@ -174,7 +177,10 @@ function dataCheckFlags(checks: DataCheck[]): ReportFlag[] {
  * - DATA_CHECK flags from the data checks (blocking → blocking, warning → warning, info dropped).
  * - Never throws on malformed content: a validator that fails yields a blocking DATA_CHECK flag.
  */
-export function runValidators(input: ValidatorInput): ReportFlag[] {
+export function runValidators(given: ValidatorInput): ReportFlag[] {
+  // Fix round 3 (B2-4): a report drafted before conditions were kept through drafting gets them from its form map.
+  const withConditions = withReportConditions(given.report, given.form);
+  const input = withConditions === given.report ? given : { ...given, report: withConditions };
   const flags: ReportFlag[] = [];
   for (const v of VALIDATORS) {
     try {

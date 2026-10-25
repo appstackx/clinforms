@@ -14,7 +14,7 @@
  * Owner: ai agent.
  */
 import type { ReportFlag } from "../types";
-import { authorsAttendedSessions, firstPersonSessionCount, namesPerson, otherCliniciansInFirstPerson } from "../voice";
+import { OWN_OPINION, authorsAttendedSessions, firstPersonSessionCount, namesClinician, namesPerson, otherCliniciansInFirstPerson, sameClinician, speaksInFirstPerson } from "../voice";
 import { formatUkDate } from "../dates";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -31,6 +31,12 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
   const flags: ReportFlag[] = [];
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if ((p.origin !== "ai" && p.origin !== "edited") || !hasText(p)) continue;
+    // Fix round 3 (B2-2): another clinician's recorded opinion printed without their name reads as the signer's own.
+    const unnamed = unattributedOpinion(input, section, p, author);
+    if (unnamed) {
+      flags.push(unnamed);
+      continue;
+    }
     const others = otherCliniciansInFirstPerson(p, input.bundle, author);
     // Fix round 2 (B1-14): "I treated Mr Ellery for 7 sessions" when one of the 7 was another clinician's.
     const count = others ? null : firstPersonSessionCount(p.text);
@@ -53,14 +59,20 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
     const who = names(others);
     // Named already ("Tom Ellis covered my leave"): whose "I" or "my" it is needs the clinician, not a rewrite.
     const named = others.every((n) => namesPerson(p.text, n));
+    // Fix round 3 (B2-3): "Tom Ellis … saw Mr Ellery on 05/08/2026 while covering my annual leave" is the signer's own
+    // account beside a colleague's, faithful to the note. Unless the "I" or "my" gives an opinion, it has its own evidence
+    // and may be acknowledged on drafted text too – or the signer's name put in with one click ("Use my name").
+    const ownAccount = named && !OWN_OPINION.test(p.text);
     flags.push(
       makeFlag({
         code: "OTHER_CLINICIAN_VOICE",
         severity: "blocking",
         sectionKey: section.key,
         paragraphId: p.id,
-        evidence: who,
-        message: named
+        evidence: ownAccount ? `named ${who}` : who,
+        message: ownAccount
+          ? `This answer names ${who}, who wrote the note it cites, and also says “I”, “me” or “my”. On the signed form those words read as yours – right when they are your own account (“while covering my annual leave”). Use your name instead of “I” or “my”, rewrite it so it is clear who did what, or acknowledge it if those words are your own.`
+          : named
           ? `This answer names ${who}, who wrote the note it cites, and also says “I”, “me” or “my”. On the signed form those words read as yours. ${
               p.origin === "ai" ? "Rewrite it so it is clear who did what." : "Rewrite it so it is clear who did what, or acknowledge it if those words are your own account."
             }`
@@ -71,4 +83,29 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
     );
   }
   return flags;
+}
+
+/**
+ * Fix round 3 (B2-2): a printed answer whose basis is a clinician's recorded opinion (clinician_opinion_recorded), citing
+ * only notes another clinician wrote, that does not name that clinician – "Grade I–II sprain of the right medial
+ * collateral ligament…" in a narrow cell from Priya Shah's assessment, on a form Sarah Reid signs. On paper it reads as
+ * the signer's own opinion, while the approval attests that opinions are the signer's own or clearly attributed. Blocking;
+ * acknowledgeable once edited (canAcknowledge), with a one-click "Name Priya Shah" (the review's fix). Supporting text
+ * (not printed) and the first person (checked below) are left to the other checks.
+ */
+function unattributedOpinion(input: ValidatorInput, section: ValidatorInput["report"]["sections"][number], p: ValidatorInput["report"]["sections"][number]["paragraphs"][number], author: NonNullable<ValidatorInput["report"]["author"]>): ReturnType<typeof makeFlag> | null {
+  if (p.basis !== "clinician_opinion_recorded" || (section.answer && section.answer.kind !== "text") || speaksInFirstPerson(p.text)) return null;
+  const cited = p.sourceIds.filter((id) => /^N-\d+$/.test(id)).map((id) => input.bundle.notes.find((n) => n.id === id));
+  if (cited.length === 0 || cited.some((n) => !n || sameClinician(n.author, author))) return null;
+  const others = Array.from(new Set(cited.map((n) => (n as NonNullable<typeof n>).author.name.trim()))).filter(Boolean);
+  if (others.length === 0 || others.some((n) => namesClinician(p.text, n))) return null;
+  const who = names(others);
+  return makeFlag({
+    code: "OTHER_CLINICIAN_VOICE",
+    severity: "blocking",
+    sectionKey: section.key,
+    paragraphId: p.id,
+    evidence: `unattributed ${who}`,
+    message: `This answer gives the opinion ${who} recorded, without naming ${others.length === 1 ? who : "them"}. On the signed form it would read as your own. Name ${others.length === 1 ? who : "the clinician"} (“${others[0]}'s assessment (date): …”), or rewrite it in your own words.`,
+  });
 }
