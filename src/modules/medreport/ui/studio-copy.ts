@@ -110,6 +110,23 @@ export const TENANT_COPY = {
     unavailableBody:
       "Batch completes several patients' forms at once from a connected clinic system. Your clinic adds patients by uploading their notes, so complete each form from “Complete a form”.",
   },
+  /** 25/10/2026: another referrer form for a patient whose notes a report already holds – no new upload. */
+  reuse: {
+    action: "Complete another form for this patient",
+    actionHint: "Uses the notes already checked for this report – nothing to upload again.",
+    rowAction: "Another form",
+    loading: "Getting the patient's notes from the earlier report…",
+    failedTitle: "Could not use the notes from that report",
+    failedNext: "Upload the patient's notes below instead.",
+    bannerLead: "Using the notes already checked for",
+    bannerNoUpload: "Nothing was uploaded again.",
+    consentReset:
+      "Consent recorded on that report is not carried over: once the patient has agreed, record their consent on the new report before it is approved.",
+    backToUpload: "Upload other notes instead",
+    completedPill: "Already completed for this patient",
+    chooseOther: "Choose the other form to complete for this patient.",
+    uploadHint: "Already uploaded this patient's notes for another form? Open that report and choose “Complete another form for this patient”.",
+  },
 } as const;
 
 /** Every string in TENANT_COPY (for the wording tests). */

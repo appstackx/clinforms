@@ -176,7 +176,8 @@ localStorage/IndexedDB.
 *Built (wave 2 store slice; detail in `src/modules/medreport/README.md` "Clinic storage"):* `HostHooks.storage`,
 `MedreportDeps.tenantStore` (host: `src/server/store/tenant-store.ts`, wired with `authenticate` in
 `src/app/api/_medreport-tenant.ts`); endpoints `/store/snapshot`, `/store/reports/{id}`, `/store/forms/{id}`
-(GET/PUT/DELETE, `ETag`/`If-Match` revisions, 409 `REV_CONFLICT` with the stored copy), chunked uploads
+(GET/PUT/DELETE, `ETag`/`If-Match` revisions, 409 `REV_CONFLICT` with the stored copy), `POST
+/store/reports/{id}/reuse` (25/10/2026: a stored report's record for a new report on another form), chunked uploads
 `/store/files` → `/store/files/{sha256}/chunks/{n}` → `/store/files/{sha256}/complete`, `GET /store/files/{sha256}`,
 `/store/settings`. Uploads use the existing `form_files` + `form_file_chunks` tables (no migration): a file counts as
 held once every chunk is present and reads verify size and SHA-256. Extras also include `getStoreSyncState`,

@@ -68,6 +68,8 @@ export const KNOWN_ACTIVITY_ACTIONS = [
   // Amendments after issue
   "amendment_started",
   "superseded",
+  // Another form for the same patient, from an earlier report's checked notes (25/10/2026, core/reuse.ts)
+  "notes_reused",
 ] as const;
 export type KnownActivityAction = (typeof KNOWN_ACTIVITY_ACTIONS)[number];
 

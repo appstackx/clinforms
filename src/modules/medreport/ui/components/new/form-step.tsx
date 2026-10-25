@@ -5,6 +5,8 @@
  * own form when the library holds a confirmed one; every confirmed form is offered; forms still to be
  * confirmed are shown but cannot be used yet. Secondary: "No form from the referrer? Use a built-in
  * report".
+ * Another form for the same patient (25/10/2026, `completedFormId`): the form the earlier report completed is marked
+ * "Already completed for this patient" and never preselected – staff choose the other form.
  *
  * Owner: studio-a agent.
  */
@@ -16,6 +18,7 @@ import { INSTRUCTING_PARTY_LABELS, REFERRER_TYPE_LABELS } from "../../../core/la
 import type { FormDefinition, InstructingParty, ReportTemplate } from "../../../core/types";
 import { api } from "../../api-client";
 import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import { Skeleton, cn } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
 import { breakdownText, FormKindBadge, Notice, questionBreakdown } from "../shared/ui-bits";
@@ -33,9 +36,11 @@ export interface FormStepProps {
   onTemplates(templates: ReportTemplate[]): void;
   /** Preferred form from the URL (?form=…). */
   preferredFormId?: string;
+  /** The form the earlier report completed from the same notes (another form for this patient): never preselected. */
+  completedFormId?: string | null;
 }
 
-export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId }: FormStepProps) {
+export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId, completedFormId = null }: FormStepProps) {
   const paths = useStudioPaths();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const proposed = useMemo(() => forms.filter((f) => f.status !== "confirmed"), [forms]);
@@ -52,8 +57,8 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
     if (!formsReady || choice) return;
     const preferred = preferredFormId ? confirmed.find((f) => f.id === preferredFormId) : undefined;
     const pick = preferred ?? match?.form;
-    if (pick) onChoice({ kind: "form", formId: pick.id });
-  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice]);
+    if (pick && pick.id !== completedFormId) onChoice({ kind: "form", formId: pick.id });
+  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice, completedFormId]);
 
   // Built-in templates, loaded when that option is opened.
   useEffect(() => {
@@ -101,7 +106,9 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {match && (choice?.kind !== "form" || choice.formId === match.form.id)
+          {completedFormId && !choice
+            ? TENANT_COPY.reuse.chooseOther
+            : match && (choice?.kind !== "form" || choice.formId === match.form.id)
             ? `“${match.form.title}” is selected: ${matchReasonLabel(match.reason).toLowerCase()}.`
             : match && choice?.kind === "form"
               ? `“${confirmed.find((f) => f.id === choice.formId)?.title ?? "Another form"}” is selected – not ${party.name}'s own form (theirs is “${match.form.title}”).`
@@ -148,6 +155,11 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
                     <span className="text-xs text-slate-500">{REFERRER_TYPE_LABELS[form.referrer.type]}</span>
                     {match?.form.id === form.id ? (
                       <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800">{matchReasonLabel(match.reason)}</span>
+                    ) : null}
+                    {completedFormId === form.id ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700" data-completed-form>
+                        {TENANT_COPY.reuse.completedPill}
+                      </span>
                     ) : null}
                   </div>
                   <p className="text-xs text-slate-600">

@@ -315,6 +315,11 @@ export const AUDIT_ACTIONS = {
   launchIssue: "launch.issue",
   /** Wave 3: a patient's notes were turned into the record a form is completed from (counts and format only). */
   notesImported: "notes.imported",
+  /**
+   * 25/10/2026: a stored report's record (the patient's notes as staff confirmed them) was taken for a NEW report on
+   * another form – target: the earlier report; counts only (POST /store/reports/{id}/reuse).
+   */
+  notesReused: "notes.reused",
 } as const;
 
 /** The first characters of a receipt MAC: enough to match audit rows to receipts, useless to forge one. */

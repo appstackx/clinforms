@@ -29,6 +29,7 @@ const ACTION_LABELS: Record<string, string> = {
   answer_set: "Answer changed",
   previewed: "Previewed",
   consent_recorded: "Consent recorded",
+  notes_reused: "Notes reused from an earlier report",
 };
 
 const ACTION_DOT: Record<string, string> = {
