@@ -1625,3 +1625,31 @@ templates themselves are gitignored and never committed).
 - Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
   its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
   per report when another site treated the patient).
+
+## Work and activity status is not a recovery opinion (10/2026, branch `fix/bh-opinion-guard`)
+
+- **Bug (Blue Heart test run, 10Bridge Initial Assessment, F-37 on time off work):** the drafted "…took 3 days off
+  work, then returned to normal duties with breaks from the desk" (note: "Took 3 days off work, then back on normal
+  duties…") was blocked as OPINION_LANGUAGE "(recovery) 'returned to normal'" in every live take. On drafted text
+  that flag cannot be acknowledged, so the physio had to rewrite a faithful answer. Cause: the recovery pattern
+  `(back|returned) to (his|her|their)? normal` matched the first three words of a work status, and that exact
+  phrase is not in the note.
+- **Fix** (`core/validation/opinion-language.ts`, code only – maps already loaded on a clinic need no change):
+  - "Back / returned to normal or pre-injury <work or activity>" ("normal duties", "his normal working hours",
+    "normal daily activities", "normal driving") is its own pattern, "return to normal work or activity". It passes
+    when a cited note records the same status at a full level as a fact: "normal / full / usual / all duties",
+    "driving normally". It still blocks when the note gives a lower level ("light duties"), negates, hedges or plans
+    it ("not yet", "nearly", "should be able to return to full duties", "graded return", "goal:"), when it is only in
+    the note's history fields (life before the injury), or when work and activities are mixed up.
+  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match); "worked on balance" / "focused on
+    strengthening and on balance" is exercise, not "on balance"; "drills caused mild discomfort" reports a note's
+    "drills cause mild discomfort" (same word before and after).
+  - `OpinionPattern.allow(hit, source)` holds these rules; every other pattern, and the exact-quote rule, is
+    unchanged. Recovery wording ("returned to normal", "resolved", "full recovery") still needs the note's own words.
+- **Unchanged on purpose:** OPINION_LANGUAGE on drafted text still cannot be acknowledged (`docs/plan.md` §7, D6:
+  opinions only if a clinician recorded them) – the clinician edits the wording, and edited text can then be
+  acknowledged with a reason (stored on the paragraph, in the activity log, on the approved report). The drafting
+  prompt stays `forms-7`.
+- Tests: `core/validation/validation.test.ts` (the F-37 sentence and note; faithful work, activity, restriction,
+  balance and provocation paraphrases; a table of unrecorded opinions and unsupported full returns that still block;
+  the new flag cannot be acknowledged on drafted text).
