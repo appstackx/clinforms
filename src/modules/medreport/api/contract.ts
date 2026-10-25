@@ -274,6 +274,8 @@ export const PROBLEM_CODES = [
   "SIGNER_NOT_AUTHOR",
   // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
   "TRIAL_ENDED",
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (sign; core/demo-clinic.ts).
+  "DEMO_NUMBER_NOT_ALLOWED",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 

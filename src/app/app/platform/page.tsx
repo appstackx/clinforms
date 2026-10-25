@@ -11,7 +11,7 @@ import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction } from "./actions";
-import { CreateClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
+import { CreateClinicForm, DemoClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
 import type { ClinicOverview } from "@/server/admin/platform-console";
 import { formatPence, packageLabel, reportsText } from "@/lib/packages";
 import { readClinicPackages, type ClinicPackage } from "@/server/repos/clinic-package";
@@ -64,6 +64,7 @@ export default async function PlatformPage() {
   const packageOf = new Map(packages.map((p) => [p.tenantId, p] as const));
   const open = requests.filter((r) => !r.contactedAt).length;
   const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const demoClinics = clinics.filter((c) => !c.offboardedAt && c.plan?.demoClinic === true).map((c) => ({ tenantId: c.tenantId, name: c.name }));
   const emailOn = emailProviderName() !== "none";
 
   return (
@@ -115,6 +116,14 @@ export default async function PlatformPage() {
             </Link>{" "}
             <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
           </p>
+        </Panel>
+
+        <Panel
+          title="Demo clinics"
+          description="A demo clinic holds made-up data only and otherwise works like a customer's clinic. Its pages show “Demo clinic – made-up data only”, every preview, document and copied answer carries a demonstration notice, and its members may approve with made-up PH-DEMO numbers (a real clinic refuses them). Only ClinForms staff can switch this, here or with npm run admin:set-demo-clinic. Every change is recorded."
+          className="mb-6"
+        >
+          <DemoClinicForm clinics={openClinics} demoClinics={demoClinics} />
         </Panel>
 
         <Panel
@@ -219,6 +228,11 @@ export default async function PlatformPage() {
                         ) : (
                           <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">Active</span>
                         )}
+                        {!c.offboardedAt && c.plan?.demoClinic ? (
+                          <span className="ml-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900" data-demo-clinic-status={c.tenantId}>
+                            Demo clinic
+                          </span>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

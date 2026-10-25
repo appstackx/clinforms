@@ -5,7 +5,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
-import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
+import { endTrial, extendTrial, setDemoClinic, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
 import { removePackage, setPackage } from "@/server/admin/clinic-package";
 import { formatPence, isPackageId, packageLabel, parsePounds, reportsText, type SetupFeeStatus } from "@/lib/packages";
 import { platformActionAdmin } from "@/server/admin/guards";
@@ -236,5 +236,25 @@ export async function packageAction(_prev: PlanActionResult | null, form: FormDa
     });
     const founding = saved.foundingPricePence !== null ? `, founding ${formatPence(saved.foundingPricePence)} until ${saved.foundingUntil}` : "";
     return `${tenantId}: ${packageLabel(saved.package)} – ${formatPence(saved.monthlyPricePence)} a month, ${reportsText(saved.reportsIncluded)}, extra ${formatPence(saved.extraReportPence)} each${founding}; from ${saved.startsOn}.`;
+  });
+}
+
+/**
+ * Demo clinic on / off ("what" = "on" | "off"): a clinic with made-up data only – banner, a notice on every output,
+ * made-up PH-DEMO numbers may approve. Platform administrators only (re-checked here); audited under the clinic and
+ * the platform (src/server/admin/clinic-plan.ts setDemoClinic). A clinic's own pages can never change it.
+ */
+export async function setDemoClinicAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    if (what !== "on" && what !== "off") throw new RepoInputError("Choose whether to switch the demo clinic on or off.");
+    const r = await setDemoClinic(getDb(), { kind: "platform", admin }, tenantId, what === "on");
+    const stale = r.membersWithDemoNumbers;
+    if (what === "on") return r.changed ? `${tenantId} is now a demo clinic: made-up data only, made-up PH-DEMO numbers accepted.` : `${tenantId} already is a demo clinic.`;
+    const base = r.changed ? `${tenantId} is a real clinic again.` : `${tenantId} is not a demo clinic.`;
+    return stale > 0 ? `${base} ${stale} ${stale === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced (Settings → Members).` : base;
   });
 }

@@ -1,18 +1,22 @@
 /**
- * `clinic_plan` (migration 0006) – a clinic's trial and its own drafting limits. Written by ClinForms staff only
- * (the platform page /app/platform and the admin scripts admin:set-trial / admin:set-limits, both through
+ * `clinic_plan` (migration 0006; `demo_clinic` migration 0008) – a clinic's trial, its own drafting limits and
+ * whether it is a DEMO clinic (made-up data only). Written by ClinForms staff only (the platform page /app/platform
+ * and the admin scripts admin:set-trial / admin:set-limits / admin:set-demo-clinic, all through
  * src/server/admin/clinic-plan.ts, which audits every change); read on every clinic page and Report API call
  * that creates something (src/server/auth/medreport-actor.ts loadClinicProfile → the module's ClinicProfile).
  *
- * One row per clinic (tenant_id = organization slug). No row = no trial and the default drafting limits – every
- * clinic made before this table existed.
+ * One row per clinic (tenant_id = organization slug). No row = no trial, the default drafting limits and a real
+ * (not demo) clinic – every clinic made before this table existed.
  *
  * A trial is `trial_days` long. It either starts when it is set, or – the default for a new clinic – when an
  * owner first opens the clinic area (`start_on_first_sign_in`; noteOwnerAccess() records that moment once, in
  * one conditional UPDATE, so two first page loads at once start it once). While the trial runs, or before it
  * starts, the clinic works as usual; once `trial_ends_at` has passed nothing new can be created (reports,
  * drafts, uploads, form readings) and existing records stay readable and downloadable. "paid" = the trial was
- * converted; "standard" = a row that only holds the clinic's own limits.
+ * converted; "standard" = a row that only holds the clinic's own limits and / or the demo flag.
+ *
+ * A DEMO clinic (`demo_clinic` = 1, setClinicDemoFlag) holds made-up data only: banner, a notice on every output and
+ * the made-up PH-DEMO-NN signing numbers (src/modules/medreport/core/demo-clinic.ts). Independent of the trial.
  *
  * Pure database code (no Next imports); the clock comes from ctx.now (tests pin it).
  */
@@ -38,6 +42,8 @@ export interface ClinicPlan {
   endedAt: string | null;
   livePerMinute: number | null;
   livePerDay: number | null;
+  /** A demo clinic (0008): made-up data only, made-up PH-DEMO-NN signing numbers accepted. Set by setClinicDemoFlag only. */
+  demoClinic: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +59,8 @@ type PlanRow = {
   ended_at: string | null;
   live_calls_per_minute: number | null;
   live_calls_per_day: number | null;
+  /** Absent on a database before migration 0008 (the column is new): a real clinic. */
+  demo_clinic?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -70,6 +78,7 @@ function toPlan(row: PlanRow): ClinicPlan {
     endedAt: row.ended_at,
     livePerMinute: row.live_calls_per_minute === null ? null : toInt(row.live_calls_per_minute),
     livePerDay: row.live_calls_per_day === null ? null : toInt(row.live_calls_per_day),
+    demoClinic: toBool(row.demo_clinic ?? 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -268,6 +277,50 @@ export async function setClinicDraftingLimits(ctx: DbContext, tenantId: string, 
     .onConflict((oc) => oc.column("tenant_id").doUpdateSet({ ...values, updated_at: at }))
     .execute();
   return saved(ctx, tenantId);
+}
+
+/**
+ * Platform staff only (admin/clinic-plan.ts setDemoClinic, which audits it): makes the clinic a DEMO clinic (on) or a
+ * real clinic again (off). Switching on creates a "standard" row when the clinic has none (no trial, default limits –
+ * like setClinicDraftingLimits); switching off a clinic without a row changes nothing (it is a real clinic). The
+ * trial, the limits and the owner's first visit are never touched, and setClinicTrial / setClinicDraftingLimits in
+ * turn never touch the flag. `changed` is false when the flag already had that value (conditional writes, so two
+ * clicks at once change it once). The column is written by name: on a database before migration 0008 this fails
+ * loudly, while the app's reads still see "a real clinic".
+ */
+export async function setClinicDemoFlag(ctx: DbContext, tenantId: string, on: boolean): Promise<{ changed: boolean; plan: ClinicPlan | null }> {
+  assertTenantId(tenantId);
+  const at = nowIso(ctx);
+  if (on && !(await getClinicPlan(ctx, tenantId))) {
+    const r = await ctx.db
+      .insertInto("clinic_plan")
+      .values({
+        tenant_id: tenantId,
+        status: "standard",
+        trial_days: null,
+        start_on_first_sign_in: 0,
+        trial_starts_at: null,
+        trial_ends_at: null,
+        owner_first_sign_in_at: null,
+        ended_at: null,
+        live_calls_per_minute: null,
+        live_calls_per_day: null,
+        demo_clinic: 1,
+        created_at: at,
+        updated_at: at,
+      })
+      // A row made at the same moment by another change (a trial, limits): the conditional update below then applies.
+      .onConflict((oc) => oc.column("tenant_id").doNothing())
+      .executeTakeFirst();
+    if (Number(r.numInsertedOrUpdatedRows ?? 0) > 0) return { changed: true, plan: await saved(ctx, tenantId) };
+  }
+  const r = await ctx.db
+    .updateTable("clinic_plan")
+    .set({ demo_clinic: on ? 1 : 0, updated_at: at })
+    .where("tenant_id", "=", tenantId)
+    .where("demo_clinic", "=", on ? 0 : 1)
+    .executeTakeFirst();
+  return { changed: Number(r.numUpdatedRows) > 0, plan: await getClinicPlan(ctx, tenantId) };
 }
 
 export interface OwnerAccessResult {

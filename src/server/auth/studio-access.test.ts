@@ -10,6 +10,7 @@ import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
 import { middleware } from "../../middleware";
 import { createSqliteTestDb, type TestDb } from "../db/testing/databases";
 import { setEmailProviderForTests } from "../email";
+import { setClinicDemoFlag } from "../repos/clinic-plan";
 import { upsertClinicProfile } from "../repos/clinic-profile";
 import { upsertMemberProfile } from "../repos/member-profile";
 import { createAuth, type Auth } from "./create-auth";
@@ -103,6 +104,8 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
       tenantId: "studio-test",
       clinicName: "Studio Test Physio (fictional)",
       draftingEnabled: false,
+      // A real clinic (demo clinics are switched on by ClinForms staff only – clinic_plan.demo_clinic).
+      demoClinic: false,
       // Fix wave 3: the clinic's clinicians (name and HCPC number only), offered when staff check uploaded notes.
       clinicians: [{ name: "Olivia Owner" }],
       // userId (fix wave 2) scopes the Studio's in-memory records to this member.
@@ -133,6 +136,17 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     // nothing secret or identifying beyond what the member's own Studio shows
     const text = JSON.stringify(second.context);
     for (const secret of [clinic.organizationId, clinic.invitationId]) assert.ok(!text.includes(secret));
+    assert.equal(second.context.demoClinic, false, "the clinic's own settings never make it a demo clinic");
+  });
+
+  it("a demo clinic (set by ClinForms staff): the Studio context says so, read from the clinic's plan on the server", async () => {
+    assert.equal((await setClinicDemoFlag({ db: t.db }, "studio-test", true)).changed, true);
+    const demo = await access(jar.headers());
+    assert.equal(demo.kind, "ok");
+    if (demo.kind === "ok") assert.equal(demo.context.demoClinic, true);
+    await setClinicDemoFlag({ db: t.db }, "studio-test", false);
+    const real = await access(jar.headers());
+    assert.equal(real.kind === "ok" && real.context.demoClinic, false);
   });
 
   it("signed out → back to /login (the session is read past the cookie cache)", async () => {

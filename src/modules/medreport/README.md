@@ -443,6 +443,13 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   contact us at …") on POST /drafts, /forms/analyse, the three file-import endpoints, POST /store/files and its
   chunks, a store PUT that CREATES a report or form map, and POST /launch – updates, approvals, renders and reads
   are unchanged. The public demo is never affected. Tests: `scripts/medreport/clinic-trial.test.ts`.
+  **Demo clinics (10/2026, `core/demo-clinic.ts`):** `ClinicProfile.demoClinic` (the host's `clinic_plan.demo_clinic`,
+  set by ClinForms staff only) – POST /render and /forms/fill-preview put the demonstration notice on every page of
+  every output (`demoOutputNotice`: the form's own notice, else the demo clinic notice; `render_final` audit rows carry
+  `demoClinic`), the Studio's preview bar and copied answers carry it (`HostHooks.clinic.demoClinic`), and POST /sign lets a
+  member's made-up PH-DEMO-NN number approve there only – any other clinic gets 403 `DEMO_NUMBER_NOT_ALLOWED` (after
+  every other check; a profile that cannot be read = not a demo clinic). Real clinics and the public demo are unchanged.
+  Tests: `scripts/medreport/demo-clinic.test.ts`.
 - **Usage (25/10/2026, `MedreportDeps.usage`, `api/usage.ts recordUsage`):** clinic members only – never the public
   demo – and never failing or holding up the action (errors logged by kind and error name; the wait is capped at
   `USAGE_WAIT_MS`). Events (`api/deps.ts UsageEvent`, ids/counts/tokens only): `drafting_call` from POST /drafts for

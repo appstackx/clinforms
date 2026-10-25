@@ -217,6 +217,36 @@ drafting limits above. Period = calendar month in UK time.
   platform page, `platform.package_set` / `platform.package_removed` naming the administrator.
 - Needs migration `0007_plan_usage` on the target database (docs/database.md §3). Before it is applied the pages read
   "no package, no usage" and nothing is counted (one warning in the log).
+### Demo clinics (10/2026)
+A **demo clinic** is a clinic account that holds **made-up data only** and otherwise works exactly like a customer's –
+e.g. ClinForms' own test clinic on production, where Khuram signs in, completes forms and approves them like a customer
+would. Switched on and off by **ClinForms staff only** (`clinic_plan.demo_clinic`, migration 0008); a clinic's own
+owners and administrators have no way to change it. In a demo clinic:
+- every page of `/app` and `/app/studio` shows the banner **"Demo clinic – made-up data only"** (the Studio also a
+  "Demo clinic" pill in its sticky header);
+- **every output carries a demonstration notice** ("DEMONSTRATION – made-up data from a demo clinic. Not for clinical
+  use."): the draft preview, the Word / PDF downloads (the referrer's form, its PDF copy, a portal question set's
+  summary, a built-in report) and copied answers (first and last line, and each single answer);
+- members' signing details accept the made-up **`PH-DEMO-NN`** numbers (Sarah Reid PH-DEMO-01 …) and such a member
+  approves with it like any clinician. **Any other clinic refuses them:** the members page keeps its strict HCPC check,
+  and `POST /sign` answers 403 `DEMO_NUMBER_NOT_ALLOWED` (checked after every other check) – so a clinic switched back
+  to real cannot approve with a leftover made-up number; the members page and the Studio say so.
+- **Audit:** `clinic.demo_on` / `clinic.demo_off` under the clinic (by "ClinForms support"; detail: the flag and how many
+  members hold a made-up number), `platform.demo_on` / `platform.demo_off` from the platform page; a demo clinic's
+  `report.sign` rows carry `demoClinic` (and `demoNumber` when a made-up number was used – a registration number is
+  never written), its `report.render_final` rows `demoClinic`, a member's `member.profile_update` row `demoNumber: true`.
+  The activity page shows "Demo clinic – approved with the made-up number PH-DEMO-01" etc.
+- **Platform page:** panel "Demo clinics" (choose a clinic → Make demo clinic / Switch off, with confirmation); the
+  clinics table shows a "Demo clinic" pill.
+- **Script** (production needs `--yes` and Khuram's go; migration 0008 applied there first):
+  ```bash
+  npm run admin:set-demo-clinic -- --env production --slug <clinic id> --on --yes     # --off to switch back
+  npm run admin:set-demo-clinic -- --env production --slug <clinic id> --show         # read only
+  ```
+- Code: `src/modules/medreport/core/demo-clinic.ts` (numbers, notice), `src/server/admin/clinic-plan.ts`
+  (`setDemoClinic`, `isDemoClinic`), `src/lib/hcpc.ts signingNumberFor`; tests `scripts/medreport/demo-clinic.test.ts`,
+  the clinic-plan suite (every database, D1 included), `src/server/admin/before-0008.test.ts` (deploy before the
+  migration: every read sees a real clinic), e2e `scripts/e2e/demo-clinic.cjs`.
 
 ### Load a clinic's own form templates (onboarding, 10/2026)
 For a clinic that sends its referrers' templates (Blue Heart: 19 TM3 letter templates – RTF, one .docx, one .doc), load

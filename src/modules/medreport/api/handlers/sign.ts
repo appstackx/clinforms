@@ -25,6 +25,13 @@ import "server-only";
  * - (fix wave 2) a clinic's member never approves drafted answers that speak in ANOTHER clinician's first
  *   person (report.author ≠ the signer and an unedited drafted answer says "I …"): 409 SIGNER_NOT_AUTHOR with
  *   the questions to edit (core/voice.ts otherClinicianVoice). The demo is unchanged.
+ * - (10/2026) DEMO clinics (core/demo-clinic.ts; ClinicProfile.demoClinic, read on the server): a member whose
+ *   signing details hold a made-up PH-DEMO-NN number approves with it exactly like a real clinician does. In ANY
+ *   OTHER clinic such a number never approves: 403 DEMO_NUMBER_NOT_ALLOWED, checked after every other check so the
+ *   existing refusals read as before (a clinic that was a demo clinic and is real again; the members page already
+ *   refuses to save one there). The audit row of a demo clinic's approval says
+ *   so (demoClinic, and the made-up number when one was used – never a real registration number). The public demo
+ *   (`/reports`, fictional signer from the body) is unchanged.
  *
  * Usage (25/10/2026): a clinic's approval is counted (api/usage.ts recordUsage): the report's first approval, and – when
  * nothing was drafted for it – it counts towards the clinic's allowance now. Approving the same report again, or an
@@ -32,10 +39,21 @@ import "server-only";
  *
  * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
  */
-import { AUDIT_ACTIONS, assertActorEpisode, assertActorTenant, auditActor, macPrefix, memberSigner, requireActor, type Actor } from "../../auth/actor";
+import {
+  AUDIT_ACTIONS,
+  actorInDemoClinic,
+  assertActorEpisode,
+  assertActorTenant,
+  auditActor,
+  macPrefix,
+  memberSigner,
+  requireActor,
+  type Actor,
+} from "../../auth/actor";
 import { formMapSha256 } from "../../auth/attestations";
 import { createReceipt } from "../../auth/sign-receipt";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
+import { isDemoHcpc, normaliseDemoHcpc } from "../../core/demo-clinic";
 import { validateReport } from "../../core/validation";
 import type { Clinician, SignReceipt } from "../../core/types";
 import { otherClinicianVoice } from "../../core/voice";
@@ -145,6 +163,15 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
     });
   }
 
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only – never on a real clinic's form. Checked last, so
+  // every other refusal reads as before. The clinic's flag is the server's (false for the public demo, and when the
+  // clinic's profile cannot be read: fail closed).
+  const demoClinic = actor.via === "demo" ? false : await actorInDemoClinic(deps, actor);
+  if (actor.via !== "demo" && isDemoHcpc(signer.hcpc) && !demoClinic) {
+    logEvent("sign_refused_demo_number", { template: template.id, ms: Date.now() - started });
+    return problem(403, WORDING.demoClinic.numberNotAllowedTitle, { code: "DEMO_NUMBER_NOT_ALLOWED", detail: WORDING.demoClinic.numberNotAllowedDetail });
+  }
+
   const receipt = await createReceipt({
     report,
     signer,
@@ -154,7 +181,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
     approvedVia: approvedVia(actor),
   });
   const body: SignResponse = { receipt, flags: result.flags };
-  logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, ms: Date.now() - started });
+  logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
+  const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;
   await auditActor(deps, actor, {
     action: AUDIT_ACTIONS.sign,
     targetType: "report",
@@ -164,6 +192,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
       receiptMac: macPrefix(receipt.mac),
       contentSha256: receipt.contentSha256.slice(0, 16),
       flags: result.flags.length,
+      // A demo clinic's approval says so; a made-up number is recorded (it identifies nobody), a real one never is.
+      ...(demoClinic ? { demoClinic: true, ...(demoNumber ? { demoNumber } : {}) } : {}),
     },
   });
   await recordUsage(deps, actor, { kind: "report_approved", reportId: report.id, ...(report.amends ? { amendsReportId: report.amends.reportId } : {}) });

@@ -227,6 +227,25 @@ describe("migration parity (SQLite/D1 vs Postgres/Supabase)", () => {
     assert.ok((await postgresConstraints(pglite)).get("audit_log")?.indexes.includes("tenant_id,user_id,id"));
   });
 
+  it("clinic_plan.demo_clinic (0008) is a NOT NULL integer defaulting to 0, limited to 0/1, on both", async () => {
+    const col = (sqlite.prepare('SELECT type, "notnull" AS nn, dflt_value AS d FROM pragma_table_info(?) WHERE name = ?').all("clinic_plan", "demo_clinic") as Row[])[0];
+    assert.deepEqual({ type: col?.type, nn: Number(col?.nn), d: String(col?.d) }, { type: "INTEGER", nn: 1, d: "0" });
+    const pgCol = await pglite.query<Row>(
+      "select data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = 'clinic_plan' and column_name = 'demo_clinic'",
+    );
+    assert.deepEqual(pgCol.rows, [{ data_type: "integer", is_nullable: "NO", column_default: "0" }]);
+    // A row written without the column (a trial, limits – every row before 0008) is a real clinic; 0/1 only, on both.
+    const insert = "INSERT INTO clinic_plan (tenant_id, status, created_at, updated_at) VALUES ('zz-demo-check', 'standard', '2026-10-25T00:00:00.000Z', '2026-10-25T00:00:00.000Z')";
+    sqlite.exec(insert);
+    assert.equal((sqlite.prepare("SELECT demo_clinic AS d FROM clinic_plan WHERE tenant_id = 'zz-demo-check'").all() as Row[])[0]?.d, 0);
+    assert.throws(() => sqlite.exec("UPDATE clinic_plan SET demo_clinic = 2 WHERE tenant_id = 'zz-demo-check'"), /CHECK/i);
+    sqlite.exec("DELETE FROM clinic_plan WHERE tenant_id = 'zz-demo-check'");
+    await pglite.query(insert);
+    assert.equal((await pglite.query<Row>("select demo_clinic as d from public.clinic_plan where tenant_id = 'zz-demo-check'")).rows[0]?.d, 0);
+    await assert.rejects(pglite.query("update public.clinic_plan set demo_clinic = 2 where tenant_id = 'zz-demo-check'"), /check/i);
+    await pglite.query("delete from public.clinic_plan where tenant_id = 'zz-demo-check'");
+  });
+
   it("only a file holding one lone ADD COLUMN statement is exempt from re-running cleanly", () => {
     assert.equal(isLoneAddColumn("-- why\nALTER TABLE access_requests ADD COLUMN contacted_at TEXT;\n"), true);
     assert.equal(isLoneAddColumn("ALTER TABLE t ADD c TEXT"), true);

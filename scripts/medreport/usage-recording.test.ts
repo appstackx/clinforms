@@ -44,7 +44,7 @@ const A = "usage-clinic-a";
 const CLIN: AuthContext = member(A, {
   role: "clinician",
   name: "Sam Ward (fictional)",
-  clinician: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05", jobTitle: "Physiotherapist", canSign: true },
+  clinician: { name: "Sam Ward (fictional)", hcpc: "ZZ0005", jobTitle: "Physiotherapist", canSign: true },
 });
 const PROFILE: ClinicProfile = { tenantId: A, displayName: "Usage Clinic (fictional)", addressLines: [], retentionDays: 365, draftingEnabled: true };
 const FORM: FormDefinition = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Practice manager", "2026-10-01T09:00:00.000Z");
@@ -115,7 +115,7 @@ const draftBody = (extra: Record<string, unknown> = {}) => ({
 
 const signBody = (report: Report) => ({
   report,
-  signer: { name: "Sam Ward (fictional)", hcpc: "PH-DEMO-05" },
+  signer: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" },
   typedSignature: "Sam Ward (fictional)",
   statementAccepted: true,
   attestations: [...FORM_ATTESTATIONS],
