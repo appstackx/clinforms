@@ -18,6 +18,7 @@ import {
   addClinicianParagraph,
   editParagraph,
   markApproved,
+  markNotApplicable,
   nameCliniciansInstead,
   overrideRecordValue,
   recordConsent,
@@ -59,7 +60,9 @@ export type ReviewAction =
   | { type: "nameClinicians"; flags: ReportFlag[]; actor: string }
   /** Change a value from the clinic's details for this report only (fix round 1, B0-4). */
   | { type: "overrideRecord"; key: string; actor: string }
-  | { type: "removeAbsence"; key: string; actor: string };
+  | { type: "removeAbsence"; key: string; actor: string }
+  /** Mark a question whose own condition does not hold as not applicable, or take the mark off (fix round 2, B1-5). */
+  | { type: "markNotApplicable"; key: string; on: boolean; actor: string };
 
 function locked(report: Report): boolean {
   return report.status === "signed";
@@ -70,12 +73,13 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   if (next === report || locked(report)) return next;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
   const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
+  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft –
+  // first, so an answer given to a question that applies again settles its reopened gaps below (fix round 2).
+  if (action.type === "setAnswer" || action.type === "applyDraft" || action.type === "markNotApplicable") next = settleConditionalGaps(next, actor || "System");
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
   if (key && actor && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
     next = settleGapsByAnswer(report, next, key, actor);
   }
-  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft.
-  if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || "System");
   return next;
 }
 
@@ -94,6 +98,8 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       return overrideRecordValue(report, action.key, action.actor);
     case "removeAbsence":
       return removeAbsenceSentences(report, action.key, action.actor);
+    case "markNotApplicable":
+      return markNotApplicable(report, action.key, action.on, action.actor);
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":

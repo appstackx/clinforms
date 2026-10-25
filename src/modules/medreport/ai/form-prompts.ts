@@ -21,7 +21,7 @@ import { answerableFields, reportKindOf, scopeForDraftCall } from "../core/forms
 import { formatUkDate } from "../core/dates";
 import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../core/labels";
 import { applyScope, initialAssessmentView, scopeExcludeTerms } from "../core/scope";
-import { conditionText } from "../core/conditions";
+import { conditionText, factCondition } from "../core/conditions";
 import { compactPlace } from "../core/validation/draft-fit";
 import type {
   Clinician,
@@ -35,7 +35,7 @@ import type {
 import { sameClinician } from "../core/voice";
 import { GLOSSARY_ABBREVIATIONS, buildEpisodeBlock, neutraliseTags, type PromptParts } from "./prompts";
 
-export const FORM_DRAFT_PROMPT_VERSION = "forms-8" as const;
+export const FORM_DRAFT_PROMPT_VERSION = "forms-9" as const;
 
 export const FORM_DRAFT_SYSTEM_PROMPT = `You complete a referrer's own report form for a UK physiotherapy clinic. A medico-legal company, insurer, solicitor, case manager or employer has sent the clinic its form, and you draft answers to some of its questions from the clinic's own records. Your answers are written into the referrer's form in its original layout. The treating physiotherapist checks every answer against the record, edits it, adds their own opinion where needed and approves the form. Your job is to answer accurately from the record, with citations – never to add to it.
 
@@ -104,6 +104,9 @@ function renderQuestion(field: FormField, fields?: readonly FormField[]): string
   }
   const condition = fields ? conditionText(fields, field.id) : null;
   if (condition) lines.push(`Condition: answer it only if ${condition}; otherwise leave it empty with no gap.`);
+  // Fix round 2 (B1-5): a yes/no carrying its own condition is the clinician's to answer (ai/assemble.ts holds it back).
+  const facts = field.answerType === "yes_no" ? factCondition(field.label) : null;
+  if (facts) lines.push(`Condition: it applies only if ${formText(facts)}. The clinician chooses its answer: set answer to "" and give one short paragraph citing what the notes record about whether that is so – no gap.`);
   lines.push("</question>");
   return lines.join("\n");
 }

@@ -14,6 +14,7 @@ import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, recordSourceOf, signoffValuesFromReceipt } from "../../../core/forms";
+import { factCondition } from "../../../core/conditions";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { nameClinicianInstead } from "../../../core/voice";
@@ -541,7 +542,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
         {SIGNOFF_PART_LABELS[part]} – completed from the approval receipt when a clinician approves the form. Blank on the draft.
       </p>
     );
-  } else if (section.status === "pending" && !answered && !readOnly) {
+  } else if (section.status === "pending" && !answered && !readOnly && !notApplicableBecause) {
     // (Once approved, a question never drafted reads "Left blank on the form." below, not "Not drafted yet.")
     body = (
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
@@ -593,6 +594,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
     const raw = section.answer?.value ?? null;
     const value = Array.isArray(raw) ? null : raw;
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
+    const facts = structuredKind === "yes_no" && !isRecords ? factCondition(q.label) : null;
     const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (
       <div className="space-y-3">
@@ -612,6 +614,24 @@ function QuestionCardImpl(props: QuestionCardProps) {
               <ChoiceEditor q={q} value={value} readOnly={readOnly} onChange={(v) => dispatch({ type: "setAnswer", key: q.key, value: v, actor })} />
             ) : (
               <TypedValueEditor q={q} value={value} readOnly={readOnly} onChange={(v) => dispatch({ type: "setAnswer", key: q.key, value: v, actor })} />
+            )}
+            {facts && !readOnly && (
+              // Fix round 2 (B1-5): a yes/no that carries its own condition is the clinician's to answer – or to mark
+              // not applicable when the condition does not hold (audited; nothing is printed).
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-slate-600">
+                <span className="min-w-0 flex-1 basis-64">It applies only if {facts}.</span>
+                {section.markedNotApplicable ? (
+                  <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => dispatch({ type: "markNotApplicable", key: q.key, on: false, actor })}>
+                    Answer it instead
+                  </Button>
+                ) : (
+                  value === null && (
+                    <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => dispatch({ type: "markNotApplicable", key: q.key, on: true, actor })}>
+                      Not applicable – the condition does not hold
+                    </Button>
+                  )
+                )}
+              </div>
             )}
             {proposedBy && (
               <div className="flex items-center gap-1.5">

@@ -288,9 +288,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report.sections));
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report));
     return map;
-  }, [questions, flagsBySection, report.gaps, report.sections, personAnswered, signed]);
+  }, [questions, flagsBySection, report, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
@@ -725,7 +725,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   canAcknowledge={canAck}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
-                  notApplicableBecause={notApplicable(report.sections, q.key)?.because ?? null}
+                  notApplicableBecause={personAnswered.has(q.key) ? null : (notApplicable(report, q.key)?.because ?? null)}
                   onDraft={
                     draftingUnavailable
                       ? undefined

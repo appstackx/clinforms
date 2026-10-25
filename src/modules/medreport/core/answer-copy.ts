@@ -12,17 +12,20 @@
  * - sign-off answers from the approval receipt (blank before approval: "[completed on approval]");
  * - questions nobody has answered: "[to complete]" ("[left blank]" once approved: only an optional
  *   question can be approved blank); questions left for the referrer's use are skipped.
+ * - a question that does not apply ("If yes, please detail" after a "No"): "[not applicable]" – the forms engine prints
+ *   nothing there, by the same rule (core/forms.ts suppressedAsNotApplicable, fix round 2, B1-1), so every answer copied
+ *   is an answer printed, and the other way round.
  * - before approval every copy is marked "Draft – not yet approved"; after approval the approved text
  *   is copied, with who approved it and when.
  *
  * Pure: no React, no Node built-ins, no env. Safe in the browser and on the server.
  */
 import { formatUkDate, isValidIsoDate, todayIso } from "./dates";
-import { answerToText, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "./forms";
+import { answerToText, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt, suppressedAsNotApplicable } from "./forms";
 import { WORDING } from "./wording";
 import type { FormDefinition, FormField, Report, ReportSection, SignReceipt } from "./types";
 
-export type CopyEntryStatus = "answered" | "to_complete" | "on_approval";
+export type CopyEntryStatus = "answered" | "to_complete" | "on_approval" | "not_applicable";
 
 export interface CopyEntry {
   /** Section key / form field ID ("F-07"). */
@@ -113,6 +116,7 @@ export function questionLead(question: string): string {
 /** The text shown for a question without an answer. */
 export function missingAnswerText(status: CopyEntryStatus, approved: boolean): string {
   const w = WORDING.answersCopy;
+  if (status === "not_applicable") return w.notApplicable;
   return status === "on_approval" ? w.onApproval : approved ? w.leftBlank : w.toComplete;
 }
 
@@ -130,7 +134,7 @@ export function copyTextForAnswer(answer: string, approved: boolean): string {
 
 /** The copy entries of a report: its form's questions in order (sign-off included, referrer's-use boxes skipped). */
 export function copyEntries(
-  report: Pick<Report, "sections" | "receipt" | "status">,
+  report: Pick<Report, "sections" | "receipt" | "status"> & Partial<Pick<Report, "flags" | "activity" | "bundleSnapshot">>,
   form: { fields: readonly CopyField[] } | null,
 ): CopyEntry[] {
   const receipt = report.status === "signed" ? report.receipt ?? null : null;
@@ -141,7 +145,9 @@ export function copyEntries(
       if (field.fillSource.kind === "leave_blank") continue;
       const section = sections.get(field.id) ?? null;
       if (!section && field.fillSource.kind !== "signoff") continue;
-      const answer = copyAnswerValue(field, section, receipt);
+      // Fix round 2 (B1-1): nothing printed there, nothing copied – the same rule as the forms engine.
+      const inapplicable = section !== null && field.fillSource.kind !== "signoff" && suppressedAsNotApplicable(report, field.id) !== null;
+      const answer = inapplicable ? null : copyAnswerValue(field, section, receipt);
       const fieldNumber = /^F-(\d+)$/.exec(field.id);
       out.push({
         key: field.id,
@@ -149,7 +155,7 @@ export function copyEntries(
         question: field.label.trim(),
         ...(field.section?.trim() ? { section: field.section.trim() } : {}),
         answer,
-        status: answer !== null ? "answered" : field.fillSource.kind === "signoff" ? "on_approval" : "to_complete",
+        status: inapplicable ? "not_applicable" : answer !== null ? "answered" : field.fillSource.kind === "signoff" ? "on_approval" : "to_complete",
         ...(field.fillSource.kind === "signoff" ? { signoff: true } : {}),
       });
     }
@@ -173,7 +179,7 @@ export function copyEntries(
 
 /** Everything "Copy all answers" copies, with its header (title, patient, approval or draft marker). */
 export function buildAnswersCopy(input: {
-  report: Pick<Report, "sections" | "receipt" | "status" | "patientLabel" | "form" | "instructingParty">;
+  report: Pick<Report, "sections" | "receipt" | "status" | "patientLabel" | "form" | "instructingParty"> & Partial<Pick<Report, "flags" | "activity" | "bundleSnapshot">>;
   form: { fields: readonly CopyField[]; title?: string; referrer?: { name: string } } | null;
   /** Title when there is no form ref (built-in report): its template name. */
   title?: string;

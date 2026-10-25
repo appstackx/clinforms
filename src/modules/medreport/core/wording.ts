@@ -385,6 +385,8 @@ export interface AnswersCopyWording {
   leftBlank: string;
   /** Shown for a sign-off answer before approval. */
   onApproval: string;
+  /** Shown for a question that does not apply (nothing is printed there – fix round 2). */
+  notApplicable: string;
   panelTitle: string;
   panelTitlePortal: string;
   panelIntro: string;
@@ -430,6 +432,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   toComplete: "[to complete]",
   leftBlank: "[left blank]",
   onApproval: "[completed on approval]",
+  notApplicable: "[not applicable]",
   panelTitle: "Copy answers",
   panelTitlePortal: "Answers for the portal",
   panelIntro: "Copy an answer, or all of them, as plain text – for a portal, an e-mail or a letter. Dates are DD/MM/YYYY and ticks are written as the option chosen.",

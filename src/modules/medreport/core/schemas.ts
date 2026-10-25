@@ -107,6 +107,8 @@ export const ReportFlagCodeSchema = z.enum([
   "DATA_CHECK",
   /** Additive (fix round 1): a warning – drafted wording that does not fit its place on the form (validation/draft-fit.ts). */
   "DRAFT_FIT",
+  /** Additive (fix round 2, B1-1): a person's answer in a box that does not apply (validation/conditions.ts). */
+  "NOT_APPLICABLE_ANSWERED",
 ]);
 export const DataCheckCodeSchema = z.enum([
   "NO_PRE_INCIDENT_HISTORY",
@@ -625,6 +627,17 @@ export const ReportSectionSchema = z.object({
    * and the form gets nothing there (the clinic system's merge code is removed).
    */
   blankFromRecords: z.boolean().optional(),
+  /**
+   * Additive (fix round 2, B1-9): the printed condition this question carries outside its own label – the heading it
+   * sits under ("If employee is not on full duties, please list…") or its map guidance ("Only when the lifting
+   * restriction is kept…") – copied from the form map when the report is created (core/conditions.ts).
+   */
+  condition: z.string().max(400).optional(),
+  /**
+   * Additive (fix round 2, B1-5): a person marked this question not applicable – its own condition ("If the client was
+   * off work at the time of the assessment, …") does not hold. Nothing is printed; answering it clears the mark.
+   */
+  markedNotApplicable: z.object({ by: z.string().min(1), at: IsoDateTimeSchema }).optional(),
 });
 
 export const GapResolutionSchema = z.object({

@@ -28,7 +28,7 @@ export function buildQuestionSummaryViewModel(
 ): ReportViewModel {
   const vm = buildViewModel(report, report.bundleSnapshot, template, { receipt: opts.receipt, now: opts.now });
   const kinds = new Map(report.sections.map((s) => [s.key, s.kind]));
-  const entries = copyEntries({ sections: report.sections, status: opts.receipt ? "signed" : "draft", receipt: opts.receipt }, form);
+  const entries = copyEntries({ sections: report.sections, status: opts.receipt ? "signed" : "draft", receipt: opts.receipt, flags: report.flags, activity: report.activity, bundleSnapshot: report.bundleSnapshot }, form);
   const sections: ReportViewSection[] = entries.map((e) => {
     const number = String(e.number);
     const paragraphs = e.answer

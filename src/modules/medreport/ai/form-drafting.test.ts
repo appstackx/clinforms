@@ -444,3 +444,35 @@ test("fix round 1 (B0-5, B0-7, B0-16, B0-23): compact places, conditions, number
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /never as "my note" or "your note"/);
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /"The notes are written by…", "so I can only describe…"/);
 });
+
+test("fix round 2 (B1-5): a yes/no carrying its own condition on the facts is never drafted – the clinician answers it or marks it not applicable", async () => {
+  const { buildFormBlock } = await import("./form-prompts");
+  const label = "a. If the client was working prior to the accident but was off work at the time of the assessment, is the client at work now?";
+  const form: FormDefinition = { ...FORM, fields: [...FORM.fields, field(7, label, { answerType: "yes_no", fillSource: { kind: "notes_narrative" } })] };
+  const bundle = testBundle();
+  const res = assembleDraft({
+    template: formToTemplate(form),
+    bundle,
+    instructingParty: bundle.referral,
+    sectionKeys: ["F-07"],
+    computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }),
+    output: {
+      sections: [{ sectionKey: "F-07", answer: "No", paragraphs: [{ text: "On 18/03/2026 [CLAIMANT] told Sarah Reid he had been off work since 13/03/2026.", sourceIds: ["N-001"], basis: "patient_reported" }] }],
+      gaps: [],
+    },
+    meta: { ...META, sectionKeys: ["F-07"] },
+    form,
+    idSeed: "t1",
+  });
+  const s = res.sections[0];
+  assert.deepEqual(s.answer, { kind: "yes_no", value: null }, "the drafted “No” is not entered");
+  assert.equal(s.paragraphs.length, 1, "its cited supporting text stays as context");
+  const gap = res.gaps.find((g) => g.id === "gap-F-07-t1-condition");
+  assert.equal(
+    gap?.issue,
+    "This question applies only if the client was working prior to the accident but was off work at the time of the assessment. The suggested answer (“No”) has not been entered. Choose Yes or No – or mark it not applicable if that is not so.",
+  );
+  assert.deepEqual(gap?.relatedNoteIds, ["N-001"]);
+  // The drafting call is told the same: supporting text only, no answer and no gap.
+  assert.match(buildFormBlock(form, formToTemplate(form)), /Condition: it applies only if the client was working prior to the accident but was off work at the time of the assessment\. The clinician chooses its answer: set answer to "" and give one short paragraph/);
+});

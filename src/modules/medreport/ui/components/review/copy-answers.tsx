@@ -146,7 +146,7 @@ export function CopyAnswersPanel({
   const w = WORDING.answersCopy;
   // The questions to answer – the same count as the progress summary: sign-off answers (completed from the
   // approval) are not among them, before or after approval.
-  const questions = copy.entries.filter((e) => !e.signoff && e.status !== "on_approval");
+  const questions = copy.entries.filter((e) => !e.signoff && e.status !== "on_approval" && e.status !== "not_applicable");
   const answered = questions.filter((e) => e.answer !== null).length;
   const toAnswer = questions.length;
   const notice = `${copy.approved ? w.approvedNotice : w.draftNotice}${

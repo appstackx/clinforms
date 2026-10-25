@@ -22,6 +22,7 @@ import "server-only";
  */
 import { DraftsResponseSchema, type DraftsResponse } from "../api/contract";
 import { otherInsurerOnForm, withoutOtherInsurerName } from "../core/form-record-rules";
+import { factCondition } from "../core/conditions";
 import { answerKindFor, parseFormAnswerValue, primaryTreatingClinician } from "../core/forms";
 import { isNoteId } from "../core/ids";
 import { createFormReport, createReport } from "../core/report-factory";
@@ -223,8 +224,21 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
       // A tick or choice the draft itself raised a gap about is one the record does not state: the
       // clinician picks it, never code ("Goals achieved" ticked, then "the clinician should confirm").
       const unconfirmed = raw !== "" && sectionGaps.length > 0;
-      answer = parseFormAnswerValue(field, unconfirmed ? "" : raw);
-      if (unconfirmed) {
+      // Fix round 2 (B1-5): a yes/no that carries its own condition on the facts ("a. If the client was … off work at the
+      // time of the assessment, is the client at work now?") is the clinician's: its Yes/No is never drafted – they answer
+      // it, or mark it not applicable when the condition does not hold. The cited paragraphs stay as context.
+      const facts = field.answerType === "yes_no" ? factCondition(field.label) : null;
+      answer = parseFormAnswerValue(field, unconfirmed || facts ? "" : raw);
+      if (facts) {
+        sectionGaps.unshift({
+          id: `gap-${key}-${seed}-condition`,
+          sectionKey: key,
+          issue: `This question applies only if ${readable(facts, false)}.${raw ? ` The suggested answer (“${readable(raw).slice(0, 40)}”) has not been entered.` : ""} Choose Yes or No – or mark it not applicable if that is not so.`,
+          suggestedQuestion: `Does “${label}” apply to this patient, and if so, what is the answer?`,
+          relatedNoteIds: Array.from(new Set(paragraphs.flatMap((p) => p.sourceIds).filter((x) => isNoteId(x)))),
+          raisedBy: "system",
+        });
+      } else if (unconfirmed) {
         paragraphs.length = 0;
         sectionGaps[0] = {
           ...sectionGaps[0],

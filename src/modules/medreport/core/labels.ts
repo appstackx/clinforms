@@ -217,6 +217,7 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   OPEN_GAP: "Open gap",
   DATA_CHECK: "Data check",
   DRAFT_FIT: "Check where it goes on the form",
+  NOT_APPLICABLE_ANSWERED: "Answered, but the box does not apply",
 };
 
 export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {

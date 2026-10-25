@@ -11,7 +11,8 @@
  * form-answers.ts for drafted date/number answers on a referrer's form), TERM_NOT_IN_SOURCE (terms.ts),
  * OPINION_LANGUAGE (opinion-language.ts), OTHER_CLINICIAN_VOICE (voice.ts: another clinician's note in the signer's
  * first person – fix round 1), DRAFT_FIT (draft-fit.ts: warnings – drafted wording that does not fit its place on the
- * form, fix round 1), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
+ * form, fix round 1), NOT_APPLICABLE_ANSWERED (conditions.ts: a person's answer in a box that does not apply – fix
+ * round 2), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
  * MISSING_PLACEHOLDER (placeholders.ts; merge-fields.ts for mail-merge fields left in an answer or on the
  * referrer's form – 10/2026, pass `form` to validateReport; choice-marks.ts for a marked cell or a kept printed option
  * that matches no printed option – 10/2026), DATA_CHECK (data-checks.ts, by the integration agent).
@@ -50,6 +51,7 @@ import { validateScopeTerms } from "./scope-terms";
 import { validateTerms } from "./terms";
 import { validateClinicianVoice } from "./voice";
 import { validateDraftFit } from "./draft-fit";
+import { validateConditions } from "./conditions";
 
 export interface ValidatorInput {
   report: Report;
@@ -84,6 +86,7 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "merge-fields", run: validateMergeFields },
   { name: "gaps", run: validateGaps },
   { name: "draft-fit", run: validateDraftFit },
+  { name: "conditions", run: validateConditions },
 ];
 
 const CODE_ORDER: Record<ReportFlagCode, number> = {
@@ -98,6 +101,7 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
   OPEN_GAP: 8,
   DATA_CHECK: 9,
   DRAFT_FIT: 10,
+  NOT_APPLICABLE_ANSWERED: 11,
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -109,6 +113,8 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
  * - warnings: yes;
  * - FIGURE_NOT_IN_SOURCE (dates): yes – the signer confirms the date from their own knowledge;
  * - TERM_NOT_IN_SOURCE: yes – the signer confirms the wording is right;
+ * - NOT_APPLICABLE_ANSWERED: on a person's answer, yes – the signer wants it printed although the box does not apply;
+ *   on a drafted answer whose supporting text says its condition does not hold, no;
  * - OPINION_LANGUAGE and OTHER_CLINICIAN_VOICE: only on "edited" text (the clinician's own words); never on AI text;
  * - UNCITED_PARAGRAPH, SCOPE_TERM, MISSING_PLACEHOLDER, blocking DATA_CHECK: no – fix the text or the record;
  * - OPEN_GAP: no – resolve or acknowledge the gap itself.
@@ -119,6 +125,9 @@ export function canAcknowledge(flag: ReportFlag, report?: Pick<Report, "sections
     case "FIGURE_NOT_IN_SOURCE":
     case "TERM_NOT_IN_SOURCE":
       return true;
+    case "NOT_APPLICABLE_ANSWERED":
+      // A person's answer in a box that does not apply – not a drafted answer whose own text says it does not hold.
+      return flag.evidence === "not applicable";
     case "OPINION_LANGUAGE":
     case "OTHER_CLINICIAN_VOICE": {
       if (!report || !flag.paragraphId) return false;
@@ -179,10 +188,12 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
     }
   }
   // Fix round 1 (B0-7): a conditional question that does not apply ("IF YES, PLEASE DETAIL" after a "No") is not asked:
-  // nothing of it is printed, so none of its checks blocks (its gaps are settled as not applicable by the review).
-  const inapplicable = new Set((input.report.sections ?? []).filter((s) => notApplicable(input.report.sections, s.key)).map((s) => s.key));
+  // nothing of it is printed, so none of its checks blocks (its gaps are settled as not applicable by the review). Fix
+  // round 2 (B1-1): except the check that a person's own answer sits in it (validation/conditions.ts).
+  const inapplicable = new Set((input.report.sections ?? []).filter((s) => notApplicable(input.report, s.key)).map((s) => s.key));
   if (inapplicable.size > 0) {
-    for (let i = flags.length - 1; i >= 0; i--) if (flags[i].sectionKey && inapplicable.has(flags[i].sectionKey as string) && flags[i].code !== "OPEN_GAP") flags.splice(i, 1);
+    const kept = (f: ReportFlag) => f.code === "OPEN_GAP" || f.code === "NOT_APPLICABLE_ANSWERED";
+    for (let i = flags.length - 1; i >= 0; i--) if (flags[i].sectionKey && inapplicable.has(flags[i].sectionKey as string) && !kept(flags[i])) flags.splice(i, 1);
   }
   try {
     flags.push(...dataCheckFlags(runDataChecks(input.bundle)));

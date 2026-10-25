@@ -24,6 +24,7 @@ import {
   type ResolvedFormValue,
 } from "./forms";
 import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
+import { conditionTextOf, notApplicable } from "./conditions";
 import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
@@ -152,7 +153,8 @@ export function createReport(input: CreateReportInput): Report {
  * ~20 s – so every call stays well inside the route's time limit.
  */
 export function planDraftGroups(report: Report, template: ReportTemplate): string[][] {
-  const present = new Set(report.sections.map((s) => s.key));
+  // Fix round 2 (B1-11): a numbered session the record does not have is not drafted (no gap, nothing printed).
+  const present = new Set(report.sections.filter((s) => !isFormReport(report) || !notApplicable(report, s.key)).map((s) => s.key));
   const specs = template.sections.filter((s) => isDraftableKind(s.kind) && present.has(s.key));
   const keys = specs.map((s) => s.key);
   if (isFormReport(report)) {
@@ -277,12 +279,18 @@ export function createFormReport(input: CreateFormReportInput): Report {
   for (const field of answerableFields(form)) {
     const kind = sectionKindForFillSource(field.fillSource);
     if (!kind) continue;
-    const base: Pick<ReportSection, "key" | "title" | "kind" | "fieldId"> = {
+    // Fix round 2 (B1-9): the printed condition it carries outside its label (its heading or guidance).
+    const condition = conditionTextOf(field, form.fields);
+    const base: Pick<ReportSection, "key" | "title" | "kind" | "fieldId" | "condition"> = {
       key: field.id,
       title: field.label,
       kind,
       fieldId: field.id,
+      ...(condition ? { condition } : {}),
     };
+    // Fix round 2 (B1-11): a numbered session the record does not have ("Session date 7" after 5 attended) – nothing to
+    // ask anyone (no gap), nothing printed; not drafted (planDraftGroups).
+    const noSuchSession = notApplicable({ sections: [{ ...base }], bundleSnapshot: bundle }, field.id) !== null;
     const structured = answerKindFor(field.answerType) !== "text";
     const src = field.fillSource;
 
@@ -337,12 +345,14 @@ export function createFormReport(input: CreateFormReportInput): Report {
           ...(answer && { answer }),
         });
       } else {
-        sections.push({ ...base, status: "needs_input", paragraphs: [], ...(answer && { answer }) });
-        gaps.push(
-          src.kind === "fixed"
-            ? fixedValueGap(field, src.value)
-            : missingValueGap(field, src.kind === "registration" ? src.path : src.factId, resolved?.text),
-        );
+        sections.push({ ...base, status: noSuchSession ? "complete" : "needs_input", paragraphs: [], ...(answer && { answer }) });
+        if (!noSuchSession) {
+          gaps.push(
+            src.kind === "fixed"
+              ? fixedValueGap(field, src.value)
+              : missingValueGap(field, src.kind === "registration" ? src.path : src.factId, resolved?.text),
+          );
+        }
       }
       continue;
     }
@@ -353,10 +363,10 @@ export function createFormReport(input: CreateFormReportInput): Report {
       continue;
     }
 
-    // notes_narrative / clinician_opinion → drafted by POST /drafts.
+    // notes_narrative / clinician_opinion → drafted by POST /drafts (a session the record does not have: never).
     sections.push({
       ...base,
-      status: "pending",
+      status: noSuchSession ? "complete" : "pending",
       paragraphs: [],
       ...(structured && { answer: { kind: answerKindFor(field.answerType), value: null } }),
     });

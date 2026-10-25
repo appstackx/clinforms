@@ -1112,6 +1112,38 @@ export function printsDefault(placeholder: string | undefined): boolean {
   return Boolean(placeholder) && /[A-Za-z0-9]/.test(placeholder as string) && !/<<|>>|[«»]/.test(placeholder as string);
 }
 
+/** Fix round 2 (B1-1): the flag code a person's answer in a box that does not apply raises (validation/conditions.ts). */
+export const NOT_APPLICABLE_ANSWERED = "NOT_APPLICABLE_ANSWERED" as const;
+
+/**
+ * Whether a person (not drafting) answered this question: a paragraph they wrote or edited, or a structured answer they
+ * set themselves (an "answer_set" activity entry for it).
+ */
+export function answeredByPersonIn(report: Partial<Pick<Report, "sections" | "activity">>, key: string): boolean {
+  const section = report.sections?.find((s) => s.key === key);
+  if (!section) return false;
+  if (section.paragraphs.some((p) => (p.origin === "clinician" || p.origin === "edited") && p.text.trim() !== "")) return true;
+  const structured = section.answer && section.answer.kind !== "text" && section.answer.value !== null && section.answer.value !== "";
+  return Boolean(structured && (report.activity ?? []).some((a) => a.action === "answer_set" && a.detail.startsWith(`${key}:`)));
+}
+
+/**
+ * Fix round 2 (B1-1): the one rule for a question that does not apply (core/conditions.ts notApplicable), shared by the
+ * forms engine (buildFormAnswers) and "Copy answers": it prints nothing – whatever drafting put there – unless a person
+ * answered it and acknowledged its "does not apply" check (they want their answer on the form after all). Returns the
+ * condition when nothing is printed, else null. Approval stays blocked while a person's answer sits in such a box
+ * unacknowledged, so the issued form never differs from the approved answers.
+ */
+export function suppressedAsNotApplicable(
+  report: Pick<Report, "sections"> & Partial<Pick<Report, "flags" | "activity" | "bundleSnapshot">>,
+  key: string,
+): ReturnType<typeof notApplicable> {
+  const condition = notApplicable(report, key);
+  if (!condition) return null;
+  const kept = answeredByPersonIn(report, key) && (report.flags ?? []).some((f) => f.code === NOT_APPLICABLE_ANSWERED && f.sectionKey === key && Boolean(f.acknowledged));
+  return kept ? null : condition;
+}
+
 /**
  * The answers to write into the referrer's original file. Signoff fields are filled only when a
  * (verified) receipt is passed – on a DRAFT they stay blank. Unanswered fields map to {} (left as printed) – or, fix
@@ -1119,7 +1151,7 @@ export function printsDefault(placeholder: string | undefined): boolean {
  * passed, or the report is signed): then no printed default reads as an answer.
  */
 export function buildFormAnswers(
-  report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status">>,
+  report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status" | "activity" | "bundleSnapshot">>,
   form: Pick<FormDefinition, "fields">,
   opts: { receipt?: Pick<SignReceipt, "signer" | "signedAt"> | null } = {},
 ): FormFillAnswers {
@@ -1133,8 +1165,9 @@ export function buildFormAnswers(
     }
     const section = report.sections.find((s) => s.key === field.id);
     const blankByDesign = isBlankByDesign(section, field);
-    // Fix round 1 (B0-7): a conditional question that does not apply prints nothing, whatever it holds.
-    if (section && notApplicable(report.sections, field.id)) {
+    // Fix round 1 (B0-7): a conditional question that does not apply prints nothing, whatever drafting put there (fix
+    // round 2, B1-1: a person's own answer only once they acknowledged that the box does not apply).
+    if (section && suppressedAsNotApplicable(report, field.id)) {
       answers[field.id] = { leftBlank: true };
       continue;
     }

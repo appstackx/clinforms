@@ -8,7 +8,7 @@
  * Owner: studio-b agent.
  */
 import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
-import { conditionOf, notApplicable } from "../../../core/conditions";
+import { notApplicable } from "../../../core/conditions";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
@@ -221,14 +221,15 @@ export function questionStatus(
   byPerson = false,
   /** The report is approved (read-only). */
   approved = false,
-  /** The report's sections, for conditional questions (fix round 1, B0-7). */
-  conditionSections?: readonly ReportSection[],
+  /** The report (or its sections), for conditional questions (fix round 1, B0-7; fix round 2: numbered sessions). */
+  conditionSections?: readonly ReportSection[] | Pick<Report, "sections" | "bundleSnapshot">,
 ): QuestionStatus {
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
-  // Fix round 1 (B0-7): not asked – the answer before it says it does not apply.
-  if (conditionSections && notApplicable(conditionSections, section.key)) return approved ? "left_blank" : "blank";
+  // Fix round 1 (B0-7): not asked – the answer before it says it does not apply (fix round 2, B1-1: unless a person
+  // answered it – then its own check says so, and it is printed once that is acknowledged).
+  if (conditionSections && !byPerson && notApplicable(conditionSections, section.key)) return approved ? "left_blank" : "blank";
   // Fix round 1 (B0-22): counted as left blank (as "Copy answers" says), not as filled from the records.
   if (isBlankByDesign(section, q.field) && !section.paragraphs.some((p) => p.text.trim() !== "")) return "record_empty";
   const answered = isSectionAnswered(section);
@@ -616,11 +617,41 @@ export function setStructuredAnswer(
   const before = section.answer.value;
   if (before === value) return report;
   const kind = section.answer.kind;
-  const sections = mapSection(report, key, (s) => ({ ...s, answer: { kind, value } }));
+  const sections = mapSection(report, key, (s) => {
+    const next: ReportSection = { ...s, answer: { kind, value } };
+    // Fix round 2 (B1-5): an answer given replaces a "not applicable" mark.
+    if (value !== null) delete next.markedNotApplicable;
+    return next;
+  });
   return appendActivity(touch(report, sections, now), {
     actor,
     action: "answer_set",
     detail: `${key}: answer to “${section.title}” set to ${answerDisplay(value, kind)} (was ${answerDisplay(before, kind)}).`,
+  }, now);
+}
+
+/**
+ * Fix round 2 (B1-5): mark a question whose own condition does not hold ("a. If the client was … off work at the time of
+ * the assessment, is the client at work now?" for a client who was not off work) as not applicable – or take the mark
+ * off again. Marked, its answer is cleared, nothing is printed and its gaps are settled as not applicable
+ * (settleConditionalGaps); the activity log says who decided it.
+ */
+export function markNotApplicable(report: Report, key: string, on: boolean, actor: string, now?: Date): Report {
+  const section = report.sections.find((s) => s.key === key);
+  if (!section || Boolean(section.markedNotApplicable) === on || !actor.trim()) return report;
+  const at = nowIso(now);
+  const sections = mapSection(report, key, (s) => {
+    const next: ReportSection = { ...s };
+    if (on) {
+      next.markedNotApplicable = { by: actor, at };
+      if (next.answer && next.answer.kind !== "text" && next.answer.kind !== "rows") next.answer = { kind: next.answer.kind, value: null };
+    } else delete next.markedNotApplicable;
+    return next;
+  });
+  return appendActivity(touch(report, sections, now), {
+    actor,
+    action: "edited",
+    detail: on ? `${key}: marked not applicable – the condition in “${section.title}” does not hold, so nothing is printed there.` : `${key}: the “not applicable” mark was taken off – “${section.title}” is to be answered.`,
   }, now);
 }
 
@@ -803,8 +834,8 @@ export function settleConditionalGaps(report: Report, actor: string, now?: Date)
   for (const section of report.sections) {
     const own = next.gaps.filter((g) => g.sectionKey === section.key);
     if (own.length === 0) continue;
-    const condition = conditionOf(next.sections, section.key);
-    if (condition?.applies === false) {
+    const condition = notApplicable(next, section.key);
+    if (condition) {
       const open = own.filter((g) => !g.resolution);
       if (open.length === 0) continue;
       const text = `Not applicable: ${condition.because}.`;
