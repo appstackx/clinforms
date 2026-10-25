@@ -468,6 +468,30 @@ function mapSection(report: Report, key: string, fn: (s: ReportSection) => Repor
  * it can be reverted); typing it back exactly reverts it to "ai". A changed paragraph loses any
  * acknowledgement reason (the clinician re-acknowledges the new wording). From-records text is locked.
  */
+/**
+ * Fix round 1 (B0-11): how much of the drafted wording an edit keeps – the share of the draft's words still in the text
+ * (0…1). Below OWN_WORDS_BELOW the clinician has written their own answer over the draft.
+ */
+export function draftWordsKept(original: string, text: string): number {
+  const words = (s: string) => s.toLowerCase().match(/[a-z0-9]+(?:['’][a-z]+)?/g) ?? [];
+  const drafted = words(original);
+  if (drafted.length === 0) return 1;
+  const left = new Map<string, number>();
+  for (const w of words(text)) left.set(w, (left.get(w) ?? 0) + 1);
+  let kept = 0;
+  for (const w of drafted) {
+    const n = left.get(w) ?? 0;
+    if (n > 0) {
+      kept += 1;
+      left.set(w, n - 1);
+    }
+  }
+  return kept / drafted.length;
+}
+
+/** An edit keeping less than this share of the drafted words is the clinician's own wording. */
+export const OWN_WORDS_BELOW = 0.3;
+
 export function editParagraph(report: Report, key: string, paragraphId: string, text: string, now?: Date): Report {
   let changed = false;
   const sections = mapSection(report, key, (s) => {
@@ -482,6 +506,13 @@ export function editParagraph(report: Report, key: string, paragraphId: string, 
       } else if (p.origin === "edited" && p.originalText !== undefined && text === p.originalText) {
         next.origin = "ai";
       }
+      // Fix round 1 (B0-11): typed over the draft – the clinician's own words, not checked against the draft's citation.
+      if (next.origin === "edited" && next.originalText !== undefined && draftWordsKept(next.originalText, text) < OWN_WORDS_BELOW) {
+        next.origin = "clinician";
+        next.originalSourceIds = p.sourceIds;
+        next.sourceIds = [];
+        delete next.basis;
+      }
       return next;
     });
     return changed ? { ...s, paragraphs } : s;
@@ -489,15 +520,16 @@ export function editParagraph(report: Report, key: string, paragraphId: string, 
   return changed ? touch(report, sections, now) : report;
 }
 
-/** Put an edited paragraph back to the AI's wording. */
+/** Put an edited paragraph – or one the clinician wrote over a draft (fix round 1) – back to the drafted wording. */
 export function revertParagraph(report: Report, key: string, paragraphId: string, now?: Date): Report {
   let changed = false;
   const sections = mapSection(report, key, (s) => {
     const paragraphs = s.paragraphs.map((p): Paragraph => {
-      if (p.id !== paragraphId || p.origin !== "edited" || p.originalText === undefined) return p;
+      if (p.id !== paragraphId || (p.origin !== "edited" && p.origin !== "clinician") || p.originalText === undefined) return p;
       changed = true;
-      const next: Paragraph = { ...p, text: p.originalText, origin: "ai" };
+      const next: Paragraph = { ...p, text: p.originalText, origin: "ai", sourceIds: p.originalSourceIds ?? p.sourceIds };
       delete next.ackReason;
+      delete next.originalSourceIds;
       return next;
     });
     return changed ? { ...s, paragraphs } : s;

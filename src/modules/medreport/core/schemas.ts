@@ -592,6 +592,11 @@ export const ParagraphSchema = z.object({
   ackReason: z.string().optional(),
   /** Text as first produced by the AI/demo draft, so the UI can revert an edit. */
   originalText: z.string().optional(),
+  /**
+   * Additive (fix round 1, B0-11): the draft's citations, kept when the clinician typed their own words over the drafted
+   * paragraph (origin "clinician", no citation) – so "Revert to the draft" brings them back with its text.
+   */
+  originalSourceIds: z.array(z.string()).optional(),
 });
 
 export const ReportSectionSchema = z.object({

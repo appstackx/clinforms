@@ -607,3 +607,39 @@ describe("fix round 1 (B0-22): one count of answered and left-blank questions", 
     assert.equal(copyEntries(withLine, form).find((e) => e.key === lineKey)?.answer, null, "“Copy answers” has no answer there either");
   });
 });
+
+describe("fix round 1 (B0-11): the clinician's own words typed over a drafted paragraph", () => {
+  it("become the clinician's (no citation, no figure or opinion checks); a light edit stays an edit; revert brings the draft and its citation back", async () => {
+    const { draftWordsKept, editParagraph, revertParagraph } = await import("./review-model");
+    const { report, form } = drafted();
+    const template = formToTemplate(form);
+    // Bodycare F-14: Sarah types her own opinion over the drafted paragraph citing the note of 18/03/2026.
+    const own = "On 20/10/2026 I found him able to manage all daily activities with no restrictions.";
+    const typed = editParagraph(report, "F-03", "F-03-p1", own);
+    const p = typed.sections.find((s) => s.key === "F-03")!.paragraphs[0];
+    assert.equal(p.origin, "clinician");
+    assert.deepEqual(p.sourceIds, []);
+    assert.deepEqual(p.originalSourceIds, ["N-001"]);
+    const flags = validateReport(typed, template, { form }).flags.filter((f) => f.sectionKey === "F-03");
+    assert.deepEqual(flags.filter((f) => ["FIGURE_NOT_IN_SOURCE", "OPINION_LANGUAGE", "UNCITED_PARAGRAPH"].includes(f.code)), [], "no “20/10/2026 not in the cited source”, no “no restrictions” check");
+    // A light edit keeps the draft's wording and its checks.
+    const light = editParagraph(report, "F-03", "F-03-p1", "On 18/03/2026 he reported a lifting injury at work on 12/03/2026 (a parcel).");
+    assert.equal(light.sections.find((s) => s.key === "F-03")!.paragraphs[0].origin, "edited");
+    assert.ok(draftWordsKept("On 18/03/2026 he reported a lifting injury.", "He reported a lifting injury.") > 0.5);
+    // Back to the draft: its text, origin and citation.
+    const back = revertParagraph(typed, "F-03", "F-03-p1").sections.find((s) => s.key === "F-03")!.paragraphs[0];
+    assert.equal(back.origin, "ai");
+    assert.deepEqual(back.sourceIds, ["N-001"]);
+    assert.equal(back.originalSourceIds, undefined);
+  });
+
+  it("an opinion word on a question that is not about work is named for what it is (restrictions), not “fitness for work”", () => {
+    const { report, form } = drafted();
+    const edited: Report = {
+      ...report,
+      sections: report.sections.map((s) => (s.key === "F-03" ? { ...s, paragraphs: [{ ...s.paragraphs[0], origin: "edited" as const, originalText: s.paragraphs[0].text, text: "On 18/03/2026 he reported a lifting injury at work, with no restrictions." }] } : s)),
+    };
+    const flag = validateReport(edited, formToTemplate(form), { form }).flags.find((f) => f.code === "OPINION_LANGUAGE" && f.sectionKey === "F-03");
+    assert.match(flag?.message ?? "", /^Opinion wording \(restrictions\) "no restrictions"/);
+  });
+});

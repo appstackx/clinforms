@@ -183,7 +183,7 @@ function ParagraphEditor({
         {paragraph.origin === "clinician" && (
           <span className="text-[11px] text-slate-500">{staffEntry ? "Typed in by staff – kept in the activity log" : "Your own words – no citation needed"}</span>
         )}
-        {!readOnly && paragraph.origin === "edited" && paragraph.originalText !== undefined && (
+        {!readOnly && (paragraph.origin === "edited" || paragraph.origin === "clinician") && paragraph.originalText !== undefined && (
           <button
             type="button"
             onClick={() => {

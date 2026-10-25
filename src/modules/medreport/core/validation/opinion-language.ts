@@ -363,8 +363,11 @@ export function validateOpinionLanguage(input: ValidatorInput): ReportFlag[] {
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p) || (p.origin !== "ai" && p.origin !== "edited")) continue;
     const cited = ctx.cited(p);
+    // Fix round 1 (B0-11): "no restrictions" on a daily-living question is about restrictions, not fitness for work.
+    const aboutWork = /\b(?:work|duties|duty|employ\w*|job|occupation\w*|fit(?:ness)?)\b/i.test(`${section.title} ${ctx.input.form?.fields.find((f) => f.id === section.key)?.label ?? ""}`);
     for (const match of findUnsupportedOpinionPhrases(p.text, cited.normalisedText)) {
       const evidence = originalSpan(p.text, match.phrase);
+      if (match.label === "fitness for work" && !aboutWork) match.label = "restrictions";
       const flag = makeFlag({
         code: "OPINION_LANGUAGE",
         severity: "blocking",
