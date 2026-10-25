@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MAX_INSTRUCTIONS_PER_FORM,
   MAX_INSTRUCTIONS_PER_LINE,
   findTemplateInstructions,
   instructionColour,
@@ -30,16 +31,23 @@ function without(line: InstructionLine): string {
 test("instructions: the delete-as-necessary family, wherever it stands apart from the referrer's wording", () => {
   assert.deepEqual(findTemplateInstructions(red("Delete unused cells")), [{ kind: "delete_unused", text: "Delete unused cells", start: 0, end: 19 }]);
   assert.equal(findTemplateInstructions(red("Delete unused rows"))[0].kind, "delete_unused");
-  assert.equal(findTemplateInstructions(red("Delete as necessary"))[0].kind, "delete");
+  assert.equal(findTemplateInstructions(red("Delete as necessary"))[0].kind, "delete", "a note beside a list of options");
+  assert.equal(findTemplateInstructions(plain("[Remove this text before sending the form]"))[0].kind, "delete_note", "a note about itself");
   assert.equal(without(red("    Delete those which are not required\t")), "\t", "the spaces before go, a tab stays");
   // After a label's colon, in brackets, after a dash or a tab – whatever its colour.
   assert.equal(without(plain("Area affected: Delete as necessary")), "Area affected:");
   assert.equal(without(plain("Duties:   (Please delete other choices)         Normal duties")), "Duties:         Normal duties");
   assert.equal(without(plain("Is treatment required? Yes/No (delete as appropriate)")), "Is treatment required? Yes/No");
-  assert.equal(without(plain("Yes / No – delete as applicable.")), "Yes / No –");
   assert.equal(without(plain("[Remove this text before sending the form]")), "");
   assert.equal(without(plain("Treatment\tdelete whichever does not apply\tWeekly")), "Treatment\t\tWeekly");
-  assert.equal(without(red("Delete if not applicable. Then sign below.")), " Then sign below.");
+  // Review 25/10: what introduces it goes with it (a dash, ";", a bullet), a label's colon and a sentence's full stop stay;
+  // at the start of a line the spaces after it go too.
+  assert.equal(without(plain("Yes / No – delete as applicable.")), "Yes / No");
+  assert.equal(without(plain("Yes / No – delete as applicable. Then sign below.")), "Yes / No. Then sign below.");
+  assert.equal(without(plain("Working; delete as appropriate")), "Working");
+  assert.equal(without(plain("• Delete as necessary")), "");
+  assert.equal(without(red("Delete if not applicable. Then sign below.")), "Then sign below.");
+  assert.equal(without(plain("(Please delete other choices)   Normal duties")), "Normal duties");
   // In a colour of its own straight after the label ("Cause of injury " navy, "Delete as necessary" red).
   const onset = "Cause of injury Delete as necessary";
   assert.equal(without({ text: onset, colours: [{ at: 0, colour: "1f497d" }, { at: 16, colour: "ff0000" }] }), "Cause of injury");
@@ -111,14 +119,37 @@ test("instructions: the notes say what is left off, in plain words", () => {
   );
   assert.equal(instructionsLeftOffNote([{ text: "Delete as necessary" }]), "Left off the completed form: the form's own instruction “Delete as necessary”, meant for whoever completes it.");
   assert.equal(
-    instructionsMappingNote(four),
-    "The form's own instruction “Delete unused cells” (4 places) is meant for whoever completes it, so it is struck through here and left off every completed form. As it asks, table rows a report leaves empty are left off too.",
+    instructionsMappingNote(four, true),
+    "The form's own instruction “Delete unused cells” (4 places) is meant for whoever completes it, so it is struck through here and left off the completed form. As it asks, table rows a report leaves empty are left off too.",
   );
+  // Review 25/10: rows are only promised where they can go (the instruction's row is blank once it is left out, or
+  // prints like the row above) – not for one outside a table or sharing its row with other text.
   assert.equal(
-    instructionsMappingNote([{ kind: "delete", text: "Delete as necessary" }, { kind: "box", text: "Please give the findings in this box" }]),
-    "The form's own instructions “Delete as necessary” and “Please give the findings in this box” are meant for whoever completes it, so they are struck through here and left off every completed form.",
+    instructionsMappingNote(four, false),
+    "The form's own instruction “Delete unused cells” (4 places) is meant for whoever completes it, so it is struck through here and left off the completed form.",
   );
-  for (const note of [instructionsLeftOffNote(four, 2), instructionsMappingNote(four)]) assert.equal(hasBannedTerm(note), false, note);
+  // A note beside options is only left off once the report has chosen from that list.
+  const both = [{ kind: "delete" as const, text: "Delete as necessary" }, { kind: "box" as const, text: "Please give the findings in this box" }];
+  assert.equal(
+    instructionsMappingNote(both, true),
+    "The form's own instructions “Delete as necessary” and “Please give the findings in this box” are meant for whoever completes it, so they are struck through here and left off the completed form. One beside a list of options is only left off once the report has chosen from that list.",
+  );
+  for (const note of [instructionsLeftOffNote(four, 2), instructionsMappingNote(four, true), instructionsMappingNote(both)]) assert.equal(hasBannedTerm(note), false, note);
+});
+
+test("instructions: the whole-line rules are linear on a line of millions of spaces, dots or tabs (security review 25/10)", () => {
+  // Before: "Copy and paste from" + 18 million spaces + "x" took about 5 s (a lazy 120-character match, each step
+  // re-reading the tail); the line is now read without its trailing spaces and dots by a plain loop.
+  const n = 18_000_000;
+  const started = Date.now();
+  for (const filler of [" ", ".", "\t"]) {
+    assert.deepEqual(findTemplateInstructions(plain(`Copy and paste from${filler.repeat(n)}x`)), [], JSON.stringify(filler));
+    assert.deepEqual(findTemplateInstructions({ ...red(`Please give the details in this box${filler.repeat(n)}x`), belowLabelInCell: true }), []);
+  }
+  const prompt = `Copy and paste from the first report${" .".repeat(n / 2)}`;
+  assert.deepEqual(findTemplateInstructions(plain(prompt)), [{ kind: "paste", text: "Copy and paste from the first report", start: 0, end: prompt.length }], "an answer space after it");
+  assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+  assert.equal(MAX_INSTRUCTIONS_PER_FORM, 200);
 });
 
 test("instructions: linear on long lines and many colour changes; a line with more than 20 is left as printed", () => {

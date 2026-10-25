@@ -11,22 +11,32 @@
  *           do not apply", "if/where not applicable…", "whichever does not apply", "this text/note [before sending]" –
  *           and only where it stands apart from the referrer's wording: in brackets, after ":" ";" "." "–" or a tab,
  *           where the text colour changes, or – at the start of a line – printed in a colour (the red notes of Blue
- *           Heart's templates; a line in the default colour stays, as before). "Delete unused cells/rows/lines" (kind
- *           "delete_unused") also asks for the table rows a report leaves empty to go.
+ *           Heart's templates; a line in the default colour stays, as before). Kinds: "delete_unused" ("Delete unused
+ *           cells/rows/lines" – it also asks for the table rows a report leaves empty to go), "delete_note" ("Delete
+ *           this text") and "delete" (any other: a note beside a list of options – the fill leaves it off only once
+ *           the report has chosen from that list, so a list nobody chose from never reads as chosen).
  *   paste   "Copy and paste from/the/here/into …" / "Cut and paste …" as the whole line (an answer box's prompt).
  *   box     "[Please] give/enter/type/write/add/record/provide … in this box/space/cell" as the whole line, printed in a
  *           colour, in a table cell below a printed label (the label stays).
  * Not instructions: "(please circle/tick)", "if applicable", "Please specify:", "please provide details" – they are
  * the referrer's own question wording.
  *
- * A line with more than MAX_INSTRUCTIONS_PER_LINE matches is not a template's note: it is left as printed (and the
- * fill's work per line stays bounded). Browser-safe and pure; linear in the text.
+ * What leaves the line with it: its brackets, the spaces before it, a dash, ";" or bullet that introduces it, and – at
+ * the start of a line – the spaces after it. A label's ":" or a full stop ending the referrer's words stays.
+ *
+ * Hostile sizes (security review 25/10/2026): a line with more than MAX_INSTRUCTIONS_PER_LINE matches, or a form with
+ * more than MAX_INSTRUCTIONS_PER_FORM, is not a template's notes: it is left as printed, so the fill's work stays
+ * bounded. Browser-safe and pure; linear in the text (the whole-line rules read the line without its trailing spaces
+ * and dots, cut off by a plain loop – never a backtracking `[.\s]*$`).
  */
 
 /** Real templates print one or two per line; a line with more is left alone (hostile sizes). */
 export const MAX_INSTRUCTIONS_PER_LINE = 20;
 
-export type TemplateInstructionKind = "delete_unused" | "delete" | "paste" | "box";
+/** Real templates print a handful (Blue Heart's: 6 at most); a form with more is left as printed (hostile sizes). */
+export const MAX_INSTRUCTIONS_PER_FORM = 200;
+
+export type TemplateInstructionKind = "delete_unused" | "delete" | "delete_note" | "paste" | "box";
 
 export interface TemplateInstruction {
   kind: TemplateInstructionKind;
@@ -66,15 +76,21 @@ const WHAT_TO_DELETE = [
 ];
 const DELETE_RE = new RegExp(String.raw`\b(?:please\s+)?(?:delete|remove)\s+(?:${WHAT_TO_DELETE.join("|")})\b`, "gi");
 const UNUSED_ROWS_RE = /\bunused\s+(?:cells?|rows?|lines?)\b/i;
-const PASTE_LINE_RE = /^\s*((?:please\s+)?(?:copy|cut)\s+(?:and|&)\s+paste?\s+(?:from|the|here|in|into|your|this|any)\b[^\n]{0,120}?)[.\s]*$/i;
+const THIS_NOTE_RE = /\b(?:this|these)\s+(?:text|notes?|instructions?|guidance)\b/i;
+// Whole-line rules, matched on the line without the spaces around it and its trailing dots (lineCore).
+const PASTE_LINE_RE = /^((?:please\s+)?(?:copy|cut)\s+(?:and|&)\s+paste?\s+(?:from|the|here|in|into|your|this|any)\b[^\n]{0,120})$/i;
 const BOX_LINE_RE =
-  /^\s*((?:please\s+)?(?:give|enter|type|write|put|add|record|provide|insert|include)\b[^\n.]{0,80}?\b(?:in|into|within)\s+this\s+(?:box|space|cell|section|field|area))[.\s]*$/i;
+  /^((?:please\s+)?(?:give|enter|type|write|put|add|record|provide|insert|include)\b[^\n.]{0,80}?\b(?:in|into|within)\s+this\s+(?:box|space|cell|section|field|area))$/i;
+/** Longest line the whole-line rules read (their longest match is about 150 characters). */
+const WHOLE_LINE_MAX = 300;
 /** Cheap first look: a line without any of these words holds no instruction. */
 const HINT_RE = /\b(?:delete|remove|paste|past)\b|\bthis\s+(?:box|space|cell|section|field|area)\b/i;
 
 const SPACE = /[ \u00A0]/;
 /** What may come before an instruction that starts a clause: ":" ";" "." "!" "?" a tab, a dash, a bullet. */
 const OPENS_CLAUSE = /[:;.!?\t\u2013\u2014\-\u2022*]/;
+/** Of those, what introduces the instruction and goes with it: ";", a dash, a bullet (":" and "." end the referrer's words). */
+const INTRODUCES = /[;\u2013\u2014\-\u2022*]/;
 
 /** Whether a line may hold an instruction at all (a fast check before reading its runs). */
 export function mayHoldInstruction(text: string): boolean {
@@ -112,8 +128,18 @@ function colourRuns(line: InstructionLine) {
   };
 }
 
+/** The line without the spaces before it and the spaces and dots after it ("…… " answer space) – plain loops, linear. */
+function lineCore(text: string): string {
+  let a = 0;
+  while (a < text.length && /\s/.test(text[a])) a += 1;
+  let z = text.length;
+  while (z > a && /[.\s]/.test(text[z - 1])) z -= 1;
+  return text.slice(a, z);
+}
+
 function wholeLine(line: InstructionLine, re: RegExp, kind: TemplateInstructionKind): TemplateInstruction | null {
-  const m = re.exec(line.text);
+  const core = lineCore(line.text);
+  const m = core.length <= WHOLE_LINE_MAX ? re.exec(core) : null;
   if (!m) return null;
   return { kind, text: m[1].replace(/\s+/g, " ").trim(), start: 0, end: line.text.length };
 }
@@ -155,11 +181,20 @@ export function findTemplateInstructions(line: InstructionLine): TemplateInstruc
       if (!standsApartBefore || !standsApartAfter) continue;
       start = a;
       end = z;
+      if (INTRODUCES.test(before)) {
+        // "Yes / No – delete as applicable." → "Yes / No": the dash goes too (a full stop before more text stays).
+        start = a - 1;
+        while (start > 0 && SPACE.test(text[start - 1])) start -= 1;
+        if (b < textEnd) end = e;
+      }
     }
+    // At the start of a line (or after a tab), the spaces after it go too: "Delete if not applicable. Then sign …".
+    if (start === 0 || text[start - 1] === "\t") while (end < text.length && SPACE.test(text[end])) end += 1;
     if (found.length > 0 && start < found[found.length - 1].end) continue;
     if (found.length === MAX_INSTRUCTIONS_PER_LINE) return [];
     const printed = m[0].replace(/\s+/g, " ");
-    found.push({ kind: UNUSED_ROWS_RE.test(printed) ? "delete_unused" : "delete", text: printed, start, end });
+    const kind = UNUSED_ROWS_RE.test(printed) ? "delete_unused" : THIS_NOTE_RE.test(printed) ? "delete_note" : "delete";
+    found.push({ kind, text: printed, start, end });
   }
   return found;
 }
@@ -192,9 +227,13 @@ export function instructionsLeftOffNote(found: readonly Pick<TemplateInstruction
 /** Tooltip of an instruction struck through in the Studio's preview of the original form. */
 export const INSTRUCTION_PREVIEW_TITLE = "Left off the completed form: an instruction for whoever completes it";
 
-/** For staff checking the form's mapping (the original form, where the instructions are struck through). */
-export function instructionsMappingNote(found: readonly Pick<TemplateInstruction, "kind" | "text">[]): string {
+/**
+ * For staff checking the form's mapping (the original form, where the instructions are struck through). `rows`: a
+ * "Delete unused cells" sits where table rows can go (its row is blank once it is left out, or prints like the row above).
+ */
+export function instructionsMappingNote(found: readonly Pick<TemplateInstruction, "kind" | "text">[], rows = false): string {
   const { list, many } = listed(found);
-  const rows = found.some((f) => f.kind === "delete_unused") ? " As it asks, table rows a report leaves empty are left off too." : "";
-  return `${many ? "The form's own instructions" : "The form's own instruction"} ${list} ${many ? "are" : "is"} meant for whoever completes it, so ${many ? "they are" : "it is"} struck through here and left off every completed form.${rows}`;
+  const lists = found.some((f) => f.kind === "delete") ? " One beside a list of options is only left off once the report has chosen from that list." : "";
+  const unused = rows && found.some((f) => f.kind === "delete_unused") ? " As it asks, table rows a report leaves empty are left off too." : "";
+  return `${many ? "The form's own instructions" : "The form's own instruction"} ${list} ${many ? "are" : "is"} meant for whoever completes it, so ${many ? "they are" : "it is"} struck through here and left off the completed form.${lists}${unused}`;
 }
