@@ -108,6 +108,11 @@ export const TENANT_COPY = {
     fillHelpRegistration: "Copied by code from the patient's details, referral or episode in the uploaded notes – never drafted.",
     mappingIdentifiers: "Identifiers are always copied by code from the patient record, never drafted.",
     lockedFromRecords: "Filled in by code from the uploaded notes. To change it, correct the notes and upload them again.",
+    /** Fix round 2 (B1-15): record values said by where they come from. */
+    reportDateLong: "The date of this report – filled by code",
+    reportDateLocked: "The date of this report, filled in by code.",
+    episodeLong: "From the appointments in the uploaded notes – filled by code",
+    episodeLocked: "Filled in by code from the appointments in the uploaded notes. To change it, correct the notes and upload them again.",
   },
   batch: {
     title: "Batch",

@@ -109,6 +109,17 @@ export const RECORD_SOURCE_LABELS: Record<RecordSource, { short: string; long: s
   clinic: { short: "From your Clinic details", long: "From your Clinic details – change it here for this patient's site" },
 };
 
+/** Fix round 2 (B1-15): what staff do with a staff-entry question, by its answer type – tick it, choose it or type it. */
+export function staffEntryVerb(answerType: AnswerType | null | undefined): "tick it" | "choose it" | "type it" {
+  if (answerType === "checkbox") return "tick it";
+  return answerType === "single_choice" || answerType === "yes_no" ? "choose it" : "type it";
+}
+
+/** RECORD_SOURCE_LABELS[source].long, with a staff entry's verb by its answer type ("…– tick it from your records"). */
+export function recordSourceLong(source: RecordSource, answerType?: AnswerType | null): string {
+  return source === "staff_entry" ? `Entered by staff on each report – ${staffEntryVerb(answerType)} from your records` : RECORD_SOURCE_LABELS[source].long;
+}
+
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "patient.fullName": "Patient full name",
   "patient.firstName": "Patient first name",

@@ -205,7 +205,9 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           if (codes && found.length === 1 && field.fillSource && !fillsCodeAsUsual(found[0].text, field.fillSource)) {
             return `${capitalise(filledWith(field.fillSource))}, in place of the code that usually prints ${usuallyPrints(found[0].code)}`;
           }
-          return codes ? `In place of the ${codes}` : `In place of ${quotePrinted(ph)}`;
+          // Fix round 2 (B1-17): "where some clinics keep the date of the accident" only beside that question.
+          const where = found.length === 1 && field.fillSource?.kind === "registration" ? practiceCode(found[0].code)?.whereFor?.[field.fillSource.path] : undefined;
+          return codes ? `In place of the ${codes}${where ? ` (${where})` : ""}` : `In place of ${quotePrinted(ph)}`;
         }
         case "content_control":
           return `In the grey field for ${q}`;
@@ -256,16 +258,13 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
 }
 
 /**
- * The question the mapping review opens on: the first that needs a decision – “Needs review” before “Check”,
- * each in the form's order – or the first question when none does.
- */
-/**
- * The question the mapping review opens on: one to check ("Needs review" before "Check") – and (fix round 1, B0-29) of
- * those, a required one before an optional one, and a clinical question before a detail staff type in; else the first.
+ * The question the mapping review opens on: one to check – of those (fix round 1, B0-29; fix round 2, B1-17) a required
+ * one first, then “Needs review” before “Check”, then a clinical question before a detail staff type in, each in the
+ * form's order; else the first question.
  */
 export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource">>>): string | null {
   const staffEntry = (f: (typeof fields)[number]) => f.fillSource?.kind === "registration" && f.fillSource.path === "staff.entry";
-  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.required === false ? 1 : 0, staffEntry(f) ? 1 : 0, f.confidence === "low" ? 0 : 1];
+  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.required === false ? 1 : 0, f.confidence === "low" ? 0 : 1, staffEntry(f) ? 1 : 0];
   const before = (a: number[], b: number[]) => {
     const i = a.findIndex((v, k) => v !== b[k]);
     return i >= 0 && a[i] < b[i];
@@ -467,4 +466,18 @@ export function withOptionLabel(anchor: Extract<FormAnchor, { kind: "pdf_field" 
  */
 export function mayConfirmForms(member: Pick<StudioMember, "role"> | undefined): boolean {
   return member?.role !== "staff";
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Counts in words (fix round 2, B1-20): the verb and pronoun agree with the count
+ * ----------------------------------------------------------------------------------------------*/
+
+/** "1 needs the clinician's own opinion" / "3 need …". */
+export function opinionNeedText(n: number): string {
+  return `${n} ${n === 1 ? "needs" : "need"} the clinician's own opinion`;
+}
+
+/** "1 question still marked “Needs review”. Confirming accepts it as it is." / "…accepts them as they are." */
+export function needsReviewNotice(n: number): string {
+  return `${n} question${n === 1 ? "" : "s"} still marked “Needs review”. Confirming accepts ${n === 1 ? "it as it is" : "them as they are"}.`;
 }

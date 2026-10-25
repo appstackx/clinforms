@@ -52,6 +52,13 @@ export interface PracticeCode {
   meaning: string;
   /** How staff screens name the code when `meaning` (less its examples in brackets) does not read well there. */
   plain?: string;
+  /**
+   * Fix round 2 (B1-17): what the code holds where the form's label decides it (a by_label code), said only beside that
+   * question – "where some clinics keep the date of the accident" beside "Date of Accident", never beside "Shoulder No".
+   */
+  whereFor?: Partial<Record<RegistrationPath, string>>;
+  /** Meanings older maps repeat after the code in their notes ("<<CODE>> (old meaning)"), dropped like `meaning`. */
+  legacyMeanings?: string[];
   /** Labels that would contradict the meaning (e.g. a clinic that keeps the solicitor in the employer field). */
   doubtfulBeside?: RegExp;
 }
@@ -95,8 +102,10 @@ const ENTRIES: PracticeCode[] = [
       kind: "by_label",
       choices: [{ label: /(?:accident|injury|incident|onset|occurrence)\b[\s\S]{0,20}\bdate|\bdate\b[\s\S]{0,20}\b(?:of\s+)?(?:the\s+)?(?:accident|injury|incident|onset)/i, path: "incident.date", answerType: "date" }],
     },
-    meaning: "the clinic system's alternative reference 1 (some clinics keep the date of the accident there)",
-    plain: "alternative reference 1 (where some clinics keep the date of the accident)",
+    meaning: "the clinic system's alternative reference 1",
+    plain: "alternative reference 1",
+    whereFor: { "incident.date": "where some clinics keep the date of the accident" },
+    legacyMeanings: ["the clinic system's alternative reference 1 (some clinics keep the date of the accident there)"],
   },
   { code: "P_INS_NUM", label: "Insurance membership number", binding: rec("referral.membershipNumber"), meaning: "the patient's insurance membership number" },
   { code: "P_HOSP_NUM", label: "Hospital number", binding: { kind: "not_held" }, meaning: "the patient's hospital number" },
@@ -190,7 +199,7 @@ function startsSentence(text: string, at: number): boolean {
  * and anything else in the text (other mail-merge fields such as «Patient_Name» included) is left as it is.
  */
 export function humaniseMergeCodes(text: string): string {
-  if (!text || text.indexOf("<<") < 0) return text;
+  if (!text || text.indexOf("<<") < 0) return flattenNestedBrackets(text);
   const re = new RegExp(CODE_RUN.source, "g");
   let out = "";
   let last = 0;
@@ -225,12 +234,29 @@ export function humaniseMergeCodes(text: string): string {
     }
     // The form reading's notes repeat the meaning after the code: "<<P_DOB>> (the patient's date of birth)".
     const entry = codes.length === 1 ? practiceCode(codes[0]) : null;
-    if (entry && text.startsWith(` (${entry.meaning})`, end)) end += entry.meaning.length + 3;
+    const repeated = entry ? [entry.meaning, ...(entry.legacyMeanings ?? [])].find((meaning) => text.startsWith(` (${meaning})`, end)) : undefined;
+    if (repeated) end += repeated.length + 3;
+    // Fix round 2 (B1-17): what a by_label code holds, only where the text is about that question ("Date of Accident").
+    if (entry?.whereFor && entry.binding.kind === "by_label") {
+      const around = text.slice(0, m.index) + text.slice(end);
+      const choice = entry.binding.choices.find((c) => c.label.test(around));
+      const where = choice ? entry.whereFor[choice.path] : undefined;
+      if (where) phrase += ` (${where})`;
+    }
     out += text.slice(last, m.index) + phrase;
     last = end;
     re.lastIndex = end;
   }
-  return out + text.slice(last);
+  return flattenNestedBrackets(out + text.slice(last));
+}
+
+/**
+ * Fix round 2 (B1-17): no brackets inside brackets on a staff screen – a map stored with "(the clinic system's
+ * alternative reference 1 (some clinics keep the date of the accident there))" reads "(the clinic system's alternative
+ * reference 1 – some clinics keep the date of the accident there)".
+ */
+export function flattenNestedBrackets(text: string): string {
+  return text.indexOf("(") < 0 ? text : text.replace(/\(([^()]*?)\s*\(([^()]*)\)\s*\)/g, (_m, outer: string, inner: string) => `(${outer.trim()} – ${inner.trim()})`);
 }
 
 /**

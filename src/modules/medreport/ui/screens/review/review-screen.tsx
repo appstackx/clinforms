@@ -29,6 +29,7 @@ import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } fr
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
+import { possessive } from "../../../core/possessive";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -558,13 +559,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           title={tenant ? `The form map for “${formInfo.title}” is not in your clinic's library` : `The form map for “${formInfo.title}” is not in this browser`}
           action={<Link className="font-medium underline" href={paths.forms}>Open the forms library</Link>}
         >
-          You can read the answers, but previewing, checking and approving need {formInfo.referrer.name}&apos;s form map and file. Add the form to the forms
+          You can read the answers, but previewing, checking and approving need {possessive(formInfo.referrer.name)} form map and file. Add the form to the forms
           library again (the same file), then reopen this report.
         </InlineAlert>
       )}
       {formProblem === "mismatch" && formInfo && (
         <InlineAlert tone="warning" title="A different version of this form is in the library">
-          This report was started from another version of {formInfo.referrer.name}&apos;s form file. Start a new report from the current form, or add the original file back to the library.
+          This report was started from another version of {possessive(formInfo.referrer.name)} form file. Start a new report from the current form, or add the original file back to the library.
         </InlineAlert>
       )}
       {form && form.status !== "confirmed" && !signed && (

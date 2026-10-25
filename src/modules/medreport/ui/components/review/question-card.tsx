@@ -15,8 +15,9 @@ import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, recordSourceOf, signoffValuesFromReceipt } from "../../../core/forms";
 import { factCondition } from "../../../core/conditions";
+import { possessive } from "../../../core/possessive";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
-import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
+import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS, recordSourceLong, staffEntryVerb } from "../../../core/labels";
 import { attendedInstead, nameClinicianInstead } from "../../../core/voice";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
@@ -195,7 +196,7 @@ function ParagraphEditor({
           <button
             type="button"
             onClick={() => {
-              dispatch({ type: "revertParagraph", key: sectionKey, paragraphId: paragraph.id });
+              dispatch({ type: "revertParagraph", key: sectionKey, paragraphId: paragraph.id, actor });
               dispatch({ type: "logEdit", key: sectionKey, actor });
             }}
             className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
@@ -430,14 +431,22 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // Open gaps in the question's item are shown there; resolved ones (and any other) as before.
   const otherGaps = box ? gaps.filter((g) => !box.gaps.includes(g)) : gaps;
 
+  // Fix round 2 (B1-15): a record value said by where it comes from – the report's own date, the appointments.
+  const recordPath = field?.fillSource.kind === "registration" ? field.fillSource.path : null;
+  const pathWords =
+    tenant && recordPath === "report.date"
+      ? { long: TENANT_COPY.sources.reportDateLong, locked: TENANT_COPY.sources.reportDateLocked }
+      : tenant && recordPath?.startsWith("episode.")
+        ? { long: TENANT_COPY.sources.episodeLong, locked: TENANT_COPY.sources.episodeLocked }
+        : null;
   const fillSourceText = staffEntered
     ? recordSource === "clinic"
       ? "Entered by staff for this report – not from your Clinic details (see the Activity tab)"
       : "Typed in by staff – not from the clinic record (see the Activity tab)"
     : field
       ? recordSource
-        ? RECORD_SOURCE_LABELS[recordSource].long
-        : sourceLabels.long[field.fillSource.kind]
+        ? recordSourceLong(recordSource, field.answerType)
+        : (pathWords?.long ?? sourceLabels.long[field.fillSource.kind])
       : section
         ? section.kind === "from_records"
           ? tenant
@@ -512,7 +521,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           aria-label={`Answer to “${q.label}”`}
           value=""
           minRows={isOpinion ? 3 : 2}
-          placeholder={isRecords && referrerField ? `${props.referrerName ?? "The referrer"}'s reference` : opts.emptyPlaceholder}
+          placeholder={isRecords && referrerField ? `${props.referrerName ? possessive(props.referrerName) : "The referrer's"} reference` : opts.emptyPlaceholder}
           onChange={(e) => startClinicianText(e.target.value)}
         />
       )}
@@ -615,6 +624,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
             connectorId={connectorId}
             activeSourceId={props.activeSourceId}
             onOpenSource={onOpenSource}
+            lockedNote={pathWords?.locked}
           />
         ) : (
           <div className="space-y-1.5">
@@ -664,6 +674,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
         connectorId={connectorId}
         activeSourceId={props.activeSourceId}
         onOpenSource={onOpenSource}
+        lockedNote={pathWords?.locked}
         // Fix round 1 (B0-4): the clinic's own details are changed on the report when another site treated the patient.
         clinic={recordSource === "clinic"}
         onOverride={!readOnly && recordSource === "clinic" ? () => dispatch({ type: "overrideRecord", key: q.key, actor }) : undefined}
@@ -679,7 +690,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               {props.referralValue
                 ? `${props.referrerName ?? "The referrer"} uses its own reference here, so the referral's reference has not been copied in. `
                 : `${props.referrerName ?? "The referrer"} asks for its own reference here, and the record holds none. `}
-              Enter {props.referrerName ? `${props.referrerName}'s` : "their"} reference from their instruction letter – it is marked as entered by staff.
+              Enter {props.referrerName ? possessive(props.referrerName) : "their"} reference from their instruction letter – it is marked as entered by staff.
               {!q.required && " This box is optional – leave it blank if you do not have it."}
             </p>
             {props.referralValue && referrerGap && (
@@ -714,7 +725,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
         ) : isRecords && !answered && !readOnly ? (
           <p className="text-[13px] text-slate-600">
             {recordSource === "staff_entry"
-              ? "Entered by staff on each report: type it from your records – it is marked as entered by staff."
+              ? `Entered by staff on each report: ${staffEntryVerb(field?.answerType)} from your records – it is marked as entered by staff.`
               : recordSource === "physio_choice"
                 ? "Chosen by the physiotherapist on each report."
                 : recordSource === "clinic"
@@ -873,6 +884,7 @@ function LockedRecordsAnswer({
   onOpenSource,
   clinic = false,
   onOverride,
+  lockedNote,
 }: {
   text: string;
   sourceIds: string[];
@@ -884,6 +896,8 @@ function LockedRecordsAnswer({
   clinic?: boolean;
   /** "Change it for this patient's site" (fix round 1, B0-4). */
   onOverride?: () => void;
+  /** Fix round 2 (B1-15): what the lock line says for this value (the report's own date, the appointments). */
+  lockedNote?: string;
 }) {
   const tenant = useStudioMode() === "tenant";
   if (clinic) {
@@ -913,7 +927,7 @@ function LockedRecordsAnswer({
         {sourceIds.map((id) => (
           <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} active={activeSourceId === id} />
         ))}
-        <span className="text-[11px] text-slate-500">{tenant ? TENANT_COPY.sources.lockedFromRecords : WORDING.byCode.lockedFromRecords}</span>
+        <span className="text-[11px] text-slate-500">{lockedNote ?? (tenant ? TENANT_COPY.sources.lockedFromRecords : WORDING.byCode.lockedFromRecords)}</span>
       </div>
     </div>
   );

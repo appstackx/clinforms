@@ -476,3 +476,25 @@ test("fix round 2 (B1-5): a yes/no carrying its own condition on the facts is ne
   // The drafting call is told the same: supporting text only, no answer and no gap.
   assert.match(buildFormBlock(form, formToTemplate(form)), /Condition: it applies only if the client was working prior to the accident but was off work at the time of the assessment\. The clinician chooses its answer: set answer to "" and give one short paragraph/);
 });
+
+test("fix round 2 (B1-21): an initial assessment form is told the next appointment after the assessment, and its date passes the checks", async () => {
+  const { buildFormPromptParts } = await import("./form-prompts");
+  const bundle = testBundle(); // IA 18/03/2026; next appointment 01/04/2026 (did not attend); discharge 06/05/2026
+  const ia: FormDefinition = { ...FORM, title: "Initial Assessment Report", fields: [...FORM.fields, field(7, "Date of next appointment (if authorised)", { answerType: "date", fillSource: { kind: "notes_narrative" } })] };
+  const parts = buildFormPromptParts({ form: ia, template: formToTemplate(ia), bundle, instructingParty: bundle.referral, sectionKeys: ["F-07"], computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }) });
+  assert.match(parts.episode, /Next appointment after the initial assessment: 01\/04\/2026 \(did not attend\)/);
+  assert.doesNotMatch(parts.episode, /id="N-002"/, "still no later note");
+  const res = assembleDraft({
+    template: formToTemplate(ia),
+    bundle,
+    instructingParty: bundle.referral,
+    sectionKeys: ["F-07"],
+    computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }),
+    output: { sections: [{ sectionKey: "F-07", answer: "01/04/2026", paragraphs: [{ text: "The next appointment after the assessment was on 01/04/2026.", sourceIds: ["REG"], basis: "record" }] }], gaps: [] },
+    meta: { ...META, sectionKeys: ["F-07"] },
+    form: ia,
+    idSeed: "t1",
+  });
+  assert.deepEqual(res.sections[0].answer, { kind: "date", value: "2026-04-01" });
+  assert.deepEqual(res.flags.filter((f) => f.sectionKey === "F-07"), [], "no “date not in the cited source”, no “later note”");
+});

@@ -20,6 +20,7 @@
  */
 import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect, recordSourceOf } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
+import { possessive } from "../../../core/possessive";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
 import type { FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { canSign, validateReport } from "../../../core/validation";
@@ -213,7 +214,7 @@ function describeBox(box: BoxItem, section: ReportSection, field: FormField | un
     const referrer = report.form?.referrer.name ?? null;
     const path = field?.fillSource.kind === "registration" ? field.fillSource.path : null;
     if (box.gaps.some((g) => g.id.endsWith("-referrer")) || (path && showsReferrerReferenceNotice(path, referrer, report.bundleSnapshot))) {
-      return { heading: `${req} – no answer yet`, instruction: `Type ${referrer ? `${referrer}'s` : "the referrer's"} reference from their letter.` };
+      return { heading: `${req} – no answer yet`, instruction: `Type ${referrer ? possessive(referrer) : "the referrer's"} reference from their letter.` };
     }
     // Fix round 1 (B0-19): what it really is – a staff entry, the physiotherapist's choice, the clinic's own details.
     const source = field ? recordSourceOf(field) : null;

@@ -40,7 +40,7 @@ import { acknowledgeGapLeavingBlank, leaveOptionalBoxesBlank } from "./box-items
 export type ReviewAction =
   | { type: "replace"; report: Report }
   | { type: "editParagraph"; key: string; paragraphId: string; text: string; actor?: string }
-  | { type: "revertParagraph"; key: string; paragraphId: string }
+  | { type: "revertParagraph"; key: string; paragraphId: string; actor?: string }
   | { type: "addParagraph"; key: string; paragraphId?: string; text?: string; actor?: string }
   | { type: "removeParagraph"; key: string; paragraphId: string; actor: string; silent?: boolean }
   | { type: "logEdit"; key: string; actor: string }
@@ -80,7 +80,7 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   // first, so an answer given to a question that applies again settles its reopened gaps below (fix round 2).
   if (action.type === "setAnswer" || action.type === "applyDraft" || action.type === "markNotApplicable") next = settleConditionalGaps(next, actor || "System");
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
-  if (key && actor && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
+  if (key && actor && ["editParagraph", "revertParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
     next = settleGapsByAnswer(report, next, key, actor);
   }
   return next;

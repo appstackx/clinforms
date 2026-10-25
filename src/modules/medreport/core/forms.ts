@@ -29,6 +29,7 @@ import { notApplicable } from "./conditions";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel, prefillSigners, prefillSignersText } from "./parties";
+import { possessive } from "./possessive";
 import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS, type RecordSource } from "./labels";
 import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
 import { isQuestionAnchor, isQuestionSet } from "./question-set";
@@ -398,8 +399,8 @@ export function formToTemplate(form: FormDefinition): ReportTemplate {
     documentTitle: form.title,
     audience: form.referrer.type,
     description: isQuestionSet(form)
-      ? `${form.referrer.name}'s portal questions, answered for entry in the portal.`
-      : `${form.referrer.name}'s own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
+      ? `${possessive(form.referrer.name)} portal questions, answered for entry in the portal.`
+      : `${possessive(form.referrer.name)} own ${FORM_KIND_LABELS[form.kind].toLowerCase()}, completed in its original layout.`,
     version: form.versionLabel?.trim() || "1",
     scope: formScope(form.referrer.type, form),
     sections,
@@ -1034,10 +1035,15 @@ function signoffAnswer(part: SignoffPart, values: SignoffValues | null): FormFil
  * "staff.entry" is typed by staff on each report, or chosen by the physiotherapist when the map's guidance says so;
  * "clinic.*" comes from the clinic's own details. Null for the patient's record and everything else.
  */
-export function recordSourceOf(field: Pick<FormField, "fillSource" | "guidance">): RecordSource | null {
+export function recordSourceOf(field: Pick<FormField, "fillSource" | "guidance"> & Partial<Pick<FormField, "answerType" | "label">>): RecordSource | null {
   if (field.fillSource.kind !== "registration") return null;
   const path = field.fillSource.path;
-  if (path === "staff.entry") return /\bchosen by the (?:physiotherapist|clinician)\b/i.test(field.guidance ?? "") ? "physio_choice" : "staff_entry";
+  if (path === "staff.entry") {
+    if (/\bchosen by the (?:physiotherapist|clinician)\b/i.test(field.guidance ?? "")) return "physio_choice";
+    // Fix round 2 (B1-15): a tick or choice about restrictions, work status or fitness is the physiotherapist's decision.
+    const choice = field.answerType === "checkbox" || field.answerType === "single_choice" || field.answerType === "yes_no";
+    return choice && /\b(?:restrictions?|work status|fit(?:ness)?|duties|absent|modified|light duties)\b/i.test(`${field.label ?? ""} ${field.guidance ?? ""}`) ? "physio_choice" : "staff_entry";
+  }
   return path.startsWith("clinic.") ? "clinic" : null;
 }
 
@@ -1045,10 +1051,15 @@ export function recordSourceOf(field: Pick<FormField, "fillSource" | "guidance">
  * Fix round 1 (B0-21): each question's section heading for grouping on screen. A run of questions the map gives no
  * section takes the heading around it when the questions before and after it share one (10Bridge's address lines
  * between two "CLAIMANT DETAILS" questions); otherwise it keeps none ("" – its own group).
+ * Fix round 2 (B1-18): a heading that is only its one question's own label is no heading ("NUMBER OF TREATMENT
+ * SESSIONS RECOMMENDED…"); and the questions under no heading make one "Other questions" group only once – a later
+ * run of them continues the heading before it (CLM's form starts under no heading, so its sectionless questions further
+ * down stay with the heading above them instead of opening "Other questions" again).
  */
-export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section">>): string[] {
-  const own = fields.map((f) => f.section?.trim() ?? "");
-  return own.map((h, i) => {
+export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section"> & Partial<Pick<FormField, "label">>>): string[] {
+  const raw = fields.map((f) => f.section?.trim() ?? "");
+  const own = raw.map((h, i) => (h && raw.filter((x) => x === h).length === 1 && h.toLowerCase() === (fields[i].label ?? "").trim().toLowerCase() ? "" : h));
+  const out = own.map((h, i) => {
     if (h) return h;
     let before = "";
     for (let j = i - 1; j >= 0 && !before; j--) before = own[j];
@@ -1056,6 +1067,17 @@ export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section">
     for (let j = i + 1; j < own.length && !after; j++) after = own[j];
     return before && before === after ? before : "";
   });
+  // The first run under no heading keeps its own group; any later run joins the heading before it.
+  let seenUntitled = false;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i]) continue;
+    let end = i;
+    while (end < out.length && !out[end]) end += 1;
+    if (seenUntitled && i > 0) out.fill(out[i - 1], i, end);
+    seenUntitled = true;
+    i = end - 1;
+  }
+  return out;
 }
 
 /**
@@ -1111,6 +1133,20 @@ export function inPrintedSentence(text: string): string {
   if (/^(?:I|Mr|Mrs|Ms|Miss|Dr|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|English|Pilates)$/.test(word)) return text;
   if (m[3] && /^\s+[A-Z][a-z]/.test(m[3])) return text; // "Five Ways Gym", "Ellis Road"
   return `${m[1].toLowerCase()}${text.slice(1)}`;
+}
+
+/**
+ * Fix round 2 (B1-16): map guidance written before a box left blank printed nothing ("unanswered: the printed default
+ * stays", "unanswered, “30 minutes” stays", "unanswered: kept as printed") said as it is now – on approval a box left
+ * blank removes what is printed there. Applied where guidance is shown and sent to drafting, so maps stored on a
+ * clinic's account read right without being changed.
+ */
+export function currentGuidance(text: string): string {
+  if (!/\bunanswered\b/i.test(text)) return text;
+  return text
+    .replace(/\bunanswered[:,]\s*the printed default stays\b/gi, "left blank, the printed default is removed")
+    .replace(/\bunanswered[:,]\s*(“[^”]+”)\s*stays\b/gi, "left blank, the printed $1 is removed")
+    .replace(/\bunanswered:\s*kept as printed\b/gi, "left blank: it is deleted too");
 }
 
 /** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */

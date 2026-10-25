@@ -148,3 +148,41 @@ test("fix round 1 (B0-29): JJ Physio's “Shoulder No” on the alternative-refe
     "as before where it is the accident's date",
   );
 });
+
+test("fix round 2 (B1-20): counts in words agree – “1 needs”, “accepts it as it is”", async () => {
+  const { needsReviewNotice, opinionNeedText } = await import("./mapping");
+  assert.equal(opinionNeedText(1), "1 needs the clinician's own opinion");
+  assert.equal(opinionNeedText(3), "3 need the clinician's own opinion");
+  assert.equal(needsReviewNotice(1), "1 question still marked “Needs review”. Confirming accepts it as it is.");
+  assert.equal(needsReviewNotice(4), "4 questions still marked “Needs review”. Confirming accepts them as they are.");
+});
+
+test("fix round 2 (B1-17): the opened panel words a place as the row does; no accident date beside “Shoulder No”; no brackets inside brackets", async () => {
+  const { flattenNestedBrackets, humaniseMergeCodes } = await import("../../../core/practice-merge-codes");
+  // JJ IA F-08 / Medcare IA F-05: <<DATE>> holding the first appointment's date – the panel passes the fill source too.
+  const date = { anchor: { kind: "docx" as const, target: "replace_placeholder" as const, blockId: "t0.r0.c1", placeholderText: "<<DATE>>" }, label: "Date first attended", fillSource: { kind: "registration" as const, path: "episode.firstSeen" as const } };
+  assert.equal(plainAnchorDescription(date), "The first appointment's date, in place of the code that usually prints the date of the report");
+  assert.equal(plainAnchorDescription({ anchor: date.anchor, label: date.label }), "In place of the merge code for the date of the report", "what the panel said without the fill source");
+  // JJ IA "Shoulder No" on <<P_ALTERNATE_REF1>>: an RTF note names the code without the accident date.
+  assert.equal(humaniseMergeCodes("Merge code <<P_ALTERNATE_REF1>> (the clinic system's alternative reference 1) is entered by staff."), "Merge code for alternative reference 1 is entered by staff.");
+  // A note stored by an older reading for a staff entry, and the RTF conversion's list of codes: no accident date.
+  assert.equal(
+    humaniseMergeCodes("The clinic system's merge code <<P_ALTERNATE_REF1>> (the clinic system's alternative reference 1 (some clinics keep the date of the accident there)): the record here does not hold it, so staff enter it on each report."),
+    "The clinic system's merge code for alternative reference 1: the record here does not hold it, so staff enter it on each report.",
+  );
+  assert.equal(
+    humaniseMergeCodes("Converted from RTF: 13 merge codes from your clinic system (<<P_GROUPREF>>, <<P_ALTERNATE_REF1>>) were kept."),
+    "Converted from RTF: 13 merge codes from your clinic system (the referrer's reference for this case, alternative reference 1) were kept.",
+  );
+  // 10Bridge IA F-10's stored guidance (a production map) reads without nested brackets.
+  const stored = "Printed as “Date of Accident”. Filled from the record (the clinic system's alternative reference 1 (some clinics keep the date of the accident there)).";
+  assert.equal(humaniseMergeCodes(stored), "Printed as “Date of Accident”. Filled from the record (the clinic system's alternative reference 1 – some clinics keep the date of the accident there).");
+  assert.equal(flattenNestedBrackets("Pain (worse (at night))"), "Pain (worse – at night)");
+  // JJ IA opens on a required "Needs review" question, not on "Job Role" (Check).
+  const jj = [
+    { id: "F-03", confidence: "medium" as const, required: true, fillSource: { kind: "registration" as const, path: "patient.occupation" as const } },
+    { id: "F-04", confidence: "low" as const, required: true, fillSource: { kind: "registration" as const, path: "staff.entry" as const } },
+    { id: "F-11", confidence: "low" as const, required: true, fillSource: { kind: "registration" as const, path: "staff.entry" as const } },
+  ];
+  assert.equal(firstQuestionToCheck(jj), "F-04");
+});

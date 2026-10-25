@@ -18,6 +18,7 @@
  * Pure and browser-safe (type-only imports plus core/dates), so the UI, core and server can all use it.
  */
 import { formatUkDate, formatUkDateTime } from "./dates";
+import { possessive } from "./possessive";
 import type { FormAnalysisMode, GenerationMode } from "./types";
 
 export type Disclosure = "neutral" | "ai-assisted";
@@ -101,7 +102,7 @@ export interface Wording {
     /** Review screen: the pending questions in demo mode without prepared answers. */
     reviewNoDemoAnswers: string;
     /** Activity log entry for a merged draft. */
-    activityDrafted(keys: readonly string[], mode: GenerationMode, model?: string): string;
+    activityDrafted(keys: readonly string[], mode: GenerationMode, model?: string, leftForClinician?: readonly string[]): string;
     /** A problem code as shown in the activity log ("AI_TIMEOUT" → "timed out"). */
     failureCode(code: string): string;
   };
@@ -437,7 +438,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   panelTitlePortal: "Answers for the portal",
   panelIntro: "Copy an answer, or all of them, as plain text – for a portal, an e-mail or a letter. Dates are DD/MM/YYYY and ticks are written as the option chosen.",
   panelIntroPortal: (referrer) =>
-    `Copy each answer into ${referrer}'s portal, question by question, or copy them all at once. Dates are DD/MM/YYYY and ticks are written as the option chosen.`,
+    `Copy each answer into ${possessive(referrer)} portal, question by question, or copy them all at once. Dates are DD/MM/YYYY and ticks are written as the option chosen.`,
   draftNotice: "Not approved yet: copied text is marked “Draft – not yet approved”. Approve the answers before entering them anywhere.",
   approvedNotice: "Approved: copied text is the approved answers.",
   copyAll: "Copy all answers",
@@ -537,10 +538,12 @@ const NEUTRAL: Wording = {
     noDemoAnswersSuffix: " There are no prepared demo answers for this patient and form – use live drafting (passcode) or answer them in review.",
     reviewNoDemoAnswers:
       "This demo holds no prepared answers for this patient and form, so nothing was drafted. Answer them below – or enter the live drafting passcode (top right) and they can be drafted from the notes, with citations.",
-    activityDrafted: (keys, mode) =>
-      mode === "live"
-        ? `Drafted ${keys.join(", ")} from the notes.`
-        : `Drafted ${keys.join(", ")} (${mode === "demo_recorded" ? "prepared demo draft" : "sample draft"}).`,
+    // Fix round 2 (B1-19): only the questions that received an answer, and the ones left for the clinician.
+    activityDrafted: (keys, mode, _model, left = []) => {
+      const how = mode === "live" ? " from the notes" : ` (${mode === "demo_recorded" ? "prepared demo draft" : "sample draft"})`;
+      if (keys.length === 0) return `Nothing drafted${how}${left.length > 0 ? ` – left for the clinician: ${left.join(", ")}` : ""}.`;
+      return `Drafted ${keys.join(", ")}${how}.${left.length > 0 ? ` Left for the clinician: ${left.join(", ")}.` : ""}`;
+    },
     failureCode: (code) => NEUTRAL_FAILURE_CODES[code] ?? code.toLowerCase().replace(/_/g, " "),
   },
   generation: {
@@ -744,10 +747,10 @@ const AI_ASSISTED: Wording = {
     noDemoAnswersSuffix: " There are no recorded demo answers for this patient and form – use live AI (passcode) or answer them in review.",
     reviewNoDemoAnswers:
       "This demo holds no recorded answers for this patient and form, so nothing was drafted. Answer them below – or enter the live AI passcode (top right) and they can be drafted from the notes, with citations.",
-    activityDrafted: (keys, mode, model) => {
+    activityDrafted: (keys, mode, model, left = []) => {
       const label =
         mode === "live" ? `live AI${model ? `, ${model}` : ""}` : mode === "demo_recorded" ? "recorded Claude output" : "pre-written draft, no AI call";
-      return `Drafted ${keys.join(", ")} (${label}).`;
+      return `Drafted ${keys.length > 0 ? keys.join(", ") : "nothing"} (${label}).${left.length > 0 ? ` Left for the clinician: ${left.join(", ")}.` : ""}`;
     },
     failureCode: (code) => code,
   },

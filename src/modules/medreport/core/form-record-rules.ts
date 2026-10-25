@@ -20,6 +20,7 @@
  * Owner: S4 (PMI data) – additive; keeps createFormReport's own changes to a few lines.
  */
 import { ANSWER_TYPE_LABELS } from "./labels";
+import { possessive } from "./possessive";
 import {
   answerKindFor,
   asksForReferralPartyReference,
@@ -127,10 +128,10 @@ export function withheldInsurerIdentifier(input: {
       sectionKey: field.id,
       issue: insurer
         ? `This form is from ${formFrom}, but the ${what} on the clinic record (“${value}”) is ${insurer}'s, so it has not been copied into “${field.label}”.`
-        : `The clinic record holds a ${what} (“${value}”) but does not say which insurer issued it, so it has not been copied onto ${formFrom}'s form.`,
+        : `The clinic record holds a ${what} (“${value}”) but does not say which insurer issued it, so it has not been copied onto ${possessive(formFrom)} form.`,
       suggestedQuestion: insurer
         ? `What is the patient's ${formFrom} ${what}? If this form is in fact for ${insurer}, use “${value}”.`
-        : `Is “${value}” the patient's ${formFrom} ${what}? If so, use it; otherwise enter ${formFrom}'s own.`,
+        : `Is “${value}” the patient's ${formFrom} ${what}? If so, use it; otherwise enter ${possessive(formFrom)} own.`,
       relatedNoteIds: [],
       raisedBy: "system",
     },

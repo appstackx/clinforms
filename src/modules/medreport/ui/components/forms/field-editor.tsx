@@ -14,6 +14,7 @@ import {
   REGISTRATION_PATH_LABELS,
   SIGNOFF_PART_LABELS,
 } from "../../../core/labels";
+import { currentGuidance } from "../../../core/forms";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import {
   AnswerTypeSchema,
@@ -119,7 +120,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
             Guidance
           </FieldLabel>
           {/* Clinic-system codes in plain words: guidance is free text, so an edit keeps the words (core/practice-merge-codes.ts). */}
-          <Textarea id={`${id}-guidance`} rows={2} value={humaniseMergeCodes(field.guidance)} onChange={(e) => set("guidance", e.target.value)} />
+          <Textarea id={`${id}-guidance`} rows={2} value={humaniseMergeCodes(currentGuidance(field.guidance))} onChange={(e) => set("guidance", e.target.value)} />
         </div>
       </div>
 
@@ -258,7 +259,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
             {picking ? "Click in the form…" : "Choose in the form"}
           </Button>
         </div>
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{plainAnchorDescription({ anchor: a, label: field.label })}</p>
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{plainAnchorDescription({ anchor: a, label: field.label, fillSource: field.fillSource })}</p>
         <details className="text-xs">
           <summary className="cursor-pointer text-slate-500 hover:text-slate-800">Edit the location by hand</summary>
           <p className="mt-2 font-mono text-[11px] text-slate-500">{describeAnchor(a)}</p>

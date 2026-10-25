@@ -162,10 +162,11 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
         fromRecords: false,
       };
     }
+    const where = entry.whereFor?.[choice.path];
     return {
       ...base,
       label: printed || entry.label,
-      guidance: guidanceFor(`Filled from the record (${entry.meaning}).`),
+      guidance: guidanceFor(`Filled from the record (${entry.meaning}${where ? `, ${where}` : ""}).`),
       answerType: choice.answerType,
       fillSource: { kind: "registration", path: choice.path },
       confidence: "medium",

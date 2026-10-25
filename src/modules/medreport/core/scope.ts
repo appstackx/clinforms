@@ -103,6 +103,23 @@ export function applyScope(bundle: EpisodeBundle, template: ReportTemplate): Epi
   return scoped;
 }
 
+/** The date of the initial assessment: the first initial-assessment note's, else the first note's; null without notes. */
+export function initialAssessmentDate(bundle: Pick<EpisodeBundle, "notes">): string | null {
+  const notes = bundle.notes.slice().sort((a, b) => (a.date + (a.time ?? "") < b.date + (b.time ?? "") ? -1 : a.date + (a.time ?? "") > b.date + (b.time ?? "") ? 1 : 0));
+  return (notes.find((n) => n.type === "initial_assessment") ?? notes[0])?.date ?? null;
+}
+
+/**
+ * Fix round 2 (B1-21): the first appointment after the initial assessment (attended, missed or booked – not one
+ * cancelled with notice), or null. "Date of next appointment" on an initial assessment form.
+ */
+export function nextAppointmentAfterAssessment(bundle: Pick<EpisodeBundle, "notes" | "appointments">): EpisodeBundle["appointments"][number] | null {
+  const date = initialAssessmentDate(bundle);
+  if (!date) return null;
+  const later = bundle.appointments.filter((a) => a.date > date && a.status !== "CNC").sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
+  return later[0] ?? null;
+}
+
 /**
  * Fix round 1 (B0-6): the record as at the initial assessment, for a form that reports it – the notes up to and
  * including the first attended assessment (its date: the first initial-assessment note, else the first note), the
@@ -110,16 +127,17 @@ export function applyScope(bundle: EpisodeBundle, template: ReportTemplate): Epi
  * the episode is open at that point. Null when there are no notes. Never mutates its input.
  */
 export function initialAssessmentView(bundle: EpisodeBundle): { bundle: EpisodeBundle; date: string } | null {
-  const notes = bundle.notes.slice().sort((a, b) => (a.date + (a.time ?? "") < b.date + (b.time ?? "") ? -1 : a.date + (a.time ?? "") > b.date + (b.time ?? "") ? 1 : 0));
-  const ia = notes.find((n) => n.type === "initial_assessment") ?? notes[0];
-  if (!ia) return null;
-  const date = ia.date;
+  const date = initialAssessmentDate(bundle);
+  if (!date) return null;
+  // Fix round 2 (B1-21): the next appointment stays – an initial assessment form asks for it – without its note.
+  const next = nextAppointmentAfterAssessment(bundle);
+  const kept = next ? [{ id: next.id, date: next.date, time: next.time, status: next.status }] : [];
   return {
     date,
     bundle: {
       ...bundle,
       notes: bundle.notes.filter((n) => n.date <= date),
-      appointments: bundle.appointments.filter((a) => a.date <= date),
+      appointments: [...bundle.appointments.filter((a) => a.date <= date), ...kept],
       outcomeMeasures: bundle.outcomeMeasures.map((m) => ({ ...m, points: m.points.filter((p) => p.date <= date) })).filter((m) => m.points.length > 0),
       episodeStatus: "open",
     },

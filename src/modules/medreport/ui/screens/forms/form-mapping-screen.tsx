@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
-import { answerableFields, checkFormDefinition, sectionHeadings } from "../../../core/forms";
+import { answerableFields, checkFormDefinition, currentGuidance, sectionHeadings } from "../../../core/forms";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
@@ -51,7 +51,7 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, firstQuestionToCheck, listedInOrder, mayConfirmForms, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { anchorFromPick, firstQuestionToCheck, listedInOrder, mayConfirmForms, needsReviewNotice, newField, opinionNeedText, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -326,7 +326,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           value={String(breakdown.fromRecords)}
           detail={hooks.mode === "tenant" ? "Filled by code: registration details and calculated figures" : "Filled by code: TM3 registration and calculated figures"}
         />
-        <Stat label="From notes / clinician" value={String(breakdown.fromNotes)} detail={`${counts.clinician_opinion} need the clinician's own opinion`} />
+        <Stat label="From notes / clinician" value={String(breakdown.fromNotes)} detail={opinionNeedText(counts.clinician_opinion)} />
         <Stat
           label="How it was analysed"
           value={
@@ -589,7 +589,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
 function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(field.guidance)}</p> : null}
+      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(currentGuidance(field.guidance))}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
       <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
       {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
@@ -707,7 +707,7 @@ function ConfirmDialog({
             }}
           >
             {toCheck ? (
-              <Notice tone="warning">{plural(toCheck, "question")} still marked “Needs review”. Confirming accepts them as they are.</Notice>
+              <Notice tone="warning">{needsReviewNotice(toCheck)}</Notice>
             ) : null}
             <div>
               <FieldLabel htmlFor="confirm-by">Your name</FieldLabel>

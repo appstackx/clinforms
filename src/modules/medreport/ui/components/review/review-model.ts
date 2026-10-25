@@ -10,7 +10,7 @@
 import { attendedInstead, inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
-import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, recordSourceOf, sectionHeadings } from "../../../core/forms";
+import { answerKindFor, answerToText, currentGuidance, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, recordSourceOf, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
 import { NOTICES } from "../../../config.public";
 import { TENANT_COPY } from "../../studio-copy";
@@ -130,7 +130,8 @@ export function buildQuestionGroups(
       spec,
       label: field.label,
       context,
-      guidance: field.guidance,
+      // Fix round 2 (B1-16): what a box left blank prints now, not a stored map's "unanswered: … stays".
+      guidance: currentGuidance(field.guidance),
       answerType: field.answerType,
       required: field.required,
       number: i + 1,
@@ -603,6 +604,8 @@ export function removeParagraph(report: Report, key: string, paragraphId: string
 function answerDisplay(value: string | boolean | null | Array<Record<string, string>>, kind: string): string {
   if (Array.isArray(value)) return `${value.length} row${value.length === 1 ? "" : "s"}`;
   if (value === null || value === "") return "blank";
+  // Fix round 2 (B1-19): a tick box as the screen says it.
+  if (typeof value === "boolean" && kind === "checkbox") return value ? "Ticked" : "Not ticked";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return kind === "date" ? formatUkDate(value) : value;
 }
@@ -799,6 +802,8 @@ export function supersedeAcknowledgedGaps(report: Report, key: string, actor: st
  * each – exactly what "Mark resolved" records); when that answer is removed again, the gaps resolved that way are
  * reopened. Drafting never resolves a gap this way, and a box that already had an answer keeps its gaps for the
  * person to check (a typo fixed is not the gap answered). canSign() is unchanged.
+ * Fix round 2 (B1-10): so does a text box that had only drafted paragraphs and gains the clinician's own words (typed
+ * over the draft, or a paragraph added); taking those words out again reopens them. A small edit keeps the gap.
  */
 export function settleGapsByAnswer(before: Report, after: Report, key: string, actor: string, now?: Date): Report {
   const was = before.sections.find((s) => s.key === key);
@@ -806,7 +811,11 @@ export function settleGapsByAnswer(before: Report, after: Report, key: string, a
   if (!was || !is || !actor.trim()) return after;
   const answeredBefore = isSectionAnswered(was);
   const answeredNow = isSectionAnswered(is);
-  if (!answeredBefore && answeredNow && answeredByPerson(after, key)) {
+  const textBox = !is.answer || is.answer.kind === "text";
+  const ownWords = (s: ReportSection) => textBox && s.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "");
+  const ownBefore = ownWords(was);
+  const ownNow = ownWords(is);
+  if ((!answeredBefore && answeredNow && answeredByPerson(after, key)) || (answeredBefore && !ownBefore && ownNow)) {
     const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution);
     if (open.length === 0) return after;
     const at = nowIso(now);
@@ -822,7 +831,7 @@ export function settleGapsByAnswer(before: Report, after: Report, key: string, a
     }
     return next;
   }
-  if (answeredBefore && !answeredNow) {
+  if ((answeredBefore && !answeredNow) || (ownBefore && !ownNow)) {
     const settled = after.gaps.filter((g) => g.sectionKey === key && g.resolution?.byAnswer);
     if (settled.length === 0) return after;
     const gaps = after.gaps.map((g) => {
@@ -831,7 +840,8 @@ export function settleGapsByAnswer(before: Report, after: Report, key: string, a
       delete open.resolution;
       return open;
     });
-    return appendActivity({ ...after, gaps }, { actor, action: "edited", detail: `${key}: the answer was removed, so ${settled.length === 1 ? "its gap is" : `its ${settled.length} gaps are`} open again.` }, now);
+    const what = answeredNow ? "your own words were taken out" : "the answer was removed";
+    return appendActivity({ ...after, gaps }, { actor, action: "edited", detail: `${key}: ${what}, so ${settled.length === 1 ? "its gap is" : `its ${settled.length} gaps are`} open again.` }, now);
   }
   return after;
 }

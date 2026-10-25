@@ -9,7 +9,8 @@
  * Owner: ai agent.
  */
 import { formatUkDate } from "../dates";
-import { INCIDENT_TYPE_LABELS, INSTRUCTING_PARTY_LABELS, NOTE_TYPE_LABELS } from "../labels";
+import { APPOINTMENT_STATUS_LABELS, INCIDENT_TYPE_LABELS, INSTRUCTING_PARTY_LABELS, NOTE_TYPE_LABELS } from "../labels";
+import { nextAppointmentAfterAssessment } from "../scope";
 import { REGISTRATION_SOURCE_ID } from "../schemas";
 import type { ComputedFact, EpisodeBundle, InstructingParty, Note } from "../types";
 
@@ -84,6 +85,9 @@ export function registrationLines(
       : "Consent to disclosure: not recorded",
   );
   lines.push(`Episode status: ${bundle.episodeStatus}`);
+  // Fix round 2 (B1-21): the next appointment after the initial assessment (the same in its as-at view, core/scope.ts).
+  const next = nextAppointmentAfterAssessment(bundle);
+  if (next) lines.push(`Next appointment after the initial assessment: ${formatUkDate(next.date)} (${APPOINTMENT_STATUS_LABELS[next.status].toLowerCase()})`);
   return lines;
 }
 

@@ -17,7 +17,7 @@ import "server-only";
  *
  * Owner: ai agent.
  */
-import { answerableFields, compactPlace, reportKindOf, scopeForDraftCall } from "../core/forms";
+import { answerableFields, compactPlace, currentGuidance, reportKindOf, scopeForDraftCall } from "../core/forms";
 import { formatUkDate } from "../core/dates";
 import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../core/labels";
 import { applyScope, initialAssessmentView, scopeExcludeTerms } from "../core/scope";
@@ -93,7 +93,7 @@ function renderQuestion(field: FormField, fields?: readonly FormField[], current
     `<question id="${attr(field.id)}" kind="${kind}" answer_type="${field.answerType}"${section}>`,
     `Question as printed: ${formText(field.label)}`,
   ];
-  if (field.guidance.trim()) lines.push(`What the referrer wants: ${formText(field.guidance)}`);
+  if (field.guidance.trim()) lines.push(`What the referrer wants: ${formText(currentGuidance(field.guidance))}`);
   lines.push(`Answer type: ${ANSWER_TYPE_LABELS[field.answerType]}${field.required ? "" : " (optional on the form)"}.`);
   if (field.options?.length) lines.push(`Options as printed: ${field.options.map((o) => `"${formText(o)}"`).join("; ")}.`);
   // Fix round 1 (B0-5, B0-7): a compact place takes the value alone; a conditional question says what it depends on.

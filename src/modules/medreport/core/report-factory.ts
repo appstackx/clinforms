@@ -15,6 +15,7 @@ import {
   formRefOf,
   formToTemplate,
   isFormReport,
+  isSectionAnswered,
   referrerNamesMatch,
   resolveComputedFactValue,
   recordSourceOf,
@@ -26,9 +27,12 @@ import {
 import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
 import { conditionTextOf, notApplicable } from "./conditions";
 import { buildAppointmentsTableSection } from "./form-tables";
+import { possessive } from "./possessive";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
-import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, type RecordSource } from "./labels";
+import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, staffEntryVerb, type RecordSource } from "./labels";
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 import type {
   ActivityEntry,
   Clinician,
@@ -257,11 +261,14 @@ export function applyDraftResult(report: Report, draft: DraftResultLike, opts: {
     ...report.flags.filter((f) => !f.sectionKey || !draftedKeys.has(f.sectionKey)),
     ...draft.flags,
   ];
+  // Fix round 2 (B1-19): the activity log names the questions that received an answer, and those left for the clinician.
+  const answered = draft.sections.filter((d) => isSectionAnswered(d)).map((d) => d.key);
+  const left = draft.sections.map((d) => d.key).filter((k) => answered.indexOf(k) < 0);
   return appendActivity(
     { ...report, sections, gaps, flags, generation: [...report.generation, draft.generation], updatedAt: at },
     {
       action: "drafted",
-      detail: WORDING.drafting.activityDrafted(Array.from(draftedKeys), draft.generation.mode, draft.generation.model),
+      detail: WORDING.drafting.activityDrafted(answered, draft.generation.mode, draft.generation.model, left),
       actor: "System",
     },
     opts.now,
@@ -443,7 +450,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
         at,
         actor: input.actor ?? "System",
         action: "created",
-        detail: `Started completing ${form.referrer.name}'s form "${form.title}" from ${bundle.source.label ?? bundle.source.connectorId}.`,
+        detail: `Started completing ${possessive(form.referrer.name)} form "${form.title}" from ${bundle.source.label ?? bundle.source.connectorId}.`,
       },
     ],
     createdAt: at,
@@ -470,9 +477,9 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
     id: `gap-${field.id}-referrer`,
     sectionKey: field.id,
     issue: value
-      ? `${formFrom} uses its own reference for “${field.label}”. The referral from ${referralFrom} gives “${value}”, which is ${referralFrom}'s reference, so it has not been copied in.`
+      ? `${formFrom} uses its own reference for “${field.label}”. The referral from ${referralFrom} gives “${value}”, which is ${possessive(referralFrom)} reference, so it has not been copied in.`
       : `${formFrom} uses its own reference for “${field.label}”, and the clinic record does not hold it.`,
-    suggestedQuestion: `What is ${formFrom}'s own reference for this case? It is usually on their instruction letter.${value ? ` If they asked for the referral's reference, use “${value}”.` : ""}`,
+    suggestedQuestion: `What is ${possessive(formFrom)} own reference for this case? It is usually on their instruction letter.${value ? ` If they asked for the referral's reference, use “${value}”.` : ""}`,
     relatedNoteIds: [],
     raisedBy: "system",
   };
@@ -486,6 +493,18 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
   // Fix wave 2: no internal source code ("FACT-attendance", "patient.postcode") in text a clinician reads – the
   // registration record or the appointment figures, in words.
   const where = what.startsWith("FACT-") ? "the appointment figures" : "the patient's registration details";
+  // Fix round 2 (B1-15): a value from the appointments is said as such ("the notes have no discharge").
+  if (what.startsWith("episode.") && !unmatched) {
+    const discharge = what === "episode.dischargeDate";
+    return {
+      id: `gap-${field.id}-record`,
+      sectionKey: field.id,
+      issue: discharge ? `The notes have no discharge, so “${field.label}” has been left blank.` : `The appointments in the notes do not give “${field.label}”, so it has been left blank.`,
+      suggestedQuestion: discharge ? "Enter the date treatment was completed – or leave it blank if treatment is still going on." : `What should be entered for “${field.label}”? Check the appointments in the notes.`,
+      relatedNoteIds: [],
+      raisedBy: "system",
+    };
+  }
   return {
     id: `gap-${field.id}-record`,
     sectionKey: field.id,
@@ -504,7 +523,8 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
 function recordSourceGap(field: FormField, source: RecordSource): Gap {
   const label = field.label;
   const words: Record<RecordSource, { issue: string; ask: string }> = {
-    staff_entry: { issue: `“${label}” is entered by staff on each report.`, ask: `What should be entered for “${label}”? Type it from your records.` },
+    // Fix round 2 (B1-15): tick it / choose it / type it, by the answer type.
+    staff_entry: { issue: `“${label}” is entered by staff on each report.`, ask: `What should be entered for “${label}”? ${capitalise(staffEntryVerb(field.answerType))} from your records.` },
     physio_choice: { issue: `“${label}” is chosen by the physiotherapist on each report.`, ask: `Which answer to “${label}” applies to this patient?` },
     clinic: { issue: `Your Clinic details do not hold “${label}” yet.`, ask: `Add it in Clinic settings, or type it here for this patient's site.` },
   };

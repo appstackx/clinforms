@@ -695,7 +695,7 @@ describe("fix round 2 (B1-7): who entered an answer is said the same way everywh
       ...testForm(),
       fields: [
         field({ label: "Date of referral", answerType: "date", fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Entered by staff on each report." }),
-        field({ label: "Restriction required – lifting limit", answerType: "checkbox", fillSource: { kind: "registration", path: "staff.entry" } }),
+        field({ label: "Confirmation of ID seen", answerType: "checkbox", fillSource: { kind: "registration", path: "staff.entry" } }),
         field({ label: "Body part affected", answerType: "single_choice", options: ["Upper Limb", "Lower Limb"], fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report: the other options are deleted from the form." }),
         field({ label: "Our Ref", answerType: "short_text", fillSource: { kind: "registration", path: "staff.entry" } }),
       ],
@@ -722,5 +722,52 @@ describe("fix round 2 (B1-7): who entered an answer is said the same way everywh
     // A typed provider reference resolves its gap as "Entered by …" – where it came from is the person's to add.
     const gap = { id: "gap-F-104-referrer", sectionKey: ref, issue: "Enter the referrer's own reference.", suggestedQuestion: "?", relatedNoteIds: [] };
     assert.equal(resolutionOptionsFor({ own: true, opinion: false, gap, actor: "Sarah Reid" }).prefill, "Entered by Sarah Reid.");
+  });
+});
+
+describe("fix round 2 (B1-10): the clinician's own words over a draft settle the box's gap", () => {
+  it("typing over the draft or adding a paragraph resolves its gaps (audited); taking the words out reopens them; a small edit keeps them", () => {
+    // Bodycare final F-14 shape: a drafted answer with a "Required – check the gap" item.
+    const { report: base } = drafted();
+    const gap = { id: "gap-F-03-t-1", sectionKey: "F-03", issue: "The record does not say which activities are restricted.", suggestedQuestion: "Which?", relatedNoteIds: ["N-001"], raisedBy: "ai" as const };
+    const report: Report = { ...base, gaps: [...base.gaps.filter((g) => g.sectionKey !== "F-03"), gap] };
+    const own = reviewReducer(report, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "No restrictions with daily activities now; he is back at the gym.", actor: "Sarah Reid" });
+    assert.equal(own.sections.find((s) => s.key === "F-03")!.paragraphs[0].origin, "clinician");
+    assert.equal(own.gaps.find((g) => g.id === gap.id)?.resolution?.text, "Answered on the form by Sarah Reid.");
+    assert.ok(own.activity.some((a) => a.detail.startsWith("F-03: resolved gap") && a.actor === "Sarah Reid"));
+    // Back to the drafted wording ("Revert to draft"): open again.
+    const reverted = reviewReducer(own, { type: "revertParagraph", key: "F-03", paragraphId: "F-03-p1", actor: "Sarah Reid" });
+    assert.equal(reverted.sections.find((s) => s.key === "F-03")!.paragraphs[0].origin, "ai");
+    assert.equal(reverted.gaps.find((g) => g.id === gap.id)?.resolution, undefined, "own words taken out: open again");
+    assert.ok(reverted.activity.some((a) => a.detail === "F-03: your own words were taken out, so its gap is open again."));
+    // An added paragraph in her own words settles it too.
+    const added = reviewReducer(report, { type: "addParagraph", key: "F-03", text: "Lifting at work is still limited to 10 kg.", actor: "Sarah Reid" });
+    assert.equal(added.gaps.find((g) => g.id === gap.id)?.resolution?.byAnswer, true);
+    // A small edit of the draft keeps the gap for her to check.
+    const light = reviewReducer(report, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "On 18/03/2026 he reported a lifting injury at work on 12/03/2026 (a parcel).", actor: "Sarah Reid" });
+    assert.equal(light.gaps.find((g) => g.id === gap.id)?.resolution, undefined);
+  });
+});
+
+describe("fix round 2 (B1-18): “Other questions” opens once; a heading that is only its question's label is no heading", () => {
+  it("CLM Initial Assessment: no second or third “Other questions”, no heading made of F-16's own label", async () => {
+    const { sectionHeadings } = await import("../../../core/forms");
+    // The stored CLM IA map (read only): F-01–F-13 under no heading, F-14 its heading, F-15 none, F-16's section = its
+    // label, F-17–F-20 none.
+    const label16 = "Number of Treatment Sessions Recommended (enter a numeric value)";
+    const fields = [
+      ...Array.from({ length: 13 }, (_, i) => ({ label: `Q${i + 1}`, section: undefined as string | undefined })),
+      { label: "Findings On Initial Examination", section: "Findings On Initial Examination" },
+      { label: "Benefit of treatment – activities to return to", section: undefined },
+      { label: label16, section: label16 },
+      ...Array.from({ length: 4 }, (_, i) => ({ label: `Q${17 + i}`, section: undefined as string | undefined })),
+    ];
+    // F-14's and F-16's headings are only their own labels (the card shows the label already): one group, no repeats.
+    assert.deepEqual(sectionHeadings(fields), Array(20).fill(""));
+    // With a real heading over F-14, the questions under no heading after it stay with it.
+    const titled = fields.map((f, i) => (i === 13 ? { ...f, section: "FINDINGS" } : f));
+    assert.deepEqual(sectionHeadings(titled), [...Array(13).fill(""), ...Array(7).fill("FINDINGS")]);
+    // A form whose only questions under no heading come later keeps them in their own group (as before).
+    assert.deepEqual(sectionHeadings([{ label: "A", section: "Part A" }, { label: "B" }, { label: "C", section: "Part C" }]), ["Part A", "", "Part C"]);
   });
 });

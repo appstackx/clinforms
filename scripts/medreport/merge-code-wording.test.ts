@@ -42,7 +42,9 @@ test("dictionary: every known code has plain words, without brackets or examples
   assert.equal(practiceCodeWords("P_TITLE"), "the patient's title", "the examples in brackets are left out");
   assert.equal(practiceCodeWords("P_ADDRESS3"), "line 3 of the patient's address");
   assert.equal(practiceCodeWords("P_LOCATION_ADDRESS2"), "line 2 of the clinic's address");
-  assert.equal(practiceCodeWords("P_ALTERNATE_REF1"), "alternative reference 1 (where some clinics keep the date of the accident)");
+  // Fix round 2 (B1-17): the accident date is said only beside the question about it ("Date of Accident"), never in a list
+  // of codes or beside "Shoulder No".
+  assert.equal(practiceCodeWords("P_ALTERNATE_REF1"), "alternative reference 1");
   assert.equal(practiceCodeWords("P_LOCATION_NAME"), "the clinic (site) the patient attends", "brackets inside the words are kept");
   assert.equal(practiceCodeWords("P_HOSP_REF"), null, "unknown");
   assert.equal(practiceCodeWords("Patient_Name"), null);

@@ -11,7 +11,8 @@ import { useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { neutralLegacyText } from "../../wording";
 
-const ACTION_LABELS: Record<string, string> = {
+/** Every action the Studio records (core/report-factory.ts KNOWN_ACTIVITY_ACTIONS) has a label; any other reads "Updated". */
+export const ACTION_LABELS: Record<string, string> = {
   created: "Created",
   drafted: "Drafted",
   draft_failed: "Drafting failed",
@@ -29,7 +30,15 @@ const ACTION_LABELS: Record<string, string> = {
   answer_set: "Answer changed",
   previewed: "Previewed",
   consent_recorded: "Consent recorded",
+  // Fix round 2 (B1-19).
+  amendment_started: "Amended version started",
+  superseded: "Replaced by a newer version",
 };
+
+/** The label of an activity action – "Updated" for one without a label, never the raw code. */
+export function activityLabel(action: string): string {
+  return ACTION_LABELS[action] ?? "Updated";
+}
 
 const ACTION_DOT: Record<string, string> = {
   approved: "bg-teal-600",
@@ -53,7 +62,7 @@ export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
           <li key={`${a.at}-${i}`} className="relative">
             <span aria-hidden className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${ACTION_DOT[a.action] ?? "bg-slate-400"}`} />
             <p className="text-[13px] font-medium text-slate-900">
-              {ACTION_LABELS[a.action] ?? a.action}
+              {activityLabel(a.action)}
               <span className="ml-1.5 font-normal text-slate-500">· {a.actor}</span>
             </p>
             <p className="text-[12px] leading-relaxed text-slate-600">{neutralLegacyText(a.detail)}</p>

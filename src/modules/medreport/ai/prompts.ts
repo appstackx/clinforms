@@ -22,7 +22,7 @@ import type { ComputedFact, EpisodeBundle, InstructingParty, Note, ReportTemplat
 import { clinicianLabel, noteFieldLines, registrationLines } from "../core/validation/sources";
 import { CLINICAL_ABBREVIATIONS } from "../core/voice";
 
-export const PROMPT_VERSION = "2" as const;
+export const PROMPT_VERSION = "3" as const;
 
 /** Placeholder the model uses for the patient; replaced with their name after drafting. */
 export const CLAIMANT_PLACEHOLDER = "[CLAIMANT]";
