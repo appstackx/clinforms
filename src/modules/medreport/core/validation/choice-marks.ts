@@ -97,13 +97,19 @@ export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
     if (field.answerType === "short_text" || field.answerType === "long_text") {
       const named = namedOptions(options, text);
       if (!named.unmatched) continue;
+      // Fix round 1 (B0-18): a few leftover words are named ("Elbow"); a sentence is quoted as written – never the
+      // leftover words with the options and punctuation taken out, which read like a garbled draft.
+      const fewWords = named.unmatched.length <= 40 && named.unmatched.split(/\s+/).length <= 4;
+      const asWritten = text.length > 80 ? `${text.slice(0, 80).replace(/\s+\S*$/, "")}…` : text;
       flags.push(
         makeFlag({
           code: "MISSING_PLACEHOLDER",
           severity: "blocking",
           sectionKey: section.key,
-          evidence: named.unmatched,
-          message: `The answer to “${section.title}” names “${named.unmatched}”, which is not printed on the form, so nothing would be marked. Name only the printed options (${printed}), or “None”.`,
+          evidence: fewWords ? named.unmatched : asWritten,
+          message: fewWords
+            ? `The answer to “${section.title}” names “${named.unmatched}”, which is not printed on the form, so nothing would be marked. Name only the printed options (${printed}), or “None”.`
+            : `The answer to “${section.title}” (“${asWritten}”) is a sentence, not the printed options, so nothing would be marked. Name only the printed options (${printed}), or “None”.`,
         }),
       );
       continue;

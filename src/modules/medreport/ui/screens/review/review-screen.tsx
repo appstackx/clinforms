@@ -78,7 +78,7 @@ import {
   type QuestionStatus,
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
-import { optionalBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
+import { emptyOptionalSummary, optionalBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
 import { useReviewActions } from "../../components/review/use-review-actions";
 import { useReviewState } from "../../components/review/use-review-state";
 
@@ -295,6 +295,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
   const blankCandidates = useMemo(() => (signed ? [] : optionalBlankCandidates(report, { template, form })), [report, template, form, signed]);
+  const blankSummary = useMemo(() => emptyOptionalSummary(report, { template, form }, blankCandidates), [report, template, form, blankCandidates]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
@@ -501,6 +502,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             bundle={bundle}
             items={items}
             blankCandidates={blankCandidates}
+            blankSummary={blankSummary}
             onLeaveBlank={leaveBlank}
             readOnly={signed}
             validating={validating}

@@ -540,3 +540,70 @@ describe("fix round 1 (B0-26): a staff member's draft says what is left", () => 
     assert.match(staffApprovalNote(0), /^Ready for a signing clinician/);
   });
 });
+
+describe("fix round 1 (B0-21): questions with no section inside a section", () => {
+  it("10Bridge's address lines between two CLAIMANT DETAILS questions stay in CLAIMANT DETAILS (review and mapping page alike)", async () => {
+    const { sectionHeadings } = await import("../../../core/forms");
+    const { report, form } = testReport();
+    const c = "CLAIMANT DETAILS";
+    const fields = form.fields.map((f) => (["F-01", "F-04"].includes(f.id) ? { ...f, section: c } : ["F-02", "F-03"].includes(f.id) ? { ...f, section: undefined } : f));
+    const groups = buildQuestionGroups(report, { fields }, formToTemplate({ ...form, fields }));
+    assert.deepEqual(groups[0].title, c);
+    // (F-05 is printed under F-04, so it stays with it.)
+    assert.deepEqual(groups[0].questions.map((q) => q.key), ["F-01", "F-02", "F-03", "F-04", "F-05"], "no “Form questions” between two CLAIMANT DETAILS headings");
+    assert.deepEqual(sectionHeadings(fields).slice(0, 4), [c, c, c, c]);
+  });
+});
+
+describe("fix round 1 (B0-24): editing an answered box keeps its acknowledged gaps", () => {
+  it("“dose not recorded” acknowledged beside a drafted answer stays acknowledged after an edit; a box left blank and then answered is resolved by the answer", () => {
+    const { report } = drafted();
+    // F-03 has a drafted answer: its gap ("dose / still taking not recorded") is acknowledged with a reason.
+    const withGap: Report = {
+      ...report,
+      gaps: [
+        ...report.gaps,
+        { id: "gap-F-03-t-dose", sectionKey: "F-03", issue: "The dose and whether he is still taking it are not recorded.", suggestedQuestion: "What dose?", relatedNoteIds: [], raisedBy: "ai" },
+      ],
+    };
+    const acked = resolveGap(withGap, "gap-F-03-t-dose", "acknowledged", "Not recorded in the notes – left out.", "Sarah Reid", NOW);
+    assert.equal(acked.gaps.find((g) => g.id === "gap-F-03-t-dose")?.resolution?.leftBlank, false, "the box had an answer");
+    const edited = reviewReducer(reviewReducer(acked, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "On 18/03/2026 he reported a lifting injury at work." }), { type: "logEdit", key: "F-03", actor: "Sarah Reid" });
+    const gap = edited.gaps.find((g) => g.id === "gap-F-03-t-dose");
+    assert.equal(gap?.resolution?.kind, "acknowledged");
+    assert.equal(gap?.resolution?.text, "Not recorded in the notes – left out.", "its own reason, not “Answered on the form … (replaces “left blank”)”");
+    assert.ok(!edited.activity.some((a) => /no longer applies/.test(a.detail)));
+
+    // A box acknowledged while empty, then answered: the answer replaces the "left blank" acknowledgement (as before).
+    const emptyGap = report.gaps.find((g) => g.sectionKey === "F-06" && !g.resolution);
+    assert.ok(emptyGap);
+    const blank = resolveGap(report, emptyGap.id, "acknowledged", "No opinion formed – left blank.", "Sarah Reid", NOW);
+    assert.equal(blank.gaps.find((g) => g.id === emptyGap.id)?.resolution?.leftBlank, true);
+    const answered = reviewReducer(blank, { type: "addParagraph", key: "F-06", text: "In my opinion he will recover within 6 weeks.", actor: "Sarah Reid" });
+    assert.equal(answered.gaps.find((g) => g.id === emptyGap.id)?.resolution?.kind, "resolved");
+  });
+});
+
+describe("fix round 1 (B0-22): one count of answered and left-blank questions", () => {
+  it("a record line that is empty by design is left blank – in the summary as in “Copy answers”", async () => {
+    const { copyEntries } = await import("../../../core/answer-copy");
+    const { report, form: base } = drafted();
+    const lineKey = "F-02";
+    // An address printed over three lines; the record's address has no third line.
+    const form: FormDefinition = {
+      ...base,
+      fields: base.fields.map((f) => (f.id === lineKey ? { ...f, label: "Address – line 3 of 3", answerType: "short_text" as const, fillSource: { kind: "registration" as const, path: "patient.addressLines" as const, part: { index: 3, of: 3 } } } : f)),
+    };
+    const withLine: Report = {
+      ...report,
+      status: "signed",
+      sections: report.sections.map((s) => (s.key === lineKey ? { ...s, paragraphs: [], answer: undefined, blankFromRecords: true, status: "complete" as const } : s)),
+    };
+    const q = flattenQuestions(buildQuestionGroups(withLine, form, formToTemplate(form))).find((x) => x.key === lineKey)!;
+    assert.equal(questionStatus(q, [], [], false, true), "record_empty", "not “Filled from records”");
+    const counts = countStatuses([questionStatus(q, [], [], false, true)]);
+    assert.equal(counts.counts.records, 0);
+    assert.equal(counts.counts.record_empty, 1);
+    assert.equal(copyEntries(withLine, form).find((e) => e.key === lineKey)?.answer, null, "“Copy answers” has no answer there either");
+  });
+});

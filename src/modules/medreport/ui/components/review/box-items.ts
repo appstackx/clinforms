@@ -291,6 +291,27 @@ export function optionalBlankCandidates(report: Report, ctx: BoxContext): BlankC
 }
 
 /**
+ * Fix round 1 (B0-28): the optional questions with no answer (not decided yet), and why the rest of them are not in
+ * "Leave optional boxes blank": they need the clinician's opinion, or have something else to sort out first.
+ */
+export function emptyOptionalSummary(report: Report, ctx: BoxContext, candidates: readonly BlankCandidate[]): { total: number; opinion: number; other: number } {
+  const fields = new Map((ctx.form?.fields ?? []).map((f) => [f.id, f]));
+  const chosen = new Set(candidates.map((c) => c.key));
+  let total = 0;
+  let opinion = 0;
+  for (const section of report.sections) {
+    if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
+    const field = fields.get(section.key);
+    if (isRequired(section, ctx) || field?.required !== false || answeredByRules(section, field) || section.paragraphs.some((p) => p.text.trim() !== "")) continue;
+    const open = (report.gaps ?? []).some((g) => g.sectionKey === section.key && !g.resolution) || (report.flags ?? []).some((f) => f.sectionKey === section.key && !f.acknowledged && f.code !== "OPEN_GAP");
+    if (!open && !chosen.has(section.key)) continue; // decided already (left blank on purpose)
+    total += 1;
+    if (!chosen.has(section.key) && section.kind === "clinician_opinion") opinion += 1;
+  }
+  return { total, opinion, other: total - candidates.length - opinion };
+}
+
+/**
  * Acknowledging the gap of an optional question that has no answer is deciding to leave it blank: the same reason also
  * acknowledges its "optional and has no answer" warning (as "Leave optional boxes blank" does), so the person is not
  * asked twice. Anything else is returned unchanged.

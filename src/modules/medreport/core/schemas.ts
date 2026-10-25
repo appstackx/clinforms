@@ -616,6 +616,12 @@ export const GapResolutionSchema = z.object({
   kind: z.enum(["resolved", "acknowledged"]),
   text: z.string().min(1),
   at: IsoDateTimeSchema,
+  /**
+   * Additive (fix round 1, B0-24): an acknowledgement made while the question had no answer – it left the box blank, so
+   * a value entered later replaces it. false: the box was answered then, and the acknowledgement (with its reason)
+   * stays. Absent on older acknowledgements (treated as left blank, as before).
+   */
+  leftBlank: z.boolean().optional(),
 });
 
 /** Something the record does not say. Every unresolved gap blocks signing (OPEN_GAP). */

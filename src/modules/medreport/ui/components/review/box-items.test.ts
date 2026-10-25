@@ -443,3 +443,18 @@ describe("fix round 1 (B0-17): why a gap was raised, by its kind", () => {
     assert.match(gapProvenance({ id: "gap-F-02-ab12-1", raisedBy: "ai" }), /^Raised while drafting/);
   });
 });
+
+describe("fix round 1 (B0-28): the leave-blank card counts every optional box without an answer", () => {
+  it("“2 of 5 … the other 3 need your opinion or a decision first” – not “2 optional boxes have no answer”", async () => {
+    const { emptyOptionalSummary } = await import("./box-items");
+    const { leaveBlankSummaryText } = await import("./flags-panel");
+    const { report, form, template } = drafted();
+    const candidates = optionalBlankCandidates(report, { template, form });
+    assert.deepEqual(candidates.map((c) => c.key), ["F-05", "F-06"]);
+    const summary = emptyOptionalSummary(report, { template, form }, candidates);
+    assert.deepEqual(summary, { total: 5, opinion: 1, other: 2 }, "F-07 needs an opinion; F-08 (a clinic-system code) and F-11 (a held-back answer) need a decision");
+    assert.equal(leaveBlankSummaryText(candidates.length, summary), "2 of 5 optional boxes without an answer can be left blank in one step, with one reason; the other 3 need your opinion or a decision first.");
+    assert.equal(leaveBlankSummaryText(1, { total: 4, opinion: 3, other: 0 }), "1 of 4 optional boxes without an answer can be left blank in one step, with one reason; the other 3 need your opinion.");
+    assert.match(leaveBlankSummaryText(2, { total: 2, opinion: 0, other: 0 }), /^2 optional boxes have no answer\./);
+  });
+});
