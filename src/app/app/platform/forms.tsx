@@ -1,12 +1,15 @@
 "use client";
+import { useRef } from "react";
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
 import { SecretBox, SubmitButton } from "@/components/account/form-controls";
 import { INVITE_COPY, OWNER_RESET_COPY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "@/lib/account-copy";
+import { PACKAGE_IDS, PACKAGE_PRESETS, SETUP_FEE_PENCE, isPackageId } from "@/lib/packages";
 import {
   changeTrialAction,
   createClinicAction,
   createOwnerResetLinkAction,
+  packageAction,
   setLimitsAction,
   setTrialAction,
   type CreateClinicResult,
@@ -229,6 +232,93 @@ export function TrialForms({ clinics }: { clinics: PlanClinicOption[] }) {
         </div>
         <Result state={limitState} />
       </form>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Packages (25/10/2026)
+ * ----------------------------------------------------------------------------------------------*/
+
+const pounds = (pence: number | null) => (pence === null ? "" : (pence / 100).toFixed(pence % 100 === 0 ? 0 : 2));
+
+/**
+ * Sets a clinic's package. Choosing a preset fills in the price list (Custom leaves the fields for the deal); every
+ * field can still be changed. Founding price: fixed for 12 months from the start unless an end date is given.
+ */
+export function PackageForm({ clinics, today }: { clinics: PlanClinicOption[]; today: string }) {
+  const [state, action] = useFormState(packageAction, null as PlanActionResult | null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const applyPreset = (id: string) => {
+    const f = formRef.current;
+    if (!f || !isPackageId(id)) return;
+    const p = PACKAGE_PRESETS[id];
+    const set = (name: string, value: string) => {
+      const el = f.elements.namedItem(name);
+      if (el instanceof HTMLInputElement) el.value = value;
+    };
+    if (p.monthlyPricePence !== null) set("monthlyPrice", pounds(p.monthlyPricePence));
+    if (p.reportsIncluded !== null) set("reportsIncluded", String(p.reportsIncluded));
+    if (p.extraReportPence !== null) set("extraReportPrice", pounds(p.extraReportPence));
+  };
+  return (
+    <div className="space-y-4">
+      <form ref={formRef} action={action} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Clinic package">
+        <ClinicSelect clinics={clinics} id="package-clinic" />
+        <div>
+          <label htmlFor="package-id" className={LABEL}>
+            Package
+          </label>
+          <select id="package-id" name="package" required className={SELECT} defaultValue="practice" onChange={(e) => applyPreset(e.target.value)}>
+            {PACKAGE_IDS.map((id) => (
+              <option key={id} value={id}>
+                {PACKAGE_PRESETS[id].label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Field label="Monthly price (£, ex VAT)" name="monthlyPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.monthlyPricePence)} />
+        <Field label="Reports included a month" name="reportsIncluded" type="number" inputMode="numeric" required defaultValue={PACKAGE_PRESETS.practice.reportsIncluded ?? 0} />
+        <Field label="Extra report price (£ each)" name="extraReportPrice" inputMode="decimal" required defaultValue={pounds(PACKAGE_PRESETS.practice.extraReportPence)} />
+        <Field label="Starts on" name="startsOn" type="date" defaultValue={today} />
+        <Field label="Founding price (£ a month)" name="foundingPrice" inputMode="decimal" placeholder="None" hint="Optional. Fixed for 12 months unless an end date is given." />
+        <Field label="Founding price until" name="foundingUntil" type="date" hint="Optional (inclusive)." />
+        <Field label="Set-up fee (£)" name="setupFee" inputMode="decimal" placeholder="None" hint={`Optional. The price list's fee is £${SETUP_FEE_PENCE / 100}.`} />
+        <div>
+          <label htmlFor="package-setup-status" className={LABEL}>
+            Set-up fee status
+          </label>
+          <select id="package-setup-status" name="setupFeeStatus" className={SELECT} defaultValue="">
+            <option value="">–</option>
+            <option value="due">Due</option>
+            <option value="paid">Paid</option>
+            <option value="waived">Waived</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="package-notes" className={LABEL}>
+            Internal notes
+          </label>
+          <textarea
+            id="package-notes"
+            name="notes"
+            rows={2}
+            maxLength={1000}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+          />
+          <p className="mt-1 text-xs text-slate-500">Never shown to the clinic and never written to the activity log.</p>
+        </div>
+        <input type="hidden" name="what" defaultValue="save" />
+        <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">
+          <WhatButton what="save" confirm="Save this package for the clinic? This month is measured against it from now on.">
+            Save package
+          </WhatButton>
+          <WhatButton what="remove" tone="danger" confirm="Remove this clinic's package? Usage is still counted, but no allowance is shown.">
+            Remove package
+          </WhatButton>
+        </div>
+      </form>
+      <Result state={state} />
     </div>
   );
 }

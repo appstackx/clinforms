@@ -165,6 +165,95 @@ export interface ClinicPlanTable {
   updated_at: IsoTimestamp;
 }
 
+/**
+ * `clinic_package` (migration 0007) – the clinic's package (price, allowance, extra-report price), written by
+ * ClinForms staff only (platform page, admin:set-package). One row per clinic; no row = no package yet.
+ * Money in pence (ex VAT); dates are UK calendar dates "YYYY-MM-DD".
+ */
+export interface ClinicPackageTable {
+  tenant_id: string;
+  /** starter | practice | group | group_plus | custom | trial */
+  package: string;
+  monthly_price_pence: number;
+  reports_included: number;
+  extra_report_pence: number;
+  founding_price_pence: number | null;
+  /** "YYYY-MM-DD" (inclusive), or null. */
+  founding_until: string | null;
+  setup_fee_pence: number | null;
+  /** due | paid | waived, or null. */
+  setup_fee_status: string | null;
+  /** "YYYY-MM-DD" */
+  starts_on: string;
+  /** Internal only (never shown to the clinic). */
+  notes: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/**
+ * `clinic_usage` (migration 0007) – counters per clinic and UK calendar month ("YYYY-MM"). Never deleted by report
+ * retention. `package` / `plan_*` = the package as it applied to that month (null = none).
+ */
+export interface ClinicUsageTable {
+  tenant_id: string;
+  period: string;
+  package: string | null;
+  plan_price_pence: number | null;
+  plan_reports_included: number | null;
+  plan_extra_report_pence: number | null;
+  reports_started: WithDefault<number>;
+  reports_drafted: WithDefault<number>;
+  reports_approved: WithDefault<number>;
+  amendments_approved: WithDefault<number>;
+  billable_reports: WithDefault<number>;
+  billable_on_approval: WithDefault<number>;
+  forms_read: WithDefault<number>;
+  question_sets: WithDefault<number>;
+  drafting_calls: WithDefault<number>;
+  failed_calls: WithDefault<number>;
+  reading_calls: WithDefault<number>;
+  input_tokens: WithDefault<number>;
+  output_tokens: WithDefault<number>;
+  cache_read_tokens: WithDefault<number>;
+  cache_write_tokens: WithDefault<number>;
+  cost_micro_usd: WithDefault<number>;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** `usage_report` (migration 0007) – one row per report seen by the usage counters: it counts once only. */
+export interface UsageReportTable {
+  tenant_id: string;
+  report_id: string;
+  /** The first version of an amended report (= report_id for a report that is not an amendment). */
+  root_report_id: string;
+  started_at: IsoTimestamp | null;
+  first_drafted_at: IsoTimestamp | null;
+  first_approved_at: IsoTimestamp | null;
+  drafting_calls: WithDefault<number>;
+  /** "YYYY-MM" the report counted in, or null (not counted). */
+  billable_period: string | null;
+  billable_at: IsoTimestamp | null;
+  /** drafted | approved */
+  billable_via: string | null;
+  started_event: string | null;
+  drafted_event: string | null;
+  approved_event: string | null;
+  billable_event: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** `usage_event` (migration 0007) – usage events already applied (a retried write never counts twice). */
+export interface UsageEventTable {
+  id: string;
+  tenant_id: string;
+  kind: string;
+  period: string;
+  created_at: IsoTimestamp;
+}
+
 /** `member_profile` – the signer identity of a member of an organization. */
 export interface MemberProfileTable {
   organization_id: string;
@@ -298,6 +387,10 @@ export interface Database {
   rateLimit: AuthRateLimitTable;
   clinic_profile: ClinicProfileTable;
   clinic_plan: ClinicPlanTable;
+  clinic_package: ClinicPackageTable;
+  clinic_usage: ClinicUsageTable;
+  usage_report: UsageReportTable;
+  usage_event: UsageEventTable;
   member_profile: MemberProfileTable;
   forms: FormsTable;
   form_files: FormFilesTable;
@@ -329,6 +422,10 @@ export const TABLES_IN_FK_ORDER = [
   ...AUTH_TABLES_IN_FK_ORDER,
   "clinic_profile",
   "clinic_plan",
+  "clinic_package",
+  "clinic_usage",
+  "usage_report",
+  "usage_event",
   "member_profile",
   "tenant_settings",
   "forms",
@@ -357,6 +454,10 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
   rateLimit: ["id"],
   clinic_profile: ["tenant_id"],
   clinic_plan: ["tenant_id"],
+  clinic_package: ["tenant_id"],
+  clinic_usage: ["tenant_id", "period"],
+  usage_report: ["tenant_id", "report_id"],
+  usage_event: ["id"],
   member_profile: ["organization_id", "user_id"],
   tenant_settings: ["tenant_id"],
   forms: ["tenant_id", "id"],
@@ -372,6 +473,9 @@ export const PRIMARY_KEYS: { readonly [T in TableName]: readonly (keyof Database
 
 export type ClinicProfileRow = Selectable<ClinicProfileTable>;
 export type ClinicPlanRow = Selectable<ClinicPlanTable>;
+export type ClinicPackageRow = Selectable<ClinicPackageTable>;
+export type ClinicUsageRow = Selectable<ClinicUsageTable>;
+export type UsageReportRow = Selectable<UsageReportTable>;
 export type MemberProfileRow = Selectable<MemberProfileTable>;
 export type FormRow = Selectable<FormsTable>;
 export type FormFileRow = Selectable<FormFilesTable>;

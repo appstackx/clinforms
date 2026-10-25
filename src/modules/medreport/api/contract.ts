@@ -442,6 +442,11 @@ export const DraftsRequestSchema = z
     author: ClinicianSchema.optional(),
     /** Wave 2: the report being drafted (recorded in a clinic's audit trail; never required). */
     reportId: z.string().min(1).max(128).optional(),
+    /**
+     * 25/10/2026 (usage): the approved report this one amends (report.amends.reportId), so drafting an amended
+     * version never counts as a new report. Checked by the host against its own record of approvals.
+     */
+    amendsReportId: z.string().min(1).max(128).optional(),
   })
   .superRefine((body, ctx) => {
     if (!body.form && body.sectionKeys.length > MAX_SECTIONS_PER_DRAFT) {

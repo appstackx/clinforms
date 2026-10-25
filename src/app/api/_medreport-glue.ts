@@ -19,6 +19,8 @@ import "server-only";
  *     sharedState    rate_limits / launch_token_uses (shared by every instance) when CLINFORMS_DB is set
  *     audit          audit_log (append-only)
  *     verifyPartnerKey  partner_keys (SHA-256, revocable; the key names its clinic)
+ *     usage          clinic_usage / usage_report / usage_event (25/10/2026: packages and usage – clinic members only,
+ *                    never the public demo; src/server/usage/recorder.ts, atomic and retry-safe)
  *   Each one degrades on its own: without a database the module keeps its per-instance fallbacks and the
  *   public demo keeps working.
  *
@@ -43,6 +45,7 @@ import { appendAudit } from "@/server/repos/audit";
 import { claimLaunchToken } from "@/server/repos/launch-tokens";
 import { partnerKeyTenant, verifyPartnerKey } from "@/server/repos/partner-keys";
 import { hitRateLimit, peekRateLimit, resetRateLimit } from "@/server/repos/rate-limits";
+import { dbUsageRecorder } from "@/server/usage/recorder";
 import { tenantDeps } from "./_medreport-tenant";
 
 /** After HTTP to the simulated API fails once, use in-process calls for this long (per instance). */
@@ -231,13 +234,15 @@ function sharedStateForEnv(): SharedStateStore | undefined {
 }
 
 /** The host capabilities of wave 2 (database-backed; see the header). */
-export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey"> {
+export function hostCapabilities(): Pick<MedreportDeps, "authenticate" | "clinicProfile" | "sharedState" | "audit" | "verifyPartnerKey" | "usage"> {
   return {
     authenticate: authenticateMember,
     clinicProfile: (tenantId) => loadClinicProfile(getDb(), tenantId),
     sharedState: sharedStateForEnv(),
     audit: dbAudit(getDb),
     verifyPartnerKey: dbPartnerKeys(getDb),
+    // Only ever called for a signed-in clinic member (api/usage.ts skips the public demo), so the demo never needs a database.
+    usage: dbUsageRecorder(getDb),
   };
 }
 

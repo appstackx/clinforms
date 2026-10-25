@@ -32,6 +32,11 @@ import "server-only";
  *
  * Logs IDs, timings and token counts only.
  *
+ * Usage (25/10/2026): every LIVE drafting call of a clinic is counted (api/usage.ts recordUsage → the host's
+ * counters): a successful one with its tokens – the report it drafts counts towards the clinic's allowance at its
+ * first live drafting (never again for the same report) – and a failed one (refused, cut off, timed out, or replaced
+ * by the recorded answers) as a failed call, with its tokens when the service answered. Demo answers never count.
+ *
  * Owner: ai agent.
  */
 import { assembleDraft } from "../../ai/assemble";
@@ -50,6 +55,7 @@ import { DraftsRequestSchema, type ProblemIssue } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { requireAttestedForm, resolveTemplate } from "../resolve-template";
+import { recordUsage, usageOfError } from "../usage";
 
 /** /drafts bodies carry a whole bundle; allow up to the platform limit. */
 const MAX_DRAFT_BODY_BYTES = 4_000_000;
@@ -123,6 +129,14 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
 
   const computedFacts = computeFacts(body.bundle);
   const started = Date.now();
+  // The report a live call counts for (usage): the Studio always names it.
+  const usageReport = { ...(body.reportId ? { reportId: body.reportId } : {}), ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}) };
+  let failedCallCounted = false;
+  const countFailedCall = async (err: unknown) => {
+    if (failedCallCounted) return;
+    failedCallCounted = true;
+    await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: false, ...usageOfError(err) });
+  };
   const run = (m: typeof mode) =>
     generateDraftGroup({
       template,
@@ -150,6 +164,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
         hasDemoDraft(body.bundle, template.id, form);
       if (!fallback) throw err;
       logEvent("draft_live_fallback", { template: template.id, sections: body.sectionKeys.join("+"), code: err.code, ms: Date.now() - started });
+      await countFailedCall(err);
       result = await run("demo");
     }
     const response = assembleDraft({
@@ -183,6 +198,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       blocking: response.flags.filter((f) => f.severity === "blocking").length,
     });
     if (result.meta.mode === "live") {
+      await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: true, model: result.meta.model, ...(usage ? { usage } : {}) });
       await auditActor(deps, actor, {
         action: AUDIT_ACTIONS.draftLive,
         targetType: body.reportId ? "report" : form ? "form" : "template",
@@ -202,6 +218,8 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     return json({ ...response, generation: { ...response.generation, model: publicEngineName(response.generation.model) } });
   } catch (err) {
     if (err instanceof DraftGenerationError) {
+      // A live call that failed still went to the drafting service (counted once, also after a fallback).
+      if (mode === "live" && err.code !== "NO_DEMO_DRAFT" && err.code !== "LIVE_AI_UNAVAILABLE") await countFailedCall(err);
       logEvent("draft_failed", {
         template: template.id,
         sections: body.sectionKeys.join("+"),

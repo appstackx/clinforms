@@ -179,6 +179,45 @@ is set, it starts at once (they have signed in already). ClinForms staff can als
   from the platform page, `platform.*` naming the administrator.
 - Needs migration `0006_clinic_plan` on the target database (docs/database.md §3).
 
+### Packages and usage (25/10/2026)
+Every clinic can see its **package** and its **usage** on **Settings → Plan & usage** (`/app/settings/plan`): owners and
+administrators see the package (name, price a month, reports included, extra-report price, founding price and its end
+date, set-up fee status, start date), this month's reports against the allowance with a bar (plus approved and
+counted-but-not-approved), extra reports × the extra price as "would be charged" ("Charging for extra reports starts once
+billing is set up" – there is no billing yet), the last 6 months, the trial and its dates, drafting on/off and the
+drafting limits. Clinicians and staff see only "This month: X of N reports". No tokens or costs are ever shown to a
+clinic. A clinic without a package works exactly as before (usage is counted, no allowance is shown).
+
+**What counts (Khuram, 25/10/2026 – drafting costs money whether or not the report is completed):** a report counts
+towards the allowance **once** – when its answers are first drafted (its first successful live drafting call), or, if
+nothing was ever drafted for it (records-only / prefilled forms), when it is first approved. Re-drafting, regenerating
+or approving the same report again never counts again (the extra calls and tokens are still counted internally); an
+amended version of a report this clinic approved never counts. Failed live calls count no report but their tokens are
+recorded. The public demo and demo (prepared) answers never count. Fair use against endless re-drafting = the clinic's
+drafting limits above. Period = calendar month in UK time.
+
+- **Platform page:** panel "Packages" (clinic, preset Starter £99/25 · Practice £199/100 · Group £349/250 · Group Plus
+  £549/500 · Custom · Trial – a preset fills in the price list; extra £1.50, Group £1.25; founding price fixed 12 months
+  unless an end date is given; set-up fee + due/paid/waived; start date; internal notes never shown to the clinic or
+  written to an audit row; "Remove package"). The clinics table has a Package column. **`/app/platform/usage`** (platform
+  administrators only): month selector, every clinic's package, price, allowance, reports counted, approved, counted but
+  not approved, extra, extra × rate, drafting calls (+ failed), form readings, tokens (in / out / cache read / cache
+  write), estimated drafting cost (list prices in `src/server/usage/pricing.ts`, £ at `CLINFORMS_USD_GBP_RATE`, default
+  0.79, or the page's rate field) and estimated margin (price + extra − cost), totals, **CSV** (`/app/platform/usage/export`,
+  formula-injection safe, audited `platform.usage_export`).
+- **Script** (shows a PREVIEW and saves nothing unless `--confirm`; production also needs `--yes` and Khuram's go):
+  ```bash
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50   # preview
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50 --confirm --yes
+  npm run admin:set-package -- --slug riverside --package practice [--founding-price 149 [--founding-until 2027-10-24]] \
+      [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-11-01] [--notes "…"]
+  npm run admin:set-package -- --slug riverside --remove | --show
+  ```
+- **Audit:** `clinic.package_set` / `clinic.package_removed` under the clinic (by "ClinForms support") and, from the
+  platform page, `platform.package_set` / `platform.package_removed` naming the administrator.
+- Needs migration `0007_plan_usage` on the target database (docs/database.md §3). Before it is applied the pages read
+  "no package, no usage" and nothing is counted (one warning in the log).
+
 ### Load a clinic's own form templates (onboarding, 10/2026)
 For a clinic that sends its referrers' templates (Blue Heart: 19 TM3 letter templates – RTF, one .docx, one .doc), load
 them into its forms library with PROPOSED maps, so its own staff check and confirm each map once:

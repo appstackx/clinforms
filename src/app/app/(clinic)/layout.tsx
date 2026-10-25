@@ -22,6 +22,8 @@ export default async function ClinicLayout({ children }: { children: React.React
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
+    // 25/10/2026: every role – owners and administrators see the package and full usage, everyone else "X of N".
+    { href: "/app/settings/plan", label: "Plan & usage" },
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
     // Every role: owners and administrators see the whole clinic's activity, everyone else their own.
     { href: "/app/settings/activity", label: "Activity" },

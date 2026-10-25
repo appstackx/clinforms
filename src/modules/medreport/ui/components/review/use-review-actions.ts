@@ -319,6 +319,7 @@ export function useReviewActions(opts: {
               instructingParty: current.instructingParty,
               sectionKeys: group,
               reportId: current.id,
+              ...(current.amends ? { amendsReportId: current.amends.reportId } : {}),
               prefer,
               ...(form ? { form } : {}),
               ...(form && current.author ? { author: current.author } : {}),
