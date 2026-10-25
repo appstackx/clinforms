@@ -19,6 +19,7 @@ import {
   editParagraph,
   markApproved,
   nameCliniciansInstead,
+  overrideRecordValue,
   recordConsent,
   removeAbsenceSentences,
   removeParagraph,
@@ -54,6 +55,8 @@ export type ReviewAction =
   | { type: "writeInOwnVoice"; authorName: string; actor: string }
   /** "Name Tom Ellis instead" on OTHER_CLINICIAN_VOICE flags (fix round 1, B0-1). */
   | { type: "nameClinicians"; flags: ReportFlag[]; actor: string }
+  /** Change a value from the clinic's details for this report only (fix round 1, B0-4). */
+  | { type: "overrideRecord"; key: string; actor: string }
   | { type: "removeAbsence"; key: string; actor: string };
 
 function locked(report: Report): boolean {
@@ -71,6 +74,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
       return writeInOwnVoice(report, action.authorName, action.actor);
     case "nameClinicians":
       return nameCliniciansInstead(report, action.flags, action.actor);
+    case "overrideRecord":
+      return overrideRecordValue(report, action.key, action.actor);
     case "removeAbsence":
       return removeAbsenceSentences(report, action.key, action.actor);
     case "editParagraph":

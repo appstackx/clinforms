@@ -18,7 +18,7 @@
  *
  * Owner: studio-b agent.
  */
-import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect } from "../../../core/forms";
+import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect, recordSourceOf } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
 import type { FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
@@ -215,6 +215,11 @@ function describeBox(box: BoxItem, section: ReportSection, field: FormField | un
     if (box.gaps.some((g) => g.id.endsWith("-referrer")) || (path && showsReferrerReferenceNotice(path, referrer, report.bundleSnapshot))) {
       return { heading: `${req} – no answer yet`, instruction: `Type ${referrer ? `${referrer}'s` : "the referrer's"} reference from their letter.` };
     }
+    // Fix round 1 (B0-19): what it really is – a staff entry, the physiotherapist's choice, the clinic's own details.
+    const source = field ? recordSourceOf(field) : null;
+    if (source === "staff_entry") return { heading: `${req} – no answer yet`, instruction: `${verb === "Write the answer" ? "Type it" : verb} from your records – it is entered by staff on each report.` };
+    if (source === "physio_choice") return { heading: `${req} – no answer yet`, instruction: "Choose the answer – the physiotherapist chooses it on each report." };
+    if (source === "clinic") return { heading: `${req} – no answer yet`, instruction: "Add it in Clinic settings, or type it here for this patient's site." };
     return { heading: `${req} – no answer yet`, instruction: `${verb === "Write the answer" ? "Type it" : verb} from your own records – the clinic record does not hold it.` };
   }
   if (section.kind === "clinician_opinion") {

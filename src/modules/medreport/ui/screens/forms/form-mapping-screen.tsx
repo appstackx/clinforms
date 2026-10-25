@@ -458,7 +458,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                               ) : null}
                             </p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              <FillSourceChip kind={field.fillSource.kind} />
+                              <FillSourceChip kind={field.fillSource.kind} field={field} />
                               <span className="text-[11px] text-slate-500">{ANSWER_TYPE_LABELS[field.answerType]}</span>
                               {field.confidence !== "high" ? (
                                 <span

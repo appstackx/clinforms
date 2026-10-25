@@ -96,6 +96,19 @@ export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   appointments_table: "From the appointment record – one row per attended session, filled by code",
 };
 
+/**
+ * Fix round 1 (B0-19): where a "record value" really comes from, in the staff's own words – a detail staff type on each
+ * report, a choice the physiotherapist makes on each report, or the clinic's own details – instead of "the patient
+ * record" (core/forms.ts recordSourceOf).
+ */
+export type RecordSource = "staff_entry" | "physio_choice" | "clinic";
+
+export const RECORD_SOURCE_LABELS: Record<RecordSource, { short: string; long: string }> = {
+  staff_entry: { short: "Entered by staff", long: "Entered by staff on each report – type it from your records" },
+  physio_choice: { short: "Chosen by the physiotherapist", long: "Chosen by the physiotherapist on each report" },
+  clinic: { short: "From your Clinic details", long: "From your Clinic details – change it here for this patient's site" },
+};
+
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "patient.fullName": "Patient full name",
   "patient.firstName": "Patient first name",

@@ -13,9 +13,9 @@ import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
-import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
+import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, recordSourceOf, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
-import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
+import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { nameClinicianInstead } from "../../../core/voice";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
@@ -393,13 +393,17 @@ function QuestionCardImpl(props: QuestionCardProps) {
     section?.kind === "from_records" && section.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "") && !section.paragraphs.some((p) => p.origin === "from_records");
   // A record value the record does not hold (another insurer's membership number withheld) is for staff to
   // enter, not a clinical question.
+  // Fix round 1 (B0-19): a staff entry, the physiotherapist's choice or the clinic's own details, said as such.
+  const recordSource = field ? recordSourceOf(field) : null;
   const statusLabel =
     status === "blank" && blankWording
       ? blankWording.chip
       : staffEntered && status === "clinician"
         ? "Entered by staff"
         : status === "needs_input" && section?.kind === "from_records"
-          ? "To be entered by staff"
+          ? recordSource === "physio_choice"
+            ? "To be chosen by the physiotherapist"
+            : "To be entered by staff"
           : meta.label;
   const answered = section ? isSectionAnswered(section) : false;
 
@@ -416,9 +420,13 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const otherGaps = box ? gaps.filter((g) => !box.gaps.includes(g)) : gaps;
 
   const fillSourceText = staffEntered
-    ? "Typed in by staff – not from the clinic record (see the Activity tab)"
+    ? recordSource === "clinic"
+      ? "Entered by staff for this report – not from your Clinic details (see the Activity tab)"
+      : "Typed in by staff – not from the clinic record (see the Activity tab)"
     : field
-      ? sourceLabels.long[field.fillSource.kind]
+      ? recordSource
+        ? RECORD_SOURCE_LABELS[recordSource].long
+        : sourceLabels.long[field.fillSource.kind]
       : section
         ? section.kind === "from_records"
           ? tenant
@@ -625,6 +633,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
         connectorId={connectorId}
         activeSourceId={props.activeSourceId}
         onOpenSource={onOpenSource}
+        // Fix round 1 (B0-4): the clinic's own details are changed on the report when another site treated the patient.
+        clinic={recordSource === "clinic"}
+        onOverride={!readOnly && recordSource === "clinic" ? () => dispatch({ type: "overrideRecord", key: q.key, actor }) : undefined}
       />
     );
   } else {
@@ -670,7 +681,15 @@ function QuestionCardImpl(props: QuestionCardProps) {
             )}
           </div>
         ) : isRecords && !answered && !readOnly ? (
-          <p className="text-[13px] text-slate-600">The clinic record does not hold this value, so it was left blank. Enter it if you know it – it is marked as entered by staff.</p>
+          <p className="text-[13px] text-slate-600">
+            {recordSource === "staff_entry"
+              ? "Entered by staff on each report: type it from your records – it is marked as entered by staff."
+              : recordSource === "physio_choice"
+                ? "Chosen by the physiotherapist on each report."
+                : recordSource === "clinic"
+                  ? "Your Clinic details do not hold this yet. Add it in Clinic settings, or type it here for this patient's site – it is marked as entered by staff."
+                  : "The clinic record does not hold this value, so it was left blank. Enter it if you know it – it is marked as entered by staff."}
+          </p>
         ) : null}
         {renderParagraphs({
           emptyPlaceholder: isOpinion
@@ -812,6 +831,8 @@ function LockedRecordsAnswer({
   connectorId,
   activeSourceId,
   onOpenSource,
+  clinic = false,
+  onOverride,
 }: {
   text: string;
   sourceIds: string[];
@@ -819,8 +840,28 @@ function LockedRecordsAnswer({
   connectorId: ConnectorId;
   activeSourceId: string | null;
   onOpenSource(id: string): void;
+  /** From the clinic's own details (Clinic settings), not the uploaded notes. */
+  clinic?: boolean;
+  /** "Change it for this patient's site" (fix round 1, B0-4). */
+  onOverride?: () => void;
 }) {
   const tenant = useStudioMode() === "tenant";
+  if (clinic) {
+    return (
+      <div className="space-y-1.5">
+        <p className="whitespace-pre-wrap rounded-lg border border-teal-100 bg-teal-50/40 px-3 py-2 text-sm leading-relaxed text-slate-900">{text}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <OriginPill origin="from_records" label="From your Clinic details" />
+          <span className="text-[11px] text-slate-500">Change it here when another of your sites treated this patient – it prints instead, on this report only.</span>
+          {onOverride && (
+            <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={onOverride}>
+              <PenLine className="mr-1 h-3.5 w-3.5" aria-hidden /> Change it for this patient&apos;s site
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <p className="flex items-start gap-2 whitespace-pre-wrap rounded-lg border border-teal-100 bg-teal-50/40 px-3 py-2 text-sm leading-relaxed text-slate-900">
