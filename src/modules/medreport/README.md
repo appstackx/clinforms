@@ -1411,6 +1411,14 @@ and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-impo
   admin hint, other details, and the clinic's own clinicians (`HostHooks.clinic.clinicians`, from
   `src/server/auth/studio-access.ts`: members other than staff, name + HCPC) in every clinician list; a member named in
   the notes without a number gets the member's number (`withMemberNumbers`).
+  10/2026 (Blue Heart trial, finding 5): each person is listed once (`notes-review-model.ts` `matchPeople`). Two
+  clinicians are one person when their full names match (case, accents, full stops, apostrophes and hyphens ignored)
+  and they do not carry two different valid HCPC numbers; no number, "Not recorded" or another format (PH-DEMO-01)
+  counts as no number, so "Sarah Reid (PH-DEMO-01)" in the notes is the member "Sarah Reid (ZZ0001)". Different names
+  are never merged, nor two different valid numbers; a clinician without a valid number whose name several numbered
+  people share stays separate. Entries take the person's details (member's name, first valid number), so the record,
+  the treating clinician on the form and the drafting block see one person; a number in the notes shown as another
+  gets a line under "Also check" (`clinicianMatchNotices`). Tests: `scripts/medreport/notes-review-clinicians.test.ts`.
 - `review-bundle.ts`: a missed or cancelled appointment is an appointment with its reason (the entry's reason, else
   its text without the "Status" line or the e-signature), not a clinical note (unless the text is too long for a
   reason); bare section headings ("Subjective", "Objective", "Plan", "Clinical Impression"…) fill their fields, other
