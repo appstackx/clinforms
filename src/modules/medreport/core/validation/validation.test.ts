@@ -382,6 +382,98 @@ test("opinion: unrecorded opinions and unsupported full returns still block", ()
   }
 });
 
+test("opinion: a drafted return the F-37 note does not record – a modal, advice or a contradiction – still blocks", () => {
+  // Integration review (10/2026): the note recording the return supports only a drafted return that happened.
+  const drafts = [
+    "He can return to normal duties.",
+    "He can't return to normal duties.",
+    "He cannot return to his normal duties.",
+    "He is able to return to his normal duties.",
+    "He is unable to return to his normal duties.",
+    "He should return to normal duties.",
+    "He should be able to return to his normal duties.",
+    "He would be able to return to his normal duties in 2 weeks.",
+    "He could return to normal duties.",
+    "He may return to normal duties.",
+    "He is ready to return to normal duties.",
+    "None – he can go back to his normal duties.",
+    "I recommend a graded return to normal duties over 4 weeks.",
+    "I would advise a return to his normal duties.",
+    "He has been advised to return to normal duties.",
+    "He should be back to normal duties by the end of the month.",
+    "Once his pain settles he can return to normal duties.",
+    "There is no reason he cannot return to normal duties.",
+    "He did not return to normal duties.",
+    "He never returned to normal duties.",
+    "He was unable to return to normal duties after the accident.",
+  ];
+  for (const draft of drafts) assert.notDeepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  // Through the validators, as /sign runs them: a fitness view on F-37's note cannot be approved as drafted.
+  const { report, p } = f37Report("None. He can return to his normal duties.");
+  const [flag] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
+  assert.equal(flag.severity, "blocking");
+  assert.equal(canAcknowledge(flag, report), false);
+  // Elsewhere: fitness and prognosis on other activities, and a prognosis after a recorded "not yet".
+  const others: Array<[draft: string, note: string]> = [
+    ["He can return to normal driving.", "Driving normally; the nervousness has settled."],
+    ["He should be able to return to normal training.", "Back to full training with the team, no pain."],
+    ["She has not yet returned to her normal 12-hour shifts, but should be able to shortly.", "Working 8-hour shifts; not yet back on 12-hour shifts."],
+    ["He can return to work without restrictions.", "Not yet able to work with no restrictions."],
+    // A symptom or body part as the subject is recovery, whatever word follows.
+    ["His neck is back to normal work-wise.", F37_NOTE],
+    ["His symptoms have returned to normal activity levels.", "Back to normal activity."],
+    ["His knee function returned to normal sporting activities.", "Back to full sporting activities."],
+  ];
+  for (const [draft, note] of others) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  // A drafted return that happened still passes.
+  for (const draft of [
+    "He returned to normal duties after 3 days off work.",
+    "He has returned to normal duties.",
+    "He went back to his normal duties.",
+    "He is back to his normal duties.",
+    "He had returned to normal duties by 15/07/2026.",
+    "He was back to normal duties.",
+    "Yes – he returned to his normal duties after 3 days.",
+  ]) {
+    assert.deepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  }
+});
+
+test("opinion: causation, the standard of proof and recorded returns – the review's remaining cases", () => {
+  const BALANCE_NOTE = "Progressed: step-ups, split squats and single-leg balance.";
+  const block: Array<[draft: string, note: string]> = [
+    // "Which / that / it caused" is causation, however the note's "which causes pain" goes on.
+    ["Ms Whitlock was injured lifting at work, which caused pain in her lower back.", "Lifting boxes at work, which causes pain in her lower back."],
+    ["The collision, which caused pain in his neck, was on 04/07/2026.", "Turning, which causes pain in his neck."],
+    ["He was hit from behind and that caused neck pain.", "Looking over his shoulder and that causes neck pain."],
+    ["The accident and it caused headaches.", "Reading and it causes headaches."],
+    // "On balance" as the standard of proof, even when the note records balance work.
+    ["Having worked on the evidence and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["Having focused on the records and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["His progress on balance suggests the account is reliable.", BALANCE_NOTE],
+    // Notes that give a goal, an earlier episode, a qualifier after a comma or an exception.
+    ["He returned to normal duties.", "LTG: back on full duties."],
+    ["He returned to normal duties.", "Objectives: back on full duties."],
+    ["He returned to normal duties.", "Had a similar injury in 2019 and was back on full duties after 4 weeks. Currently off work."],
+    ["He returned to normal duties.", "Back on full duties, but avoiding lifting."],
+    ["He returned to normal duties.", "Back on full duties, except lifting."],
+    ["He has returned to all his normal activities.", "Back to all activities other than running."],
+    ["He returned to normal duties.", "Back on full duties is unrealistic at present."],
+    ["He returned to normal duties.", "Back on full duties Monday."],
+  ];
+  for (const [draft, note] of block) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  const pass: Array<[draft: string, note: string]> = [
+    ["Sessions focused on strengthening and on balance, with step-ups.", BALANCE_NOTE],
+    ["Treatment progressed to split squats, with work on balance.", BALANCE_NOTE],
+    ["He worked on balance and strength.", BALANCE_NOTE],
+    ["Side-stepping and cutting drills caused mild discomfort on the inner side of the knee.", "Side-stepping and cutting drills cause mild discomfort on the inner side of the knee."],
+    // Jordan Ellery's discharge note (welcome pack): "Working full time with no restrictions".
+    ["Yes – he has returned to his normal duties and is working full time with no restrictions.", "Working full time with no restrictions."],
+    ["He has now returned to his normal working hours.", "Working full time with no restrictions."],
+  ];
+  for (const [draft, note] of pass) assert.deepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+});
+
 test("opinion: an unsupported full return blocks drafted text with no acknowledgement; edited text needs a reason", () => {
   const ai = para("He returned to normal duties.", ["N-002"]);
   const report = withSection(testReport(EMP), "functional_status", [ai]);

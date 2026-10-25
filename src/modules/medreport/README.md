@@ -1691,11 +1691,23 @@ templates themselves are gitignored and never committed).
     goal", "?"); straight after it a date, limit or time span ("from 01/10/2026", "in 2 weeks", "for 2 hours a day",
     "but avoiding lifting"); or only the note's history fields.
   - A drafted "has not yet returned to her normal 12-hour shifts" passes when the note records the same negation
-    ("not yet back on 12-hour shifts"); "can't return to normal duties" is a fitness opinion and needs a recorded return.
-  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match); "worked on balance" / "focused on
-    strengthening and on balance" is exercise when a cited note records balance work ("single-leg balance"), never
-    the standard of proof; "drills caused mild discomfort" reports a note's "drills cause mild discomfort" (same word
-    before and after).
+    ("not yet back on 12-hour shifts").
+  - The drafted side must state a return that happened (integration review): only "returned" or "back" can, and not
+    after a modal, an ability word, advice or a plan, so "he can / can't / should be able to return to his normal
+    duties", "I recommend a graded return", "he should be back to normal duties by…" and "he never returned" block
+    whatever the note says; a symptom or body part as the subject ("his knee function returned to normal sporting
+    activities") stays recovery. A note's "working full time with no restrictions" records a return to normal duties
+    (full time alone: normal working hours). The note side also rejects goals ("LTG:", "Objectives:"), an earlier
+    episode ("a similar injury in 2019"), a qualifier after a comma (", but avoiding lifting"), "other than",
+    "unrealistic" and a weekday straight after. Its result is remembered per note, so a long paragraph repeating a
+    phrase stays fast.
+  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match; not after a drafted modal, and only
+    where the note records it as a fact); "worked on balance" / "focused on strengthening and on balance" is exercise
+    when a cited note records balance work ("single-leg balance") and nothing but a list or an exercise word follows
+    ("his progress on balance suggests…" and "worked on the evidence and on balance" stay the standard of proof);
+    "drills caused mild discomfort" reports a note's "drills cause mild discomfort" (the same content word before and
+    after – "which / that / it caused" is causation). "Should / would / could / may be able (fit, ready, back)" is a
+    prediction.
   - `OpinionPattern.allow(hit, source)` holds these rules; every other pattern, and the exact-quote rule, is
     unchanged. Recovery wording ("returned to normal", "resolved", "full recovery") still needs the note's own words.
   - Not covered, as before: "returned to full duties" / "can return to full activities" match no pattern (only
