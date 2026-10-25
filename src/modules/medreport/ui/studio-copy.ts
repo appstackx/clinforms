@@ -121,10 +121,16 @@ export const TENANT_COPY = {
     bannerLead: "Using the notes already checked for",
     bannerNoUpload: "Nothing was uploaded again.",
     consentReset:
-      "Consent recorded on that report is not carried over: once the patient has agreed, record their consent on the new report before it is approved.",
+      "The patient's consent to share the earlier report is not carried over to another form: once the patient has agreed, record their consent on the new report before it is approved.",
     backToUpload: "Upload other notes instead",
     completedPill: "Already completed for this patient",
     chooseOther: "Choose the other form to complete for this patient.",
+    /** The library holds no confirmed form but the one the earlier report completed. */
+    noOtherHint: "The only form ready to use is already completed for this patient.",
+    noOtherTitle: "No other referrer form is ready to use",
+    noOtherBody: "The only confirmed form in your library is already completed for this patient. To complete another referrer's form, add it in",
+    noOtherLink: "Referrer forms",
+    noOtherAfter: "and confirm it – or use a built-in report below.",
     uploadHint: "Already uploaded this patient's notes for another form? Open that report and choose “Complete another form for this patient”.",
   },
 } as const;

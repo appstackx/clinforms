@@ -6,7 +6,9 @@
  * confirmed are shown but cannot be used yet. Secondary: "No form from the referrer? Use a built-in
  * report".
  * Another form for the same patient (25/10/2026, `completedFormId`): the form the earlier report completed is marked
- * "Already completed for this patient" and never preselected – staff choose the other form.
+ * "Already completed for this patient" and never preselected – staff choose the other form. When the library holds
+ * no other confirmed form (review fix: a clinic with one form), the step says so and points to Referrer forms or a
+ * built-in report instead of asking for a form that is not there.
  *
  * Owner: studio-a agent.
  */
@@ -92,6 +94,8 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
   }
 
   const ordered = match ? [match.form, ...confirmed.filter((f) => f.id !== match.form.id)] : confirmed;
+  // Another form for the same patient, but the only confirmed form is the one already completed.
+  const noOtherForm = Boolean(completedFormId) && confirmed.some((f) => f.id === completedFormId) && confirmed.every((f) => f.id === completedFormId);
 
   return (
     <div className="space-y-5">
@@ -106,7 +110,9 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {completedFormId && !choice
+          {completedFormId && !choice && noOtherForm
+            ? TENANT_COPY.reuse.noOtherHint
+            : completedFormId && !choice && confirmed.length > 0
             ? TENANT_COPY.reuse.chooseOther
             : match && (choice?.kind !== "form" || choice.formId === match.form.id)
             ? `“${match.form.title}” is selected: ${matchReasonLabel(match.reason).toLowerCase()}.`
@@ -170,6 +176,17 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
             })}
           </div>
         )}
+        {noOtherForm ? (
+          <div data-no-other-form>
+            <Notice tone="info" title={TENANT_COPY.reuse.noOtherTitle}>
+              {TENANT_COPY.reuse.noOtherBody}{" "}
+              <Link href={paths.forms} className="font-medium underline">
+                {TENANT_COPY.reuse.noOtherLink}
+              </Link>{" "}
+              {TENANT_COPY.reuse.noOtherAfter}
+            </Notice>
+          </div>
+        ) : null}
         {proposed.length ? (
           <p className="text-xs text-slate-500">
             Not ready yet:{" "}

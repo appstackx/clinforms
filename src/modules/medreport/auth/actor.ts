@@ -316,8 +316,9 @@ export const AUDIT_ACTIONS = {
   /** Wave 3: a patient's notes were turned into the record a form is completed from (counts and format only). */
   notesImported: "notes.imported",
   /**
-   * 25/10/2026: a stored report's record (the patient's notes as staff confirmed them) was taken for a NEW report on
-   * another form – target: the earlier report; counts only (POST /store/reports/{id}/reuse).
+   * 25/10/2026: a stored report's record (the patient's notes as staff confirmed them) was read to start a NEW report
+   * on another form – target: the earlier report; counts only (POST /store/reports/{id}/reuse). Written on every read
+   * (a reload reads again); the new report, once made, has its own "report.create".
    */
   notesReused: "notes.reused",
 } as const;

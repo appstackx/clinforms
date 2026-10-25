@@ -5,8 +5,10 @@
  * - the handler on an in-memory clinic store: the member's own clinic only (another clinic's report and a missing or
  *   deleted one are the same 404, in plain words), sign-in / two-step / same-origin / JSON rules, a trial that has
  *   ended, the simulated demo system, a launch session narrowed to another episode; the record is the stored copy
- *   (the clinic's current details stamped on, figures and data checks of today), consent recorded on the earlier
- *   report is not carried over, and one "notes.reused" audit row (counts only – no patient data);
+ *   (the clinic's current details stamped on, figures and data checks of today), the patient's consent to share the
+ *   earlier report is not carried over for uploaded notes – recorded on the report, entered at the notes check or
+ *   shown by the notes (review fix) – while a clinic system's record keeps its own, and one "notes.reused" audit row
+ *   per read (counts only – no patient data);
  * - the new report (ui/components/new/generate.ts createTargetReport): a NEW id, version 1, no "amends", its activity
  *   says where the notes came from;
  * - usage on the host's real counters (node:sqlite) with live drafting against a fake drafting client (no network):
@@ -34,7 +36,9 @@ import { generateDraftGroup } from "../../src/modules/medreport/ai/generate";
 import { withAttestedConfirmation } from "../../src/modules/medreport/auth/attestations";
 import { createSessionToken } from "../../src/modules/medreport/auth/session-token";
 import { resetMemoryLimits } from "../../src/modules/medreport/auth/shared-limits";
-import { createFileImportConnector } from "../../src/modules/medreport/connectors/file-import/connector";
+import { createFileImportConnector, readNotesUpload } from "../../src/modules/medreport/connectors/file-import/connector";
+import { bundleFromReview } from "../../src/modules/medreport/connectors/file-import/review-bundle";
+import { NotesReviewSchema } from "../../src/modules/medreport/connectors/file-import/review-contract";
 import { createConnectorRegistry } from "../../src/modules/medreport/connectors/registry";
 import { createTm3SimConnector } from "../../src/modules/medreport/connectors/tm3-sim/connector";
 import { computeFacts } from "../../src/modules/medreport/core/computed-facts";
@@ -46,6 +50,8 @@ import { runDataChecks } from "../../src/modules/medreport/core/validation/data-
 import { WORDING } from "../../src/modules/medreport/core/wording";
 import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "../../src/modules/medreport/forms/samples/maps/harrow-pike";
 import { createTargetReport } from "../../src/modules/medreport/ui/components/new/generate";
+import { updateRegistration } from "../../src/modules/medreport/ui/components/new/notes-review-model";
+import { canRecordConsent } from "../../src/modules/medreport/ui/components/review/review-model";
 import { ACTIVITY_GROUPS, activityLabel, describeActivityDetail } from "../../src/lib/activity-copy";
 import { createSqliteTestDb } from "../../src/server/db/testing/databases";
 import { getUsageMonths, listUsageReportRows } from "../../src/server/repos/usage";
@@ -53,6 +59,7 @@ import { ukPeriodOf } from "../../src/server/repos/usage-period";
 import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
+import { PRACTICE_PRINTOUT_TEXT } from "./notes-fixtures";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
 import { demoBearer } from "./test-actors";
 
@@ -294,7 +301,7 @@ describe("POST /store/reports/{id}/reuse – the handler", () => {
     assert.equal(((await res.json()) as { code: string }).code, "SESSION_MISMATCH");
   });
 
-  test("consent recorded on the earlier report is not carried over; consent the notes recorded stays (as for a fresh upload)", async () => {
+  test("consent recorded on the earlier report ('Record consent') is not carried over", async () => {
     resetMemoryLimits();
     const { as, store } = setup();
     const f = as("a");
@@ -312,14 +319,95 @@ describe("POST /store/reports/{id}/reuse – the handler", () => {
     assert.deepEqual(a.data.bundle.consent, { disclosureConsentRecorded: false });
     assert.ok(a.data.dataChecks.some((c) => c.code === "CONSENT_NOT_RECORDED" && c.severity === "blocking"), "approval needs it recorded again");
     assert.equal(store.auditLog.at(-1)?.detail?.consentReset, true);
+  });
 
-    // In the notes themselves: kept.
+  // Review fix R-security-1 / R-correctness-1: consent that staff ENTER AT THE NOTES CHECK ("Consent to share the
+  // report: Recorded" + date) lands in the record exactly like consent the notes showed – nothing tells them apart –
+  // so for uploaded notes recorded consent is never carried into another form, however it was recorded.
+  test("consent staff entered at the notes check (real read → check → confirm) is not carried over: blocking again on the new form", async () => {
+    resetMemoryLimits();
+    const now = new Date("2026-10-10T09:00:00.000Z");
+    const read = await readNotesUpload(
+      { tenantId: A, credentials: { kind: "none" }, baseUrl: "", fetch: (u, i) => fetch(u, i), trace: [] },
+      { format: "text", content: PRACTICE_PRINTOUT_TEXT, fileName: "printout.txt" },
+      { now },
+    );
+    assert.equal(read.kind, "review");
+    if (read.kind !== "review") return;
+    let review = NotesReviewSchema.parse(read.review);
+    assert.equal(review.registration.consent, "", "the fictional notes do not record consent");
+    // A fresh upload as read: consent not recorded, approval blocked.
+    const fresh = bundleFromReview(review, { tenantId: A, now });
+    assert.ok(fresh.ok, JSON.stringify(!fresh.ok && fresh.issues));
+    if (!fresh.ok) return;
+    assert.equal(fresh.bundle.consent.disclosureConsentRecorded, false);
+    // Staff choose "Recorded" (05/10/2026) at the notes check for the FIRST form, then confirm (file-import-confirm.ts).
+    review = updateRegistration(updateRegistration(review, "consent", "yes"), "consentDate", "2026-10-05");
+    const confirmed = bundleFromReview(review, { tenantId: A, now });
+    assert.ok(confirmed.ok, JSON.stringify(!confirmed.ok && confirmed.issues));
+    if (!confirmed.ok) return;
+    assert.deepEqual(confirmed.bundle.consent, { disclosureConsentRecorded: true, date: "2026-10-05" });
+    assert.ok(!runDataChecks(confirmed.bundle).some((c) => c.code === "CONSENT_NOT_RECORDED"), "the first form may be approved");
+
+    // Report A on the first form, stored by a member with the staff role (no "consent_recorded" activity).
+    const { as, store } = setup();
+    const f = as("staff");
+    const reportA = sourceReport("rpt_reuse_consent_notes_check", {
+      episodeRef: { connectorId: "file-import", patientId: confirmed.bundle.source.externalPatientId, episodeId: confirmed.bundle.source.externalEpisodeId },
+      bundleSnapshot: confirmed.bundle,
+    });
+    assert.ok(!reportA.activity.some((x) => x.action === CONSENT_RECORDED_ACTION));
+    await putReport(f, reportA);
+    const before = store.auditLog.length;
+    const res = await reuse(f, reportA.id);
+    assert.equal(res.status, 200, await res.clone().text());
+    const body = StoreReportReuseResponseSchema.parse(await res.json());
+    assert.equal(body.source.consentReset, true, "the Studio says consent must be recorded again");
+    assert.deepEqual(body.data.bundle.consent, { disclosureConsentRecorded: false }, "no consent (and no date) carried into the other form");
+    assert.ok(body.data.dataChecks.some((c) => c.code === "CONSENT_NOT_RECORDED" && c.severity === "blocking"), "approval of the other form is blocked until consent is recorded");
+    assert.equal(store.auditLog.slice(before).find((r) => r.action === "notes.reused")?.detail?.consentReset, true);
+    // The earlier report keeps its own consent.
+    const storedA = await store.getReport(A, reportA.id);
+    assert.deepEqual((storedA?.payload as Report).bundleSnapshot.consent, { disclosureConsentRecorded: true, date: "2026-10-05" });
+
+    // The new report from it starts with consent not recorded, and "Record consent" is offered on it.
+    const second = createTargetReport({ data: body.data, target: { kind: "form", form: FORM2 }, reusedFrom: body.source });
+    assert.equal(second.bundleSnapshot.consent.disclosureConsentRecorded, false);
+    assert.equal(canRecordConsent(second), true);
+    assert.match(second.activity.find((x) => x.action === NOTES_REUSED_ACTION)?.detail ?? "", /consent to share that report is not carried over: record it on this report before approval\.$/);
+  });
+
+  test("consent the uploaded notes showed is not carried over either (the record cannot tell it from consent entered by staff)", async () => {
+    resetMemoryLimits();
+    const { as } = setup();
+    const f = as("a");
     const inNotes = sourceReport("rpt_reuse_consent_in_notes", { bundleSnapshot: { ...UPLOADED, consent: { disclosureConsentRecorded: true, date: "2026-10-01" } } });
     await putReport(f, inNotes);
     const b = StoreReportReuseResponseSchema.parse(await (await reuse(f, inNotes.id)).json());
-    assert.equal(b.source.consentReset, false);
-    assert.deepEqual(b.data.bundle.consent, { disclosureConsentRecorded: true, date: "2026-10-01" });
-    assert.ok(!b.data.dataChecks.some((c) => c.code === "CONSENT_NOT_RECORDED"));
+    assert.equal(b.source.consentReset, true);
+    assert.deepEqual(b.data.bundle.consent, { disclosureConsentRecorded: false });
+    assert.ok(b.data.dataChecks.some((c) => c.code === "CONSENT_NOT_RECORDED" && c.severity === "blocking"));
+  });
+
+  test("a record from a clinic system keeps the consent the clinic system holds (fetching it afresh gives the same)", () => {
+    const fromSystem: EpisodeBundle = {
+      ...UPLOADED,
+      source: { ...UPLOADED.source, connectorId: "tm3", label: "Clinic system" },
+      consent: { disclosureConsentRecorded: true, date: "2026-10-01" },
+    };
+    const kept = recordForAnotherForm({ bundleSnapshot: fromSystem, activity: [] });
+    assert.equal(kept.consentReset, false);
+    assert.deepEqual(kept.bundle.consent, { disclosureConsentRecorded: true, date: "2026-10-01" });
+    // Recorded on the earlier report itself: reset (belt and braces – "Record consent" is offered for uploaded notes only).
+    const onReport = recordForAnotherForm({
+      bundleSnapshot: fromSystem,
+      activity: [{ at: "2026-10-21T10:00:00.000Z", actor: "Sam Ward (fictional)", action: CONSENT_RECORDED_ACTION, detail: "…" }],
+    });
+    assert.equal(onReport.consentReset, true);
+    // No consent recorded at all: nothing to reset (the data check blocks approval anyway).
+    const none = recordForAnotherForm({ bundleSnapshot: UPLOADED, activity: [] });
+    assert.equal(none.consentReset, false);
+    assert.equal(none.bundle, UPLOADED);
   });
 });
 
@@ -367,7 +455,11 @@ describe("the new report (Studio) and the wording", () => {
   });
 
   test("the clinic's activity page: a label, the Reports group and a counts-only description", () => {
-    assert.equal(activityLabel("notes.reused"), "Patient notes reused for another form");
+    // Review fix R-correctness-4: written on every read (a reload, Back, or leaving without a form), so it says the
+    // notes were opened – it never claims another form was completed (that is the new report's "Report started").
+    assert.equal(activityLabel("notes.reused"), "Patient notes opened from an earlier report");
+    assert.doesNotMatch(activityLabel("notes.reused"), /another form|completed|reused for/i);
+    assert.equal(activityLabel("report.create"), "Report started");
     assert.ok(ACTIVITY_GROUPS.find((g) => g.label === "Reports")?.actions.includes("notes.reused"));
     assert.equal(
       describeActivityDetail("notes.reused", { notes: 8, appointments: 9, outcomeScores: 6, sourceStatus: "signed", sourceVersion: 1, consentReset: true }),

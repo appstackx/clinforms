@@ -13,6 +13,11 @@
  *           report 2 (a NEW id, the same patient, episode and notes, no "amends", activity "notes_reused"); the list's
  *           "Another form" on the draft report 2; the activity page; a deleted report and a made-up id say so plainly;
  *           375 px; nothing from the notes in browser storage; a signed-out call is refused.
+ *   review fixes (25/10/2026): the consent report 1 was approved with is NOT carried into report 2 (banner line,
+ *           blocking data check, "Record consent" on report 2 works); the top bar's "Complete a form" from the reuse
+ *           wizard opens a fresh upload (no earlier notes kept); the activity page says "Patient notes opened from an
+ *           earlier report" once per read and only two "Report started" rows; with the library down to one confirmed
+ *           form (the one already completed) step 3 says so and points to Referrer forms / a built-in report.
  *
  *   npm run build
  *   NODE_PATH=/Users/khuram/Projects/Appstackx/pigeon-web/node_modules node scripts/e2e/reuse-notes.cjs
@@ -422,6 +427,11 @@ async function completeChosen(app, titleRe) {
     const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 }, acceptDownloads: true });
     const app = await ctx.newPage();
     watch(app, problems, "sarah");
+    // Every successful read of an earlier report's notes (each one writes a "notes.reused" activity row).
+    let reuseReads = 0;
+    app.on("response", (r) => {
+      if (r.request().method() === "POST" && /\/store\/reports\/[^/]+\/reuse$/.test(r.url()) && r.status() === 200) reuseReads++;
+    });
 
     await step("Sarah Reid: invitation → account → two-step; signing details PH-DEMO-01 (demo clinic)", async () => {
       await acceptInvite(app, state.link, SARAH);
@@ -534,7 +544,13 @@ async function completeChosen(app, titleRe) {
       assert(banner.includes("the report on “Rehabilitation Progress Report” (approved)"), `banner names the earlier report: ${banner}`);
       assert(banner.includes(state.counts), `same counts: ${banner} vs ${state.counts}`);
       assert(banner.includes("Nothing was uploaded again."), "says no upload");
-      assert(!/Consent recorded on that report is not carried over/.test(banner), "the notes recorded consent themselves: nothing to reset");
+      // Review fix R-security-1 / R-correctness-1: report 1 was approved with consent recorded (from the notes check);
+      // that consent is not carried into another form – the banner says so and the data check blocks approval.
+      const r1 = await storedReport(app, state.report1);
+      assert(r1.bundleSnapshot.consent.disclosureConsentRecorded === true, "report 1 holds recorded consent");
+      assert(/consent to share the earlier report is not carried over to another form/.test(banner), `consent reset line: ${banner}`);
+      const checks = (await app.locator("section[aria-labelledby=checks-heading]").innerText()).replace(/\s+/g, " ");
+      assert(/consent/i.test(checks) && !/No problems found/.test(checks), `consent data check on the reused notes: ${checks.slice(0, 300)}`);
       assert((await app.locator("input[type=file]").count()) === 0, "no upload on this page");
       const text = await mainText(app);
       assert(text.includes(state.patient), "the data step shows the patient");
@@ -577,8 +593,28 @@ async function completeChosen(app, titleRe) {
       await app.getByRole("tab", { name: /Activity/ }).first().click().catch(() => undefined);
       await app.waitForTimeout(600);
       assert(/Notes reused from an earlier report/.test(await mainText(app)), "the Activity tab names it");
+      assert(/consent to share that report is not carried over/.test(reusedEntry.detail), `activity says consent is not carried over: ${reusedEntry.detail}`);
       await shot(app, "report2-activity-tab", false);
-      return { report1: r1.id, report2: r2.id, notes: r2.bundleSnapshot.notes.length };
+      assert(r1.bundleSnapshot.consent.disclosureConsentRecorded === true && r2.bundleSnapshot.consent.disclosureConsentRecorded === false, "consent not carried into report 2");
+      return { report1: r1.id, report2: r2.id, notes: r2.bundleSnapshot.notes.length, consent: { report1: r1.bundleSnapshot.consent, report2: r2.bundleSnapshot.consent } };
+    });
+
+    await step("report 2: consent blocks approval until recorded on it; 'Record consent' on the new draft works", async () => {
+      await app.getByRole("tab", { name: /Flags/ }).first().click();
+      await app.waitForTimeout(600);
+      const recorder = app.locator("[data-testid=record-consent]");
+      await recorder.first().waitFor({ timeout: 20000 });
+      await shot(app, "report2-consent-to-record", false);
+      await recorder.getByRole("button", { name: "Record consent" }).click();
+      for (let i = 0; i < 40; i++) {
+        const r2 = await storedReport(app, state.report2);
+        if (r2.bundleSnapshot.consent.disclosureConsentRecorded) {
+          assert(r2.activity.some((a) => a.action === "consent_recorded"), "recorded in report 2's activity");
+          return r2.bundleSnapshot.consent;
+        }
+        await app.waitForTimeout(250);
+      }
+      throw new Error("consent was not saved on report 2");
     });
 
     await step("Reports list: both of the patient's forms; 'Another form' on the draft report 2 opens the wizard with its notes ('draft')", async () => {
@@ -602,16 +638,53 @@ async function completeChosen(app, titleRe) {
       return banner.trim();
     });
 
-    await step("the clinic's activity: 'Patient notes reused for another form' rows linking to the earlier reports (counts only)", async () => {
+    // Review fix R-correctness-2: Next keeps a page mounted when only its search parameters change.
+    await step("reuse wizard → the top bar's 'Complete a form': a fresh upload, none of the earlier report's notes kept; Back reopens them", async () => {
+      await app.goto(`${BASE}/app/studio/${state.report1}`);
+      await app.locator("header [data-reuse-notes]").click();
+      await app.waitForURL(`${BASE}/app/studio/new?from=${state.report1}`, { timeout: 30000 });
+      await app.waitForSelector("[data-reused-notes]", { timeout: 30000 });
+      await app.getByRole("button", { name: "Choose the referrer form" }).click();
+      await app.getByRole("radio").first().waitFor({ timeout: 20000 });
+      await app.locator("header a:visible", { hasText: /^Complete a form$/ }).first().click();
+      await app.waitForURL(`${BASE}/app/studio/new`, { timeout: 30000 });
+      await app.waitForSelector("text=Drop the patient's notes here", { timeout: 30000 });
+      await app.waitForTimeout(1000);
+      const after = {
+        url: app.url().replace(BASE, ""),
+        banner: await app.locator("[data-reused-notes]").count(),
+        uploadInputs: await app.locator("input[type=file]").count(),
+        completedPill: await app.locator("[data-completed-form]").count(),
+        text: await mainText(app),
+      };
+      await shot(app, "top-bar-complete-a-form-fresh", false);
+      assert(after.url === "/app/studio/new", `url ${after.url}`);
+      assert(after.banner === 0 && after.completedPill === 0, `earlier notes still shown: banner ${after.banner}, pill ${after.completedPill}`);
+      assert(after.uploadInputs >= 1, "the upload is shown");
+      assert(!after.text.includes(state.patient), "the earlier patient is not on the page");
+      assert(/Already uploaded this patient's notes for another form\?/.test(after.text), "the fresh upload step");
+      // Browser Back to ?from=: the earlier report's notes again (a new read).
+      await app.goBack();
+      await app.waitForURL(`${BASE}/app/studio/new?from=${state.report1}`, { timeout: 30000 });
+      await app.waitForSelector("[data-reused-notes]", { timeout: 30000 });
+      return { url: after.url, banner: after.banner, uploadInputs: after.uploadInputs };
+    });
+
+    // Review fix R-correctness-4: one row per read, worded as a read – the reports themselves are "Report started".
+    await step("the clinic's activity: 'Patient notes opened from an earlier report' – one row per read, linking to the earlier reports; only 2 'Report started'", async () => {
       await app.goto(`${BASE}/app/settings/activity`);
       await app.waitForSelector("text=Activity");
       const body = await mainText(app);
-      const n = (body.match(/Patient notes reused for another form/g) || []).length;
-      assert(n === 2, `rows ${n}`);
+      const n = (body.match(/Patient notes opened from an earlier report/g) || []).length;
+      const started = (body.match(/Report started/g) || []).length;
+      assert(n === reuseReads, `rows ${n} vs ${reuseReads} reads`);
+      assert(n >= 3, `rows ${n}`);
+      assert(started === 2, `"Report started" rows ${started}: only reports 1 and 2 exist`);
+      assert(!/reused for another form/.test(body), "never claims another form was completed");
       assert(/from an approved report/.test(body) && /from a draft report/.test(body), "says which kind of report");
       assert((await app.locator(`a[href='/app/studio/${state.report1}']`).count()) >= 1, "links to report 1");
-      await shot(app, "activity-notes-reused");
-      return `${n} rows`;
+      await shot(app, "activity-notes-opened");
+      return `${n} rows for ${reuseReads} reads; ${started} reports started`;
     });
 
     await step("gone: report 2 deleted → its notes cannot be reused (plain words, upload offered); a made-up id says the same", async () => {
@@ -625,6 +698,32 @@ async function completeChosen(app, titleRe) {
         assert((await app.locator("input[type=file]").count()) >= 1, "the upload is offered");
       }
       await shot(app, "reuse-gone-plain-words");
+    });
+
+    // Review fix R-correctness-5: a library whose only confirmed form is the one already completed.
+    await step("one form left (Kingsway removed from the library): step 3 says no other form is ready and points to Referrer forms / a built-in report", async () => {
+      const snap = await app.evaluate(async () => (await (await fetch("/api/reports/v1/store/snapshot")).json()));
+      const kw = snap.forms.find((f) => /Return to Work Assessment/.test(f.title));
+      assert(kw, "the Kingsway form is in the library");
+      const del = await app.evaluate(async (id) => (await fetch(`/api/reports/v1/store/forms/${id}`, { method: "DELETE", headers: { "content-type": "application/json" } })).status, kw.id);
+      assert(del === 200, `delete form ${del}`);
+      await app.goto(`${BASE}/app/studio/new?from=${state.report1}`);
+      await app.waitForSelector("[data-reused-notes]", { timeout: 30000 });
+      await app.getByRole("button", { name: "Choose the referrer form" }).click();
+      await app.getByRole("radio").first().waitFor({ timeout: 20000 });
+      await app.waitForTimeout(800);
+      const text = await mainText(app);
+      const radios = await app.locator("[role=radiogroup][aria-label='Referrer forms'] [role=radio]").count();
+      assert(radios === 1 && (await app.locator("[data-completed-form]").count()) === 1, `one form, marked completed (${radios})`);
+      assert(!/Choose the other form to complete for this patient\./.test(text), "never asks for a form that is not there");
+      assert(/The only form ready to use is already completed for this patient\./.test(text), "the hint says so");
+      const notice = app.locator("[data-no-other-form]");
+      assert((await notice.count()) === 1, "the notice");
+      assert(/No other referrer form is ready to use/.test(await notice.innerText()), "notice title");
+      assert((await notice.locator("a[href='/app/studio/forms']").count()) === 1, "links to Referrer forms");
+      assert(/No form from the referrer\? Use a built-in report/.test(text), "the built-in report is offered");
+      await shot(app, "reuse-only-one-form", false);
+      return { radios };
     });
 
     await step("375 px: the wizard with the reused notes and the report header's action fit (no sideways scroll from them)", async () => {

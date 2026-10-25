@@ -472,5 +472,61 @@ describe("25/10/2026: complete another form for this patient (a clinic's Studio 
     assert.match(text(html), new RegExp(TENANT_COPY.reuse.chooseOther));
     assertTenantClean(html);
     assert.doesNotMatch(step(null), /data-completed-form/);
+    // Another confirmed form exists: no "nothing else is ready" notice.
+    assert.doesNotMatch(html, /data-no-other-form/);
+    assert.doesNotMatch(text(html), new RegExp(TENANT_COPY.reuse.noOtherTitle));
+  });
+
+  // Review fix R-correctness-5: a clinic whose library holds one confirmed form – the one already completed.
+  it("choosing the form when the only confirmed form is the one already completed: says so and points to Referrer forms or a built-in report", async () => {
+    const { FormStep } = await import("./components/new/form-step");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { NORTHFIELD_FORM } = await import("../forms/samples/maps/northfield");
+    const only = { ...NORTHFIELD_FORM, status: "confirmed" as const, referrer: { ...NORTHFIELD_FORM.referrer, name: "Northfield Insurance" } };
+    // A form still to be confirmed does not count as another form ready to use.
+    const proposed = { ...HARROW_PIKE_FORM, status: "proposed" as const, referrer: { ...HARROW_PIKE_FORM.referrer, name: "Harrow Solicitors" } };
+    const html = render(
+      createElement(FormStep, {
+        party: { name: "Unlinked Referrer", type: "insurer", reference: "", contactName: "", address: "" },
+        forms: [only, proposed],
+        formsReady: true,
+        choice: null,
+        onChoice: () => undefined,
+        onTemplates: () => undefined,
+        completedFormId: NORTHFIELD_FORM.id,
+      }),
+      TENANT,
+      "/app/studio/new",
+    );
+    const t = text(html);
+    assert.equal((html.match(/role="radio"/g) ?? []).length, 1, "the one confirmed form is still listed (it may be completed again)");
+    assert.equal((html.match(/data-completed-form/g) ?? []).length, 1);
+    assert.doesNotMatch(t, new RegExp(TENANT_COPY.reuse.chooseOther), "never asks for a form that is not there");
+    assert.match(t, new RegExp(TENANT_COPY.reuse.noOtherHint));
+    assert.equal((html.match(/data-no-other-form/g) ?? []).length, 1);
+    assert.match(t, new RegExp(TENANT_COPY.reuse.noOtherTitle));
+    assert.match(t, new RegExp(`${TENANT_COPY.reuse.noOtherBody} ${TENANT_COPY.reuse.noOtherLink} ${TENANT_COPY.reuse.noOtherAfter.replace(/[.–]/g, ".")}`));
+    assert.match(html, /<div data-no-other-form="true">[\s\S]*?<a [^>]*href="\/app\/studio\/forms"/, "links to Referrer forms");
+    assert.match(t, /No form from the referrer\? Use a built-in report/, "the built-in report is still offered");
+    assertTenantClean(html);
+  });
+
+  // Review fix R-correctness-2: Next keeps a page mounted when only its search parameters change, so the screen is
+  // keyed by ?from= – "Complete a form" in the top bar (no from) then starts the wizard afresh.
+  it("the wizard page is keyed by ?from=: going to plain 'Complete a form' remounts it without the earlier report's notes", async () => {
+    const { default: TenantNewReportPage } = await import("../../../app/app/studio/new/page");
+    const reuse = TenantNewReportPage({ searchParams: { from: "rpt_reuse_1" } });
+    const other = TenantNewReportPage({ searchParams: { from: "rpt_reuse_2" } });
+    const plain = TenantNewReportPage({ searchParams: {} });
+    const withForm = TenantNewReportPage({ searchParams: { form: "frm_1" } });
+    assert.equal(reuse.props.reuseReportId, "rpt_reuse_1");
+    assert.equal(plain.props.reuseReportId, undefined);
+    assert.notEqual(reuse.key, plain.key, "from=… → none: a new screen (no reused notes, upload step)");
+    assert.notEqual(reuse.key, other.key, "another earlier report: a new screen");
+    assert.equal(plain.key, withForm.key, "the fresh wizard is unchanged");
+    // What a remount gives: the upload step, no banner.
+    const fresh = text(render(createElement(NewReportScreen, plain.props), TENANT, "/app/studio/new"));
+    assert.match(fresh, /Drop the patient's notes here/);
+    assert.doesNotMatch(fresh, new RegExp(TENANT_COPY.reuse.loading));
   });
 });

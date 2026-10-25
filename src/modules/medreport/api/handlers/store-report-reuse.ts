@@ -11,8 +11,9 @@ import "server-only";
  * → 200 StoreReportReuseResponse {data: BundleResponse, source}: the record re-stamped with the clinic's current
  *   details from its profile, the figures and data checks worked out again today (as for an upload), and what the
  *   Studio shows about the earlier report (its form, status, version – no patient data beyond the report screen's).
- *   Consent recorded on the earlier report itself is not carried over (core/reuse.ts recordForAnotherForm):
- *   `source.consentReset` – the new report needs it recorded before approval, as for a fresh upload.
+ *   The patient's consent to share the earlier report is not carried over for a record from uploaded notes, however
+ *   it was recorded – found in the notes, entered at the notes check, or "Record consent" on the report (core/reuse.ts
+ *   recordForAnotherForm): `source.consentReset` – the new report needs it recorded before approval.
  *
  * Rules (as for a fresh upload of the same notes):
  *   401 / 403 TWO_FACTOR_REQUIRED / NO_CLINIC / ORIGIN_NOT_ALLOWED / 429   requireTenantActor (a write: same origin)
