@@ -29,9 +29,10 @@ import type {
   InstructingParty,
   ReportTemplate,
 } from "../core/types";
+import { sameClinician } from "../core/voice";
 import { GLOSSARY_ABBREVIATIONS, buildEpisodeBlock, neutraliseTags, type PromptParts } from "./prompts";
 
-export const FORM_DRAFT_PROMPT_VERSION = "forms-7" as const;
+export const FORM_DRAFT_PROMPT_VERSION = "forms-8" as const;
 
 export const FORM_DRAFT_SYSTEM_PROMPT = `You complete a referrer's own report form for a UK physiotherapy clinic. A medico-legal company, insurer, solicitor, case manager or employer has sent the clinic its form, and you draft answers to some of its questions from the clinic's own records. Your answers are written into the referrer's form in its original layout. The treating physiotherapist checks every answer against the record, edits it, adds their own opinion where needed and approves the form. Your job is to answer accurately from the record, with citations – never to add to it.
 
@@ -44,7 +45,7 @@ The user message contains a <form> (the referrer's questions), an <episode> hold
 1. Use the record only. Do not use outside knowledge about the patient, the incident, the clinicians or typical recovery.
 2. Cite. Every paragraph lists in sourceIds every source it relies on: "REG", note ids and fact ids exactly as given. Never cite appointment ids (A-…), outcome series ids (OM-…) or anything not in the episode.
 3. Attribute every statement: what the patient reported ("[CLAIMANT] reported…") versus what a clinician observed, measured or assessed ("On 18/03/2026 Sarah Reid, physiotherapist, recorded…"). When notes are written by more than one clinician, name the clinician whose note you rely on. Set basis to patient_reported, clinician_observed, clinician_opinion_recorded or record.
-   Voice: the form is the signing clinician's own report. When the final instruction names the author who will sign it, write what THAT clinician recorded in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other clinician stays named. When the final instruction names no author, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note.
+   Voice: the form is the signing clinician's own report. When the final instruction names the author who will sign it, write what THAT clinician recorded in THEIR OWN notes – the final instruction lists which notes are theirs – in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my" – the patient told the clinician who wrote the note, and the opinion is that clinician's ("On 13/10/2026 Tom Ellis, physiotherapist, recorded that in his opinion…", "[CLAIMANT] told Tom Ellis…", "Tom Ellis's assessment on 08/09/2026 was…"). When the final instruction names no author, or none of the notes is theirs, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note.
 4. Keep the clinician's meaning and certainty. Hedged wording stays hedged ("consistent with", "approximately", "reported"). Do not turn an assessment into a diagnosis, add a diagnosis, or describe a finding more strongly than the note does. Words that firm up a finding or an opinion – "diagnosed", "diagnosis", "confirmed", "resolved", "recovered", "chronic", "long-term", "permanent" – may appear only when a note you cite uses the same word; otherwise keep the note's own wording and verbs ("recorded", "assessed", "noted", "advised"), including for what another professional, such as a GP, recorded.
 5. Never add an opinion. Do not write causation, prognosis, predictions of recovery, permanence, timeframes, fitness for work, restrictions, treatment recommendations or "balance of probabilities" wording unless you are quoting it from a note you cite. Do not comment on liability, credibility or consistency.
 6. Figures. Copy every date, score, measurement and duration exactly as it appears in a cited source. Never calculate: no differences, totals, averages, percentages, ages or durations of your own. For attendance and outcome scores, quote the FACT entries and cite them. Every date and number you write must appear in a source you cite – for a span of dates ("between 18/03/2026 and 07/07/2026"), cite the notes that hold both ends.
@@ -120,15 +121,39 @@ export function buildFormBlock(form: FormDefinition, template: ReportTemplate): 
   ].join("\n");
 }
 
+/**
+ * Which of the episode's notes the signing author wrote (fix round 1, B0-1): only those are written in the first person.
+ * The same clinician = the same HCPC number, else the same name (core/voice.ts sameClinician).
+ */
+function authorsOwnNotes(notes: ReadonlyArray<Pick<EpisodeBundle["notes"][number], "id" | "author">>, author: Clinician): { own: string[]; others: string[] } {
+  const own = notes.filter((n) => sameClinician(n.author, author)).map((n) => n.id);
+  return { own, others: notes.map((n) => n.id).filter((id) => own.indexOf(id) < 0) };
+}
+
 /** The short, per-call final instruction (with the signing author, when known – data, not instructions). */
-export function buildFormFinalInstruction(form: FormDefinition, fieldIds: string[], author?: Clinician): string {
+export function buildFormFinalInstruction(
+  form: FormDefinition,
+  fieldIds: string[],
+  author?: Clinician,
+  notes: ReadonlyArray<Pick<EpisodeBundle["notes"][number], "id" | "author">> = [],
+): string {
   const items = fieldIds.map((id) => {
     const f = form.fields.find((x) => x.id === id);
     return f ? `${id} ("${formText(f.label)}", ${f.answerType})` : id;
   });
-  const by = author?.name.trim()
-    ? ` The author who will sign this form: ${formText(author.name)}${author.hcpc ? ` (${formText(author.hcpc)})` : ""}.`
-    : " No signing author is named: write in the third person and name each clinician.";
+  let by = " No signing author is named: write in the third person and name each clinician.";
+  if (author?.name.trim()) {
+    const { own, others } = authorsOwnNotes(notes, author);
+    const whose =
+      notes.length === 0
+        ? ""
+        : own.length === 0
+          ? ` None of the notes is theirs: write in the third person throughout and name the clinician of every note you rely on – never "I", "me" or "my".`
+          : others.length === 0
+            ? " Every note is their own."
+            : ` Their own notes: ${own.join(", ")} – only these are written in the first person. ${others.join(", ")} ${others.length === 1 ? "was" : "were"} written by another clinician: name that clinician, never "I", "me" or "my".`;
+    by = ` The author who will sign this form: ${formText(author.name)}${author.hcpc ? ` (${formText(author.hcpc)})` : ""}.${whose}`;
+  }
   return `Answer form fields: ${items.join(", ")}.${by}`;
 }
 
@@ -150,6 +175,6 @@ export function buildFormPromptParts(input: {
     system: FORM_DRAFT_SYSTEM_PROMPT,
     template: buildFormBlock(input.form, input.template),
     episode: buildEpisodeBlock(scoped, input.computedFacts, input.instructingParty),
-    final: buildFormFinalInstruction(input.form, input.sectionKeys, input.author),
+    final: buildFormFinalInstruction(input.form, input.sectionKeys, input.author, scoped.notes),
   };
 }

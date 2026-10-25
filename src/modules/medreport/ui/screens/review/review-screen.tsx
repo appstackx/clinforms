@@ -27,7 +27,7 @@ import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
-import { otherClinicianVoice } from "../../../core/voice";
+import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -331,7 +331,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     if (member.role === "staff") return TENANT_COPY.review.staffCannotApprove;
     if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
     const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
-    if (!voice) return null;
+    if (!voice) {
+      // Fix round 1 (B0-1): a report with no author, approved by this member – "I" about notes they did not write.
+      const notesVoice = unsignableFirstPerson(report, { name: member.name, hcpc: member.hcpc });
+      return notesVoice ? WORDING.server.access.notesVoiceDetail(notesVoice.names, notesVoice.keys) : null;
+    }
     const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
     return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
   }, [tenant, signed, member, report, questions]);

@@ -195,6 +195,7 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   FIGURE_NOT_IN_SOURCE: "Date or figure not in the cited source",
   TERM_NOT_IN_SOURCE: "Clinical term not as the record writes it",
   OPINION_LANGUAGE: "Opinion language not in the cited note",
+  OTHER_CLINICIAN_VOICE: "Another clinician's note written as yours",
   SCOPE_TERM: "Out-of-scope information",
   MISSING_PLACEHOLDER: "Missing field",
   OPEN_GAP: "Open gap",

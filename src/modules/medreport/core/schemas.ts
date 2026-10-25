@@ -99,6 +99,8 @@ export const ReportFlagCodeSchema = z.enum([
   "FIGURE_NOT_IN_SOURCE",
   "TERM_NOT_IN_SOURCE",
   "OPINION_LANGUAGE",
+  /** Additive (fix round 1): "I" / "my" in an answer that cites another clinician's note (validation/voice.ts). */
+  "OTHER_CLINICIAN_VOICE",
   "SCOPE_TERM",
   "MISSING_PLACEHOLDER",
   "OPEN_GAP",

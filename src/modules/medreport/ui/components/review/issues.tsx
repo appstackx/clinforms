@@ -104,6 +104,7 @@ export function FlagItem({
   onJump,
   jumpLabel,
   compact,
+  fix,
 }: {
   flag: ReportFlag;
   canAck: boolean;
@@ -112,6 +113,8 @@ export function FlagItem({
   onJump?: () => void;
   jumpLabel?: string;
   compact?: boolean;
+  /** A one-click correction the check offers ("Name Tom Ellis instead"). */
+  fix?: { label: string; onFix(): void };
 }) {
   const [acking, setAcking] = useState(false);
   const acked = Boolean(flag.acknowledged);
@@ -157,8 +160,17 @@ export function FlagItem({
             }}
           />
         ) : (
-          (onJump || (canAck && !acked && !readOnly)) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+          (onJump || (canAck && !acked && !readOnly) || (fix && !acked && !readOnly)) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {fix && !acked && !readOnly && (
+                <button
+                  type="button"
+                  onClick={fix.onFix}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-red-700 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  {fix.label}
+                </button>
+              )}
               {canAck && !acked && !readOnly && (
                 <button type="button" onClick={() => setAcking(true)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
                   Acknowledge with a reason

@@ -16,7 +16,7 @@ import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
-import { MIN_GAP_REASON, canRecordConsent, gapResolutionOptions } from "./review-model";
+import { MIN_GAP_REASON, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
 import type { ReviewAction } from "./use-review-state";
 
 export function FlagsPanel({
@@ -80,18 +80,24 @@ export function FlagsPanel({
     />
   );
   const consentFlag = (f: ReportFlag) => f.code === "DATA_CHECK" && f.evidence === "CONSENT_NOT_RECORDED" && !readOnly && consentRecorder && canRecordConsent(report);
-  const flagItem = (f: ReportFlag) => (
-    <div key={f.id} className="space-y-1.5">
-      <FlagItem
-        flag={f}
-        readOnly={readOnly}
-        canAck={canAcknowledge(f)}
-        onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
-        {...jumpProps(f.sectionKey)}
-      />
-      {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
-    </div>
-  );
+  const flagItem = (f: ReportFlag) => {
+    const named = nameClinicianFix(report, f);
+    return (
+      <div key={f.id} className="space-y-1.5">
+        <FlagItem
+          flag={f}
+          readOnly={readOnly}
+          canAck={canAcknowledge(f)}
+          onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
+          {...jumpProps(f.sectionKey)}
+          {...(named && { fix: { label: `Name ${named.name} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+        />
+        {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
+      </div>
+    );
+  };
+  // Every "I" / "my" answer that reports one other clinician's note, named in one step (fix round 1, B0-1).
+  const voiceFixes = readOnly ? [] : report.flags.filter((f) => !f.acknowledged && nameClinicianFix(report, f));
   const boxItem = (box: BoxItem) => (
     <BoxIssue
       key={`box-${box.key}`}
@@ -136,6 +142,18 @@ export function FlagsPanel({
         </span>
         {validating && <span className="text-xs font-normal opacity-80">Checking…</span>}
       </div>
+
+      {voiceFixes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] text-red-950" data-testid="name-clinicians">
+          <p className="min-w-0 flex-1 basis-56">
+            <span className="font-medium">{voiceFixes.length} answers say “I” or “my” about another clinician&apos;s note.</span> Name the clinician who
+            wrote each note instead – each answer is marked as edited, and you can put the draft back.
+          </p>
+          <Button type="button" size="sm" variant="outline" className="h-8 bg-white" disabled={validating} onClick={() => dispatch({ type: "nameClinicians", flags: voiceFixes, actor })}>
+            Name the clinician in all {voiceFixes.length}
+          </Button>
+        </div>
+      )}
 
       {!readOnly && blankCandidates.length > 0 && (
         <LeaveBlankPanel candidates={blankCandidates} disabled={validating} questionLabel={questionLabel} onConfirm={onLeaveBlank} />

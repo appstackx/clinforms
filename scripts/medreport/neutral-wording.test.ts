@@ -102,6 +102,7 @@ const CALLS: Record<string, unknown[][]> = {
   "server.analysis.clinicRecordedDetail": [["09/10/2026"]],
   "server.analysis.clinicLiveDetail": [[1], [23]],
   "server.access.otherVoiceDetail": [["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07"]], ["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07", "F-08"]]],
+  "server.access.notesVoiceDetail": [[["Tom Ellis (fictional)"], ["F-07"]], [["Tom Ellis (fictional)", "Priya Shah (fictional)"], ["F-07", "F-08"]]],
   "server.access.storeLimitDetail": [[30]],
   "server.access.importLimitDetail": [[30]],
   "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],

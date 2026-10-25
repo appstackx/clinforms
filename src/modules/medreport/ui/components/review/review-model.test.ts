@@ -505,3 +505,29 @@ describe("supersedeAcknowledgedGaps", () => {
     assert.equal(typedIn.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
   });
 });
+
+describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
+  it("rewrites the flagged paragraph in the third person, marks it edited and audits it; the voice check then passes", async () => {
+    const { nameClinicianFix } = await import("./review-model");
+    const { report: base, form } = drafted();
+    // Sarah Reid signs; F-03 cites Tom Ellis's note in her first person.
+    const report: Report = {
+      ...base,
+      author: { name: "Sarah Reid", hcpc: "PH-DEMO-01" },
+      sections: base.sections.map((s) =>
+        s.key === "F-03" ? { ...s, paragraphs: [{ ...s.paragraphs[0], text: "On 06/05/2026 he told me that his back pain was 2/10 at worst after shifts.", sourceIds: ["N-002"] }] } : s,
+      ),
+    };
+    const template = formToTemplate(form);
+    const checked = { ...report, flags: validateReport(report, template, { form }).flags };
+    const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+    assert.ok(flag);
+    assert.deepEqual(nameClinicianFix(checked, flag), { name: "Tom Ellis", text: "On 06/05/2026 he told Tom Ellis that his back pain was 2/10 at worst after shifts." });
+    const fixed = reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" });
+    const p = fixed.sections.find((s) => s.key === "F-03")?.paragraphs[0];
+    assert.equal(p?.origin, "edited");
+    assert.equal(p?.originalText, "On 06/05/2026 he told me that his back pain was 2/10 at worst after shifts.");
+    assert.match(fixed.activity[fixed.activity.length - 1].detail, /^F-03: named Tom Ellis, who wrote the cited note, instead of “I” or “my”/);
+    assert.equal(validateReport(fixed, template, { form }).flags.some((f) => f.code === "OTHER_CLINICIAN_VOICE"), false);
+  });
+});

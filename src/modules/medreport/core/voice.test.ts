@@ -211,3 +211,54 @@ test("fix wave 2: otherClinicianVoice – only unedited drafted answers in the a
   assert.equal(otherClinicianVoice({ ...report, author: undefined } as typeof report, { name: "Sam Patel", hcpc: "PH123456" }), null, "third-person drafts");
   assert.equal(sameClinician({ name: "A", hcpc: "X1" }, { name: "A", hcpc: "X2" }), false);
 });
+
+/* Fix round 1 (B0-1): another physio's notes and opinions in the approver's first person. */
+
+const TOM_ONLY = {
+  notes: [
+    { id: "N-001", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } },
+    { id: "N-005", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } },
+  ],
+} as unknown as Parameters<typeof import("./voice").otherCliniciansInFirstPerson>[1];
+const SARAH = { name: "Sarah Reid", hcpc: "ZZ0001" };
+
+test("fix round 1: otherCliniciansInFirstPerson – 'I' / 'me' / 'my' citing another clinician's note", async () => {
+  const { otherCliniciansInFirstPerson } = await import("./voice");
+  const p = (text: string, sourceIds = ["N-001"]) => ({ text, sourceIds });
+  // Gemma Whitlock's notes are all Tom Ellis's; Sarah Reid signs.
+  for (const text of [
+    "Mrs Whitlock told me that she saw her GP on 03/09/2026.",
+    "My assessment on 08/09/2026 was acute non-specific (mechanical) low back pain.",
+    "In my opinion, she should be able to return to full duties, including 12-hour shifts, within 4 weeks.",
+    "I also advised ice and compression.",
+  ]) {
+    assert.deepEqual(otherCliniciansInFirstPerson(p(text), TOM_ONLY, SARAH), ["Tom Ellis"], text);
+  }
+  const mine = { notes: [{ id: "N-001", author: { name: "Sarah Reid", hcpc: "ZZ0001" } }, { id: "N-004", author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } }] } as typeof TOM_ONLY;
+  assert.equal(otherCliniciansInFirstPerson(p("Mr Ellery told me that driving was uncomfortable."), mine, SARAH), null, "the signer's own note");
+  assert.equal(otherCliniciansInFirstPerson(p("Tom Ellis, physiotherapist, recorded that she told him it eased."), TOM_ONLY, SARAH), null, "third person");
+  assert.equal(otherCliniciansInFirstPerson(p("She said “my back aches by the end of the shift”."), TOM_ONLY, SARAH), null, "a quotation from the note");
+  // The signer's notes and another's together: fine while the other clinician is named.
+  assert.equal(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026, and Tom Ellis, physiotherapist, recorded it on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), null);
+  assert.deepEqual(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026 and on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), ["Tom Ellis"]);
+  // No signing author: nothing is anyone's "I".
+  assert.deepEqual(otherCliniciansInFirstPerson(p("Mr Ellery told me that driving was uncomfortable."), mine, null), ["Sarah Reid"]);
+  assert.equal(otherCliniciansInFirstPerson(p("7 appointments were attended, and I was told of none missed.", ["FACT-attendance"]), TOM_ONLY, SARAH), null, "no note cited");
+});
+
+test("fix round 1: nameClinicianInstead – the inverse of the first-person rewrite, or null", async () => {
+  const { nameClinicianInstead } = await import("./voice");
+  assert.equal(nameClinicianInstead("Mrs Whitlock told me that she saw her GP on 03/09/2026.", "Tom Ellis"), "Mrs Whitlock told Tom Ellis that she saw her GP on 03/09/2026.");
+  assert.equal(
+    nameClinicianInstead("My assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.", "Tom Ellis"),
+    "Tom Ellis's assessment on 08/09/2026 was acute non-specific (mechanical) low back pain following a moving and handling incident at work on 01/09/2026.",
+  );
+  assert.equal(
+    nameClinicianInstead("On 13/10/2026, in my opinion, she should be able to return to full duties within 4 weeks. I requested 3 further sessions.", "Tom Ellis"),
+    "On 13/10/2026, in Tom Ellis's opinion, she should be able to return to full duties within 4 weeks. Tom Ellis requested 3 further sessions.",
+  );
+  assert.equal(nameClinicianInstead("She said “my back aches”, and I advised heat.", "Tom Ellis"), "She said “my back aches”, and Tom Ellis advised heat.", "quotations untouched");
+  assert.equal(nameClinicianInstead("He was graded WAD I and I advised rest.", "Tom Ellis"), "He was graded WAD I and Tom Ellis advised rest.", "a numeral stays");
+  assert.equal(nameClinicianInstead("I'm told she improved.", "Tom Ellis"), null, "a contraction: rewritten by hand");
+  assert.equal(nameClinicianInstead("Tom Ellis recorded full movement.", "Tom Ellis"), null, "nothing to change");
+});

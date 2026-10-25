@@ -7,7 +7,7 @@
  *
  * Owner: studio-b agent.
  */
-import { inOwnClinicalWording, isOwnVoiceCandidate } from "../../../core/voice";
+import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
@@ -812,6 +812,36 @@ export function writeInOwnVoice(report: Report, authorName: string, actor: strin
     { actor, action: "edited", detail: `Wrote ${targets.length} drafted answer${targets.length === 1 ? "" : "s"} about ${authorName}'s own notes in ${authorName}'s own clinical wording (citations unchanged).` },
     now,
   );
+}
+
+/**
+ * "Name Tom Ellis instead" (fix round 1, B0-1): the rewrite offered on an OTHER_CLINICIAN_VOICE flag – the paragraph
+ * with the one other clinician whose note it cites named instead of "I" / "me" / "my" – or null (two clinicians, or
+ * wording the rewrite cannot settle: the clinician edits it).
+ */
+export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId">): { name: string; text: string } | null {
+  if (flag.code !== "OTHER_CLINICIAN_VOICE" || !flag.sectionKey || !flag.paragraphId) return null;
+  const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
+  if (!p) return null;
+  const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, report.author);
+  if (!others || others.length !== 1) return null;
+  const text = nameClinicianInstead(p.text, others[0]);
+  return text ? { name: others[0], text } : null;
+}
+
+/** Apply nameClinicianFix() to the flagged paragraphs (by flag ID): each becomes "edited" (revertable); one activity entry each. */
+export function nameCliniciansInstead(report: Report, flags: readonly ReportFlag[], actor: string, now?: Date): Report {
+  let next = report;
+  for (const flag of flags) {
+    const fix = nameClinicianFix(next, flag);
+    if (!fix || !flag.sectionKey || !flag.paragraphId) continue;
+    next = appendActivity(
+      editParagraph(next, flag.sectionKey, flag.paragraphId, fix.text, now),
+      { actor, action: "edited", detail: `${flag.sectionKey}: named ${fix.name}, who wrote the cited note, instead of “I” or “my” (citations unchanged).` },
+      now,
+    );
+  }
+  return next;
 }
 
 /** Sentences of drafted text that only say something was NOT recorded. */

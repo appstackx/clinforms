@@ -161,6 +161,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       output: result.output,
       meta: result.meta,
       form,
+      ...(form && body.author ? { author: body.author } : {}),
     });
     const usage = result.meta.usage;
     logEvent("draft_ok", {

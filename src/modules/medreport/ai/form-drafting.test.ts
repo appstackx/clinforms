@@ -344,3 +344,52 @@ test("demo answers for a form are matched by answer space, never by field ID alo
     /no prepared demo answers/,
   );
 });
+
+/* Fix round 1 (B0-1): the first person is the signer's own notes only. */
+
+test("fix round 1: 'I recorded' about another clinician's note keeps its first person and is flagged; the signer's own note gets plain wording", () => {
+  const bundle = testBundle(); // N-001 Sarah Reid, N-002 Tom Ellis
+  const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" };
+  const res = assembleDraft({
+    template: formToTemplate(FORM),
+    bundle,
+    instructingParty: bundle.referral,
+    sectionKeys: ["F-02"],
+    computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }),
+    output: {
+      sections: [
+        {
+          sectionKey: "F-02",
+          paragraphs: [
+            { text: "On 18/03/2026 I recorded that the presentation was consistent with acute mechanical low back pain.", sourceIds: ["N-001"], basis: "clinician_observed" },
+            { text: "On 06/05/2026 I recorded that lumbar active range of movement was full and pain-free.", sourceIds: ["N-002"], basis: "clinician_observed" },
+          ],
+        },
+      ],
+      gaps: [],
+    },
+    meta: { ...META, sectionKeys: ["F-02"] },
+    form: FORM,
+    idSeed: "v1",
+    author: sarah,
+  });
+  const [own, toms] = res.sections[0].paragraphs;
+  assert.equal(own.text, "On 18/03/2026, the presentation was consistent with acute mechanical low back pain.", "Sarah's own note: plain clinical wording");
+  assert.equal(toms.text, "On 06/05/2026 I recorded that lumbar active range of movement was full and pain-free.", "Tom's note: the first person is kept, not hidden");
+  const flag = res.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+  assert.equal(flag?.paragraphId, toms.id);
+  assert.equal(flag?.evidence, "Tom Ellis");
+});
+
+test("fix round 1: the final instruction says which notes are the signing author's own", async () => {
+  const { buildFormFinalInstruction } = await import("./form-prompts");
+  const bundle = testBundle();
+  const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01" };
+  const mixed = buildFormFinalInstruction(FORM, ["F-02"], sarah, bundle.notes);
+  assert.match(mixed, /The author who will sign this form: Sarah Reid \(PH-DEMO-01\)\. Their own notes: N-001 – only these are written in the first person\. N-002 was written by another clinician: name that clinician, never "I", "me" or "my"\./);
+  const toms = bundle.notes.map((n) => ({ ...n, author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } }));
+  assert.match(buildFormFinalInstruction(FORM, ["F-02"], sarah, toms), /None of the notes is theirs: write in the third person throughout/);
+  const hers = bundle.notes.map((n) => ({ ...n, author: sarah }));
+  assert.match(buildFormFinalInstruction(FORM, ["F-02"], sarah, hers), /Every note is their own\.$/);
+  assert.match(FORM_DRAFT_SYSTEM_PROMPT, /Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my"/);
+});

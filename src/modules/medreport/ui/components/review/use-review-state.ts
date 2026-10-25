@@ -18,6 +18,7 @@ import {
   addClinicianParagraph,
   editParagraph,
   markApproved,
+  nameCliniciansInstead,
   recordConsent,
   removeAbsenceSentences,
   removeParagraph,
@@ -51,6 +52,8 @@ export type ReviewAction =
   | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
   | { type: "activity"; action: string; detail: string; actor: string }
   | { type: "writeInOwnVoice"; authorName: string; actor: string }
+  /** "Name Tom Ellis instead" on OTHER_CLINICIAN_VOICE flags (fix round 1, B0-1). */
+  | { type: "nameClinicians"; flags: ReportFlag[]; actor: string }
   | { type: "removeAbsence"; key: string; actor: string };
 
 function locked(report: Report): boolean {
@@ -66,6 +69,8 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   switch (action.type) {
     case "writeInOwnVoice":
       return writeInOwnVoice(report, action.authorName, action.actor);
+    case "nameClinicians":
+      return nameCliniciansInstead(report, action.flags, action.actor);
     case "removeAbsence":
       return removeAbsenceSentences(report, action.key, action.actor);
     case "editParagraph":
