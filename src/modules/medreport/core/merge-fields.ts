@@ -69,7 +69,10 @@ export function listMergeTokensInWords(tokens: readonly string[], max = 3): stri
 export interface UnresolvedMergeField extends FormMergeField {
   /** How many times this text is left there. */
   count: number;
-  /** A question whose answer box is in the same place (for "Go to"), when there is one. */
+  /**
+   * The question whose answer replaces it (fix round 1), else one whose answer box is in the same place (for "Go to"),
+   * when there is one.
+   */
   fieldId?: string;
 }
 
@@ -106,14 +109,20 @@ export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "f
     let near: string | undefined;
     if (!g.fixed && g.blockId) {
       const blockId = g.blockId;
+      // Fix round 1 (B0-10): the question whose answer replaces the code owns it ("Reference <<P_GROUPREF>>" on a line
+      // that starts "Claimant <<P_TITLE>>" is F-04's, not the line's first question); else the first one there.
+      let owner: string | undefined;
       for (const f of form.fields) {
         if (f.anchor.kind !== "docx") continue;
         const blocks = docxAnchorBlockIds(f.anchor);
         if (!blocks.some((b) => inBlock(b, blockId))) continue;
         near ??= f.id;
         // (A question that writes AFTER the printed text – writeAfter, 10/2026 – leaves the code there.)
-        if (f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0 && answeredOrSignoff(f, report)) cleared += 1;
+        const replaces = f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0;
+        if (replaces) owner ??= f.id;
+        if (replaces && answeredOrSignoff(f, report)) cleared += 1;
       }
+      near = owner ?? near;
     } else if (!g.fixed && g.fieldName) {
       for (const f of form.fields) {
         if (!formAnchorPdfFieldNames(f.anchor).includes(g.fieldName)) continue;

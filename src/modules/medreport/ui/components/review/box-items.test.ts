@@ -367,3 +367,30 @@ describe("fix round 1 (B0-2): what a box left blank prints", () => {
     assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "table_cell", blockId: "t0.r2.c1" } }), null);
   });
 });
+
+describe("fix round 1 (B0-10): a merge code blames the question that replaces it", () => {
+  it("“Claimant <<P_TITLE>> … Reference <<P_GROUPREF>>” on one line: the title is filled and not blocked; the reference's question is", async () => {
+    const { unresolvedMergeFields } = await import("../../../core/merge-fields");
+    const line = (id: string, label: string, code: string, path: "patient.title" | "staff.entry"): FormField =>
+      field(id, { label, answerType: "short_text", fillSource: { kind: "registration", path }, anchor: { kind: "docx", target: "replace_placeholder", blockId: "p4", placeholderText: code }, required: path === "patient.title" });
+    const base = testForm();
+    const form: FormDefinition = {
+      ...base,
+      fields: [line("F-01", "Patient's title", "<<P_TITLE>>", "patient.title"), line("F-02", "Group reference", "<<P_GROUPREF>>", "staff.entry")],
+      analysis: { ...base.analysis, mergeFields: [{ text: "<<P_TITLE>>", where: "paragraph 5", blockId: "p4" }, { text: "<<P_GROUPREF>>", where: "paragraph 5", blockId: "p4" }] },
+    };
+    const bundle = testBundle();
+    const created = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), now: new Date(AT), id: "rpt_merge_owner" });
+    const report = revalidated(created, form);
+    assert.deepEqual(unresolvedMergeFields(form, report).map((u) => [u.text, u.fieldId]), [["<<P_GROUPREF>>", "F-02"]]);
+    const merge = report.flags.filter((f) => f.evidence?.startsWith("mail-merge field "));
+    assert.deepEqual(merge.map((f) => f.sectionKey), ["F-02"]);
+    const groups = buildQuestionGroups(report, form, formToTemplate(form));
+    const status = (key: string) => {
+      const q = flattenQuestions(groups).find((x) => x.key === key)!;
+      return questionStatus(q, report.flags, report.gaps);
+    };
+    assert.equal(status("F-01"), "records", "the filled title is not “Blocked – check required”");
+    assert.notEqual(status("F-02"), "records");
+  });
+});
