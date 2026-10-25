@@ -119,6 +119,12 @@ export interface Wording {
   origin: {
     /** Pill for a drafted paragraph (ParagraphOrigin "ai"). */
     drafted: string;
+    /** The same pill once the report is approved: where the text came from, not that it is still a draft. */
+    draftedApproved: string;
+    /** Under a tick box, choice or yes/no answer drafted from the notes, while it is reviewed. */
+    answerDrafted: string;
+    /** The same pill once the report is approved (nothing left to check). */
+    answerDraftedApproved: string;
     revertToDraft: string;
   };
 
@@ -544,6 +550,9 @@ const NEUTRAL: Wording = {
   },
   origin: {
     drafted: "Draft",
+    draftedApproved: "Drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer drafted from the notes",
     revertToDraft: "Revert to the draft",
   },
   labels: {
@@ -749,6 +758,9 @@ const AI_ASSISTED: Wording = {
   },
   origin: {
     drafted: "AI draft",
+    draftedApproved: "AI-drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer AI-drafted from the notes",
     revertToDraft: "Revert to AI draft",
   },
   labels: {

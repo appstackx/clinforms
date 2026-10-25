@@ -97,7 +97,8 @@ npm run admin:create-clinic -- --env production --yes \
   --name "Riverside Physiotherapy" --slug riverside-physio --owner-email owner@riverside.example [--retention-days 365]
 ```
 Prints the clinic id and the owner's invitation link (**once**). **The script never sends email** (it runs on a laptop,
-whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days). To
+whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days, at the same UK clock time it was
+created – every invitation does, so an expiry never reads an hour off across a clock change). To
 have the invitation emailed, create the clinic on the platform page instead (§ "Platform page"). The id (slug) can never
 change – choose it carefully.
 For preview, add `--app-url <origin of the deployment or local server using the preview database>`.

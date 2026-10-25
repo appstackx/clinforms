@@ -73,6 +73,7 @@ import {
   generationSummary,
   groupBySection,
   questionStatus,
+  wordFormPdfNote,
   type QuestionStatus,
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
@@ -285,9 +286,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key)));
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed));
     return map;
-  }, [questions, flagsBySection, report.gaps, personAnswered]);
+  }, [questions, flagsBySection, report.gaps, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
@@ -646,9 +647,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           questionSet={questionSet}
           downloading={actions.downloading}
           pdfUnavailable={
-            actions.pdfUnavailable ??
-            // Fix wave 2: a clinic's Studio says before anyone clicks that a Word form has no PDF copy here yet.
-            (tenant && report.form?.kind === "docx" && !questionSet && aiMode.health?.pdfFromWord === false ? TENANT_COPY.files.pdfUnavailable : null)
+            // A Word form's PDF copy only where this deployment makes one: never a greyed-out button (test run 24/10/2026).
+            wordFormPdfNote({ formKind: report.form?.kind, pdfFromWord: aiMode.health?.pdfFromWord, failed: actions.pdfUnavailable })
           }
           filing={actions.filing}
           filed={filedEntries(report)}

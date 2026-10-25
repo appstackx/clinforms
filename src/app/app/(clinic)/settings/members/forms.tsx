@@ -1,7 +1,7 @@
 "use client";
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
-import { SecretBox, SubmitButton } from "@/components/account/form-controls";
+import { FormResult, SecretBox, SubmitButton } from "@/components/account/form-controls";
 import { INVITE_COPY, ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { changeRole, createResetLink, inviteMember, saveMemberProfile, type InviteResult, type ResetLinkResult } from "./actions";
@@ -38,13 +38,6 @@ export function InviteForm({ roles }: { roles: RoleKey[] }) {
         </div>
         <SubmitButton pendingText="Inviting…">Invite</SubmitButton>
       </form>
-      <ul className="grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
-        {roles.map((r) => (
-          <li key={r}>
-            <strong className="text-slate-700">{ROLE_LABELS[r]}:</strong> {ROLE_DESCRIPTIONS[r]}
-          </li>
-        ))}
-      </ul>
       {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
       {state?.ok === true ? (
         <div className="space-y-3" data-testid="invite-result">
@@ -59,6 +52,14 @@ export function InviteForm({ roles }: { roles: RoleKey[] }) {
           ) : null}
         </div>
       ) : null}
+      {/* Below the outcome, so "Invitation emailed to …" shows right under the Invite button. */}
+      <ul className="grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+        {roles.map((r) => (
+          <li key={r}>
+            <strong className="text-slate-700">{ROLE_LABELS[r]}:</strong> {ROLE_DESCRIPTIONS[r]}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -72,8 +73,7 @@ export function RoleForm({ memberId, roles, current }: { memberId: string; roles
       <SubmitButton variant="secondary" pendingText="Saving…">
         Change role
       </SubmitButton>
-      {state?.ok === false ? <span className="text-sm text-red-700">{state.error}</span> : null}
-      {state?.ok === true ? <span className="text-sm text-teal-700">Role changed.</span> : null}
+      <FormResult state={state} success="Role changed." />
     </form>
   );
 }
@@ -104,12 +104,11 @@ export function SigningForm({
         May sign (approve) completed forms
         {staff ? <span className="text-xs text-slate-500">(not for staff)</span> : null}
       </label>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <SubmitButton variant="secondary" pendingText="Saving…">
           Save signing details
         </SubmitButton>
-        {state?.ok === false ? <span className="text-sm text-red-700">{state.error}</span> : null}
-        {state?.ok === true ? <span className="text-sm text-teal-700">Saved.</span> : null}
+        <FormResult state={state} />
       </div>
     </form>
   );

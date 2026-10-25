@@ -52,6 +52,7 @@ export interface QuestionCardProps {
   bundle: EpisodeBundle;
   connectorId: ConnectorId;
   referrerName: string | null;
+  /** The report is approved: read-only from now on, and its drafted paragraphs and answers are no longer called drafts. */
   readOnly: boolean;
   /** The clinician changed the structured answer (activity "answer_set"). */
   answerEdited: boolean;
@@ -164,7 +165,10 @@ function ParagraphEditor({
         />
       )}
       <div className="flex flex-wrap items-center gap-1.5">
-        <OriginPill origin={paragraph.origin} label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId)} />
+        <OriginPill
+          origin={paragraph.origin}
+          label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
+        />
         {paragraph.basis && paragraph.origin !== "from_records" && (
           <span className="text-[11px] text-slate-500">{PARAGRAPH_BASIS_LABELS[paragraph.basis]}</span>
         )}
@@ -519,7 +523,8 @@ function QuestionCardImpl(props: QuestionCardProps) {
         {SIGNOFF_PART_LABELS[part]} – completed from the approval receipt when a clinician approves the form. Blank on the draft.
       </p>
     );
-  } else if (section.status === "pending" && !answered) {
+  } else if (section.status === "pending" && !answered && !readOnly) {
+    // (Once approved, a question never drafted reads "Left blank on the form." below, not "Not drafted yet.")
     body = (
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
         {props.drafting ? (
@@ -592,7 +597,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
             )}
             {proposedBy && (
               <div className="flex items-center gap-1.5">
-                {proposedBy === "ai" && <Pill className="border-sky-200 bg-sky-50 text-sky-800">Answer proposed from the notes – check it</Pill>}
+                {proposedBy === "ai" && (
+                  <Pill className="border-sky-200 bg-sky-50 text-sky-800">{readOnly ? WORDING.origin.answerDraftedApproved : WORDING.origin.answerDrafted}</Pill>
+                )}
                 {proposedBy === "edited" && <Pill className="border-violet-200 bg-violet-50 text-violet-800">Answer changed by the clinician</Pill>}
                 {proposedBy === "clinician" && <Pill className="border-indigo-200 bg-indigo-50 text-indigo-800">Clinician</Pill>}
               </div>

@@ -177,7 +177,7 @@ options rather than merging them, so the script writes one full pattern list per
   tooltips, aria-labels, toasts, problem titles/details shown in the UI, the activity log, the Security
   & GDPR page, generated documents, the case export and the demo video – describes what the product
   does, never the technology or the vendor ("drafted from the notes", "reads the form and identifies
-  each question and answer space", origin pill "Draft", "Live drafting" / "Demo mode"). All of it comes
+  each question and answer space", origin pill "Draft" – "Drafted from notes" once approved, a drafted tick or choice "Answer proposed from the notes – check it" – "Answer drafted from the notes" once approved, "Live drafting" / "Demo mode"). All of it comes
   from `core/wording.ts` (`WORDING`, re-exported by `ui/wording.ts`); switch `DISCLOSURE` there
   (`"neutral"` default, `"ai-assisted"` kept for later). API responses the Studio stores or renders
   name the engine `publicEngineName()` (`"drafting-service"` while neutral); the real model id stays in
@@ -722,8 +722,9 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   `TenantHome`): no hero, badges or tiles; the clinic's forms with In progress (first) / Approved / All, a search over
   patient, referrer, form and approver, "Amended – vN", the next step and who approved; a new clinic sees a two-step
   first run (a confirmed referrer form, then the notes). **Word → PDF:** `/health` carries `pdfFromWord` (LibreOffice
-  present – false on every hosted deployment), and the approved banner says up front "A PDF copy of a Word form is not
-  available yet – download the completed Word file" instead of failing on the click; `NOTICES.pdfConversionUnavailable`
+  present – false on every hosted deployment); in both Studios a Word form's approved banner offers its PDF copy only
+  when `pdfFromWord` is true, and otherwise shows the Word download alone with `NOTICES.wordFormPdfHint` ("Need a PDF?
+  …save it as a PDF") – no greyed-out button (test run 24/10/2026); `NOTICES.pdfConversionUnavailable`
   is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
   "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
   (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a

@@ -24,11 +24,13 @@ import {
   buildQuestionGroups,
   citationLabel,
   citationsBySource,
+  countStatuses,
   editParagraph,
   flattenQuestions,
   generationSummary,
   markApproved,
   nextClinicianParagraphId,
+  originLabel,
   questionStatus,
   removeParagraph,
   reopenGap,
@@ -36,7 +38,9 @@ import {
   revertParagraph,
   setStructuredAnswer,
   supersedeAcknowledgedGaps,
+  wordFormPdfNote,
 } from "./review-model";
+import { NOTICES } from "../../../config.public";
 import { reviewReducer } from "./use-review-state";
 
 const AT = "2026-10-06T09:00:00.000Z";
@@ -231,6 +235,32 @@ describe("questionStatus", () => {
     const flags2 = validateReport(resolved, template).flags;
     assert.equal(questionStatus(q6b, flags2, resolved.gaps), "clinician");
   });
+
+  it("once approved, a question without an answer was left blank on approval – it does not need input any more", () => {
+    const { report, form } = drafted();
+    const template = formToTemplate(form);
+    // F-06's gap acknowledged with the question left blank, then approved.
+    const left = resolveGap(report, "gap-F-06-ai", "acknowledged", "Left blank: no prognosis was recorded.", "Sarah Reid", NOW);
+    const flags = validateReport(left, template).flags;
+    const qs = flattenQuestions(buildQuestionGroups(left, form, template));
+    const status = (key: string, approved: boolean, from = qs) => {
+      const q = from.find((x) => x.key === key);
+      assert.ok(q);
+      return questionStatus(q, flags, left.gaps, false, approved);
+    };
+    assert.equal(status("F-06", false), "needs_input");
+    assert.equal(status("F-06", true), "left_blank");
+    // answered questions, sign-off and the referrer's own boxes read the same before and after approval
+    for (const key of ["F-01", "F-03", "F-04", "F-08", "F-09"]) assert.equal(status(key, true), status(key, false), key);
+    // never drafted ("Not drafted yet" under review)
+    const fresh = flattenQuestions(buildQuestionGroups(testReport().report, form, template));
+    assert.equal(status("F-03", false, fresh), "pending");
+    assert.equal(status("F-03", true, fresh), "left_blank");
+    // counted in the summary as left blank, not as needing input
+    const counts = countStatuses(qs.map((q) => questionStatus(q, flags, left.gaps, false, true)));
+    assert.equal(counts.counts.needs_input, 0);
+    assert.ok(counts.counts.left_blank >= 1);
+  });
 });
 
 describe("generationSummary", () => {
@@ -378,6 +408,29 @@ describe("labels and options", () => {
     const by = citationsBySource(report);
     assert.deepEqual(by.get("N-001"), ["F-03"]);
     assert.deepEqual(by.get("REG"), ["F-01", "F-02"]);
+  });
+
+  it("origin pills: a drafted paragraph is a 'Draft' until approval, then says where it came from", () => {
+    assert.equal(originLabel("ai", "file-import"), "Draft");
+    assert.equal(originLabel("ai", "file-import", true), "Drafted from notes");
+    // the other origins read the same before and after approval
+    for (const origin of ["from_records", "edited", "clinician"] as const) {
+      assert.equal(originLabel(origin, "file-import", true), originLabel(origin, "file-import"));
+    }
+  });
+
+  it("an approved Word form offers a PDF copy only where one can be made – no greyed-out button (test run 24/10/2026)", () => {
+    // Every hosted deployment (no converter), and while /health is not known yet: the Word download alone, with a hint.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: false, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: undefined, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(NOTICES.wordFormPdfHint, "Need a PDF? Open the completed Word file and save it as a PDF.");
+    // A converter: the PDF copy is offered – until it fails, then the failure says why.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: null }), null);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: "Not now." }), "Not now.");
+    // PDF forms and portal questions: their own PDF, always.
+    for (const formKind of ["pdf_acroform", "pdf_flat", "questions", undefined] as const) {
+      assert.equal(wordFormPdfNote({ formKind, pdfFromWord: false, failed: null }), null, String(formKind));
+    }
   });
 
   it("offers the printed options for yes/no and single choice", () => {

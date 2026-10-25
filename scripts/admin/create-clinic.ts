@@ -12,6 +12,7 @@
 import { authSecret } from "../../src/server/auth/config";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDb, getDbKind } from "../../src/server/db";
+import { ukDateTime } from "../../src/server/email/templates";
 import { applyTarget, appUrl, parseArgs, requireYesForProduction, resolveTarget, runCli, str } from "./cli";
 
 void runCli(async () => {
@@ -36,7 +37,7 @@ void runCli(async () => {
   console.log(`Clinic created on ${target === "current" ? `the ${getDbKind()} database` : target}.`);
   console.log(`  clinic id (tenant):  ${created.tenantId}`);
   console.log(`  organization id:     ${created.organizationId}`);
-  console.log(`  owner invitation:    expires ${created.invitationExpiresAt}`);
+  console.log(`  owner invitation:    expires ${ukDateTime(created.invitationExpiresAt)}`);
   console.log("  email:               not sent (this command never sends email)");
   console.log("");
   console.log("Invitation link (shown once – send it to the owner yourself, and only to them):");
