@@ -39,7 +39,8 @@ import { verifyReceipt } from "@/modules/medreport/auth/sign-receipt";
 import { buildAnswersCopy, copyFormOf, copyTextForAnswer } from "@/modules/medreport/core/answer-copy";
 import { demoOutputNotice, isDemoHcpc, normaliseDemoHcpc } from "@/modules/medreport/core/demo-clinic";
 import { FORM_ATTESTATIONS } from "@/modules/medreport/core/forms";
-import { createReport } from "@/modules/medreport/core/report-factory";
+import { EXAMPLE_PORTAL_QUESTIONS, createQuestionSet, parsePortalQuestions } from "@/modules/medreport/core/question-set";
+import { createFormReport, createReport } from "@/modules/medreport/core/report-factory";
 import type { FormDefinition, Report, SignReceipt } from "@/modules/medreport/core/types";
 import { WORDING } from "@/modules/medreport/core/wording";
 import { loadPdfjs, pdfjsDocumentParams } from "@/modules/medreport/forms/pdfjs";
@@ -391,6 +392,23 @@ describe("outputs – the demonstration notice", () => {
       const res = await call(handleRender, "/render?format=original", { report: { ...report, status: "signed", receipt }, receipt, form, fileBase64, requireFinal: true }, { member });
       assert.equal(res.status, 200, await res.clone().text());
       assert.equal(docxFooters(new Uint8Array(await res.arrayBuffer())).includes("made-up data from a demo clinic. Not for clinical use."), expected, `${tenantId} Word footer`);
+    }
+  });
+
+  test("a portal question set's summary PDF carries the notice in a demo clinic only", async () => {
+    const bundle = getDemoBundle("megan-hart");
+    for (const [member, tenantId, expected] of [
+      ["sarah-d", D, true],
+      ["sam-a", A, false],
+    ] as const) {
+      const parsed = parsePortalQuestions(EXAMPLE_PORTAL_QUESTIONS);
+      const set = await createQuestionSet({ referrer: { name: "Northbridge Health Insurance (fictional)", type: "insurer" }, questions: parsed.questions, now: new Date("2026-10-09T10:00:00.000Z"), id: `form-portal-${tenantId}` });
+      const form = attested(set, tenantId);
+      const created = createFormReport({ form, bundle: { ...bundle, tenantId }, instructingParty: bundle.referral, computedFacts: computeFacts(bundle), now: new Date("2026-10-09T10:00:00.000Z") });
+      const report: Report = { ...created, tenantId };
+      const res = await call(handleRender, "/render?format=pdf", { report, form }, { member });
+      assert.equal(res.status, 200, await res.clone().text());
+      (await pagesText(new Uint8Array(await res.arrayBuffer()))).forEach((text, i) => assert.equal(hasNotice(text), expected, `${tenantId} summary page ${i + 1}`));
     }
   });
 
