@@ -268,3 +268,22 @@ test("fix round 1: nameClinicianInstead – the inverse of the first-person rewr
     "the clinician is named already: rewritten by hand",
   );
 });
+
+test("fix round 1 (B0-23): gap wording names whose note it is – never “my note” or “your note”", async () => {
+  const { notesNamedByAuthor } = await import("./voice");
+  const notes = [
+    { date: "2026-07-15", author: { name: "Sarah Reid" } },
+    { date: "2026-08-05", author: { name: "Tom Ellis" } },
+    { date: "2026-09-16", author: { name: "Sarah Reid" } },
+  ];
+  assert.equal(
+    notesNamedByAuthor("Your discharge note of 16/09/2026 says the stiffness should settle within 4–6 weeks.", notes),
+    "Sarah Reid's discharge note of 16/09/2026 says the stiffness should settle within 4–6 weeks.",
+  );
+  assert.equal(notesNamedByAuthor("What did my note of 05/08/2026 record?", notes), "What did Tom Ellis's note of 05/08/2026 record?", "the note's own author, by its date");
+  assert.equal(notesNamedByAuthor("Your notes do not record a dose. Check my initial assessment note.", notes), "The notes do not record a dose. Check the initial assessment note.", "no date: “the”");
+  assert.equal(notesNamedByAuthor("She said “my notes from the gym say so”.", notes), "She said “my notes from the gym say so”.", "quotations untouched");
+  assert.equal(notesNamedByAuthor("Sarah Reid's note of 15/07/2026 records no dose.", notes), "Sarah Reid's note of 15/07/2026 records no dose.", "nothing to change");
+  assert.equal(notesNamedByAuthor("Check your records for the date.", notes), "Check your records for the date.", "not a note");
+  assert.equal(notesNamedByAuthor("Does your clinic have no notes of it?", notes), "Does your clinic have no notes of it?", "not someone's note");
+});

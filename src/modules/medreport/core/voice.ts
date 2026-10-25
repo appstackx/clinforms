@@ -589,3 +589,23 @@ export function unsignableFirstPerson(
   }
   return keys.length > 0 ? { names: Array.from(names), keys } : null;
 }
+
+/**
+ * Fix round 1 (B0-23): gap wording ("issue", "suggestedQuestion") read by everyone who opens the review – staff too – so
+ * "your discharge note of 16/09/2026" or "my note of 05/08/2026" names whose note it is: the clinician who wrote the
+ * note of that date ("Sarah Reid's discharge note of 16/09/2026"), else "the" ("The notes do not record a dose").
+ * Quotations are untouched. Pure; browser and server.
+ */
+export function notesNamedByAuthor(text: string, notes: ReadonlyArray<{ date: string; author: Pick<Clinician, "name"> }>): string {
+  // "your discharge note", "my initial assessment note" – not "your clinic has no notes".
+  const own = /\b(my|your)((?:\s+(?!(?:has|have|had|is|are|was|were|do|does|did|no|not|and|or|of|in|on|for|to)\b)[A-Za-z-]+){0,3}?\s+notes?)\b(\s+(?:of|on|dated)\s+(\d{2})\/(\d{2})\/(\d{4}))?/gi;
+  return outsideQuotes(text, (s) =>
+    s.replace(own, (_m, _who: string, rest: string, tail: string | undefined, dd?: string, mm?: string, yyyy?: string, offset?: number, whole?: string) => {
+      const iso = dd && mm && yyyy ? `${yyyy}-${mm}-${dd}` : null;
+      const authors = iso ? Array.from(new Set(notes.filter((n) => n.date === iso).map((n) => n.author.name.trim()).filter(Boolean))) : [];
+      if (authors.length === 1) return `${authors[0]}'s${rest}${tail ?? ""}`;
+      const start = (offset ?? 0) === 0 || /[.!?]\s+$/.test((whole ?? "").slice(0, offset));
+      return `${start ? "The" : "the"}${rest}${tail ?? ""}`;
+    }),
+  );
+}
