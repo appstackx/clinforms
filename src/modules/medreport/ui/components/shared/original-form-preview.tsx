@@ -23,7 +23,7 @@ import { formAnchorPdfFieldNames } from "../../../core/forms";
 import { INSTRUCTION_PREVIEW_TITLE } from "../../../core/template-instructions";
 import type { FormAnchor, FormMimeType, PdfFieldType } from "../../../core/types";
 import { cn } from "../../primitives";
-import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PAGE_OVERFLOW_CSS, DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { indexDocxDom, type DocxIndex } from "./docx-index";
 import { INSTRUCTION_CLASS, markTemplateInstructions, type PreviewInstructions } from "./docx-instructions";
 import { Spinner } from "./ui-bits";
@@ -74,6 +74,7 @@ const HL_CSS = `
 .mr-picking [data-mr-block]{cursor:crosshair;}
 .mr-picking [data-mr-block]:hover{outline:2px dashed #0D9488;outline-offset:-2px;background-color:rgba(13,148,136,.08);}
 .mr-preview .${INSTRUCTION_CLASS}{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6;}
+.mr-preview ${DOCX_PAGE_OVERFLOW_CSS}
 `;
 
 function ensureStyles(): void {
@@ -195,7 +196,8 @@ function DocxPreview({ file, highlight, pickMode, onPick, onInstructions }: Orig
       const page = content.querySelector<HTMLElement>("section.docx");
       if (!page) return;
       content.style.zoom = "1";
-      const needed = page.offsetWidth + 32;
+      // (Content wider than the page – a logo, a table pulled into the margin – is shown too: fix round 1, B0-30.)
+      const needed = Math.max(page.offsetWidth, page.scrollWidth) + 32;
       const zoom = Math.min(1, Math.max(0.3, (viewport.clientWidth - 4) / needed));
       content.style.zoom = String(zoom);
     };

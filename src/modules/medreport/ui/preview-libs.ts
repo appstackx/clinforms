@@ -82,12 +82,73 @@ export function sanitizeDocxPreview(root: HTMLElement): void {
   });
 }
 
+/**
+ * Fix round 1 (B0-30): docx-preview ignores a table's indent ("w:tblInd", in twips), so a table Word pulls left into the
+ * margin (Proclaim's -680) is drawn shifted right and cut off. The body's table indents, in document order, as CSS
+ * margins: read from the file's own document.xml through the parsed package (docx-preview 0.4.1 keeps it as `_package`).
+ */
+export function tableIndentsOf(documentXml: string): Array<number | null> {
+  const out: Array<number | null> = [];
+  const re = /<w:tbl(?:Ind)?\b[^>]*>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(documentXml))) {
+    if (!m[0].startsWith("<w:tblInd")) {
+      out.push(null);
+      continue;
+    }
+    const w = /\bw:w="(-?\d+)"/.exec(m[0]);
+    const type = /\bw:type="(\w+)"/.exec(m[0])?.[1] ?? "dxa";
+    if (w && type === "dxa" && out.length > 0 && out[out.length - 1] === null) out[out.length - 1] = Number(w[1]);
+  }
+  return out;
+}
+
+interface PreviewNode {
+  type?: string;
+  cssStyle?: Record<string, string>;
+  children?: PreviewNode[];
+}
+
+/** Every table of the parsed body, in document order (nested tables after the table that holds them). */
+function tablesOf(node: PreviewNode | undefined, out: PreviewNode[] = []): PreviewNode[] {
+  if (!node) return out;
+  if (node.type === "table") out.push(node);
+  for (const child of node.children ?? []) tablesOf(child, out);
+  return out;
+}
+
 /** Render a Word file with docx-preview into `host`, then make it inert (sanitizeDocxPreview). */
 export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: Record<string, unknown>): Promise<void> {
   const lib = await loadDocxPreview();
-  await lib.renderAsync(blob, host, undefined, options);
+  const doc = (await lib.parseAsync(blob, options)) as unknown as {
+    _package?: { load(path: string, type?: string): Promise<string | null> };
+    documentPart?: { body?: PreviewNode };
+  };
+  // A negative table indent, as Word draws it (best effort: an unexpected file renders as before).
+  try {
+    const xml = (await doc._package?.load("word/document.xml", "string")) ?? "";
+    const indents = tableIndentsOf(xml);
+    const tables = tablesOf(doc.documentPart?.body);
+    if (indents.length === tables.length) {
+      tables.forEach((t, i) => {
+        const twips = indents[i];
+        if (twips !== null && twips < 0 && t.cssStyle && !t.cssStyle["margin-left"]) t.cssStyle["margin-left"] = `${twips / 20}pt`;
+      });
+    }
+  } catch {
+    // as docx-preview draws it
+  }
+  const nodes = await lib.renderDocument(doc as never, options);
+  host.innerHTML = "";
+  for (const n of nodes) host.appendChild(n);
   sanitizeDocxPreview(host);
 }
+
+/**
+ * Fix round 1 (B0-30): a page's content wider than its text column (a logo, a footer, a table pulled into the margin)
+ * is shown, not cut off at the page's edge (docx-preview draws each page with overflow: hidden).
+ */
+export const DOCX_PAGE_OVERFLOW_CSS = "section.docx { overflow: visible !important; }";
 
 /** docx-preview options that keep the referrer's layout (page size, margins, headers and footers). */
 export const DOCX_PREVIEW_OPTIONS = {
