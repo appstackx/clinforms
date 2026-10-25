@@ -299,13 +299,16 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
  * Labels: origins and citations
  * ----------------------------------------------------------------------------------------------*/
 
-/** Origin pill text. From-records answers name the clinic system they came from. */
-export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId): string {
+/**
+ * Origin pill text. From-records answers name the clinic system they came from. Once the report is approved
+ * (`approved`), a drafted paragraph says where it came from rather than "Draft" (test run 24/10/2026, finding 6).
+ */
+export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, approved = false): string {
   switch (origin) {
     case "from_records":
       return connectorId === "file-import" ? "From clinic records" : "From TM3 records";
     case "ai":
-      return WORDING.origin.drafted;
+      return approved ? WORDING.origin.draftedApproved : WORDING.origin.drafted;
     case "edited":
       return "Edited";
     case "clinician":

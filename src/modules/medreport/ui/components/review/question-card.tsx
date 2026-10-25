@@ -46,6 +46,7 @@ export interface QuestionCardProps {
   bundle: EpisodeBundle;
   connectorId: ConnectorId;
   referrerName: string | null;
+  /** The report is approved: read-only from now on, and its drafted paragraphs are no longer called drafts. */
   readOnly: boolean;
   /** The clinician changed the structured answer (activity "answer_set"). */
   answerEdited: boolean;
@@ -158,7 +159,10 @@ function ParagraphEditor({
         />
       )}
       <div className="flex flex-wrap items-center gap-1.5">
-        <OriginPill origin={paragraph.origin} label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId)} />
+        <OriginPill
+          origin={paragraph.origin}
+          label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
+        />
         {paragraph.basis && paragraph.origin !== "from_records" && (
           <span className="text-[11px] text-slate-500">{PARAGRAPH_BASIS_LABELS[paragraph.basis]}</span>
         )}

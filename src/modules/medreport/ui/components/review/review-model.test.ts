@@ -29,6 +29,7 @@ import {
   generationSummary,
   markApproved,
   nextClinicianParagraphId,
+  originLabel,
   questionStatus,
   removeParagraph,
   reopenGap,
@@ -378,6 +379,15 @@ describe("labels and options", () => {
     const by = citationsBySource(report);
     assert.deepEqual(by.get("N-001"), ["F-03"]);
     assert.deepEqual(by.get("REG"), ["F-01", "F-02"]);
+  });
+
+  it("origin pills: a drafted paragraph is a 'Draft' until approval, then says where it came from", () => {
+    assert.equal(originLabel("ai", "file-import"), "Draft");
+    assert.equal(originLabel("ai", "file-import", true), "Drafted from notes");
+    // the other origins read the same before and after approval
+    for (const origin of ["from_records", "edited", "clinician"] as const) {
+      assert.equal(originLabel(origin, "file-import", true), originLabel(origin, "file-import"));
+    }
   });
 
   it("offers the printed options for yes/no and single choice", () => {

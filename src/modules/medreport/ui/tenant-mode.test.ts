@@ -290,6 +290,56 @@ describe("Review pieces", () => {
   });
 });
 
+describe("approved reports (test run 24/10/2026)", () => {
+  /** Megan Hart on the Harrow & Pike Word form, B1 drafted from her first note. */
+  async function draftedReport() {
+    const { createTargetReport } = await import("./components/new/generate");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { getDemoBundle } = await import("../../../../scripts/medreport/dev-bundles");
+    const bundle = getDemoBundle("megan-hart");
+    const report = createTargetReport({ data: { bundle, computedFacts: [] }, target: { kind: "form", form: HARROW_PIKE_FORM } });
+    const key = HARROW_PIKE_FORM.fields.find((f) => f.label === "B1. Mechanism of injury")?.id ?? "";
+    const paragraph = { id: `${key}-p1`, text: "She reported a rear-end collision.", sourceIds: [bundle.notes[0].id], origin: "ai" as const };
+    const sections = report.sections.map((s) => (s.key === key ? { ...s, status: "drafted" as const, paragraphs: [paragraph] } : s));
+    return { report: { ...report, sections }, form: HARROW_PIKE_FORM, key, bundle };
+  }
+
+  it("QuestionCard: a drafted paragraph is a 'Draft' under review, 'Drafted from notes' once approved", async () => {
+    const { QuestionCard } = await import("./components/review/question-card");
+    const { buildQuestionGroups, flattenQuestions } = await import("./components/review/review-model");
+    const { formToTemplate } = await import("../core/forms");
+    const { report, form, key, bundle } = await draftedReport();
+    const q = flattenQuestions(buildQuestionGroups(report, form, formToTemplate(form))).find((x) => x.key === key);
+    assert.ok(q);
+    const card = (readOnly: boolean) =>
+      createElement(QuestionCard, {
+        q,
+        status: "drafted",
+        flags: [],
+        gaps: [],
+        bundle,
+        connectorId: "file-import",
+        referrerName: form.referrer.name,
+        readOnly,
+        answerEdited: false,
+        answeredByPerson: false,
+        receipt: undefined,
+        activeSourceId: null,
+        drafting: false,
+        actor: "Alex Morgan",
+        dispatch: () => {},
+        onOpenSource: () => {},
+        canAcknowledge: () => false,
+      });
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(card(false), hooks)), /\bDraft\b/);
+      const approved = text(render(card(true), hooks));
+      assert.match(approved, /She reported a rear-end collision\. Drafted from notes/);
+      assert.doesNotMatch(approved, /\bDraft\b/);
+    }
+  });
+});
+
 describe("TENANT_COPY", () => {
   it("is production copy: no demo wording, no technology or vendor terms", () => {
     const strings = tenantCopyStrings();
