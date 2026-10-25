@@ -18,7 +18,7 @@
  *
  * Owner: studio-b agent.
  */
-import { answerKindFor, isBlankByDesign, isSectionAnswered } from "../../../core/forms";
+import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
 import type { FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
@@ -222,9 +222,10 @@ function describeBox(box: BoxItem, section: ReportSection, field: FormField | un
       ? { heading: "Required – needs your opinion", instruction: `Only you can answer this: ${opinion}.` }
       : { heading: "Optional – needs your opinion", instruction: `Only you can answer this: ${opinion}, or acknowledge the gap with a reason to leave it blank.` };
   }
+  const effect = field ? leftBlankEffect(field) : null;
   return box.required
     ? { heading: "Required – no answer yet", instruction: `${verb} yourself – the notes do not settle it.` }
-    : { heading: "Optional – no answer yet", instruction: "Answer it if you can, or leave it blank." };
+    : { heading: "Optional – no answer yet", instruction: `Answer it if you can, or leave it blank${effect ? ` (${effect})` : ""}.` };
 }
 
 /** One line per item for the approve button's tooltip ("F-01 Case Reference: Type …"). */
@@ -251,6 +252,8 @@ export interface BlankCandidate {
   gaps: Gap[];
   /** The "optional and has no answer" warning acknowledged by the action, when it is open. */
   warning: ReportFlag | null;
+  /** What leaving it blank removes from the printed form ("the printed “30 minutes” is removed"), if anything. */
+  effect: string | null;
 }
 
 /** A gap where the draft proposed an answer that was held back (core: ai/assemble.ts "-fit", "-choice"): a person decides. */
@@ -277,7 +280,7 @@ export function optionalBlankCandidates(report: Report, ctx: BoxContext): BlankC
     const gaps = (report.gaps ?? []).filter((g) => g.sectionKey === section.key && !g.resolution);
     if (gaps.some(heldBackAnswer)) continue;
     if (gaps.length === 0 && !warning) continue;
-    out.push({ key: section.key, label: section.title, gaps, warning });
+    out.push({ key: section.key, label: section.title, gaps, warning, effect: field ? leftBlankEffect(field) : null });
   }
   return out;
 }

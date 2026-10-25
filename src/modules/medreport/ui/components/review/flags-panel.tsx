@@ -281,6 +281,7 @@ function LeaveBlankPanel({
             <span className="min-w-0">
               <span className="font-mono text-[11px] text-slate-500">{c.key.startsWith("F-") ? c.key : ""}</span> {humaniseMergeCodes(questionLabel(c.key) || c.label)}
               {c.gaps[0] && <span className="block text-xs text-slate-500">{c.gaps[0].issue}</span>}
+              {c.effect && <span className="block text-xs font-medium text-slate-600">Left blank: {c.effect}.</span>}
             </span>
           </label>
         ))}

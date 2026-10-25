@@ -41,7 +41,7 @@ import "server-only";
  *
  * Owner: forms-engine agent. Signature final.
  */
-import { docxAnchorBlockIds, isAnswerableField, isUnknownAnswer, matchOption, namedOptions, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import { docxAnchorBlockIds, isAnswerableField, isUnknownAnswer, matchOption, namedOptions, printsDefault, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
 import { hasMergeToken } from "../core/merge-fields";
 import {
   MAX_INSTRUCTIONS_PER_FORM,
@@ -954,6 +954,11 @@ function fillCheckboxes(ctx: Ctx, field: FormField, answer: FormFillAnswer, targ
     ctx.warn(`${where(field)}: no tick boxes are linked to this question.`);
     return;
   }
+  if (answer.leftBlank) {
+    // Fix round 1 (B0-2): left blank – a box printed ticked is cleared; unticked boxes stay exactly as printed.
+    for (const target of targets) if (target.slot?.checked) setGlyph(ctx, target.slot, false);
+    return;
+  }
   const chosen = chosenOptions(field, answer, targets.map((t) => t.option));
   if (chosen === null) return;
   if (chosen.size === 0 && (answer.text || answer.value !== undefined)) {
@@ -1050,6 +1055,11 @@ function fillMarkCells(ctx: Ctx, field: FormField, answer: FormFillAnswer, targe
     return;
   }
   const options = targets.map((t) => t.option);
+  if (answer.leftBlank) {
+    // Fix round 1 (B0-2): left blank – a mark printed as a default ("x") is cleared, never left as an answer.
+    for (const target of targets) if (target.ref) clearMark(target.ref);
+    return;
+  }
   let chosen: Set<string> | null;
   if (field.answerType === "short_text" || field.answerType === "long_text") {
     // "Tick all that apply": a text answer names the options to mark ("Neck, Back"). Anything else in it marks nothing.
@@ -1126,7 +1136,8 @@ function removeIfBlank(p: XmlElement): void {
   remove(p);
 }
 
-function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
+/** `removeAll` (fix round 1, B0-2): the question was left blank – every printed option is removed, none kept. */
+function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = false): void {
   const { field, ref, answer } = job;
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   if (!anchor) return;
@@ -1141,10 +1152,11 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
       if (!unanswered) ctx.warn(`${where(field)}: the options “${list}” were not found, so nothing was deleted.`);
       return;
     }
-    const chosen = unanswered ? null : chosenOptions(field, answer, options);
+    const chosen = removeAll ? new Set<string>() : unanswered ? null : chosenOptions(field, answer, options);
     const target = occ[Math.min(k, occ.length - 1)];
-    // A single printed item ("delete any that do not apply"): kept when ticked, removed when not.
-    if (chosen && options.length === 1) {
+    // A single printed item ("delete any that do not apply"): kept when ticked, removed when not – and the whole list
+    // when the question is left blank.
+    if (chosen && (options.length === 1 || removeAll)) {
       let settled = true;
       if (chosen.size === 0 && !replaceRange(target.p, target.index, target.index + target.length, () => [])) {
         ctx.warn(`${where(field)}: “${list}” could not be removed.`);
@@ -1174,9 +1186,9 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     return;
   }
   // One option per line (or a single printed item kept when ticked).
-  const chosen = unanswered ? null : chosenOptions(field, answer, options);
+  const chosen = removeAll ? new Set<string>() : unanswered ? null : chosenOptions(field, answer, options);
   if (chosen === null) return;
-  if (chosen.size === 0 && options.length > 1) {
+  if (chosen.size === 0 && options.length > 1 && !removeAll) {
     ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any printed option, so every option was left as printed.`);
     return;
   }
@@ -1640,6 +1652,14 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     const blank = text === "" && job.answer.blank === true;
     if (blank) {
       if (anchor.target === "replace_placeholder" && !anchor.writeAfter) clearPlaceholder(ctx, job);
+      continue;
+    }
+    // Fix round 1 (B0-2): a question a person left blank (or an approved report left without an answer) prints nothing
+    // that reads as an answer: a "delete as necessary" list is removed, a printed default value ("30 minutes") too.
+    // Blank lines and empty cells stay as printed, with no review marker (it is decided).
+    if (text === "" && job.answer.leftBlank) {
+      if (anchor.target === "delete_options") fillDeleteOptions(ctx, job, false, true);
+      else if (anchor.target === "replace_placeholder" && !anchor.writeAfter && printsDefault(anchor.placeholderText)) clearPlaceholder(ctx, job);
       continue;
     }
     const unanswered = text === "";

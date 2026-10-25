@@ -973,6 +973,13 @@ export interface FormFillAnswer {
    * engine removes the placeholder (a clinic system's merge code) instead of leaving it or a review marker.
    */
   blank?: boolean;
+  /**
+   * Fix round 1 (B0-2): a person left this question blank (leftBlankByPerson), or the report was approved without an
+   * answer here. Nothing the form prints as a default may then read as an answer: a printed tick or mark is cleared,
+   * a "delete as necessary" list is removed, and a printed default value ("30 minutes") is removed. Blank lines,
+   * empty cells and unticked boxes stay exactly as printed.
+   */
+  leftBlank?: boolean;
 }
 
 /** Answers keyed by form field ID ("F-01"…). */
@@ -1007,16 +1014,59 @@ function signoffAnswer(part: SignoffPart, values: SignoffValues | null): FormFil
   return { text: values[part], value: values[part] };
 }
 
+/** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */
+const OPTIONAL_BLANK_EVIDENCE = "optional field blank";
+
+/**
+ * Fix round 1 (B0-2): a person decided to leave this question blank – it has no answer, none of its gaps is still
+ * open, and a gap of it or its "optional and has no answer" warning was acknowledged (one by one, or with "Leave
+ * optional boxes blank").
+ */
+export function leftBlankByPerson(report: Partial<Pick<Report, "sections" | "gaps" | "flags">>, key: string): boolean {
+  const section = report.sections?.find((s) => s.key === key);
+  if (!section || isSectionAnswered(section)) return false;
+  const gaps = (report.gaps ?? []).filter((g) => g.sectionKey === key);
+  if (gaps.some((g) => !g.resolution)) return false;
+  return gaps.some((g) => g.resolution?.kind === "acknowledged") || (report.flags ?? []).some((f) => f.sectionKey === key && !f.paragraphId && f.evidence === OPTIONAL_BLANK_EVIDENCE && Boolean(f.acknowledged));
+}
+
+/**
+ * What leaving a question blank does to what its place on the form prints (fix round 1, B0-2), for the review's
+ * wording – or null when nothing printed there changes (an empty cell, a blank line, unticked boxes).
+ */
+export function leftBlankEffect(field: Pick<FormField, "anchor">): string | null {
+  const a = field.anchor;
+  if (a.kind !== "docx") return null;
+  if (a.target === "mark_cell" || a.target === "checkbox_glyph") return "no box is marked – a mark printed there is removed";
+  if (a.target === "delete_options") {
+    const printed = a.placeholderText ?? (a.optionTexts ?? []).map((o) => o.text).join(" / ");
+    return printed ? `the printed “${printed}” is removed` : null;
+  }
+  if (a.target === "replace_placeholder" && printsDefault(a.placeholderText) && !a.writeAfter) return `the printed “${a.placeholderText}” is removed`;
+  return null;
+}
+
+/**
+ * A placeholder that prints a default value ("30 minutes", "N/10"): letters or digits, and not a clinic system's merge
+ * code (those block approval until they are replaced – core/merge-fields.ts). A fill line ("____") prints no value.
+ */
+export function printsDefault(placeholder: string | undefined): boolean {
+  return Boolean(placeholder) && /[A-Za-z0-9]/.test(placeholder as string) && !/<<|>>|[«»]/.test(placeholder as string);
+}
+
 /**
  * The answers to write into the referrer's original file. Signoff fields are filled only when a
- * (verified) receipt is passed – on a DRAFT they stay blank. Unanswered fields map to {} (left blank).
+ * (verified) receipt is passed – on a DRAFT they stay blank. Unanswered fields map to {} (left as printed) – or, fix
+ * round 1 (B0-2), to {leftBlank: true} when a person left the question blank or the report is approved (a receipt is
+ * passed, or the report is signed): then no printed default reads as an answer.
  */
 export function buildFormAnswers(
-  report: Pick<Report, "sections">,
+  report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status">>,
   form: Pick<FormDefinition, "fields">,
   opts: { receipt?: Pick<SignReceipt, "signer" | "signedAt"> | null } = {},
 ): FormFillAnswers {
   const signoff = opts.receipt ? signoffValuesFromReceipt(opts.receipt) : null;
+  const approved = Boolean(opts.receipt) || report.status === "signed";
   const answers: FormFillAnswers = {};
   for (const field of answerableFields(form)) {
     if (field.fillSource.kind === "signoff") {
@@ -1026,7 +1076,7 @@ export function buildFormAnswers(
     const section = report.sections.find((s) => s.key === field.id);
     const blankByDesign = isBlankByDesign(section, field);
     if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
-      answers[field.id] = {};
+      answers[field.id] = section && (approved || leftBlankByPerson(report, field.id)) ? { leftBlank: true } : {};
       continue;
     }
     const text = answerToText(section);

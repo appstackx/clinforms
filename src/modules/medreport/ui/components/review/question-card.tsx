@@ -13,7 +13,7 @@ import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
-import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
+import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { nameClinicianInstead } from "../../../core/voice";
@@ -721,6 +721,10 @@ function QuestionCardImpl(props: QuestionCardProps) {
         )}
       </div>
       <div className="mt-3">{body}</div>
+      {(status === "blank" || status === "left_blank") && section && field && leftBlankEffect(field) && (
+        // Fix round 1 (B0-2): what leaving it blank changes on the printed form.
+        <p className="mt-2 text-[12px] text-slate-600">Left blank on the form: {leftBlankEffect(field)}.</p>
+      )}
       {absence.length > 0 && (
         <div className="mt-3 flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2 text-[13px] text-sky-950">
           <p className="min-w-0 flex-1 basis-64">

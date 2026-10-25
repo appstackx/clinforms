@@ -13,7 +13,8 @@
  *
  * Owner: ai agent.
  */
-import { isBlankByDesign, isSectionAnswered } from "../forms";
+import { isBlankByDesign, isSectionAnswered, leftBlankEffect } from "../forms";
+import type { FormField } from "../types";
 import type { ReportFlag } from "../types";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -25,6 +26,12 @@ export const PLACEHOLDER_PATTERNS: readonly RegExp[] = [
   /\b(?:TODO|TBC|FIXME)\b/g,
   /\{\{?[^{}\n]{1,40}\}\}?/g,
 ];
+
+/** " – the printed “30 minutes” is removed" (what leaving the box blank changes on the form), or "". */
+function blankEffect(field: Pick<FormField, "anchor"> | undefined): string {
+  const effect = field ? leftBlankEffect(field) : null;
+  return effect ? ` – ${effect}` : "";
+}
 
 export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
   const ctx = getValidationContext(input);
@@ -44,7 +51,8 @@ export function validatePlaceholders(input: ValidatorInput): ReportFlag[] {
             severity: "warning",
             sectionKey: section.key,
             evidence: "optional field blank",
-            message: `“${section.title}” is optional on the referrer's form and has no answer, so it will be left blank.`,
+            // Fix round 1 (B0-2): what leaving it blank removes from the printed form, where it prints a default.
+            message: `“${section.title}” is optional on the referrer's form and has no answer, so it will be left blank${blankEffect(field)}.`,
           }),
         );
         continue;
