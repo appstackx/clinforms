@@ -15,9 +15,10 @@
  *
  * 10/2026 (Blue Heart trial): ordinary clinical wording that only looks like an opinion is told apart
  * (OpinionPattern.allow). "Returned to normal duties" is a work status, not "returned to normal" (recovery):
- * it passes when a cited note records the same status as a fact ("back on normal duties"). "Without
- * restrictions" equals a note's "no restrictions"; "worked on balance" is exercise, not "on balance"; "drills
- * caused mild discomfort" reports a note's "drills cause mild discomfort". Every other match is unchanged.
+ * it passes when a cited note records the same return as a fact ("then back on normal duties"); "returned to
+ * normal during work" stays recovery. "Without restrictions" equals a note's "no restrictions"; "worked on
+ * balance" is exercise when the note records balance work; "drills caused mild discomfort" reports a note's
+ * "drills cause mild discomfort". Every other match is unchanged.
  *
  * Owner: ai agent.
  */
@@ -57,22 +58,45 @@ const EVENT = "(?:accident|collision|crash|rta|incident|injury|index event|lifti
 
 /* Work and activity status ("returned to normal duties") ------------------------------------------ */
 
+const JOB = "(?:duties|duty|work|role|job|employment)";
 const WORK = "(?:duties|duty|work|hours|shifts?|role|job|employment)";
 const ACTIVITY = "(?:activities|activity|routine|hobbies|hobby|sports?|training|exercises?|gym|driving)";
-/** One describing word may stand between: "normal working hours", "normal 12-hour shifts", "usual gym routine". */
-const ONE_WORD = "(?:(?!(?:and|or|but|at|in|on|with|by|so|then|for|of|to|from|after|before)\\b)[a-z0-9-]+ )?";
+/**
+ * The only words that may stand between "normal" and the noun: "normal daily activities", "normal working hours",
+ * "normal 12-hour shifts". Any other word ("normal during work", "normal pain-free activities") leaves the phrase to
+ * the recovery pattern. The words other than daily / working / work must also be in the note.
+ */
+const DESCRIBER = "(?:daily|everyday|day-to-day|working|work|gym|training|exercise|sporting|social|leisure|household|\\d+-hour)";
+const PLAIN_DESCRIBER = /^(?:daily|everyday|day-to-day|working|work)$/;
 /** What a "normal" or pre-injury level belongs to when it is a work or activity: " duties", " daily activities". */
-const STATUS_TAIL = ` ${ONE_WORD}(?:${WORK}|${ACTIVITY})\\b`;
-/** Wording a note uses for the same full level: "normal duties", "full duties", "usual training", "all activities". */
+const STATUS_TAIL = ` (?:${DESCRIBER} )?(?:${WORK}|${ACTIVITY})\\b`;
+
+/** A note's words for a return that happened ("then back on normal duties", "resumed all his usual hobbies") or not. */
+const RETURNED_IN_NOTE = "(?:back (?:on|to|at|in)|returned to|resumed|now on) (?:work (?:on|with) )?";
+const NOT_RETURNED_IN_NOTE =
+  "(?:(?:not|never|\\w+n't) (?:yet )?(?:back (?:on|to|at|in)|returned to|resumed)|yet to (?:return to|resume)) (?:work (?:on|with) )?";
+const OWNER = "(?:his |her |their |the )?(?:all (?:his |her |their |the )?)?";
 const FULL_LEVEL = "(?:normal|full|usual|regular|all|pre-?(?:accident|injury|incident))";
+/** "Driving normally" records normal driving, and only that. */
+const DOING_NORMALLY: Record<string, string> = { driving: "driving", training: "training", exercise: "exercising", exercises: "exercising" };
+/** A drafted status that says the return has not happened: "she has not yet returned to her normal 12-hour shifts". */
+const NOT_RETURNED_DRAFT =
+  /\b(?:(?:has|have|had|is|are|was|were|still) (?:not|never)|hasn't|haven't|hadn't|isn't|wasn't|aren't|weren't) (?:yet )?$|\b(?:has|have|had) yet to $/;
 
 /**
- * Words that make a recorded status something other than a fact – negated, hedged, planned or hoped for – when
- * they come before it in its sentence: "not yet on full duties", "nearly back on normal duties", "should be able
- * to return to full duties", "graded return to full duties", "goal: normal training", "before the accident".
+ * Words that make a recorded return something other than a fact – negated, hedged, planned, hoped for or in the
+ * past – when they come before it in its sentence: "not yet back on full duties", "nearly back on normal duties",
+ * "aim: back to full training", "previously back on full duties", "to be back on", "getting back to".
  */
-const NOT_A_FACT =
-  /\b(?:not|no longer|never|yet|unable|cannot|can't|won't|isn't|wasn't|hasn't|haven't|hadn't|should|would|will|could|may|might|must|expect\w*|anticipat\w*|aim\w*|goals?|plan\w*|hop(?:e|es|ed|ing)|want\w*|wish\w*|graded|phased|gradual\w*|towards?|until|if|unless|when|once|before|nearly|almost|mostly|largely|partly|partial\w*|some|target\w*|advis\w*|recommend\w*|request\w*|try\w*|attempt\w*|return(?:ing)? to|to return)\b/;
+const NOT_A_FACT_BEFORE =
+  /\b(?:not|\w+n't|no longer|never|neither|yet|unable|cannot|should|would|will|could|may|might|must|expect\w*|anticipat\w*|aim\w*|goals?|plan\w*|hop(?:e|es|ed|ing)|want\w*|wish\w*|worr\w*|concern\w*|graded|phased|gradual\w*|towards?|until|unless|if|when|once|before|prior|previous\w*|pre-?(?:accident|injury|incident)|nearly|almost|mostly|largely|partly|partial\w*|some|target\w*|advis\w*|recommend\w*|request\w*|try\w*|attempt\w*)\b|\b(?:to|be|being|get|getting|go|going) $/;
+/**
+ * The same after it: a negation, modal or plan later in its sentence ("back to full training would be premature",
+ * "back on full duties is the goal"), a question ("back on full duties with breaks?"), or straight after it a date,
+ * limit or label ("from Monday", "in 2 weeks", "for 2 hours a day", "but avoiding lifting", "full duties: no").
+ */
+const NOT_A_FACT_AFTER =
+  /\b(?:not|\w+n't|never|yet|cannot|unable|should|would|could|may|might|will|must|(?:un)?likely|plan\w*|expect\w*|anticipat\w*|hop(?:e|es|ed|ing)|aim\w*|goals?|target\w*|until|unless|if|pending|due)\b|^(?: ?:| (?:from|by|within|next|soon|for|but|except|apart|only)\b| in (?:\d|a |an |the next |several )[^ ]* ?(?:days?|weeks?|months?|fortnight))|\?$/;
 
 /** A note's history fields (always its last lines) describe life before the injury, never a current status. */
 const HISTORY_FIELDS = /\b(?:past medical history|social history): [^\n]*/g;
@@ -96,28 +120,35 @@ function textAfter(text: string, index: number, stop: RegExp): string {
   return text.slice(index, i);
 }
 
-/** Whether the global `re` matches `source` at least once as a plain fact (nothing in NOT_A_FACT before it in its sentence). */
-function recordedAsFact(source: string, re: RegExp): boolean {
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source)) !== null) {
-    if (!NOT_A_FACT.test(textBefore(source, m.index, SENTENCE_END))) return true;
-  }
-  return false;
-}
-
 /**
- * "Returned to normal duties" / "back to his normal training" states a work or activity status. It passes when
- * a cited note records that status at a full level, as a fact: "then back on normal duties" or "full duties"
- * supports "returned to normal duties", "driving normally" supports "returned to normal driving"; "back on light
- * duties", "not yet on full duties" or "should be able to return to full duties" do not. Work and activities are
- * not interchangeable.
+ * "Returned to normal duties" / "back to his normal training" states a work or activity status. It passes only when
+ * a cited note records the same return as a fact: a return ("back on", "returned to", "resumed", "now on") to a
+ * full level ("normal", "full", "usual", "all") of the same thing ("then back on normal duties", "back on full
+ * hours"), or "<doing> normally" for that one activity ("driving normally" → "normal driving"). "Off normal
+ * duties", "pain with all activities", "back on light duties", "not yet back on full duties", "back on full duties
+ * from Monday" and a history field do not. Any word for the job counts as the same thing (duties, work, role).
+ * A drafted "has not yet returned to her normal shifts" needs the note's "not yet back on … shifts".
  */
 function statusRecorded(hit: OpinionHit, source: string): boolean {
-  const work = new RegExp(`\\b${WORK}$`).test(hit.phrase);
-  const nouns = work ? WORK : ACTIVITY;
-  const verbs = work ? "working" : "(?:driving|training|exercising)";
-  const status = new RegExp(`\\b(?:${FULL_LEVEL} ${ONE_WORD}${nouns}|${verbs} normally)\\b`, "g");
-  return recordedAsFact(source.replace(HISTORY_FIELDS, ""), status);
+  const m = new RegExp(`\\b(?:(${DESCRIBER}) )?(${WORK}|${ACTIVITY})$`).exec(hit.phrase);
+  if (!m) return false;
+  const [, describer, noun] = m;
+  const job = new RegExp(`^${JOB}$`).test(noun);
+  const same = job ? JOB : `${noun.replace(/(?:ies|y|s)$/, "")}(?:ies|y|s)?`;
+  const describers = describer && !PLAIN_DESCRIBER.test(describer) ? `${escapeRegExp(describer)} ` : `(?:${DESCRIBER} )?`;
+  const doing = job ? "working" : DOING_NORMALLY[noun];
+  const recorded = NOT_RETURNED_DRAFT.test(hit.before)
+    ? `${NOT_RETURNED_IN_NOTE}${OWNER}(?:${FULL_LEVEL} )?${describers}${same}`
+    : `${RETURNED_IN_NOTE}${OWNER}${FULL_LEVEL} ${describers}${same}${doing ? `|${doing} normally` : ""}`;
+  const status = new RegExp(`\\b(?:${recorded})\\b`, "g");
+  const text = source.replace(HISTORY_FIELDS, "");
+  for (let r = status.exec(text); r !== null; r = status.exec(text)) {
+    const end = r.index + r[0].length;
+    const before = textBefore(text, r.index, SENTENCE_END);
+    const after = text.slice(end, end + textAfter(text, end, SENTENCE_END).length + 1); // with the "?" or "." that ends it
+    if (!NOT_A_FACT_BEFORE.test(before) && !NOT_A_FACT_AFTER.test(after)) return true;
+  }
+  return false;
 }
 
 /** "Without restrictions" and "with no restrictions" say the same; "no further restrictions" needs "further". */
@@ -133,9 +164,11 @@ const EXERCISE_WORD =
 
 /**
  * "Worked on balance and strength", "focused on strengthening and on balance": exercise, not the standard of
- * proof – the exercise word comes straight before "on balance", or before a list of what was worked on.
+ * proof – the exercise word comes straight before "on balance", or before a list of what was worked on, and a
+ * cited note records balance work ("single-leg balance").
  */
-function exerciseOnBalance(hit: OpinionHit): boolean {
+function exerciseOnBalance(hit: OpinionHit, source: string): boolean {
+  if (!/\bbalance\b(?! of probabilit)/.test(source)) return false;
   if (new RegExp(`\\b${EXERCISE_WORD} $`).test(hit.before)) return true;
   return / (?:and|or) $/.test(hit.before) && new RegExp(`\\b${EXERCISE_WORD} on `).test(hit.before);
 }
@@ -157,13 +190,13 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   {
     label: "recovery",
     re: new RegExp(
-      `\\b(?:back|return(?:ed|ing|s)?) to (?:his |her |their )?(?:full fitness\\b|(?:normal|pre-?(?:accident|injury|incident))\\b(?!${STATUS_TAIL}))`,
+      `\\b(?:back|return(?:ed|ing|s)?) to (?:all )?(?:his |her |their )?(?:full fitness\\b|(?:normal|pre-?(?:accident|injury|incident))\\b(?!${STATUS_TAIL}))`,
       "g",
     ),
   },
   {
     label: "return to normal work or activity",
-    re: new RegExp(`\\b(?:back|return(?:ed|ing|s)?) to (?:his |her |their )?(?:normal|pre-?(?:accident|injury|incident))${STATUS_TAIL}`, "g"),
+    re: new RegExp(`\\b(?:back|return(?:ed|ing|s)?) to (?:all )?(?:his |her |their )?(?:normal|pre-?(?:accident|injury|incident))${STATUS_TAIL}`, "g"),
     allow: statusRecorded,
   },
   { label: "prediction", re: /\bwill (?:make an? |go on to |continue to )?(?:recover|resolve|settle|improve|heal|return|be able|need|require|have|experience|suffer|remain|persist)\w*/g },
