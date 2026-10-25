@@ -659,3 +659,12 @@ test("fix round 1: a form with no printed defaults is byte-identical whether its
   const leftBlank = Object.fromEntries(f.fields.map((x) => [x.id, { leftBlank: true }]));
   assert.ok(Buffer.from(fillDocx(plain, f, leftBlank, { draft: false })).equals(Buffer.from(fillDocx(plain, f, {}, { draft: false }))));
 });
+
+test("fix round 1 (B0-18): a drafted sentence in a body-area grid is quoted as written, not as its leftover words", () => {
+  const input = (report: Report) => ({ report, form: GRID_FORM }) as unknown as ValidatorInput;
+  const sentence = "On 08/09/2026 Tom Ellis, physiotherapist, recorded that Mrs Whitlock's low back pain was across the lower back, worse on the left.";
+  const [flag] = validateChoiceMarks(input(reportWith({ "F-04": { text: sentence, kind: "text" } })));
+  assert.match(flag.message, /^The answer to “F-04” \(“On 08\/09\/2026 Tom Ellis, physiotherapist, recorded that Mrs Whitlock's low back…”\) is a sentence, not the printed options/);
+  assert.match(flag.message, /Name only the printed options \(“Neck”, “Back”, “Shoulder”\), or “None”\.$/);
+  assert.doesNotMatch(flag.message, /08 09 2026/, "never the answer with its punctuation stripped");
+});

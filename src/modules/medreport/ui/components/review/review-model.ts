@@ -9,7 +9,7 @@
  */
 import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
-import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
+import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
 import { NOTICES } from "../../../config.public";
 import { TENANT_COPY } from "../../studio-copy";
@@ -69,7 +69,8 @@ const UNTITLED_GROUP = "Form questions";
 /**
  * The questions in form order, grouped by the form's own headings. A field whose "section" is the label
  * of an earlier question (a sub-question such as "If modified duties, please give details") stays in
- * that question's group; consecutive fields with no heading share one group. Fields left blank for the
+ * that question's group; consecutive fields with no heading share one group – unless the fields around them share a
+ * heading, which they then take (fix round 1, core/forms.ts sectionHeadings). Fields left blank for the
  * referrer's use are included (no section) so every question on the form is accounted for.
  * Built-in template reports: one group, one question per section.
  */
@@ -102,8 +103,10 @@ export function buildQuestionGroups(
   const groups: ReviewGroup[] = [];
   const groupOfLabel = new Map<string, ReviewGroup>();
   let current: ReviewGroup | null = null;
+  // Fix round 1 (B0-21): questions with no heading inside a section keep it (core/forms.ts sectionHeadings).
+  const headings = sectionHeadings(form.fields);
   form.fields.forEach((field, i) => {
-    const heading = field.section?.trim() || "";
+    const heading = headings[i];
     const parentGroup = heading ? groupOfLabel.get(heading.toLowerCase()) : undefined;
     let group: ReviewGroup;
     let context: string | undefined;
@@ -157,7 +160,9 @@ export type QuestionStatus =
   | "pending"
   | "signoff"
   | "blank"
-  | "left_blank";
+  | "left_blank"
+  /** Fix round 1 (B0-22): a record line the record leaves empty on purpose (an address line it does not have). */
+  | "record_empty";
 
 export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short: string; dot: string; text: string }> = {
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
@@ -170,10 +175,11 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   signoff: { label: "Filled on approval", short: "On approval", dot: "bg-slate-400", text: "text-slate-600" },
   blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
   left_blank: { label: "Left blank on approval", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-600" },
+  record_empty: { label: "Left blank – nothing in the record", short: "Left blank (nothing in the record)", dot: "border border-dashed border-teal-500 bg-white", text: "text-slate-600" },
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -218,6 +224,8 @@ export function questionStatus(
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
+  // Fix round 1 (B0-22): counted as left blank (as "Copy answers" says), not as filled from the records.
+  if (isBlankByDesign(section, q.field) && !section.paragraphs.some((p) => p.text.trim() !== "")) return "record_empty";
   const answered = isSectionAnswered(section);
   if (!answered && approved) return "left_blank";
   if (section.status === "pending" && !answered) return "pending";
@@ -246,7 +254,7 @@ export interface StatusCounts {
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
@@ -660,7 +668,10 @@ export function resolveGap(
   const clean = text.trim();
   if (!gap || !clean) return report;
   const at = nowIso(now);
-  const gaps = report.gaps.map((g) => (g.id === gapId ? { ...g, resolution: { kind, text: clean, at } } : g));
+  // Fix round 1 (B0-24): whether this acknowledgement left an empty box blank (a value entered later replaces it).
+  const section = report.sections.find((s) => s.key === gap.sectionKey);
+  const leftBlank = kind === "acknowledged" ? { leftBlank: !section || !isSectionAnswered(section) } : {};
+  const gaps = report.gaps.map((g) => (g.id === gapId ? { ...g, resolution: { kind, text: clean, at, ...leftBlank } } : g));
   return appendActivity(
     { ...report, gaps, updatedAt: at },
     { actor, action: kind === "resolved" ? "gap_resolved" : "gap_acknowledged", detail: `${gap.sectionKey}: ${kind === "resolved" ? "resolved" : "acknowledged"} gap “${gap.issue}” – ${clean}` },
@@ -671,8 +682,9 @@ export function resolveGap(
 /**
  * A value entered after its gap was acknowledged as "left blank" supersedes the acknowledgement: the gap
  * becomes resolved by the answer ("Answered on the form by …"), so the card no longer says "Left blank
- * for the office to add…" beside the value. Only gaps of `key` that were acknowledged (not resolved),
- * and only when the section now holds a person's own answer.
+ * for the office to add…" beside the value. Only gaps of `key` that were acknowledged (not resolved) while the box
+ * was empty (fix round 1, B0-24: an acknowledgement of a gap in an answered box – "dose not recorded" beside a drafted
+ * answer – keeps its own reason), and only when the section now holds a person's own answer.
  */
 export function supersedeAcknowledgedGaps(report: Report, key: string, actor: string, now?: Date): Report {
   const section = report.sections.find((s) => s.key === key);
@@ -681,7 +693,7 @@ export function supersedeAcknowledgedGaps(report: Report, key: string, actor: st
     section.paragraphs.some((p) => (p.origin === "clinician" || p.origin === "edited") && p.text.trim() !== "") ||
     (section.answer !== undefined && section.answer.kind !== "text" && section.answer.value !== null && section.answer.value !== "");
   if (!personAnswered) return report;
-  const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged");
+  const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged" && g.resolution.leftBlank !== false);
   if (stale.length === 0) return report;
   const at = nowIso(now);
   const text = `Answered on the form by ${actor} (replaces “${(stale[0].resolution?.text ?? "").replace(/[.\s]+$/, "")}”).`;

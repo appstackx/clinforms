@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
-import { answerableFields, checkFormDefinition } from "../../../core/forms";
+import { answerableFields, checkFormDefinition, sectionHeadings } from "../../../core/forms";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
@@ -239,8 +239,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     filter === "all" ? true : filter === "check" ? f.confidence !== "high" : f.fillSource.kind === filter,
   );
   const groups: Array<{ section: string; fields: FormField[] }> = [];
+  // Fix round 1 (B0-21): questions with no section inside a section keep it (core/forms.ts sectionHeadings).
+  const headings = sectionHeadings(draft.fields);
+  const sectionOf = new Map(draft.fields.map((f, i) => [f.id, headings[i] || "Other questions"]));
   for (const f of visible) {
-    const section = f.section?.trim() || "Other questions";
+    const section = sectionOf.get(f.id) ?? "Other questions";
     const last = groups[groups.length - 1];
     if (last && last.section === section) last.fields.push(f);
     else groups.push({ section, fields: [f] });

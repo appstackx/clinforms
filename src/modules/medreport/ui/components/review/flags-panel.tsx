@@ -24,6 +24,7 @@ export function FlagsPanel({
   bundle,
   items,
   blankCandidates,
+  blankSummary,
   onLeaveBlank,
   readOnly,
   validating,
@@ -46,6 +47,8 @@ export function FlagsPanel({
   items: ReviewItems;
   /** Optional questions "Leave optional boxes blank" may acknowledge (box-items.ts optionalBlankCandidates). */
   blankCandidates: BlankCandidate[];
+  /** All optional questions without an answer, and why the others are not offered (box-items.ts emptyOptionalSummary). */
+  blankSummary?: { total: number; opinion: number; other: number };
   onLeaveBlank(keys: string[], reason: string): void;
   readOnly: boolean;
   validating: boolean;
@@ -156,7 +159,7 @@ export function FlagsPanel({
       )}
 
       {!readOnly && blankCandidates.length > 0 && (
-        <LeaveBlankPanel candidates={blankCandidates} disabled={validating} questionLabel={questionLabel} onConfirm={onLeaveBlank} />
+        <LeaveBlankPanel candidates={blankCandidates} summary={blankSummary} disabled={validating} questionLabel={questionLabel} onConfirm={onLeaveBlank} />
       )}
 
       {!readOnly && items.required.length > 0 && (
@@ -220,11 +223,13 @@ export function FlagsPanel({
  */
 function LeaveBlankPanel({
   candidates,
+  summary,
   disabled,
   questionLabel,
   onConfirm,
 }: {
   candidates: BlankCandidate[];
+  summary?: { total: number; opinion: number; other: number };
   disabled: boolean;
   questionLabel(key: string): string;
   onConfirm(keys: string[], reason: string): void;
@@ -247,12 +252,7 @@ function LeaveBlankPanel({
   if (!open) {
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700" data-testid="leave-blank">
-        <p className="min-w-0 flex-1 basis-56">
-          <span className="font-medium text-slate-900">
-            {n} optional box{n === 1 ? " has" : "es have"} no answer.
-          </span>{" "}
-          You can leave {n === 1 ? "it" : "them"} blank on the form in one step, with one reason.
-        </p>
+        <p className="min-w-0 flex-1 basis-56">{leaveBlankSummaryText(n, summary)}</p>
         <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => setOpen(true)}>
           Leave optional boxes blank…
         </Button>
@@ -313,6 +313,18 @@ function LeaveBlankPanel({
       </div>
     </form>
   );
+}
+
+/**
+ * Fix round 1 (B0-28): "1 of 4 optional boxes can be left blank in one step; the other 3 need your opinion." – the count
+ * of every optional box without an answer, not only the ones the step covers.
+ */
+export function leaveBlankSummaryText(n: number, summary?: { total: number; opinion: number; other: number }): string {
+  const total = Math.max(summary?.total ?? n, n);
+  if (total === n) return `${n} optional box${n === 1 ? " has" : "es have"} no answer. You can leave ${n === 1 ? "it" : "them"} blank on the form in one step, with one reason.`;
+  const rest = total - n;
+  const why = summary && summary.opinion === rest ? "need your opinion" : summary && summary.opinion === 0 ? "have something else to sort out first" : "need your opinion or a decision first";
+  return `${n} of ${total} optional boxes without an answer can be left blank in one step, with one reason; the other ${rest} ${why}.`;
 }
 
 /** Fix wave 3: record the patient's consent (and the date it was given) on a report built from uploaded notes. */
