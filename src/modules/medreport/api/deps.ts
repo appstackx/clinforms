@@ -9,7 +9,7 @@ import "server-only";
  * Shared contract (orchestrator-owned): additive optional members only.
  */
 import type { ConnectorContext, ConnectorRegistry } from "../connectors/types";
-import type { ConnectorId, TenantId } from "../core/types";
+import type { ConnectorId, TenantId, TokenUsage } from "../core/types";
 import type { TenantStore } from "./store-port";
 
 /** A clinic member's role (docs/production-architecture.md §3). */
@@ -105,6 +105,35 @@ export interface VerifiedPartnerKey {
   tenantId: TenantId;
 }
 
+/**
+ * A usage event of a clinic (25/10/2026 – packages and usage): what the counters of the clinic's month record. Ids,
+ * counts and token totals only – never patient data. The host decides how a report counts (once: at its first live
+ * drafting, or at its first approval when nothing was drafted – src/server/repos/usage.ts).
+ */
+export type UsageEvent =
+  /** A new report was stored for the clinic (POST/PUT create in the clinic's storage). */
+  | { kind: "report_started"; reportId: string; amendsReportId?: string }
+  /**
+   * One live drafting call (POST /drafts in live mode), successful (answers drafted) or not. `reportId` = the report
+   * being drafted (the Studio always sends it); `usage`/`model` when the drafting service answered.
+   */
+  | { kind: "drafting_call"; reportId?: string; amendsReportId?: string; succeeded: boolean; model?: string; usage?: TokenUsage }
+  /**
+   * A referrer form reading (POST /forms/analyse): `read` = a proposed map came back; `liveCalls` = successful live
+   * calls (a long form is read in parallel parts), `failedCalls` = live calls that failed (the reading then fell back
+   * to a stored map or rules, or failed); `usage`/`model` = the tokens of the live calls.
+   */
+  | { kind: "form_read"; read: boolean; liveCalls: number; failedCalls: number; model?: string; usage?: TokenUsage }
+  /** A report was approved (POST /sign issued a receipt). */
+  | { kind: "report_approved"; reportId: string; amendsReportId?: string }
+  /** A portal question set was stored for the clinic for the first time. */
+  | { kind: "question_set_created"; formId: string };
+
+/** The host's usage counters (src/server/usage/recorder.ts). Best effort: the module never lets it fail a request. */
+export interface UsageRecorder {
+  record(tenantId: TenantId, event: UsageEvent): Promise<void>;
+}
+
 export interface MedreportDeps {
   connectors: ConnectorRegistry;
   /**
@@ -134,4 +163,9 @@ export interface MedreportDeps {
    * Absent in the public demo: the store endpoints then answer 501.
    */
   tenantStore?: TenantStore;
+  /**
+   * 25/10/2026: the clinic's usage counters (packages and usage). Called for clinic members only – never for the
+   * public demo – through api/usage.ts recordUsage(), which never fails or blocks the request (errors are logged).
+   */
+  usage?: UsageRecorder;
 }

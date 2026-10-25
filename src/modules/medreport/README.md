@@ -443,6 +443,17 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   contact us at …") on POST /drafts, /forms/analyse, the three file-import endpoints, POST /store/files and its
   chunks, a store PUT that CREATES a report or form map, and POST /launch – updates, approvals, renders and reads
   are unchanged. The public demo is never affected. Tests: `scripts/medreport/clinic-trial.test.ts`.
+- **Usage (25/10/2026, `MedreportDeps.usage`, `api/usage.ts recordUsage`):** clinic members only – never the public
+  demo – and never failing or holding up the action (errors logged by kind and error name; the wait is capped at
+  `USAGE_WAIT_MS`). Events (`api/deps.ts UsageEvent`, ids/counts/tokens only): `drafting_call` from POST /drafts for
+  every LIVE call – successful with tokens and the serving model, or failed (refused, cut off, unreadable, timed out, or
+  replaced by the recorded answers) with its tokens when the service answered (`DraftGenerationError.usage`/`.model`,
+  set by `ai/claude.ts`); `report_approved` from POST /sign; `form_read` from POST /forms/analyse (live calls, a failed
+  live reading via `AnalyseFormFileResult.liveFailure`); `report_started` from a store create; `question_set_created`
+  from a question set's first store. POST /drafts takes an optional `amendsReportId` (the Studio sends
+  `report.amends.reportId`) so drafting an amended version never counts as a new report. How a report counts is the
+  host's rule (src/server/repos/usage.ts). Tests: `scripts/medreport/usage-recording.test.ts` (a fake drafting client via
+  `ai/claude.ts overrideClaudeClientForTests`, tests only).
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
   `UNSUPPORTED_MEDIA_TYPE`.

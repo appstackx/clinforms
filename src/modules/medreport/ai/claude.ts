@@ -146,9 +146,35 @@ export interface StructuredCallResult<T> {
   stopReason?: string;
 }
 
+/**
+ * TESTS ONLY (25/10/2026): a fake SDK client for every call that does not pass its own `client` – lets the API
+ * handlers be tested in live mode without network access. Production never sets it.
+ */
+let clientOverride: ClaudeClient | null = null;
+export function overrideClaudeClientForTests(client: ClaudeClient | null): void {
+  clientOverride = client;
+}
+
+/** The token counts of a response, in the app's shape. */
+function usageOf(usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }): TokenUsage {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    ...(usage.cache_read_input_tokens != null && { cacheReadInputTokens: usage.cache_read_input_tokens }),
+    ...(usage.cache_creation_input_tokens != null && { cacheCreationInputTokens: usage.cache_creation_input_tokens }),
+  };
+}
+
+/** A failure after the service answered: it still cost tokens (usage counters, 25/10/2026). */
+function answeredFailure(err: DraftGenerationError, response: { model?: string; usage?: Parameters<typeof usageOf>[0] | null }): DraftGenerationError {
+  if (response.usage) err.usage = usageOf(response.usage);
+  if (typeof response.model === "string") err.model = response.model;
+  return err;
+}
+
 /** One structured-output call to Claude with the house rules above. */
 export async function callClaudeStructured<T>(input: StructuredCallInput<T>): Promise<StructuredCallResult<T>> {
-  const client = input.client ?? getClaudeClient();
+  const client = input.client ?? clientOverride ?? getClaudeClient();
   const timeout = input.timeoutMs ?? LIVE_TIMEOUT_MS;
   const format = outputFormat(input.schema, input.lenient);
   const started = Date.now();
@@ -174,32 +200,26 @@ export async function callClaudeStructured<T>(input: StructuredCallInput<T>): Pr
   const alt = `Retry, or ${input.wording.alternative}.`;
 
   if (response.stop_reason === "refusal") {
-    throw new DraftGenerationError("AI_REFUSAL", WORDING.server.sdk.refusal(input.wording.noun, alt), true);
+    throw answeredFailure(new DraftGenerationError("AI_REFUSAL", WORDING.server.sdk.refusal(input.wording.noun, alt), true), response);
   }
   if (response.stop_reason === "max_tokens") {
-    throw new DraftGenerationError("AI_MAX_TOKENS", `The ${input.wording.noun} was cut off before it was complete. ${alt}`, true);
+    throw answeredFailure(new DraftGenerationError("AI_MAX_TOKENS", `The ${input.wording.noun} was cut off before it was complete. ${alt}`, true), response);
   }
   if (response.stop_reason === "model_context_window_exceeded") {
-    throw new DraftGenerationError("AI_ERROR", `This ${input.wording.noun} request is too large for one call.`, false);
+    throw answeredFailure(new DraftGenerationError("AI_ERROR", `This ${input.wording.noun} request is too large for one call.`, false), response);
   }
   const outcome = response.parsed_output as ParseOutcome<T> | null;
   if (!outcome || !outcome.ok) {
-    throw new DraftGenerationError("AI_ERROR", WORDING.server.sdk.unreadable(alt), true);
+    throw answeredFailure(new DraftGenerationError("AI_ERROR", WORDING.server.sdk.unreadable(alt), true), response);
   }
 
-  const usage = response.usage;
   return {
     data: outcome.data,
     lenient: outcome.lenient,
     model: response.model,
     startedAt: new Date(started).toISOString(),
     durationMs,
-    usage: {
-      inputTokens: usage.input_tokens,
-      outputTokens: usage.output_tokens,
-      ...(usage.cache_read_input_tokens != null && { cacheReadInputTokens: usage.cache_read_input_tokens }),
-      ...(usage.cache_creation_input_tokens != null && { cacheCreationInputTokens: usage.cache_creation_input_tokens }),
-    },
+    usage: usageOf(response.usage),
     stopReason: response.stop_reason ?? undefined,
   };
 }

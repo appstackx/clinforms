@@ -44,6 +44,8 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.trial_ended",
       "clinic.trial_converted",
       "clinic.limits_set",
+      "clinic.package_set",
+      "clinic.package_removed",
       "clinic.forms_loaded",
       "api_key.create",
       "api_key.revoke",
@@ -96,6 +98,8 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.trial_ended": "Trial ended by ClinForms",
   "clinic.trial_converted": "Trial converted to a full account",
   "clinic.limits_set": "Drafting limits changed by ClinForms",
+  "clinic.package_set": "Package set by ClinForms",
+  "clinic.package_removed": "Package removed by ClinForms",
   "clinic.forms_loaded": "Forms added to the library by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
@@ -129,6 +133,9 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.trial_ended": "Trial ended",
   "platform.trial_converted": "Trial converted to a full account",
   "platform.limits_set": "Drafting limits changed",
+  "platform.package_set": "Package set",
+  "platform.package_removed": "Package removed",
+  "platform.usage_export": "Usage downloaded (CSV)",
   "platform.owner_reset_link": "Owner password reset link created",
 };
 
@@ -276,9 +283,35 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const per = (v: unknown, unit: string) => (typeof v === "number" ? `${v.toLocaleString("en-GB")} a ${unit}` : `default a ${unit}`);
       return withClinic(action, detail, `${per(detail.perMinute, "minute")}, ${per(detail.perDay, "day")}`);
     }
+    case "clinic.package_set":
+    case "platform.package_set": {
+      const name = PACKAGE_NAMES[String(detail.package)] ?? null;
+      const price = typeof detail.monthlyPricePence === "number" ? `${pounds(detail.monthlyPricePence)} a month` : null;
+      const reports = typeof detail.reportsIncluded === "number" ? `${detail.reportsIncluded.toLocaleString("en-GB")} ${detail.reportsIncluded === 1 ? "report" : "reports"}` : null;
+      const extra = typeof detail.extraReportPence === "number" ? `extra ${pounds(detail.extraReportPence)} each` : null;
+      return withClinic(action, detail, [name, price, reports, extra].filter(Boolean).join(", ") || null);
+    }
+    case "clinic.package_removed":
+    case "platform.package_removed":
+      return withClinic(action, detail, null);
+    case "platform.usage_export":
+      return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
       return null;
   }
+}
+
+const PACKAGE_NAMES: Readonly<Record<string, string>> = {
+  starter: "Starter",
+  practice: "Practice",
+  group: "Group",
+  group_plus: "Group Plus",
+  custom: "Custom",
+  trial: "Trial",
+};
+
+function pounds(pence: number): string {
+  return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
 
 /** "24 October 2026, 10:15" (UK time). */

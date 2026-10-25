@@ -17,6 +17,8 @@ import { authBool, type Database } from "../db/schema";
 import { captureOutbox, deliverEmail, invitationEmail, type DeliveryResult } from "../email";
 import { appendAudit, listAudit } from "../repos/audit";
 import { getClinicPlan } from "../repos/clinic-plan";
+import { readClinicPackage } from "../repos/clinic-package";
+import { isMissingUsageTable } from "../repos/usage-period";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { RepoInputError, assertText } from "../repos/context";
 import { getFormFile, listFormFiles } from "../repos/form-files";
@@ -265,6 +267,16 @@ async function exportAudit(db: Kysely<Database>, tenantId: string): Promise<unkn
   }
 }
 
+/** Every month's usage counters of the clinic (export), oldest first; none before migration 0007. */
+async function exportUsage(db: Kysely<Database>, tenantId: string): Promise<Record<string, unknown>[]> {
+  try {
+    return (await db.selectFrom("clinic_usage").selectAll().where("tenant_id", "=", tenantId).orderBy("period").execute()) as Record<string, unknown>[];
+  } catch (err) {
+    if (isMissingUsageTable(err)) return [];
+    throw err;
+  }
+}
+
 function writePrivate(file: string, content: string | Buffer): void {
   fs.writeFileSync(file, content, { mode: 0o600 });
 }
@@ -352,6 +364,9 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     organization: { id: org.id, name: org.name, createdAt: org.createdAt },
     clinicProfile: await getClinicProfile(ctx, tenantId),
     clinicPlan: await getClinicPlan(ctx, tenantId),
+    // 25/10/2026: the package and every month's usage counters (billing records: no patient data).
+    clinicPackage: await readClinicPackage(ctx, tenantId),
+    usage: await exportUsage(db, tenantId),
     tenantSettings: await getTenantSettings(ctx, tenantId),
     members: members.map((m) => ({ memberId: m.id, userId: m.userId, name: m.name, email: m.email, role: m.role, joinedAt: m.createdAt })),
     memberProfiles: profiles,
@@ -385,6 +400,16 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     db.deleteFrom("tenant_settings").where("tenant_id", "=", tenantId),
     db.deleteFrom("clinic_profile").where("tenant_id", "=", tenantId),
     db.deleteFrom("clinic_plan").where("tenant_id", "=", tenantId),
+    db.deleteFrom("clinic_package").where("tenant_id", "=", tenantId),
+    // The usage counters are billing records (no patient data) and stay with the closed clinic's id – unless the id
+    // is released for reuse, when a new clinic must not inherit them.
+    ...(input.releaseSlug
+      ? [
+          db.deleteFrom("clinic_usage").where("tenant_id", "=", tenantId),
+          db.deleteFrom("usage_report").where("tenant_id", "=", tenantId),
+          db.deleteFrom("usage_event").where("tenant_id", "=", tenantId),
+        ]
+      : []),
     db.deleteFrom("member_profile").where("organization_id", "=", org.id),
     db.updateTable("partner_keys").set({ revoked_at: now }).where("tenant_id", "=", tenantId).where("revoked_at", "is", null),
     db.deleteFrom("invitation").where("organizationId", "=", org.id),
