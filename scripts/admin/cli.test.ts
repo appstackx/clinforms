@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { applyTarget, appUrl, CliError, parseArgs, requireYesForProduction, resolveTarget, safeExportDir } from "./cli";
+import { demoSwitch } from "./set-demo-clinic";
 
 describe("admin script helpers", () => {
   it("parses --flag value and boolean flags", () => {
@@ -25,6 +26,12 @@ describe("admin script helpers", () => {
     assert.equal(env.UNRELATED, undefined);
     assert.throws(() => applyTarget("preview", {}, path.join(dir, "missing.env")), /PREVIEW_CLINFORMS_DB/);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+  it("set-demo-clinic: exactly one of --on / --off", () => {
+    assert.equal(demoSwitch(parseArgs(["--slug", "x", "--on"])), true);
+    assert.equal(demoSwitch(parseArgs(["--slug", "x", "--off"])), false);
+    assert.throws(() => demoSwitch(parseArgs(["--slug", "x"])), /exactly one/);
+    assert.throws(() => demoSwitch(parseArgs(["--on", "--off"])), /exactly one/);
   });
   it("production changes need --yes", () => {
     assert.throws(() => requireYesForProduction("production", parseArgs([]), "X"), /--yes/);

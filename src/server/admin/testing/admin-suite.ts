@@ -42,10 +42,12 @@ import {
   listClinicsOverview,
   listPlatformActivity,
   markAccessRequest,
+  setDemoClinicAsPlatform,
   type PlatformAdmin,
 } from "../platform-console";
+import { setDemoClinic } from "../../auth/platform";
 import { loadSetupChecklist } from "../setup-checklist";
-import { upsertClinicProfile } from "../../repos/clinic-profile";
+import { getClinicProfile, upsertClinicProfile } from "../../repos/clinic-profile";
 import { upsertMemberProfile } from "../../repos/member-profile";
 
 export interface AdminSuiteDb {
@@ -411,6 +413,71 @@ export function defineAdminSuite(name: string, setup: () => Promise<AdminSuiteDb
       assert.equal(harbour.retentionDays, 400);
       assert.ok(harbour.lastActivityAt);
       assert.ok(!overview.some((c) => c.tenantId === PLATFORM_AUDIT_TENANT), "the platform is not a clinic");
+      assert.equal(mine.demoClinic, false, "an ordinary clinic");
+    });
+
+    it("demonstration clinics (platform staff only): dry run, on and off audited both ways, the clinic's settings never change it, a closed clinic refused", async () => {
+      const created = await createClinicAsPlatform(t.db, ADMIN, {
+        name: "Riverside Demo (fictional)",
+        slug: "riverside-demo-test",
+        ownerEmail: "demo-owner@riverside.example",
+        appOrigin: ORIGIN,
+        linkSecret: LINK_SECRET,
+      });
+      const slug = created.tenantId;
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, false, "a new clinic is an ordinary clinic");
+      const clinicRows = async () => listAudit(ctx, slug, { action: "clinic.demo_mode" });
+      const platformRows = async () => (await listPlatformActivity(ctx, 200)).filter((e) => /^platform\.clinic_demo_(on|off)$/.test(e.action) && e.targetId === created.organizationId);
+
+      // Dry run (the script's default): nothing changes, nothing is recorded.
+      const dry = await setDemoClinic(t.db, { slug, on: true, via: "script" });
+      assert.deepEqual({ dryRun: dry.dryRun, changed: dry.changed, was: dry.wasDemoClinic, now: dry.demoClinic }, { dryRun: true, changed: false, was: false, now: false });
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, false);
+      assert.equal((await clinicRows()).length + (await platformRows()).length, 0);
+
+      // On, from the platform page: the clinic's trail (by ClinForms support) and the platform's (by the administrator).
+      const on = await setDemoClinicAsPlatform(t.db, ADMIN, slug, true);
+      assert.deepEqual({ changed: on.changed, now: on.demoClinic }, { changed: true, now: true });
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, true);
+      const [clinicOn] = await clinicRows();
+      assert.equal(clinicOn.userId, PLATFORM_USER_ID);
+      assert.deepEqual(clinicOn.detail, { demoClinic: true, via: "platform_page" });
+      const [platformOn] = await platformRows();
+      assert.deepEqual(
+        { action: platformOn.action, userId: platformOn.userId, sessionId: platformOn.sessionId, detail: platformOn.detail },
+        { action: "platform.clinic_demo_on", userId: ADMIN.userId, sessionId: ADMIN.sessionId, detail: { tenantId: slug, via: "platform_page" } },
+      );
+      assert.equal((await listClinicsOverview(t.db)).find((c) => c.tenantId === slug)?.demoClinic, true);
+
+      // Already on: nothing written.
+      assert.equal((await setDemoClinicAsPlatform(t.db, ADMIN, slug, true)).changed, false);
+      assert.equal((await clinicRows()).length, 1);
+      assert.equal((await platformRows()).length, 1);
+
+      // The clinic's own settings (Settings → Clinic: upsertClinicProfile) never touch the flag.
+      await upsertClinicProfile(ctx, slug, { organizationId: created.organizationId, displayName: "Riverside Demo (fictional)", draftingEnabled: true, retentionDays: 30 });
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, true, "settings keep the demonstration flag");
+
+      // Off, with the admin script: a member's PH-DEMO number is counted (to be replaced by a real number).
+      await upsertMemberProfile(ctx, created.organizationId, "u-demo-member", { hcpcNumber: "PH-DEMO-01", canSign: true });
+      await upsertMemberProfile(ctx, created.organizationId, "u-real-member", { hcpcNumber: "PH123456", canSign: true });
+      const off = await setDemoClinic(t.db, { slug, on: false, confirm: true, via: "script" });
+      assert.deepEqual({ changed: off.changed, was: off.wasDemoClinic, now: off.demoClinic, demoNumbers: off.membersWithDemoNumbers }, { changed: true, was: true, now: false, demoNumbers: 1 });
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, false);
+      const [clinicOff] = await clinicRows();
+      assert.deepEqual({ userId: clinicOff.userId, detail: clinicOff.detail }, { userId: PLATFORM_USER_ID, detail: { demoClinic: false, via: "script" } });
+      const [platformOff] = await platformRows();
+      assert.deepEqual(
+        { action: platformOff.action, userId: platformOff.userId, sessionId: platformOff.sessionId, detail: platformOff.detail },
+        { action: "platform.clinic_demo_off", userId: PLATFORM_USER_ID, sessionId: null, detail: { tenantId: slug, via: "script" } },
+      );
+      assert.ok(!JSON.stringify([...(await clinicRows()), ...(await platformRows())]).includes("PH-DEMO"), "ids and flags only");
+
+      // Unknown and closed clinics are refused, and change nothing.
+      await assert.rejects(setDemoClinic(t.db, { slug: "no-such-clinic", on: true, confirm: true, via: "script" }), /No clinic/);
+      await t.db.updateTable("organization").set({ metadata: JSON.stringify({ offboardedAt: new Date(clock).toISOString() }) }).where("id", "=", created.organizationId).execute();
+      await assert.rejects(setDemoClinicAsPlatform(t.db, ADMIN, slug, true), /closed/);
+      assert.equal((await getClinicProfile(ctx, slug))?.demoClinic, false);
     });
   });
 }

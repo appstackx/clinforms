@@ -163,6 +163,9 @@ export interface Wording {
   /* Insurer portal question sets (forms library, mapping, review) -------------------------------- */
   questionSet: QuestionSetWording;
 
+  /* Demonstration clinics (clinic_profile.demo_clinic, set by ClinForms staff only) ---------------- */
+  demoClinic: DemoClinicWording;
+
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
   payload: {
     toggle: string;
@@ -461,6 +464,76 @@ const QUESTION_SET: QuestionSetWording = {
   summaryPdf: "Summary (PDF)",
 };
 
+/**
+ * A DEMONSTRATION clinic (clinic_profile.demo_clinic = 1, set by ClinForms platform staff only): a clinic account with
+ * fictional patients only, used to show the product. Its Studio and clinic pages carry a banner, every rendered output
+ * a notice, and its members may approve as one of the fixed fictional demonstration clinicians (core/demo-clinic.ts) –
+ * recorded truthfully as made by the signed-in member on their behalf. An ordinary clinic never sees any of this.
+ */
+export interface DemoClinicWording {
+  /** The persistent banner of the Studio and the clinic pages (/app). */
+  banner: string;
+  /** Short label (badges, the platform page). */
+  label: string;
+  /** Every rendered output (draft preview, final, PDF copy, copied answers) when the form carries no notice of its own. */
+  outputNotice: string;
+  /* Approve dialog */
+  approveAsHeading: string;
+  approveAsYourself(name: string, hcpc: string): string;
+  approveAsYourselfUnavailable: string;
+  approveAsDemo: string;
+  approveAsDemoHint: string;
+  clinicianOption(name: string, role: string, hcpc: string): string;
+  typedSignatureHint(name: string): string;
+  /** The report's own activity entry and the activity page: truthful about who approved on whose behalf. */
+  approvedActivity(clinician: string, hcpc: string, member: string): string;
+  /** The approved banner of a report approved as a demonstration clinician. */
+  approvedBannerNote(clinician: string): string;
+  /* New report: whose voice drafts speak in */
+  writeAsLabel: string;
+  writeAsHelp: string;
+  writeAsMember(name: string): string;
+  writeAsNobody: string;
+  /* Members page */
+  hcpcHint: string;
+  /* Server problems (POST /sign) */
+  notAllowedTitle: string;
+  notAllowedDetail: string;
+  unknownClinicianTitle: string;
+  unknownClinicianDetail: string;
+  staffDetail: string;
+  signAsDemoMismatch(name: string): string;
+}
+
+/* The same text under every disclosure setting: it never names a technology. */
+const DEMO_CLINIC: DemoClinicWording = {
+  banner: "Demonstration clinic – fictional patients only. Do not enter real patient data.",
+  label: "Demonstration clinic",
+  outputNotice: "Demonstration – fictional patient data. Not for clinical use.",
+  approveAsHeading: "Who approves",
+  approveAsYourself: (name, hcpc) => `Approve as yourself – ${name} (HCPC ${hcpc})`,
+  approveAsYourselfUnavailable: "Your own signing details are not set, so you can approve here only as a demonstration clinician.",
+  approveAsDemo: "Approve as a demonstration clinician",
+  approveAsDemoHint:
+    "Fictional clinicians for demonstrations only. Their name and number are written into the form, and the activity log records that you approved on their behalf.",
+  clinicianOption: (name, role, hcpc) => `${name} – ${role} – ${hcpc}`,
+  typedSignatureHint: (name) => `Type the demonstration clinician's name exactly: ${name}.`,
+  approvedActivity: (clinician, hcpc, member) => `Approved as demonstration clinician ${clinician} (${hcpc}) by ${member}`,
+  approvedBannerNote: (clinician) =>
+    `${clinician} is a fictional demonstration clinician: the activity log records who approved on their behalf. Demonstration only – not for clinical use.`,
+  writeAsLabel: "Write the drafts as",
+  writeAsHelp: "Demonstration clinic: drafts may speak in the first person of a demonstration clinician, who then approves them.",
+  writeAsMember: (name) => `Yourself (${name})`,
+  writeAsNobody: "No one – third person",
+  hcpcHint: "Demonstration clinic: a demonstration number such as PH-DEMO-01 is accepted here (never in an ordinary clinic).",
+  notAllowedTitle: "Not a demonstration clinic",
+  notAllowedDetail: "Approving as a demonstration clinician is only possible in a demonstration clinic. Approve as yourself.",
+  unknownClinicianTitle: "Unknown demonstration clinician",
+  unknownClinicianDetail: "Choose one of the demonstration clinicians offered in the approval dialog.",
+  staffDetail: "Staff members prepare forms but do not approve them, also not as a demonstration clinician.",
+  signAsDemoMismatch: (name) => `This approval is made as the demonstration clinician ${name}: their name and number are used.`,
+};
+
 /** Problem codes in plain words (the codes themselves stay in the API). */
 const NEUTRAL_FAILURE_CODES: Record<string, string> = {
   AI_TIMEOUT: "timed out",
@@ -582,6 +655,7 @@ const NEUTRAL: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what the drafting service receives",
     subtitle: "The minimised record for this patient, exactly as a drafting request would send it – nothing is sent to show it.",
@@ -786,6 +860,7 @@ const AI_ASSISTED: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what is sent to the AI",
     subtitle: "The minimised record for this patient, as a drafting call would send it – no AI call is made to show it.",

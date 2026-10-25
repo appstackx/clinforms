@@ -7,8 +7,12 @@ import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
 import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
 import { platformActionAdmin } from "@/server/admin/guards";
+<<<<<<< ours
 import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
 import { getAuth } from "@/server/auth/auth";
+=======
+import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest, setDemoClinicAsPlatform } from "@/server/admin/platform-console";
+>>>>>>> theirs
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { normaliseEmail } from "@/server/auth/platform";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
@@ -104,6 +108,7 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
   revalidatePath(PLATFORM_PATH);
 }
 
+<<<<<<< ours
 /* ------------------------------------------------------------------------------------------------
  * Trials and drafting limits (10/2026) – every change audited (src/server/admin/clinic-plan.ts)
  * ----------------------------------------------------------------------------------------------*/
@@ -188,4 +193,21 @@ export async function setLimitsAction(_prev: PlanActionResult | null, form: Form
     const text = (v: number | null, unit: string) => (v === null ? `the default a ${unit}` : `${v.toLocaleString("en-GB")} a ${unit}`);
     return `${tenantId}: drafting limits are ${text(plan.livePerMinute, "minute")} and ${text(plan.livePerDay, "day")}.`;
   });
+=======
+/**
+ * Makes a clinic a demonstration clinic (demo=1) or an ordinary one again (demo=0). Platform administrators only –
+ * re-checked here with a fresh session; audited under the clinic and the platform (setDemoClinic).
+ */
+export async function setDemoClinicAction(form: FormData): Promise<void> {
+  const admin = await platformActionAdmin();
+  if (!admin) return;
+  const demo = form.get("demo");
+  if (demo !== "1" && demo !== "0") return;
+  try {
+    await setDemoClinicAsPlatform(getDb(), admin, String(form.get("tenantId") ?? ""), demo === "1");
+  } catch (err) {
+    if (!(err instanceof RepoInputError)) logAuthEvent("platform.demo_clinic_failed", { error: err instanceof Error ? err.name : "error" });
+  }
+  revalidatePath(PLATFORM_PATH);
+>>>>>>> theirs
 }

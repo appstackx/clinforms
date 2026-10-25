@@ -6,7 +6,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, type InviteDelivery } from "@/lib/account-copy";
-import { isValidHcpc, normaliseHcpc } from "@/lib/hcpc";
+import { signingNumberFor } from "@/lib/hcpc";
 import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { INVITATION_TTL_SECONDS } from "@/server/auth/create-auth";
@@ -17,6 +17,7 @@ import { actionContext, auditAction, requestHeaders, throttle, type ActionResult
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
 import { captureOutbox, emailProviderName, inviteDeliveryOf, linkToShare } from "@/server/email";
+import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
 const PATH = "/app/settings/members";
@@ -165,9 +166,11 @@ export async function saveMemberProfile(_prev: ActionResult | null, form: FormDa
   }
   const jobTitle = String(form.get("jobTitle") ?? "").trim().slice(0, 120) || null;
   const rawHcpc = String(form.get("hcpcNumber") ?? "").trim();
-  const hcpcNumber = rawHcpc ? normaliseHcpc(rawHcpc) : null;
+  // PH-DEMO-0N only in a demonstration clinic (read on the server, never from the form).
+  const demoClinic = (await getClinicProfile({ db: getDb() }, ctx.membership.tenantId).catch(() => null))?.demoClinic === true;
+  const hcpcNumber = rawHcpc ? signingNumberFor(rawHcpc, { demoClinic }) : null;
   const canSign = form.get("canSign") === "on";
-  if (hcpcNumber && !isValidHcpc(hcpcNumber)) return { ok: false, error: ACCOUNT_ERRORS.invalidHcpc };
+  if (rawHcpc && !hcpcNumber) return { ok: false, error: ACCOUNT_ERRORS.invalidHcpc };
   if (canSign && !hcpcNumber) return { ok: false, error: ACCOUNT_ERRORS.canSignNeedsHcpc };
   if (canSign && target.role === "staff") return { ok: false, error: ACCOUNT_ERRORS.staffCannotSign };
   await upsertMemberProfile({ db: getDb() }, ctx.membership.organizationId, target.userId, { jobTitle, hcpcNumber, canSign });

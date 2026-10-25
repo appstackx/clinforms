@@ -15,8 +15,10 @@
 import { useCallback, useMemo, useRef } from "react";
 import { CheckCircle2, ClipboardCopy, Copy, Download, PenLine } from "lucide-react";
 import { answersFileName, answersTxt, buildAnswersCopy, copyFormOf, copyTextForAnswer, type AnswersCopy } from "../../../core/answer-copy";
+import { demoOutputNotice } from "../../../core/demo-clinic";
 import type { FormDefinition, Report } from "../../../core/types";
 import { saveBlob } from "../../api-client";
+import { useDemoClinic } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import type { Toast } from "./review-ui";
@@ -77,20 +79,23 @@ export function useAnswersCopy(opts: {
   toast(t: Omit<Toast, "id">): void;
 }): AnswersCopyActions {
   const { report, form, actor, dispatch, toast } = opts;
-  const copy = useMemo(() => buildAnswersCopy({ report, form: copyFormOf(form) }), [report, form]);
+  // A demonstration clinic (from the server, via the host): every copy carries the demonstration notice.
+  const demoClinic = useDemoClinic();
+  const demoNotice = demoClinic ? demoOutputNotice(form, true) : undefined;
+  const copy = useMemo(() => buildAnswersCopy({ report, form: copyFormOf(form), ...(demoNotice ? { demoNotice } : {}) }), [report, form, demoNotice]);
   const copyable = useMemo(() => new Set(copy.entries.filter((e) => e.answer !== null).map((e) => e.key)), [copy]);
-  const latest = useRef({ copy, report, actor, dispatch, toast });
-  latest.current = { copy, report, actor, dispatch, toast };
+  const latest = useRef({ copy, report, actor, dispatch, toast, demoNotice });
+  latest.current = { copy, report, actor, dispatch, toast, demoNotice };
   const w = WORDING.answersCopy;
 
   const copyOne = useCallback((key: string) => {
-    const { copy: c, toast: t } = latest.current;
+    const { copy: c, toast: t, demoNotice: notice } = latest.current;
     const entry = c.entries.find((e) => e.key === key);
     if (!entry?.answer) {
       t({ tone: "info", title: w.nothingToCopy });
       return;
     }
-    void copyToClipboard(copyTextForAnswer(entry.answer, c.approved)).then((ok) =>
+    void copyToClipboard(copyTextForAnswer(entry.answer, c.approved, notice)).then((ok) =>
       ok
         ? t({ tone: "success", title: w.copiedOne(entry.question), detail: c.approved ? w.copiedApprovedDetail : w.copiedDraftDetail })
         : t({ tone: "error", title: w.copyFailed }),

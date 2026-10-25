@@ -29,7 +29,13 @@ export default async function TenantStudioLayout({ children }: { children: React
     <>
       <TrialBannerBar access={context.trial} />
       <TenantHost
-        clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}
+        clinic={{
+          tenantId: context.tenantId,
+          name: context.clinicName,
+          draftingEnabled: context.draftingEnabled,
+          clinicians: context.clinicians,
+          demoClinic: context.demoClinic,
+        }}
         member={{
           name: context.member.name,
           userId: context.member.userId,

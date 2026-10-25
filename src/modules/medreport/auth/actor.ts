@@ -288,6 +288,15 @@ export async function clinicProfileOf(deps: MedreportDeps, actor: Actor): Promis
   }
 }
 
+/**
+ * Whether the actor's clinic is a DEMONSTRATION clinic (clinic_profile.demo_clinic, read on the server – never
+ * from the request). The public demo and any clinic whose profile cannot be read are not (fail closed).
+ */
+export async function actorInDemoClinic(deps: MedreportDeps, actor: Actor): Promise<boolean> {
+  if (actor.via === "demo") return false;
+  return (await clinicProfileOf(deps, actor))?.demoClinic === true;
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Audit trail (tenant actors only; never patient data)
  * ----------------------------------------------------------------------------------------------*/

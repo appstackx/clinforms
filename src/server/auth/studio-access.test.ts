@@ -10,7 +10,7 @@ import { SESSION_COOKIE_NAMES } from "../../lib/session-cookie";
 import { middleware } from "../../middleware";
 import { createSqliteTestDb, type TestDb } from "../db/testing/databases";
 import { setEmailProviderForTests } from "../email";
-import { upsertClinicProfile } from "../repos/clinic-profile";
+import { setClinicDemoFlag, upsertClinicProfile } from "../repos/clinic-profile";
 import { upsertMemberProfile } from "../repos/member-profile";
 import { createAuth, type Auth } from "./create-auth";
 import { createClinic } from "./platform";
@@ -103,6 +103,8 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
       tenantId: "studio-test",
       clinicName: "Studio Test Physio (fictional)",
       draftingEnabled: false,
+      // An ordinary clinic (demonstration clinics are switched on by ClinForms staff only).
+      demoClinic: false,
       // Fix wave 3: the clinic's clinicians (name and HCPC number only), offered when staff check uploaded notes.
       clinicians: [{ name: "Olivia Owner" }],
       // userId (fix wave 2) scopes the Studio's in-memory records to this member.
@@ -119,6 +121,7 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     assert.equal(second.kind, "ok");
     if (second.kind !== "ok") return;
     assert.equal(second.context.draftingEnabled, true);
+    assert.equal(second.context.demoClinic, false, "the clinic's own settings never make it a demonstration clinic");
     assert.deepEqual(second.context.clinicians, [{ name: "Olivia Owner", hcpc: "PH123456" }]);
     assert.deepEqual(second.context.member, {
       name: "Olivia Owner",
@@ -133,6 +136,17 @@ describe("resolveStudioAccess (real sign-in on node:sqlite)", () => {
     // nothing secret or identifying beyond what the member's own Studio shows
     const text = JSON.stringify(second.context);
     for (const secret of [clinic.organizationId, clinic.invitationId]) assert.ok(!text.includes(secret));
+  });
+
+  it("a demonstration clinic (set by platform staff): the Studio context says so, read from the clinic profile on the server", async () => {
+    assert.ok((await setClinicDemoFlag({ db: t.db }, "studio-test", true))?.changed);
+    const demo = await access(jar.headers());
+    assert.equal(demo.kind, "ok");
+    if (demo.kind === "ok") assert.equal(demo.context.demoClinic, true);
+    await setClinicDemoFlag({ db: t.db }, "studio-test", false);
+    const ordinary = await access(jar.headers());
+    if (ordinary.kind === "ok") assert.equal(ordinary.context.demoClinic, false);
+    else assert.fail("still signed in");
   });
 
   it("signed out → back to /login (the session is read past the cookie cache)", async () => {

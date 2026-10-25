@@ -28,13 +28,19 @@ import "server-only";
  * written to its audit trail (report id, format, receipt MAC prefix, purpose) – except (fix wave 2) the review's
  * on-screen preview (`purpose: "preview"`), which is not recorded and carries no file token.
  *
+ * Demonstration clinics (clinic_profile.demo_clinic, read on the server): EVERY output – a referrer's form (Word,
+ * PDF, the PDF copy), a portal question set's summary and a built-in report (Word or PDF), draft or final – carries
+ * the demonstration notice on every page (core/demo-clinic.ts demoOutputNotice: the form's own notice, else the
+ * clinic notice). Ordinary clinics and the public demo are unchanged. File names follow the usual rules.
+ *
  * Owner: forms-engine agent.
  */
-import { AUDIT_ACTIONS, assertActorTenant, auditActor, macPrefix, requireActor, type Actor } from "../../auth/actor";
+import { AUDIT_ACTIONS, actorInDemoClinic, assertActorTenant, auditActor, macPrefix, requireActor, type Actor } from "../../auth/actor";
 import { createFileToken, formConfirmationProblem, formMapSha256, sha256HexOf, verifyFormConfirmation } from "../../auth/attestations";
 import { verifyReceipt } from "../../auth/sign-receipt";
 import { MAX_TEMPLATE_DOCX_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
+import { demoOutputNotice } from "../../core/demo-clinic";
 import { reportFingerprint } from "../../core/fingerprint";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
@@ -43,6 +49,7 @@ import { getBuiltinTemplateDocx, renderDocx } from "../../docgen/docx";
 import { renderPdf } from "../../docgen/pdf";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
+import { addDocxDemoNotice, stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
@@ -220,6 +227,8 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
       : { final: false, refusal: null };
   if (parsed.data.requireFinal && !decision.final && decision.refusal) return decision.refusal;
   const final = decision.final;
+  // A demonstration clinic's outputs all carry the demonstration notice (undefined everywhere else).
+  const notice = (await actorInDemoClinic(deps, actor)) ? demoOutputNotice(formDef, true) : undefined;
   const contentSha256 = await reportFingerprint(report);
   const baseHeaders: Record<string, string> = {
     [HEADERS.renderKind]: final ? "final" : "draft",
@@ -252,13 +261,14 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
       });
     }
     const out = await renderQuestionSummaryPdf(report, formDef, template, { receipt: final ? receipt : undefined });
+    const bytes = notice ? await stampPdfDemoNotice(out.bytes, notice, { draft: !final }) : out.bytes;
     const base = reviewCopy ? `${out.baseName}_REVIEW-COPY` : out.baseName;
-    logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: 0, ms: Date.now() - started });
+    logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: bytes.byteLength, warnings: 0, ms: Date.now() - started });
     if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose);
-    return fileResponse(out.bytes, {
+    return fileResponse(bytes, {
       contentType: CONTENT_TYPES.pdf,
       fileName: `${base}.pdf`,
-      headers: { ...baseHeaders, [HEADERS.formKind]: formDef.kind, ...fillWarningsHeader([]), ...fileTokenHeader(out.bytes) },
+      headers: { ...baseHeaders, [HEADERS.formKind]: formDef.kind, ...fillWarningsHeader([]), ...fileTokenHeader(bytes) },
     });
   }
 
@@ -280,6 +290,7 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
       reviewMarkers: reviewCopy,
       format: format === "pdf" ? "pdf" : "original",
       continuationLabel: continuationLabelFor(report),
+      ...(notice ? { demoNotice: notice } : {}),
     });
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
@@ -291,8 +302,14 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     });
   }
 
-  const out = await renderBuiltIn(format, report, template, final, receipt, reviewCopy, templateDocxBase64);
-  if (out instanceof Response) return out;
+  const rendered = await renderBuiltIn(format, report, template, final, receipt, reviewCopy, templateDocxBase64);
+  if (rendered instanceof Response) return rendered;
+  const out = notice
+    ? {
+        ...rendered,
+        bytes: rendered.ext === "pdf" ? await stampPdfDemoNotice(rendered.bytes, notice, { draft: !final }) : addDocxDemoNotice(rendered.bytes, notice),
+      }
+    : rendered;
   logEvent("render", { template: template.id, format, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
   if (final) await auditFinal(deps, actor, report, receipt, format, null, purpose);
   return fileResponse(out.bytes, {

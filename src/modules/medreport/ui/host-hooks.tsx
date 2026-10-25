@@ -51,6 +51,13 @@ export interface StudioClinic {
    * offered when staff choose who wrote an uploaded note.
    */
   clinicians?: Array<{ name: string; hcpc?: string }>;
+  /**
+   * A DEMONSTRATION clinic (clinic_profile.demo_clinic – worked out by the host on the server; set by ClinForms staff
+   * only): the Studio shows the demonstration banner, previews and copied answers carry the demonstration notice,
+   * and members who may approve can approve as one of the fixed demonstration clinicians (core/demo-clinic.ts).
+   * The server applies the same rules itself (POST /sign, /render, /forms/fill-preview).
+   */
+  demoClinic?: boolean;
 }
 
 /** The signed-in member (tenant mode). Their signing details are the default signer on approvals. */
@@ -142,6 +149,12 @@ export function HostHooksProvider({ hooks, children }: { hooks: HostHooks; child
 
 export function useHostHooks(): HostHooks {
   return useContext(HostHooksContext);
+}
+
+/** Whether this Studio is a demonstration clinic's (tenant mode only; the host read it on the server). */
+export function useDemoClinic(): boolean {
+  const hooks = useContext(HostHooksContext);
+  return hooks.mode === "tenant" && hooks.clinic?.demoClinic === true;
 }
 
 /** "demo" unless the host mounted the Studio for a clinic. */

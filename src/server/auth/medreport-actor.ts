@@ -103,6 +103,7 @@ export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, 
     ...(p.email ? { email: p.email } : {}),
     retentionDays: p.retentionDays,
     draftingEnabled: p.draftingEnabled,
+    demoClinic: p.demoClinic,
   };
 }
 

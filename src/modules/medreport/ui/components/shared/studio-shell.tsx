@@ -13,6 +13,9 @@
  * only" and the Simulated TM3 link.
  * Tenant mode (HostHooks.mode = "tenant"): the clinic's name, the signed-in member's menu (clinic
  * settings, sign out) and no demo wording. Paths come from HostHooks.basePath (ui/routes.ts).
+ * A demonstration clinic (HostHooks.clinic.demoClinic, read by the host on the server): the demonstration banner
+ * (WORDING.demoClinic.banner) above the header on every page, and a "Demonstration clinic" pill in the sticky header
+ * so it stays in view while scrolling. An ordinary clinic shows neither.
  *
  * The header is sticky at the top of the viewport (top-0); the review and form-mapping screens' sticky
  * side panels sit just below it.
@@ -28,6 +31,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronDown, LayoutTemplate, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { PRODUCT } from "../../../config.public";
+import { WORDING } from "../../../core/wording";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { cn } from "../../primitives";
 import { studioSection, useStudioPaths, type StudioPaths, type StudioSection } from "../../routes";
@@ -104,6 +108,7 @@ function OuterShell({ children, ...page }: StudioShellProps) {
   const mode = useStudioMode();
   const tenant = mode === "tenant";
   const { clinic } = useHostHooks();
+  const demoClinic = tenant && clinic?.demoClinic === true;
   const pathname = usePathname() ?? paths.home;
   const section = studioSection(pathname, paths.basePath);
   const items = navItems(paths, tenant);
@@ -118,6 +123,11 @@ function OuterShell({ children, ...page }: StudioShellProps) {
       >
         Skip to content
       </a>
+      {demoClinic ? (
+        <div role="note" data-demo-clinic-banner="" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-[13px] font-medium text-amber-950 sm:px-6">
+          {WORDING.demoClinic.banner}
+        </div>
+      ) : null}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 pt-3 sm:px-6 lg:px-8 lg:pb-3">
           <Link
@@ -133,6 +143,11 @@ function OuterShell({ children, ...page }: StudioShellProps) {
                 /
               </span>
               <span className="max-w-[16rem] truncate font-medium">{clinic.name}</span>
+            </span>
+          ) : null}
+          {demoClinic ? (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-300" data-demo-clinic-pill="">
+              {WORDING.demoClinic.label}
             </span>
           ) : null}
           <nav aria-label="Studio" className="ml-4 hidden items-center gap-1 text-sm lg:flex">

@@ -61,6 +61,12 @@ export interface ClinicProfile {
   draftingLimits?: { perMinute?: number; perDay?: number };
   /** Where the clinic asks about its account (shown when the trial has ended). */
   contactEmail?: string;
+  /**
+   * A DEMO clinic (the host's clinic_plan.demo_clinic, set by ClinForms platform staff only): made-up patients only.
+   * Every rendered output then carries the demo notice (core/demo-clinic.ts demoOutputNotice), and members' made-up
+   * PH-DEMO-NN numbers may approve (POST /sign refuses them anywhere else). Absent / false = an ordinary clinic.
+   */
+  demoClinic?: boolean;
 }
 
 /** One fixed window of a shared counter (rate_limits). */

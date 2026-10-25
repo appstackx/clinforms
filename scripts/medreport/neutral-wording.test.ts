@@ -106,6 +106,13 @@ const CALLS: Record<string, unknown[][]> = {
   "server.access.importLimitDetail": [[30]],
   "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
+  "demoClinic.approveAsYourself": [["Alex Morgan (fictional)", "PH123456"]],
+  "demoClinic.clinicianOption": [["Sarah Reid", "Senior Physiotherapist", "PH-DEMO-01"]],
+  "demoClinic.typedSignatureHint": [["Sarah Reid"]],
+  "demoClinic.approvedActivity": [["Sarah Reid", "PH-DEMO-01", "Alex Morgan (fictional)"]],
+  "demoClinic.writeAsMember": [["Alex Morgan (fictional)"]],
+  "demoClinic.approvedBannerNote": [["Sarah Reid"]],
+  "demoClinic.signAsDemoMismatch": [["Sarah Reid"]],
 };
 
 /** Every string a wording object can produce: plain strings, and each function called with CALLS. */
@@ -155,6 +162,15 @@ test("the guide's wording is used where the owner set it", () => {
     "F-07, F-08 · drafted 06/10/2026 21:04 · 6 s",
   );
   assert.equal(WORDING.payload.toggle, "See exactly what the drafting service receives");
+});
+
+test("demonstration clinics: the owner's banner and output notice, word for word, under both disclosures", () => {
+  for (const w of [WORDING, wordingFor("ai-assisted")]) {
+    assert.equal(w.demoClinic.banner, "Demonstration clinic – fictional patients only. Do not enter real patient data.");
+    assert.equal(w.demoClinic.outputNotice, "Demonstration – fictional patient data. Not for clinical use.");
+    assert.equal(w.demoClinic.approveAsDemo, "Approve as a demonstration clinician");
+    assert.equal(w.demoClinic.approvedActivity("Sarah Reid", "PH-DEMO-01", "Alex Morgan"), "Approved as demonstration clinician Sarah Reid (PH-DEMO-01) by Alex Morgan");
+  }
 });
 
 test("the ai-assisted variant is kept with the same shape, for later", () => {

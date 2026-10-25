@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
 import { CopyButton, SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { WORDING } from "@/modules/medreport/core/wording";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { listClinicMembers, listPendingInvitations } from "@/server/auth/membership";
 import { inviteLink } from "@/server/auth/platform";
@@ -9,6 +10,7 @@ import { assignableRoles, isManager } from "@/server/auth/roles";
 import { requestHeaders, requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
+import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { ukDateTime } from "@/server/email/templates";
 import { cancelInvitation, removeMember } from "./actions";
 import { InviteForm, ResetLinkForm, RoleForm, SigningForm } from "./forms";
@@ -19,10 +21,12 @@ export const metadata: Metadata = { title: "Members" };
 export default async function MembersPage() {
   const { session, membership } = await requireAppContext();
   const db = getDb();
-  const [members, invitations] = await Promise.all([
+  const [members, invitations, profile] = await Promise.all([
     listClinicMembers(db, membership.organizationId),
     listPendingInvitations(db, membership.organizationId),
+    getClinicProfile({ db }, membership.tenantId).catch(() => null),
   ]);
+  const demoClinic = profile?.demoClinic === true;
   const manager = isManager(membership.role);
   const roles = assignableRoles(membership.role);
   const emailOff = emailProviderName() === "none";
@@ -105,6 +109,7 @@ export default async function MembersPage() {
                         hcpcNumber={m.hcpcNumber ?? ""}
                         canSign={m.canSign}
                         staff={m.role === "staff"}
+                        {...(demoClinic ? { demoHint: WORDING.demoClinic.hcpcHint } : {})}
                       />
                       {!isSelf ? <ResetLinkForm memberId={m.memberId} emailOff={emailOff} /> : null}
                       {!isSelf ? (

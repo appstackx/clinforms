@@ -2,11 +2,13 @@ import { AppNav, type NavItem } from "@/components/account/app-nav";
 import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { WORDING } from "@/modules/medreport/core/wording";
 import { isManager } from "@/server/auth/roles";
 import { TrialBannerBar } from "@/components/account/trial-banner";
 import { noteClinicVisit } from "@/server/admin/clinic-plan";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
+import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { SignOutForm } from "../session-forms";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,8 @@ export default async function ClinicLayout({ children }: { children: React.React
   const manager = isManager(membership.role);
   // 10/2026: the clinic's trial – an owner's first visit starts a trial that waits for it; the banner says what is left.
   const trial = await noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role });
+  // A demo clinic (clinic_profile.demo_clinic, set by ClinForms staff only): the same banner as the Studio.
+  const demoClinic = (await getClinicProfile({ db: getDb() }, membership.tenantId).catch(() => null))?.demoClinic === true;
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
     { href: "/app/studio", label: "Studio" },
@@ -28,6 +32,11 @@ export default async function ClinicLayout({ children }: { children: React.React
   ];
   return (
     <>
+      {demoClinic ? (
+        <div role="note" data-demo-clinic-banner="" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-[13px] font-medium text-amber-950">
+          {WORDING.demoClinic.banner}
+        </div>
+      ) : null}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">

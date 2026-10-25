@@ -7,6 +7,7 @@
  * Every audit action the app writes should have a label here. An action without one is still shown, with a
  * readable name made from its code (activityLabel), so new actions never break the page.
  */
+import { WORDING } from "../modules/medreport/core/wording";
 
 export interface ActivityGroup {
   label: string;
@@ -45,6 +46,8 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.trial_converted",
       "clinic.limits_set",
       "clinic.forms_loaded",
+      "clinic.demo_on",
+      "clinic.demo_off",
       "api_key.create",
       "api_key.revoke",
       "audit.export",
@@ -97,6 +100,8 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.trial_converted": "Trial converted to a full account",
   "clinic.limits_set": "Drafting limits changed by ClinForms",
   "clinic.forms_loaded": "Forms added to the library by ClinForms",
+  "clinic.demo_on": "Made a demo clinic by ClinForms",
+  "clinic.demo_off": "Demo clinic switched off by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
@@ -130,6 +135,8 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.trial_converted": "Trial converted to a full account",
   "platform.limits_set": "Drafting limits changed",
   "platform.owner_reset_link": "Owner password reset link created",
+  "platform.demo_on": "Demo clinic switched on",
+  "platform.demo_off": "Demo clinic switched off",
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -194,11 +201,26 @@ const RESET_REFUSALS: Readonly<Record<string, string>> = {
 
 /**
  * A short description of an entry's details, or null. Only fields known to be safe and useful are shown
- * (audit details never hold patient data, but unknown fields are not shown either).
+ * (audit details never hold patient data, but unknown fields are not shown either). `context.who` is the name of
+ * the person who acted (the activity page's "By" column) – used where the description must say who acted for whom.
  */
-export function describeActivityDetail(action: string, detail: Record<string, unknown> | null | undefined): string | null {
+export function describeActivityDetail(action: string, detail: Record<string, unknown> | null | undefined, context: { who?: string } = {}): string | null {
   if (!detail || typeof detail !== "object") return null;
   switch (action) {
+    case "report.sign":
+      // A demonstration clinic's approval as a fixed fictional clinician: who approved, on whose behalf.
+      return typeof detail.demoSignerName === "string" && typeof detail.demoSignerHcpc === "string"
+        ? WORDING.demoClinic.approvedActivity(detail.demoSignerName, detail.demoSignerHcpc, context.who ?? "a member of this clinic")
+        : null;
+    case "clinic.demo_mode":
+      return detail.demoClinic === true
+        ? "Now a demonstration clinic: fictional patients only"
+        : detail.demoClinic === false
+          ? "Now an ordinary clinic"
+          : null;
+    case "platform.clinic_demo_on":
+    case "platform.clinic_demo_off":
+      return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}${detail.via === "script" ? " · with the admin script" : ""}` : null;
     case "member.invite":
     case "member.join":
     case "member.remove":

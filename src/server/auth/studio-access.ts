@@ -6,8 +6,9 @@
  *   no two-step verification        → /two-factor
  *   no active clinic membership     → /app/select-clinic
  *   otherwise                       → the clinic and the signed-in member (signing details from member_profile,
- *                                     drafting switch from clinic_profile) for the Studio's TenantHost, and the
- *                                     clinic's clinicians (fix wave 3: names and HCPC numbers, offered when staff
+ *                                     drafting switch from clinic_profile, trial and demo-clinic flag from
+ *                                     clinic_plan) for the Studio's TenantHost, and the clinic's clinicians
+ *                                     (fix wave 3: names and HCPC numbers, offered when staff
  *                                     check uploaded notes)
  *
  * Same rules as requireAppContext() (session.ts) – read past Better Auth's 5-minute cookie cache, so a revoked
@@ -17,7 +18,7 @@
 import "server-only";
 import type { Kysely } from "kysely";
 import { roleLabel } from "../../lib/account-copy";
-import { noteClinicVisit } from "../admin/clinic-plan";
+import { isDemoClinic, noteClinicVisit } from "../admin/clinic-plan";
 import type { Database } from "../db/schema";
 import type { ClinicAccess } from "../repos/clinic-plan";
 import { getClinicProfile } from "../repos/clinic-profile";
@@ -39,6 +40,8 @@ export interface TenantStudioContext {
    * owner for the first time starts a trial that waits for it (admin/clinic-plan.ts noteClinicVisit).
    */
   trial?: ClinicAccess;
+  /** A demo clinic (clinic_plan.demo_clinic; set by ClinForms platform staff only): the Studio's demo banner. */
+  demoClinic: boolean;
   /** Members other than staff (and anyone with an HCPC number): name and HCPC number. No e-mail addresses or ids. */
   clinicians: Array<{ name: string; hcpc?: string }>;
   member: {
@@ -69,11 +72,12 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
   if (!organizationId) return { kind: "redirect", to: "/app/select-clinic" };
   const membership = await findMembership(deps.db, organizationId, session.user.id);
   if (!membership) return { kind: "redirect", to: "/app/select-clinic" };
-  const [clinic, profile, members, trial] = await Promise.all([
+  const [clinic, profile, members, trial, demoClinic] = await Promise.all([
     getClinicProfile({ db: deps.db }, membership.tenantId).catch(() => null),
     getMemberProfile({ db: deps.db }, organizationId, session.user.id).catch(() => null),
     listClinicMembers(deps.db, organizationId).catch(() => []),
     noteClinicVisit(deps.db, { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }, deps.now?.()),
+    isDemoClinic(deps.db, membership.tenantId),
   ]);
   const clinicians = members
     .filter((m) => m.name.trim() && (m.role !== "staff" || Boolean(m.hcpcNumber)))
@@ -86,6 +90,7 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
       clinicName: clinic?.displayName || membership.clinicName,
       draftingEnabled: clinic?.draftingEnabled === true,
       ...(trial ? { trial } : {}),
+      demoClinic,
       clinicians,
       member: {
         name: session.user.name,
