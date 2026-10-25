@@ -689,7 +689,7 @@ async function completeChosen(app, titleRe) {
     const secrets = [ENV.BETTER_AUTH_SECRET, ENV.MEDREPORT_SIGNING_SECRET, ...Object.values(state.accounts).map((a) => a.password)];
     if (secrets.some((s) => s && serverLog.includes(s))) console.log("WARNING: a test secret appeared in the server log");
     fs.writeFileSync(path.join(PRIVATE, "server.log"), serverLog, { mode: 0o600 });
-    fs.rmSync(ENV.CLINFORMS_SQLITE_PATH, { force: true });
+    for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${ENV.CLINFORMS_SQLITE_PATH}${suffix}`, { force: true });
   }
 })().catch((e) => {
   console.error(String(e).slice(0, 400));
