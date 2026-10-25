@@ -7,8 +7,8 @@
  * - basePath "/app/studio", mode "tenant": the screens link here and hide every demo-only control.
  * - storage "server": reports and form maps are kept for the clinic on the server (ui/store.ts reads it).
  * - clinic, member: worked out on the server by the layout (src/server/auth/studio-access.ts); the member is
- *   the default signer and the name on activity entries. `clinic.demoClinic` (a demonstration clinic) comes from
- *   the clinic's profile on the server too, never from the browser.
+ *   the default signer and the name on activity entries. `clinic.demoClinic` (a demo clinic, made-up data only) comes
+ *   from the clinic's plan on the server too, never from the browser.
  * - track: the consent-gated, allow-listed analytics (src/components/analytics), tagged area "app".
  * - onSignOut: the shared sign-out, then /login loaded in full (fix wave 2: nothing in memory survives).
  * - No onDocumentFiled / onResetDemo / clinicRecordUrl: there is no simulated record or demo state here.

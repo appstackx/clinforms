@@ -9,9 +9,8 @@ import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
 import { SignOutForm } from "../session-forms";
-<<<<<<< ours
 import { setAccessRequestContactedAction } from "./actions";
-import { CreateClinicForm, OwnerResetForm, TrialForms } from "./forms";
+import { CreateClinicForm, DemoClinicForm, OwnerResetForm, TrialForms } from "./forms";
 import type { ClinicOverview } from "@/server/admin/platform-console";
 
 const UK_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -30,10 +29,6 @@ function limitsText(c: ClinicOverview): string {
   if (!m && !d) return "Default";
   return `${m ? `${m}/min` : "default/min"} · ${d ? `${d.toLocaleString("en-GB")}/day` : "default/day"}`;
 }
-=======
-import { setAccessRequestContactedAction, setDemoClinicAction } from "./actions";
-import { CreateClinicForm } from "./forms";
->>>>>>> theirs
 
 /**
  * /app/platform – ClinForms staff only (emails in CLINFORMS_PLATFORM_ADMINS, signed in with two-step verification;
@@ -55,6 +50,7 @@ export default async function PlatformPage() {
   ]);
   const open = requests.filter((r) => !r.contactedAt).length;
   const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const demoClinics = clinics.filter((c) => !c.offboardedAt && c.plan?.demoClinic === true).map((c) => ({ tenantId: c.tenantId, name: c.name }));
   const emailOn = emailProviderName() !== "none";
 
   return (
@@ -92,6 +88,14 @@ export default async function PlatformPage() {
 
         <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
           <TrialForms clinics={openClinics} />
+        </Panel>
+
+        <Panel
+          title="Demo clinics"
+          description="A demo clinic holds made-up data only and otherwise works like a customer's clinic. Its pages show “Demo clinic – made-up data only”, every preview, document and copied answer carries a demonstration notice, and its members may approve with made-up PH-DEMO numbers (a real clinic refuses them). Only ClinForms staff can switch this, here or with npm run admin:set-demo-clinic. Every change is recorded."
+          className="mb-6"
+        >
+          <DemoClinicForm clinics={openClinics} demoClinics={demoClinics} />
         </Panel>
 
         <Panel
@@ -155,11 +159,7 @@ export default async function PlatformPage() {
           )}
         </Panel>
 
-        <Panel
-          title={`Clinics (${clinics.length})`}
-          description="Every clinic account, including closed ones (their id is kept so it is never reused). Times are UK time. A demonstration clinic holds fictional patients only: its pages carry a banner, its documents a notice, and its members may approve as fictional demonstration clinicians – only ClinForms staff can switch this, here or with the admin script."
-          className="mb-6"
-        >
+        <Panel title={`Clinics (${clinics.length})`} description="Every clinic account, including closed ones (their id is kept so it is never reused). Times are UK time." className="mb-6">
           {clinics.length === 0 ? (
             <p className="text-sm text-slate-600">No clinics yet.</p>
           ) : (
@@ -176,7 +176,6 @@ export default async function PlatformPage() {
                     <th className={TH}>Trial</th>
                     <th className={TH}>Drafting limits</th>
                     <th className={TH}>Status</th>
-                    <th className={TH}>Demonstration</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -199,33 +198,11 @@ export default async function PlatformPage() {
                         ) : (
                           <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">Active</span>
                         )}
-                      </td>
-                      <td className={TD}>
-                        {c.offboardedAt ? (
-                          <span className="text-xs text-slate-500">–</span>
-                        ) : (
-                          <form action={setDemoClinicAction} className="flex flex-wrap items-center gap-2" data-demo-clinic-toggle={c.tenantId}>
-                            <input type="hidden" name="tenantId" value={c.tenantId} />
-                            <input type="hidden" name="demo" value={c.demoClinic ? "0" : "1"} />
-                            {c.demoClinic ? (
-                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Demonstration clinic</span>
-                            ) : (
-                              <span className="text-xs text-slate-500">Ordinary</span>
-                            )}
-                            <SubmitButton
-                              variant="secondary"
-                              className="h-8 px-2.5 text-xs"
-                              pendingText="Saving…"
-                              confirmText={
-                                c.demoClinic
-                                  ? `Make ${c.name} an ordinary clinic again? Approving as demonstration clinicians stops, and members' PH-DEMO numbers should be replaced by real HCPC numbers.`
-                                  : `Make ${c.name} a demonstration clinic? Use this only for a clinic with fictional patients: its members can then approve as fictional demonstration clinicians.`
-                              }
-                            >
-                              {c.demoClinic ? "Switch off" : "Make demonstration clinic"}
-                            </SubmitButton>
-                          </form>
-                        )}
+                        {!c.offboardedAt && c.plan?.demoClinic ? (
+                          <span className="ml-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900" data-demo-clinic-status={c.tenantId}>
+                            Demo clinic
+                          </span>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

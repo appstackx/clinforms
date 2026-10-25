@@ -163,7 +163,7 @@ export interface Wording {
   /* Insurer portal question sets (forms library, mapping, review) -------------------------------- */
   questionSet: QuestionSetWording;
 
-  /* Demonstration clinics (clinic_profile.demo_clinic, set by ClinForms staff only) ---------------- */
+  /* Demo clinics (clinic_plan.demo_clinic, set by ClinForms staff only – core/demo-clinic.ts) ------- */
   demoClinic: DemoClinicWording;
 
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
@@ -465,73 +465,53 @@ const QUESTION_SET: QuestionSetWording = {
 };
 
 /**
- * A DEMONSTRATION clinic (clinic_profile.demo_clinic = 1, set by ClinForms platform staff only): a clinic account with
- * fictional patients only, used to show the product. Its Studio and clinic pages carry a banner, every rendered output
- * a notice, and its members may approve as one of the fixed fictional demonstration clinicians (core/demo-clinic.ts) –
- * recorded truthfully as made by the signed-in member on their behalf. An ordinary clinic never sees any of this.
+ * A DEMO clinic (the host's clinic_plan.demo_clinic = 1, set by ClinForms platform staff only – core/demo-clinic.ts):
+ * a clinic account with made-up data only that otherwise works like any customer's. Its clinic pages and Studio carry
+ * a banner, every output a notice, and its members may hold the made-up PH-DEMO-NN numbers and approve with them. A
+ * real clinic never sees any of this – and refuses those numbers.
  */
 export interface DemoClinicWording {
   /** The persistent banner of the Studio and the clinic pages (/app). */
   banner: string;
-  /** Short label (badges, the platform page). */
+  /** Short label (the Studio header pill, the platform page). */
   label: string;
-  /** Every rendered output (draft preview, final, PDF copy, copied answers) when the form carries no notice of its own. */
+  /** Every output (draft preview, Word / PDF files, copied answers) when the form carries no notice of its own. */
   outputNotice: string;
-  /* Approve dialog */
-  approveAsHeading: string;
-  approveAsYourself(name: string, hcpc: string): string;
-  approveAsYourselfUnavailable: string;
-  approveAsDemo: string;
-  approveAsDemoHint: string;
-  clinicianOption(name: string, role: string, hcpc: string): string;
-  typedSignatureHint(name: string): string;
-  /** The report's own activity entry and the activity page: truthful about who approved on whose behalf. */
-  approvedActivity(clinician: string, hcpc: string, member: string): string;
-  /** The approved banner of a report approved as a demonstration clinician. */
-  approvedBannerNote(clinician: string): string;
-  /* New report: whose voice drafts speak in */
-  writeAsLabel: string;
-  writeAsHelp: string;
-  writeAsMember(name: string): string;
-  writeAsNobody: string;
-  /* Members page */
+  /** Members page, signing details of a demo clinic. */
   hcpcHint: string;
-  /* Server problems (POST /sign) */
-  notAllowedTitle: string;
-  notAllowedDetail: string;
-  unknownClinicianTitle: string;
-  unknownClinicianDetail: string;
-  staffDetail: string;
-  signAsDemoMismatch(name: string): string;
+  /** Members page of a REAL clinic: a member still holds a made-up number (the clinic was a demo clinic before). */
+  memberHasDemoNumber: string;
+  /** POST /sign outside a demo clinic with a made-up number (403 DEMO_NUMBER_NOT_ALLOWED); the Studio says it first. */
+  numberNotAllowedTitle: string;
+  numberNotAllowedDetail: string;
+  /** Activity log: an approval in a demo clinic, with the made-up number used or with a registration number. */
+  approvedWithDemoNumber(hcpc: string): string;
+  approvedInDemoClinic: string;
+  /** Activity log: a final document produced in a demo clinic. */
+  finalWithNotice: string;
+  /** Activity log: ClinForms switched the clinic to a demo clinic / back to a real clinic. */
+  switchedOn: string;
+  switchedOff(membersWithDemoNumbers: number): string;
 }
 
 /* The same text under every disclosure setting: it never names a technology. */
 const DEMO_CLINIC: DemoClinicWording = {
-  banner: "Demonstration clinic – fictional patients only. Do not enter real patient data.",
-  label: "Demonstration clinic",
-  outputNotice: "Demonstration – fictional patient data. Not for clinical use.",
-  approveAsHeading: "Who approves",
-  approveAsYourself: (name, hcpc) => `Approve as yourself – ${name} (HCPC ${hcpc})`,
-  approveAsYourselfUnavailable: "Your own signing details are not set, so you can approve here only as a demonstration clinician.",
-  approveAsDemo: "Approve as a demonstration clinician",
-  approveAsDemoHint:
-    "Fictional clinicians for demonstrations only. Their name and number are written into the form, and the activity log records that you approved on their behalf.",
-  clinicianOption: (name, role, hcpc) => `${name} – ${role} – ${hcpc}`,
-  typedSignatureHint: (name) => `Type the demonstration clinician's name exactly: ${name}.`,
-  approvedActivity: (clinician, hcpc, member) => `Approved as demonstration clinician ${clinician} (${hcpc}) by ${member}`,
-  approvedBannerNote: (clinician) =>
-    `${clinician} is a fictional demonstration clinician: the activity log records who approved on their behalf. Demonstration only – not for clinical use.`,
-  writeAsLabel: "Write the drafts as",
-  writeAsHelp: "Demonstration clinic: drafts may speak in the first person of a demonstration clinician, who then approves them.",
-  writeAsMember: (name) => `Yourself (${name})`,
-  writeAsNobody: "No one – third person",
-  hcpcHint: "Demonstration clinic: a demonstration number such as PH-DEMO-01 is accepted here (never in an ordinary clinic).",
-  notAllowedTitle: "Not a demonstration clinic",
-  notAllowedDetail: "Approving as a demonstration clinician is only possible in a demonstration clinic. Approve as yourself.",
-  unknownClinicianTitle: "Unknown demonstration clinician",
-  unknownClinicianDetail: "Choose one of the demonstration clinicians offered in the approval dialog.",
-  staffDetail: "Staff members prepare forms but do not approve them, also not as a demonstration clinician.",
-  signAsDemoMismatch: (name) => `This approval is made as the demonstration clinician ${name}: their name and number are used.`,
+  banner: "Demo clinic – made-up data only",
+  label: "Demo clinic",
+  outputNotice: "DEMONSTRATION – made-up data from a demo clinic. Not for clinical use.",
+  hcpcHint: "Demo clinic: a made-up number such as PH-DEMO-01 is accepted here. A real clinic accepts HCPC registration numbers only.",
+  memberHasDemoNumber: "Made-up number: it cannot approve in this clinic. Enter the HCPC registration number.",
+  numberNotAllowedTitle: "Made-up number – approval refused",
+  numberNotAllowedDetail:
+    "PH-DEMO numbers are made up and work in a demo clinic only. Ask an owner or administrator to enter your HCPC registration number (Settings → Members), then approve again.",
+  approvedWithDemoNumber: (hcpc) => `Demo clinic – approved with the made-up number ${hcpc}`,
+  approvedInDemoClinic: "Demo clinic – approved",
+  finalWithNotice: "Demo clinic – marked as a demonstration",
+  switchedOn: "Demo clinic: made-up data only, made-up PH-DEMO numbers accepted",
+  switchedOff: (n) =>
+    n > 0
+      ? `A real clinic again: ${n} ${n === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced`
+      : "A real clinic again",
 };
 
 /** Problem codes in plain words (the codes themselves stay in the API). */

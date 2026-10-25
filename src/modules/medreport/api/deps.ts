@@ -62,9 +62,10 @@ export interface ClinicProfile {
   /** Where the clinic asks about its account (shown when the trial has ended). */
   contactEmail?: string;
   /**
-   * A DEMO clinic (the host's clinic_plan.demo_clinic, set by ClinForms platform staff only): made-up patients only.
-   * Every rendered output then carries the demo notice (core/demo-clinic.ts demoOutputNotice), and members' made-up
-   * PH-DEMO-NN numbers may approve (POST /sign refuses them anywhere else). Absent / false = an ordinary clinic.
+   * A DEMO clinic (the host's clinic_plan.demo_clinic, migration 0008, set by ClinForms platform staff only): made-up
+   * data only. Every output then carries the demonstration notice (core/demo-clinic.ts demoOutputNotice: POST /render,
+   * POST /forms/fill-preview), and members' made-up PH-DEMO-NN numbers may approve (POST /sign refuses them in any
+   * other clinic: 403 DEMO_NUMBER_NOT_ALLOWED). Absent / false = a real clinic, unchanged.
    */
   demoClinic?: boolean;
 }

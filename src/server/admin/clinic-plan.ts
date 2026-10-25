@@ -1,8 +1,9 @@
 /**
- * Trials and drafting limits per clinic (10/2026), for ClinForms staff: the platform page (/app/platform) and the
- * admin scripts (admin:set-trial, admin:set-limits) call these – never a clinic's own pages. Every change is audited
- * twice: under the clinic ("clinic.trial_set" …, shown on its activity page – who acted is "ClinForms") and, from the
- * platform page, under the "platform" pseudo-tenant naming the administrator ("platform.trial_set" …).
+ * Trials, drafting limits and demo clinics per clinic (10/2026), for ClinForms staff: the platform page
+ * (/app/platform) and the admin scripts (admin:set-trial, admin:set-limits, admin:set-demo-clinic) call these – never
+ * a clinic's own pages. Every change is audited twice: under the clinic ("clinic.trial_set", "clinic.demo_on" …, shown
+ * on its activity page – who acted is "ClinForms") and, from the platform page, under the "platform" pseudo-tenant
+ * naming the administrator ("platform.trial_set", "platform.demo_on" …).
  *
  * The owner's first visit (clinic layout and Studio layout, noteClinicVisit) records the moment and starts a trial
  * that was waiting for it, audited as "clinic.trial_started" under the owner.
@@ -19,6 +20,8 @@ import {
   extendClinicTrial,
   getClinicPlan,
   noteOwnerAccess,
+  readClinicPlan,
+  setClinicDemoFlag,
   setClinicDraftingLimits,
   setClinicTrial,
   type ClinicAccess,
@@ -26,6 +29,8 @@ import {
   type DraftingLimitsInput,
 } from "../repos/clinic-plan";
 import { RepoInputError } from "../repos/context";
+import { listMemberProfiles } from "../repos/member-profile";
+import { isDemoHcpc } from "../../modules/medreport/core/demo-clinic";
 import { appendPlatformAudit, type PlatformAdmin } from "./platform-console";
 
 /** Who changes a plan: a platform administrator on the platform page, or an admin script (ClinForms itself). */
@@ -152,6 +157,46 @@ export async function noteClinicVisit(
 export async function clinicTrialRunning(db: Kysely<Database>, tenantId: string, now = new Date()): Promise<boolean> {
   try {
     return clinicAccessOf(await getClinicPlan({ db }, tenantId), now).state === "trial";
+  } catch {
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Demo clinics (made-up data only – src/modules/medreport/core/demo-clinic.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface SetDemoClinicResult {
+  /** The flag after this call. */
+  demoClinic: boolean;
+  /** false when the clinic already was (or was not) a demo clinic: nothing written, nothing audited. */
+  changed: boolean;
+  /** Members whose signing details hold a made-up PH-DEMO number (a real clinic refuses them at approval). */
+  membersWithDemoNumbers: number;
+}
+
+/**
+ * Makes a clinic a DEMO clinic (on) or a real clinic again (off) – platform staff only (the platform page and
+ * admin:set-demo-clinic); a clinic's own owners and administrators have no way to change it. Audited under the clinic
+ * ("clinic.demo_on" / "clinic.demo_off", by ClinForms) and, from the platform page, under the platform naming the
+ * administrator. Refused for an unknown or closed clinic. The audit rows hold the flag and a count, never a number.
+ */
+export async function setDemoClinic(db: Kysely<Database>, actor: PlanActor, tenantId: string, on: boolean, now = new Date()): Promise<SetDemoClinicResult> {
+  const clinic = await requireOpenClinic(db, tenantId);
+  const { changed, plan } = await setClinicDemoFlag({ db, now: () => now }, tenantId, on);
+  const membersWithDemoNumbers = (await listMemberProfiles({ db }, clinic.organizationId)).filter((m) => isDemoHcpc(m.hcpcNumber)).length;
+  if (changed) await audit(db, actor, tenantId, on ? "demo_on" : "demo_off", { demoClinic: on, membersWithDemoNumbers });
+  return { demoClinic: plan?.demoClinic === true, changed, membersWithDemoNumbers };
+}
+
+/**
+ * Whether the clinic is a demo clinic, for the app's pages and actions (clinic layout, Studio, members page). Read on
+ * the server from the clinic's plan – never from a request. false without a plan row, on a database before migration
+ * 0008, and on any error (fail closed: a real clinic's strict rules apply).
+ */
+export async function isDemoClinic(db: Kysely<Database>, tenantId: string): Promise<boolean> {
+  try {
+    return (await readClinicPlan({ db }, tenantId))?.demoClinic === true;
   } catch {
     return false;
   }

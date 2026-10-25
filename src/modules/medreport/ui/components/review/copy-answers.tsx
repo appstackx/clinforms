@@ -79,7 +79,7 @@ export function useAnswersCopy(opts: {
   toast(t: Omit<Toast, "id">): void;
 }): AnswersCopyActions {
   const { report, form, actor, dispatch, toast } = opts;
-  // A demonstration clinic (from the server, via the host): every copy carries the demonstration notice.
+  // A demo clinic (from the server, via the host): every copy carries the demonstration notice.
   const demoClinic = useDemoClinic();
   const demoNotice = demoClinic ? demoOutputNotice(form, true) : undefined;
   const copy = useMemo(() => buildAnswersCopy({ report, form: copyFormOf(form), ...(demoNotice ? { demoNotice } : {}) }), [report, form, demoNotice]);

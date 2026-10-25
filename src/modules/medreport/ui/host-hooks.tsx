@@ -52,10 +52,10 @@ export interface StudioClinic {
    */
   clinicians?: Array<{ name: string; hcpc?: string }>;
   /**
-   * A DEMONSTRATION clinic (clinic_profile.demo_clinic – worked out by the host on the server; set by ClinForms staff
-   * only): the Studio shows the demonstration banner, previews and copied answers carry the demonstration notice,
-   * and members who may approve can approve as one of the fixed demonstration clinicians (core/demo-clinic.ts).
-   * The server applies the same rules itself (POST /sign, /render, /forms/fill-preview).
+   * A DEMO clinic (the host's clinic_plan.demo_clinic, worked out on the server; set by ClinForms staff only –
+   * core/demo-clinic.ts): made-up data only. The Studio shows the "Demo clinic" pill, previews and copied answers carry
+   * the demonstration notice, and a member's made-up PH-DEMO number may approve. The server applies the same rules
+   * itself (POST /sign, /render, /forms/fill-preview) – this flag only shapes what the screens say.
    */
   demoClinic?: boolean;
 }
@@ -151,7 +151,7 @@ export function useHostHooks(): HostHooks {
   return useContext(HostHooksContext);
 }
 
-/** Whether this Studio is a demonstration clinic's (tenant mode only; the host read it on the server). */
+/** Whether this Studio is a demo clinic's (tenant mode only; the host read it on the server). */
 export function useDemoClinic(): boolean {
   const hooks = useContext(HostHooksContext);
   return hooks.mode === "tenant" && hooks.clinic?.demoClinic === true;

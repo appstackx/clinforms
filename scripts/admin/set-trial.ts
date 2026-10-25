@@ -67,6 +67,7 @@ export function describePlan(plan: ClinicPlan | null, now = new Date()): string[
     `  state:            ${state}`,
     `  owner first seen: ${plan.ownerFirstSignInAt ?? "not yet"}`,
     `  drafting limits:  ${plan.livePerMinute ?? "default"} a minute, ${plan.livePerDay ?? "default"} a day`,
+    ...(plan.demoClinic ? ["  demo clinic:      yes – made-up data only (admin:set-demo-clinic)"] : []),
   ];
 }
 

@@ -355,3 +355,24 @@ describe("fix wave 2: the voice of a clinic's drafts", () => {
     assert.equal(createTargetReport({ data, target: { kind: "form", form: HARROW_PIKE_FORM } }).author?.name, "Sarah Reid");
   });
 });
+
+describe("demo clinic (HostHooks.clinic.demoClinic – read by the host on the server)", () => {
+  const DEMO_TENANT: HostHooks = { ...TENANT, clinic: { tenantId: "khuram-test", name: "ClinForms Test Clinic (fictional)", demoClinic: true } };
+
+  it("a demo clinic's Studio shows the 'Demo clinic' pill in the sticky header on every page; a real clinic and the public demo do not", () => {
+    for (const pathname of ["/app/studio", "/app/studio/new", "/app/studio/forms", "/app/studio/rpt_1"]) {
+      const html = shell(DEMO_TENANT, pathname);
+      assert.match(html, /data-demo-clinic-pill[^>]*>Demo clinic</, pathname);
+      assert.match(html, /title="Demo clinic – made-up data only"/, "the full banner text on the pill");
+    }
+    for (const [hooks, pathname] of [
+      [TENANT, "/app/studio"],
+      [{}, "/reports"],
+      // demoClinic counts in a clinic's own Studio only
+      [{ ...DEMO_TENANT, mode: "demo" as const }, "/reports"],
+    ] as const) {
+      assert.doesNotMatch(shell(hooks as HostHooks, pathname), /data-demo-clinic-pill/, pathname);
+    }
+    assertTenantClean(shell(TENANT, "/app/studio"));
+  });
+});

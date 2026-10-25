@@ -91,7 +91,7 @@ export function SigningForm({
   hcpcNumber: string;
   canSign: boolean;
   staff: boolean;
-  /** A demonstration clinic (from the server): PH-DEMO-0N numbers are accepted here – say so. */
+  /** A demo clinic (worked out on the server): made-up PH-DEMO-NN numbers are accepted here – say so. */
   demoHint?: string;
 }) {
   const [state, action] = useFormState(saveMemberProfile, null as ActionResult | null);

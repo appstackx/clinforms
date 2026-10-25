@@ -201,26 +201,11 @@ const RESET_REFUSALS: Readonly<Record<string, string>> = {
 
 /**
  * A short description of an entry's details, or null. Only fields known to be safe and useful are shown
- * (audit details never hold patient data, but unknown fields are not shown either). `context.who` is the name of
- * the person who acted (the activity page's "By" column) – used where the description must say who acted for whom.
+ * (audit details never hold patient data, but unknown fields are not shown either).
  */
-export function describeActivityDetail(action: string, detail: Record<string, unknown> | null | undefined, context: { who?: string } = {}): string | null {
+export function describeActivityDetail(action: string, detail: Record<string, unknown> | null | undefined): string | null {
   if (!detail || typeof detail !== "object") return null;
   switch (action) {
-    case "report.sign":
-      // A demonstration clinic's approval as a fixed fictional clinician: who approved, on whose behalf.
-      return typeof detail.demoSignerName === "string" && typeof detail.demoSignerHcpc === "string"
-        ? WORDING.demoClinic.approvedActivity(detail.demoSignerName, detail.demoSignerHcpc, context.who ?? "a member of this clinic")
-        : null;
-    case "clinic.demo_mode":
-      return detail.demoClinic === true
-        ? "Now a demonstration clinic: fictional patients only"
-        : detail.demoClinic === false
-          ? "Now an ordinary clinic"
-          : null;
-    case "platform.clinic_demo_on":
-    case "platform.clinic_demo_off":
-      return typeof detail.tenantId === "string" ? `Clinic id ${detail.tenantId}${detail.via === "script" ? " · with the admin script" : ""}` : null;
     case "member.invite":
     case "member.join":
     case "member.remove":
@@ -228,7 +213,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "member.role_change":
       return detail.from ? `${role(detail.from)} → ${role(detail.to)}` : `Now ${role(detail.to)}`;
     case "member.profile_update":
-      return detail.canSign === true ? "May sign forms" : "Does not sign forms";
+      // A made-up demo number (demo clinics only) is flagged in the row, never stored as the number itself.
+      return `${detail.canSign === true ? "May sign forms" : "Does not sign forms"}${detail.demoNumber === true ? " · made-up demo number" : ""}`;
     case "clinic.update": {
       const fields = Array.isArray(detail.fields) ? detail.fields.map((f) => CLINIC_FIELDS[String(f)] ?? String(f)) : [];
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
@@ -262,8 +248,14 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
       return parts.length ? parts.join(" · ") : null;
     }
-    case "report.render_final":
-      return detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+    case "report.render_final": {
+      const format = detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+      return [format, detail.demoClinic === true ? WORDING.demoClinic.finalWithNotice : null].filter(Boolean).join(" · ") || null;
+    }
+    case "report.sign":
+      // A demo clinic's approval says so: with the made-up number used, or with a registration number (never shown).
+      if (detail.demoClinic !== true) return null;
+      return typeof detail.demoNumber === "string" ? WORDING.demoClinic.approvedWithDemoNumber(detail.demoNumber) : WORDING.demoClinic.approvedInDemoClinic;
     case "report.update":
     case "report.create":
     case "report.store_signed":
@@ -293,6 +285,12 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "clinic.trial_converted":
     case "platform.trial_converted":
       return withClinic(action, detail, null);
+    case "clinic.demo_on":
+    case "platform.demo_on":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOn);
+    case "clinic.demo_off":
+    case "platform.demo_off":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOff(typeof detail.membersWithDemoNumbers === "number" ? detail.membersWithDemoNumbers : 0));
     case "clinic.limits_set":
     case "platform.limits_set": {
       const per = (v: unknown, unit: string) => (typeof v === "number" ? `${v.toLocaleString("en-GB")} a ${unit}` : `default a ${unit}`);

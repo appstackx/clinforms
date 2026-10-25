@@ -175,18 +175,25 @@ describe("activity wording", () => {
     assert.equal(describeActivityDetail("clinic.update", { fields: ["displayName", "retentionDays"] }), "Changed: name, how long reports are kept");
   });
 
-  it("demonstration clinics: the approval line says who approved as which demonstration clinician; the switch both ways", () => {
-    const detail = { formId: "frm_1", receiptMac: "abc", demoSigner: "sarah-reid", demoSignerName: "Sarah Reid", demoSignerHcpc: "PH-DEMO-01" };
+  it("demo clinics (10/2026): the switch both ways, approvals and final documents say so; real clinics' rows are unchanged", () => {
+    assert.equal(activityLabel("clinic.demo_on"), "Made a demo clinic by ClinForms");
+    assert.equal(activityLabel("clinic.demo_off"), "Demo clinic switched off by ClinForms");
+    assert.equal(activityLabel("platform.demo_on"), "Demo clinic switched on");
+    assert.equal(describeActivityDetail("clinic.demo_on", { demoClinic: true, membersWithDemoNumbers: 0 }), "Demo clinic: made-up data only, made-up PH-DEMO numbers accepted");
     assert.equal(
-      describeActivityDetail("report.sign", detail, { who: "Dana Demo (fictional)" }),
-      "Approved as demonstration clinician Sarah Reid (PH-DEMO-01) by Dana Demo (fictional)",
+      describeActivityDetail("platform.demo_off", { tenantId: "khuram-test", demoClinic: false, membersWithDemoNumbers: 2 }),
+      "Clinic id khuram-test · A real clinic again: 2 members still hold a made-up number and cannot approve until it is replaced",
     );
-    assert.equal(describeActivityDetail("report.sign", { formId: "frm_1", receiptMac: "abc" }, { who: "Dana Demo (fictional)" }), null, "an ordinary approval: unchanged");
-    assert.equal(describeActivityDetail("clinic.demo_mode", { demoClinic: true }), "Now a demonstration clinic: fictional patients only");
-    assert.equal(describeActivityDetail("clinic.demo_mode", { demoClinic: false }), "Now an ordinary clinic");
-    assert.equal(describeActivityDetail("platform.clinic_demo_on", { tenantId: "riverside-demo", via: "script" }), "Clinic id riverside-demo · with the admin script");
-    assert.equal(describeActivityDetail("platform.clinic_demo_off", { tenantId: "riverside-demo", via: "platform_page" }), "Clinic id riverside-demo");
-    assert.equal(activityLabel("clinic.demo_mode"), "Demonstration clinic setting changed");
+    assert.equal(describeActivityDetail("clinic.demo_off", { demoClinic: false, membersWithDemoNumbers: 0 }), "A real clinic again");
+    // Approvals: a demo clinic's say so (with the made-up number, never a registration number); a real clinic's: as before.
+    assert.equal(describeActivityDetail("report.sign", { formId: "frm_1", receiptMac: "abc", demoClinic: true, demoNumber: "PH-DEMO-01" }), "Demo clinic – approved with the made-up number PH-DEMO-01");
+    assert.equal(describeActivityDetail("report.sign", { formId: "frm_1", receiptMac: "abc", demoClinic: true }), "Demo clinic – approved");
+    assert.equal(describeActivityDetail("report.sign", { formId: "frm_1", receiptMac: "abc", flags: 0 }), null, "a real clinic's approval: unchanged");
+    assert.equal(describeActivityDetail("report.render_final", { format: "pdf", purpose: "download", demoClinic: true }), "PDF · Demo clinic – marked as a demonstration");
+    assert.equal(describeActivityDetail("report.render_final", { format: "original", purpose: "download" }), "In the referrer's own format", "unchanged");
+    assert.equal(describeActivityDetail("report.render_final", { purpose: "download" }), null);
+    assert.equal(describeActivityDetail("member.profile_update", { canSign: true, hasHcpc: true, demoNumber: true }), "May sign forms · made-up demo number");
+    assert.equal(describeActivityDetail("member.profile_update", { canSign: true, hasHcpc: true }), "May sign forms", "unchanged");
   });
 
   it("no banned technology or vendor terms in the labels, details, names and page copy", () => {
@@ -203,6 +210,10 @@ describe("activity wording", () => {
         describeActivityDetail("auth.password_reset_link_refused", { reason: "other_clinic_email_off" }),
         describeActivityDetail("auth.password_reset_link_refused", { reason: "other_clinic_email_failed" }),
         describeActivityDetail("auth.password_reset_link", { delivery: "not_sent" }),
+        describeActivityDetail("clinic.demo_on", { demoClinic: true }),
+        describeActivityDetail("clinic.demo_off", { membersWithDemoNumbers: 3 }),
+        describeActivityDetail("report.sign", { demoClinic: true, demoNumber: "PH-DEMO-02" }),
+        describeActivityDetail("report.render_final", { format: "docx", demoClinic: true }),
       ].filter((t): t is string => typeof t === "string"),
     ];
     for (const text of texts) {
@@ -226,24 +237,32 @@ describe("every activity and platform entry point applies its guard (source chec
     assert.match(guards, /getServerSession\(\{ fresh: true \}\)/, "past the session cookie cache");
   });
 
-  it("a clinic's own settings can never make it a demonstration clinic (only the platform page and the admin script)", () => {
-    for (const file of [
-      "src/app/app/(clinic)/settings/clinic/actions.ts",
-      "src/app/app/(clinic)/settings/clinic/form.tsx",
-      "src/app/app/(clinic)/settings/clinic/page.tsx",
-      "src/app/app/(clinic)/settings/members/actions.ts",
-    ]) {
-      const source = read(file);
-      assert.ok(!/demo_clinic|setClinicDemoFlag|setDemoClinic\b|demoClinic:/.test(source), `${file} never writes the demonstration flag`);
-    }
-    // Only these write it: the repository function, the platform operation, its platform-page wrapper and the script.
-    const writers = ["src/server/repos/clinic-profile.ts", "src/server/auth/platform.ts", "src/server/admin/platform-console.ts", "src/app/app/platform/actions.ts", "scripts/admin/set-demo-clinic.ts"];
+  it("demo clinics: only ClinForms staff switch the flag – the platform page and the admin script, never a clinic's own pages", () => {
+    // The only code that writes clinic_plan.demo_clinic: the repository function, the audited admin operation, the
+    // platform page's action and the script (tests and test helpers aside).
     const walk = (dir: string): string[] =>
-      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|tsx)$/.test(e.name) && !/\.test\.ts$|testing/.test(path.join(dir, e.name)) ? [path.join(dir, e.name)] : []));
-    const callers = [...walk("src"), ...walk("scripts")].filter((f) => /setClinicDemoFlag\(|setDemoClinic\(|setDemoClinicAsPlatform\(/.test(read(f)));
-    assert.deepEqual(callers.map((f) => path.relative(process.cwd(), f)).sort(), [...writers].sort());
-    // The platform page's toggle goes through platformActionAdmin() (checked for every action above).
-    assert.match(read("src/app/app/platform/actions.ts"), /export async function setDemoClinicAction\(form: FormData\): Promise<void> \{\n  const admin = await platformActionAdmin\(\);/);
+      fs
+        .readdirSync(dir, { withFileTypes: true })
+        .flatMap((e) =>
+          e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|tsx)$/.test(e.name) && !/\.test\.ts$/.test(e.name) && !/[\\/]testing[\\/]/.test(path.join(dir, e.name)) ? [path.join(dir, e.name)] : [],
+        );
+    const writers = [...walk("src"), ...walk("scripts")]
+      .filter((f) => /\bsetClinicDemoFlag\(|\bsetDemoClinic\(|demo_clinic: (?:1|on|value)/.test(read(f)))
+      .map((f) => path.relative(process.cwd(), f).split(path.sep).join("/"))
+      .sort();
+    assert.deepEqual(writers, ["scripts/admin/set-demo-clinic.ts", "src/app/app/platform/actions.ts", "src/server/admin/clinic-plan.ts", "src/server/repos/clinic-plan.ts"]);
+    // The clinic's own settings never mention it; the members page reads it on the server (never from the form).
+    for (const file of ["src/app/app/(clinic)/settings/clinic/actions.ts", "src/app/app/(clinic)/settings/clinic/form.tsx", "src/app/app/(clinic)/settings/clinic/page.tsx"]) {
+      if (fs.existsSync(path.resolve(file))) assert.doesNotMatch(read(file), /demo_clinic|demoClinic|setDemoClinic/, file);
+    }
+    const members = read("src/app/app/(clinic)/settings/members/actions.ts");
+    assert.match(members, /const demoClinic = await isDemoClinic\(getDb\(\), ctx\.membership\.tenantId\);/);
+    assert.match(members, /signingNumberFor\(rawHcpc, \{ demoClinic \}\)/);
+    assert.doesNotMatch(members, /form\.get\("demo/);
+    // The platform page's toggle goes through platformActionAdmin() and the audited operation.
+    const actions = read("src/app/app/platform/actions.ts");
+    assert.match(actions, /export async function setDemoClinicAction\(_prev: PlanActionResult \| null, form: FormData\): Promise<PlanActionResult> \{\n  const admin = await platformActionAdmin\(\);/);
+    assert.match(actions, /setDemoClinic\(getDb\(\), \{ kind: "platform", admin \}, tenantId, what === "on"\)/);
   });
 
   it("every platform server action checks platformActionAdmin() first", () => {

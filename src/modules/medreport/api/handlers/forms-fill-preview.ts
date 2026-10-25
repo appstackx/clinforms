@@ -15,8 +15,8 @@ import "server-only";
  * summary PDF (docgen/question-summary.ts), and `fileBase64` is ignored.
  *
  * Wave 2: an actor is required (auth/actor.ts; any role); the report and the form map must be the actor's
- * clinic's (403 TENANT_MISMATCH). A demonstration clinic's preview (clinic_profile.demo_clinic, read on the
- * server) carries the demonstration notice on every page (core/demo-clinic.ts demoOutputNotice).
+ * clinic's (403 TENANT_MISMATCH). A demo clinic's preview (ClinicProfile.demoClinic, read on the server)
+ * carries the demonstration notice on every page (core/demo-clinic.ts demoOutputNotice).
  *
  * Owner: forms-engine agent.
  */
@@ -52,7 +52,7 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
   if (!resolved.ok) return resolved.response;
 
   const started = Date.now();
-  // Demonstration clinics (read on the server): the preview carries the demonstration notice too.
+  // Demo clinics (read on the server): the preview carries the demonstration notice too.
   const notice = (await actorInDemoClinic(deps, actor)) ? demoOutputNotice(form, true) : undefined;
   if (isQuestionSet(form)) {
     const out = await renderQuestionSummaryPdf(report, form, resolved.template);

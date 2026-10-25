@@ -7,6 +7,8 @@
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, type InviteDelivery } from "@/lib/account-copy";
 import { signingNumberFor } from "@/lib/hcpc";
+import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
+import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { INVITATION_TTL_SECONDS } from "@/server/auth/create-auth";
@@ -17,7 +19,6 @@ import { actionContext, auditAction, requestHeaders, throttle, type ActionResult
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
 import { captureOutbox, emailProviderName, inviteDeliveryOf, linkToShare } from "@/server/email";
-import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
 const PATH = "/app/settings/members";
@@ -166,8 +167,8 @@ export async function saveMemberProfile(_prev: ActionResult | null, form: FormDa
   }
   const jobTitle = String(form.get("jobTitle") ?? "").trim().slice(0, 120) || null;
   const rawHcpc = String(form.get("hcpcNumber") ?? "").trim();
-  // PH-DEMO-0N only in a demonstration clinic (read on the server, never from the form).
-  const demoClinic = (await getClinicProfile({ db: getDb() }, ctx.membership.tenantId).catch(() => null))?.demoClinic === true;
+  // Made-up PH-DEMO-NN numbers in a demo clinic only (its plan, read on the server – never from the form).
+  const demoClinic = await isDemoClinic(getDb(), ctx.membership.tenantId);
   const hcpcNumber = rawHcpc ? signingNumberFor(rawHcpc, { demoClinic }) : null;
   const canSign = form.get("canSign") === "on";
   if (rawHcpc && !hcpcNumber) return { ok: false, error: ACCOUNT_ERRORS.invalidHcpc };
@@ -178,7 +179,8 @@ export async function saveMemberProfile(_prev: ActionResult | null, form: FormDa
     action: "member.profile_update",
     targetType: "member",
     targetId: target.id,
-    detail: { canSign, hasHcpc: Boolean(hcpcNumber), hasJobTitle: Boolean(jobTitle) },
+    // A made-up demo number (demo clinics only) is flagged, never the number itself.
+    detail: { canSign, hasHcpc: Boolean(hcpcNumber), hasJobTitle: Boolean(jobTitle), ...(isDemoHcpc(hcpcNumber) ? { demoNumber: true } : {}) },
   });
   revalidatePath(PATH);
   return { ok: true };

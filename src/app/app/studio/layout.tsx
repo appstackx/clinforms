@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { getAuth } from "@/server/auth/auth";
@@ -20,6 +21,7 @@ export const metadata: Metadata = {
  * (src/app/app/studio/tenant-host.tsx). Checked on the server on every request
  * (src/server/auth/studio-access.ts): no session → /login, no two-step verification → /two-factor, no
  * active clinic → /app/select-clinic. The Edge middleware only redirects requests without a session cookie.
+ * A demo clinic (made-up data only, set by ClinForms staff) shows the demo banner above the Studio on every page.
  */
 export default async function TenantStudioLayout({ children }: { children: React.ReactNode }) {
   const access = await resolveStudioAccess({ auth: getAuth(), db: getDb(), headers: requestHeaders(), path: currentPath() });
@@ -27,6 +29,8 @@ export default async function TenantStudioLayout({ children }: { children: React
   const { context } = access;
   return (
     <>
+      {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
+      <DemoClinicBanner on={context.demoClinic} />
       <TrialBannerBar access={context.trial} />
       <TenantHost
         clinic={{

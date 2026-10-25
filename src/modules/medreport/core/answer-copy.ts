@@ -14,7 +14,7 @@
  *   question can be approved blank); questions left for the referrer's use are skipped.
  * - before approval every copy is marked "Draft – not yet approved"; after approval the approved text
  *   is copied, with who approved it and when.
- * - a demonstration clinic (`demoNotice`, core/demo-clinic.ts demoOutputNotice): every copy also carries the
+ * - a demo clinic (`demoNotice`, core/demo-clinic.ts demoOutputNotice): every copy also carries the
  *   demonstration notice – first and last line of "Copy all" / the .txt, and in brackets before a single answer.
  *   Without it the text is exactly as before.
  *
@@ -127,8 +127,8 @@ export function formatCopyBlock(entry: Pick<CopyEntry, "number" | "question" | "
 }
 
 /**
- * The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft; in a demonstration
- * clinic always marked with the demonstration notice).
+ * The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft; in a demo clinic
+ * always marked with the demonstration notice).
  */
 export function copyTextForAnswer(answer: string, approved: boolean, demoNotice?: string): string {
   const marked = approved ? answer : `[${WORDING.answersCopy.draftMarker}] ${answer}`;
@@ -184,7 +184,7 @@ export function buildAnswersCopy(input: {
   form: { fields: readonly CopyField[]; title?: string; referrer?: { name: string } } | null;
   /** Title when there is no form ref (built-in report): its template name. */
   title?: string;
-  /** A demonstration clinic: the demonstration notice every copy carries (core/demo-clinic.ts demoOutputNotice). */
+  /** A demo clinic: the demonstration notice every copy carries (core/demo-clinic.ts demoOutputNotice). */
   demoNotice?: string;
 }): AnswersCopy {
   const { report, form } = input;

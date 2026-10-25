@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
 import { CopyButton, SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
 import { WORDING } from "@/modules/medreport/core/wording";
+import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { listClinicMembers, listPendingInvitations } from "@/server/auth/membership";
 import { inviteLink } from "@/server/auth/platform";
@@ -10,7 +12,6 @@ import { assignableRoles, isManager } from "@/server/auth/roles";
 import { requestHeaders, requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
-import { getClinicProfile } from "@/server/repos/clinic-profile";
 import { ukDateTime } from "@/server/email/templates";
 import { cancelInvitation, removeMember } from "./actions";
 import { InviteForm, ResetLinkForm, RoleForm, SigningForm } from "./forms";
@@ -21,12 +22,12 @@ export const metadata: Metadata = { title: "Members" };
 export default async function MembersPage() {
   const { session, membership } = await requireAppContext();
   const db = getDb();
-  const [members, invitations, profile] = await Promise.all([
+  const [members, invitations, demoClinic] = await Promise.all([
     listClinicMembers(db, membership.organizationId),
     listPendingInvitations(db, membership.organizationId),
-    getClinicProfile({ db }, membership.tenantId).catch(() => null),
+    // A demo clinic (made-up data only, set by ClinForms staff): made-up PH-DEMO numbers are accepted – say so.
+    isDemoClinic(db, membership.tenantId),
   ]);
-  const demoClinic = profile?.demoClinic === true;
   const manager = isManager(membership.role);
   const roles = assignableRoles(membership.role);
   const emailOff = emailProviderName() === "none";
@@ -90,6 +91,12 @@ export default async function MembersPage() {
                       {[m.jobTitle, m.hcpcNumber ? `HCPC ${m.hcpcNumber}` : null, m.canSign ? "May sign" : null].filter(Boolean).join(" · ") ||
                         "No signing details yet"}
                     </p>
+                    {!demoClinic && isDemoHcpc(m.hcpcNumber) ? (
+                      // A real clinic (it was a demo clinic before): this member cannot approve until the number is replaced.
+                      <p className="mt-1 text-xs font-medium text-amber-800" data-demo-number-warning="">
+                        {WORDING.demoClinic.memberHasDemoNumber}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{roleLabel(m.role ?? "")}</span>

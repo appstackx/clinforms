@@ -106,13 +106,8 @@ const CALLS: Record<string, unknown[][]> = {
   "server.access.importLimitDetail": [[30]],
   "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
-  "demoClinic.approveAsYourself": [["Alex Morgan (fictional)", "PH123456"]],
-  "demoClinic.clinicianOption": [["Sarah Reid", "Senior Physiotherapist", "PH-DEMO-01"]],
-  "demoClinic.typedSignatureHint": [["Sarah Reid"]],
-  "demoClinic.approvedActivity": [["Sarah Reid", "PH-DEMO-01", "Alex Morgan (fictional)"]],
-  "demoClinic.writeAsMember": [["Alex Morgan (fictional)"]],
-  "demoClinic.approvedBannerNote": [["Sarah Reid"]],
-  "demoClinic.signAsDemoMismatch": [["Sarah Reid"]],
+  "demoClinic.approvedWithDemoNumber": [["PH-DEMO-01"]],
+  "demoClinic.switchedOff": [[0], [1], [3]],
 };
 
 /** Every string a wording object can produce: plain strings, and each function called with CALLS. */
@@ -164,12 +159,14 @@ test("the guide's wording is used where the owner set it", () => {
   assert.equal(WORDING.payload.toggle, "See exactly what the drafting service receives");
 });
 
-test("demonstration clinics: the owner's banner and output notice, word for word, under both disclosures", () => {
+test("demo clinics: Khuram's banner word for word, the output notice and the refusal, under both disclosures", () => {
   for (const w of [WORDING, wordingFor("ai-assisted")]) {
-    assert.equal(w.demoClinic.banner, "Demonstration clinic – fictional patients only. Do not enter real patient data.");
-    assert.equal(w.demoClinic.outputNotice, "Demonstration – fictional patient data. Not for clinical use.");
-    assert.equal(w.demoClinic.approveAsDemo, "Approve as a demonstration clinician");
-    assert.equal(w.demoClinic.approvedActivity("Sarah Reid", "PH-DEMO-01", "Alex Morgan"), "Approved as demonstration clinician Sarah Reid (PH-DEMO-01) by Alex Morgan");
+    assert.equal(w.demoClinic.banner, "Demo clinic – made-up data only");
+    assert.equal(w.demoClinic.outputNotice, "DEMONSTRATION – made-up data from a demo clinic. Not for clinical use.");
+    assert.match(w.demoClinic.numberNotAllowedDetail, /PH-DEMO numbers are made up and work in a demo clinic only/);
+    assert.equal(w.demoClinic.approvedWithDemoNumber("PH-DEMO-01"), "Demo clinic – approved with the made-up number PH-DEMO-01");
+    assert.equal(w.demoClinic.switchedOff(1), "A real clinic again: 1 member still holds a made-up number and cannot approve until it is replaced");
+    assert.equal(w.demoClinic.switchedOff(0), "A real clinic again");
   }
 });
 

@@ -145,8 +145,9 @@ export interface ClinicProfileTable {
 }
 
 /**
- * `clinic_plan` (migration 0006) – a clinic's trial and its own drafting limits, written by ClinForms staff only
- * (platform page, admin scripts). One row per clinic; no row = no trial, default limits.
+ * `clinic_plan` (migration 0006; demo_clinic 0008) – a clinic's trial, its own drafting limits and the demo-clinic
+ * flag, written by ClinForms staff only (platform page, admin scripts). One row per clinic; no row = no trial,
+ * default limits, a real clinic.
  */
 export interface ClinicPlanTable {
   tenant_id: string;
@@ -161,6 +162,12 @@ export interface ClinicPlanTable {
   ended_at: IsoTimestamp | null;
   live_calls_per_minute: number | null;
   live_calls_per_day: number | null;
+  /**
+   * 0/1 (migration 0008): a DEMO clinic – made-up data only; banner, a notice on every output, made-up PH-DEMO-NN
+   * signing numbers accepted. Written by ClinForms platform staff only (repos/clinic-plan.ts setClinicDemoFlag via
+   * admin/clinic-plan.ts setDemoClinic). Absent on a database before 0008: read as 0.
+   */
+  demo_clinic: WithDefault<number>;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }

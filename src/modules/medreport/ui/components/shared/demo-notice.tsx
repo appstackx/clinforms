@@ -4,8 +4,8 @@
  * The demonstration notice of a demonstration form (FormDefinition.demoNotice – e.g. a public insurer
  * form in a private demo), shown in the header of the Studio's form previews. The same line is printed
  * at the foot of every page of that form's drafts and final files (forms/demo-notice.ts). Renders
- * nothing for an ordinary form. A demonstration clinic's previews show the clinic notice with `label`
- * "Demonstration clinic" (core/demo-clinic.ts demoOutputNotice).
+ * nothing for an ordinary form. A demo clinic's previews show its notice with `label` "Demo clinic"
+ * (core/demo-clinic.ts demoOutputNotice).
  */
 import { Info } from "lucide-react";
 import { cn } from "../../primitives";

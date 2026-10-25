@@ -11,7 +11,7 @@ import "server-only";
  *
  * A demonstration form (FormDefinition.demoNotice) gets its footer line on every page of the draft and
  * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it – except in a
- * demonstration clinic, whose handlers pass `demoNotice` (core/demo-clinic.ts demoOutputNotice: the form's own
+ * demo clinic, whose handlers pass `demoNotice` (core/demo-clinic.ts demoOutputNotice: the form's own
  * notice, else the clinic notice). The notice is never part of the form map, so the approved map's hash is unchanged.
  *
  * Mail-merge fields (10/2026, core/merge-fields.ts): the completed file is scanned for «Name» / <<Name>> /
@@ -47,7 +47,7 @@ export interface FormRenderInput {
   /** PDF: printed on every continuation page (fix wave 3), e.g. "Claimant: … · Reference: …". */
   continuationLabel?: string;
   /**
-   * The demonstration notice to print on every page (a demonstration clinic: core/demo-clinic.ts demoOutputNotice).
+   * The demonstration notice to print on every page (a demo clinic: core/demo-clinic.ts demoOutputNotice).
    * Default: the form's own demoNotice (none for an ordinary form – the file is then exactly as filled).
    */
   demoNotice?: string;

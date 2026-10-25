@@ -5,14 +5,10 @@
  */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
-import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
+import { endTrial, extendTrial, setDemoClinic, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
 import { platformActionAdmin } from "@/server/admin/guards";
-<<<<<<< ours
 import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
 import { getAuth } from "@/server/auth/auth";
-=======
-import { PLATFORM_PATH, createClinicAsPlatform, markAccessRequest, setDemoClinicAsPlatform } from "@/server/admin/platform-console";
->>>>>>> theirs
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { normaliseEmail } from "@/server/auth/platform";
 import { requestHeaders, type ActionResult } from "@/server/auth/session";
@@ -108,7 +104,6 @@ export async function setAccessRequestContactedAction(form: FormData): Promise<v
   revalidatePath(PLATFORM_PATH);
 }
 
-<<<<<<< ours
 /* ------------------------------------------------------------------------------------------------
  * Trials and drafting limits (10/2026) – every change audited (src/server/admin/clinic-plan.ts)
  * ----------------------------------------------------------------------------------------------*/
@@ -193,21 +188,24 @@ export async function setLimitsAction(_prev: PlanActionResult | null, form: Form
     const text = (v: number | null, unit: string) => (v === null ? `the default a ${unit}` : `${v.toLocaleString("en-GB")} a ${unit}`);
     return `${tenantId}: drafting limits are ${text(plan.livePerMinute, "minute")} and ${text(plan.livePerDay, "day")}.`;
   });
-=======
+}
+
 /**
- * Makes a clinic a demonstration clinic (demo=1) or an ordinary one again (demo=0). Platform administrators only –
- * re-checked here with a fresh session; audited under the clinic and the platform (setDemoClinic).
+ * Demo clinic on / off ("what" = "on" | "off"): a clinic with made-up data only – banner, a notice on every output,
+ * made-up PH-DEMO numbers may approve. Platform administrators only (re-checked here); audited under the clinic and
+ * the platform (src/server/admin/clinic-plan.ts setDemoClinic). A clinic's own pages can never change it.
  */
-export async function setDemoClinicAction(form: FormData): Promise<void> {
+export async function setDemoClinicAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
   const admin = await platformActionAdmin();
-  if (!admin) return;
-  const demo = form.get("demo");
-  if (demo !== "1" && demo !== "0") return;
-  try {
-    await setDemoClinicAsPlatform(getDb(), admin, String(form.get("tenantId") ?? ""), demo === "1");
-  } catch (err) {
-    if (!(err instanceof RepoInputError)) logAuthEvent("platform.demo_clinic_failed", { error: err instanceof Error ? err.name : "error" });
-  }
-  revalidatePath(PLATFORM_PATH);
->>>>>>> theirs
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    if (what !== "on" && what !== "off") throw new RepoInputError("Choose whether to switch the demo clinic on or off.");
+    const r = await setDemoClinic(getDb(), { kind: "platform", admin }, tenantId, what === "on");
+    const stale = r.membersWithDemoNumbers;
+    if (what === "on") return r.changed ? `${tenantId} is now a demo clinic: made-up data only, made-up PH-DEMO numbers accepted.` : `${tenantId} already is a demo clinic.`;
+    const base = r.changed ? `${tenantId} is a real clinic again.` : `${tenantId} is not a demo clinic.`;
+    return stale > 0 ? `${base} ${stale} ${stale === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced (Settings → Members).` : base;
+  });
 }

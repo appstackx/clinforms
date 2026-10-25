@@ -289,8 +289,9 @@ export async function clinicProfileOf(deps: MedreportDeps, actor: Actor): Promis
 }
 
 /**
- * Whether the actor's clinic is a DEMONSTRATION clinic (clinic_profile.demo_clinic, read on the server – never
- * from the request). The public demo and any clinic whose profile cannot be read are not (fail closed).
+ * Whether the actor's clinic is a DEMO clinic (ClinicProfile.demoClinic – the host's clinic_plan, read on the server,
+ * never from the request; core/demo-clinic.ts). The public demo and a clinic whose profile cannot be read are not
+ * (fail closed: a real clinic's rules apply, so a made-up PH-DEMO number cannot approve).
  */
 export async function actorInDemoClinic(deps: MedreportDeps, actor: Actor): Promise<boolean> {
   if (actor.via === "demo") return false;

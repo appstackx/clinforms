@@ -1,6 +1,6 @@
 /**
- * TESTS ONLY: trials and drafting limits per clinic (10/2026) – the clinic_plan repository, the audited admin layer
- * (platform page and scripts), the owner's first visit, what the Report API sees (loadClinicProfile) and offboarding –
+ * TESTS ONLY: trials, drafting limits and demo clinics per clinic (10/2026) – the clinic_plan repository, the audited
+ * admin layer (platform page and scripts), the owner's first visit, what the Report API sees (loadClinicProfile) and offboarding –
  * run unchanged on every database: node:sqlite and PGlite (src/server/admin/clinic-plan.test.ts), D1 through the
  * in-process gateway Worker and real local D1 (workers/data-gateway/test/admin-stack.test.ts).
  */
@@ -23,13 +23,15 @@ import {
   extendClinicTrial,
   getClinicPlan,
   noteOwnerAccess,
+  setClinicDemoFlag,
   setClinicDraftingLimits,
   setClinicTrial,
   trialDaysLeft,
 } from "../../repos/clinic-plan";
 import { upsertClinicProfile } from "../../repos/clinic-profile";
 import { RepoInputError } from "../../repos/context";
-import { endTrial, extendTrial, noteClinicVisit, setDraftingLimits, setTrial } from "../clinic-plan";
+import { upsertMemberProfile } from "../../repos/member-profile";
+import { endTrial, extendTrial, isDemoClinic, noteClinicVisit, setDemoClinic, setDraftingLimits, setTrial } from "../clinic-plan";
 import { PLATFORM_AUDIT_TENANT, listClinicsOverview, type PlatformAdmin } from "../platform-console";
 
 export interface ClinicPlanSuiteDb {
@@ -264,6 +266,68 @@ export function defineClinicPlanSuite(label: string, factory: () => Promise<Clin
         fs.rmSync(dir, { recursive: true, force: true });
       }
       await assert.rejects(setTrial(t.db, { kind: "script" }, NEW, { days: 3, start: "now" }, now()), /closed/, "a closed clinic gets no trial");
+      await assert.rejects(setDemoClinic(t.db, { kind: "script" }, NEW, true, now()), /closed/, "nor a demo flag");
+    });
+
+    it("demo clinics (0008): platform staff only, audited both ways, independent of the trial and the limits; what the app sees", async () => {
+      const slug = "demo-clinic-test";
+      const orgId = `org-${slug}`;
+      await clinic(t.db, slug, true, now().toISOString());
+      const actor = { kind: "platform" as const, admin: ADMIN };
+      assert.equal(await isDemoClinic(t.db, slug), false, "a new clinic is a real clinic");
+      assert.equal((await loadClinicProfile(t.db, slug, now()))?.demoClinic, undefined);
+      assert.deepEqual(await setClinicDemoFlag(ctx(), slug, false), { changed: false, plan: null }, "off without a row: nothing written");
+      assert.equal(await getClinicPlan(ctx(), slug), null);
+
+      // On, from the platform page: a "standard" row (no trial, default limits), audited under the clinic and the platform.
+      assert.deepEqual(await setDemoClinic(t.db, actor, slug, true, now()), { demoClinic: true, changed: true, membersWithDemoNumbers: 0 });
+      const plan = await getClinicPlan(ctx(), slug);
+      assert.deepEqual(
+        { status: plan?.status, demoClinic: plan?.demoClinic, trialDays: plan?.trialDays, perDay: plan?.livePerDay },
+        { status: "standard", demoClinic: true, trialDays: null, perDay: null },
+      );
+      assert.deepEqual(clinicAccessOf(plan, now()), { state: "full", plan: "standard" }, "a demo clinic is not a trial");
+      assert.equal(await isDemoClinic(t.db, slug), true);
+      assert.equal((await loadClinicProfile(t.db, slug, now()))?.demoClinic, true, "the Report API sees it");
+      assert.equal(clinicPlanForModule(plan, now()).demoClinic, true);
+      const onRows = await listAudit({ db: t.db }, slug, { action: "clinic.demo_on" });
+      assert.equal(onRows.length, 1);
+      assert.equal(onRows[0].userId, PLATFORM_USER_ID, "the clinic's trail names ClinForms");
+      assert.deepEqual(onRows[0].detail, { demoClinic: true, membersWithDemoNumbers: 0 });
+      const platformOn = (await listAudit({ db: t.db }, PLATFORM_AUDIT_TENANT, { action: "platform.demo_on" })).filter((r) => r.targetId === slug);
+      assert.equal(platformOn.length, 1);
+      assert.equal(platformOn[0].userId, ADMIN.userId, "the platform's trail names the administrator");
+      assert.deepEqual(platformOn[0].detail, { tenantId: slug, demoClinic: true, membersWithDemoNumbers: 0 });
+
+      // Already on: nothing written, nothing audited.
+      assert.equal((await setDemoClinic(t.db, actor, slug, true, now())).changed, false);
+      assert.equal((await listAudit({ db: t.db }, slug, { action: "clinic.demo_on" })).length, 1);
+
+      // A trial and limits keep the flag; the clinic's own settings never touch it.
+      await setTrial(t.db, { kind: "script" }, slug, { days: 3, start: "now" }, now());
+      await setDraftingLimits(t.db, { kind: "script" }, slug, { perMinute: 10, perDay: 100 }, now());
+      await upsertClinicProfile(ctx(), slug, { organizationId: orgId, displayName: `${slug} renamed (fictional)`, draftingEnabled: false });
+      const both = await getClinicPlan(ctx(), slug);
+      assert.deepEqual({ demo: both?.demoClinic, status: both?.status, perDay: both?.livePerDay }, { demo: true, status: "trial", perDay: 100 });
+      assert.equal((await listClinicsOverview(t.db, now())).find((c) => c.tenantId === slug)?.plan?.demoClinic, true, "the platform overview");
+
+      // Off, with the admin script: members holding a made-up number are counted (they cannot approve in a real clinic);
+      // the trial and the limits stay; a script's change is in the clinic's trail only. Counts and flags, never a number.
+      await upsertMemberProfile(ctx(), orgId, "u-demo-sarah", { hcpcNumber: "PH-DEMO-01", canSign: true });
+      await upsertMemberProfile(ctx(), orgId, "u-real-sam", { hcpcNumber: "PH123456", canSign: true });
+      assert.deepEqual(await setDemoClinic(t.db, { kind: "script" }, slug, false, now()), { demoClinic: false, changed: true, membersWithDemoNumbers: 1 });
+      const after = await getClinicPlan(ctx(), slug);
+      assert.deepEqual({ demo: after?.demoClinic, status: after?.status, perDay: after?.livePerDay }, { demo: false, status: "trial", perDay: 100 });
+      assert.equal(await isDemoClinic(t.db, slug), false);
+      assert.equal((await loadClinicProfile(t.db, slug, now()))?.demoClinic, undefined, "a real clinic again");
+      const offRows = await listAudit({ db: t.db }, slug, { action: "clinic.demo_off" });
+      assert.deepEqual(offRows.map((r) => [r.userId, r.detail]), [[PLATFORM_USER_ID, { demoClinic: false, membersWithDemoNumbers: 1 }]]);
+      assert.ok(!(await listAudit({ db: t.db }, PLATFORM_AUDIT_TENANT)).some((r) => r.action === "platform.demo_off" && r.targetId === slug));
+      assert.ok(!JSON.stringify([...onRows, ...offRows, ...platformOn]).includes("PH-DEMO"), "no number in the audit rows");
+
+      // Unknown clinics are refused, and an unknown clinic never reads as a demo clinic.
+      await assert.rejects(setDemoClinic(t.db, actor, "no-such-clinic", true, now()), RepoInputError);
+      assert.equal(await isDemoClinic(t.db, "no-such-clinic"), false);
     });
 
     it("verify fix: an extension past 366 days in all is refused with a clear message (a running trial too), nothing changed", async () => {

@@ -7,6 +7,7 @@ import {
   changeTrialAction,
   createClinicAction,
   createOwnerResetLinkAction,
+  setDemoClinicAction,
   setLimitsAction,
   setTrialAction,
   type CreateClinicResult,
@@ -230,5 +231,34 @@ export function TrialForms({ clinics }: { clinics: PlanClinicOption[] }) {
         <Result state={limitState} />
       </form>
     </div>
+  );
+}
+
+/**
+ * Demo clinic on / off (made-up data only): for a clinic used to show or test ClinForms – e.g. ClinForms' own test
+ * clinic – never for a clinic with real patients. `demoClinics` = the clinics that are demo clinics now.
+ */
+export function DemoClinicForm({ clinics, demoClinics }: { clinics: PlanClinicOption[]; demoClinics: PlanClinicOption[] }) {
+  const [state, action] = useFormState(setDemoClinicAction, null as PlanActionResult | null);
+  return (
+    <form action={action} className="max-w-xl space-y-3" aria-label="Demo clinic">
+      <p className="text-sm text-slate-700">
+        {demoClinics.length === 0 ? "No demo clinics." : `Demo clinics now: ${demoClinics.map((c) => `${c.name} (${c.tenantId})`).join(", ")}.`}
+      </p>
+      <ClinicSelect clinics={clinics} id="demo-clinic-clinic" />
+      <input type="hidden" name="what" defaultValue="on" />
+      <div className="flex flex-wrap gap-2">
+        <WhatButton
+          what="on"
+          confirm="Make this a demo clinic? Use this only for a clinic with made-up data: its pages and every document are marked as a demonstration, and made-up PH-DEMO numbers can approve."
+        >
+          Make demo clinic
+        </WhatButton>
+        <WhatButton what="off" tone="secondary" confirm="Make this a real clinic again? Made-up PH-DEMO numbers then stop approving and must be replaced by HCPC numbers.">
+          Switch off
+        </WhatButton>
+      </div>
+      <Result state={state} />
+    </form>
   );
 }

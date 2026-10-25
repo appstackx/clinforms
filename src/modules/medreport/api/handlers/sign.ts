@@ -25,21 +25,18 @@ import "server-only";
  * - (fix wave 2) a clinic's member never approves drafted answers that speak in ANOTHER clinician's first
  *   person (report.author ≠ the signer and an unedited drafted answer says "I …"): 409 SIGNER_NOT_AUTHOR with
  *   the questions to edit (core/voice.ts otherClinicianVoice). The demo is unchanged.
- * - Demonstration clinics (core/demo-clinic.ts; clinic_profile.demo_clinic read on the server): a member with role
- *   owner / admin / clinician may send `demoSigner` = the id of one of the FIXED fictional clinicians and approve as
- *   them – the receipt's signer is that clinician (name, PH-DEMO-0N, role), approvedVia {kind "user", sid, userId,
- *   demoSigner}, the same statement, typed signature (the clinician's name) and attestations, and the author rule
- *   applies to that clinician (drafts written as them may be approved as them). Refused: `demoSigner` from any
- *   other clinic or the public demo (403 DEMO_SIGNER_NOT_ALLOWED), from staff (403 SIGNER_NOT_ALLOWED), an unknown
- *   id (422 VALIDATION_FAILED). The audit row names the clinician's id, name and number beside the member's own
- *   ids. (PH-DEMO-0N numbers in members' own signing details are accepted only in a demonstration clinic – the
- *   members settings page checks that, src/lib/hcpc.ts signingNumberFor.)
+ * - (10/2026) DEMO clinics (core/demo-clinic.ts; ClinicProfile.demoClinic, read on the server): a member whose
+ *   signing details hold a made-up PH-DEMO-NN number approves with it exactly like a real clinician does. In ANY
+ *   OTHER clinic such a number never approves: 403 DEMO_NUMBER_NOT_ALLOWED, checked after every other check so the
+ *   existing refusals read as before (a clinic that was a demo clinic and is real again; the members page already
+ *   refuses to save one there). The audit row of a demo clinic's approval says
+ *   so (demoClinic, and the made-up number when one was used – never a real registration number). The public demo
+ *   (`/reports`, fictional signer from the body) is unchanged.
  *
  * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
  */
 import {
   AUDIT_ACTIONS,
-  SIGN_ROLES,
   actorInDemoClinic,
   assertActorEpisode,
   assertActorTenant,
@@ -52,8 +49,8 @@ import {
 import { formMapSha256 } from "../../auth/attestations";
 import { createReceipt } from "../../auth/sign-receipt";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
+import { isDemoHcpc, normaliseDemoHcpc } from "../../core/demo-clinic";
 import { validateReport } from "../../core/validation";
-import { demoClinicianAsSigner, findDemoClinician, type DemoClinician } from "../../core/demo-clinic";
 import type { Clinician, SignReceipt } from "../../core/types";
 import { otherClinicianVoice } from "../../core/voice";
 import { WORDING } from "../../core/wording";
@@ -64,7 +61,7 @@ import { requireAttestedForm, resolveTemplate } from "../resolve-template";
 const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 const normaliseHcpc = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
 
-function approvedVia(actor: Actor, demo: DemoClinician | null): NonNullable<SignReceipt["approvedVia"]> {
+function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"]> {
   if (actor.via === "demo") {
     const claims = actor.session;
     return {
@@ -79,7 +76,6 @@ function approvedVia(actor: Actor, demo: DemoClinician | null): NonNullable<Sign
     ...(actor.userId ? { userId: actor.userId } : {}),
     ...(actor.session ? { launchSid: actor.session.sid } : {}),
     ...(actor.session?.clinician ? { clinician: actor.session.clinician } : {}),
-    ...(demo ? { demoSigner: demo.id } : {}),
   };
 }
 
@@ -105,28 +101,7 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
 
   // Who signs.
   let signer: Clinician;
-  let demo: DemoClinician | null = null;
-  if (parsed.data.demoSigner !== undefined) {
-    // Approving as a fictional demonstration clinician: a demonstration clinic's members only (read on the server).
-    if (!(await actorInDemoClinic(deps, actor))) {
-      return problem(403, WORDING.demoClinic.notAllowedTitle, { code: "DEMO_SIGNER_NOT_ALLOWED", detail: WORDING.demoClinic.notAllowedDetail });
-    }
-    if (SIGN_ROLES.indexOf(actor.role) < 0) {
-      return problem(403, WORDING.server.access.cannotSignTitle, { code: "SIGNER_NOT_ALLOWED", detail: WORDING.demoClinic.staffDetail });
-    }
-    demo = findDemoClinician(parsed.data.demoSigner);
-    if (!demo) {
-      return problem(422, WORDING.demoClinic.unknownClinicianTitle, {
-        code: "VALIDATION_FAILED",
-        detail: WORDING.demoClinic.unknownClinicianDetail,
-        issues: [{ path: "demoSigner", message: WORDING.demoClinic.unknownClinicianDetail }],
-      });
-    }
-    signer = demoClinicianAsSigner(demo);
-    if (normaliseHcpc(parsed.data.signer.hcpc) !== normaliseHcpc(signer.hcpc)) {
-      return problem(403, WORDING.server.access.signAsYourselfTitle, { code: "SIGNER_MISMATCH", detail: WORDING.demoClinic.signAsDemoMismatch(signer.name) });
-    }
-  } else if (actor.via === "demo") {
+  if (actor.via === "demo") {
     signer = parsed.data.signer;
   } else {
     signer = memberSigner(actor); // 403 SIGNER_NOT_ALLOWED
@@ -183,16 +158,26 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
     });
   }
 
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only – never on a real clinic's form. Checked last, so
+  // every other refusal reads as before. The clinic's flag is the server's (false for the public demo, and when the
+  // clinic's profile cannot be read: fail closed).
+  const demoClinic = actor.via === "demo" ? false : await actorInDemoClinic(deps, actor);
+  if (actor.via !== "demo" && isDemoHcpc(signer.hcpc) && !demoClinic) {
+    logEvent("sign_refused_demo_number", { template: template.id, ms: Date.now() - started });
+    return problem(403, WORDING.demoClinic.numberNotAllowedTitle, { code: "DEMO_NUMBER_NOT_ALLOWED", detail: WORDING.demoClinic.numberNotAllowedDetail });
+  }
+
   const receipt = await createReceipt({
     report,
     signer,
     statementAccepted: true,
     attestations: [...template.attestations],
     ...(resolved.form ? { formMapSha256: formMapSha256(resolved.form) } : {}),
-    approvedVia: approvedVia(actor, demo),
+    approvedVia: approvedVia(actor),
   });
   const body: SignResponse = { receipt, flags: result.flags };
-  logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoSigner: demo?.id ?? null, ms: Date.now() - started });
+  logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
+  const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;
   await auditActor(deps, actor, {
     action: AUDIT_ACTIONS.sign,
     targetType: "report",
@@ -202,8 +187,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
       receiptMac: macPrefix(receipt.mac),
       contentSha256: receipt.contentSha256.slice(0, 16),
       flags: result.flags.length,
-      // Demonstration clinics: the fixed fictional clinician approved as (who acted is the row's own user id).
-      ...(demo ? { demoSigner: demo.id, demoSignerName: demo.name, demoSignerHcpc: demo.hcpc } : {}),
+      // A demo clinic's approval says so; a made-up number is recorded (it identifies nobody), a real one never is.
+      ...(demoClinic ? { demoClinic: true, ...(demoNumber ? { demoNumber } : {}) } : {}),
     },
   });
   return json(body);

@@ -339,7 +339,7 @@ export function PreviewPanel({
         <span className="flex-1">{signed ? "FINAL – approved by the clinician" : "DRAFT – awaiting clinician approval"}</span>
       </div>
       {demoClinic ? (
-        // A demonstration clinic: every output carries a notice (the form's own, else the clinic's).
+        // A demo clinic: every output carries a notice (the form's own, else the demo clinic notice).
         <DemoNoticeBar notice={demoOutputNotice(isForm ? form : null, true)} label={form?.demoNotice && isForm ? "Demonstration form" : WORDING.demoClinic.label} />
       ) : isForm ? (
         <DemoNoticeBar notice={form?.demoNotice} />
