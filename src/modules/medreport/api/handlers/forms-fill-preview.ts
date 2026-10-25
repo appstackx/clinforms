@@ -15,16 +15,19 @@ import "server-only";
  * summary PDF (docgen/question-summary.ts), and `fileBase64` is ignored.
  *
  * Wave 2: an actor is required (auth/actor.ts; any role); the report and the form map must be the actor's
- * clinic's (403 TENANT_MISMATCH).
+ * clinic's (403 TENANT_MISMATCH). A demo clinic's preview (ClinicProfile.demoClinic, read on the server)
+ * carries the demonstration notice on every page (core/demo-clinic.ts demoOutputNotice).
  *
  * Owner: forms-engine agent.
  */
-import { assertActorTenant, requireActor } from "../../auth/actor";
+import { actorInDemoClinic, assertActorTenant, requireActor } from "../../auth/actor";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
+import { demoOutputNotice } from "../../core/demo-clinic";
 import { buildFormAnswers } from "../../core/forms";
 import { isQuestionSet } from "../../core/question-set";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
+import { stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
 import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
 import { CONTENT_TYPES, FormFillPreviewRequestSchema, HEADERS } from "../contract";
@@ -49,10 +52,13 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
   if (!resolved.ok) return resolved.response;
 
   const started = Date.now();
+  // Demo clinics (read on the server): the preview carries the demonstration notice too.
+  const notice = (await actorInDemoClinic(deps, actor)) ? demoOutputNotice(form, true) : undefined;
   if (isQuestionSet(form)) {
     const out = await renderQuestionSummaryPdf(report, form, resolved.template);
-    logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: out.bytes.byteLength, warnings: 0, ms: Date.now() - started });
-    return fileResponse(out.bytes, {
+    const bytes = notice ? await stampPdfDemoNotice(out.bytes, notice, { draft: true }) : out.bytes;
+    logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: bytes.byteLength, warnings: 0, ms: Date.now() - started });
+    return fileResponse(bytes, {
       contentType: CONTENT_TYPES.pdf,
       fileName: `${out.baseName}.pdf`,
       inline: true,
@@ -65,7 +71,7 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
 
   let answers = buildFormAnswers(report, form, { receipt: null });
   if (reviewMarkers) answers = withSourceMarkers(answers, report, form);
-  const out = await renderFormFile({ form, file, answers, draft: true, reviewMarkers, format: "original" });
+  const out = await renderFormFile({ form, file, answers, draft: true, reviewMarkers, format: "original", ...(notice ? { demoNotice: notice } : {}) });
 
   logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
   return fileResponse(out.bytes, {

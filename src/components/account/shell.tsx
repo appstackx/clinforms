@@ -83,7 +83,7 @@ export function Field({
   defaultValue?: string | number;
   hint?: React.ReactNode;
   readOnly?: boolean;
-  inputMode?: "numeric" | "text" | "email" | "tel";
+  inputMode?: "numeric" | "decimal" | "text" | "email" | "tel";
   maxLength?: number;
   minLength?: number;
   pattern?: string;

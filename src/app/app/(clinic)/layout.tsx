@@ -3,8 +3,9 @@ import { BrandMark } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
 import { isManager } from "@/server/auth/roles";
+import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
 import { TrialBannerBar } from "@/components/account/trial-banner";
-import { noteClinicVisit } from "@/server/admin/clinic-plan";
+import { isDemoClinic, noteClinicVisit } from "@/server/admin/clinic-plan";
 import { requireAppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { SignOutForm } from "../session-forms";
@@ -15,19 +16,26 @@ export default async function ClinicLayout({ children }: { children: React.React
   const { session, membership } = await requireAppContext();
   const manager = isManager(membership.role);
   // 10/2026: the clinic's trial – an owner's first visit starts a trial that waits for it; the banner says what is left.
-  const trial = await noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role });
+  // A demo clinic (clinic_plan.demo_clinic, set by ClinForms staff only): the same banner as the Studio.
+  const [trial, demoClinic] = await Promise.all([
+    noteClinicVisit(getDb(), { tenantId: membership.tenantId, userId: session.user.id, sessionId: session.session.id, role: membership.role }),
+    isDemoClinic(getDb(), membership.tenantId),
+  ]);
   const items: NavItem[] = [
     { href: "/app", label: "Overview" },
     { href: "/app/studio", label: "Studio" },
     { href: "/app/settings/clinic", label: "Clinic" },
     { href: "/app/settings/members", label: "Members" },
     { href: "/app/settings/security", label: "Security" },
+    // 25/10/2026: every role – owners and administrators see the package and full usage, everyone else "X of N".
+    { href: "/app/settings/plan", label: "Plan & usage" },
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys" }] : []),
     // Every role: owners and administrators see the whole clinic's activity, everyone else their own.
     { href: "/app/settings/activity", label: "Activity" },
   ];
   return (
     <>
+      <DemoClinicBanner on={demoClinic} />
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">

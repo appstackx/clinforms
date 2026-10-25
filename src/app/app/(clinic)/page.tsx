@@ -43,6 +43,7 @@ export default async function ClinicOverviewPage() {
     { href: "/app/settings/clinic", label: "Clinic details", text: manager ? "Name, address and how long reports are kept." : "Your clinic's details." },
     { href: "/app/settings/members", label: "Members", text: manager ? "Invite people, set roles and signing details." : "Who is in your clinic." },
     { href: "/app/settings/security", label: "Security", text: "Backup codes and where you are signed in." },
+    { href: "/app/settings/plan", label: "Plan & usage", text: manager ? "Your package and the reports used this month." : "Reports your clinic has used this month." },
     ...(manager ? [{ href: "/app/settings/api-keys", label: "API keys", text: "Keys for connecting your practice-management system." }] : []),
     {
       href: "/app/settings/activity",

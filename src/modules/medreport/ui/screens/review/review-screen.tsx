@@ -22,6 +22,7 @@ import { BookOpenText, FileQuestion, Flag, History, Loader2, NotebookPen, PanelR
 import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
+import { isDemoHcpc } from "../../../core/demo-clinic";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
@@ -30,7 +31,7 @@ import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "
 import { otherClinicianVoice } from "../../../core/voice";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
-import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useDemoClinic, useHostHooks, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { TENANT_COPY } from "../../studio-copy";
 import {
@@ -314,15 +315,18 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     ? (member?.name ?? null)
     : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null));
   // Fix wave 2: who may approve in a clinic's Studio, and drafted answers that speak as another clinician.
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (the server refuses it elsewhere, too).
+  const demoClinic = useDemoClinic();
   const tenantSignProblem = useMemo((): string | null => {
     if (!tenant || signed || !member) return null;
     if (member.role === "staff") return TENANT_COPY.review.staffCannotApprove;
     if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
+    if (!demoClinic && isDemoHcpc(member.hcpc)) return WORDING.demoClinic.numberNotAllowedDetail;
     const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
     if (!voice) return null;
     const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
     return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
-  }, [tenant, signed, member, report, questions]);
+  }, [tenant, signed, member, report, questions, demoClinic]);
   const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
 
   const startAmendment = useCallback(async () => {

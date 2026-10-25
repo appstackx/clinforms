@@ -14,6 +14,9 @@
  *   question can be approved blank); questions left for the referrer's use are skipped.
  * - before approval every copy is marked "Draft – not yet approved"; after approval the approved text
  *   is copied, with who approved it and when.
+ * - a demo clinic (`demoNotice`, core/demo-clinic.ts demoOutputNotice): every copy also carries the
+ *   demonstration notice – first and last line of "Copy all" / the .txt, and in brackets before a single answer.
+ *   Without it the text is exactly as before.
  *
  * Pure: no React, no Node built-ins, no env. Safe in the browser and on the server.
  */
@@ -123,9 +126,13 @@ export function formatCopyBlock(entry: Pick<CopyEntry, "number" | "question" | "
   return value.includes("\n") ? `${lead}\n${value}` : `${lead} ${value}`;
 }
 
-/** The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft). */
-export function copyTextForAnswer(answer: string, approved: boolean): string {
-  return approved ? answer : `[${WORDING.answersCopy.draftMarker}] ${answer}`;
+/**
+ * The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft; in a demo clinic
+ * always marked with the demonstration notice).
+ */
+export function copyTextForAnswer(answer: string, approved: boolean, demoNotice?: string): string {
+  const marked = approved ? answer : `[${WORDING.answersCopy.draftMarker}] ${answer}`;
+  return demoNotice ? `[${demoNotice}] ${marked}` : marked;
 }
 
 /** The copy entries of a report: its form's questions in order (sign-off included, referrer's-use boxes skipped). */
@@ -177,6 +184,8 @@ export function buildAnswersCopy(input: {
   form: { fields: readonly CopyField[]; title?: string; referrer?: { name: string } } | null;
   /** Title when there is no form ref (built-in report): its template name. */
   title?: string;
+  /** A demo clinic: the demonstration notice every copy carries (core/demo-clinic.ts demoOutputNotice). */
+  demoNotice?: string;
 }): AnswersCopy {
   const { report, form } = input;
   const w = WORDING.answersCopy;
@@ -190,9 +199,10 @@ export function buildAnswersCopy(input: {
     title.toLowerCase().includes(referrer.toLowerCase()) ? title : `${title} – ${referrer}`,
     `Patient: ${report.patientLabel}`,
     approved && receipt ? w.approvedHeader(receipt.signer.name, receipt.signer.hcpc, formatUkDate(todayIso(new Date(receipt.signedAt)))) : w.draftMarker,
+    ...(input.demoNotice ? [input.demoNotice] : []),
   ];
   const blocks = entries.map((e) => formatCopyBlock(e, approved));
-  const footer = approved ? [] : ["", w.draftMarker];
+  const footer = [...(approved ? [] : ["", w.draftMarker]), ...(input.demoNotice ? ["", input.demoNotice] : [])];
   const text = [...header, "", blocks.join("\n\n"), ...footer].join("\n");
   return { approved, entries, toComplete, header, text };
 }

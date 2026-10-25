@@ -274,6 +274,8 @@ export const PROBLEM_CODES = [
   "SIGNER_NOT_AUTHOR",
   // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
   "TRIAL_ENDED",
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (sign; core/demo-clinic.ts).
+  "DEMO_NUMBER_NOT_ALLOWED",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -442,6 +444,11 @@ export const DraftsRequestSchema = z
     author: ClinicianSchema.optional(),
     /** Wave 2: the report being drafted (recorded in a clinic's audit trail; never required). */
     reportId: z.string().min(1).max(128).optional(),
+    /**
+     * 25/10/2026 (usage): the approved report this one amends (report.amends.reportId), so drafting an amended
+     * version never counts as a new report. Checked by the host against its own record of approvals.
+     */
+    amendsReportId: z.string().min(1).max(128).optional(),
   })
   .superRefine((body, ctx) => {
     if (!body.form && body.sectionKeys.length > MAX_SECTIONS_PER_DRAFT) {

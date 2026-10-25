@@ -223,6 +223,8 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
         sectionKeys: group.keys,
         // The report being drafted: a clinic's audit trail names it (ids only).
         reportId: report.id,
+        // An amended version of an approved report: drafting it never counts as a new report (usage).
+        ...(report.amends ? { amendsReportId: report.amends.reportId } : {}),
         prefer: "auto" as const,
         ...(form && { form }),
         ...(form && report.author ? { author: report.author } : {}),

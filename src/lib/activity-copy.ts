@@ -7,6 +7,7 @@
  * Every audit action the app writes should have a label here. An action without one is still shown, with a
  * readable name made from its code (activityLabel), so new actions never break the page.
  */
+import { WORDING } from "../modules/medreport/core/wording";
 
 export interface ActivityGroup {
   label: string;
@@ -44,7 +45,11 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.trial_ended",
       "clinic.trial_converted",
       "clinic.limits_set",
+      "clinic.package_set",
+      "clinic.package_removed",
       "clinic.forms_loaded",
+      "clinic.demo_on",
+      "clinic.demo_off",
       "api_key.create",
       "api_key.revoke",
       "audit.export",
@@ -96,7 +101,11 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.trial_ended": "Trial ended by ClinForms",
   "clinic.trial_converted": "Trial converted to a full account",
   "clinic.limits_set": "Drafting limits changed by ClinForms",
+  "clinic.package_set": "Package set by ClinForms",
+  "clinic.package_removed": "Package removed by ClinForms",
   "clinic.forms_loaded": "Forms added to the library by ClinForms",
+  "clinic.demo_on": "Made a demo clinic by ClinForms",
+  "clinic.demo_off": "Demo clinic switched off by ClinForms",
   "api_key.create": "API key created",
   "api_key.revoke": "API key revoked",
   "audit.export": "Activity downloaded",
@@ -129,7 +138,12 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.trial_ended": "Trial ended",
   "platform.trial_converted": "Trial converted to a full account",
   "platform.limits_set": "Drafting limits changed",
+  "platform.package_set": "Package set",
+  "platform.package_removed": "Package removed",
+  "platform.usage_export": "Usage downloaded (CSV)",
   "platform.owner_reset_link": "Owner password reset link created",
+  "platform.demo_on": "Demo clinic switched on",
+  "platform.demo_off": "Demo clinic switched off",
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -206,7 +220,8 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "member.role_change":
       return detail.from ? `${role(detail.from)} → ${role(detail.to)}` : `Now ${role(detail.to)}`;
     case "member.profile_update":
-      return detail.canSign === true ? "May sign forms" : "Does not sign forms";
+      // A made-up demo number (demo clinics only) is flagged in the row, never stored as the number itself.
+      return `${detail.canSign === true ? "May sign forms" : "Does not sign forms"}${detail.demoNumber === true ? " · made-up demo number" : ""}`;
     case "clinic.update": {
       const fields = Array.isArray(detail.fields) ? detail.fields.map((f) => CLINIC_FIELDS[String(f)] ?? String(f)) : [];
       return fields.length ? `Changed: ${fields.join(", ")}` : null;
@@ -240,8 +255,14 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
       return parts.length ? parts.join(" · ") : null;
     }
-    case "report.render_final":
-      return detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+    case "report.render_final": {
+      const format = detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
+      return [format, detail.demoClinic === true ? WORDING.demoClinic.finalWithNotice : null].filter(Boolean).join(" · ") || null;
+    }
+    case "report.sign":
+      // A demo clinic's approval says so: with the made-up number used, or with a registration number (never shown).
+      if (detail.demoClinic !== true) return null;
+      return typeof detail.demoNumber === "string" ? WORDING.demoClinic.approvedWithDemoNumber(detail.demoNumber) : WORDING.demoClinic.approvedInDemoClinic;
     case "report.update":
     case "report.create":
     case "report.store_signed":
@@ -271,14 +292,47 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "clinic.trial_converted":
     case "platform.trial_converted":
       return withClinic(action, detail, null);
+    case "clinic.demo_on":
+    case "platform.demo_on":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOn);
+    case "clinic.demo_off":
+    case "platform.demo_off":
+      return withClinic(action, detail, WORDING.demoClinic.switchedOff(typeof detail.membersWithDemoNumbers === "number" ? detail.membersWithDemoNumbers : 0));
     case "clinic.limits_set":
     case "platform.limits_set": {
       const per = (v: unknown, unit: string) => (typeof v === "number" ? `${v.toLocaleString("en-GB")} a ${unit}` : `default a ${unit}`);
       return withClinic(action, detail, `${per(detail.perMinute, "minute")}, ${per(detail.perDay, "day")}`);
     }
+    case "clinic.package_set":
+    case "platform.package_set": {
+      const name = PACKAGE_NAMES[String(detail.package)] ?? null;
+      const price = typeof detail.monthlyPricePence === "number" ? `${pounds(detail.monthlyPricePence)} a month` : null;
+      const reports = typeof detail.reportsIncluded === "number" ? `${detail.reportsIncluded.toLocaleString("en-GB")} ${detail.reportsIncluded === 1 ? "report" : "reports"}` : null;
+      const extra =
+        typeof detail.extraReportPence === "number" ? `extra ${pounds(detail.extraReportPence)} each` : detail.extraReportPence === null ? "extra report price not set yet" : null;
+      return withClinic(action, detail, [name, price, reports, extra].filter(Boolean).join(", ") || null);
+    }
+    case "clinic.package_removed":
+    case "platform.package_removed":
+      return withClinic(action, detail, null);
+    case "platform.usage_export":
+      return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
       return null;
   }
+}
+
+const PACKAGE_NAMES: Readonly<Record<string, string>> = {
+  starter: "Starter",
+  practice: "Practice",
+  group: "Group",
+  group_plus: "Group Plus",
+  custom: "Custom",
+  trial: "Trial",
+};
+
+function pounds(pence: number): string {
+  return `£${(pence / 100).toFixed(pence % 100 === 0 ? 0 : 2)}`;
 }
 
 /** "24 October 2026, 10:15" (UK time). */

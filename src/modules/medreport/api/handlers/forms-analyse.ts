@@ -27,6 +27,9 @@ import "server-only";
  * passcode for the public demo, the clinic's own limits for a member); the extra parallel calls of a long
  * form count against the same limits. A clinic's live analysis is written to its audit trail.
  *
+ * Usage (25/10/2026): a clinic's form reading is counted (api/usage.ts recordUsage): every reading, its live calls and
+ * their tokens, and a live call that failed (estimated cost on the platform page only). The public demo never counts.
+ *
  * Owner: ai agent.
  */
 import { analyseFormFile } from "../../ai/analyse-form";
@@ -41,6 +44,7 @@ import { listMergeTokens } from "../../core/merge-fields";
 import { FormsAnalyseRequestSchema, type FormsAnalyseResponse } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
+import { recordUsage, usageOfError } from "../usage";
 
 export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
@@ -90,7 +94,19 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
       cacheReadTok: usage?.cacheReadInputTokens,
       cacheWriteTok: usage?.cacheCreationInputTokens,
     });
-    if (result.form.analysis.mode === "live") {
+    const live = result.form.analysis.mode === "live";
+    const failure = result.liveFailure;
+    const countedUsage = live ? usage : failure?.usage;
+    const countedModel = live ? result.form.analysis.model : failure?.model;
+    await recordUsage(deps, actor, {
+      kind: "form_read",
+      read: true,
+      liveCalls: live ? (result.live?.chunks ?? 1) : 0,
+      failedCalls: failure ? 1 : 0,
+      ...(countedModel ? { model: countedModel } : {}),
+      ...(countedUsage ? { usage: countedUsage } : {}),
+    });
+    if (live) {
       await auditActor(deps, actor, {
         action: AUDIT_ACTIONS.formAnalyseLive,
         targetType: "form",
@@ -137,6 +153,10 @@ export const handleFormsAnalyse: MedreportHandler = async (req, _ctx, deps) => {
     return json(response);
   } catch (err) {
     if (err instanceof DraftGenerationError) {
+      // A live reading that failed after the drafting service answered still cost tokens.
+      if (gate.mode === "live" && err.code !== "LIVE_AI_UNAVAILABLE") {
+        await recordUsage(deps, actor, { kind: "form_read", read: false, liveCalls: 0, failedCalls: 1, ...usageOfError(err) });
+      }
       logEvent("form_analysis_failed", { kind: file.mimeType, bytes: file.sizeBytes, code: err.code, ms: Date.now() - started });
       return problem(err.code === "LIVE_AI_UNAVAILABLE" ? 503 : 502, "Form analysis failed", {
         code: err.code,

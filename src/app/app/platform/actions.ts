@@ -5,7 +5,9 @@
  */
 import { revalidatePath } from "next/cache";
 import { ACCOUNT_ERRORS, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type InviteDelivery } from "@/lib/account-copy";
-import { endTrial, extendTrial, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
+import { endTrial, extendTrial, setDemoClinic, setDraftingLimits, setTrial } from "@/server/admin/clinic-plan";
+import { removePackage, setPackage } from "@/server/admin/clinic-package";
+import { formatPence, isPackageId, packageLabel, parsePounds, reportsText, type SetupFeeStatus } from "@/lib/packages";
 import { platformActionAdmin } from "@/server/admin/guards";
 import { PLATFORM_PATH, createClinicAsPlatform, createOwnerResetLinkAsPlatform, markAccessRequest } from "@/server/admin/platform-console";
 import { getAuth } from "@/server/auth/auth";
@@ -187,5 +189,73 @@ export async function setLimitsAction(_prev: PlanActionResult | null, form: Form
     const plan = await setDraftingLimits(getDb(), { kind: "platform", admin }, tenantId, { perMinute, perDay });
     const text = (v: number | null, unit: string) => (v === null ? `the default a ${unit}` : `${v.toLocaleString("en-GB")} a ${unit}`);
     return `${tenantId}: drafting limits are ${text(plan.livePerMinute, "minute")} and ${text(plan.livePerDay, "day")}.`;
+  });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Packages (25/10/2026) – every change audited (src/server/admin/clinic-package.ts)
+ * ----------------------------------------------------------------------------------------------*/
+
+function poundsField(form: FormData, name: string, what: string, required: boolean): number | null {
+  const pence = parsePounds(String(form.get(name) ?? ""));
+  if (pence === null) {
+    if (required) throw new RepoInputError(`Enter ${what} in pounds (for example 199 or 1.50).`);
+    return null;
+  }
+  if (Number.isNaN(pence)) throw new RepoInputError(`${what[0].toUpperCase()}${what.slice(1)} must be an amount in pounds, for example 199 or 1.50.`);
+  return pence;
+}
+
+/** Saves a clinic's package ("what" = save), or removes it ("what" = remove). */
+export async function packageAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const actor = { kind: "platform" as const, admin };
+    if (form.get("what") === "remove") {
+      await removePackage(getDb(), actor, tenantId);
+      return `${tenantId}: the package was removed. Usage is still counted; nothing is shown as an allowance.`;
+    }
+    const id = String(form.get("package") ?? "");
+    if (!isPackageId(id)) throw new RepoInputError("Choose a package.");
+    const reports = intField(form, "reportsIncluded");
+    if (reports === null || Number.isNaN(reports)) throw new RepoInputError("Enter the reports included a month (a whole number).");
+    const status = String(form.get("setupFeeStatus") ?? "");
+    const saved = await setPackage(getDb(), actor, tenantId, {
+      package: id,
+      monthlyPricePence: poundsField(form, "monthlyPrice", "the monthly price", true) as number,
+      reportsIncluded: reports,
+      // Empty = not agreed yet (a Custom deal before its extra price is settled): extra reports are counted, shown without a price.
+      extraReportPence: poundsField(form, "extraReportPrice", "the price of an extra report", false),
+      foundingPricePence: poundsField(form, "foundingPrice", "the founding price", false),
+      foundingUntil: String(form.get("foundingUntil") ?? "").trim() || null,
+      setupFeePence: poundsField(form, "setupFee", "the set-up fee", false),
+      setupFeeStatus: status === "due" || status === "paid" || status === "waived" ? (status as SetupFeeStatus) : null,
+      startsOn: String(form.get("startsOn") ?? "").trim() || null,
+      notes: String(form.get("notes") ?? ""),
+    });
+    const founding = saved.foundingPricePence !== null ? `, founding ${formatPence(saved.foundingPricePence)} until ${saved.foundingUntil}` : "";
+    return `${tenantId}: ${packageLabel(saved.package)} – ${formatPence(saved.monthlyPricePence)} a month, ${reportsText(saved.reportsIncluded)}, extra ${saved.extraReportPence === null ? "not set yet" : `${formatPence(saved.extraReportPence)} each`}${founding}; from ${saved.startsOn}.`;
+  });
+}
+
+/**
+ * Demo clinic on / off ("what" = "on" | "off"): a clinic with made-up data only – banner, a notice on every output,
+ * made-up PH-DEMO numbers may approve. Platform administrators only (re-checked here); audited under the clinic and
+ * the platform (src/server/admin/clinic-plan.ts setDemoClinic). A clinic's own pages can never change it.
+ */
+export async function setDemoClinicAction(_prev: PlanActionResult | null, form: FormData): Promise<PlanActionResult> {
+  const admin = await platformActionAdmin();
+  if (!admin) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  return runPlanChange(async () => {
+    const tenantId = String(form.get("tenantId") ?? "").trim();
+    const what = String(form.get("what") ?? "");
+    if (what !== "on" && what !== "off") throw new RepoInputError("Choose whether to switch the demo clinic on or off.");
+    const r = await setDemoClinic(getDb(), { kind: "platform", admin }, tenantId, what === "on");
+    const stale = r.membersWithDemoNumbers;
+    if (what === "on") return r.changed ? `${tenantId} is now a demo clinic: made-up data only, made-up PH-DEMO numbers accepted.` : `${tenantId} already is a demo clinic.`;
+    const base = r.changed ? `${tenantId} is a real clinic again.` : `${tenantId} is not a demo clinic.`;
+    return stale > 0 ? `${base} ${stale} ${stale === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced (Settings → Members).` : base;
   });
 }

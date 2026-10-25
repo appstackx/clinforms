@@ -25,7 +25,7 @@ import type { FormAnalysisStep, FormOutlineSummary } from "../api/contract";
 import { DEMO_TENANT_ID } from "../config.public";
 import { createId } from "../core/ids";
 import { REFERRER_TO_BE_CONFIRMED } from "../core/labels";
-import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
+import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId, TokenUsage } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
 import { assertReadableOutline, buildDocxOutline } from "../forms/docx-outline";
 import type { DecodedFormFile } from "../forms/file";
@@ -83,6 +83,11 @@ export interface AnalyseFormFileResult {
   /** Post-validation counts. */
   dropped: number;
   repaired: number;
+  /**
+   * 25/10/2026 (usage): a live reading that failed after it was sent (a stored map or rules took over) – its tokens
+   * when the drafting service answered, so the clinic's usage records the call.
+   */
+  liveFailure?: { code: string; usage?: TokenUsage; model?: string };
 }
 
 /** Deterministic parsing by the forms engine. */
@@ -254,6 +259,9 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
   // Live Claude, or rules.
   let live: AnalyseFormLiveResult | undefined;
   let liveError: DraftGenerationError | null = null;
+  let liveSent = false;
+  const failureOf = (err: DraftGenerationError): AnalyseFormFileResult["liveFailure"] =>
+    liveSent ? { code: err.code, ...(err.usage ? { usage: err.usage } : {}), ...(err.model ? { model: err.model } : {}) } : undefined;
   if (input.mode === "live") {
     t = Date.now();
     try {
@@ -261,6 +269,7 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       if (calls > 1 && input.reserveExtraLiveCalls && !(await input.reserveExtraLiveCalls(calls - 1))) {
         throw new DraftGenerationError("AI_ERROR", WORDING.server.analysis.tooManyCalls(calls));
       }
+      liveSent = true;
       live = await analyseFormLive({
         parsed: redaction.parsed,
         fileBytes: blanked.bytes,
@@ -285,7 +294,8 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       if (!(err instanceof DraftGenerationError) || err.code === "LIVE_AI_UNAVAILABLE") throw err;
       liveError = err;
       const stored = input.rulesOnly ? null : await storedMap(err);
-      if (stored) return stored;
+      const failure = failureOf(err);
+      if (stored) return failure ? { ...stored, liveFailure: failure } : stored;
       trace.push({ label: "Proposed the form map", status: "warning", ms: Date.now() - t, detail: WORDING.server.analysis.liveFailedRules(err.code) });
     }
   }
@@ -346,5 +356,6 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
   // A local demonstration form read live or by rules is labelled as such too (ai/demo-assets.ts).
   const notice = demoAssetNotice(input.file.sha256, input.referrer?.name ?? live?.output.referrerName.trim());
   if (notice) form.demoNotice = notice;
-  return { form, outlineSummary, trace, live, dropped: checked.dropped, repaired: checked.repaired };
+  const liveFailure = liveError ? failureOf(liveError) : undefined;
+  return { form, outlineSummary, trace, live, dropped: checked.dropped, repaired: checked.repaired, ...(liveFailure ? { liveFailure } : {}) };
 }

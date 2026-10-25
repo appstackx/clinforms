@@ -16,6 +16,7 @@ import "server-only";
  * DELETE → {deleted}; the map's file is deleted too when no other map of the clinic uses it (as in the
  *        browser store). If-Match optional. (Fix wave 2) a confirmed map is deleted only by a role that may confirm.
  * Every change writes an audit row (ids, revision and status only).
+ * Usage (25/10/2026): a portal question set (kind "questions") stored for the first time is counted for the clinic.
  *
  * Owner: store slice (wave 2).
  */
@@ -37,6 +38,7 @@ import {
 import type { TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
+import { recordUsage } from "../usage";
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -151,6 +153,7 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
     targetId: id,
     detail: { rev: result.rev, status: form.status, kind: form.kind, downgraded },
   });
+  if (created && form.kind === "questions") await recordUsage(deps, t.actor, { kind: "question_set_created", formId: id });
   const body: StoreFormResponse = { rev: result.rev, updatedAt: result.updatedAt, form, ...(downgraded ? { downgraded: true } : {}) };
   return jsonWithRev(body, result.rev, { status: created ? 201 : 200 });
 };

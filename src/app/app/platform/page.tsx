@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BrandMark, PageHeader, Panel } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
@@ -10,8 +11,11 @@ import { getDb } from "@/server/db";
 import { emailProviderName } from "@/server/email";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction } from "./actions";
-import { CreateClinicForm, OwnerResetForm, TrialForms } from "./forms";
+import { CreateClinicForm, DemoClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
 import type { ClinicOverview } from "@/server/admin/platform-console";
+import { formatPence, packageLabel, reportsText } from "@/lib/packages";
+import { readClinicPackages, type ClinicPackage } from "@/server/repos/clinic-package";
+import { ukDateOf } from "@/server/repos/usage-period";
 
 const UK_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -21,6 +25,14 @@ function trialText(c: ClinicOverview): string {
   if (a.state === "trial") return a.pending ? `${a.daysLeft}-day trial, starts at the owner's first sign-in` : `Trial, ${a.daysLeft} ${a.daysLeft === 1 ? "day" : "days"} left (ends ${UK_DAY.format(new Date(a.endsAt ?? ""))})`;
   if (a.state === "trial_ended") return `Trial ended ${UK_DAY.format(new Date(a.endedAt))}`;
   return a.plan === "paid" ? "Full account (trial converted)" : "–";
+}
+
+/** The clinic's package in a few words (25/10/2026). */
+function packageText(p: ClinicPackage | undefined): string {
+  if (!p) return "–";
+  return `${packageLabel(p.package)} · ${formatPence(p.monthlyPricePence)} · ${reportsText(p.reportsIncluded)} · extra ${p.extraReportPence === null ? "not set" : formatPence(p.extraReportPence)}${
+    p.foundingPricePence !== null ? ` · founding ${formatPence(p.foundingPricePence)} to ${p.foundingUntil}` : ""
+  }`;
 }
 
 function limitsText(c: ClinicOverview): string {
@@ -43,13 +55,16 @@ const TD = "px-3 py-2 align-top text-sm";
 export default async function PlatformPage() {
   const admin = await requirePlatformAdmin();
   const db = getDb();
-  const [requests, clinics, activity] = await Promise.all([
+  const [requests, clinics, activity, packages] = await Promise.all([
     listAccessRequestsForPlatform({ db }),
     listClinicsOverview(db),
     listPlatformActivity({ db }, 20),
+    readClinicPackages({ db }),
   ]);
+  const packageOf = new Map(packages.map((p) => [p.tenantId, p] as const));
   const open = requests.filter((r) => !r.contactedAt).length;
   const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const demoClinics = clinics.filter((c) => !c.offboardedAt && c.plan?.demoClinic === true).map((c) => ({ tenantId: c.tenantId, name: c.name }));
   const emailOn = emailProviderName() !== "none";
 
   return (
@@ -87,6 +102,28 @@ export default async function PlatformPage() {
 
         <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
           <TrialForms clinics={openClinics} />
+        </Panel>
+
+        <Panel
+          title="Packages"
+          description="A clinic's package: price, reports included a month and the price of each extra report (all ex VAT). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
+          className="mb-6"
+        >
+          <PackageForm clinics={openClinics} today={ukDateOf(new Date())} />
+          <p className="mt-4 text-sm">
+            <Link href="/app/platform/usage" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Usage across clinics
+            </Link>{" "}
+            <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
+          </p>
+        </Panel>
+
+        <Panel
+          title="Demo clinics"
+          description="A demo clinic holds made-up data only and otherwise works like a customer's clinic. Its pages show “Demo clinic – made-up data only”, every preview, document and copied answer carries a demonstration notice, and its members may approve with made-up PH-DEMO numbers (a real clinic refuses them). Only ClinForms staff can switch this, here or with npm run admin:set-demo-clinic. Every change is recorded."
+          className="mb-6"
+        >
+          <DemoClinicForm clinics={openClinics} demoClinics={demoClinics} />
         </Panel>
 
         <Panel
@@ -165,6 +202,7 @@ export default async function PlatformPage() {
                     <th className={TH}>Open invitations</th>
                     <th className={TH}>Last activity</th>
                     <th className={TH}>Trial</th>
+                    <th className={TH}>Package</th>
                     <th className={TH}>Drafting limits</th>
                     <th className={TH}>Status</th>
                   </tr>
@@ -182,6 +220,7 @@ export default async function PlatformPage() {
                       <td className={TD}>{c.pendingInvitations}</td>
                       <td className={`${TD} whitespace-nowrap text-slate-600`}>{c.lastActivityAt ? activityTime(c.lastActivityAt) : "–"}</td>
                       <td className={`${TD} text-slate-700`}>{trialText(c)}</td>
+                      <td className={`${TD} text-slate-700`}>{packageText(packageOf.get(c.tenantId))}</td>
                       <td className={`${TD} whitespace-nowrap text-slate-700`}>{limitsText(c)}</td>
                       <td className={TD}>
                         {c.offboardedAt ? (
@@ -189,6 +228,11 @@ export default async function PlatformPage() {
                         ) : (
                           <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">Active</span>
                         )}
+                        {!c.offboardedAt && c.plan?.demoClinic ? (
+                          <span className="ml-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900" data-demo-clinic-status={c.tenantId}>
+                            Demo clinic
+                          </span>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

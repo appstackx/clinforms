@@ -109,9 +109,14 @@ export async function loadClinicProfile(db: Kysely<Database>, tenantId: string, 
 /**
  * clinic_plan → the module's view of it (10/2026): the trial's state (pending / running / ended – an ended trial
  * makes the Report API refuse anything new with 403 TRIAL_ENDED, auth/clinic-access.ts), the clinic's own drafting
- * limits (ai/live-gate.ts) and the contact address for the refusal. Nothing for a clinic without a plan row.
+ * limits (ai/live-gate.ts), the contact address for the refusal and – migration 0008 – whether it is a DEMO clinic
+ * (made-up data only: notices on every output, made-up PH-DEMO numbers may approve – core/demo-clinic.ts). Nothing for
+ * a clinic without a plan row.
  */
-export function clinicPlanForModule(plan: ClinicPlan | null, now: Date = new Date()): Pick<ClinicProfile, "trial" | "draftingLimits" | "contactEmail"> {
+export function clinicPlanForModule(
+  plan: ClinicPlan | null,
+  now: Date = new Date(),
+): Pick<ClinicProfile, "trial" | "draftingLimits" | "contactEmail" | "demoClinic"> {
   if (!plan) return {};
   const access = clinicAccessOf(plan, now);
   const trial: ClinicProfile["trial"] | undefined =
@@ -128,5 +133,6 @@ export function clinicPlanForModule(plan: ClinicPlan | null, now: Date = new Dat
     ...(trial ? { trial } : {}),
     ...(Object.keys(limits).length ? { draftingLimits: limits } : {}),
     contactEmail: COMPANY.contactEmail,
+    ...(plan.demoClinic ? { demoClinic: true } : {}),
   };
 }

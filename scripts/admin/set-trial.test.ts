@@ -43,6 +43,7 @@ test("describePlan prints the state in plain words", () => {
       endedAt: null,
       livePerMinute: 30,
       livePerDay: 1500,
+      demoClinic: false,
       createdAt: "2026-10-24T09:00:00.000Z",
       updatedAt: "2026-10-24T09:00:00.000Z",
     },

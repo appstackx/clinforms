@@ -10,7 +10,9 @@ import "server-only";
  * Also: review-copy source markers for the answers, the fill-warnings header and file names.
  *
  * A demonstration form (FormDefinition.demoNotice) gets its footer line on every page of the draft and
- * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it.
+ * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it – except in a
+ * demo clinic, whose handlers pass `demoNotice` (core/demo-clinic.ts demoOutputNotice: the form's own
+ * notice, else the clinic notice). The notice is never part of the form map, so the approved map's hash is unchanged.
  *
  * Mail-merge fields (10/2026, core/merge-fields.ts): the completed file is scanned for «Name» / <<Name>> /
  * MERGEFIELD. A FINAL copy with any is refused (422 FORM_INVALID) – approval is normally blocked before
@@ -44,6 +46,11 @@ export interface FormRenderInput {
   format: FormOutputFormat;
   /** PDF: printed on every continuation page (fix wave 3), e.g. "Claimant: … · Reference: …". */
   continuationLabel?: string;
+  /**
+   * The demonstration notice to print on every page (a demo clinic: core/demo-clinic.ts demoOutputNotice).
+   * Default: the form's own demoNotice (none for an ordinary form – the file is then exactly as filled).
+   */
+  demoNotice?: string;
 }
 
 export interface FormRenderOutput {
@@ -85,12 +92,13 @@ async function assertNoMergeFields(bytes: Uint8Array, kind: "docx" | "pdf"): Pro
 export async function renderFormFile(input: FormRenderInput): Promise<FormRenderOutput> {
   const { form, file, answers, draft } = input;
   assertKind(form, file);
+  const notice = input.demoNotice ?? form.demoNotice;
   const warnings: string[] = [];
   const onWarning = (m: string) => {
     if (!warnings.includes(m)) warnings.push(m);
   };
   if (form.kind === "docx") {
-    const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), form.demoNotice);
+    const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), notice);
     if (draft) {
       const left = await mergeTokensInOutput(docx, "docx");
       if (left.length > 0) warnings.unshift(`${mergeFieldsLeft(left)} The form cannot be approved until each is answered or replaced.`);
@@ -131,7 +139,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
       detail: `${errors.join(" ")} The final copy was not made. Correct the answer and approve the report again – an approved report cannot be edited, so use “Create amended version”, correct the answer there and approve the amended version.`,
     });
   }
-  const pdf = await stampPdfDemoNotice(filled, form.demoNotice, { draft });
+  const pdf = await stampPdfDemoNotice(filled, notice, { draft });
   if (!draft) await assertNoMergeFields(pdf, "pdf");
   return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings: [...errors, ...warnings], ...(errors.length > 0 && { errors }) };
 }

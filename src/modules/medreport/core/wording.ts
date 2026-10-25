@@ -163,6 +163,9 @@ export interface Wording {
   /* Insurer portal question sets (forms library, mapping, review) -------------------------------- */
   questionSet: QuestionSetWording;
 
+  /* Demo clinics (clinic_plan.demo_clinic, set by ClinForms staff only – core/demo-clinic.ts) ------- */
+  demoClinic: DemoClinicWording;
+
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
   payload: {
     toggle: string;
@@ -461,6 +464,56 @@ const QUESTION_SET: QuestionSetWording = {
   summaryPdf: "Summary (PDF)",
 };
 
+/**
+ * A DEMO clinic (the host's clinic_plan.demo_clinic = 1, set by ClinForms platform staff only – core/demo-clinic.ts):
+ * a clinic account with made-up data only that otherwise works like any customer's. Its clinic pages and Studio carry
+ * a banner, every output a notice, and its members may hold the made-up PH-DEMO-NN numbers and approve with them. A
+ * real clinic never sees any of this – and refuses those numbers.
+ */
+export interface DemoClinicWording {
+  /** The persistent banner of the Studio and the clinic pages (/app). */
+  banner: string;
+  /** Short label (the Studio header pill, the platform page). */
+  label: string;
+  /** Every output (draft preview, Word / PDF files, copied answers) when the form carries no notice of its own. */
+  outputNotice: string;
+  /** Members page, signing details of a demo clinic. */
+  hcpcHint: string;
+  /** Members page of a REAL clinic: a member still holds a made-up number (the clinic was a demo clinic before). */
+  memberHasDemoNumber: string;
+  /** POST /sign outside a demo clinic with a made-up number (403 DEMO_NUMBER_NOT_ALLOWED); the Studio says it first. */
+  numberNotAllowedTitle: string;
+  numberNotAllowedDetail: string;
+  /** Activity log: an approval in a demo clinic, with the made-up number used or with a registration number. */
+  approvedWithDemoNumber(hcpc: string): string;
+  approvedInDemoClinic: string;
+  /** Activity log: a final document produced in a demo clinic. */
+  finalWithNotice: string;
+  /** Activity log: ClinForms switched the clinic to a demo clinic / back to a real clinic. */
+  switchedOn: string;
+  switchedOff(membersWithDemoNumbers: number): string;
+}
+
+/* The same text under every disclosure setting: it never names a technology. */
+const DEMO_CLINIC: DemoClinicWording = {
+  banner: "Demo clinic – made-up data only",
+  label: "Demo clinic",
+  outputNotice: "DEMONSTRATION – made-up data from a demo clinic. Not for clinical use.",
+  hcpcHint: "Demo clinic: a made-up number such as PH-DEMO-01 is accepted here. A real clinic accepts HCPC registration numbers only.",
+  memberHasDemoNumber: "Made-up number: it cannot approve in this clinic. Enter the HCPC registration number.",
+  numberNotAllowedTitle: "Made-up number – approval refused",
+  numberNotAllowedDetail:
+    "PH-DEMO numbers are made up and work in a demo clinic only. Ask an owner or administrator to enter your HCPC registration number (Settings → Members), then approve again.",
+  approvedWithDemoNumber: (hcpc) => `Demo clinic – approved with the made-up number ${hcpc}`,
+  approvedInDemoClinic: "Demo clinic – approved",
+  finalWithNotice: "Demo clinic – marked as a demonstration",
+  switchedOn: "Demo clinic: made-up data only, made-up PH-DEMO numbers accepted",
+  switchedOff: (n) =>
+    n > 0
+      ? `A real clinic again: ${n} ${n === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced`
+      : "A real clinic again",
+};
+
 /** Problem codes in plain words (the codes themselves stay in the API). */
 const NEUTRAL_FAILURE_CODES: Record<string, string> = {
   AI_TIMEOUT: "timed out",
@@ -582,6 +635,7 @@ const NEUTRAL: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what the drafting service receives",
     subtitle: "The minimised record for this patient, exactly as a drafting request would send it – nothing is sent to show it.",
@@ -786,6 +840,7 @@ const AI_ASSISTED: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what is sent to the AI",
     subtitle: "The minimised record for this patient, as a drafting call would send it – no AI call is made to show it.",

@@ -84,12 +84,15 @@ export function SigningForm({
   hcpcNumber,
   canSign,
   staff,
+  demoHint,
 }: {
   memberId: string;
   jobTitle: string;
   hcpcNumber: string;
   canSign: boolean;
   staff: boolean;
+  /** A demo clinic (worked out on the server): made-up PH-DEMO-NN numbers are accepted here – say so. */
+  demoHint?: string;
 }) {
   const [state, action] = useFormState(saveMemberProfile, null as ActionResult | null);
   return (
@@ -99,6 +102,7 @@ export function SigningForm({
         <Field label="Job title" name="jobTitle" defaultValue={jobTitle} maxLength={120} placeholder="Senior Physiotherapist" />
         <Field label="HCPC registration number" name="hcpcNumber" defaultValue={hcpcNumber} maxLength={12} placeholder="As on the HCPC register" />
       </div>
+      {demoHint ? <p className="text-xs text-amber-900">{demoHint}</p> : null}
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" name="canSign" defaultChecked={canSign} disabled={staff} className="h-4 w-4 rounded border-slate-300" />
         May sign (approve) completed forms
