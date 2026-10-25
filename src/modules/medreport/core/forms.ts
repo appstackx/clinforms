@@ -25,6 +25,7 @@
  * Owner: ai agent (contract-stage baseline; exported signatures are contract).
  */
 import { bundleClinic } from "./clinic";
+import { notApplicable } from "./conditions";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel, prefillSigners, prefillSignersText } from "./parties";
@@ -1057,6 +1058,20 @@ export function sectionHeadings(fields: ReadonlyArray<Pick<FormField, "section">
   });
 }
 
+/**
+ * Fix round 1 (B0-20, B0-6): whether a form is an initial assessment or a discharge / final report, from its title – a
+ * referrer usually sends both. Null for anything else (progress, interim, a return-to-work assessment, a portal).
+ */
+export type ReportKind = "initial" | "discharge";
+
+export function reportKindOf(title: string | undefined): ReportKind | null {
+  const t = (title ?? "").toLowerCase();
+  if (/\b(?:discharge|final|end of treatment|eots|closing)\b/.test(t)) return "discharge";
+  if (/\binitial\b/.test(t)) return "initial";
+  if (/\bassessment\b/.test(t) && !/\b(?:return to work|progress|interim|review|functional|capacity|ergonomic|workplace)\b/.test(t)) return "initial";
+  return null;
+}
+
 /** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */
 const OPTIONAL_BLANK_EVIDENCE = "optional field blank";
 
@@ -1118,6 +1133,11 @@ export function buildFormAnswers(
     }
     const section = report.sections.find((s) => s.key === field.id);
     const blankByDesign = isBlankByDesign(section, field);
+    // Fix round 1 (B0-7): a conditional question that does not apply prints nothing, whatever it holds.
+    if (section && notApplicable(report.sections, field.id)) {
+      answers[field.id] = { leftBlank: true };
+      continue;
+    }
     if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
       answers[field.id] = section && (approved || leftBlankByPerson(report, field.id)) ? { leftBlank: true } : {};
       continue;

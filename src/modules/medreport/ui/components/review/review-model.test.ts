@@ -607,3 +607,25 @@ describe("fix round 1 (B0-22): one count of answered and left-blank questions", 
     assert.equal(copyEntries(withLine, form).find((e) => e.key === lineKey)?.answer, null, "“Copy answers” has no answer there either");
   });
 });
+
+describe("fix round 1 (B0-7): a conditional question's gaps follow the answer before it", () => {
+  it("“No” settles the gaps of “IF YES, PLEASE DETAIL” as not applicable (audited); “Yes” reopens them", () => {
+    const { report: base } = drafted();
+    // F-06 printed as "IF YES, PLEASE DETAIL" under F-04 (yes / no / modified duties).
+    const report: Report = {
+      ...base,
+      sections: base.sections.map((s) => (s.key === "F-06" ? { ...s, title: "IF YES, PLEASE DETAIL" } : s)),
+      gaps: [...base.gaps.filter((g) => g.sectionKey !== "F-06"), { id: "gap-F-06-t-1", sectionKey: "F-06", issue: "No detail is recorded.", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" }],
+    };
+    const no = reviewReducer(report, { type: "setAnswer", key: "F-04", value: "No", actor: "Sarah Reid" });
+    const gap = no.gaps.find((g) => g.id === "gap-F-06-t-1");
+    assert.equal(gap?.resolution?.kind, "resolved");
+    assert.equal(gap?.resolution?.text, "Not applicable: “B2. Is the claimant fit for work?” is “No”.");
+    assert.equal(gap?.resolution?.notApplicable, true);
+    assert.ok(no.activity.some((a) => a.detail.startsWith("F-06: resolved gap “No detail is recorded.” – Not applicable")));
+    const q = flattenQuestions(buildQuestionGroups(no, testForm(), formToTemplate(testForm()))).find((x) => x.key === "F-06")!;
+    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "blank");
+    const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: "Sarah Reid" });
+    assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
+  });
+});

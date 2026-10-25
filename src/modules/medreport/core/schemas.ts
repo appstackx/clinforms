@@ -105,6 +105,8 @@ export const ReportFlagCodeSchema = z.enum([
   "MISSING_PLACEHOLDER",
   "OPEN_GAP",
   "DATA_CHECK",
+  /** Additive (fix round 1): a warning – drafted wording that does not fit its place on the form (validation/draft-fit.ts). */
+  "DRAFT_FIT",
 ]);
 export const DataCheckCodeSchema = z.enum([
   "NO_PRE_INCIDENT_HISTORY",
@@ -635,6 +637,11 @@ export const GapResolutionSchema = z.object({
    * by itself if that answer is removed again.
    */
   byAnswer: z.boolean().optional(),
+  /**
+   * Additive (fix round 1, B0-7): settled because its question does not apply ("IF YES, PLEASE DETAIL" after a "No") –
+   * reopened by itself if that answer changes.
+   */
+  notApplicable: z.boolean().optional(),
 });
 
 /** Something the record does not say. Every unresolved gap blocks signing (OPEN_GAP). */

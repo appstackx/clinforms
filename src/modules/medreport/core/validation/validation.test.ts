@@ -619,3 +619,69 @@ test("fix round 1: 'told me' / 'My assessment' / 'in my opinion' citing another 
   assert.equal(ef?.severity, "blocking");
   assert.equal(canAcknowledge(ef, edited), true);
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-7): conditional questions
+ * ----------------------------------------------------------------------------------------------*/
+
+test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back at work…” after “Yes” are not asked – no blocking check, printed blank", async () => {
+  const { conditionOf, conditionWanted } = await import("../conditions");
+  const { buildFormAnswers } = await import("../forms");
+  assert.deepEqual(conditionWanted("IF YES, PLEASE DETAIL"), { wants: "yes", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("If not back at work, expected return to work date"), { wants: "no", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("Frequency – if other, details"), { wants: "other", anyOfAbove: false });
+  assert.deepEqual(conditionWanted("If yes to any of the above, note detail"), { wants: "yes", anyOfAbove: true });
+  assert.equal(conditionWanted("Has the patient returned to work?"), null);
+  const sec = (key: string, title: string, answer?: ReportSection_["answer"], text = "") => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: text ? [{ id: `${key}-p1`, text, sourceIds: ["N-001"], origin: "ai" as const }] : [], ...(answer ? { answer } : {}) });
+  const sections = [
+    sec("F-27", "Has the patient returned to work?", { kind: "yes_no", value: true }),
+    sec("F-28", "If not back at work, expected return to work date", { kind: "date", value: null }),
+    sec("F-32", "ANY FURTHER TREATMENT RECOMMENDED?", { kind: "yes_no", value: false }),
+    sec("F-33", "IF YES, PLEASE DETAIL", undefined, "Request 3 further sessions."),
+  ];
+  assert.equal(conditionOf(sections, "F-28")?.applies, false);
+  assert.equal(conditionOf(sections, "F-33")?.because, "“ANY FURTHER TREATMENT RECOMMENDED?” is “No”");
+  const base = testReport(SOL);
+  const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
+  const flags = run(report, template);
+  assert.equal(flags.filter((f) => f.sectionKey === "F-28" || f.sectionKey === "F-33").length, 0, "no “required, no answer” and no checks on the drafted text");
+  const form = { fields: sections.map((s) => ({ id: s.key, label: s.title, guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "table_cell", blockId: "t0.r0.c0" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" })) } as never;
+  assert.deepEqual(buildFormAnswers({ sections } as never, form)["F-33"], { leftBlank: true }, "the drafted detail is not printed");
+  // Answered "Yes" after all: it applies again.
+  const yes = sections.map((s) => (s.key === "F-32" ? { ...s, answer: { kind: "yes_no" as const, value: true } } : s));
+  assert.equal(conditionOf(yes, "F-33")?.applies, true);
+});
+
+type ReportSection_ = import("../types").ReportSection;
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-5, B0-6, B0-16, B0-23): drafted wording that does not fit its place on the form (warnings)
+ * ----------------------------------------------------------------------------------------------*/
+
+test("fix round 1: a dated, attributed sentence in a table cell, a repeated row, commentary and a later note on an IA form are warnings", () => {
+  const bundle = testBundle(); // N-001 18/03/2026 initial assessment, N-002 06/05/2026 discharge
+  const cell = (id: string, label: string) => ({ id, label, guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "table_cell", blockId: `t4.r${id.slice(2)}.c0` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+  const fields = [cell("F-28", "Activity 1"), cell("F-29", "Activity 1 – frequency"), cell("F-32", "Activity 2"), { ...cell("F-40", "Present condition"), answerType: "long_text", anchor: { kind: "docx", target: "after_paragraph", blockId: "p40" } }];
+  const sec = (key: string, title: string, text: string, ids = ["N-001"]) => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: [{ id: `${key}-p1`, text, sourceIds: ids, origin: "ai" as const }] });
+  const base = testReport(SOL, bundle);
+  const report = {
+    ...base,
+    form: { formId: "frm_10bridge_ia", title: "Initial Assessment Report", referrer: { name: "10Bridge", type: "mlc" }, fileSha256: "0".repeat(64), kind: "docx" },
+    sections: [
+      sec("F-28", "Activity 1", "Mr Testcase told Tom Ellis, physiotherapist, on 18/03/2026 that he walks the dog every day."),
+      sec("F-29", "Activity 1 – frequency", "Daily"),
+      sec("F-32", "Activity 2", "He walks the dog every day."),
+      sec("F-40", "Present condition", "The notes are written by Sarah Reid. On 06/05/2026 his back pain was 2/10 at worst.", ["N-002"]),
+    ],
+  } as unknown as Report;
+  const template = { ...SOL, sections: report.sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: false, guidance: "" })) } as unknown as ReportTemplate;
+  const flags = runValidators({ report, bundle, template, computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }), form: { analysis: { mode: "rules", promptVersion: "t", at: "2026-10-25T09:00:00.000Z", warnings: [] }, fields } as never }).filter((f) => f.code === "DRAFT_FIT");
+  const by = (key: string, ev: string) => flags.find((f) => f.sectionKey === key && (f.evidence ?? "").startsWith(ev));
+  assert.match(by("F-28", "shorten")?.message ?? "", /^Shorten for the box: this answer goes in a table cell/);
+  assert.equal(by("F-29", "shorten"), undefined, "“Daily” is the value alone");
+  assert.match(by("F-32", "repeat")?.message ?? "", /^This repeats “Activity 1” \(F-28\)/);
+  assert.match(by("F-40", "comment")?.message ?? "", /^Remove the comment about the notes \(“The notes are written by/);
+  assert.match(by("F-40", "later note")?.message ?? "", /^From a later note of 06\/05\/2026 – check it belongs on an initial assessment \(18\/03\/2026\)\.$/);
+  assert.ok(flags.every((f) => f.severity === "warning"), "never blocking");
+});

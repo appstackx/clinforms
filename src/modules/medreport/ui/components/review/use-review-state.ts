@@ -27,6 +27,7 @@ import {
   resolveGap,
   revertParagraph,
   setStructuredAnswer,
+  settleConditionalGaps,
   settleGapsByAnswer,
   supersedeAcknowledgedGaps,
   writeInOwnVoice,
@@ -65,13 +66,17 @@ function locked(report: Report): boolean {
 }
 
 export function reviewReducer(report: Report, action: ReviewAction): Report {
-  const next = applyReviewAction(report, action);
-  // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
+  let next = applyReviewAction(report, action);
+  if (next === report || locked(report)) return next;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
   const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
-  if (next === report || !key || !actor || locked(report)) return next;
-  if (["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) < 0) return next;
-  return settleGapsByAnswer(report, next, key, actor);
+  // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
+  if (key && actor && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
+    next = settleGapsByAnswer(report, next, key, actor);
+  }
+  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft.
+  if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || "System");
+  return next;
 }
 
 function applyReviewAction(report: Report, action: ReviewAction): Report {
