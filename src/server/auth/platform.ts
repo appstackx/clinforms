@@ -23,7 +23,8 @@ import { getFormFile, listFormFiles } from "../repos/form-files";
 import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
-import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID, RESET_TOKEN_TTL_SECONDS, invitationRef } from "./create-auth";
+import { PLATFORM_USER_EMAIL, PLATFORM_USER_ID, RESET_TOKEN_TTL_SECONDS, invitationRef } from "./create-auth";
+import { invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
 import { assertTenantSlug } from "./tenant";
@@ -114,7 +115,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   const at = now.toISOString();
   const organizationId = authId();
   const invitationId = authId();
-  const invitationExpiresAt = new Date(now.getTime() + INVITATION_TTL_SECONDS * 1000).toISOString();
+  const invitationExpiresAt = invitationExpiry(now).toISOString();
   const link = inviteLink(input.appOrigin, invitationId, input.linkSecret); // before any write: a bad secret changes nothing
   await runBatch(db, [
     db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: null }),
