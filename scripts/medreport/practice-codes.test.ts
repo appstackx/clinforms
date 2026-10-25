@@ -251,18 +251,21 @@ test("Megan Hart (fictional) on the form: record values in place, empty address 
   const warnings: string[] = [];
   const out = fillDocx(docx, form, answers, { draft: false, onWarning: (w) => warnings.push(w) });
   assert.deepEqual(await mergeTokensInOutput(out, "docx"), [], "no merge code in the completed file");
-  const filled = new Map(buildDocxOutline(out).blocks.map((b) => [b.id, b.text]));
+  const blocks = buildDocxOutline(out).blocks;
+  const filled = new Map(blocks.map((b) => [b.id, b.text]));
   assert.equal(filled.get("p4"), "Claimant: Ms Megan Hart");
   assert.equal(filled.get("p5"), "14 Willow Bank (fictional)");
   assert.equal(filled.get("p7"), "Milton Keynes");
-  assert.equal(filled.get("p8"), "", "an address line the record does not have is empty");
-  assert.equal(filled.get("p9"), "");
-  assert.equal(filled.get("p10"), "MK3 9ZZ");
-  assert.match(filled.get("p12") ?? "", /^Date of Birth: \d\d\/\d\d\/\d{4}$/);
-  assert.equal(filled.get("p13"), "Date of Accident: 12/03/2026");
-  assert.equal(filled.get("p16"), "Home address on one line: 14 Willow Bank (fictional), Bletchley, Milton Keynes, MK3 9ZZ");
+  // Fix round 1 (B0-32): the address lines the record does not have are not left as empty lines – the postcode follows
+  // the last line of the address (the two emptied paragraphs are removed, so the later block IDs move up by two).
+  assert.equal(filled.get("p8"), "MK3 9ZZ", "an address line the record does not have leaves no empty line");
+  const body = blocks.filter((b) => b.kind === "paragraph").map((b) => b.text);
+  assert.equal(body[body.indexOf("Milton Keynes") + 1], "MK3 9ZZ");
+  assert.match(filled.get("p10") ?? "", /^Date of Birth: \d\d\/\d\d\/\d{4}$/);
+  assert.equal(filled.get("p11"), "Date of Accident: 12/03/2026");
+  assert.equal(filled.get("p14"), "Home address on one line: 14 Willow Bank (fictional), Bletchley, Milton Keynes, MK3 9ZZ");
   assert.equal(filled.get("t0.r0.c1"), "Megan Hart");
-  assert.equal(filled.get("p26"), "Date of report: 24/10/2026");
+  assert.equal(filled.get("p24"), "Date of report: 24/10/2026");
   assert.deepEqual(warnings.filter((w) => /not found|could not/.test(w)), []);
 });
 
