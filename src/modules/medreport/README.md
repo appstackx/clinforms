@@ -176,7 +176,7 @@ options rather than merging them, so the script writes one full pattern list per
   tooltips, aria-labels, toasts, problem titles/details shown in the UI, the activity log, the Security
   & GDPR page, generated documents, the case export and the demo video – describes what the product
   does, never the technology or the vendor ("drafted from the notes", "reads the form and identifies
-  each question and answer space", origin pill "Draft" – "Drafted from notes" once approved, "Live drafting" / "Demo mode"). All of it comes
+  each question and answer space", origin pill "Draft" – "Drafted from notes" once approved, a drafted tick or choice "Answer proposed from the notes – check it" – "Answer drafted from the notes" once approved, "Live drafting" / "Demo mode"). All of it comes
   from `core/wording.ts` (`WORDING`, re-exported by `ui/wording.ts`); switch `DISCLOSURE` there
   (`"neutral"` default, `"ai-assisted"` kept for later). API responses the Studio stores or renders
   name the engine `publicEngineName()` (`"drafting-service"` while neutral); the real model id stays in

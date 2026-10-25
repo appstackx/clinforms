@@ -155,7 +155,8 @@ export type QuestionStatus =
   | "blocked"
   | "pending"
   | "signoff"
-  | "blank";
+  | "blank"
+  | "left_blank";
 
 export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short: string; dot: string; text: string }> = {
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
@@ -167,10 +168,11 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   pending: { label: "Not drafted yet", short: "Not drafted", dot: "border-2 border-slate-400 bg-white", text: "text-slate-600" },
   signoff: { label: "Filled on approval", short: "On approval", dot: "bg-slate-400", text: "text-slate-600" },
   blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
+  left_blank: { label: "Left blank on approval", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-600" },
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -197,6 +199,7 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
  * - pending: not drafted yet;
  * - signoff / blank: filled on approval / left for the referrer;
  * - needs_input: no answer yet (an opinion nobody recorded, a value the record lacks);
+ * - left_blank: the report was approved without an answer here, so nothing is waiting for anyone;
  * - confirm: a person has answered it and only its gap is still open (one click: "Mark resolved");
  * - blocked: answered, but a blocking check or an open gap remains;
  * - records / drafted / clinician: answered and clear, by where the answer came from.
@@ -207,12 +210,15 @@ export function questionStatus(
   gaps: readonly Gap[],
   /** A person (not the drafting step) answered it (answeredByPerson). */
   byPerson = false,
+  /** The report is approved (read-only). */
+  approved = false,
 ): QuestionStatus {
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
-  if (section.status === "pending" && !isSectionAnswered(section)) return "pending";
   const answered = isSectionAnswered(section);
+  if (!answered && approved) return "left_blank";
+  if (section.status === "pending" && !answered) return "pending";
   if (!answered) return "needs_input";
   const blockingFlags = flags.filter((f) => f.sectionKey === section.key && isOpenBlocking(f, gaps));
   const openGap = gaps.some((g) => g.sectionKey === section.key && !g.resolution);
@@ -231,7 +237,7 @@ export interface StatusCounts {
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }

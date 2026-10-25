@@ -24,6 +24,7 @@ import {
   buildQuestionGroups,
   citationLabel,
   citationsBySource,
+  countStatuses,
   editParagraph,
   flattenQuestions,
   generationSummary,
@@ -233,6 +234,32 @@ describe("questionStatus", () => {
     assert.ok(q6b);
     const flags2 = validateReport(resolved, template).flags;
     assert.equal(questionStatus(q6b, flags2, resolved.gaps), "clinician");
+  });
+
+  it("once approved, a question without an answer was left blank on approval – it does not need input any more", () => {
+    const { report, form } = drafted();
+    const template = formToTemplate(form);
+    // F-06's gap acknowledged with the question left blank, then approved.
+    const left = resolveGap(report, "gap-F-06-ai", "acknowledged", "Left blank: no prognosis was recorded.", "Sarah Reid", NOW);
+    const flags = validateReport(left, template).flags;
+    const qs = flattenQuestions(buildQuestionGroups(left, form, template));
+    const status = (key: string, approved: boolean, from = qs) => {
+      const q = from.find((x) => x.key === key);
+      assert.ok(q);
+      return questionStatus(q, flags, left.gaps, false, approved);
+    };
+    assert.equal(status("F-06", false), "needs_input");
+    assert.equal(status("F-06", true), "left_blank");
+    // answered questions, sign-off and the referrer's own boxes read the same before and after approval
+    for (const key of ["F-01", "F-03", "F-04", "F-08", "F-09"]) assert.equal(status(key, true), status(key, false), key);
+    // never drafted ("Not drafted yet" under review)
+    const fresh = flattenQuestions(buildQuestionGroups(testReport().report, form, template));
+    assert.equal(status("F-03", false, fresh), "pending");
+    assert.equal(status("F-03", true, fresh), "left_blank");
+    // counted in the summary as left blank, not as needing input
+    const counts = countStatuses(qs.map((q) => questionStatus(q, flags, left.gaps, false, true)));
+    assert.equal(counts.counts.needs_input, 0);
+    assert.ok(counts.counts.left_blank >= 1);
   });
 });
 

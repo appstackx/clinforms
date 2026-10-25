@@ -368,6 +368,12 @@ export const ApprovedBanner = forwardRef<
           </Button>
         )}
       </div>
+      {/* Directly under the Word download it is about. */}
+      {pdfUnavailable && (
+        <p id="pdf-unavailable" role="status" className="mt-2 text-[13px] text-slate-700">
+          {pdfUnavailable}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
         {lastFiled && canFile && !fileMissing && (
           <button
@@ -387,11 +393,6 @@ export const ApprovedBanner = forwardRef<
         )}
       </div>
 
-      {pdfUnavailable && (
-        <p id="pdf-unavailable" role="status" className="mt-2 text-[13px] text-slate-700">
-          {pdfUnavailable}
-        </p>
-      )}
       {!canFile && (
         <p className="mt-2 text-[12px] text-slate-600">
           {report.episodeRef.connectorId === "file-import"

@@ -286,9 +286,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key)));
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed));
     return map;
-  }, [questions, flagsBySection, report.gaps, personAnswered]);
+  }, [questions, flagsBySection, report.gaps, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);

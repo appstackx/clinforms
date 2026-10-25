@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import { BANNED_TERM_PATTERNS } from "../core/wording";
+import type { EpisodeBundle, FormDefinition, Gap, Report } from "../core/types";
 import { HostHooksProvider, type HostHooks } from "./host-hooks";
 import { StudioShell } from "./components/shared/studio-shell";
 import { SourceStep } from "./components/new/source-step";
@@ -304,46 +305,113 @@ describe("approved reports (test run 24/10/2026)", () => {
     return { report: { ...report, sections }, form: HARROW_PIKE_FORM, key, bundle };
   }
 
-  it("QuestionCard: a drafted paragraph is a 'Draft' under review, 'Drafted from notes' once approved", async () => {
+  /** Megan Hart on the Northfield Assurance PDF form, as created (nothing drafted yet). */
+  async function northfieldReport() {
+    const { createTargetReport } = await import("./components/new/generate");
+    const { NORTHFIELD_FORM } = await import("../forms/samples/maps/northfield");
+    const { getDemoBundle } = await import("../../../../scripts/medreport/dev-bundles");
+    const bundle = getDemoBundle("megan-hart");
+    const report = createTargetReport({ data: { bundle, computedFacts: [] }, target: { kind: "form", form: NORTHFIELD_FORM } });
+    const keyOf = (label: string) => NORTHFIELD_FORM.fields.find((f) => f.label === label)?.id ?? "";
+    return { report, form: NORTHFIELD_FORM, bundle, keyOf };
+  }
+
+  /** The review card of one question, as the review screen renders it (`readOnly` once approved). */
+  async function questionCard(input: { report: Report; form: FormDefinition; bundle: EpisodeBundle; key: string; status: string; readOnly: boolean; gaps?: Gap[] }) {
     const { QuestionCard } = await import("./components/review/question-card");
     const { buildQuestionGroups, flattenQuestions } = await import("./components/review/review-model");
     const { formToTemplate } = await import("../core/forms");
-    const { report, form, key, bundle } = await draftedReport();
-    const q = flattenQuestions(buildQuestionGroups(report, form, formToTemplate(form))).find((x) => x.key === key);
+    const q = flattenQuestions(buildQuestionGroups(input.report, input.form, formToTemplate(input.form))).find((x) => x.key === input.key);
     assert.ok(q);
-    const card = (readOnly: boolean) =>
-      createElement(QuestionCard, {
-        q,
-        status: "drafted",
-        flags: [],
-        gaps: [],
-        bundle,
-        connectorId: "file-import",
-        referrerName: form.referrer.name,
-        readOnly,
-        answerEdited: false,
-        answeredByPerson: false,
-        receipt: undefined,
-        activeSourceId: null,
-        drafting: false,
-        actor: "Alex Morgan",
-        dispatch: () => {},
-        onOpenSource: () => {},
-        canAcknowledge: () => false,
-      });
+    return createElement(QuestionCard, {
+      q,
+      status: input.status as never,
+      flags: [],
+      gaps: input.gaps ?? [],
+      bundle: input.bundle,
+      connectorId: "file-import",
+      referrerName: input.form.referrer.name,
+      readOnly: input.readOnly,
+      answerEdited: false,
+      answeredByPerson: false,
+      receipt: undefined,
+      activeSourceId: null,
+      drafting: false,
+      actor: "Alex Morgan",
+      dispatch: () => {},
+      onOpenSource: () => {},
+      canAcknowledge: () => false,
+    });
+  }
+
+  it("QuestionCard: a drafted paragraph is a 'Draft' under review, 'Drafted from notes' once approved", async () => {
+    const { report, form, key, bundle } = await draftedReport();
+    const card = (readOnly: boolean) => questionCard({ report, form, bundle, key, status: "drafted", readOnly });
     for (const hooks of [TENANT, {}]) {
-      assert.match(text(render(card(false), hooks)), /\bDraft\b/);
-      const approved = text(render(card(true), hooks));
+      assert.match(text(render(await card(false), hooks)), /\bDraft\b/);
+      const approved = text(render(await card(true), hooks));
       assert.match(approved, /She reported a rear-end collision\. Drafted from notes/);
       assert.doesNotMatch(approved, /\bDraft\b/);
     }
+  });
+
+  it("QuestionCard: a tick box drafted from the notes is 'proposed – check it' under review, 'drafted from the notes' once approved", async () => {
+    // Northfield F-11 "Treatment completed – claimant discharged" (like the 10Bridge treatment tick boxes): the review of finding 6.
+    const { report, form, bundle, keyOf } = await northfieldReport();
+    const key = keyOf("Treatment completed – claimant discharged");
+    const paragraph = { id: `${key}-p1`, text: "She was discharged to self-management.", sourceIds: [bundle.notes[bundle.notes.length - 1].id], origin: "ai" as const };
+    const sections = report.sections.map((s) => (s.key === key ? { ...s, status: "drafted" as const, answer: { kind: "checkbox" as const, value: true }, paragraphs: [paragraph] } : s));
+    const card = (readOnly: boolean) => questionCard({ report: { ...report, sections }, form, bundle, key, status: "drafted", readOnly });
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(await card(false), hooks)), /Answer proposed from the notes – check it/);
+      const approved = text(render(await card(true), hooks));
+      assert.match(approved, /Answer drafted from the notes/);
+      assert.doesNotMatch(approved, /check it|proposed|\bDraft\b/);
+    }
+  });
+
+  it("QuestionCard and summary: a question left blank is 'Left blank on approval', not 'Needs clinician input' or 'Not drafted yet'", async () => {
+    const { ProgressSummary } = await import("./components/review/question-nav");
+    const { buildQuestionGroups, countStatuses, flattenQuestions, questionStatus } = await import("./components/review/review-model");
+    const { formToTemplate } = await import("../core/forms");
+    const { report, form, bundle, keyOf } = await northfieldReport();
+    // 4. Fit for work: no opinion recorded, its gap acknowledged and the question left blank. 1. Diagnosis: never drafted.
+    const fit = keyOf("4. Is the claimant fit for work?");
+    const diagnosis = keyOf("1. Diagnosis / working diagnosis");
+    const gap: Gap = {
+      id: `gap-${fit}`,
+      sectionKey: fit,
+      issue: "No clinician recorded an opinion on fitness for work.",
+      suggestedQuestion: "Is she fit for work?",
+      relatedNoteIds: [],
+      raisedBy: "ai",
+      resolution: { kind: "acknowledged", text: "Left blank: not assessed at discharge.", at: "2026-10-24T18:10:00.000Z" },
+    };
+    const sections = report.sections.map((s) => (s.key === fit ? { ...s, status: "needs_input" as const } : s));
+    const left = { ...report, sections, gaps: [gap] };
+    const qs = flattenQuestions(buildQuestionGroups(left, form, formToTemplate(form)));
+    const statusOf = (key: string, approved: boolean) => questionStatus(qs.find((q) => q.key === key) ?? qs[0], [], left.gaps, false, approved);
+    assert.equal(statusOf(fit, false), "needs_input");
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(await questionCard({ report: left, form, bundle, key: fit, status: statusOf(fit, false), readOnly: false, gaps: [gap] }), hooks)), /Needs clinician input/);
+      const approvedFit = text(render(await questionCard({ report: left, form, bundle, key: fit, status: statusOf(fit, true), readOnly: true, gaps: [gap] }), hooks));
+      assert.match(approvedFit, /Left blank on approval/);
+      assert.doesNotMatch(approvedFit, /Needs clinician input|Needs input/);
+      const approvedDiagnosis = text(render(await questionCard({ report: left, form, bundle, key: diagnosis, status: statusOf(diagnosis, true), readOnly: true }), hooks));
+      assert.match(approvedDiagnosis, /Left blank on approval.*Left blank on the form\./);
+      assert.doesNotMatch(approvedDiagnosis, /Not drafted yet|Draft from the notes/);
+    }
+    // The summary beside the approved report: "Left blank", and nothing needs input.
+    const summary = text(render(createElement(ProgressSummary, { counts: countStatuses(qs.map((q) => statusOf(q.key, true))) })));
+    assert.match(summary, /Left blank \d+/);
+    assert.match(summary, /Needs input 0/);
   });
 
   it("ApprovedBanner: a Word form shows its Word download alone where no PDF copy can be made – no greyed-out button", async () => {
     const { ApprovedBanner } = await import("./components/review/review-header");
     const { NOTICES } = await import("../config.public");
     const { report } = await draftedReport();
-    const receipt = { signer: { name: "Alex Morgan", hcpc: "PH123456" }, signedAt: "2026-10-24T18:15:00.000Z", contentSha256: "a".repeat(64) };
+    const receipt = { signer: { name: "Alex Morgan", hcpc: "PH-DEMO-01" }, signedAt: "2026-10-24T18:15:00.000Z", contentSha256: "a".repeat(64) };
     const signed = { ...report, status: "signed", receipt } as never;
     const banner = (props: Record<string, unknown>) =>
       createElement(ApprovedBanner, {
@@ -363,8 +431,9 @@ describe("approved reports (test run 24/10/2026)", () => {
       });
     for (const hooks of [TENANT, {}]) {
       // (the demo's report comes from the Simulated TM3, so it can be filed back there)
-      const html = render(banner({ pdfUnavailable: NOTICES.wordFormPdfHint, canFile: hooks !== TENANT }), hooks);
+      const html = render(banner({ pdfUnavailable: NOTICES.wordFormPdfHint, canFile: hooks !== TENANT, onAmend: () => {} }), hooks);
       assert.match(text(html), /Completed form \(Word\)/);
+      assert.match(text(html), /Completed form \(Word\).*Need a PDF\?.*Create amended version/, "the hint sits with the Word download, before the links");
       assert.doesNotMatch(text(html), /Completed form \(PDF\)/);
       assert.match(text(html), /Need a PDF\? Open the completed Word file and save it as a PDF\./);
       assert.doesNotMatch(html, /<button[^>]*\sdisabled=""/, "no greyed-out button");
