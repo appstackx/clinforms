@@ -17,7 +17,7 @@ import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
 import type { BoxItem } from "./box-items";
-import type { GapResolutionOptions } from "./review-model";
+import { requiredAnswerFirst, type GapResolutionOptions } from "./review-model";
 import { CitationChip } from "./review-ui";
 
 const MIN_REASON = 3;
@@ -293,9 +293,11 @@ function GapBody({
                     Resolve
                   </button>
                 ))}
-              <button type="button" onClick={() => setMode("acknowledged")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
-                Acknowledge with a reason
-              </button>
+              {resolution.canAcknowledge !== false && (
+                <button type="button" onClick={() => setMode("acknowledged")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+                  Acknowledge with a reason
+                </button>
+              )}
             </>
           )}
           {!readOnly && done && (
@@ -426,7 +428,8 @@ export function BoxIssue({
           <GapBody
             key={g.id}
             gap={g}
-            resolution={resolutionFor(g)}
+            // Fix round 1 (B0-3): a required question with no answer is answered first, never acknowledged blank.
+            resolution={box.required && !box.answered ? requiredAnswerFirst(resolutionFor(g)) : resolutionFor(g)}
             issueLabel="Gap"
             hideIssue={hideGapIssue}
             hideQuestion={hideQuestion || box.answered}

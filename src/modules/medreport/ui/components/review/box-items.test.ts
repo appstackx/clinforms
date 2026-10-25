@@ -459,3 +459,25 @@ describe("fix round 1 (B0-28): the leave-blank card counts every optional box wi
     assert.match(leaveBlankSummaryText(2, { total: 2, opinion: 0, other: 0 }), /^2 optional boxes have no answer\./);
   });
 });
+
+describe("fix round 1 (B0-3): a required choice the notes do not settle is answered, never acknowledged blank", () => {
+  it("“WAD grade” for a knee injury: the item names the options up front, offers no acknowledgement, and keeps saying so after one", async () => {
+    const { requiredAnswerFirst, resolutionOptionsFor } = await import("./review-model");
+    const { report: base, form: baseForm } = drafted();
+    const form: FormDefinition = {
+      ...baseForm,
+      fields: baseForm.fields.map((f) => (f.id === "F-11" ? { ...f, label: "WAD grade", required: true, options: ["0", "I", "IIa", "IIb", "III", "IV"] } : f)),
+    };
+    const template = formToTemplate(form);
+    const report = revalidated({ ...base, gaps: base.gaps.map((g) => (g.sectionKey === "F-11" ? { ...g, id: "gap-F-11-t-1", raisedBy: "ai" as const, issue: "No WAD grade is recorded (a knee injury)." } : g)) }, form);
+    const box = reviewItems(report, { template, form }).boxes.get("F-11");
+    assert.equal(box?.heading, "Required – no answer yet");
+    assert.equal(box?.instruction, "This form requires an answer – choose one of 0 / I / IIa / IIb / III / IV.");
+    const options = requiredAnswerFirst(resolutionOptionsFor({ own: false, opinion: false, gap: box!.gaps[0], actor: ACTOR }));
+    assert.equal(options.canAcknowledge, false, "no “Acknowledge with a reason” that would leave a required box blank");
+    // Acknowledged anyway (an older report): still the same instruction, never a dead end.
+    const acked = revalidated(resolveGap(report, "gap-F-11-t-1", "acknowledged", "Not applicable – knee injury.", ACTOR, NOW), form);
+    assert.equal(reviewItems(acked, { template, form }).boxes.get("F-11")?.instruction, "This form requires an answer – choose one of 0 / I / IIa / IIb / III / IV.");
+    assert.equal(canSign(acked.flags, acked.gaps).ok, false, "approval stays blocked until it is answered");
+  });
+});
