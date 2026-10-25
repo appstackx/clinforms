@@ -11,7 +11,7 @@
  * Owner: studio-a agent.
  */
 import { STORAGE_PREFIX } from "../../../config.public";
-import { distinctiveTokens, normaliseOrgName } from "../../../core/forms";
+import { distinctiveTokens, normaliseOrgName, reportKindOf, type ReportKind } from "../../../core/forms";
 import type { EpisodeBundle, FormDefinition, InstructingParty } from "../../../core/types";
 import { getStoreMode, getStoredReferrerLinks, saveReferrerLinks } from "../../store";
 
@@ -19,18 +19,7 @@ export { distinctiveTokens, normaliseOrgName } from "../../../core/forms";
 
 export type MatchReason = "remembered" | "same_name" | "similar_name";
 
-/**
- * Fix round 1 (B0-20): whether a form is an initial assessment or a discharge / final report, from its title – a
- * referrer usually sends both, so a choice is remembered for each. Null for anything else (progress, interim, portal).
- */
-export type ReportKind = "initial" | "discharge";
-
-export function reportKindOf(title: string): ReportKind | null {
-  const t = (title ?? "").toLowerCase();
-  if (/\b(?:discharge|final|end of treatment|eots|closing)\b/.test(t)) return "discharge";
-  if (/\binitial\b|\bassessment\b/.test(t)) return "initial";
-  return null;
-}
+export { reportKindOf, type ReportKind } from "../../../core/forms";
 
 /** What the notes cover: a discharge (the episode closed, or a discharge note), only the first assessment, or neither. */
 export function notesReportKind(bundle: Pick<EpisodeBundle, "notes" | "episodeStatus">): ReportKind | null {

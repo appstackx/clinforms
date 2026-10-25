@@ -10,7 +10,8 @@
  * Codes: UNKNOWN_SOURCE_ID, UNCITED_PARAGRAPH (citations.ts), FIGURE_NOT_IN_SOURCE (figures.ts, and
  * form-answers.ts for drafted date/number answers on a referrer's form), TERM_NOT_IN_SOURCE (terms.ts),
  * OPINION_LANGUAGE (opinion-language.ts), OTHER_CLINICIAN_VOICE (voice.ts: another clinician's note in the signer's
- * first person – fix round 1), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
+ * first person – fix round 1), DRAFT_FIT (draft-fit.ts: warnings – drafted wording that does not fit its place on the
+ * form, fix round 1), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
  * MISSING_PLACEHOLDER (placeholders.ts; merge-fields.ts for mail-merge fields left in an answer or on the
  * referrer's form – 10/2026, pass `form` to validateReport; choice-marks.ts for a marked cell or a kept printed option
  * that matches no printed option – 10/2026), DATA_CHECK (data-checks.ts, by the integration agent).
@@ -22,6 +23,7 @@
  * Owner: ai agent (runValidators). `canSign` keeps the foundation's signature.
  */
 import { computeFacts } from "../computed-facts";
+import { notApplicable } from "../conditions";
 import { todayIso } from "../dates";
 import type {
   ComputedFact,
@@ -47,6 +49,7 @@ import { validatePlaceholders } from "./placeholders";
 import { validateScopeTerms } from "./scope-terms";
 import { validateTerms } from "./terms";
 import { validateClinicianVoice } from "./voice";
+import { validateDraftFit } from "./draft-fit";
 
 export interface ValidatorInput {
   report: Report;
@@ -80,6 +83,7 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "placeholders", run: validatePlaceholders },
   { name: "merge-fields", run: validateMergeFields },
   { name: "gaps", run: validateGaps },
+  { name: "draft-fit", run: validateDraftFit },
 ];
 
 const CODE_ORDER: Record<ReportFlagCode, number> = {
@@ -93,6 +97,7 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
   MISSING_PLACEHOLDER: 7,
   OPEN_GAP: 8,
   DATA_CHECK: 9,
+  DRAFT_FIT: 10,
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -172,6 +177,12 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
         }),
       );
     }
+  }
+  // Fix round 1 (B0-7): a conditional question that does not apply ("IF YES, PLEASE DETAIL" after a "No") is not asked:
+  // nothing of it is printed, so none of its checks blocks (its gaps are settled as not applicable by the review).
+  const inapplicable = new Set((input.report.sections ?? []).filter((s) => notApplicable(input.report.sections, s.key)).map((s) => s.key));
+  if (inapplicable.size > 0) {
+    for (let i = flags.length - 1; i >= 0; i--) if (flags[i].sectionKey && inapplicable.has(flags[i].sectionKey as string) && flags[i].code !== "OPEN_GAP") flags.splice(i, 1);
   }
   try {
     flags.push(...dataCheckFlags(runDataChecks(input.bundle)));

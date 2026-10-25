@@ -82,6 +82,8 @@ export interface QuestionCardProps {
   onCopy?: (key: string) => void;
   /** The question has an answer to copy. */
   copyable?: boolean;
+  /** Fix round 1 (B0-7): why this conditional question does not apply ("“ANY FURTHER TREATMENT…?” is “NO”"), or null. */
+  notApplicableBecause?: string | null;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -378,6 +380,7 @@ function TypedValueEditor({
 
 function QuestionCardImpl(props: QuestionCardProps) {
   const { q, status, flags, gaps, bundle, connectorId, readOnly, receipt, actor, dispatch, onOpenSource, canAcknowledge } = props;
+  const notApplicableBecause = props.notApplicableBecause ?? null;
   const tenant = useStudioMode() === "tenant";
   const sourceLabels = useFillSourceLabels();
   const section = q.section;
@@ -739,6 +742,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
           </span>
         )}
       </div>
+      {notApplicableBecause && (
+        // Fix round 1 (B0-7): a conditional question the answer before it rules out.
+        <p className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600">
+          Not applicable: {notApplicableBecause} – nothing is printed here, and its checks do not block approval.
+        </p>
+      )}
       <div className="mt-3">{body}</div>
       {(status === "blank" || status === "left_blank") && section && field && leftBlankEffect(field) && (
         // Fix round 1 (B0-2): what leaving it blank changes on the printed form.

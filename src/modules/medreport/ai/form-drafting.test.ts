@@ -394,3 +394,41 @@ test("fix round 1: the final instruction says which notes are the signing author
   assert.match(buildFormFinalInstruction(FORM, ["F-02"], sarah, hers), /Every note is their own\.$/);
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my"/);
 });
+
+test("fix round 1 (B0-6): an initial assessment form is drafted from the record as at that assessment", async () => {
+  const { buildFormPromptParts } = await import("./form-prompts");
+  const bundle = testBundle(); // N-001 initial assessment 18/03/2026, N-002 discharge 06/05/2026
+  const ia: FormDefinition = { ...FORM, title: "Initial Assessment Report" };
+  const parts = buildFormPromptParts({ form: ia, template: formToTemplate(ia), bundle, instructingParty: bundle.referral, sectionKeys: ["F-02"], computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }) });
+  assert.match(parts.episode, /id="N-001"/);
+  assert.doesNotMatch(parts.episode, /id="N-002"/, "the later discharge note is not sent");
+  assert.doesNotMatch(parts.episode, /FACT-attendance|FACT-outcomes/, "no figures worked out from the whole episode");
+  assert.match(parts.episode, /Episode status: open/);
+  assert.match(parts.final, /The record is as at the initial assessment of 18\/03\/2026: later notes are left out/);
+  // Any other form: the whole record, as before.
+  const full = buildFormPromptParts({ form: FORM, template: formToTemplate(FORM), bundle, instructingParty: bundle.referral, sectionKeys: ["F-02"], computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }) });
+  assert.match(full.episode, /id="N-002"/);
+  assert.doesNotMatch(full.final, /as at the initial assessment/);
+});
+
+test("fix round 1 (B0-5, B0-7, B0-16, B0-23): compact places, conditions, numbered rows and gap wording reach the drafting call", async () => {
+  const { buildFormBlock } = await import("./form-prompts");
+  const f = (n: number, label: string, rest: Partial<FormField>) => field(n, label, { answerType: "short_text", fillSource: { kind: "notes_narrative" }, ...rest });
+  const form: FormDefinition = {
+    ...FORM,
+    fields: [
+      f(1, "Activity 1", { anchor: { kind: "docx", target: "table_cell", blockId: "t4.r2.c0" } }),
+      f(2, "Benefit of treatment – activities to return to", { anchor: { kind: "docx", target: "replace_placeholder", blockId: "t0.r17.c0", placeholderText: "…" } }),
+      field(3, "ANY FURTHER TREATMENT RECOMMENDED?", { answerType: "yes_no", options: ["YES", "NO"], fillSource: { kind: "clinician_opinion" } }),
+      field(4, "IF YES, PLEASE DETAIL", { answerType: "long_text", fillSource: { kind: "clinician_opinion" } }),
+    ],
+  };
+  const block = buildFormBlock(form, formToTemplate(form));
+  assert.match(block, /Question as printed: Activity 1\n[\s\S]*?Where it goes: a cell of a table – give only the value\./);
+  assert.match(block, /Where it goes: it fills "…" inside a sentence printed on the form – give only the words that complete that sentence\./);
+  assert.match(block, /Condition: answer it only if F-03 \(“ANY FURTHER TREATMENT RECOMMENDED\?”\) is Yes; otherwise leave it empty with no gap\./);
+  assert.match(FORM_DRAFT_SYSTEM_PROMPT, /10\. Conditions\./);
+  assert.match(FORM_DRAFT_SYSTEM_PROMPT, /11\. Numbered rows\.[^\n]*row N gives the Nth item/);
+  assert.match(FORM_DRAFT_SYSTEM_PROMPT, /never as "my note" or "your note"/);
+  assert.match(FORM_DRAFT_SYSTEM_PROMPT, /"The notes are written by…", "so I can only describe…"/);
+});

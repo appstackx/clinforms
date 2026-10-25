@@ -28,6 +28,7 @@ import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
+import { notApplicable } from "../../../core/conditions";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
@@ -287,9 +288,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed));
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report.sections));
     return map;
-  }, [questions, flagsBySection, report.gaps, personAnswered, signed]);
+  }, [questions, flagsBySection, report.gaps, report.sections, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
@@ -724,6 +725,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   canAcknowledge={canAck}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
+                  notApplicableBecause={notApplicable(report.sections, q.key)?.because ?? null}
                   onDraft={
                     draftingUnavailable
                       ? undefined

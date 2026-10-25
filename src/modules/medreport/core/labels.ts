@@ -216,6 +216,7 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   MISSING_PLACEHOLDER: "Missing field",
   OPEN_GAP: "Open gap",
   DATA_CHECK: "Data check",
+  DRAFT_FIT: "Check where it goes on the form",
 };
 
 export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {

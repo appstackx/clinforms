@@ -102,3 +102,26 @@ export function applyScope(bundle: EpisodeBundle, template: ReportTemplate): Epi
   if (incident) scoped.incident = incident;
   return scoped;
 }
+
+/**
+ * Fix round 1 (B0-6): the record as at the initial assessment, for a form that reports it – the notes up to and
+ * including the first attended assessment (its date: the first initial-assessment note, else the first note), the
+ * appointments up to then and the outcome scores taken by then. Registration, referral, incident and consent are kept;
+ * the episode is open at that point. Null when there are no notes. Never mutates its input.
+ */
+export function initialAssessmentView(bundle: EpisodeBundle): { bundle: EpisodeBundle; date: string } | null {
+  const notes = bundle.notes.slice().sort((a, b) => (a.date + (a.time ?? "") < b.date + (b.time ?? "") ? -1 : a.date + (a.time ?? "") > b.date + (b.time ?? "") ? 1 : 0));
+  const ia = notes.find((n) => n.type === "initial_assessment") ?? notes[0];
+  if (!ia) return null;
+  const date = ia.date;
+  return {
+    date,
+    bundle: {
+      ...bundle,
+      notes: bundle.notes.filter((n) => n.date <= date),
+      appointments: bundle.appointments.filter((a) => a.date <= date),
+      outcomeMeasures: bundle.outcomeMeasures.map((m) => ({ ...m, points: m.points.filter((p) => p.date <= date) })).filter((m) => m.points.length > 0),
+      episodeStatus: "open",
+    },
+  };
+}

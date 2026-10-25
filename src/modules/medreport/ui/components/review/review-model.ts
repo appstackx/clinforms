@@ -8,6 +8,7 @@
  * Owner: studio-b agent.
  */
 import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
+import { conditionOf, notApplicable } from "../../../core/conditions";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isBlankByDesign, isSectionAnswered, parseFormAnswerValue, sectionHeadings } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
@@ -220,10 +221,14 @@ export function questionStatus(
   byPerson = false,
   /** The report is approved (read-only). */
   approved = false,
+  /** The report's sections, for conditional questions (fix round 1, B0-7). */
+  conditionSections?: readonly ReportSection[],
 ): QuestionStatus {
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
+  // Fix round 1 (B0-7): not asked – the answer before it says it does not apply.
+  if (conditionSections && notApplicable(conditionSections, section.key)) return approved ? "left_blank" : "blank";
   // Fix round 1 (B0-22): counted as left blank (as "Copy answers" says), not as filled from the records.
   if (isBlankByDesign(section, q.field) && !section.paragraphs.some((p) => p.text.trim() !== "")) return "record_empty";
   const answered = isSectionAnswered(section);
@@ -784,6 +789,44 @@ export function settleGapsByAnswer(before: Report, after: Report, key: string, a
     return appendActivity({ ...after, gaps }, { actor, action: "edited", detail: `${key}: the answer was removed, so ${settled.length === 1 ? "its gap is" : `its ${settled.length} gaps are`} open again.` }, now);
   }
   return after;
+}
+
+/**
+ * Fix round 1 (B0-7): a conditional question that does not apply ("IF YES, PLEASE DETAIL" after a "No") has its open
+ * gaps settled – "Not applicable: “ANY FURTHER TREATMENT RECOMMENDED?” is “NO”." (one activity entry each); when the
+ * answer before it changes so that it applies again, the gaps settled that way are reopened. Returns `report` itself when
+ * nothing changes.
+ */
+export function settleConditionalGaps(report: Report, actor: string, now?: Date): Report {
+  let next = report;
+  const at = nowIso(now);
+  for (const section of report.sections) {
+    const own = next.gaps.filter((g) => g.sectionKey === section.key);
+    if (own.length === 0) continue;
+    const condition = conditionOf(next.sections, section.key);
+    if (condition?.applies === false) {
+      const open = own.filter((g) => !g.resolution);
+      if (open.length === 0) continue;
+      const text = `Not applicable: ${condition.because}.`;
+      next = { ...next, gaps: next.gaps.map((g) => (open.indexOf(g) >= 0 ? { ...g, resolution: { kind: "resolved" as const, text, at, notApplicable: true } } : g)), updatedAt: at };
+      for (const g of open) next = appendActivity(next, { actor, action: "gap_resolved", detail: `${section.key}: resolved gap “${g.issue}” – ${text}` }, now);
+    } else {
+      const settled = own.filter((g) => g.resolution?.notApplicable);
+      if (settled.length === 0) continue;
+      next = {
+        ...next,
+        gaps: next.gaps.map((g) => {
+          if (settled.indexOf(g) < 0) return g;
+          const reopened = { ...g };
+          delete reopened.resolution;
+          return reopened;
+        }),
+        updatedAt: at,
+      };
+      next = appendActivity(next, { actor, action: "edited", detail: `${section.key}: applies again, so its gap${settled.length === 1 ? " is" : "s are"} open again.` }, now);
+    }
+  }
+  return next;
 }
 
 /** Undo a gap's resolution. */
