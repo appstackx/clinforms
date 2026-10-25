@@ -194,15 +194,33 @@ NODE_PATH=<node_modules with playwright> node scripts/medreport/video/record-hel
 
 ```bash
 NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-help.mjs --src <help-video src> --out <dir> \
-  [--name ClinForms-Blue-Heart-getting-started] [--chapter-cards 1.6] [--email-mb 23] [--plan-only]
+  [--name ClinForms-Blue-Heart-getting-started] [--chapter-cards 1.6] [--email-mb 13] [--plan-only]
 ```
 
 Title card (lines of chapter 0) → per chapter a 1.6 s chapter card and that chapter's footage → end card (the last
 line). Each narration clip starts at its recorded line start (no clip is sped up or cut); captions (the lines'
 `caption`), a chapter chip top left, the "Sped up – real time about N s" badge and the "Skipped ahead" tags are burned
 in; the narration is levelled to -16 LUFS (compression, look-ahead limiter, linear loudnorm). Outputs: `<name>.mp4`
-(1920x1080), `<name>-email.mp4` (1280x720, at most `--email-mb` MB), `<name>.srt` (the narration as spoken),
-`chapters.txt`, `poster.png`; checks and verification frames in `<src>/work/mix/` (`mix-report.json`, `frames/`).
+(1920x1080), `<name>-email.mp4` (1280x720, mono 64 kb/s audio, at most `--email-mb` MB), `<name>.srt` (the narration
+as spoken), `chapters.txt`, `poster.png`; checks and verification frames in `<src>/work/mix/` (`mix-report.json`,
+`frames/`).
+
+- **E-mail size.** An attachment grows by about 37 % when it is sent (base64): keep the e-mail copy at 13 MB or less
+  so that it plus a welcome pack stays under Outlook.com's 20 MB (Gmail: 25 MB). `mix-report.json` gives
+  `asAttachmentMB`.
+- **Files.** The first frame is the title card (no fade from black), so mail and Finder thumbnails show the title.
+  Both videos carry the chapters as metadata (from `chapters.txt`), the title tag and no tool tags (bit-exact muxing,
+  encoder tags emptied, the encoder's informational SEI dropped). Use `-map_metadata <chapters input>`, never
+  `-map_metadata -1`: that also drops the chapter titles and the chapter track.
+- **Per line** (`narration.json`): `captionPos: "right"` puts that caption bottom right (when the centre caption
+  would cover the control being named, e.g. a dialog's main button); `startOnCard: <s>` starts the line that long into
+  its chapter card (for a line that introduces the chapter, or one that needs a little more room).
+- **Footage edits** (`<src>/mix-edits.json`, times in the app segment): `holds` `[{at, dur}]` (a still of that frame,
+  e.g. to land a click on its words), `cuts` `[{from, dur}]` (only where the page is still – give a hold back),
+  `replaces` `[{from, to, frameAt}]` (show a later still instead of a scroll, same length), `zooms`
+  `[{from, ease, to?, window: {x, y, zoom}}]` (eased zoom about a fixed point onto a panel, made on a 4x upscale so it
+  does not jitter). Each edit stays inside one chapter; lines, chapters and labels follow. Check that a hold or cut
+  sits on still frames (frame difference) before using it.
 
 ## Outreach video (`record-outreach.mjs`)
 

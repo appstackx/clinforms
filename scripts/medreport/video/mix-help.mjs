@@ -7,11 +7,25 @@
  * the line times; a chapter chip sits top left over the app; the sped-up drafting wait carries "Sped up – real time
  * about N s" and each labelled jump cut a short "Skipped ahead" tag.
  *
- * Outputs (--out): <name>.mp4 (1920x1080 master, H.264 + AAC), <name>-email.mp4 (1280x720, at most --email-mb MB),
- * <name>.srt (the narration as spoken, at its real times), chapters.txt, poster.png. Working files: <src>/work/mix.
+ * Per-line options in narration.json: `captionPos: "right"` (bottom right instead of bottom centre, for a line whose
+ * screen has its key control under the centre caption) and `startOnCard: <s>` (the line starts this long after its
+ * chapter card appears, instead of with the chapter's first app frame).
+ *
+ * Optional <src>/mix-edits.json (all times in seconds of the app segment, work/clips/app-clean.mp4):
+ *   holds    [{at, dur}]          insert a still of the frame at `at` for `dur` s (e.g. to land a click on its words)
+ *   cuts     [{from, dur}]        drop `dur` s of source from `from` (only where the page is still – give a hold back)
+ *   replaces [{from, to, frameAt}] show the still frame at `frameAt` instead of [from, to) (same length)
+ *   zooms    [{from, ease, to?, window: {x, y, zoom}}]  ease into a zoom (window = top-left of the zoomed view in
+ *            1920x1080 frame pixels at full zoom) and hold it to `to` (eased back out) or to the chapter's end
+ * Each edit must fall inside one chapter's footage. Line starts, chapter times and labels follow the edits.
+ *
+ * Outputs (--out): <name>.mp4 (1920x1080 master, H.264 + AAC), <name>-email.mp4 (1280x720, mono 64 kb/s audio, at most
+ * --email-mb MB so that it still fits an e-mail once encoded for sending), <name>.srt (the narration as spoken, at its
+ * real times), chapters.txt, poster.png. Both videos carry the chapters, the title tag and no tool tags. The first
+ * frame is the title card itself (no fade from black), so thumbnails show the title. Working files: <src>/work/mix.
  *
  *   NODE_PATH=<node_modules with playwright> node scripts/medreport/video/mix-help.mjs --src <help-video src> --out <dir> \
- *     [--name ClinForms-Blue-Heart-getting-started] [--chapter-cards 1.6] [--email-mb 23] [--frames <dir>] [--plan-only]
+ *     [--name ClinForms-Blue-Heart-getting-started] [--chapter-cards 1.6] [--email-mb 13] [--frames <dir>] [--plan-only]
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -56,13 +70,19 @@ const CFG = {
   endLead: 0.6,
   endTail: 3.0, // the end card stays this long after the last line (the last 0.8 s fade out)
   capTail: 0.35, // a caption stays this long after its line
-  emailMB: Number(arg("--email-mb", 23)),
+  // E-mail attachments grow by about 37 % when encoded for sending (base64): 13 MB -> about 17.8 MB, which leaves
+  // room for the welcome pack inside Outlook.com's 20 MB and Gmail's 25 MB limits.
+  emailMB: Number(arg("--email-mb", 13)),
   lufs: -16,
   tp: -1.5,
   lra: 11,
   comp: "acompressor=threshold=-26dB:ratio=2:attack=1:release=150:knee=8:makeup=1,acompressor=threshold=-14dB:ratio=4:attack=0.5:release=50:knee=4:makeup=1",
   x264: ["-profile:v", "high", "-level:v", "4.0", "-x264-params", "ref=4"],
 };
+// No tool tags in the files: bit-exact muxing/encoding drops the Lavf/Lavc "encoder" tags, and filter_units drops the
+// encoder's SEI note (NAL type 6, informational only) from the H.264 stream.
+const CLEAN = ["-fflags", "+bitexact", "-bsf:v", "filter_units=remove_types=6"];
+const TITLE = "ClinForms – your Blue Heart trial: getting started";
 const TAGS = [
   "-color_range",
   "tv",
@@ -92,6 +112,12 @@ const VOICE = Object.fromEntries(
   ).map((v) => [v.id, v]),
 );
 const APP = path.join(WORK, "clips", "app-clean.mp4");
+const EDITS_FILE = path.join(SRC, "mix-edits.json");
+const EDITS = fs.existsSync(EDITS_FILE)
+  ? JSON.parse(fs.readFileSync(EDITS_FILE, "utf8"))
+  : {};
+const NARR_BY_ID = Object.fromEntries(NARR.map((l) => [l.id, l]));
+const grid = (x) => Math.round(x * FPS) / FPS;
 const CH_NAMES = [
   "Welcome",
   "First sign-in",
@@ -117,6 +143,66 @@ const CH_WHO = {
 /* ---------------------------------------------------------------------------------------------
  * Plan: where every line, chapter and overlay lands in the final video
  * -------------------------------------------------------------------------------------------*/
+/**
+ * A chapter's footage as pieces in app time: {a, b} plays [a, b); {freeze, d} holds the frame at `freeze` for d s.
+ * Holds, cuts and replaces inside [appA, appB) split the single piece; zooms are applied later (they keep time).
+ */
+function piecesFor(appA, appB) {
+  const inside = (t) => t >= appA - 1e-6 && t < appB - 1e-6;
+  const ops = [];
+  for (const h of EDITS.holds || [])
+    if (inside(h.at))
+      ops.push({ at: grid(h.at), F: grid(h.at), d: grid(h.dur), skip: 0, edit: h });
+  for (const c of EDITS.cuts || [])
+    if (inside(c.from))
+      ops.push({ at: grid(c.from), F: null, d: 0, skip: grid(c.dur), edit: c });
+  for (const r of EDITS.replaces || [])
+    if (inside(r.from)) {
+      if (!inside(r.to) || !inside(r.frameAt))
+        throw new Error(`replace ${JSON.stringify(r)} leaves its chapter`);
+      ops.push({
+        at: grid(r.from),
+        F: grid(r.frameAt),
+        d: grid(r.to - r.from),
+        skip: grid(r.to - r.from),
+        edit: r,
+      });
+    }
+  ops.sort((x, y) => x.at - y.at);
+  const pieces = [];
+  let cur = appA;
+  for (const o of ops) {
+    if (o.at < cur - 1e-6)
+      throw new Error(`overlapping edits near ${o.at}s: ${JSON.stringify(o.edit)}`);
+    if (o.at > cur) pieces.push({ a: cur, b: o.at });
+    if (o.d > 0) pieces.push({ freeze: o.F, d: o.d, edit: o.edit });
+    cur = o.at + o.skip;
+    if (cur > appB + 1e-6)
+      throw new Error(`edit runs past its chapter: ${JSON.stringify(o.edit)}`);
+  }
+  if (cur < appB) pieces.push({ a: cur, b: appB });
+  let local = 0;
+  for (const p of pieces) {
+    p.local = local;
+    local += p.freeze !== undefined ? p.d : p.b - p.a;
+  }
+  return { pieces, len: local };
+}
+/** App time -> time within the chapter's (edited) footage; times inside a cut or replaced range map to its end. */
+function appToLocal(s, t) {
+  let last = 0;
+  for (const p of s.pieces) {
+    if (p.freeze !== undefined) {
+      last = p.local + p.d;
+      continue;
+    }
+    if (t < p.a) return Math.max(0, p.local);
+    if (t < p.b) return p.local + (t - p.a);
+    last = p.local + (p.b - p.a);
+  }
+  return Math.min(last, s.len);
+}
+
 function plan() {
   const dur = (id) => VOICE[id].trimmedDurationSec;
   const lines = [];
@@ -136,6 +222,7 @@ function plan() {
     const a = c.start;
     const b = i + 1 < chs.length ? chs[i + 1].start : TL.dur;
     const card = CFG.chapterCard;
+    const { pieces, len } = piecesFor(a, b);
     segs.push({
       n: c.n,
       name: c.name,
@@ -144,21 +231,30 @@ function plan() {
       appA: a,
       appB: b,
       start: at + card,
+      pieces,
+      len,
     });
-    at += card + (b - a);
+    at += card + len;
   });
   const appEnd = at;
+  const segOf = (appT) =>
+    segs.find((x) => appT >= x.appA - 1e-6 && appT < x.appB - 1e-6) ||
+    segs[segs.length - 1];
   const toFinal = (appT) => {
-    const s =
-      segs.find((x) => appT >= x.appA - 1e-6 && appT < x.appB - 1e-6) ||
-      segs[segs.length - 1];
-    return s.start + (appT - s.appA);
+    const s = segOf(appT);
+    return s.start + appToLocal(s, appT);
   };
   // A line belongs to its own chapter's footage (it never starts on the chapter card, even if it was logged a few
-  // milliseconds before the chapter mark).
+  // milliseconds before the chapter mark) – unless narration.json asks for it to start on the card (startOnCard).
   for (const l of TL.lines) {
     const s = segs.find((x) => x.n === l.chapter);
-    const t = s ? s.start + Math.max(0, l.start - s.appA) : toFinal(l.start);
+    const onCard = NARR_BY_ID[l.id] && NARR_BY_ID[l.id].startOnCard;
+    let t = s ? s.start + appToLocal(s, l.start) : toFinal(l.start);
+    if (s && onCard !== undefined && onCard !== null) {
+      if (onCard < 0 || onCard >= s.card)
+        throw new Error(`${l.id}: startOnCard must be within the ${s.card}s card`);
+      t = s.cardStart + onCard;
+    }
     lines.push({ id: l.id, start: Number(t.toFixed(3)), dur: dur(l.id) });
   }
   // End card: the last line.
@@ -187,7 +283,26 @@ function plan() {
     fEnd: toFinal(s.end),
   }));
   const jumps = (TL.jumps || []).map((j) => ({ ...j, f: toFinal(j.at) }));
-  return { titleDur, segs, appEnd, total, lines, sped, jumps };
+  // Zooms, in each chapter's local (edited) time.
+  const zooms = (EDITS.zooms || []).map((z) => {
+    const s = segOf(z.from);
+    const zs = grid(appToLocal(s, z.from));
+    const ze =
+      z.to === undefined || z.to === null ? s.len : grid(appToLocal(s, z.to));
+    return { ...z, n: s.n, localFrom: zs, localTo: ze, fFrom: s.start + zs, fTo: s.start + ze };
+  });
+  const edits = segs.flatMap((s) =>
+    s.pieces
+      .filter((p) => p.freeze !== undefined)
+      .map((p) => ({
+        chapter: s.n,
+        label: p.edit.label || "",
+        frameAt: p.freeze,
+        stillSec: p.d,
+        fStart: Number((s.start + p.local).toFixed(3)),
+      })),
+  );
+  return { titleDur, segs, appEnd, total, lines, sped, jumps, zooms, edits };
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -408,7 +523,8 @@ function renderPicture(pl, A, out) {
     `[${tnIdx}:v]${card},format=rgba,fade=t=in:st=${(h02 - 0.2).toFixed(3)}:d=0.5:alpha=1[tn]`,
   );
   g.push(
-    `[t0][tn]overlay=0:0:format=rgb,format=rgb24,fade=t=in:st=0:d=0.5,fade=t=out:st=${(pl.titleDur - 0.3).toFixed(3)}:d=0.3:color=white[p0]`,
+    // No fade-in: the very first frame is the title card, so mail and file thumbnails show the title, not black.
+    `[t0][tn]overlay=0:0:format=rgb,format=rgb24,fade=t=out:st=${(pl.titleDur - 0.3).toFixed(3)}:d=0.3:color=white[p0]`,
   );
   parts.push("p0");
   const appIdx = input(["-i", APP]);
@@ -432,9 +548,67 @@ function renderPicture(pl, A, out) {
       );
       parts.push(`c${i}`);
     }
-    const d = s.appB - s.appA;
+    const d = s.len;
+    const P = s.pieces;
+    const lo = 0.4 / FPS; // trim edges sit 0.4 frame before a grid time (trim rounds through microseconds,
+    const hi = 0.6 / FPS; // so an edge exactly half a frame off can land either side)
+    if (P.length === 1 && P[0].freeze === undefined)
+      g.push(
+        `[a${i}]trim=start=${s.appA.toFixed(4)}:end=${s.appB.toFixed(4)},setpts=PTS-STARTPTS[r${i}]`,
+      );
+    else {
+      g.push(`[a${i}]split=${P.length}${P.map((_, k) => `[a${i}p${k}]`).join("")}`);
+      P.forEach((p, k) => {
+        if (p.freeze !== undefined)
+          g.push(
+            `[a${i}p${k}]trim=start=${(p.freeze - lo).toFixed(4)}:end=${(p.freeze + hi).toFixed(4)},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop=${Math.round(p.d * FPS) - 1}[a${i}q${k}]`,
+          );
+        else
+          g.push(
+            `[a${i}p${k}]trim=start=${(k === 0 ? p.a : p.a - lo).toFixed(4)}:end=${(k === P.length - 1 ? p.b : p.b - lo).toFixed(4)},setpts=PTS-STARTPTS[a${i}q${k}]`,
+          );
+      });
+      g.push(
+        `${P.map((_, k) => `[a${i}q${k}]`).join("")}concat=n=${P.length}:v=1:a=0,setpts=N/(${FPS}*TB)[r${i}]`,
+      );
+    }
+    let src = `r${i}`;
+    for (const [zi, z] of pl.zooms.filter((x) => x.n === s.n).entries()) {
+      const K = 4; // zoom on a 4x upscale, so the eased pan moves in quarter pixels (no jitter)
+      const Z = z.window.zoom;
+      const px = z.window.x / (1 - 1 / Z); // the fixed point of the zoom, in frame pixels
+      const py = z.window.y / (1 - 1 / Z);
+      const E = z.ease;
+      const tIn = `clip(it/${E},0,1)`;
+      const sIn = `(${tIn})*(${tIn})*(3-2*(${tIn}))`;
+      const len = z.localTo - z.localFrom;
+      const tOut = `clip((${len.toFixed(4)}-it)/${E},0,1)`;
+      const sOut =
+        z.to === undefined || z.to === null
+          ? "1"
+          : `(${tOut})*(${tOut})*(3-2*(${tOut}))`;
+      const zexpr = `1+${(Z - 1).toFixed(4)}*min(${sIn},${sOut})`;
+      const pre = `r${i}z${zi}pre`;
+      const mid = `r${i}z${zi}mid`;
+      const post = `r${i}z${zi}post`;
+      const hasPost = len < d - z.localFrom - 1e-6;
+      g.push(
+        `[${src}]split=${hasPost ? 3 : 2}[${pre}i][${mid}i]${hasPost ? `[${post}i]` : ""}`,
+        `[${pre}i]trim=end=${(z.localFrom - lo).toFixed(4)},setpts=PTS-STARTPTS[${pre}]`,
+        `[${mid}i]trim=start=${(z.localFrom - lo).toFixed(4)}${hasPost ? `:end=${(z.localTo - lo).toFixed(4)}` : ""},setpts=PTS-STARTPTS,scale=${W * K}:${H * K}:flags=bicubic,` +
+          `zoompan=z='${zexpr}':x='${(K * px).toFixed(2)}*(1-1/zoom)':y='${(K * py).toFixed(2)}*(1-1/zoom)':d=1:s=${W}x${H}:fps=${FPS},setsar=1,format=rgb24[${mid}]`,
+      );
+      if (hasPost)
+        g.push(
+          `[${post}i]trim=start=${(z.localTo - lo).toFixed(4)},setpts=PTS-STARTPTS[${post}]`,
+        );
+      g.push(
+        `[${pre}][${mid}]${hasPost ? `[${post}]` : ""}concat=n=${hasPost ? 3 : 2}:v=1:a=0,setpts=N/(${FPS}*TB)[r${i}z${zi}]`,
+      );
+      src = `r${i}z${zi}`;
+    }
     g.push(
-      `[a${i}]trim=start=${s.appA.toFixed(4)}:end=${s.appB.toFixed(4)},setpts=PTS-STARTPTS,fade=t=in:st=0:d=0.2:color=white${i === pl.segs.length - 1 ? `,fade=t=out:st=${(d - 0.3).toFixed(3)}:d=0.3:color=white` : ""}[s${i}]`,
+      `[${src}]fade=t=in:st=0:d=0.2:color=white${i === pl.segs.length - 1 ? `,fade=t=out:st=${(d - 0.3).toFixed(3)}:d=0.3:color=white` : ""}[s${i}]`,
     );
     parts.push(`s${i}`);
   });
@@ -464,9 +638,10 @@ function renderPicture(pl, A, out) {
     const s = l.start;
     const e = Math.min(l.start + l.dur + CFG.capTail, next - 0.08);
     const c = A.captions[l.id];
+    const right = NARR_BY_ID[l.id] && NARR_BY_ID[l.id].captionPos === "right";
     items.push({
       file: c.file,
-      x: Math.round((W - c.w) / 2),
+      x: right ? W - 12 - c.w : Math.round((W - c.w) / 2),
       y: H - 14 - c.h,
       s,
       e,
@@ -481,7 +656,7 @@ function renderPicture(pl, A, out) {
       x: 0,
       y: 0,
       s: s.start + 0.15,
-      e: s.start + (s.appB - s.appA) - 0.1,
+      e: s.start + s.len - 0.1,
       fade: 0.25,
     });
   });
@@ -779,7 +954,16 @@ function subtitleEvents(text, start, end) {
       (m) => m.index + (m[0] === " – " ? 2 : 1),
     );
     const mid = text.length / 2;
-    cands.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+    // Prefer a sentence end (if neither part is very short), then the break nearest the middle.
+    const sentence = (c) =>
+      text[c - 1] === "." &&
+      Math.min(c, text.length - c) >= 0.3 * text.length
+        ? 0
+        : 1;
+    cands.sort(
+      (a, b) =>
+        sentence(a) - sentence(b) || Math.abs(a - mid) - Math.abs(b - mid),
+    );
     const k = cands.find(
       (c) => fits(text.slice(0, c).trim()) && fits(text.slice(c).trim()),
     );
@@ -831,6 +1015,24 @@ function writeChapters(pl) {
   // The help chapter (8) already covers the address; keep YouTube-style rows for the 9 chapters only.
   rows.pop();
   fs.writeFileSync(FILES.chapters, rows.join("\n") + "\n");
+  // The same chapters as file metadata (players with a chapter menu show them).
+  const marks = [
+    { t: 0, name: "Welcome" },
+    ...pl.segs.map((s) => ({ t: s.cardStart, name: s.name })),
+  ];
+  const escMeta = (x) => x.replace(/[=;#\\\n]/g, (c) => `\\${c}`);
+  const meta = [";FFMETADATA1"];
+  marks.forEach((m, i) => {
+    const end = i + 1 < marks.length ? marks[i + 1].t : pl.total;
+    meta.push(
+      "[CHAPTER]",
+      "TIMEBASE=1/1000",
+      `START=${Math.round(m.t * 1000)}`,
+      `END=${Math.round(end * 1000)}`,
+      `title=${escMeta(m.name)}`,
+    );
+  });
+  fs.writeFileSync(CHAPTER_META, meta.join("\n") + "\n");
   return rows;
 }
 async function renderPoster(A, total) {
@@ -921,6 +1123,7 @@ function verificationFrames(pl) {
 }
 
 const MB = (b) => Number((b / 1e6).toFixed(2));
+const CHAPTER_META = path.join(MIX, "chapters.ffmeta");
 function probe(file) {
   return JSON.parse(
     execFileSync(
@@ -929,7 +1132,7 @@ function probe(file) {
         "-v",
         "error",
         "-show_entries",
-        "format=duration,size,bit_rate:format_tags:stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels:stream_tags",
+        "format=duration,size,bit_rate:format_tags:stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels:stream_tags:chapter=start_time,end_time:chapter_tags",
         "-of",
         "json",
         file,
@@ -957,12 +1160,15 @@ async function main() {
   const picDur = probeDuration(pic);
   if (Math.abs(picDur - pl.total) > 0.08)
     throw new Error(`picture is ${picDur}s, planned ${pl.total}s`);
+  const chapters = writeChapters(pl);
   log("master");
   ff([
     "-i",
     pic,
     "-i",
     vo.final,
+    "-i",
+    CHAPTER_META,
     "-map",
     "0:v:0",
     "-map",
@@ -977,24 +1183,36 @@ async function main() {
     "2",
     "-ar",
     "48000",
+    "-flags:a",
+    "+bitexact",
+    ...CLEAN,
     "-t",
     pl.total.toFixed(3),
+    // Global tags from the chapters file (none) – not "-1", which would also drop the chapter titles.
     "-map_metadata",
-    "-1",
+    "2",
+    "-map_chapters",
+    "2",
+    "-metadata:s:v",
+    "encoder=",
+    "-metadata:s:a",
+    "encoder=",
     "-metadata",
-    "title=ClinForms – your Blue Heart trial: getting started",
+    `title=${TITLE}`,
     "-movflags",
     "+faststart",
     FILES.master,
   ]);
   log("e-mail version (1280x720)");
   let email = null;
-  for (const crf of [22, 24, 26, 28, 30, 32]) {
+  for (const crf of [27, 28, 29, 30, 31, 32]) {
     ff([
       "-i",
       pic,
       "-i",
       vo.final,
+      "-i",
+      CHAPTER_META,
       "-map",
       "0:v:0",
       "-map",
@@ -1018,34 +1236,46 @@ async function main() {
       "-c:a",
       "aac",
       "-b:a",
-      "96k",
+      "64k",
       "-ac",
-      "2",
+      "1",
       "-ar",
       "48000",
+      "-flags:v",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      ...CLEAN,
       "-t",
       pl.total.toFixed(3),
       "-map_metadata",
-      "-1",
+      "2",
+      "-map_chapters",
+      "2",
+      "-metadata:s:v",
+      "encoder=",
+      "-metadata:s:a",
+      "encoder=",
       "-metadata",
-      "title=ClinForms – your Blue Heart trial: getting started",
+      `title=${TITLE}`,
       "-movflags",
       "+faststart",
       FILES.email,
     ]);
     const size = fs.statSync(FILES.email).size;
-    email = { crf, bytes: size, MB: MB(size) };
+    // Size once attached to an e-mail: base64 (4/3) plus a line break every 76 characters.
+    const sent = Math.ceil(size / 3) * 4 * (78 / 76);
+    email = { crf, bytes: size, MB: MB(size), asAttachmentMB: MB(sent) };
     log(`e-mail crf ${crf}: ${email.MB} MB`);
     if (size <= CFG.emailMB * 1e6) break;
   }
   const subs = writeSrt(pl);
-  const chapters = writeChapters(pl);
   await renderPoster(A, pl.total);
   const frames = verificationFrames(pl);
   const probes = { master: probe(FILES.master), email: probe(FILES.email) };
   const metaText = JSON.stringify(probes);
   const metaHits = bannedIn(metaText).concat(
-    (metaText.match(/eleven|labs|anthropic|claude/gi) || []).map(
+    (metaText.match(/eleven|labs|anthropic|claude|lavf|lavc|x264/gi) || []).map(
       (x) => `metadata: ${x}`,
     ),
   );
@@ -1077,6 +1307,13 @@ async function main() {
     jumps: pl.jumps.map(({ label, f }) => ({
       label,
       at: Number(f.toFixed(2)),
+    })),
+    edits: pl.edits,
+    zooms: pl.zooms.map(({ label, fFrom, fTo, window }) => ({
+      label,
+      fFrom: Number(fFrom.toFixed(2)),
+      fTo: Number(fTo.toFixed(2)),
+      window,
     })),
     metadataHits: metaHits,
     probes,
