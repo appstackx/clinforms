@@ -1699,3 +1699,31 @@ templates themselves are gitignored and never committed).
   citing the same note stays a blocking recovery flag; faithful work, activity, restriction, balance and provocation
   paraphrases; notes that say the opposite or name another activity; a table of unrecorded opinions that still block;
   the new flag cannot be acknowledged on drafted text).
+
+## Review: one item per question, "Leave optional boxes blank" (10/2026, Blue Heart test run findings 2 and 3)
+
+On Blue Heart's 10Bridge Initial Assessment Report the drafted review listed 28 checks before approval: most were
+gaps on optional boxes, each also listed as "Missing field (warning)", and the Case Reference card stacked three
+warnings for one box (the gap, "Missing field" and the raw code `<<P_GROUPREF>>`). The approval gate is unchanged
+(`core/validation` `canSign` decides, at `/sign` too); the screen now groups and words it
+(`ui/components/review/box-items.ts`, pure; tests `box-items.test.ts`):
+- **One item per question.** A question's open gaps and the checks its own answer clears ("required and has no
+  answer", "optional and has no answer", a mail-merge field only that question's answer removes – found by answering
+  it in a copy) are ONE item (`BoxIssue`) with one instruction – "Type 10Bridge's reference from their letter",
+  "Choose the answer yourself – the notes do not settle it", "Only you can answer this: write your own opinion",
+  "Check your answer, then click Mark resolved". Every other check stays an item of its own. The Flags tab, its badge,
+  the header and the approve button's tooltip count items (the 10Bridge IA: 20 instead of 28; 0 exactly when canSign
+  allows approval) and list "Required" and "Optional" apart.
+- **"Leave optional boxes blank"** (Flags tab): optional questions that are simply blank – drafted, no answer and no
+  text, nothing on them but open gaps and the "optional and has no answer" warning – are acknowledged in one step with
+  one reason (default "Optional on the form – left blank.", at least 15 characters), each ticked and listed with its
+  gap. `leaveOptionalBoxesBlank` re-runs the validators and re-checks every box, then calls `resolveGap` /
+  `acknowledgeFlag` per gap and warning – the same records, activity entries and signed content as single
+  acknowledgements. Never included: required questions, questions that ask for the clinician's opinion
+  (`clinician_opinion` – clinical decisions stay one by one), a box whose drafted answer was held back (`-fit` /
+  `-choice` gaps) and any box with another check (a mail-merge field, opinion wording, a figure…). Acknowledging an
+  optional blank box's gap on its own also acknowledges its "no answer" warning with the same reason. Such a box shows
+  "Left blank on the form" and no longer counts as needing input.
+- **Clinic-system codes in plain words:** validation messages and the preview's notes name a TM3 code by what the
+  code dictionary says it holds (`practiceCodeInWords`: "your clinic system's placeholder for the referrer's reference
+  for this case"); the flag's evidence (and so its ID) keeps the code. «Name» fields read as before.
