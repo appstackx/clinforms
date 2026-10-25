@@ -155,6 +155,15 @@ test("the signer's own record reads as clinical statements, not record-keeping (
     ["On 01/09/2026 I recorded an assessment of shoulder pain, and on 01/10/2026 I recorded the assessment as shoulder pain, improving.", "Assessment on 01/09/2026: shoulder pain, and on 01/10/2026 the assessment was shoulder pain, improving."],
     ["On 22/09/2026 I recorded that, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks.", "On 22/09/2026, in my opinion, Mr Brooks is fit for a phased return to normal duties over 2 weeks."],
     ["I recorded my assessment that the presentation was consistent with WAD II.", "In my assessment, the presentation was consistent with WAD II."],
+    // Fix round 1 (B0-23), seen on an approved Proclaim final report: no dangling "and that" after the rewrite.
+    [
+      "On 16/09/2026 I recorded that, in my opinion, the remaining occasional stiffness should settle within 4–6 weeks with his home exercise programme, and that no further treatment is needed.",
+      "On 16/09/2026, in my opinion, the remaining occasional stiffness should settle within 4–6 weeks with his home exercise programme, and no further treatment is needed.",
+    ],
+    [
+      "On 16/09/2026 I recorded my opinion that the remaining stiffness should settle within 4–6 weeks, and that no further treatment is needed.",
+      "On 16/09/2026, in my opinion, the remaining stiffness should settle within 4–6 weeks, and no further treatment is needed.",
+    ],
   ];
   for (const [input, expected] of cases) {
     assert.equal(plainClinicalWording(input), expected, input);

@@ -108,7 +108,8 @@ function plainRecordedBody(body: string, lead: string, date: string): string {
   const on = date ? ` on ${date}` : "";
   const b = body.trim();
   let m: RegExpExecArray | null;
-  if ((m = /^that,? in my opinion,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1]}`;
+  // Fix round 1 (B0-23): "…, and that no further treatment is needed" loses its "that" with the frame.
+  if ((m = /^(?:that,? in my opinion,?|my opinion that,?)\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1].replace(/ and that,? /, " and ")}`;
   if ((m = /^the clinical reason(?: for (?:the )?further treatment)? (?:as follows|as):\s*([\s\S]*)$/.exec(b))) return m[1];
   if ((m = /^as the clinical reason that,?\s+([\s\S]*)$/.exec(b))) return m[1];
   if ((m = /^(?:the |my )?goals? ((?:for|of) [^:]+?)(?: as)?:\s*([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
