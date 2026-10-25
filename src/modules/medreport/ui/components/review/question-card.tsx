@@ -16,6 +16,7 @@ import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
+import { nameClinicianInstead } from "../../../core/voice";
 import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
@@ -208,16 +209,21 @@ function ParagraphEditor({
       {paragraph.ackReason && <p className="text-[11px] text-slate-500">Wording acknowledged: “{paragraph.ackReason}”</p>}
       {flags.length > 0 && (
         <div className="space-y-1.5">
-          {flags.map((f) => (
-            <FlagItem
-              key={f.id}
-              flag={f}
-              compact
-              readOnly={readOnly}
-              canAck={canAcknowledge(f)}
-              onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
-            />
-          ))}
+          {flags.map((f) => {
+            // "Name Tom Ellis instead" (fix round 1): another clinician's note written as "I" / "my".
+            const named = f.code === "OTHER_CLINICIAN_VOICE" && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
+            return (
+              <FlagItem
+                key={f.id}
+                flag={f}
+                compact
+                readOnly={readOnly}
+                canAck={canAcknowledge(f)}
+                onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
+                {...(named && { fix: { label: `Name ${f.evidence} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+              />
+            );
+          })}
         </div>
       )}
     </div>

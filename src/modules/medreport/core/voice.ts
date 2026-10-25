@@ -498,3 +498,93 @@ export function otherClinicianVoice(
   const keys = report.sections.filter((s) => s.paragraphs.some((p) => p.origin === "ai" && speaksInFirstPerson(p.text))).map((s) => s.key);
   return keys.length > 0 ? { author: author.name, keys } : null;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Another clinician's note in the author's first person (Blue Heart fix round 1, B0-1)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Whether `text` names `name` (case, spaces and a trailing possessive ignored). */
+function namesPerson(text: string, name: string): boolean {
+  const n = name.trim();
+  return n !== "" && new RegExp(`\\b${escapeRe(n).replace(/ /g, "\\s+")}\\b`, "i").test(text);
+}
+
+/**
+ * A paragraph that says "I", "me" or "my" (outside quotations) while it cites a note another clinician wrote: the
+ * clinicians to name instead, or null. The first person is the report author's own (the clinician who signs), so it
+ * fits only the author's own notes:
+ * - every cited note is the author's → null;
+ * - no cited note is the author's (or no author is named, so nothing is anyone's "I") → every other clinician cited;
+ * - the author's notes and another's together → null when each other clinician is named in the text ("I repeated it
+ *   on 22/07/2026, and Tom Ellis recorded…"), else the ones not named.
+ * Only N-* notes count: a paragraph citing no note (the registration record, a computed fact) is left to the other checks.
+ */
+export function otherCliniciansInFirstPerson(
+  p: Pick<Paragraph, "text" | "sourceIds">,
+  bundle: Pick<EpisodeBundle, "notes">,
+  author: (Pick<Clinician, "name"> & { hcpc?: string | null }) | null | undefined,
+): string[] | null {
+  if (!speaksInFirstPerson(p.text)) return null;
+  const cited = citedNoteIds(p)
+    .map((id) => bundle.notes.find((n) => n.id === id))
+    .filter((n): n is EpisodeBundle["notes"][number] => Boolean(n));
+  if (cited.length === 0) return null;
+  const own = (a: Pick<Clinician, "name"> & { hcpc?: string | null }) => Boolean(author?.name.trim()) && sameClinician(a, author as Pick<Clinician, "name">);
+  const others = Array.from(new Set(cited.filter((n) => !own(n.author)).map((n) => n.author.name.trim()))).filter(Boolean);
+  if (others.length === 0) return null;
+  if (!cited.some((n) => own(n.author))) return others;
+  const unnamed = others.filter((name) => !namesPerson(p.text, name));
+  return unnamed.length > 0 ? unnamed : null;
+}
+
+/** Text outside quotations ("…", “…”) through `fn`; quoted note wording stays as written. */
+function outsideQuotes(text: string, fn: (s: string) => string): string {
+  return text
+    .split(/(“[^”]*”|"[^"]*")/)
+    .map((part, i) => (i % 2 === 1 ? part : fn(part)))
+    .join("");
+}
+
+/**
+ * "Name Tom Ellis instead": the inverse of rewriteInFirstPerson() for a paragraph that reports one other clinician's
+ * notes in the first person – "told me" → "told Tom Ellis", "My assessment" → "Tom Ellis's assessment", "in my
+ * opinion" → "in Tom Ellis's opinion", "I also advised" → "Tom Ellis also advised". Quotations, dates and figures are
+ * untouched. Returns null when anything first-person is left (the clinician rewrites it instead).
+ */
+export function nameClinicianInstead(text: string, clinicianName: string): string | null {
+  const name = clinicianName.trim();
+  if (!name || /\bI['\u2019](?:m|ve|d|ll)\b/.test(text)) return null;
+  const possessive = `${name}'s`;
+  const out = outsideQuotes(text, (s) =>
+    s
+      .replace(/\bmy\b/g, possessive)
+      .replace(/\bMy\b/g, possessive)
+      .replace(/\b(?:me|myself|Myself)\b/g, name)
+      .replace(/\bI\b(?![-–/.]\w)/g, (m, offset: number, whole: string) => (NUMERAL_BEFORE_I.test(whole.slice(Math.max(0, offset - 16), offset)) ? m : name)),
+  );
+  return out !== text && !speaksInFirstPerson(out) ? out : null;
+}
+
+/**
+ * A report with no author (drafted in the third person: a draft staff prepared, a built-in report) approved by
+ * `signer`: the drafted answers that still say "I", "me" or "my" about notes the signer did not write – the
+ * questions to edit, or null. The validators check reports that have an author (validation/voice.ts).
+ */
+export function unsignableFirstPerson(
+  report: Pick<Report, "author" | "sections" | "bundleSnapshot">,
+  signer: Pick<Clinician, "name"> & { hcpc?: string | null },
+): { names: string[]; keys: string[] } | null {
+  if (report.author?.name.trim() || !signer.name.trim()) return null;
+  const names = new Set<string>();
+  const keys: string[] = [];
+  for (const s of report.sections) {
+    for (const p of s.paragraphs) {
+      if (p.origin !== "ai") continue;
+      const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, signer);
+      if (!others) continue;
+      others.forEach((n) => names.add(n));
+      if (keys.indexOf(s.key) < 0) keys.push(s.key);
+    }
+  }
+  return keys.length > 0 ? { names: Array.from(names), keys } : null;
+}

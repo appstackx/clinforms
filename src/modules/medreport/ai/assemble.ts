@@ -22,11 +22,12 @@ import "server-only";
  */
 import { DraftsResponseSchema, type DraftsResponse } from "../api/contract";
 import { otherInsurerOnForm, withoutOtherInsurerName } from "../core/form-record-rules";
-import { answerKindFor, parseFormAnswerValue } from "../core/forms";
+import { answerKindFor, parseFormAnswerValue, primaryTreatingClinician } from "../core/forms";
 import { isNoteId } from "../core/ids";
 import { createFormReport, createReport } from "../core/report-factory";
 import { applyScope } from "../core/scope";
 import type {
+  Clinician,
   ComputedFact,
   EpisodeBundle,
   FormAnswer,
@@ -45,7 +46,7 @@ import type {
 import { runValidators } from "../core/validation";
 import { makeFlag } from "../core/validation/context";
 import { buildSourceTexts } from "../core/validation/sources";
-import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, plainClinicalWording } from "../core/voice";
+import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, plainClinicalWording, sameClinician } from "../core/voice";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -61,6 +62,8 @@ export interface AssembleDraftInput {
   form?: FormDefinition;
   /** Fixed ID seed (tests); random otherwise. */
   idSeed?: string;
+  /** The clinician who will sign (the first person is theirs): only their own notes get plain clinical wording. */
+  author?: Clinician;
 }
 
 /** "Ms Hart" (title + surname), or the full name when no title is recorded. */
@@ -149,12 +152,23 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   // On another insurer's form the insurer on record is "the insurer"; "(fictional)" labels stay. A draft
   // in the signer's first person reads as the signer writes a form: "On 01/10/2026 I recorded that X" →
   // "On 01/10/2026, X" (plainClinicalWording; third-person attributions are left for "Write in my own voice").
+  // Fix round 1 (B0-1): only a paragraph citing the signer's OWN notes – "I recorded" about another clinician's note
+  // stays as drafted, so the voice check (validation/voice.ts) flags it instead of the attribution disappearing.
   const otherInsurer = form ? otherInsurerOnForm(form, bundle) : null;
   const fictional = fictionalNames(stringsOf([bundle, input.instructingParty]));
-  const readable = (raw: string) => {
+  const author = input.author;
+  // Whose "I recorded" it is: the signer, else (no signer sent) the clinician who wrote most notes, as on the form.
+  const voiceOwner = author ?? (form ? primaryTreatingClinician(bundle) : null);
+  const ownNotes = (ids: readonly string[]) => {
+    if (!form) return true;
+    const notes = ids.filter(isNoteId).map((id) => bundle.notes.find((n) => n.id === id));
+    return Boolean(voiceOwner?.name.trim()) && notes.length > 0 && notes.every((n) => n !== undefined && sameClinician(n.author, voiceOwner as Clinician));
+  };
+  const readable = (raw: string, plain = true) => {
     let text = describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts });
     if (otherInsurer) text = withoutOtherInsurerName(text, otherInsurer);
-    return plainClinicalWording(keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional));
+    text = keepFictionalLabels(normaliseJobTitles(expandNoteShorthand(text), bundle), fictional);
+    return plain ? plainClinicalWording(text) : text;
   };
 
   const sections: ReportSection[] = [];
@@ -168,10 +182,10 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
     const paragraphs: Paragraph[] = [];
     for (const out of outSections) {
       for (const p of out.paragraphs ?? []) {
-        const text = readable(String(p.text ?? ""));
+        const ids = Array.from(new Set((p.sourceIds ?? []).map((x) => String(x).trim()).filter(Boolean)));
+        const text = readable(String(p.text ?? ""), ownNotes(ids));
         if (!text) continue;
         const id = `${key}-${seed}-p${paragraphs.length + 1}`;
-        const ids = Array.from(new Set((p.sourceIds ?? []).map((x) => String(x).trim()).filter(Boolean)));
         const valid = ids.filter((x) => sourceIds.has(x));
         for (const bad of ids.filter((x) => !sourceIds.has(x))) {
           droppedFlags.push(
@@ -278,6 +292,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
         instructingParty: input.instructingParty,
         computedFacts: input.computedFacts,
         id: "rpt_assemble",
+        author: author ?? null,
       })
     : createReport({
         template,

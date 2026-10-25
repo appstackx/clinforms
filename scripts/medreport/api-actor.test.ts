@@ -683,10 +683,25 @@ describe("clinic members – roles and approval", () => {
     };
     const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(ok.status, 200, await ok.clone().text());
-    // The author approving their own first-person draft is fine (the author is the member).
-    const own: Report = { ...report, author: { name: "Sam Ward (fictional)", hcpc: "ZZ0005" } };
+    // The author approving their own first-person draft of their own notes is fine (the author is the member).
+    const sam = { name: "Sam Ward (fictional)", hcpc: "ZZ0005" };
+    const samsNotes = { ...report.bundleSnapshot, notes: report.bundleSnapshot.notes.map((n) => ({ ...n, author: sam })) };
+    const own: Report = { ...report, author: sam, bundleSnapshot: samsNotes };
     const mine = await call(handleSign, "/sign", { member: "clin-a", body: signBody(own, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(mine.status, 200, await mine.clone().text());
+    // Fix round 1 (B0-1): the author is the member, but the "I" reports Sarah Reid's note – refused, naming her.
+    const othersNote: Report = { ...report, author: sam };
+    const blocked = await call(handleSign, "/sign", { member: "clin-a", body: signBody(othersNote, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const blockedProblem = (await problemOf(blocked.clone())) as { flags?: Array<{ code: string; sectionKey?: string; evidence?: string }> };
+    await expectProblem(blocked, 409, "SIGNOFF_BLOCKED");
+    assert.ok(blockedProblem.flags?.some((f) => f.code === "OTHER_CLINICIAN_VOICE" && f.sectionKey === "F-15" && f.evidence === "Sarah Reid"));
+    // No author named (a draft staff prepared): the signer's "I" must still be theirs.
+    const noAuthor: Report = { ...report, author: undefined };
+    const unnamed = await call(handleSign, "/sign", { member: "clin-a", body: signBody(noAuthor, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const unnamedProblem = await problemOf(unnamed.clone());
+    await expectProblem(unnamed, 409, "SIGNER_NOT_AUTHOR");
+    assert.match(unnamedProblem.detail ?? "", /Sarah Reid/);
+    assert.match(unnamedProblem.detail ?? "", /F-15/);
   });
 
   test("launch from the clinic's own system: clinic partner key → the clinic's Studio; only its member redeems it; scope and launch clinician enforced", async () => {

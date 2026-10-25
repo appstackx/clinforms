@@ -25,6 +25,9 @@ import "server-only";
  * - (fix wave 2) a clinic's member never approves drafted answers that speak in ANOTHER clinician's first
  *   person (report.author ≠ the signer and an unedited drafted answer says "I …"): 409 SIGNER_NOT_AUTHOR with
  *   the questions to edit (core/voice.ts otherClinicianVoice). The demo is unchanged.
+ * - (fix round 1, B0-1) every approval: a drafted answer that says "I" / "my" while citing another clinician's note is
+ *   a blocking OTHER_CLINICIAN_VOICE flag (core/validation/voice.ts), so canSign refuses it (409 SIGNOFF_BLOCKED);
+ *   on a report with no author, a member's approval is refused the same way against the signer (409 SIGNER_NOT_AUTHOR).
  * - (10/2026) DEMO clinics (core/demo-clinic.ts; ClinicProfile.demoClinic, read on the server): a member whose
  *   signing details hold a made-up PH-DEMO-NN number approves with it exactly like a real clinician does. In ANY
  *   OTHER clinic such a number never approves: 403 DEMO_NUMBER_NOT_ALLOWED, checked after every other check so the
@@ -58,7 +61,7 @@ import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { isDemoHcpc, normaliseDemoHcpc } from "../../core/demo-clinic";
 import { validateReport } from "../../core/validation";
 import type { Clinician, SignReceipt } from "../../core/types";
-import { otherClinicianVoice } from "../../core/voice";
+import { otherClinicianVoice, unsignableFirstPerson } from "../../core/voice";
 import { WORDING } from "../../core/wording";
 import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
@@ -131,6 +134,15 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
       return problem(409, WORDING.server.access.otherVoiceTitle, {
         code: "SIGNER_NOT_AUTHOR",
         detail: WORDING.server.access.otherVoiceDetail(voice.author, signer.name, voice.keys),
+      });
+    }
+    // Fix round 1 (B0-1): with no author named (the validators check those), the signer's own "I" must still be
+    // theirs – never "told me" about another clinician's note.
+    const notesVoice = unsignableFirstPerson(report, signer);
+    if (notesVoice) {
+      return problem(409, WORDING.server.access.otherVoiceTitle, {
+        code: "SIGNER_NOT_AUTHOR",
+        detail: WORDING.server.access.notesVoiceDetail(notesVoice.names, notesVoice.keys),
       });
     }
   }

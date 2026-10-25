@@ -9,7 +9,8 @@
  *
  * Codes: UNKNOWN_SOURCE_ID, UNCITED_PARAGRAPH (citations.ts), FIGURE_NOT_IN_SOURCE (figures.ts, and
  * form-answers.ts for drafted date/number answers on a referrer's form), TERM_NOT_IN_SOURCE (terms.ts),
- * OPINION_LANGUAGE (opinion-language.ts), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
+ * OPINION_LANGUAGE (opinion-language.ts), OTHER_CLINICIAN_VOICE (voice.ts: another clinician's note in the signer's
+ * first person – fix round 1), SCOPE_TERM (scope-terms.ts), OPEN_GAP (gaps.ts),
  * MISSING_PLACEHOLDER (placeholders.ts; merge-fields.ts for mail-merge fields left in an answer or on the
  * referrer's form – 10/2026, pass `form` to validateReport; choice-marks.ts for a marked cell or a kept printed option
  * that matches no printed option – 10/2026), DATA_CHECK (data-checks.ts, by the integration agent).
@@ -45,6 +46,7 @@ import { validateOpinionLanguage } from "./opinion-language";
 import { validatePlaceholders } from "./placeholders";
 import { validateScopeTerms } from "./scope-terms";
 import { validateTerms } from "./terms";
+import { validateClinicianVoice } from "./voice";
 
 export interface ValidatorInput {
   report: Report;
@@ -73,6 +75,7 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "choice-marks", run: validateChoiceMarks },
   { name: "terms", run: validateTerms },
   { name: "opinion-language", run: validateOpinionLanguage },
+  { name: "voice", run: validateClinicianVoice },
   { name: "scope-terms", run: validateScopeTerms },
   { name: "placeholders", run: validatePlaceholders },
   { name: "merge-fields", run: validateMergeFields },
@@ -85,10 +88,11 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
   FIGURE_NOT_IN_SOURCE: 2,
   TERM_NOT_IN_SOURCE: 3,
   OPINION_LANGUAGE: 4,
-  SCOPE_TERM: 5,
-  MISSING_PLACEHOLDER: 6,
-  OPEN_GAP: 7,
-  DATA_CHECK: 8,
+  OTHER_CLINICIAN_VOICE: 5,
+  SCOPE_TERM: 6,
+  MISSING_PLACEHOLDER: 7,
+  OPEN_GAP: 8,
+  DATA_CHECK: 9,
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -100,7 +104,7 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
  * - warnings: yes;
  * - FIGURE_NOT_IN_SOURCE (dates): yes – the signer confirms the date from their own knowledge;
  * - TERM_NOT_IN_SOURCE: yes – the signer confirms the wording is right;
- * - OPINION_LANGUAGE: only on "edited" text (the clinician's own opinion); never on AI text;
+ * - OPINION_LANGUAGE and OTHER_CLINICIAN_VOICE: only on "edited" text (the clinician's own words); never on AI text;
  * - UNCITED_PARAGRAPH, SCOPE_TERM, MISSING_PLACEHOLDER, blocking DATA_CHECK: no – fix the text or the record;
  * - OPEN_GAP: no – resolve or acknowledge the gap itself.
  */
@@ -110,7 +114,8 @@ export function canAcknowledge(flag: ReportFlag, report?: Pick<Report, "sections
     case "FIGURE_NOT_IN_SOURCE":
     case "TERM_NOT_IN_SOURCE":
       return true;
-    case "OPINION_LANGUAGE": {
+    case "OPINION_LANGUAGE":
+    case "OTHER_CLINICIAN_VOICE": {
       if (!report || !flag.paragraphId) return false;
       for (const s of report.sections) {
         const p = s.paragraphs.find((x) => x.id === flag.paragraphId);

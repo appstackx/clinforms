@@ -296,6 +296,8 @@ export interface AccessWording {
   /** Fix wave 2: answers drafted in another clinician's voice ("I recorded…"). */
   otherVoiceTitle: string;
   otherVoiceDetail(author: string, signer: string, keys: string[]): string;
+  /** Fix round 1 (B0-1): a report with no author whose drafted answers say "I" about notes the signer did not write. */
+  notesVoiceDetail(clinicians: string[], keys: string[]): string;
   /** Fix wave 2: too many changes to the clinic's records in a short time. */
   storeLimitTitle: string;
   storeLimitDetail(seconds: number): string;
@@ -358,6 +360,9 @@ const ACCESS: AccessWording = {
   otherVoiceDetail: (author, signer, keys) =>
     `${keys.length === 1 ? "One answer speaks" : `${keys.length} answers speak`} as ${author} ("I …"): ${keys.join(", ")}. ` +
     `You are approving as ${signer}. Edit ${keys.length === 1 ? "it" : "them"} so ${keys.length === 1 ? "it does" : "they do"} not speak as ${author}, or ask ${author} to approve.`,
+  notesVoiceDetail: (clinicians, keys) =>
+    `${keys.length === 1 ? "One answer says" : `${keys.length} answers say`} “I” or “my” about notes written by ${clinicians.join(" and ")}: ${keys.join(", ")}. ` +
+    `On your signed form ${keys.length === 1 ? "it" : "they"} would read as your own. Name the clinician who wrote the note instead, or rewrite ${keys.length === 1 ? "it" : "them"} in your own words.`,
   storeLimitTitle: "Too many changes at once",
   storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
   storeDailyLimitDetail:

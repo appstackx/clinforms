@@ -584,3 +584,38 @@ test("validateReport: computes facts from the snapshot and returns canSign", () 
   assert.ok(r.blocking.length > 0);
   assert.deepEqual(r.flags, run(report, SOL));
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-1): another clinician's notes in the signer's first person
+ * ----------------------------------------------------------------------------------------------*/
+
+test("fix round 1: 'told me' / 'My assessment' / 'in my opinion' citing another clinician's note blocks; the signer's own note does not", () => {
+  // Every note written by Tom Ellis; Sarah Reid is the author who signs.
+  const tom = { name: "Tom Ellis", hcpc: "PH-DEMO-02", role: "Physiotherapist, MCSP" };
+  const bundle = testBundle();
+  const allTom = { ...bundle, notes: bundle.notes.map((n) => ({ ...n, author: tom })) };
+  const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" };
+  const told = para("Mr Testcase told me that the pain started when he lifted a parcel.", ["N-001"], { basis: "patient_reported" });
+  const assessed = para("My assessment on 18/03/2026 was acute mechanical low back pain.", ["N-001"]);
+  const opinion = para("On 06/05/2026, in my opinion, he is fit for a phased return to normal duties over 2 weeks.", ["N-002"], { basis: "clinician_opinion_recorded" });
+  const report = { ...withSection(testReport(SOL, allTom), "presenting_complaints", [told, assessed, opinion]), author: sarah };
+  const flags = run(report, SOL);
+  for (const p of [told, assessed, opinion]) {
+    const f = of(flags, "OTHER_CLINICIAN_VOICE", p.id)[0];
+    assert.equal(f?.severity, "blocking", p.text);
+    assert.equal(f?.evidence, "Tom Ellis");
+    assert.match(f?.message ?? "", /written by Tom Ellis/);
+    assert.equal(canAcknowledge(f, report), false, "drafted text: name the clinician or rewrite it");
+  }
+  assert.equal(validateReport(report, SOL).canSign, false);
+
+  // The same words citing Sarah Reid's own note (N-001 in the test bundle) raise nothing.
+  const own = { ...withSection(testReport(SOL), "presenting_complaints", [{ ...told, id: "own-1" }, { ...assessed, id: "own-2" }]), author: sarah };
+  assert.equal(of(run(own, SOL), "OTHER_CLINICIAN_VOICE").length, 0);
+
+  // Edited by the clinician: still flagged, but they may acknowledge it (it is their own account).
+  const edited = { ...report, sections: report.sections.map((s) => (s.key === "presenting_complaints" ? { ...s, paragraphs: [{ ...told, origin: "edited" as const, originalText: told.text }] } : s)) };
+  const ef = of(run(edited, SOL), "OTHER_CLINICIAN_VOICE")[0];
+  assert.equal(ef?.severity, "blocking");
+  assert.equal(canAcknowledge(ef, edited), true);
+});
