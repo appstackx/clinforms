@@ -22,7 +22,7 @@ import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
 import { useDemoClinic, useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
-import { DOCX_PAGE_OVERFLOW_CSS, DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
 import { DemoNoticeBar } from "../shared/demo-notice";
 import { WORDING } from "../../wording";
@@ -40,7 +40,7 @@ const DOCX_STYLES = `
 .medreport-docx-host .docx-wrapper { background: #e2e8f0; padding: 16px 16px 0; }
 .medreport-docx-host .docx-wrapper > section.docx { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18); margin-bottom: 16px; }
 .medreport-docx-host a { pointer-events: none; cursor: default; }
-.medreport-docx-host ${DOCX_PAGE_OVERFLOW_CSS}
+${docxPageCss(".medreport-docx-host")}
 `;
 
 /* Renderers ------------------------------------------------------------------------------------- */

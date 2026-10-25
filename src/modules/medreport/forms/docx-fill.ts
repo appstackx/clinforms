@@ -651,6 +651,19 @@ function fillTableCell(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
   if (!written) ctx.warn(`${where(field)}: the answer box could not be written.`);
 }
 
+/**
+ * Fix round 2 (B1-8): run properties of the text around a paragraph inside a table cell – the cell's label first, then
+ * the other cells of its row – for the colour an uncoloured instruction paragraph does not give ("Please give clinical
+ * details in this box" under JJ Physio's navy "Clinical Impression:"). Empty outside a table.
+ */
+function cellContextRPrs(p: XmlElement): XmlElement[] {
+  const tc = ancestorW(p, "tc");
+  if (!tc) return [];
+  const tr = ancestorW(tc, "tr");
+  const cells = tr ? childElements(tr).filter((c) => isW(c, "tc")) : [tc];
+  return [tc, ...cells.filter((c) => c !== tc)].map((c) => firstW(firstTextRun(c), "rPr")).filter((r): r is XmlElement => r !== null);
+}
+
 function fillAfterParagraph(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
   const { field, ref } = job;
   if (ref.kind === "cell") {
@@ -665,6 +678,7 @@ function fillAfterParagraph(ctx: Ctx, job: Job, text: string, kind: RunKind): vo
     ...spaceRunRPrs([p, ...space]),
     markRPr(p),
     firstW(firstTextRun(p), "rPr"),
+    ...cellContextRPrs(p),
   ]);
   const written = writeIntoSpace(ctx, field, toParagraphs(text), space, p, null, answerPPr(ctx, p), rPr, kind);
   if (!written) ctx.warn(`${where(field)}: the answer could not be added after the question.`);
