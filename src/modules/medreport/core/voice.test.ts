@@ -261,4 +261,10 @@ test("fix round 1: nameClinicianInstead – the inverse of the first-person rewr
   assert.equal(nameClinicianInstead("He was graded WAD I and I advised rest.", "Tom Ellis"), "He was graded WAD I and Tom Ellis advised rest.", "a numeral stays");
   assert.equal(nameClinicianInstead("I'm told she improved.", "Tom Ellis"), null, "a contraction: rewritten by hand");
   assert.equal(nameClinicianInstead("Tom Ellis recorded full movement.", "Tom Ellis"), null, "nothing to change");
+  // Already named: the "my" may be the signer's own ("covered my leave") – rewriting it would make it false.
+  assert.equal(
+    nameClinicianInstead("On 05/08/2026 Tom Ellis, physiotherapist, covered my leave and recorded mobilisations and soft tissue release.", "Tom Ellis"),
+    null,
+    "the clinician is named already: rewritten by hand",
+  );
 });

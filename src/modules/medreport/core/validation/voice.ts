@@ -14,7 +14,7 @@
  * Owner: ai agent.
  */
 import type { ReportFlag } from "../types";
-import { otherCliniciansInFirstPerson } from "../voice";
+import { namesPerson, otherCliniciansInFirstPerson } from "../voice";
 import { getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
 
@@ -33,6 +33,8 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
     const others = otherCliniciansInFirstPerson(p, input.bundle, author);
     if (!others) continue;
     const who = names(others);
+    // Named already ("Tom Ellis covered my leave"): whose "I" or "my" it is needs the clinician, not a rewrite.
+    const named = others.every((n) => namesPerson(p.text, n));
     flags.push(
       makeFlag({
         code: "OTHER_CLINICIAN_VOICE",
@@ -40,8 +42,11 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
         sectionKey: section.key,
         paragraphId: p.id,
         evidence: who,
-        message:
-          p.origin === "ai"
+        message: named
+          ? `This answer names ${who}, who wrote the note it cites, and also says “I”, “me” or “my”. On the signed form those words read as yours. ${
+              p.origin === "ai" ? "Rewrite it so it is clear who did what." : "Rewrite it so it is clear who did what, or acknowledge it if those words are your own account."
+            }`
+          : p.origin === "ai"
             ? `This answer says “I”, “me” or “my”, but the note it cites was written by ${who}. On the signed form it would read as your own. Name ${others.length === 1 ? who : "the clinician"} instead, or rewrite it in your own words.`
             : `This answer says “I”, “me” or “my”, but the note it cites was written by ${who}. On the signed form it reads as your own. Name ${others.length === 1 ? who : "the clinician"} instead, or acknowledge it if it is your own account.`,
       }),
