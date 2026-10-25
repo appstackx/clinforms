@@ -43,6 +43,7 @@ import "server-only";
  */
 import { docxAnchorBlockIds, isAnswerableField, isUnknownAnswer, matchOption, namedOptions, printsDefault, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
 import { hasMergeToken } from "../core/merge-fields";
+import { isConvertedFromRtf } from "../core/rtf/notes";
 import {
   MAX_INSTRUCTIONS_PER_FORM,
   findTemplateInstructions,
@@ -162,6 +163,11 @@ interface Ctx {
   deletedParas: Set<XmlElement>;
   /** "Delete as necessary" questions whose list an answer settled – the chosen options kept, the others removed (25/10). */
   chosenLists: Set<FormField>;
+  /**
+   * Fix round 1 (B0-13): a form converted from RTF when it was added (core/rtf). Its text carries its font, size and
+   * colour on every run, and its document defaults (the converter's Times New Roman 12 pt) are never the form's own.
+   */
+  rtf: boolean;
 }
 
 function where(field: FormField): string {
@@ -206,6 +212,64 @@ function typographyOf(rPr: XmlElement | null, keep: string[] = ["rFonts", "sz", 
   for (const child of childElements(out)) {
     if (!keep.includes(child.localName ?? "")) out.removeChild(child);
   }
+  return childElements(out).length ? out : null;
+}
+
+/** The typography an answer takes from the form around it: never bold, italic or underline from a label. */
+const ANSWER_TYPOGRAPHY = ["rFonts", "color", "sz", "szCs", "lang"];
+
+/** A colour the form uses for its own instructions or labels, never for an answer: red, or a mid grey. */
+function labelOnlyColour(color: XmlElement): boolean {
+  const m = /^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(wAttr(color, "val") ?? "");
+  if (!m) return false;
+  const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
+  const red = r >= 0xb0 && g < 0x70 && b < 0x70;
+  const grey = Math.max(r, g, b) - Math.min(r, g, b) < 0x18 && r >= 0x60 && r <= 0xd8;
+  return red || grey;
+}
+
+/**
+ * Fix round 1 (B0-13), converted RTF forms only: the answer's run properties completed with the font, size, colour and
+ * language they lack, from the first of `sources` (run properties of the form text around the answer) that has each –
+ * so an answer in a Tahoma form is never Times New Roman, and never black and larger beside dark-blue Calibri. A colour
+ * the form keeps for instructions (red) or grey labels is never taken, and the answer is never bold, italic or underlined
+ * (a label's emphasis). Any other form is written exactly as before.
+ */
+function completeTypography(ctx: Ctx, base: XmlElement | null, sources: ReadonlyArray<XmlElement | null>): XmlElement | null {
+  if (!ctx.rtf) return base;
+  // An RTF template's empty answer line carries the bold or underline of the label above it in its paragraph mark.
+  let out = withoutEmphasis(base);
+  for (const key of ANSWER_TYPOGRAPHY) {
+    if (out && firstW(out, key)) continue;
+    for (const src of sources) {
+      const el = firstW(src, key);
+      if (!el || (key === "color" && labelOnlyColour(el))) continue;
+      out ??= wEl(ctx.dom, "rPr");
+      setProp(out, cloneEl(el), RPR_ORDER);
+      break;
+    }
+  }
+  return out;
+}
+
+/** Run properties of the whitespace-only runs in `paras` (an RTF template's typed spaces carry its answer style). */
+function spaceRunRPrs(paras: XmlElement[]): XmlElement[] {
+  const out: XmlElement[] = [];
+  for (const p of paras) {
+    for (const run of descendantsW(p, "r")) {
+      const text = descendantsW(run, "t").map((t) => t.textContent ?? "").join("");
+      const rPr = firstW(run, "rPr");
+      if (rPr && text !== "" && text.trim() === "") out.push(rPr);
+    }
+  }
+  return out;
+}
+
+/** Bold, italic and underline dropped (an answer written after a bold label is not bold). */
+function withoutEmphasis(rPr: XmlElement | null): XmlElement | null {
+  if (!rPr) return null;
+  const out = cloneEl(rPr);
+  for (const child of childElements(out)) if (["b", "bCs", "i", "iCs", "u"].includes(child.localName ?? "")) out.removeChild(child);
   return childElements(out).length ? out : null;
 }
 
@@ -302,9 +366,23 @@ function answerPPr(ctx: Ctx, from: XmlElement | null): XmlElement | null {
     const el = firstW(src, name);
     if (el) out.appendChild(cloneEl(el));
   }
+  clampRightIndentInCell(ctx, out, from);
   const jc = firstW(src, "jc");
   if (jc && ["left", "start", "both"].includes(wAttr(jc, "val") ?? "")) out.appendChild(cloneEl(jc));
   return childElements(out).length ? out : null;
+}
+
+/**
+ * Fix round 1 (B0-31): an answer paragraph in a table cell never keeps a negative right indent (RTF templates carry
+ * "\ri-330"), which runs long answers over the cell's border; it becomes 0. `at` is where the paragraph is.
+ */
+function clampRightIndentInCell(ctx: Ctx, pPr: XmlElement | null, at: XmlElement | null): void {
+  const ind = firstW(pPr, "ind");
+  if (!ind || !at || !(isW(at, "tc") || ancestorW(at, "tc"))) return;
+  for (const name of ["right", "end"]) {
+    const v = Number(wAttr(ind, name) ?? "NaN");
+    if (Number.isFinite(v) && v < 0) setWAttr(ctx.dom, ind, name, "0");
+  }
 }
 
 function newParagraph(ctx: Ctx, pPr: XmlElement | null): XmlElement {
@@ -359,6 +437,7 @@ function writeIntoSpace(
       else if (container) container.appendChild(target);
       else return;
     }
+    clampRightIndentInCell(ctx, firstW(target, "pPr"), target);
     for (const run of answerRuns(ctx, field, lines, rPr, kind, i === paras.length - 1)) target.appendChild(run);
     if (i < paras.length - 1) ensureSpaceAfter(ctx, target, 100);
     last = target;
@@ -519,12 +598,16 @@ function blockParagraphs(ref: BlockRef): XmlElement[] {
 }
 
 function labelCellRPr(ref: BlockRef): XmlElement | null {
+  return typographyOf(labelCellRunRPr(ref));
+}
+
+/** Run properties of the first text in the cell before an answer cell (its label), as printed. */
+function labelCellRunRPr(ref: BlockRef): XmlElement | null {
   if (ref.kind !== "cell") return null;
   let prev = ref.el.previousSibling;
   while (prev && !isW(prev, "tc")) prev = prev.previousSibling;
   if (!prev || !isElement(prev)) return null;
-  const run = firstTextRun(prev);
-  return typographyOf(firstW(run, "rPr"));
+  return firstW(firstTextRun(prev), "rPr");
 }
 
 function fillTableCell(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
@@ -557,7 +640,12 @@ function fillTableCell(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
       space = followingSpace(ref.el);
     }
   }
-  const rPr = markRPr(space[0] ?? null) ?? labelCellRPr(ref) ?? typographyOf(firstW(firstTextRun(ref.el), "rPr"));
+  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? labelCellRPr(ref) ?? typographyOf(firstW(firstTextRun(ref.el), "rPr")), [
+    ...spaceRunRPrs(ref.kind === "cell" ? ref.paragraphs : [ref.el, ...space]),
+    labelCellRunRPr(ref),
+    firstW(firstTextRun(ref.el), "rPr"),
+    markRPr(after),
+  ]);
   const pPr = space.length ? null : answerPPr(ctx, after);
   const written = writeIntoSpace(ctx, field, paras, space, after, container, pPr, rPr, kind);
   if (!written) ctx.warn(`${where(field)}: the answer box could not be written.`);
@@ -573,7 +661,11 @@ function fillAfterParagraph(ctx: Ctx, job: Job, text: string, kind: RunKind): vo
   const space = followingSpace(p);
   // The answer space's own formatting first; otherwise only the question's font family (not its size:
   // questions are often headings or small grey instructions).
-  const rPr = markRPr(space[0] ?? null) ?? typographyOf(firstW(firstTextRun(space[0] ?? p), "rPr"), space[0] ? undefined : ["rFonts"]);
+  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? typographyOf(firstW(firstTextRun(space[0] ?? p), "rPr"), space[0] ? undefined : ["rFonts"]), [
+    ...spaceRunRPrs([p, ...space]),
+    markRPr(p),
+    firstW(firstTextRun(p), "rPr"),
+  ]);
   const written = writeIntoSpace(ctx, field, toParagraphs(text), space, p, null, answerPPr(ctx, p), rPr, kind);
   if (!written) ctx.warn(`${where(field)}: the answer could not be added after the question.`);
 }
@@ -681,7 +773,10 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     label ? target.index + target.length : target.index,
     label ? target.index + target.length : target.index + target.length,
     (styleRPr) => {
-      const rPr = withoutPlaceholderStyle(styleRPr);
+      // Written after a printed label (writeAfter, or a bare "Answer:" on a converted RTF form): not in the label's bold.
+      const afterLabel = Boolean(anchor?.writeAfter) || (label && ctx.rtf);
+      const plain = withoutPlaceholderStyle(styleRPr);
+      const rPr = afterLabel ? completeTypography(ctx, withoutEmphasis(plain), [plain]) : plain;
       const lines = inline.slice();
       const needsSpace = label || (before !== "" && !/[\s(]/.test(before));
       if (needsSpace) lines[0] = ` ${lines[0]}`;
@@ -698,7 +793,8 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   if (atLineEnd) {
     const space = followingSpace(p).filter((x, i, all) => all.slice(0, i + 1).every(isFillLine));
     const rPr = withoutPlaceholderStyle(firstW(firstTextRun(p), "rPr"));
-    if (rest.length > 0 || space.length > 0) writeIntoSpace(ctx, field, rest, space, p, null, answerPPr(ctx, p), typographyOf(rPr), kind);
+    // Every paragraph of a long answer in the same typography as its first (fix round 1, B0-13: its colour too).
+    if (rest.length > 0 || space.length > 0) writeIntoSpace(ctx, field, rest, space, p, null, answerPPr(ctx, p), completeTypography(ctx, typographyOf(rPr), [rPr]), kind);
   }
 }
 
@@ -719,7 +815,11 @@ function clearPlaceholder(ctx: Ctx, job: Job): void {
   const target = occ[Math.min(k, occ.length - 1)];
   if (!replaceRange(target.p, target.index, target.index + target.length, () => [])) {
     ctx.warn(`${where(field)}: the placeholder “${needle}” could not be removed.`);
+    return;
   }
+  // Fix round 1 (B0-32): a line left empty (an address line the record does not have) goes too – a cell keeps its last
+  // line, and a line that keeps two tables apart stays (removeIfBlank).
+  removeIfBlank(target.p);
 }
 
 /** Content controls of a block: inside its paragraphs/cell, or the block-level control around it. */
@@ -1597,6 +1697,7 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     glyphEdits: new Map(),
     deletedParas: new Set(),
     chosenLists: new Set(),
+    rtf: isConvertedFromRtf(form.file),
   };
 
   // 1. Resolve every anchor on the untouched document – and (10/2026) the form author's instructions: the repeat rows a
