@@ -50,6 +50,8 @@ export interface PracticeCode {
   binding: PracticeCodeBinding;
   /** What the clinic system puts there, in plain English (the question's guidance and its note). */
   meaning: string;
+  /** How staff screens name the code when `meaning` (less its examples in brackets) does not read well there. */
+  plain?: string;
   /** Labels that would contradict the meaning (e.g. a clinic that keeps the solicitor in the employer field). */
   doubtfulBeside?: RegExp;
 }
@@ -94,6 +96,7 @@ const ENTRIES: PracticeCode[] = [
       choices: [{ label: /(?:accident|injury|incident|onset|occurrence)\b[\s\S]{0,20}\bdate|\bdate\b[\s\S]{0,20}\b(?:of\s+)?(?:the\s+)?(?:accident|injury|incident|onset)/i, path: "incident.date", answerType: "date" }],
     },
     meaning: "the clinic system's alternative reference 1 (some clinics keep the date of the accident there)",
+    plain: "alternative reference 1 (where some clinics keep the date of the accident)",
   },
   { code: "P_INS_NUM", label: "Insurance membership number", binding: rec("referral.membershipNumber"), meaning: "the patient's insurance membership number" },
   { code: "P_HOSP_NUM", label: "Hospital number", binding: { kind: "not_held" }, meaning: "the patient's hospital number" },
@@ -131,4 +134,113 @@ export function findPracticeCodes(text: string): Array<{ code: string; text: str
     if (isPracticeCodeName(m[1])) out.push({ code: m[1], text: m[0], index: m.index });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Plain words for staff (Blue Heart trial, 10/2026). The codes stay in the stored map – an answer's place names
+ * the exact text it replaces, and a note says which code it came from – but staff screens show what each code
+ * holds instead ("the patient's first name"). It is done when the text is shown, so maps stored before this
+ * change read the same way. Shared by every staff screen that shows a map's notes, guidance or places.
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A run of codes as the form reading and the RTF converter list them: "<<P_TITLE>>, <<P_FIRSTNAM>>". */
+const CODE_RUN = /(\b[Mm]erge codes? )?(<<[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*>>(?:, <<[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*>>)*)/g;
+
+/** What a known code holds, as staff screens name it ("the patient's first name"); null for an unknown code. */
+export function practiceCodeWords(code: string): string | null {
+  const entry = practiceCode(code);
+  if (!entry) return null;
+  // The meaning without its examples: "the patient's title (Mr, Mrs, Ms…)" → "the patient's title".
+  return entry.plain ?? entry.meaning.replace(/\s*\((?:[^()]|\([^()]*\))*\)$/, "");
+}
+
+/**
+ * The words for a code's place ("merge code for …"): an address printed over several lines is spread over them in
+ * order, so each line's code names the whole address – "line 3 of the patient's address" would contradict the
+ * "line 2 of 3" it fills.
+ */
+function placeWords(code: string): string | null {
+  const entry = practiceCode(code);
+  if (entry?.binding.kind === "address_line") return entry.binding.family === "patient" ? "the patient's address" : "the clinic's address";
+  return practiceCodeWords(code);
+}
+
+/** "a and b", "a, b and c" – or, for examples in brackets (perhaps followed by "and 3 more"), "a, b, c". */
+function joinWords(words: string[], withAnd: boolean): string {
+  if (!withAnd || words.length < 2) return words.join(", ");
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
+/** Whether `at` starts a sentence: the text's start, a new line, or after ". " (looks back over spaces only). */
+function startsSentence(text: string, at: number): boolean {
+  let i = at - 1;
+  while (i >= 0 && (text[i] === " " || text[i] === "\t")) i--;
+  return i < 0 || ".!?\n".includes(text[i]);
+}
+
+/**
+ * A text for staff with every clinic-system code in plain words:
+ *   "From the clinic system's merge code <<P_FIRSTNAM>> (the patient's first name): filled from the record."
+ *     → "From the clinic system's merge code for the patient's first name: filled from the record."
+ *   "13 merge codes from your clinic system (<<P_GROUPREF>>, <<P_TITLE>>, <<P_FIRSTNAM>>) were kept"
+ *     → "13 merge codes from your clinic system (the referrer's reference for this case, the patient's title, the
+ *        patient's first name) were kept"
+ * A code the dictionary does not know keeps its name, in quotes (“P_HOSP_REF”), so staff can still find it on the
+ * form. Plain text in and out: codes are only capital letters, digits and underscores, nothing is read as markup,
+ * and anything else in the text (other mail-merge fields such as «Patient_Name» included) is left as it is.
+ */
+export function humaniseMergeCodes(text: string): string {
+  if (!text || text.indexOf("<<") < 0) return text;
+  const re = new RegExp(CODE_RUN.source, "g");
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const prefix = m[1] ?? "";
+    const codes = m[2].split(", ").map((t) => t.slice(2, -2));
+    if (!codes.every(isPracticeCodeName)) continue;
+    const start = m.index + prefix.length;
+    let end = m.index + m[0].length;
+    // A single code already in quotes (“<<P_X>>”) is not quoted again.
+    const quoted = codes.length === 1 && text[start - 1] === "“" && text[end] === "”";
+    // After "merge code(s)" the codes name one place; a bare list is examples, each code in its own words.
+    const words: string[] = [];
+    for (const code of codes) {
+      const w = (prefix ? placeWords(code) : practiceCodeWords(code)) ?? (quoted ? code : `“${code}”`);
+      if (!words.includes(w)) words.push(w);
+    }
+    for (const who of prefix ? ["patient's", "clinic's"] : []) {
+      const at = words.indexOf(`the ${who} address`);
+      const pc = words.indexOf(`the ${who} postcode`);
+      if (at >= 0 && pc >= 0) {
+        words[at] = `the ${who} address and postcode`;
+        words.splice(pc, 1);
+      }
+    }
+    let phrase = joinWords(words, Boolean(prefix));
+    if (prefix) {
+      phrase = `${prefix}${codes.some((c) => practiceCode(c)) ? "for " : ""}${phrase}`;
+    } else if (startsSentence(text, start)) {
+      phrase = phrase.charAt(0).toUpperCase() + phrase.slice(1);
+    }
+    // The form reading's notes repeat the meaning after the code: "<<P_DOB>> (the patient's date of birth)".
+    const entry = codes.length === 1 ? practiceCode(codes[0]) : null;
+    if (entry && text.startsWith(` (${entry.meaning})`, end)) end += entry.meaning.length + 3;
+    out += text.slice(last, m.index) + phrase;
+    last = end;
+    re.lastIndex = end;
+  }
+  return out + text.slice(last);
+}
+
+/**
+ * A place that is nothing but clinic-system codes ("<<P_FIRSTNAM>>", "<<P_ADDRESS1>>, <<P_POSTCODE>>"), in plain
+ * words – "merge code for the patient's first name" – or null when the text holds anything else.
+ */
+export function practiceCodesInWords(text: string): string | null {
+  const codes = findPracticeCodes(text);
+  if (codes.length === 0) return null;
+  const rest = codes.reduce((t, c) => t.split(c.text).join(""), text);
+  if (!/^[\s,;:.\-–—/()]*$/.test(rest)) return null;
+  return humaniseMergeCodes(`merge code${codes.length === 1 ? "" : "s"} ${codes.map((c) => c.text).join(", ")}`);
 }
