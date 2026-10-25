@@ -338,6 +338,45 @@ describe("approved reports (test run 24/10/2026)", () => {
       assert.doesNotMatch(approved, /\bDraft\b/);
     }
   });
+
+  it("ApprovedBanner: a Word form shows its Word download alone where no PDF copy can be made – no greyed-out button", async () => {
+    const { ApprovedBanner } = await import("./components/review/review-header");
+    const { NOTICES } = await import("../config.public");
+    const { report } = await draftedReport();
+    const receipt = { signer: { name: "Alex Morgan", hcpc: "PH123456" }, signedAt: "2026-10-24T18:15:00.000Z", contentSha256: "a".repeat(64) };
+    const signed = { ...report, status: "signed", receipt } as never;
+    const banner = (props: Record<string, unknown>) =>
+      createElement(ApprovedBanner, {
+        report: signed,
+        isWordForm: true,
+        isPdfForm: false,
+        downloading: null,
+        pdfUnavailable: null,
+        filing: false,
+        filed: [],
+        canFile: false,
+        clinicRecordUrl: null,
+        fileMissing: false,
+        onDownload: () => {},
+        onSave: () => {},
+        ...props,
+      });
+    for (const hooks of [TENANT, {}]) {
+      // (the demo's report comes from the Simulated TM3, so it can be filed back there)
+      const html = render(banner({ pdfUnavailable: NOTICES.wordFormPdfHint, canFile: hooks !== TENANT }), hooks);
+      assert.match(text(html), /Completed form \(Word\)/);
+      assert.doesNotMatch(text(html), /Completed form \(PDF\)/);
+      assert.match(text(html), /Need a PDF\? Open the completed Word file and save it as a PDF\./);
+      assert.doesNotMatch(html, /<button[^>]*\sdisabled=""/, "no greyed-out button");
+      // where this deployment makes PDF copies, both downloads
+      const both = text(render(banner({}), hooks));
+      assert.match(both, /Completed form \(Word\).*Completed form \(PDF\)/);
+      // a PDF form: its PDF only
+      const pdf = text(render(banner({ isWordForm: false, isPdfForm: true }), hooks));
+      assert.match(pdf, /Completed form \(PDF\)/);
+      assert.doesNotMatch(pdf, /Completed form \(Word\)/);
+    }
+  });
 });
 
 describe("TENANT_COPY", () => {

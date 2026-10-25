@@ -37,7 +37,9 @@ import {
   revertParagraph,
   setStructuredAnswer,
   supersedeAcknowledgedGaps,
+  wordFormPdfNote,
 } from "./review-model";
+import { NOTICES } from "../../../config.public";
 import { reviewReducer } from "./use-review-state";
 
 const AT = "2026-10-06T09:00:00.000Z";
@@ -387,6 +389,20 @@ describe("labels and options", () => {
     // the other origins read the same before and after approval
     for (const origin of ["from_records", "edited", "clinician"] as const) {
       assert.equal(originLabel(origin, "file-import", true), originLabel(origin, "file-import"));
+    }
+  });
+
+  it("an approved Word form offers a PDF copy only where one can be made – no greyed-out button (test run 24/10/2026)", () => {
+    // Every hosted deployment (no converter), and while /health is not known yet: the Word download alone, with a hint.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: false, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: undefined, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(NOTICES.wordFormPdfHint, "Need a PDF? Open the completed Word file and save it as a PDF.");
+    // A converter: the PDF copy is offered – until it fails, then the failure says why.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: null }), null);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: "Not now." }), "Not now.");
+    // PDF forms and portal questions: their own PDF, always.
+    for (const formKind of ["pdf_acroform", "pdf_flat", "questions", undefined] as const) {
+      assert.equal(wordFormPdfNote({ formKind, pdfFromWord: false, failed: null }), null, String(formKind));
     }
   });
 

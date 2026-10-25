@@ -259,6 +259,7 @@ export const ApprovedBanner = forwardRef<
     isWordForm: boolean;
     isPdfForm: boolean;
     downloading: DownloadKind | null;
+    /** Why a Word form has no PDF copy here (shown instead of its PDF button), or null. */
     pdfUnavailable: string | null;
     filing: boolean;
     filed: ActivityEntry[];
@@ -333,15 +334,16 @@ export const ApprovedBanner = forwardRef<
                 {spin("original")} Completed form (Word)
               </Button>
             )}
-            <Button
-              type="button"
-              variant={isPdfForm ? "default" : "outline"}
-              onClick={() => onDownload(isPdfForm ? "original" : "pdf")}
-              disabled={downloading !== null || fileMissing || (!isPdfForm && pdfUnavailable !== null)}
-              aria-describedby={!isPdfForm && pdfUnavailable ? "pdf-unavailable" : undefined}
-            >
-              {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
-            </Button>
+            {(isPdfForm || pdfUnavailable === null) && (
+              <Button
+                type="button"
+                variant={isPdfForm ? "default" : "outline"}
+                onClick={() => onDownload(isPdfForm ? "original" : "pdf")}
+                disabled={downloading !== null || fileMissing}
+              >
+                {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
+              </Button>
+            )}
           </>
         ) : (
           <>

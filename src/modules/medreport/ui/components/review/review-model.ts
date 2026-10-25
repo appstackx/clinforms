@@ -11,6 +11,7 @@ import { inOwnClinicalWording, isOwnVoiceCandidate } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
+import { NOTICES } from "../../../config.public";
 import { WORDING } from "../../wording";
 import type {
   ActivityEntry,
@@ -314,6 +315,18 @@ export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, a
     case "clinician":
       return "Clinician";
   }
+}
+
+/**
+ * Why an approved Word form offers no PDF copy here – the approved banner then shows its Word download alone, with
+ * this line – or null when it does. The PDF copy needs this deployment's converter (/health `pdfFromWord`); until that
+ * is known to be there, no PDF button, so there is never a greyed-out or failing one (test run 24/10/2026). `failed`:
+ * the message of a PDF copy that could not be made after all.
+ */
+export function wordFormPdfNote(input: { formKind: FormDefinition["kind"] | undefined; pdfFromWord: boolean | undefined; failed: string | null }): string | null {
+  if (input.formKind !== "docx") return null;
+  if (input.failed !== null) return input.failed;
+  return input.pdfFromWord === true ? null : NOTICES.wordFormPdfHint;
 }
 
 export const ORIGIN_PILL_CLASSES: Record<ParagraphOrigin, string> = {
