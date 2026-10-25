@@ -79,7 +79,7 @@ import {
   type QuestionStatus,
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
-import { emptyOptionalSummary, optionalBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
+import { emptyOptionalSummary, optionalBlankCandidates, optionalOpinionBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
 import { useReviewActions } from "../../components/review/use-review-actions";
 import { useReviewState } from "../../components/review/use-review-state";
 
@@ -295,7 +295,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
-  const blankCandidates = useMemo(() => (signed ? [] : optionalBlankCandidates(report, { template, form })), [report, template, form, signed]);
+  // Fix round 1 (B0-8): opinion questions are offered too, unticked – the clinician ticks each one.
+  const blankCandidates = useMemo(
+    () => (signed ? [] : [...optionalBlankCandidates(report, { template, form }), ...optionalOpinionBlankCandidates(report, { template, form })]),
+    [report, template, form, signed],
+  );
   const blankSummary = useMemo(() => emptyOptionalSummary(report, { template, form }, blankCandidates), [report, template, form, blankCandidates]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
@@ -307,10 +311,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   reportRef.current = report;
   const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
   const leaveBlank = useCallback(
-    (keys: string[], reason: string) => {
-      if (!template || keys.length === 0) return;
-      dispatch({ type: "leaveOptionalBlank", keys, reason, actor, template, form });
-      toast({ tone: "success", title: `${keys.length} optional box${keys.length === 1 ? "" : "es"} left blank`, detail: "Each is recorded with your reason in the Activity tab." });
+    (keys: string[], reason: string, opinionKeys: string[] = []) => {
+      const n = keys.length + opinionKeys.length;
+      if (!template || n === 0) return;
+      dispatch({ type: "leaveOptionalBlank", keys, opinionKeys, reason, actor, template, form });
+      toast({ tone: "success", title: `${n} optional box${n === 1 ? "" : "es"} left blank`, detail: "Each is recorded with your reason in the Activity tab." });
     },
     [template, form, actor, dispatch, toast],
   );

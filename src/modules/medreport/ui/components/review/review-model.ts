@@ -711,6 +711,49 @@ export function supersedeAcknowledgedGaps(report: Report, key: string, actor: st
   return appendActivity({ ...report, gaps, updatedAt: at }, { actor, action: "gap_resolved", detail: `${key}: a value was entered, so the earlier “left blank” acknowledgement no longer applies.` }, now);
 }
 
+/**
+ * Fix round 1 (B0-8): a person's answer settles its own box's gaps in the same step. When `key` goes from no answer to
+ * a person's answer, each of its open gaps is resolved ("Answered on the form by Sarah Reid.", one activity entry
+ * each – exactly what "Mark resolved" records); when that answer is removed again, the gaps resolved that way are
+ * reopened. Drafting never resolves a gap this way, and a box that already had an answer keeps its gaps for the
+ * person to check (a typo fixed is not the gap answered). canSign() is unchanged.
+ */
+export function settleGapsByAnswer(before: Report, after: Report, key: string, actor: string, now?: Date): Report {
+  const was = before.sections.find((s) => s.key === key);
+  const is = after.sections.find((s) => s.key === key);
+  if (!was || !is || !actor.trim()) return after;
+  const answeredBefore = isSectionAnswered(was);
+  const answeredNow = isSectionAnswered(is);
+  if (!answeredBefore && answeredNow && answeredByPerson(after, key)) {
+    const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution);
+    if (open.length === 0) return after;
+    const at = nowIso(now);
+    let next: Report = after;
+    for (const gap of open) {
+      const text = resolutionOptionsFor({ own: true, opinion: is.kind === "clinician_opinion", gap, actor }).prefill;
+      next = {
+        ...next,
+        gaps: next.gaps.map((g) => (g.id === gap.id ? { ...g, resolution: { kind: "resolved" as const, text, at, byAnswer: true } } : g)),
+        updatedAt: at,
+      };
+      next = appendActivity(next, { actor, action: "gap_resolved", detail: `${key}: resolved gap “${gap.issue}” – ${text}` }, now);
+    }
+    return next;
+  }
+  if (answeredBefore && !answeredNow) {
+    const settled = after.gaps.filter((g) => g.sectionKey === key && g.resolution?.byAnswer);
+    if (settled.length === 0) return after;
+    const gaps = after.gaps.map((g) => {
+      if (settled.indexOf(g) < 0) return g;
+      const open = { ...g };
+      delete open.resolution;
+      return open;
+    });
+    return appendActivity({ ...after, gaps }, { actor, action: "edited", detail: `${key}: the answer was removed, so ${settled.length === 1 ? "its gap is" : `its ${settled.length} gaps are`} open again.` }, now);
+  }
+  return after;
+}
+
 /** Undo a gap's resolution. */
 export function reopenGap(report: Report, gapId: string, actor: string, now?: Date): Report {
   const gap = report.gaps.find((g) => g.id === gapId);

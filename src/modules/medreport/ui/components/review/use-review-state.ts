@@ -27,6 +27,7 @@ import {
   resolveGap,
   revertParagraph,
   setStructuredAnswer,
+  settleGapsByAnswer,
   supersedeAcknowledgedGaps,
   writeInOwnVoice,
 } from "./review-model";
@@ -35,7 +36,7 @@ import { acknowledgeGapLeavingBlank, leaveOptionalBoxesBlank } from "./box-items
 
 export type ReviewAction =
   | { type: "replace"; report: Report }
-  | { type: "editParagraph"; key: string; paragraphId: string; text: string }
+  | { type: "editParagraph"; key: string; paragraphId: string; text: string; actor?: string }
   | { type: "revertParagraph"; key: string; paragraphId: string }
   | { type: "addParagraph"; key: string; paragraphId?: string; text?: string; actor?: string }
   | { type: "removeParagraph"; key: string; paragraphId: string; actor: string; silent?: boolean }
@@ -46,7 +47,7 @@ export type ReviewAction =
   | { type: "reopenGap"; gapId: string; actor: string }
   | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
   /** "Leave optional boxes blank": one acknowledgement per gap and warning, re-checked against the form (box-items.ts). */
-  | { type: "leaveOptionalBlank"; keys: string[]; reason: string; actor: string; template: ReportTemplate; form: FormDefinition | null }
+  | { type: "leaveOptionalBlank"; keys: string[]; opinionKeys?: string[]; reason: string; actor: string; template: ReportTemplate; form: FormDefinition | null }
   | { type: "recordConsent"; givenOn: string; actor: string }
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
@@ -64,6 +65,16 @@ function locked(report: Report): boolean {
 }
 
 export function reviewReducer(report: Report, action: ReviewAction): Report {
+  const next = applyReviewAction(report, action);
+  // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
+  const key = "key" in action && typeof action.key === "string" ? action.key : null;
+  const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
+  if (next === report || !key || !actor || locked(report)) return next;
+  if (["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) < 0) return next;
+  return settleGapsByAnswer(report, next, key, actor);
+}
+
+function applyReviewAction(report: Report, action: ReviewAction): Report {
   if (action.type === "replace") return action.report;
   if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor });
   if (action.type === "approved") return markApproved(action.sent, action.receipt, action.flags, { isForm: action.isForm });
@@ -112,7 +123,7 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
     case "acknowledgeFlag":
       return acknowledgeFlag(report, action.flagId, action.reason, action.actor);
     case "leaveOptionalBlank":
-      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, reason: action.reason, actor: action.actor });
+      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, opinionKeys: action.opinionKeys, reason: action.reason, actor: action.actor });
     case "recordConsent":
       return recordConsent(report, action.givenOn, action.actor);
     case "setFlags":

@@ -263,6 +263,8 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
             suggestedQuestion: `Which answer should be given to “${label}”${field.options?.length ? ` (${field.options.join(" / ")})` : ""}?`,
             relatedNoteIds: Array.from(new Set(paragraphs.flatMap((p) => p.sourceIds).filter((x) => isNoteId(x)))),
             raisedBy: "system",
+            // Fix round 1 (B0-8): offered as one click; ticking it is the person's own decision.
+            suggestedAnswer: option,
           });
         }
       }

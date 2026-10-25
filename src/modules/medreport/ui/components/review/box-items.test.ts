@@ -337,8 +337,7 @@ describe("clinic-system codes in plain words", () => {
       assert.equal(practiceCodeInWords(`<<${code}>>`), `your clinic system's placeholder for ${practiceCodeWords(code)}`, code);
       assert.doesNotMatch(humaniseMergeCodes(`Seen in <<${code}>>.`), /<<|>>/, code);
     }
-    // Fix round 1 (B0-29): no aside about what some clinics keep there.
-    assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1");
+    assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1 (where some clinics keep the date of the accident)");
   });
 });
 
@@ -445,18 +444,36 @@ describe("fix round 1 (B0-17): why a gap was raised, by its kind", () => {
   });
 });
 
-describe("fix round 1 (B0-28): the leave-blank card counts every optional box without an answer", () => {
-  it("“2 of 5 … the other 3 need your opinion or a decision first” – not “2 optional boxes have no answer”", async () => {
-    const { emptyOptionalSummary } = await import("./box-items");
+describe("fix round 1 (B0-28, B0-8): the leave-blank card counts every optional box without an answer", () => {
+  it("says how many can go in one step, which ask for the clinician's opinion (offered unticked) and which need a decision first", async () => {
+    const { emptyOptionalSummary, optionalOpinionBlankCandidates } = await import("./box-items");
     const { leaveBlankSummaryText } = await import("./flags-panel");
     const { report, form, template } = drafted();
-    const candidates = optionalBlankCandidates(report, { template, form });
-    assert.deepEqual(candidates.map((c) => c.key), ["F-05", "F-06"]);
+    const plain = optionalBlankCandidates(report, { template, form });
+    const opinion = optionalOpinionBlankCandidates(report, { template, form });
+    assert.deepEqual(plain.map((c) => c.key), ["F-05", "F-06"]);
+    assert.deepEqual(opinion.map((c) => [c.key, c.opinion]), [["F-07", true]], "the acupuncture plan is offered, for the clinician to tick");
+    const candidates = [...plain, ...opinion];
     const summary = emptyOptionalSummary(report, { template, form }, candidates);
-    assert.deepEqual(summary, { total: 5, opinion: 1, other: 2 }, "F-07 needs an opinion; F-08 (a clinic-system code) and F-11 (a held-back answer) need a decision");
-    assert.equal(leaveBlankSummaryText(candidates.length, summary), "2 of 5 optional boxes without an answer can be left blank in one step, with one reason; the other 3 need your opinion or a decision first.");
-    assert.equal(leaveBlankSummaryText(1, { total: 4, opinion: 3, other: 0 }), "1 of 4 optional boxes without an answer can be left blank in one step, with one reason; the other 3 need your opinion.");
-    assert.match(leaveBlankSummaryText(2, { total: 2, opinion: 0, other: 0 }), /^2 optional boxes have no answer\./);
+    assert.deepEqual(summary, { total: 5, opinion: 1, other: 2 }, "F-08 (a clinic-system code) and F-11 (a held-back answer) need a decision");
+    assert.equal(
+      leaveBlankSummaryText(candidates.length, summary),
+      "5 optional boxes have no answer: 2 can be left blank in one step, with one reason; 1 asks for your opinion – tick it in the list only if you decide to leave it blank; the other 2 need a decision first.",
+    );
+    assert.equal(
+      leaveBlankSummaryText(4, { total: 4, opinion: 3, other: 0 }),
+      "4 optional boxes have no answer: 1 can be left blank in one step, with one reason; 3 ask for your opinion – tick them in the list only if you decide to leave them blank.",
+    );
+    assert.match(leaveBlankSummaryText(2, { total: 2, opinion: 0, other: 0 }), /^2 optional boxes have no answer\. You can leave them blank/);
+  });
+
+  it("an opinion box is left blank only when the clinician ticks it themselves (opinionKeys), never through the one-step keys", () => {
+    const { report, form, template } = drafted();
+    const viaKeys = leaveOptionalBoxesBlank(report, { template, form, keys: ["F-05", "F-07"], reason: LEAVE_BLANK_REASON, actor: ACTOR, now: NOW });
+    assert.equal(viaKeys.gaps.find((g) => g.sectionKey === "F-07")?.resolution, undefined);
+    const ticked = leaveOptionalBoxesBlank(report, { template, form, keys: [], opinionKeys: ["F-07"], reason: "No plan for acupuncture – left blank.", actor: ACTOR, now: NOW });
+    assert.equal(ticked.gaps.find((g) => g.sectionKey === "F-07")?.resolution?.kind, "acknowledged");
+    assert.equal(ticked.gaps.find((g) => g.sectionKey === "F-05")?.resolution, undefined, "only what was ticked");
   });
 });
 
@@ -479,5 +496,43 @@ describe("fix round 1 (B0-3): a required choice the notes do not settle is answe
     const acked = revalidated(resolveGap(report, "gap-F-11-t-1", "acknowledged", "Not applicable – knee injury.", ACTOR, NOW), form);
     assert.equal(reviewItems(acked, { template, form }).boxes.get("F-11")?.instruction, "This form requires an answer – choose one of 0 / I / IIa / IIb / III / IV.");
     assert.equal(canSign(acked.flags, acked.gaps).ok, false, "approval stays blocked until it is answered");
+  });
+});
+
+describe("fix round 1 (B0-8): answering a box settles its own gaps in the same step", () => {
+  it("typing or choosing an answer resolves the box's open gaps (audited); removing the answer reopens them; a drafted answer's gap stays to check", () => {
+    const { report, form, template } = drafted();
+    const before = reviewItems(report, { template, form }).count;
+    // F-10 Prognosis (required opinion, no answer, one gap): the clinician writes their opinion.
+    const typed = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "In my opinion he will recover fully within 6 weeks.", actor: ACTOR }), form);
+    const gap = typed.gaps.find((g) => g.sectionKey === "F-10");
+    assert.equal(gap?.resolution?.kind, "resolved");
+    assert.equal(gap?.resolution?.text, "Answered on the form by Sarah Reid.");
+    assert.equal(gap?.resolution?.byAnswer, true);
+    assert.ok(typed.activity.some((a) => a.action === "gap_resolved" && a.detail.startsWith("F-10: resolved gap")), "audited like “Mark resolved”");
+    assert.equal(reviewItems(typed, { template, form }).count, before - 1, "the count falls as boxes are answered");
+    assert.equal(reviewItems(typed, { template, form }).boxes.get("F-10"), undefined, "no “confirm your answer” item left");
+    // The answer removed again: the gap is open again.
+    const pid = typed.sections.find((s) => s.key === "F-10")!.paragraphs[0].id;
+    const removed = reviewReducer(typed, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: ACTOR });
+    assert.equal(removed.gaps.find((g) => g.sectionKey === "F-10")?.resolution, undefined);
+    // A choice: F-04 (yes/no, no answer, one gap).
+    const chosen = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: ACTOR });
+    assert.equal(chosen.gaps.find((g) => g.sectionKey === "F-04")?.resolution?.text, "Answered on the form by Sarah Reid.");
+    // Drafting is not a person: applying a draft never resolves a gap.
+    // A box that already had an answer (F-09, drafted) keeps its gaps when the person edits it.
+    const withGap: Report = { ...report, gaps: [...report.gaps, { id: "gap-F-09-t-2", sectionKey: "F-09", issue: "Which activity?", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" }] };
+    const edited = reviewReducer(withGap, { type: "editParagraph", key: "F-09", paragraphId: "F-09-p1", text: "He has made good progress.", actor: ACTOR });
+    assert.equal(edited.gaps.find((g) => g.id === "gap-F-09-t-2")?.resolution, undefined);
+  });
+
+  it("a held-back drafted choice is ticked in one click – the person's decision, audited", () => {
+    const { report } = drafted();
+    const held = { id: "gap-F-11-ab12-choice", sectionKey: "F-11", issue: "The suggested answer “Moderate” is not stated in the cited notes…", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "system" as const, suggestedAnswer: "Moderate" };
+    const withHeld: Report = { ...report, gaps: [...report.gaps.filter((g) => g.sectionKey !== "F-11"), held] };
+    const ticked = reviewReducer(withHeld, { type: "setAnswer", key: "F-11", value: held.suggestedAnswer, actor: ACTOR });
+    assert.deepEqual(ticked.sections.find((s) => s.key === "F-11")?.answer, { kind: "choice", value: "Moderate" });
+    assert.equal(ticked.gaps.find((g) => g.id === held.id)?.resolution?.kind, "resolved");
+    assert.ok(ticked.activity.some((a) => a.action === "answer_set" && /set to Moderate/.test(a.detail)));
   });
 });

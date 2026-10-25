@@ -190,6 +190,7 @@ test("a choice is ticked only when the cited notes use the option's words", () =
   assert.match(res.gaps[0].issue, /“Fit with a phased return” is not stated in the cited notes \(they do not use the words “phased” and “return”\)/);
   assert.match(res.gaps[0].suggestedQuestion, /\(Fit for normal duties \/ Fit with a phased return \/ Not fit\)/);
   assert.deepEqual(res.gaps[0].relatedNoteIds, ["N-001"]);
+  assert.equal(res.gaps[0].suggestedAnswer, "Fit with a phased return", "fix round 1 (B0-8): offered to the person as one click");
   assert.deepEqual(optionWordsNotIn("Goals achieved", "Episode of care complete. Discharged to self-management."), ["goals", "achieved"]);
   assert.deepEqual(optionWordsNotIn("Goals achieved", "All treatment goals were achieved."), []);
 });

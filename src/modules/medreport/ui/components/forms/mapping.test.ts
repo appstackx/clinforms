@@ -135,3 +135,16 @@ test("fix round 1 (B0-29): a code's place is described by what really goes there
     "Medcare EOTS opens on its clinical YES/NO, not an optional session time",
   );
 });
+
+test("fix round 1 (B0-29): JJ Physio's “Shoulder No” on the alternative-reference code is not described as an accident date", () => {
+  const anchor = { kind: "docx" as const, target: "replace_placeholder" as const, blockId: "p2", placeholderText: "<<P_ALTERNATE_REF1>>" };
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Shoulder No", fillSource: { kind: "registration", path: "staff.entry" } }),
+    "What staff type in on each report, in place of the code that usually prints the clinic system's alternative reference",
+  );
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Date of Accident", fillSource: { kind: "registration", path: "incident.date" } }),
+    "In place of the merge code for alternative reference 1 (where some clinics keep the date of the accident)",
+    "as before where it is the accident's date",
+  );
+});
