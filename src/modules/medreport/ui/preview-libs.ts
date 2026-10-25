@@ -226,14 +226,15 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
   } catch {
     // as docx-preview draws it
   }
-  // Fix round 2 (B1-22): a drawing anchored to the page, its margin or its column where Word puts it – positioned on its
-  // page (docx-preview places it by the text around it, so the TPN logo overhung the page edge). docx-preview draws
-  // every drawing "position: relative", so each is tagged with a class here and placed once drawn. Best effort: a part
-  // whose drawings do not line up with its XML is drawn as before.
+  // Fix round 2 (B1-22): a drawing anchored to the page, its margin or its column at the distance from the page's left
+  // edge Word gives it (docx-preview places it by the text around it, so the TPN logo overhung the page edge). Its
+  // height stays in the text, so nothing is drawn over the form's own words. Each drawing is tagged with a class here
+  // and moved across once drawn. Best effort: a part whose drawings do not line up with its XML is drawn as before.
   const placed: AnchorPlacement[] = [];
+  let page: PageGeometry | null = null;
   try {
     const xml = (await doc._package?.load("word/document.xml", "string")) ?? "";
-    const page = pageGeometryOf(xml);
+    page = pageGeometryOf(xml);
     for (const part of page ? (doc.parts ?? []) : []) {
       const root = part.rootElement ?? part.body;
       if (!root || !part.path || !/^word\/(?:document|header\d*|footer\d*)\.xml$/.test(part.path)) continue;
@@ -254,20 +255,28 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
   const nodes = await lib.renderDocument(doc as never, options);
   host.innerHTML = "";
   for (const n of nodes) host.appendChild(n);
-  placeAnchoredDrawings(host, placed);
+  if (page) placeAnchoredDrawings(host, placed, page);
   sanitizeDocxPreview(host);
 }
 
 const ANCHOR_CLASS = "mr-anchor-";
 
-/** Each tagged drawing on its page (its section), at the placement its tag names (fix round 2, B1-22). */
-function placeAnchoredDrawings(host: HTMLElement, placed: readonly AnchorPlacement[]): void {
+/**
+ * Each tagged drawing moved across its page (its section) to the left edge its tag names (fix round 2, B1-22) – measured
+ * as drawn, so a zoomed preview is moved in proportion. It stays in the text's flow ("position: relative").
+ */
+function placeAnchoredDrawings(host: HTMLElement, placed: readonly AnchorPlacement[], page: PageGeometry): void {
   if (placed.length === 0) return;
   host.querySelectorAll<HTMLElement>(`[class*="${ANCHOR_CLASS}"]`).forEach((el) => {
     const n = new RegExp(`(?:^|\\s)${ANCHOR_CLASS}(\\d+)(?:\\s|$)`).exec(el.className)?.[1];
     const at = n === undefined ? undefined : placed[Number(n)];
-    if (!at) return;
-    Object.assign(el.style, { position: "absolute", display: "block", float: "none", margin: "0", left: `${at.left}pt`, top: `${at.top}pt`, width: `${at.width}pt`, height: `${at.height}pt`, zIndex: "2" });
+    const section = el.closest("section");
+    if (!at || !section) return;
+    const pxPerPt = section.getBoundingClientRect().width / page.width;
+    if (!(pxPerPt > 0)) return;
+    const now = (el.getBoundingClientRect().left - section.getBoundingClientRect().left) / pxPerPt;
+    const left = el.style.left.endsWith("pt") ? parseFloat(el.style.left) || 0 : 0;
+    el.style.left = `${Math.round((left + at.left - now) * 10) / 10}pt`;
   });
 }
 
