@@ -20,6 +20,7 @@
  * Browser-safe and pure.
  */
 import { docxAnchorBlockIds, formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
+import { findPracticeCodes, practiceCode } from "./practice-merge-codes";
 import type { FormDefinition, FormField, FormMergeField, Report } from "./types";
 
 const TOKEN = "«[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}»|<<[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}>>|\\bMERGEFIELD\\b";
@@ -44,6 +45,23 @@ export function listMergeTokens(tokens: readonly string[], max = 3): string {
   const shown = distinct.slice(0, max);
   const more = distinct.length - shown.length;
   return `${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
+/**
+ * A clinic-system code in plain words (fix 10/2026, Blue Heart test run): what the code dictionary says it holds –
+ * <<P_GROUPREF>> → "your clinic system's placeholder for the referrer's reference for this case" – so a clinician
+ * never reads the raw code. Null for anything else («Patient Name» and MERGEFIELD read as printed).
+ */
+export function practiceCodeInWords(token: string): string | null {
+  const found = findPracticeCodes(token);
+  if (found.length !== 1 || found[0].text !== token) return null;
+  const entry = practiceCode(found[0].code);
+  return entry ? `your clinic system's placeholder for ${entry.meaning}` : "a placeholder from your clinic system";
+}
+
+/** listMergeTokens() with clinic-system codes in plain words (the same text when there are none). */
+export function listMergeTokensInWords(tokens: readonly string[], max = 3): string {
+  return listMergeTokens(tokens.map((t) => practiceCodeInWords(t) ?? t), max);
 }
 
 export interface UnresolvedMergeField extends FormMergeField {

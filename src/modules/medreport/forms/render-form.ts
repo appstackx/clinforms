@@ -30,7 +30,7 @@ import { addDocxDemoNotice, stampPdfDemoNotice } from "./demo-notice";
 import { fillDocx } from "./docx-fill";
 import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "./file";
 import { mergeTokensInOutput } from "./merge-scan";
-import { listMergeTokens } from "../core/merge-fields";
+import { listMergeTokensInWords } from "../core/merge-fields";
 import { fillPdf } from "./pdf-fill";
 
 export type FormOutputFormat = "original" | "pdf";
@@ -68,7 +68,8 @@ function assertKind(form: FormDefinition, file: DecodedFormFile): void {
 }
 
 function mergeFieldsLeft(tokens: string[]): string {
-  return `The completed form still contains ${tokens.length === 1 ? "a mail-merge field" : `${tokens.length} mail-merge fields`} (${listMergeTokens(tokens)}).`;
+  // A clinic-system code in plain words (<<P_GROUPREF>> → "your clinic system's placeholder for the referrer's reference…").
+  return `The completed form still contains ${tokens.length === 1 ? "a mail-merge field" : `${tokens.length} mail-merge fields`} (${listMergeTokensInWords(tokens)}).`;
 }
 
 /** A final copy never leaves with a mail-merge field on it (see the file comment). */
