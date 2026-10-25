@@ -12,6 +12,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
@@ -691,9 +692,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
         <div className="min-w-0 flex-1 basis-60">
           {q.context && <p className="text-xs text-slate-500">Part of: {q.context}</p>}
           <h3 id={headingId} tabIndex={-1} className="text-[15px] font-semibold leading-snug text-slate-900 focus:outline-none">
-            {q.label}
+            {humaniseMergeCodes(q.label)}
           </h3>
-          {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{q.guidance}</p>}
+          {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{humaniseMergeCodes(q.guidance)}</p>}
         </div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
           {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}

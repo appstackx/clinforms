@@ -235,3 +235,34 @@ test("the field editor as rendered: plain words, the code as printed only under 
   assert.ok(!html.includes("<img") && html.includes("&lt;img src=x onerror=alert(1)&gt;"), "markup in a map is shown as text");
   assert.match(details, /&lt;&lt;P_ALTERNATE_REF1&gt;&gt;/, "the printed code, where staff edit the location by hand");
 });
+
+test("the review screen as rendered: flag messages and gaps name clinic-system codes in plain words (integration 25/10)", async () => {
+  const { FlagItem, GapItem } = await import("@/modules/medreport/ui/components/review/issues");
+  // A label holding a code the dictionary does not know, as the validators and the gap list quote it.
+  const flag = {
+    id: "flag-1",
+    code: "MISSING_PLACEHOLDER",
+    severity: "warning",
+    sectionKey: "F-15",
+    evidence: "optional field blank",
+    message: "“Merge code <<P_CONTACT_PREF>>” is optional on the referrer's form and has no answer, so it will be left blank.",
+  } as const;
+  const gap = {
+    id: "F-15-gap",
+    sectionKey: "F-15",
+    issue: "The record does not hold <<P_HOSP_NUM>>.",
+    suggestedQuestion: "What goes in <<P_HOSP_NUM>>?",
+    relatedNoteIds: [],
+    raisedBy: "system",
+  } as const;
+  const html = renderToStaticMarkup(
+    createElement("div", null, [
+      createElement(FlagItem, { key: "f", flag: flag as never, canAck: false, readOnly: false, onAcknowledge: () => {} }),
+      createElement(GapItem, { key: "g", gap: gap as never, resolution: { resolved: true, acknowledged: true } as never, bundle: { notes: [] }, readOnly: false, onResolve: () => {}, onReopen: () => {} }),
+    ]),
+  );
+  assert.ok(!/&lt;&lt;[A-Z]/.test(html), html);
+  assert.match(html, /Merge code “P_CONTACT_PREF”/);
+  assert.match(html, /The record does not hold the patient&#x27;s hospital number\./);
+  assert.match(html, /What goes in the patient&#x27;s hospital number\?/);
+});

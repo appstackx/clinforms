@@ -13,6 +13,7 @@ import { useId, useState } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
 import { DATA_CHECK_LABELS, FLAG_CODE_LABELS } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
 import type { BoxItem } from "./box-items";
@@ -133,7 +134,7 @@ export function FlagItem({
           <span className="sr-only">{acked ? " (acknowledged)" : blocking ? " (blocks approval)" : " (warning)"}</span>
           {!compact && flag.sectionKey && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{flag.sectionKey}</span>}
         </p>
-        <p className="mt-0.5 leading-relaxed">{flag.message}</p>
+        <p className="mt-0.5 leading-relaxed">{humaniseMergeCodes(flag.message)}</p>
         {showEvidence && (
           <p className="mt-1 text-xs opacity-80">
             Found: <q className="font-medium">{flag.evidence}</q>
@@ -221,12 +222,12 @@ function GapBody({
       {!hideIssue && (
         <p className={cn("leading-relaxed", issueLabel ? "mt-1.5" : "mt-0.5")}>
           {issueLabel && <span className="font-medium">{issueLabel}: </span>}
-          {gap.issue}
+          {humaniseMergeCodes(gap.issue)}
         </p>
       )}
       {!done && !hideQuestion && !hideIssue && gap.suggestedQuestion && (
         <p className="mt-1 text-xs">
-          <span className="font-medium">Ask:</span> {gap.suggestedQuestion}
+          <span className="font-medium">Ask:</span> {humaniseMergeCodes(gap.suggestedQuestion)}
         </p>
       )}
       {gap.relatedNoteIds.length > 0 && !hideIssue && (

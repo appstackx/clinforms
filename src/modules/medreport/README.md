@@ -1754,4 +1754,8 @@ warnings for one box (the gap, "Missing field" and the raw code `<<P_GROUPREF>>`
   "Left blank on the form" and no longer counts as needing input.
 - **Clinic-system codes in plain words:** validation messages and the preview's notes name a TM3 code by what the
   code dictionary says it holds (`practiceCodeInWords`: "your clinic system's placeholder for the referrer's reference
-  for this case"); the flag's evidence (and so its ID) keeps the code. «Name» fields read as before.
+  for this case"); the flag's evidence (and so its ID) keeps the code. «Name» fields read as before. The words are the
+  staff screens' own (`core/practice-merge-codes.ts` `practiceCodeWords`, branch `fix/bh-merge-code-display`), and a
+  code the dictionary does not know keeps its name in quotes (“P_CONTACT_PREF”). The review screen also shows flag
+  messages, gaps, the question's label and guidance and the "Leave optional boxes blank" list through
+  `humaniseMergeCodes` (integration 25/10/2026).

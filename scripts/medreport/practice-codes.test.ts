@@ -231,7 +231,7 @@ test("Megan Hart (fictional) on the form: record values in place, empty address 
   const blocking = before.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && /mail-merge field/.test(f.message));
   // Fix 10/2026: the code is in the evidence (flag IDs unchanged); the message says what it is in plain words.
   assert.ok(blocking.some((f) => /<<P_HOSP_NUM>>/.test(f.evidence ?? "") && /your clinic system's placeholder for the patient's hospital number, in /.test(f.message)));
-  assert.ok(blocking.some((f) => /<<P_CONTACT_PREF>>/.test(f.evidence ?? "") && /a placeholder from your clinic system, in /.test(f.message)));
+  assert.ok(blocking.some((f) => /<<P_CONTACT_PREF>>/.test(f.evidence ?? "") && /your clinic system's placeholder “P_CONTACT_PREF”, in /.test(f.message)));
   for (const f of blocking) assert.doesNotMatch(f.message, /<<[A-Z]/, `no raw clinic-system code shown: ${f.message}`);
   assert.equal(before.canSign, false);
 

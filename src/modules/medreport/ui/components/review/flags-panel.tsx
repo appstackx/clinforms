@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { todayIso } from "../../../core/dates";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { EpisodeBundle, Gap, Report, ReportFlag } from "../../../core/types";
 import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
@@ -260,7 +261,7 @@ function LeaveBlankPanel({
           <label key={c.key} className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 hover:bg-slate-50">
             <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#0D9488]" checked={!excluded.has(c.key)} onChange={() => toggle(c.key)} />
             <span className="min-w-0">
-              <span className="font-mono text-[11px] text-slate-500">{c.key.startsWith("F-") ? c.key : ""}</span> {questionLabel(c.key) || c.label}
+              <span className="font-mono text-[11px] text-slate-500">{c.key.startsWith("F-") ? c.key : ""}</span> {humaniseMergeCodes(questionLabel(c.key) || c.label)}
               {c.gaps[0] && <span className="block text-xs text-slate-500">{c.gaps[0].issue}</span>}
             </span>
           </label>

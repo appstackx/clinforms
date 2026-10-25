@@ -12,6 +12,7 @@ import { describe, it } from "node:test";
 import { computeFacts } from "../../../core/computed-facts";
 import { formToTemplate } from "../../../core/forms";
 import { listMergeTokens, listMergeTokensInWords, practiceCodeInWords } from "../../../core/merge-fields";
+import { PRACTICE_CODES, humaniseMergeCodes, practiceCodeWords } from "../../../core/practice-merge-codes";
 import { createFormReport } from "../../../core/report-factory";
 import type { FormDefinition, FormField, Gap, Report, ReportFlag } from "../../../core/types";
 import { canSign, validateReport } from "../../../core/validation";
@@ -322,12 +323,20 @@ describe("Leave optional boxes blank", () => {
 });
 
 describe("clinic-system codes in plain words", () => {
-  it("names a known code by what it holds, an unknown one generically, and leaves other merge fields as printed", () => {
+  it("names a known code by what it holds, an unknown one by its name in quotes, and leaves other merge fields as printed", () => {
     assert.equal(practiceCodeInWords("<<P_GROUPREF>>"), "your clinic system's placeholder for the referrer's reference for this case");
-    assert.equal(practiceCodeInWords("<<P_NOT_IN_THE_DICTIONARY>>"), "a placeholder from your clinic system");
+    assert.equal(practiceCodeInWords("<<P_NOT_IN_THE_DICTIONARY>>"), "your clinic system's placeholder “P_NOT_IN_THE_DICTIONARY”");
     assert.equal(practiceCodeInWords("«Patient Name»"), null);
     assert.equal(practiceCodeInWords("<<Referral Ref>>"), null);
     assert.equal(listMergeTokensInWords(["«Patient Name»", "«Referral Ref»"]), listMergeTokens(["«Patient Name»", "«Referral Ref»"]), "unchanged without clinic-system codes");
-    assert.equal(listMergeTokensInWords(["<<P_TITLE>>", "<<P_SURNAME>>"]), "your clinic system's placeholder for the patient's title (Mr, Mrs, Ms…), your clinic system's placeholder for the patient's surname");
+    assert.equal(listMergeTokensInWords(["<<P_TITLE>>", "<<P_SURNAME>>"]), "your clinic system's placeholder for the patient's title, your clinic system's placeholder for the patient's surname");
+  });
+
+  it("uses the same words as the staff screens for every code in the dictionary (integration 25/10)", () => {
+    for (const code of Array.from(PRACTICE_CODES.keys())) {
+      assert.equal(practiceCodeInWords(`<<${code}>>`), `your clinic system's placeholder for ${practiceCodeWords(code)}`, code);
+      assert.doesNotMatch(humaniseMergeCodes(`Seen in <<${code}>>.`), /<<|>>/, code);
+    }
+    assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1 (where some clinics keep the date of the accident)");
   });
 });
