@@ -324,6 +324,9 @@ export const NOTES_REVIEW_COPY = {
   clinicianNotRecorded: "Not recorded",
   clinicianNameLabel: "Clinician's name",
   clinicianHcpcLabel: "HCPC number (optional)",
+  /** A clinician in the notes shown with another number: a clinic member's, or the one on their other notes. */
+  clinicianMatched: (inNotes: string, shownAs: string, member: boolean) =>
+    `${inNotes} in the notes is shown as ${shownAs}${member ? ", from your clinic's members" : ", as on the other notes"}. If that is someone else, change the clinician on those entries.`,
   scoresHeading: "Outcome scores found",
   scoresNone: "No outcome scores (such as NPRS 7/10 or QuickDASH 52.3) were found.",
   attendanceOn: "Attendance is taken from the status of each entry.",
@@ -378,6 +381,8 @@ export function notesReviewCopyStrings(): string[] {
     NOTES_REVIEW_COPY.attendanceNoTime(1),
     NOTES_REVIEW_COPY.attendanceNoTime(6),
     NOTES_REVIEW_COPY.letterDateButton("09/10/2026"),
+    NOTES_REVIEW_COPY.clinicianMatched("Sarah Reid (PH-DEMO-01)", "Sarah Reid (ZZ0001)", true),
+    NOTES_REVIEW_COPY.clinicianMatched("Sarah Reid (PH-DEMO-01)", "Sarah Reid (PH123456)", false),
     ...NOTES_REVIEW_FIELDS.map(missingFieldText),
     ...Object.values(NOTES_REVIEW_FIELD_LABELS),
   );
