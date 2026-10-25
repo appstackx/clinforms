@@ -413,7 +413,8 @@ function QuestionCardImpl(props: QuestionCardProps) {
 
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
   // its "required and empty" check is listed in the Flags tab rather than repeated here.
-  const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section);
+  // (A question that does not apply asks nobody for an opinion – fix round 2.)
+  const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section) && !notApplicableBecause;
   const box = props.box;
   const hidden = props.hiddenFlagIds;
   const sectionFlags = flags.filter(
@@ -597,7 +598,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
     const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (
       <div className="space-y-3">
-        {isOpinion && value === null && !readOnly && <NeedsClinician gaps={gaps} />}
+        {isOpinion && value === null && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
         {recordsLocked ? (
           <LockedRecordsAnswer
             text={paragraphs[0]?.text ?? String(value ?? "")}
@@ -645,7 +646,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   } else {
     body = (
       <div className="space-y-3">
-        {isOpinion && !answered && !readOnly && <NeedsClinician gaps={gaps} />}
+        {isOpinion && !answered && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
         {referrerNotice ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
