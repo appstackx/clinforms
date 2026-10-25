@@ -88,3 +88,13 @@ test("fillable-PDF answer spaces of several fields: descriptions, editing and pi
   assert.equal(anchorFromPick(yesNo, { kind: "pdf_field", fieldName: "Check Box6", fieldType: "checkbox" }), yesNo);
   assert.deepEqual(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" }), { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" });
 });
+
+test("places that are clinic-system merge codes are described in plain words; the location by hand keeps the code", () => {
+  const at = (placeholderText: string, extra: Partial<Extract<FormField["anchor"], { kind: "docx" }>> = {}): FormField["anchor"] => ({ kind: "docx", target: "replace_placeholder", blockId: "p4", placeholderText, ...extra });
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_FIRSTNAM>>"), label: "Patient's first name" }), "In place of the merge code for the patient's first name");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>"), label: "Address" }), "In place of the merge codes for the patient's address and postcode");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_CONTACT_PREF>>"), label: "Merge code <<P_CONTACT_PREF>>" }), "In place of the merge code “P_CONTACT_PREF”");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_DOB>>", { writeAfter: true }), label: "Date of birth" }), "After the printed merge code for the patient's date of birth");
+  assert.equal(plainAnchorDescription({ anchor: at("____"), label: "Name" }), "On the blank line for “Name”", "unchanged for ordinary blanks");
+  assert.equal(describeAnchor(at("<<P_FIRSTNAM>>")), "Replaces “<<P_FIRSTNAM>>” – Paragraph 5", "the code as printed, under “Edit the location by hand”");
+});

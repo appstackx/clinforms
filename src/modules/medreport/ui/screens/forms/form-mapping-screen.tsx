@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
 import {
@@ -320,7 +321,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           {rtfNotes.length ? (
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {rtfNotes.map((w) => (
-                <li key={w}>{rtfNoteText(w)}</li>
+                <li key={w}>{humaniseMergeCodes(rtfNoteText(w))}</li>
               ))}
             </ul>
           ) : null}
@@ -331,7 +332,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
             {analysisNotes.map((w) => (
-              <li key={w}>{w}</li>
+              <li key={w}>{humaniseMergeCodes(w)}</li>
             ))}
           </ul>
         </Notice>
@@ -418,7 +419,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                           <span className="mt-0.5 shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">{field.id}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium leading-snug text-slate-900">
-                              {field.label}
+                              {humaniseMergeCodes(field.label)}
                               {field.required ? (
                                 <span className="ml-1 text-red-600" title="Required by the referrer">
                                   *
@@ -550,10 +551,10 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
 function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-      {field.guidance ? <p className="text-slate-700">{field.guidance}</p> : null}
+      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(field.guidance)}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
       <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
-      {field.note ? <p className="text-xs text-slate-500">Note: {field.note}</p> : null}
+      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
     </div>
   );
 }

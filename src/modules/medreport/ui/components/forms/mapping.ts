@@ -6,6 +6,7 @@
  */
 import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
+import { humaniseMergeCodes, practiceCodesInWords } from "../../../core/practice-merge-codes";
 import { nextQuestionAnchor, questionAnchor } from "../../../core/question-set";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
@@ -122,13 +123,20 @@ function quoteLabel(label: string): string {
   return `“${t.length > 48 ? `${t.slice(0, 46)}…` : t}”`;
 }
 
+/** Printed text quoted in a place's description: clinic-system codes in plain words, at most 40 characters. */
+function quotePrinted(text: string): string {
+  const t = humaniseMergeCodes(text);
+  return `“${t.length > 40 ? `${t.slice(0, 38)}…` : t}”`;
+}
+
 /**
  * Where the answer goes, in words a practice manager uses ("In the box next to “Date of birth”"). The
- * technical location (block, table, row, cell) is shown only under "Edit the location by hand".
+ * technical location (block, table, row, cell) is shown only under "Edit the location by hand" – the only
+ * place a clinic-system code is shown as printed (“In place of the merge code for the patient's first name”).
  */
 export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label">): string {
   const a = field.anchor;
-  const q = quoteLabel(field.label);
+  const q = quoteLabel(humaniseMergeCodes(field.label));
   switch (a.kind) {
     case "docx":
       switch (a.target) {
@@ -138,8 +146,10 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           return `On the lines under ${q}`;
         case "replace_placeholder": {
           const ph = (a.placeholderText ?? "").trim();
-          if (a.writeAfter) return `After the printed “${ph.length > 40 ? `${ph.slice(0, 38)}…` : ph}”`;
-          return /^[_.…\s-]+$/.test(ph) || !ph ? `On the blank line for ${q}` : `In place of “${ph.length > 40 ? `${ph.slice(0, 38)}…` : ph}”`;
+          const codes = practiceCodesInWords(ph);
+          if (a.writeAfter) return `After the printed ${codes ?? quotePrinted(ph)}`;
+          if (/^[_.…\s-]+$/.test(ph) || !ph) return `On the blank line for ${q}`;
+          return codes ? `In place of the ${codes}` : `In place of ${quotePrinted(ph)}`;
         }
         case "content_control":
           return `In the grey field for ${q}`;
@@ -155,7 +165,7 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
         }
         case "delete_options": {
           const opts = (a.optionTexts?.length ? a.optionTexts.map((o) => o.option) : []).map((o) => `“${o}”`);
-          if (a.placeholderText) return `Keeps one of “${a.placeholderText.length > 40 ? `${a.placeholderText.slice(0, 38)}…` : a.placeholderText}” and deletes the others`;
+          if (a.placeholderText) return `Keeps one of ${quotePrinted(a.placeholderText)} and deletes the others`;
           return opts.length > 1 ? `Keeps one of ${opts.join(" / ")} and deletes the others` : `Keeps ${opts[0] ?? q} when it applies, deletes it when not`;
         }
       }
