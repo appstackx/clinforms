@@ -82,7 +82,8 @@ test("dictionary: TM3-style codes, the detector, and what each code means", () =
 });
 
 test("RTF: clinic-system codes are kept in the body (split runs joined); other merge fields and headers as before; earlier fixtures convert to the same bytes", () => {
-  assert.equal(RTF_CONVERTER_VERSION, "rtf-docx-2");
+  // (rtf-docx-3, fix round 1: pictures carried over – a file without PNG or JPEG pictures converts as with rtf-docx-2.)
+  assert.equal(RTF_CONVERTER_VERSION, "rtf-docx-3");
   const r = convertRtfToDocx(rtf(FIXTURE), { maxBytes: MAX });
   const blocks = new Map(buildDocxOutline(r.docx).blocks.map((b) => [b.id, b.text]));
   assert.equal(blocks.get("p4"), "Claimant: <<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>>", "the code split over two runs is one code");
@@ -97,9 +98,11 @@ test("RTF: clinic-system codes are kept in the body (split runs joined); other m
   for (const n of r.notes) for (const re of WORDING_BANNED) assert.doesNotMatch(n, re);
   assert.equal(sha(convertRtfToDocx(rtf(FIXTURE), { maxBytes: MAX }).docx), sha(r.docx), "deterministic");
 
-  // The fixtures without clinic-system codes: byte for byte what main (rtf-docx-1) wrote.
+  // The fixtures without clinic-system codes: byte for byte what main (rtf-docx-1) wrote – except (rtf-docx-3, fix round
+  // 1, B0-14) the one whose header holds a PNG logo: it now carries the picture (word/media/image1.png); main's bytes
+  // were 540cc0f217be49a2d14c58b95d7c9f6a36a3aa436b778beba9677338542444f0, without it.
   const MAIN: Record<string, string> = {
-    "initial-assessment-report.rtf": "540cc0f217be49a2d14c58b95d7c9f6a36a3aa436b778beba9677338542444f0",
+    "initial-assessment-report.rtf": "3beeabb75e83e5697c5f51da2b42186e55770d7e21729e1e3653aa2c2d8e0912",
     "progress-report-textedit.rtf": "2ec9ea0abbcb7100c8b8e5f811a4046d251dc1fee40b0592b8c44c9e70212287",
     "mail-merge-report.rtf": "dc456f8a33130ccd30262700443466bc6657c593f97dc1300e22215db176a046",
     "tick-box-discharge.rtf": "c95ab91828d5a190791074a6c8cab12e9c15bde7b5a544bb7a6093f827545437",

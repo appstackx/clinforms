@@ -1229,6 +1229,7 @@ function keepsTableApart(p: XmlElement): boolean {
 
 function removeIfBlank(p: XmlElement): void {
   if (segmentsText(paragraphSegments(p)).trim() !== "") return;
+  if (descendantsW(p, "drawing").length > 0 || descendantsW(p, "pict").length > 0) return; // a picture (a logo) stays
   const cell = ancestorW(p, "tc");
   if (cell && wChildren(cell, "p").length <= 1) return; // a cell keeps its last paragraph
   if (firstW(firstW(p, "pPr"), "sectPr")) return;
