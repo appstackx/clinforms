@@ -50,7 +50,7 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import { anchorFromPick, firstQuestionToCheck, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -123,7 +123,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const analysisLabels = useAnalysisModeLabels();
   const [draft, setDraft] = useState<FormDefinition>(saved);
   const [editing, setEditing] = useState(saved.status !== "confirmed");
-  const [selected, setSelected] = useState<string | null>(saved.fields.find((f) => f.confidence !== "high")?.id ?? saved.fields[0]?.id ?? null);
+  const [selected, setSelected] = useState<string | null>(firstQuestionToCheck(saved.fields));
   const [picking, setPicking] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);

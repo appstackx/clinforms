@@ -7,6 +7,7 @@ import {
   describeAnchor,
   describeBlock,
   fillSourceOfKind,
+  firstQuestionToCheck,
   formatOptionFields,
   newField,
   nextFieldId,
@@ -87,6 +88,14 @@ test("fillable-PDF answer spaces of several fields: descriptions, editing and pi
   assert.equal(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 6", fieldType: "text" }), chars);
   assert.equal(anchorFromPick(yesNo, { kind: "pdf_field", fieldName: "Check Box6", fieldType: "checkbox" }), yesNo);
   assert.deepEqual(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" }), { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" });
+});
+
+test("the mapping review opens on the question that most needs a decision: “Needs review” first, then “Check”", () => {
+  const q = (id: string, confidence: FormField["confidence"]) => ({ id, confidence });
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "low"), q("F-04", "low")]), "F-03");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "medium")]), "F-02", "the first to check, in the form's order");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "high")]), "F-01", "nothing to check: the first question");
+  assert.equal(firstQuestionToCheck([]), null);
 });
 
 test("places that are clinic-system merge codes are described in plain words; the location by hand keeps the code", () => {

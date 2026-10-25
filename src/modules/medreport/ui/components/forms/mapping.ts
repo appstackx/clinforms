@@ -199,6 +199,14 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
   }
 }
 
+/**
+ * The question the mapping review opens on: the first that needs a decision – “Needs review” before “Check”,
+ * each in the form's order – or the first question when none does.
+ */
+export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence">>): string | null {
+  return (fields.find((f) => f.confidence === "low") ?? fields.find((f) => f.confidence !== "high") ?? fields[0])?.id ?? null;
+}
+
 /** Next free field ID ("F-23"). */
 export function nextFieldId(form: Pick<FormDefinition, "fields">): string {
   let max = 0;
