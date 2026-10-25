@@ -305,7 +305,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export const NOTES_REVIEW_COPY = {
   title: "Check the notes before they are used",
   intro:
-    "These notes are not in the documented import layout, so they were read as ordinary clinic notes. Check what was found: correct the dates, clinicians and patient details where needed. The notes' own text is used exactly as written. Nothing is drafted until you confirm.",
+    // Fix round 1 (B0-33): neutral – ordinary clinic notes are the usual case, not a fault (the welcome pack's own notes).
+    "Read as ordinary clinic notes – check the entries below: correct the dates, clinicians and patient details where needed. The notes' own text is used exactly as written. Nothing is drafted until you confirm.",
   summary: (entries: number, clinicians: number, scores: number) =>
     `${plural(entries, "entry", "entries")} · ${plural(clinicians, "clinician")} · ${plural(scores, "outcome score")}`,
   patientHeading: "Patient and referral details",
