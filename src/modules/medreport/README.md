@@ -80,7 +80,8 @@ src/modules/medreport/
     merge-scan.ts         mail-merge fields in a form file (analysis record) and in a completed file (final-render refusal)
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
-    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
+    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers;
+                          the form author's instructions left off – core/template-instructions.ts)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
     pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
     pdf-widgets.ts        printed label beside each radio / tick-box widget; runs of one-character boxes
@@ -1582,6 +1583,35 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
 - Tests: `forms/docx-choices.test.ts` (fictional fixtures for every pattern). The bundled forms and the RTF fixtures
   are byte-identical (forms-regression.cjs 5/5 IDENTICAL, rtf-forms.cjs 2/2 IDENTICAL, practice-codes.cjs all parts
   identical vs `fix/blue-heart-verify`), and the rules reading of the bundled forms is unchanged (reading baseline).
+- **The form author's instructions** (25/10, Blue Heart test-run finding 14: a provider template's red "Delete unused
+  cells" reached the completed Word file) – `core/template-instructions.ts` says what counts, deliberately narrowly:
+  "[Please] delete/remove" + what ("unused cells/rows", "as necessary/appropriate", "other choices", "those which are
+  not required", "if not applicable", "this text before sending"…) where it stands apart from the referrer's wording – in
+  brackets, after ":" ";" "–" or a tab, where the colour changes, or at the start of a line printed in a colour (a line
+  in the default colour stays, as `docx-choices.test.ts` expects); "Copy and paste from …" as the whole line; "Please
+  give … in this box" as a coloured line below a label in the same cell. Question wording ("(please circle/tick)",
+  "if applicable", "Please specify:") never matches. `forms/docx-fill.ts` runs last, on DRAFT and FINAL alike: each
+  instruction leaves its line (with its brackets, the spaces before it and a dash or ";" that introduces it; a label's
+  colon stays), a line it emptied goes (a cell keeps its last line), and for "Delete unused cells/rows/lines" its own row
+  goes and so do the repeat rows the report left exactly as printed – at least two plain rows directly above, alike once
+  instructions are left out (no merged cells, controls, fields or merge codes, and no row an answered question writes in
+  or ticks); the first stays when none was used. A note beside a list of options ("Delete as necessary", "(Please delete
+  other choices)", "Delete those which are not required") is only left off once an answer has chosen from every list
+  next to it – its line, else its cell, else its row, else the blocks right after it – so a list nobody chose from (an
+  optional question left unanswered, or a list the map does not handle) never reads as chosen. Never an answer: runs
+  the fill wrote are tracked (`WRITTEN`, also through run splits). One fill note lists what was left off ("Notes from
+  filling the form" on the review screen's Preview tab); the mapping screen's preview strikes the instructions in the
+  page body through (`ui/components/shared/docx-instructions.ts`) under the notice "Left off the completed form" (rows
+  only promised where they can go). Works for forms already loaded (no map change, no re-load); a form without such
+  notes is written byte for byte as before; page headers and footers are not read (none of Blue Heart's 17 templates
+  prints one there); PDF forms are unchanged. Hostile sizes (security review 25/10: removing 40,000 emptied lines one
+  by one was quadratic, 7.5 s against 0.4 s, reachable through the public demo's `/forms/fill-preview`): a line with
+  more than 20 instructions, or a form with more than 200 (`MAX_INSTRUCTIONS_PER_FORM`; Blue Heart's have at most 6),
+  is left as printed, read before anything changes; at most 500 rows are left off per form; the whole-line rules read
+  the line without its trailing spaces and dots (a plain loop, no backtracking). Tests:
+  `core/template-instructions.test.ts`, `scripts/medreport/template-instructions.test.ts` (fixture
+  `fixtures/rtf/repeat-rows-report.rtf`, "Fernhurst Medical Reporting (fictional)"; hostile files timed against the
+  same file in neutral words).
 
 ## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
 

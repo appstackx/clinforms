@@ -19,6 +19,7 @@ import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
+import { instructionsMappingNote } from "../../../core/template-instructions";
 import {
   ANSWER_TYPE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
@@ -54,6 +55,7 @@ import { QuestionSetPreview } from "../../components/forms/question-set-preview"
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
 import { DemoNoticeBar } from "../../components/shared/demo-notice";
+import { type PreviewInstructions } from "../../components/shared/docx-instructions";
 import { OriginalFormPreview, type PreviewPick } from "../../components/shared/original-form-preview";
 import { StudioShell } from "../../components/shared/studio-shell";
 import {
@@ -128,6 +130,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // 10/2026: the form author's instructions for whoever completes it, as found in the preview (left off the completed form).
+  const [instructions, setInstructions] = useState<PreviewInstructions>({ found: [], rows: false });
   // A portal question set has no file: its questions are shown instead, and nothing is picked in a file.
   const questionSet = isQuestionSet(saved);
   const { file, loading, error } = useFormFile(questionSet ? null : saved);
@@ -327,6 +331,12 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </Notice>
       ) : null}
 
+      {instructions.found.length && !questionSet ? (
+        <Notice tone="info" title="Left off the completed form">
+          {instructionsMappingNote(instructions.found, instructions.rows)}
+        </Notice>
+      ) : null}
+
       {analysisNotes.length ? (
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
@@ -364,6 +374,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               highlight={selectedField ? { anchor: selectedField.anchor, label: selectedField.label } : null}
               pickMode={picking && editing}
               onPick={onPick}
+              onInstructions={setInstructions}
               className={questionSet ? "hidden" : "h-[70vh] lg:h-[calc(100vh-154px)]"}
               label={`${draft.title} – original layout`}
             />
