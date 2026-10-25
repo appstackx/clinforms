@@ -340,3 +340,30 @@ describe("clinic-system codes in plain words", () => {
     assert.equal(practiceCodeInWords("<<P_ALTERNATE_REF1>>"), "your clinic system's placeholder for alternative reference 1 (where some clinics keep the date of the accident)");
   });
 });
+
+describe("fix round 1 (B0-2): what a box left blank prints", () => {
+  it("leaving optional boxes blank (one by one or in one step) passes an explicit blank to the forms engine; undecided boxes stay as printed", async () => {
+    const { buildFormAnswers } = await import("../../../core/forms");
+    const { report, form, template } = drafted();
+    // Before anyone decides: F-05 and F-06 are just unanswered.
+    assert.deepEqual(buildFormAnswers(report, form)["F-05"], {});
+    const bulk = leaveOptionalBoxesBlank(report, { template, form, keys: ["F-05", "F-06"], reason: LEAVE_BLANK_REASON, actor: ACTOR, now: NOW });
+    const answers = buildFormAnswers(bulk, form);
+    assert.deepEqual(answers["F-05"], { leftBlank: true }, "its gap was acknowledged");
+    assert.deepEqual(answers["F-06"], { leftBlank: true }, "its “optional and has no answer” warning was acknowledged");
+    assert.deepEqual(answers["F-09"].leftBlank, undefined, "a box with an answer is written as answered");
+    // An approved report: every box without an answer is left blank on the form, whatever was decided.
+    const approved = buildFormAnswers({ ...report, status: "signed" }, form);
+    assert.deepEqual(approved["F-07"], { leftBlank: true });
+    assert.deepEqual(approved["F-12"], {}, "sign-off parts come from the receipt");
+  });
+
+  it("the review says what leaving a box blank removes from the printed form", async () => {
+    const { leftBlankEffect } = await import("../../../core/forms");
+    assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "mark_cell", blockId: "t0.r0.c1", optionCells: [{ option: "x", blockId: "t0.r0.c1" }] } }), "no box is marked – a mark printed there is removed");
+    assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "delete_options", blockId: "t0.r1.c2", placeholderText: "Restricted / Unable to perform" } }), "the printed “Restricted / Unable to perform” is removed");
+    assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "replace_placeholder", blockId: "t0.r2.c2", placeholderText: "30 minutes" } }), "the printed “30 minutes” is removed");
+    assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "________" } }), null);
+    assert.equal(leftBlankEffect({ anchor: { kind: "docx", target: "table_cell", blockId: "t0.r2.c1" } }), null);
+  });
+});
