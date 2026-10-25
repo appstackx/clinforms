@@ -1791,7 +1791,8 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
 
 - **Whose "I" it is** (`core/validation/voice.ts`, `OTHER_CLINICIAN_VOICE`, blocking): a drafted paragraph that says
   "I", "me" or "my" while citing a note another clinician wrote is never approved as the signer's own. One click,
-  "Name Tom Ellis instead" (`core/voice.ts nameClinicianInstead`), or a rewrite. Assembly gives plain clinical wording to
+  "Name Tom Ellis instead" (`core/voice.ts nameClinicianInstead`), or a rewrite – only a rewrite when the paragraph names
+  the clinician already ("Tom Ellis covered my leave": the "my" is the signer's). Assembly gives plain clinical wording to
   the signer's own notes only. A report with no author is checked against the signer at `/sign`.
 - **Prompt `forms-8`**: the final instruction lists the author's own notes; compact places ("Where it goes: a cell of a
   table", "it fills “…” inside a sentence") take the value alone; conditional questions and numbered rows; gaps never say
@@ -1802,7 +1803,8 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
   minutes") are removed – when a person left the box blank, and on every approved report. Forms without printed
   defaults are byte-identical.
 - **Conditional questions** (`core/conditions.ts`): "IF YES, PLEASE DETAIL" after a "No" prints nothing, blocks nothing,
-  and its gaps are settled as not applicable (audited, reopened if the answer changes).
+  and its gaps are settled as not applicable (audited, reopened if the answer changes) – right after drafting
+  (`ui/components/new/generate.ts`) and after each answer in the review.
 - **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
 - **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`); held-back choices in one click
   (`Gap.suggestedAnswer`); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
