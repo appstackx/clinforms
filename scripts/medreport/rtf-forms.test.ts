@@ -206,7 +206,9 @@ test("POST /forms/analyse on each RTF fixture: a Word map that keeps the .rtf na
     assert.ok(form.fields.length > 0, name);
   }
   const a = await analyseRtf(FIXTURES.initial);
-  assert.ok(a.form.analysis.warnings.some((w) => isRtfConversionNote(w) && /1 picture \(such as a logo\)/.test(w)));
+  // Fix round 1 (B0-14): its header's PNG logo is carried over (no "left out" note any more), as a picture of its own.
+  assert.ok(!a.form.analysis.warnings.some((w) => isRtfConversionNote(w) && /picture \(such as a logo\)/.test(w)));
+  assert.ok(new PizZip(docxOf(FIXTURES.initial)).file("word/media/image1.png"), "the logo is in the converted Word file");
   const anchorOf = (f: FormDefinition, label: string) => {
     const field = f.fields.find((x) => x.label === label);
     assert.ok(field, `field “${label}” in ${f.fields.map((x) => x.label).join(" | ")}`);
