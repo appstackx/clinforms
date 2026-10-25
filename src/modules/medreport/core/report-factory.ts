@@ -17,6 +17,7 @@ import {
   isFormReport,
   referrerNamesMatch,
   resolveComputedFactValue,
+  recordSourceOf,
   resolveRegistrationValue,
   sectionKindForFillSource,
   toFormAnswer,
@@ -26,7 +27,7 @@ import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withhe
 import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
 import { WORDING } from "./wording";
-import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS } from "./labels";
+import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, type RecordSource } from "./labels";
 import type {
   ActivityEntry,
   Clinician,
@@ -420,6 +421,10 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
 }
 
 function missingValueGap(field: FormField, what: string, unmatched?: string): Gap {
+  // Fix round 1 (B0-19): a detail staff type on each report, a physiotherapist's choice or the clinic's own details is
+  // said as such – never "the record does not hold it (the patient's registration details)".
+  const source = recordSourceOf(field);
+  if (source && !unmatched) return recordSourceGap(field, source);
   // Fix wave 2: no internal source code ("FACT-attendance", "patient.postcode") in text a clinician reads – the
   // registration record or the appointment figures, in words.
   const where = what.startsWith("FACT-") ? "the appointment figures" : "the patient's registration details";
@@ -436,6 +441,17 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
     relatedNoteIds: [],
     raisedBy: "system",
   };
+}
+
+function recordSourceGap(field: FormField, source: RecordSource): Gap {
+  const label = field.label;
+  const words: Record<RecordSource, { issue: string; ask: string }> = {
+    staff_entry: { issue: `“${label}” is entered by staff on each report.`, ask: `What should be entered for “${label}”? Type it from your records.` },
+    physio_choice: { issue: `“${label}” is chosen by the physiotherapist on each report.`, ask: `Which answer to “${label}” applies to this patient?` },
+    clinic: { issue: `Your Clinic details do not hold “${label}” yet.`, ask: `Add it in Clinic settings, or type it here for this patient's site.` },
+  };
+  const suffix: Record<RecordSource, string> = { staff_entry: "staff", physio_choice: "physio", clinic: "clinic" };
+  return { id: `gap-${field.id}-${suffix[source]}`, sectionKey: field.id, issue: words[source].issue, suggestedQuestion: words[source].ask, relatedNoteIds: [], raisedBy: "system" };
 }
 
 /* ------------------------------------------------------------------------------------------------

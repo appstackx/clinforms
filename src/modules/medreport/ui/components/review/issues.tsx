@@ -250,13 +250,7 @@ function GapBody({
           ))}
         </div>
       )}
-      <p className="mt-1 text-[11px] opacity-70">
-        {gap.raisedBy === "system"
-          ? gap.id.endsWith("-referrer")
-            ? "Raised by the system: the value comes from another organisation's referral, so a person confirms it."
-            : "Raised by the system: the clinic record does not hold this value."
-          : "Raised while drafting: the notes do not say this, so nothing was guessed."}
-      </p>
+      <p className="mt-1 text-[11px] opacity-70">{gapProvenance(gap)}</p>
       {done && (
         <p className="mt-1 text-xs">
           {done.kind === "resolved" ? "Resolution" : "Reason"}: “{done.text}” · {formatUkDateTime(done.at)}
@@ -314,6 +308,24 @@ function GapBody({
       )}
     </>
   );
+}
+
+/**
+ * Why a gap was raised, by its kind (fix round 1, B0-17): a held-back drafted choice is not "the clinic record does not
+ * hold this value". System gaps from drafting end "-choice", "-fit", "-cite" or "-sys" (ai/assemble.ts); a staff entry, a
+ * physiotherapist's choice or the clinic's details "-staff", "-physio" or "-clinic" (core/report-factory.ts).
+ */
+export function gapProvenance(gap: Pick<Gap, "id" | "raisedBy">): string {
+  if (gap.raisedBy !== "system") return "Raised while drafting: the notes do not say this, so nothing was guessed.";
+  if (gap.id.endsWith("-referrer")) return "Raised by the system: the value comes from another organisation's referral, so a person confirms it.";
+  if (gap.id.endsWith("-choice")) return "Raised by the system: the notes do not use the option's own words, so a person ticks it.";
+  if (gap.id.endsWith("-fit")) return "Raised by the system: the drafted answer does not fit the printed options, so a person chooses.";
+  if (gap.id.endsWith("-cite")) return "Raised by the system: the drafted answer cites no source, so a person confirms it.";
+  if (gap.id.endsWith("-sys")) return "Raised by the system: the notes did not answer this question.";
+  if (gap.id.endsWith("-staff")) return "Raised by the system: this is entered by staff on each report.";
+  if (gap.id.endsWith("-physio")) return "Raised by the system: the physiotherapist chooses this on each report.";
+  if (gap.id.endsWith("-clinic")) return "Raised by the system: your Clinic details do not hold this yet.";
+  return "Raised by the system: the clinic record does not hold this value.";
 }
 
 function JumpButton({ onJump, jumpLabel }: { onJump(): void; jumpLabel?: string }) {

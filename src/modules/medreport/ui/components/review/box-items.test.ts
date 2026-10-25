@@ -394,3 +394,52 @@ describe("fix round 1 (B0-10): a merge code blames the question that replaces it
     assert.notEqual(status("F-02"), "records");
   });
 });
+
+describe("fix round 1 (B0-19, B0-4): staff entries, physiotherapists' choices and the clinic's details in their own words", () => {
+  it("a staff entry is never “the record does not hold it (the patient's registration details)”; the source chip says what it is", async () => {
+    const { recordSourceOf } = await import("../../../core/forms");
+    const { report, form, template } = drafted();
+    const gap = report.gaps.find((g) => g.sectionKey === "F-08");
+    assert.equal(gap?.issue, "“Work telephone” is entered by staff on each report.");
+    assert.doesNotMatch(`${gap?.issue} ${gap?.suggestedQuestion}`, /registration details|does not hold/);
+    // (F-08 also holds a clinic-system code, so its item says to fill it in: leaving it blank would leave the code.)
+    assert.match(reviewItems(report, { template, form }).boxes.get("F-08")?.instruction ?? "", /^Fill it in/);
+    const f = (path: "staff.entry" | "clinic.name" | "patient.fullName", guidance = "") => ({ fillSource: { kind: "registration" as const, path }, guidance });
+    assert.equal(recordSourceOf(f("staff.entry")), "staff_entry");
+    assert.equal(recordSourceOf(f("staff.entry", "Chosen by the physiotherapist on each report: the other options are deleted from the form.")), "physio_choice");
+    assert.equal(recordSourceOf(f("clinic.name")), "clinic");
+    assert.equal(recordSourceOf(f("patient.fullName")), null);
+  });
+
+  it("a value from the Clinic details can be changed for this report only: entered by staff, audited, printed instead", async () => {
+    const { buildFormAnswers } = await import("../../../core/forms");
+    const { overrideRecordValue } = await import("./review-model");
+    const base = testForm();
+    const form: FormDefinition = { ...base, fields: [...base.fields, field("F-13", { label: "Therapist location – site", answerType: "short_text", fillSource: { kind: "registration", path: "clinic.name" } })] };
+    const bundle = { ...testBundle(), clinic: { name: "Blue Heart Clinics Test Ltd (fictional)" } } as ReturnType<typeof testBundle>;
+    const created = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), now: new Date(AT), id: "rpt_clinic_site" });
+    const site = created.sections.find((s) => s.key === "F-13");
+    assert.equal(site?.paragraphs[0]?.origin, "from_records", "filled from the Clinic details");
+    const changed = overrideRecordValue(created, "F-13", ACTOR, NOW);
+    const p = changed.sections.find((s) => s.key === "F-13")?.paragraphs[0];
+    assert.equal(p?.origin, "clinician");
+    assert.equal(p?.text, site?.paragraphs[0]?.text, "starts from the setting, ready to change");
+    assert.match(changed.activity[changed.activity.length - 1].detail, /^F-13: “Therapist location – site” changed for this report only \(was “.+” from the Clinic details\) – entered by staff\.$/);
+    const typed = reviewReducer(changed, { type: "editParagraph", key: "F-13", paragraphId: p!.id, text: "Blue Heart Clinics – Aylesbury site (fictional)" });
+    assert.equal(buildFormAnswers(typed, form)["F-13"].text, "Blue Heart Clinics – Aylesbury site (fictional)");
+    assert.equal(overrideRecordValue(typed, "F-13", ACTOR, NOW), typed, "only while it still holds the value filled by code");
+  });
+});
+
+describe("fix round 1 (B0-17): why a gap was raised, by its kind", () => {
+  it("a held-back choice is not “the clinic record does not hold this value”", async () => {
+    const { gapProvenance } = await import("./issues");
+    const g = (id: string) => ({ id, raisedBy: "system" as const });
+    assert.equal(gapProvenance(g("gap-F-10-ab12-choice")), "Raised by the system: the notes do not use the option's own words, so a person ticks it.");
+    assert.equal(gapProvenance(g("gap-F-10-ab12-fit")), "Raised by the system: the drafted answer does not fit the printed options, so a person chooses.");
+    assert.equal(gapProvenance(g("gap-F-10-ab12-cite")), "Raised by the system: the drafted answer cites no source, so a person confirms it.");
+    assert.equal(gapProvenance(g("gap-F-01-record")), "Raised by the system: the clinic record does not hold this value.");
+    assert.equal(gapProvenance(g("gap-F-08-staff")), "Raised by the system: this is entered by staff on each report.");
+    assert.match(gapProvenance({ id: "gap-F-02-ab12-1", raisedBy: "ai" }), /^Raised while drafting/);
+  });
+});

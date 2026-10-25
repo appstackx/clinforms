@@ -28,7 +28,7 @@ import { bundleClinic } from "./clinic";
 import { formatScore } from "./computed-facts";
 import { ageOn, compareIsoDateTime, formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "./dates";
 import { isNonClinicParty, partyLabel, prefillSigners, prefillSignersText } from "./parties";
-import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS } from "./labels";
+import { ANSWER_TYPE_LABELS, FORM_KIND_LABELS, type RecordSource } from "./labels";
 import { hasRowContent, isTableAnchor, rowsToText } from "./form-tables";
 import { isQuestionAnchor, isQuestionSet } from "./question-set";
 import type {
@@ -1012,6 +1012,18 @@ function signoffAnswer(part: SignoffPart, values: SignoffValues | null): FormFil
   if (!values) return {};
   if (part === "date") return { text: values.date, value: values.dateIso };
   return { text: values[part], value: values[part] };
+}
+
+/**
+ * Fix round 1 (B0-19): where a registration-filled question's value really comes from (core/labels.ts RecordSource) –
+ * "staff.entry" is typed by staff on each report, or chosen by the physiotherapist when the map's guidance says so;
+ * "clinic.*" comes from the clinic's own details. Null for the patient's record and everything else.
+ */
+export function recordSourceOf(field: Pick<FormField, "fillSource" | "guidance">): RecordSource | null {
+  if (field.fillSource.kind !== "registration") return null;
+  const path = field.fillSource.path;
+  if (path === "staff.entry") return /\bchosen by the (?:physiotherapist|clinician)\b/i.test(field.guidance ?? "") ? "physio_choice" : "staff_entry";
+  return path.startsWith("clinic.") ? "clinic" : null;
 }
 
 /** The validators' evidence for "optional and has no answer" (validation/placeholders.ts). */

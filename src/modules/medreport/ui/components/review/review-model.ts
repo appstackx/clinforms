@@ -497,6 +497,23 @@ export function revertParagraph(report: Report, key: string, paragraphId: string
   return changed ? touch(report, sections, now) : report;
 }
 
+/**
+ * Fix round 1 (B0-4): change a value filled from the clinic's own details on this report only (another of the clinic's
+ * sites treated the patient). The value filled by code becomes the person's own entry ("Entered by staff", editable,
+ * printed instead of the setting); the activity log says what it was. Only a section filled from the records, and only
+ * while it still holds the value filled by code.
+ */
+export function overrideRecordValue(report: Report, key: string, actor: string, now?: Date): Report {
+  const section = report.sections.find((s) => s.key === key);
+  if (!section || section.kind !== "from_records" || section.paragraphs.length === 0 || !section.paragraphs.every((p) => p.origin === "from_records")) return report;
+  const was = section.paragraphs.map((p) => p.text).join(", ");
+  const sections = mapSection(report, key, (s) => ({
+    ...s,
+    paragraphs: [{ id: nextClinicianParagraphId(s), text: s.paragraphs.map((p) => p.text).join("\n"), sourceIds: [], origin: "clinician" }],
+  }));
+  return appendActivity(touch(report, sections, now), { actor, action: "edited", detail: `${key}: “${section.title}” changed for this report only (was “${was}” from the Clinic details) – entered by staff.` }, now);
+}
+
 /** The ID the next clinician paragraph of this section gets ("F-14-c1", "F-14-c2"…). */
 export function nextClinicianParagraphId(section: Pick<ReportSection, "key" | "paragraphs">): string {
   let n = section.paragraphs.length + 1;
