@@ -622,6 +622,11 @@ export const GapResolutionSchema = z.object({
    * stays. Absent on older acknowledgements (treated as left blank, as before).
    */
   leftBlank: z.boolean().optional(),
+  /**
+   * Additive (fix round 1, B0-8): resolved by a person answering the question (typing or choosing its answer) – reopened
+   * by itself if that answer is removed again.
+   */
+  byAnswer: z.boolean().optional(),
 });
 
 /** Something the record does not say. Every unresolved gap blocks signing (OPEN_GAP). */
@@ -633,6 +638,11 @@ export const GapSchema = z.object({
   relatedNoteIds: z.array(z.string()),
   raisedBy: z.enum(["ai", "system"]).optional(),
   resolution: GapResolutionSchema.optional(),
+  /**
+   * Additive (fix round 1, B0-8): a drafted choice that was held back (its option's words are not in the cited notes) –
+   * the option as printed, offered to the person as a one-click "Tick “No Impact”" (their decision, audited).
+   */
+  suggestedAnswer: z.string().optional(),
 });
 
 export const FlagAcknowledgementSchema = z.object({

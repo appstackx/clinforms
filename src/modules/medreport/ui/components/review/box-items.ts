@@ -10,9 +10,9 @@
  * - Required and optional: items on optional questions are counted and listed apart from the rest.
  * - "Leave optional boxes blank": optional questions that are simply blank – drafted, no answer and no text, nothing
  *   on them but open gaps and the "optional and has no answer" warning – are acknowledged in one action with one
- *   reason. Each gap and each warning is acknowledged exactly as a single acknowledgement is (resolveGap /
+ *   reason. Questions that ask for the clinician's opinion are listed too (fix round 1) but never ticked for them. Each gap and each warning is acknowledged exactly as a single acknowledgement is (resolveGap /
  *   acknowledgeFlag: on the report, so in the approved content, and one activity entry each). Never included:
- *   required questions, questions that ask for the clinician's opinion (their gaps are clinical decisions), a box
+ *   required questions, an opinion question the clinician did not tick themselves (its gap is a clinical decision), a box
  *   the draft proposed an answer for that was held back, and any box with another check (a mail-merge field, opinion
  *   wording, a figure…).
  *
@@ -264,6 +264,11 @@ export interface BlankCandidate {
   warning: ReportFlag | null;
   /** What leaving it blank removes from the printed form ("the printed “30 minutes” is removed"), if anything. */
   effect: string | null;
+  /**
+   * Fix round 1 (B0-8): a question that asks for the clinician's opinion – offered too, but never ticked for them: the
+   * clinician ticks each one they decide to leave blank.
+   */
+  opinion?: boolean;
 }
 
 /** A gap where the draft proposed an answer that was held back (core: ai/assemble.ts "-fit", "-choice"): a person decides. */
@@ -276,11 +281,24 @@ function heldBackAnswer(gap: Gap): boolean {
  * `report.flags` as they are: leaveOptionalBoxesBlank() re-runs the validators first.
  */
 export function optionalBlankCandidates(report: Report, ctx: BoxContext): BlankCandidate[] {
+  return blankCandidatesOf(report, ctx, false);
+}
+
+/**
+ * Fix round 1 (B0-8): the optional questions that ask for the clinician's opinion and are otherwise simply blank – offered
+ * in "Leave optional boxes blank" unticked, for the clinician to tick one by one (leaveOptionalBoxesBlank `opinionKeys`).
+ */
+export function optionalOpinionBlankCandidates(report: Report, ctx: BoxContext): BlankCandidate[] {
+  return blankCandidatesOf(report, ctx, true);
+}
+
+function blankCandidatesOf(report: Report, ctx: BoxContext, opinion: boolean): BlankCandidate[] {
   if (report.status === "signed") return [];
   const fields = new Map((ctx.form?.fields ?? []).map((f) => [f.id, f]));
   const out: BlankCandidate[] = [];
   for (const section of report.sections) {
-    if (!section.fieldId || section.kind === "declaration" || section.kind === "clinician_opinion" || section.status === "pending") continue;
+    if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
+    if ((section.kind === "clinician_opinion") !== opinion) continue;
     const field = fields.get(section.key);
     if (isRequired(section, ctx) || field?.required !== false) continue;
     if (answeredByRules(section, field) || section.paragraphs.some((p) => p.text.trim() !== "")) continue;
@@ -290,7 +308,7 @@ export function optionalBlankCandidates(report: Report, ctx: BoxContext): BlankC
     const gaps = (report.gaps ?? []).filter((g) => g.sectionKey === section.key && !g.resolution);
     if (gaps.some(heldBackAnswer)) continue;
     if (gaps.length === 0 && !warning) continue;
-    out.push({ key: section.key, label: section.title, gaps, warning, effect: field ? leftBlankEffect(field) : null });
+    out.push({ key: section.key, label: section.title, gaps, warning, effect: field ? leftBlankEffect(field) : null, ...(opinion && { opinion: true }) });
   }
   return out;
 }
@@ -303,7 +321,6 @@ export function emptyOptionalSummary(report: Report, ctx: BoxContext, candidates
   const fields = new Map((ctx.form?.fields ?? []).map((f) => [f.id, f]));
   const chosen = new Set(candidates.map((c) => c.key));
   let total = 0;
-  let opinion = 0;
   for (const section of report.sections) {
     if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
     const field = fields.get(section.key);
@@ -311,9 +328,9 @@ export function emptyOptionalSummary(report: Report, ctx: BoxContext, candidates
     const open = (report.gaps ?? []).some((g) => g.sectionKey === section.key && !g.resolution) || (report.flags ?? []).some((f) => f.sectionKey === section.key && !f.acknowledged && f.code !== "OPEN_GAP");
     if (!open && !chosen.has(section.key)) continue; // decided already (left blank on purpose)
     total += 1;
-    if (!chosen.has(section.key) && section.kind === "clinician_opinion") opinion += 1;
   }
-  return { total, opinion, other: total - candidates.length - opinion };
+  const opinion = candidates.filter((c) => c.opinion).length;
+  return { total, opinion, other: total - candidates.length };
 }
 
 /**
@@ -341,14 +358,28 @@ export const LEAVE_BLANK_REASON = "Optional on the form – left blank.";
  */
 export function leaveOptionalBoxesBlank(
   report: Report,
-  input: { template: ReportTemplate; form: FormDefinition | null; keys: readonly string[]; reason: string; actor: string; now?: Date },
+  input: {
+    template: ReportTemplate;
+    form: FormDefinition | null;
+    keys: readonly string[];
+    /** Fix round 1 (B0-8): opinion questions the clinician ticked one by one (never through `keys`). */
+    opinionKeys?: readonly string[];
+    reason: string;
+    actor: string;
+    now?: Date;
+  },
 ): Report {
   const reason = input.reason.trim();
   if (report.status === "signed" || reason.length < MIN_GAP_REASON || !input.actor.trim()) return report;
   const { flags } = validateReport(report, input.template, { form: input.form });
   const fresh: Report = { ...report, flags };
   const chosen = new Set(input.keys);
-  const candidates = optionalBlankCandidates(fresh, { template: input.template, form: input.form }).filter((c) => chosen.has(c.key));
+  const opinionChosen = new Set(input.opinionKeys ?? []);
+  const ctx = { template: input.template, form: input.form };
+  const candidates = [
+    ...optionalBlankCandidates(fresh, ctx).filter((c) => chosen.has(c.key)),
+    ...optionalOpinionBlankCandidates(fresh, ctx).filter((c) => opinionChosen.has(c.key)),
+  ];
   if (candidates.length === 0) return report;
   let next = fresh;
   for (const c of candidates) {

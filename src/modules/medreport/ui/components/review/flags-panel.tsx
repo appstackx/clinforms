@@ -49,7 +49,8 @@ export function FlagsPanel({
   blankCandidates: BlankCandidate[];
   /** All optional questions without an answer, and why the others are not offered (box-items.ts emptyOptionalSummary). */
   blankSummary?: { total: number; opinion: number; other: number };
-  onLeaveBlank(keys: string[], reason: string): void;
+  /** Fix round 1 (B0-8): opinion questions the clinician ticked one by one go in `opinionKeys`. */
+  onLeaveBlank(keys: string[], reason: string, opinionKeys: string[]): void;
   readOnly: boolean;
   validating: boolean;
   actor: string;
@@ -110,6 +111,7 @@ export function FlagsPanel({
       resolutionFor={(g) => gapResolutionOptions(report, g, actor)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
+      onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
       onOpenSource={onOpenSource}
       {...jumpProps(box.key)}
     />
@@ -232,22 +234,25 @@ function LeaveBlankPanel({
   summary?: { total: number; opinion: number; other: number };
   disabled: boolean;
   questionLabel(key: string): string;
-  onConfirm(keys: string[], reason: string): void;
+  onConfirm(keys: string[], reason: string, opinionKeys: string[]): void;
 }) {
   const [open, setOpen] = useState(false);
-  // Questions the person unticked (new candidates start ticked).
+  // Questions the person unticked (new candidates start ticked) – and opinion questions they ticked themselves (fix round
+  // 1, B0-8: those start unticked, the clinician decides each).
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  const [optedIn, setOptedIn] = useState<ReadonlySet<string>>(new Set());
   const [reason, setReason] = useState(LEAVE_BLANK_REASON);
-  const chosen = candidates.filter((c) => !excluded.has(c.key));
+  const isTicked = (c: BlankCandidate) => (c.opinion ? optedIn.has(c.key) : !excluded.has(c.key));
+  const chosen = candidates.filter(isTicked);
   const valid = reason.trim().length >= MIN_GAP_REASON && chosen.length > 0;
   const n = candidates.length;
-  const toggle = (key: string) =>
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const flip = (prev: ReadonlySet<string>, key: string) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  };
+  const toggle = (c: BlankCandidate) => (c.opinion ? setOptedIn((prev) => flip(prev, c.key)) : setExcluded((prev) => flip(prev, c.key)));
 
   if (!open) {
     return (
@@ -267,8 +272,9 @@ function LeaveBlankPanel({
         e.preventDefault();
         if (!valid || disabled) return;
         onConfirm(
-          chosen.map((c) => c.key),
+          chosen.filter((c) => !c.opinion).map((c) => c.key),
           reason.trim(),
+          chosen.filter((c) => c.opinion).map((c) => c.key),
         );
         setOpen(false);
       }}
@@ -277,9 +283,10 @@ function LeaveBlankPanel({
         <legend className="mb-1 font-medium text-slate-900">Leave these optional boxes blank</legend>
         {candidates.map((c) => (
           <label key={c.key} className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 hover:bg-slate-50">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#0D9488]" checked={!excluded.has(c.key)} onChange={() => toggle(c.key)} />
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#0D9488]" checked={isTicked(c)} onChange={() => toggle(c)} />
             <span className="min-w-0">
               <span className="font-mono text-[11px] text-slate-500">{c.key.startsWith("F-") ? c.key : ""}</span> {humaniseMergeCodes(questionLabel(c.key) || c.label)}
+              {c.opinion && <span className="block text-xs font-medium text-violet-800">Asks for your opinion – tick it only if you decide to leave it blank.</span>}
               {c.gaps[0] && <span className="block text-xs text-slate-500">{c.gaps[0].issue}</span>}
               {c.effect && <span className="block text-xs font-medium text-slate-600">Left blank: {c.effect}.</span>}
             </span>
@@ -300,8 +307,8 @@ function LeaveBlankPanel({
         {reason.trim().length < MIN_GAP_REASON && <p className="mt-1 text-[11px] text-slate-500">At least {MIN_GAP_REASON} characters.</p>}
       </div>
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Each box is recorded as acknowledged, with this reason, in the activity log. Never included: required questions, questions that need your
-        clinical opinion, and boxes with another check to sort out.
+        Each box is recorded as acknowledged, with this reason, in the activity log. Never included: required questions, and boxes with another
+        check to sort out. Questions that ask for your opinion are left blank only if you tick them.
       </p>
       <div className="flex gap-2">
         <Button type="submit" size="sm" className="h-8" disabled={!valid || disabled}>
@@ -321,10 +328,15 @@ function LeaveBlankPanel({
  */
 export function leaveBlankSummaryText(n: number, summary?: { total: number; opinion: number; other: number }): string {
   const total = Math.max(summary?.total ?? n, n);
-  if (total === n) return `${n} optional box${n === 1 ? " has" : "es have"} no answer. You can leave ${n === 1 ? "it" : "them"} blank on the form in one step, with one reason.`;
-  const rest = total - n;
-  const why = summary && summary.opinion === rest ? "need your opinion" : summary && summary.opinion === 0 ? "have something else to sort out first" : "need your opinion or a decision first";
-  return `${n} of ${total} optional boxes without an answer can be left blank in one step, with one reason; the other ${rest} ${why}.`;
+  const opinion = Math.min(summary?.opinion ?? 0, n);
+  const inStep = n - opinion;
+  const other = total - n;
+  const box = (k: number) => `${k} optional box${k === 1 ? "" : "es"}`;
+  if (opinion === 0 && other === 0) return `${box(n)} ${n === 1 ? "has" : "have"} no answer. You can leave ${n === 1 ? "it" : "them"} blank on the form in one step, with one reason.`;
+  const parts = [`${inStep} can be left blank in one step, with one reason`];
+  if (opinion) parts.push(`${opinion} ${opinion === 1 ? "asks" : "ask"} for your opinion – tick ${opinion === 1 ? "it" : "them"} in the list only if you decide to leave ${opinion === 1 ? "it" : "them"} blank`);
+  if (other) parts.push(`the other ${other} ${other === 1 ? "needs" : "need"} a decision first`);
+  return `${box(total)} ${total === 1 ? "has" : "have"} no answer: ${parts.join("; ")}.`;
 }
 
 /** Fix wave 3: record the patient's consent (and the date it was given) on a report built from uploaded notes. */

@@ -152,7 +152,7 @@ function ParagraphEditor({
           onFocus={() => {
             textAtFocus.current = paragraph.text;
           }}
-          onChange={(e) => dispatch({ type: "editParagraph", key: sectionKey, paragraphId: paragraph.id, text: e.target.value })}
+          onChange={(e) => dispatch({ type: "editParagraph", key: sectionKey, paragraphId: paragraph.id, text: e.target.value, actor })}
           onBlur={(e) => {
             const before = textAtFocus.current;
             textAtFocus.current = null;
@@ -770,6 +770,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
+              onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
               onOpenSource={onOpenSource}
             />
           )}

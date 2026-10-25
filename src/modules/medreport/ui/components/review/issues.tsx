@@ -194,6 +194,8 @@ export function FlagItem({
 interface GapActionProps {
   bundle: Pick<EpisodeBundle, "notes">;
   readOnly: boolean;
+  /** Fix round 1 (B0-8): tick a held-back drafted choice ("Tick “No Impact”") – the person's own decision. */
+  onTickSuggested?: (gap: Gap) => void;
   onResolve(gapId: string, kind: "resolved" | "acknowledged", text: string): void;
   onReopen(gapId: string): void;
   onOpenSource?: (id: string) => void;
@@ -207,6 +209,7 @@ function GapBody({
   bundle,
   readOnly,
   resolution,
+  onTickSuggested,
   onResolve,
   onReopen,
   onOpenSource,
@@ -278,6 +281,15 @@ function GapBody({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {!readOnly && !done && (
             <>
+              {gap.suggestedAnswer && onTickSuggested && (
+                <button
+                  type="button"
+                  onClick={() => onTickSuggested(gap)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Tick “{gap.suggestedAnswer}”
+                </button>
+              )}
               {resolution.canResolve &&
                 (resolution.prefill ? (
                   // The answer is the person's own: one click records exactly that.

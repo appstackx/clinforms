@@ -174,7 +174,15 @@ function fillsCodeAsUsual(code: string, source: FillSource | undefined): boolean
   if (binding.kind === "address_line") return source.kind === "registration" && source.path === `${binding.family}.addressLines`;
   if (binding.kind === "postcode") return source.kind === "registration" && source.path === `${binding.family}.postcode`;
   if (binding.kind === "not_held") return source.kind === "registration" && source.path === "staff.entry";
-  return true; // decided by the form's label
+  // Decided by the form's label ("Date of Accident" → the accident's date): as usual when it is one of those.
+  return source.kind === "registration" && binding.choices.some((c) => c.path === source.path);
+}
+
+/** What a clinic-system code usually prints, in words – a code that depends on the clinic's set-up by its name only. */
+function usuallyPrints(code: string): string {
+  const entry = practiceCode(code);
+  if (entry?.binding.kind === "by_label") return `the clinic system's ${entry.label.toLowerCase()}`;
+  return practiceCodeWords(code) ?? "something else";
 }
 
 export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"> & Partial<Pick<FormField, "fillSource">>): string {
@@ -195,8 +203,7 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           // Fix round 1 (B0-29): "the merge code for the date of the report" only when that is what goes there.
           const found = findPracticeCodes(ph);
           if (codes && found.length === 1 && field.fillSource && !fillsCodeAsUsual(found[0].text, field.fillSource)) {
-            const usual = practiceCodeWords(found[0].code);
-            return `${capitalise(filledWith(field.fillSource))}, in place of the code that usually prints ${usual ?? "something else"}`;
+            return `${capitalise(filledWith(field.fillSource))}, in place of the code that usually prints ${usuallyPrints(found[0].code)}`;
           }
           return codes ? `In place of the ${codes}` : `In place of ${quotePrinted(ph)}`;
         }
