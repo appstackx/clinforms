@@ -105,6 +105,10 @@ test("without a hint the type comes from the wording; unknown hints are kept and
   assert.equal(inferAnswerType("Treatment start date"), "date");
   assert.equal(inferAnswerType("Number of sessions attended to date"), "number");
   assert.equal(inferAnswerType("How many sessions were attended?"), "number");
+  // Fix round 1 (B0-34): a count the referrer expects is a number too, not long text.
+  assert.equal(inferAnswerType("Expected number of further sessions"), "number");
+  assert.equal(inferAnswerType("Estimated number of sessions still needed"), "number");
+  assert.equal(inferAnswerType("Further sessions – how many?"), "number");
   assert.equal(inferAnswerType("Patient's full name"), "short_text");
   assert.equal(inferAnswerType("Current symptoms"), "long_text");
 
