@@ -271,7 +271,7 @@ export async function renderDocxPreview(blob: Blob, host: HTMLElement, options: 
   // review's Preview draws into a host not yet on the page (it is made inert first): there the placing waits for
   // placeDocxDrawings(), called once the host is shown – it was skipped, so TPN's first-page banner stayed cut off.
   if (page) {
-    const pending = { placed, page, tabs };
+    const pending = { placed, page, tabs, appPages };
     if (host.isConnected) placeMeasured(host, pending);
     else pendingPlacements.set(host, pending);
   }
@@ -282,6 +282,7 @@ interface PendingPlacement {
   placed: AnchorPlacement[];
   page: PageGeometry;
   tabs: TabbedParagraphs;
+  appPages: number | null;
 }
 
 const pendingPlacements = new WeakMap<HTMLElement, PendingPlacement>();
@@ -290,9 +291,29 @@ function placeMeasured(host: HTMLElement, pending: PendingPlacement): void {
   placeAnchoredDrawings(host, pending.placed, pending.page);
   try {
     layoutTabStops(host, pending.tabs, pending.page);
+    noteContinuousSheet(host, pending.page, pending.appPages);
   } catch {
     // tabs as docx-preview draws them
   }
+}
+
+/** One sheet drawn much longer than a page (a converted form with no page breaks of its own): said so above it. */
+function noteContinuousSheet(host: HTMLElement, page: PageGeometry, appPages: number | null): void {
+  const pages = Array.from(host.querySelectorAll<HTMLElement>("section.docx"));
+  if (pages.length !== 1 || host.querySelector(`.${CONTINUOUS_CLASS}`)) return;
+  const r = pages[0].getBoundingClientRect();
+  const pageHeight = (r.width / page.width) * page.height;
+  if (!(pageHeight > 0) || r.height < pageHeight * 1.25) return;
+  addContinuousNote(pages[0], appPages ?? Math.ceil(r.height / pageHeight));
+}
+
+function addContinuousNote(sheet: HTMLElement | undefined, pages: number): void {
+  if (!sheet?.parentElement) return;
+  const note = document.createElement("p");
+  note.className = CONTINUOUS_CLASS;
+  note.textContent = `Shown as one continuous sheet – Word prints this form on ${pages} pages.`;
+  note.setAttribute("style", "margin:0 0 8px;font:12px/1.4 system-ui,sans-serif;color:#475569;");
+  sheet.parentElement.insertBefore(note, sheet);
 }
 
 /** Place the anchored drawings (and tab stops) of a preview drawn into a host that was not on the page yet (renderDocxPreview). */
@@ -412,13 +433,7 @@ export function fillPageFields(host: HTMLElement, appPages: number | null): void
       n.nodeValue = n.nodeValue.split(PAGE_TOKEN).join(continuous ? "1" : String(i + 1)).split(NUMPAGES_TOKEN).join(String(total));
     }
   });
-  if (continuous && pages[0]?.parentElement && !host.querySelector(`.${CONTINUOUS_CLASS}`)) {
-    const note = document.createElement("p");
-    note.className = CONTINUOUS_CLASS;
-    note.textContent = `Shown as one continuous sheet – Word prints this form on ${appPages} pages.`;
-    note.setAttribute("style", "margin:0 0 8px;font:12px/1.4 system-ui,sans-serif;color:#475569;");
-    pages[0].parentElement.insertBefore(note, pages[0]);
-  }
+  if (continuous && !host.querySelector(`.${CONTINUOUS_CLASS}`)) addContinuousNote(pages[0], appPages as number);
 }
 
 interface TabbedParagraphs {

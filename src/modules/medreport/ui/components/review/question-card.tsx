@@ -462,8 +462,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const pathWords =
     tenant && recordPath === "report.date"
       ? { long: TENANT_COPY.sources.reportDateLong, locked: TENANT_COPY.sources.reportDateLocked }
-      : tenant && recordPath?.startsWith("episode.")
-        ? { long: TENANT_COPY.sources.episodeLong, locked: TENANT_COPY.sources.episodeLocked }
+      : tenant && (recordPath?.startsWith("episode.") || (section?.kind === "from_records" && field?.fillSource.kind === "notes_narrative"))
+        ? // (Fix round 3, B2-19: session dates filled by code from the appointments, on a question the map drafts.)
+          { long: TENANT_COPY.sources.episodeLong, locked: TENANT_COPY.sources.episodeLocked }
         : null;
   // Fix round 3 (B2-22): the source line follows who fills it – a reference withheld on another organisation's form is
   // typed in by staff; any record value a person entered (a date, a choice too) is theirs; the clinic's details changed

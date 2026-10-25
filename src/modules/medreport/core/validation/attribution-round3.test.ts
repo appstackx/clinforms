@@ -104,6 +104,10 @@ test("B2-2: another clinician's recorded diagnosis printed without their name bl
   const fix = nameClinicianFix(report, flag);
   assert.equal(fix?.label, "Name Tom Ellis");
   assert.equal(fix?.text, "Tom Ellis's assessment (06/05/2026): grade I–II sprain of the right medial collateral ligament, with possible irritation of the medial meniscus");
+  // Found live: a drafted impression marked as an observation is still the other clinician's assessment in a box that asks
+  // for an impression, a diagnosis or a prognosis.
+  const observed = signedBySarah("prognosis", [para("Should settle with exercise", ["N-002"], { id: "d6", basis: "clinician_observed" })]);
+  assert.equal(run(observed).find((f) => f.code === "OTHER_CLINICIAN_VOICE" && f.paragraphId === "d6")?.evidence, "unattributed Tom Ellis");
   // On a prognosis question it is the clinician's opinion.
   const prognosis = signedBySarah("prognosis", [para("Should settle with exercise", ["N-002"], { id: "d5", basis: "clinician_opinion_recorded" })]);
   const pf = run(prognosis).find((f) => f.code === "OTHER_CLINICIAN_VOICE" && f.paragraphId === "d5");

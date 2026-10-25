@@ -167,6 +167,12 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
   const firstText = new Map<string, string>();
 
   const formFields = input.form?.fields ?? [];
+  // Fix round 3 (B2-2): the one other clinician whose notes a paragraph cites (not the signer's), for the shorten advice.
+  const author = input.report.author;
+  const othersNote = (ids: readonly string[]) => {
+    const names = Array.from(new Set(ids.map((id) => input.bundle.notes.find((n) => n.id === id)?.author.name.trim() ?? "").filter(Boolean)));
+    return author?.name.trim() && names.length === 1 && names[0] !== author.name.trim() ? names[0] : null;
+  };
   // Fix round 2 (B1-6): on a discharge or progress form a bare value states the patient's position now.
   const current = input.report.form ? currentStateForm(input.report.form.title) : null;
   const latestNote = input.bundle.notes.map((n) => n.date).sort().pop() ?? null;
@@ -200,7 +206,9 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
               ? "Shorten for the box: this answer fills a blank inside the form's printed sentence, so it should be the words that complete it – no date and no “recorded” or “told”. Its citation keeps the source."
               : long && lines && tooLong
                 ? `Shorten for the box: the form asks for one or two lines here, and this answer runs to ${words(body).length} words in a narrow table cell. Keep the score and the main symptoms. Its citation keeps the source.`
-                : long
+                : long && othersNote(p.sourceIds)
+                  ? `Shorten for the box: this answer goes in a narrow table cell – keep what the form asks for in a line or two, without a date lead. Another clinician's assessment keeps a short attribution (“${othersNote(p.sourceIds)}'s assessment: …”).`
+                  : long
                   ? "Shorten for the box: this answer goes in a narrow table cell – keep what the form asks for, without a date lead or “recorded” / “told”. Its citation keeps the source."
                   : "Shorten for the box: this answer goes in a table cell, so it should be the value alone (for example “Dog walking”, “Daily”, “6/10”, “Lower back”) – no date and no “recorded” or “told”. Its citation keeps the source.",
         }),

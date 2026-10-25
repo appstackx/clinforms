@@ -94,7 +94,11 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
  * (not printed) and the first person (checked below) are left to the other checks.
  */
 function unattributedOpinion(input: ValidatorInput, section: ValidatorInput["report"]["sections"][number], p: ValidatorInput["report"]["sections"][number]["paragraphs"][number], author: NonNullable<ValidatorInput["report"]["author"]>): ReturnType<typeof makeFlag> | null {
-  if (p.basis !== "clinician_opinion_recorded" || (section.answer && section.answer.kind !== "text") || speaksInFirstPerson(p.text)) return null;
+  // An opinion by its basis, or by what the box asks for ("Clinical Impression", "Diagnosis", "Prognosis") – a drafted
+  // impression marked as an observation is still another clinician's assessment once its attribution is cut.
+  const label = `${section.title} ${input.form?.fields.find((f) => f.id === section.key)?.label ?? ""}`;
+  const opinion = p.basis === "clinician_opinion_recorded" || section.kind === "clinician_opinion" || /\b(?:impression|diagnos\w*|prognos\w*|opinion)\b/i.test(label);
+  if (!opinion || (section.answer && section.answer.kind !== "text") || speaksInFirstPerson(p.text)) return null;
   const cited = p.sourceIds.filter((id) => /^N-\d+$/.test(id)).map((id) => input.bundle.notes.find((n) => n.id === id));
   if (cited.length === 0 || cited.some((n) => !n || sameClinician(n.author, author))) return null;
   const others = Array.from(new Set(cited.map((n) => (n as NonNullable<typeof n>).author.name.trim()))).filter(Boolean);
