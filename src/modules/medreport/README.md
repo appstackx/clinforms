@@ -61,7 +61,7 @@ src/modules/medreport/
                           attestations (form-map confirmations, filed-document tokens)
   ai/                     server-only
     claude.ts live-gate.ts            Anthropic client + SDK error mapping; live/demo gate (passcode, rate cap)
-    prompts.ts form-prompts.ts        frozen system prompts: built-in templates ("2") and referrer forms ("forms-7")
+    prompts.ts form-prompts.ts        frozen system prompts: built-in templates ("2") and referrer forms ("forms-8")
     form-redact.ts bundle-fingerprint.ts   patient details masked before form analysis; record fingerprint for demo drafts
     generate.ts draft-live.ts draft-demo.ts assemble.ts   drafting entry, live call, demo/recorded lookup, assembly
     demo-format.ts demo-drafts/*.json  recorded drafts: {patientId}__{templateId}.json, {patientId}__form-{sampleId}.json
@@ -1759,3 +1759,38 @@ warnings for one box (the gap, "Missing field" and the raw code `<<P_GROUPREF>>`
   code the dictionary does not know keeps its name in quotes (“P_CONTACT_PREF”). The review screen also shows flag
   messages, gaps, the question's label and guidance and the "Leave optional boxes blank" list through
   `humaniseMergeCodes` (integration 25/10/2026).
+
+## Blue Heart fix round 1 (10/2026, branch `release/bh-trial-fixes`)
+
+An end-to-end test run on a local copy of Dell's trial clinic (all nine providers, three fictional patients) found
+35 issues; every code-level one is fixed here, each with a regression test. The rules that carry the most weight:
+
+- **Whose "I" it is** (`core/validation/voice.ts`, `OTHER_CLINICIAN_VOICE`, blocking): a drafted paragraph that says
+  "I", "me" or "my" while citing a note another clinician wrote is never approved as the signer's own. One click,
+  "Name Tom Ellis instead" (`core/voice.ts nameClinicianInstead`), or a rewrite. Assembly gives plain clinical wording to
+  the signer's own notes only. A report with no author is checked against the signer at `/sign`.
+- **Prompt `forms-8`**: the final instruction lists the author's own notes; compact places ("Where it goes: a cell of a
+  table", "it fills “…” inside a sentence") take the value alone; conditional questions and numbered rows; gaps never say
+  "my note"; an initial assessment form is drafted from the record as at that assessment (`core/scope.ts
+  initialAssessmentView`).
+- **Left blank prints nothing that reads as an answer** (`core/forms.ts buildFormAnswers` → `leftBlank`;
+  `forms/docx-fill.ts`): a printed tick or mark is cleared, a "delete as necessary" list and a printed default ("30
+  minutes") are removed – when a person left the box blank, and on every approved report. Forms without printed
+  defaults are byte-identical.
+- **Conditional questions** (`core/conditions.ts`): "IF YES, PLEASE DETAIL" after a "No" prints nothing, blocks nothing,
+  and its gaps are settled as not applicable (audited, reopened if the answer changes).
+- **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
+- **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`); held-back choices in one click
+  (`Gap.suggestedAnswer`); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
+- **Typography on converted RTF forms** (`completeTypography`), no negative right indents in cells, no empty record lines;
+  **RTF pictures** (PNG / JPEG logos, picture frames, text boxes) carried over (`rtf-docx-3`).
+- **Record values**: appointment times (`episode.firstSeenTime`, `episode.attendedDate` / `episode.attendedTime` with
+  `part.index`); staff entries, physiotherapists' choices and Clinic details said as such; a Clinic-details value can be
+  changed for one report.
+- **Roles**: staff never see a refused save or removal as done; Confirm, Edit and Remove are not offered to staff on a
+  confirmed form.
+
+Not fixed in code (production data, for Khuram): Dell's stored map notes written for whoever prepared them ("Ask Dell…",
+B0-12); his RTF forms re-loaded to gain their logos (B0-14); switching Medcare / Ascenti time questions to the new record
+values (B0-15); the duplicate "Blue Heart Clinics" before the site code on two forms (B0-4) and whether WAD grade stays
+required (B0-3) are Dell's call.
