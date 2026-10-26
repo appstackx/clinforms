@@ -124,5 +124,5 @@ export interface AnonymisationRecord {
 /** What a records server action answers (forms show `error` and the field errors next to their fields). */
 export type RecordsActionState =
   | { ok: true; message?: string; id?: string; rev?: number }
-  | { ok: false; error: string; fieldErrors?: Record<string, string>; conflict?: boolean }
+  | { ok: false; error: string; fieldErrors?: Record<string, string>; conflict?: boolean; rev?: number }
   | null;
