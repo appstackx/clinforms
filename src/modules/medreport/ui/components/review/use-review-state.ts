@@ -88,7 +88,7 @@ export function reviewReducer(report: Report, action: ReviewAction & ReviewActio
   return next;
 }
 
-function applyReviewAction(report: Report, action: ReviewAction): Report {
+function applyReviewAction(report: Report, action: ReviewAction & ReviewActionContext): Report {
   if (action.type === "replace") return action.report;
   if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor });
   if (action.type === "approved") return markApproved(action.sent, action.receipt, action.flags, { isForm: action.isForm });
@@ -108,7 +108,8 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
     case "revertParagraph":
       return revertParagraph(report, action.key, action.paragraphId);
     case "addParagraph": {
-      const next = addClinicianParagraph(report, action.key, action.text ?? "");
+      // Safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked as edited text, never the clinician's own.
+      const next = addClinicianParagraph(report, action.key, action.text ?? "", undefined, { byStaff: action.actorIsStaff === true });
       // A value typed straight into an empty answer supersedes a "left blank" acknowledgement of its gap.
       return action.actor && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor) : next.report;
     }

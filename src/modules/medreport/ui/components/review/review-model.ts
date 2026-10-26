@@ -535,14 +535,22 @@ export function nextClinicianParagraphId(section: Pick<ReportSection, "key" | "p
   return `${section.key}-c${n}`;
 }
 
-/** A new paragraph written by the clinician (origin "clinician", no citations needed). */
-export function addClinicianParagraph(report: Report, key: string, text = "", now?: Date): { report: Report; paragraphId: string } {
+/**
+ * A new paragraph written by the clinician (origin "clinician", no citations needed).
+ *
+ * Safety amendment (C-REV-2 stop-gap, release/bh-trial-2): written by staff (`opts.byStaff`) in a box that is not filled
+ * from the records, it is origin "edited" – checked like edited text (citation, figures, opinion wording, voice) – never
+ * the clinician's own words. A value staff type into a records box (a staff entry) stays as before ("Entered by staff").
+ * Workstream WC replaces this with origin "staff" and the approver's adoption.
+ */
+export function addClinicianParagraph(report: Report, key: string, text = "", now?: Date, opts: { byStaff?: boolean } = {}): { report: Report; paragraphId: string } {
   const section = report.sections.find((s) => s.key === key);
   if (!section) return { report, paragraphId: "" };
   const paragraphId = nextClinicianParagraphId(section);
+  const origin: Paragraph["origin"] = opts.byStaff && section.kind !== "from_records" ? "edited" : "clinician";
   const sections = mapSection(report, key, (s) => ({
     ...s,
-    paragraphs: [...s.paragraphs, { id: paragraphId, text, sourceIds: [], origin: "clinician" }],
+    paragraphs: [...s.paragraphs, { id: paragraphId, text, sourceIds: [], origin }],
   }));
   return { report: touch(report, sections, now), paragraphId };
 }

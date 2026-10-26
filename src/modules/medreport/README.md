@@ -1811,7 +1811,9 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
 - **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
 - **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`) – safety amendment (NEW-1 stop-gap):
   never a clinician gap (`isClinicianGap`: an opinion box, or the physiotherapist's "-physio" choice) when the person
-  acting is staff (`useReviewState`'s `actorIsStaff`), so it stays open for the clinician; held-back choices in one click
+  acting is staff (`useReviewState`'s `actorIsStaff`), so it stays open for the clinician – and (C-REV-2 stop-gap) a
+  paragraph staff add outside a records box is origin "edited", checked like edited text, never the clinician's own
+  words (`addClinicianParagraph`'s `byStaff`); held-back choices in one click
   (`Gap.suggestedAnswer`) – safety amendment (C-2): never on a clinician_opinion box or the physiotherapist's choice
   (`recordSourceOf` "physio_choice"); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
 - **Typography on converted RTF forms** (`completeTypography`), no negative right indents in cells, no empty record lines;

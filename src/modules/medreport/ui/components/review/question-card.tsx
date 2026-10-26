@@ -159,7 +159,8 @@ function ParagraphEditor({
             const before = textAtFocus.current;
             textAtFocus.current = null;
             const now = e.target.value;
-            if (!now.trim() && paragraph.origin === "clinician") {
+            // A paragraph a person added and left empty goes again (staff's are "edited" with no draft behind them).
+            if (!now.trim() && (paragraph.origin === "clinician" || (paragraph.origin === "edited" && paragraph.originalText === undefined))) {
               dispatch({ type: "removeParagraph", key: sectionKey, paragraphId: paragraph.id, actor, silent: before === "" || before === null });
               return;
             }

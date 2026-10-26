@@ -575,6 +575,35 @@ describe("safety amendment (NEW-1 stop-gap): staff answering never settles a cli
   });
 });
 
+describe("safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked as edited text, never the clinician's own words", () => {
+  const STAFF = "Pat Morgan (fictional)";
+  it("staff text in a drafted or opinion box is origin “edited” and blocks like edited text; the clinician's own paragraph and a staff entry do not", () => {
+    const { report, form, template } = drafted();
+    const opinion = "He has made a full recovery and is fit for normal duties.";
+    const paragraphOf = (r: Report, key: string) => r.sections.find((s) => s.key === key)!.paragraphs.at(-1)!;
+    // Staff type an opinion into "Prognosis" (clinician_opinion) and into "Mechanism of injury" (a drafted narrative box).
+    for (const key of ["F-10", "F-03"]) {
+      const byStaff = revalidated(reviewReducer(report, { type: "addParagraph", key, text: opinion, actor: STAFF, actorIsStaff: true }), form);
+      const p = paragraphOf(byStaff, key);
+      assert.equal(p.origin, "edited", `${key}: staff text is not the clinician's own words`);
+      const blocking = canSign(byStaff.flags, byStaff.gaps).blocking.filter((f) => f.paragraphId === p.id);
+      assert.ok(blocking.some((f) => f.code === "UNCITED_PARAGRAPH"), `${key}: checked for its citation`);
+      assert.ok(byStaff.flags.some((f) => f.paragraphId === p.id && f.code === "OPINION_LANGUAGE"), `${key}: checked for opinion wording`);
+    }
+    // Negative twins: the same words added by the clinician are their own (fix round 1 behaviour unchanged)…
+    const byClinician = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: opinion, actor: ACTOR }), form);
+    const own = paragraphOf(byClinician, "F-10");
+    assert.equal(own.origin, "clinician");
+    assert.deepEqual(byClinician.flags.filter((f) => f.paragraphId === own.id && (f.code === "UNCITED_PARAGRAPH" || f.code === "OPINION_LANGUAGE")), []);
+    // …and a value staff type into a records box (F-08 Work telephone, a staff entry) stays "Entered by staff".
+    const entry = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-08", text: "01632 960123", actor: STAFF, actorIsStaff: true }), form);
+    const typed = paragraphOf(entry, "F-08");
+    assert.equal(typed.origin, "clinician");
+    assert.equal(entry.flags.some((f) => f.paragraphId === typed.id && f.code === "UNCITED_PARAGRAPH"), false);
+    assert.equal(validateReport(entry, template, { form }).flags.some((f) => f.paragraphId === typed.id && f.severity === "blocking"), false);
+  });
+});
+
 describe("fix round 1 (B0-15): appointment times are record values", () => {
   it("the first attended appointment's time, and the Nth attended appointment's date and time; a session the record does not have is left empty", async () => {
     const { resolveRegistrationValue } = await import("../../../core/forms");
