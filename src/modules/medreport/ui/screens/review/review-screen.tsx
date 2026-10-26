@@ -52,6 +52,7 @@ import {
 import { getSession, loadFormFile, saveReportDurable, useForm, useReport } from "../../store";
 import { WORDING } from "../../wording";
 import { createId } from "../../../core/ids";
+import { demoActor, memberActor, type Actor } from "../../../core/actor";
 import { useAiMode } from "../../components/shared/ai-mode";
 import { ActivityPanel } from "../../components/review/activity-panel";
 import { ApproveDialog } from "../../components/review/approve-dialog";
@@ -250,9 +251,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     return getTemplate(initial.templateId) ?? null;
   }, [formInfo, form, initial.templateId]);
 
-  // Safety amendment (NEW-1 stop-gap): staff answering an opinion box never settles its clinician gap.
-  const actorIsStaff = tenant && hooks.member?.role === "staff";
-  const { report, dispatch, validating, saveState, savedAt, validateNow, commit } = useReviewState(initial, stored, template, form, { actorIsStaff });
+  const { report, dispatch, validating, saveState, savedAt, validateNow, commit } = useReviewState(initial, stored, template, form);
   // A portal question set has no file: nothing to load, the answers are copied into the portal.
   const questionSet = formInfo?.kind === "questions";
   const file = useFormFile(form, Boolean(formInfo) && !questionSet);
@@ -267,9 +266,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const session = getSession();
   const sessionCoversReport =
     session?.claims.kind === "launch" && session.claims.patientId === initial.episodeRef.patientId && session.claims.episodeId === initial.episodeRef.episodeId;
-  const actor = tenant
+  const actorName = tenant
     ? member?.name ?? TENANT_COPY.review.actorFallback
     : (sessionCoversReport ? session?.claims.clinician?.name : undefined) ?? initial.author?.name ?? session?.claims.clinician?.name ?? "Clinic staff (demo session)";
+  // W0.6: the person behind every action (ReviewAction.actor). Safety amendment (NEW-1 stop-gap): a staff member's
+  // answer in an opinion box never settles its clinician gap – the reducer reads their role from here. Kept stable so
+  // the memoised question cards do not re-render.
+  const actor: Actor = useMemo(() => (tenant ? memberActor(member, actorName) : demoActor(actorName)), [tenant, member, actorName]);
   const defaultSigner: Clinician | null = useMemo(() => {
     // A clinic's signer is the signed-in member (their clinic profile), never someone from the notes.
     if (tenant) return member ? { name: member.name, hcpc: member.hcpc ?? "", ...(member.jobTitle ? { role: member.jobTitle } : {}) } : null;
@@ -335,7 +338,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   // Studio the signer is the signed-in member (fix wave 2): never rewrite answers into someone else's voice.
   const voiceAuthor = tenant
     ? (member?.name ?? null)
-    : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null));
+    : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actorName) ? actorName : null));
   // Fix wave 2: who may approve in a clinic's Studio, and drafted answers that speak as another clinician.
   // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (the server refuses it elsewhere, too).
   const demoClinic = useDemoClinic();
@@ -358,7 +361,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
 
   const startAmendment = useCallback(async () => {
     const id = createId("rpt");
-    const amended = createAmendedVersion(report, actor, id);
+    const amended = createAmendedVersion(report, actor.name, id);
     // Must be stored before opening it (a clinic's Studio saves to the server; wait for it).
     if (!(await saveReportDurable(amended))) {
       toast({ tone: "error", title: "The amended version could not be saved. Please try again." });

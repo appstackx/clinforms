@@ -42,52 +42,44 @@ import "server-only";
  * report of the same patient, episode and form (the server's fingerprint of this report, api/usage.ts usageEpisodeFp);
  * any other "amends" counts as a new report. The public demo never counts.
  *
+ * W0.4 module split (bh2): the checks live in sign/checks/ (roles.ts – who signs and the demo number, owner WC;
+ * voice.ts – the signer's own voice, WB; issue.ts – the validators, WA1) and the receipt in sign/receipt.ts (WA1);
+ * this file runs them in the order above. W0.6 adds the pipeline's stub checks (SIGNER_CHECKS, BEFORE_VALIDATION,
+ * AFTER_VALIDATION below; their context is checks/context.ts). Owners: docs/bh2-ownership.json.
+ *
  * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
  */
-import {
-  AUDIT_ACTIONS,
-  actorInDemoClinic,
-  assertActorEpisode,
-  assertActorTenant,
-  auditActor,
-  macPrefix,
-  memberSigner,
-  requireActor,
-  type Actor,
-} from "../../auth/actor";
-import { formMapSha256 } from "../../auth/attestations";
-import { createReceipt } from "../../auth/sign-receipt";
-import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
-import { isDemoHcpc, normaliseDemoHcpc } from "../../core/demo-clinic";
-import { validateReport } from "../../core/validation";
-import type { Clinician, SignReceipt } from "../../core/types";
-import { otherClinicianVoice, unsignableFirstPerson } from "../../core/voice";
-import { WORDING } from "../../core/wording";
-import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../contract";
-import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
-import { requireAttestedForm, resolveTemplate } from "../resolve-template";
-import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../usage";
+import { AUDIT_ACTIONS, assertActorEpisode, assertActorTenant, auditActor, macPrefix, requireActor } from "../../../auth/actor";
+import { MAX_FORM_REQUEST_BYTES } from "../../../config.public";
+import { normaliseDemoHcpc } from "../../../core/demo-clinic";
+import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../../contract";
+import { json, logEvent, parseBody, problem, type MedreportHandler } from "../../http";
+import { requireAttestedForm, resolveTemplate } from "../../resolve-template";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
+import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
+import { issuedDocumentCheck, staleReportCheck, validationCheck } from "./checks/issue";
+import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
+import { signerConfirmationsCheck, voiceRefusal } from "./checks/voice";
+import { mintReceipt } from "./receipt";
+
+/**
+ * W0.6 pipeline: the checks the workstreams fill in, in the order they run (each a stub that refuses nothing today).
+ * Once the signer is known: is the signer the report's approver (WC). Before the validators: is the body the stored
+ * revision (WA1). After them: the signer's confirmations (WB), then what would be issued (WA1).
+ */
+const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
+const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
+const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck, issuedDocumentCheck];
+
+async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {
+  for (const check of checks) {
+    const refusal = await check(ctx);
+    if (refusal) return refusal;
+  }
+  return null;
+}
 
 const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-const normaliseHcpc = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-
-function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"]> {
-  if (actor.via === "demo") {
-    const claims = actor.session;
-    return {
-      kind: claims?.kind ?? "demo",
-      sid: actor.sid,
-      ...(claims?.clinician ? { clinician: claims.clinician } : {}),
-    };
-  }
-  return {
-    kind: "user",
-    sid: actor.sid,
-    ...(actor.userId ? { userId: actor.userId } : {}),
-    ...(actor.session ? { launchSid: actor.session.sid } : {}),
-    ...(actor.session?.clinician ? { clinician: actor.session.clinician } : {}),
-  };
-}
 
 export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   // Approval is an authenticated act: who approved is recorded from the sign-in / session, not just typed.
@@ -110,42 +102,15 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   }
 
   // Who signs.
-  let signer: Clinician;
-  if (actor.via === "demo") {
-    signer = parsed.data.signer;
-  } else {
-    signer = memberSigner(actor); // 403 SIGNER_NOT_ALLOWED
-    if (normaliseHcpc(parsed.data.signer.hcpc) !== normaliseHcpc(signer.hcpc)) {
-      return problem(403, WORDING.server.access.signAsYourselfTitle, { code: "SIGNER_MISMATCH", detail: WORDING.server.access.signAsYourself(signer.name) });
-    }
-  }
-  const launched = actor.session?.kind === "launch" ? actor.session.clinician : undefined;
-  if (launched && normaliseHcpc(launched.hcpc) !== normaliseHcpc(signer.hcpc)) {
-    return problem(403, "Approve as yourself", {
-      code: "SIGNER_MISMATCH",
-      detail: `The clinic system opened this report for ${launched.name} (HCPC ${launched.hcpc}). Only they can approve it from this session; another clinician must open the patient from the clinic system themselves.`,
-    });
-  }
+  const who = resolveSigner(actor, parsed.data.signer);
+  if (!who.ok) return who.response;
+  const { signer } = who;
+  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer };
+  const notApprover = await runChecks(SIGNER_CHECKS, signerCtx);
+  if (notApprover) return notApprover;
 
-  if (actor.via !== "demo") {
-    // The approver's own first person must be theirs: never another clinician's treatment and opinions as "I".
-    const voice = otherClinicianVoice(report, signer);
-    if (voice) {
-      return problem(409, WORDING.server.access.otherVoiceTitle, {
-        code: "SIGNER_NOT_AUTHOR",
-        detail: WORDING.server.access.otherVoiceDetail(voice.author, signer.name, voice.keys),
-      });
-    }
-    // Fix round 1 (B0-1): with no author named (the validators check those), the signer's own "I" must still be
-    // theirs – never "told me" about another clinician's note.
-    const notesVoice = unsignableFirstPerson(report, signer);
-    if (notesVoice) {
-      return problem(409, WORDING.server.access.otherVoiceTitle, {
-        code: "SIGNER_NOT_AUTHOR",
-        detail: WORDING.server.access.notesVoiceDetail(notesVoice.names, notesVoice.keys),
-      });
-    }
-  }
+  const voice = voiceRefusal(actor, report, signer);
+  if (voice) return voice;
 
   const resolved = resolveTemplate({ templateId: report.templateId, form, reportForm: report.form, path: "report.templateId" });
   if (!resolved.ok) return resolved.response;
@@ -166,34 +131,18 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (issues.length > 0) return problem(422, "The approval is incomplete", { code: "VALIDATION_FAILED", issues });
 
   const started = Date.now();
-  // A form report: the form map too (10/2026 – mail-merge fields left on the form block approval).
-  const result = validateReport(report, template, { form: resolved.form });
-  if (!result.canSign) {
-    logEvent("sign_blocked", { template: template.id, blocking: result.blocking.length, ms: Date.now() - started });
-    return problem(409, "Blocking items remain", {
-      code: "SIGNOFF_BLOCKED",
-      detail: `${result.blocking.length} item${result.blocking.length === 1 ? "" : "s"} must be resolved before approval.`,
-      flags: result.blocking,
-    });
-  }
+  const ctx: SignCheckContext = { ...signerCtx, template, form: resolved.form, started };
+  const stale = await runChecks(BEFORE_VALIDATION, ctx);
+  if (stale) return stale;
+  const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started });
+  if (blocked) return blocked;
+  const notIssuable = await runChecks(AFTER_VALIDATION, ctx);
+  if (notIssuable) return notIssuable;
 
-  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only – never on a real clinic's form. Checked last, so
-  // every other refusal reads as before. The clinic's flag is the server's (false for the public demo, and when the
-  // clinic's profile cannot be read: fail closed).
-  const demoClinic = actor.via === "demo" ? false : await actorInDemoClinic(deps, actor);
-  if (actor.via !== "demo" && isDemoHcpc(signer.hcpc) && !demoClinic) {
-    logEvent("sign_refused_demo_number", { template: template.id, ms: Date.now() - started });
-    return problem(403, WORDING.demoClinic.numberNotAllowedTitle, { code: "DEMO_NUMBER_NOT_ALLOWED", detail: WORDING.demoClinic.numberNotAllowedDetail });
-  }
+  const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
+  if (demoRefusal) return demoRefusal;
 
-  const receipt = await createReceipt({
-    report,
-    signer,
-    statementAccepted: true,
-    attestations: [...template.attestations],
-    ...(resolved.form ? { formMapSha256: formMapSha256(resolved.form) } : {}),
-    approvedVia: approvedVia(actor),
-  });
+  const receipt = await mintReceipt({ report, signer, template, form: resolved.form, actor });
   const body: SignResponse = { receipt, flags: result.flags };
   logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
   const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;

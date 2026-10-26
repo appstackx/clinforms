@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
+import { SYSTEM_ACTOR_NAME, isStaffActor, type Actor } from "../../../core/actor";
 import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
@@ -35,112 +36,119 @@ import {
 import { setRowsAnswer } from "./table-answer-model";
 import { acknowledgeGapLeavingBlank, leaveOptionalBoxesBlank } from "./box-items";
 
-export type ReviewAction =
-  | { type: "replace"; report: Report }
-  | { type: "editParagraph"; key: string; paragraphId: string; text: string; actor?: string }
+/**
+ * What a person does on the review screen. Every action carries who did it (W0.6: required, so the compiler finds every
+ * dispatch site; WC stamps it as `by`). The activity log names `actor.name`.
+ */
+export type PersonReviewAction = (
+  | { type: "editParagraph"; key: string; paragraphId: string; text: string }
   | { type: "revertParagraph"; key: string; paragraphId: string }
-  | { type: "addParagraph"; key: string; paragraphId?: string; text?: string; actor?: string }
-  | { type: "removeParagraph"; key: string; paragraphId: string; actor: string; silent?: boolean }
-  | { type: "logEdit"; key: string; actor: string }
-  | { type: "setAnswer"; key: string; value: string | boolean | null; actor: string }
-  | { type: "setRows"; key: string; rows: FormAnswerRow[]; actor: string }
-  | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string; actor: string }
-  | { type: "reopenGap"; gapId: string; actor: string }
-  | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
+  | { type: "addParagraph"; key: string; paragraphId?: string; text?: string }
+  | { type: "removeParagraph"; key: string; paragraphId: string; silent?: boolean }
+  | { type: "logEdit"; key: string }
+  | { type: "setAnswer"; key: string; value: string | boolean | null }
+  | { type: "setRows"; key: string; rows: FormAnswerRow[] }
+  | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string }
+  | { type: "reopenGap"; gapId: string }
+  | { type: "acknowledgeFlag"; flagId: string; reason: string }
   /** "Leave optional boxes blank": one acknowledgement per gap and warning, re-checked against the form (box-items.ts). */
-  | { type: "leaveOptionalBlank"; keys: string[]; opinionKeys?: string[]; reason: string; actor: string; template: ReportTemplate; form: FormDefinition | null }
-  | { type: "recordConsent"; givenOn: string; actor: string }
+  | { type: "leaveOptionalBlank"; keys: string[]; opinionKeys?: string[]; reason: string; template: ReportTemplate; form: FormDefinition | null }
+  | { type: "recordConsent"; givenOn: string }
+  | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
+  | { type: "activity"; action: string; detail: string }
+  | { type: "writeInOwnVoice"; authorName: string }
+  /** "Name Tom Ellis instead" on OTHER_CLINICIAN_VOICE flags (fix round 1, B0-1). */
+  | { type: "nameClinicians"; flags: ReportFlag[] }
+  /** Change a value from the clinic's details for this report only (fix round 1, B0-4). */
+  | { type: "overrideRecord"; key: string }
+  | { type: "removeAbsence"; key: string }
+) & { actor: Actor };
+
+/**
+ * What code does, with no person behind it: a newer stored copy replaces the working copy, the validators' flags, a
+ * draft arriving, and a line in the activity log from the drafting step (SYSTEM_ACTOR_NAME, "System").
+ */
+export type SystemReviewAction =
+  | { type: "replace"; report: Report }
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
-  | { type: "approved"; sent: Report; receipt: SignReceipt; flags: ReportFlag[]; isForm: boolean }
-  | { type: "activity"; action: string; detail: string; actor: string }
-  | { type: "writeInOwnVoice"; authorName: string; actor: string }
-  /** "Name Tom Ellis instead" on OTHER_CLINICIAN_VOICE flags (fix round 1, B0-1). */
-  | { type: "nameClinicians"; flags: ReportFlag[]; actor: string }
-  /** Change a value from the clinic's details for this report only (fix round 1, B0-4). */
-  | { type: "overrideRecord"; key: string; actor: string }
-  | { type: "removeAbsence"; key: string; actor: string };
+  | { type: "systemActivity"; action: string; detail: string };
+
+export type ReviewAction = PersonReviewAction | SystemReviewAction;
 
 function locked(report: Report): boolean {
   return report.status === "signed";
 }
 
-/**
- * Who dispatched an action, added by useReviewState's dispatch (safety amendment, NEW-1 stop-gap): `actorIsStaff` when
- * the signed-in member of a clinic's Studio is staff. Workstream W0.6 replaces it with a required Actor on every action.
- */
-export interface ReviewActionContext {
-  actorIsStaff?: boolean;
-}
-
-export function reviewReducer(report: Report, action: ReviewAction & ReviewActionContext): Report {
+export function reviewReducer(report: Report, action: ReviewAction): Report {
   let next = applyReviewAction(report, action);
   if (next === report || locked(report)) return next;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
-  const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
+  const actor = "actor" in action ? action.actor.name : "";
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
-  if (key && actor && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
-    // Safety amendment (NEW-1 stop-gap): never a clinician gap when staff answered.
-    next = settleGapsByAnswer(report, next, key, actor, undefined, { actorIsStaff: action.actorIsStaff === true });
+  if (key && actor && "actor" in action && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
+    // Safety amendment (NEW-1 stop-gap): never a clinician gap when staff answered (the action's actor, W0.6).
+    next = settleGapsByAnswer(report, next, key, actor, undefined, { actorIsStaff: isStaffActor(action.actor) });
   }
   // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft.
-  if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || "System");
+  if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || SYSTEM_ACTOR_NAME);
   return next;
 }
 
-function applyReviewAction(report: Report, action: ReviewAction & ReviewActionContext): Report {
+function applyReviewAction(report: Report, action: ReviewAction): Report {
   if (action.type === "replace") return action.report;
-  if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor });
+  if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor.name });
+  if (action.type === "systemActivity") return appendActivity(report, { action: action.action, detail: action.detail, actor: SYSTEM_ACTOR_NAME });
   if (action.type === "approved") return markApproved(action.sent, action.receipt, action.flags, { isForm: action.isForm });
   // Everything below changes content: a signed report is read-only.
   if (locked(report)) return report;
   switch (action.type) {
     case "writeInOwnVoice":
-      return writeInOwnVoice(report, action.authorName, action.actor);
+      return writeInOwnVoice(report, action.authorName, action.actor.name);
     case "nameClinicians":
-      return nameCliniciansInstead(report, action.flags, action.actor);
+      return nameCliniciansInstead(report, action.flags, action.actor.name);
     case "overrideRecord":
-      return overrideRecordValue(report, action.key, action.actor);
+      return overrideRecordValue(report, action.key, action.actor.name);
     case "removeAbsence":
-      return removeAbsenceSentences(report, action.key, action.actor);
+      return removeAbsenceSentences(report, action.key, action.actor.name);
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":
       return revertParagraph(report, action.key, action.paragraphId);
     case "addParagraph": {
       // Safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked as edited text, never the clinician's own.
-      const next = addClinicianParagraph(report, action.key, action.text ?? "", undefined, { byStaff: action.actorIsStaff === true });
+      const next = addClinicianParagraph(report, action.key, action.text ?? "", undefined, { byStaff: isStaffActor(action.actor) });
       // A value typed straight into an empty answer supersedes a "left blank" acknowledgement of its gap.
-      return action.actor && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor) : next.report;
+      return action.actor.name && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor.name) : next.report;
     }
     case "removeParagraph": {
       const section = report.sections.find((s) => s.key === action.key);
       const next = removeParagraph(report, action.key, action.paragraphId);
       if (next === report || action.silent) return next;
-      return appendActivity(next, { actor: action.actor, action: "edited", detail: `${action.key}: removed a paragraph from “${section?.title ?? action.key}”.` });
+      return appendActivity(next, { actor: action.actor.name, action: "edited", detail: `${action.key}: removed a paragraph from “${section?.title ?? action.key}”.` });
     }
     case "logEdit": {
       const section = report.sections.find((s) => s.key === action.key);
-      const logged = appendActivity(report, { actor: action.actor, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
-      return supersedeAcknowledgedGaps(logged, action.key, action.actor);
+      const logged = appendActivity(report, { actor: action.actor.name, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
+      return supersedeAcknowledgedGaps(logged, action.key, action.actor.name);
     }
     case "setAnswer":
-      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor), action.key, action.actor);
+      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor.name), action.key, action.actor.name);
     case "setRows":
-      return setRowsAnswer(report, action.key, action.rows, action.actor);
+      return setRowsAnswer(report, action.key, action.rows, action.actor.name);
     case "resolveGap":
       // An optional box's gap acknowledged = left blank: its "no answer" warning is acknowledged with it.
       return action.kind === "acknowledged"
-        ? acknowledgeGapLeavingBlank(report, action.gapId, action.text, action.actor)
-        : resolveGap(report, action.gapId, action.kind, action.text, action.actor);
+        ? acknowledgeGapLeavingBlank(report, action.gapId, action.text, action.actor.name)
+        : resolveGap(report, action.gapId, action.kind, action.text, action.actor.name);
     case "reopenGap":
-      return reopenGap(report, action.gapId, action.actor);
+      return reopenGap(report, action.gapId, action.actor.name);
     case "acknowledgeFlag":
-      return acknowledgeFlag(report, action.flagId, action.reason, action.actor);
+      return acknowledgeFlag(report, action.flagId, action.reason, action.actor.name);
     case "leaveOptionalBlank":
-      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, opinionKeys: action.opinionKeys, reason: action.reason, actor: action.actor });
+      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, opinionKeys: action.opinionKeys, reason: action.reason, actor: action.actor.name });
     case "recordConsent":
-      return recordConsent(report, action.givenOn, action.actor);
+      return recordConsent(report, action.givenOn, action.actor.name);
     case "setFlags":
       return { ...report, flags: action.flags };
     case "applyDraft":
@@ -188,18 +196,15 @@ const SAVE_DELAY_MS = 300;
  * @param stored   the latest stored copy (useReport); a newer one replaces the working copy
  * @param template the report's template (null when the form map is missing: validation is skipped)
  * @param form     the referrer's form map of a form report (its mail-merge fields are checked, 10/2026)
- * @param context  who is acting: `actorIsStaff` for a staff member of a clinic (safety amendment, NEW-1 stop-gap)
+ * (W0.6: who is acting travels on each action – ReviewAction.actor – not here.)
  */
 export function useReviewState(
   initial: Report,
   stored: Report | null,
   template: ReportTemplate | null,
   form: FormDefinition | null = null,
-  context: ReviewActionContext = {},
 ): ReviewState {
   const [report, rawDispatch] = useReducer(reviewReducer, initial);
-  // Safety amendment (NEW-1 stop-gap): every action carries whether the person acting is staff.
-  const actorIsStaff = context.actorIsStaff === true;
   const [validating, setValidating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<string | null>(initial.updatedAt);
@@ -214,13 +219,10 @@ export function useReviewState(
   // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
   // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.
   const changedByUser = useRef(false);
-  const dispatch = useCallback(
-    (action: ReviewAction) => {
-      if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
-      rawDispatch(actorIsStaff ? { ...action, actorIsStaff: true } : action);
-    },
-    [actorIsStaff],
-  );
+  const dispatch = useCallback((action: ReviewAction) => {
+    if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
+    rawDispatch(action);
+  }, []);
 
   // A newer copy saved elsewhere (another tab, background drafting) replaces the working copy.
   useEffect(() => {

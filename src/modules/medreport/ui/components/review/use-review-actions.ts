@@ -27,6 +27,7 @@ import type { ApproveInput, ApproveResult } from "./approve-dialog";
 import type { FormFileState } from "./preview-panel";
 import { markApproved } from "./review-model";
 import type { Toast } from "./review-ui";
+import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
 export type DownloadKind = "original" | "pdf" | "docx";
@@ -66,7 +67,7 @@ export function useReviewActions(opts: {
   form: FormDefinition | null;
   template: ReportTemplate | null;
   file: FormFileState;
-  actor: string;
+  actor: Actor;
   hooks: HostHooks;
   dispatch(action: ReviewAction): void;
   commit(next: Report): boolean;
@@ -328,7 +329,7 @@ export function useReviewActions(opts: {
           } catch (err) {
             const p = problemText(err, "Drafting failed");
             setDraftFailures((list) => [...list, { keys: group, message: p.detail ? `${p.title}: ${p.detail}` : p.title, code: p.code }]);
-            dispatch({ type: "activity", action: "draft_failed", actor: "System", detail: `Drafting ${group.join(", ")} failed (${WORDING.drafting.failureCode(p.code)}).` });
+            dispatch({ type: "systemActivity", action: "draft_failed", detail: `Drafting ${group.join(", ")} failed (${WORDING.drafting.failureCode(p.code)}).` });
           } finally {
             setDraftingKeys((prev) => {
               const next = new Set(prev);

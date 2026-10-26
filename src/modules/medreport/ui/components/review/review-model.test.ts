@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { namedActor } from "../../../core/actor";
 import { computeFacts } from "../../../core/computed-facts";
 import { reportFingerprint } from "../../../core/fingerprint";
 import { formToTemplate } from "../../../core/forms";
@@ -42,6 +43,9 @@ import {
 } from "./review-model";
 import { NOTICES } from "../../../config.public";
 import { reviewReducer } from "./use-review-state";
+
+/** Sarah Reid as a review action's actor (W0.6: every action carries one). */
+const SARAH = namedActor("Sarah Reid");
 
 const AT = "2026-10-06T09:00:00.000Z";
 const NOW = new Date("2026-10-07T10:00:00.000Z");
@@ -389,10 +393,10 @@ describe("approval", () => {
     assert.doesNotMatch(plainDetail, /server|receipt|fingerprint/i);
 
     // A signed report ignores content edits.
-    assert.equal(reviewReducer(approved, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "changed" }), approved);
-    assert.equal(reviewReducer(approved, { type: "setAnswer", key: "F-04", value: "No", actor: "x" }), approved);
+    assert.equal(reviewReducer(approved, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "changed", actor: SARAH }), approved);
+    assert.equal(reviewReducer(approved, { type: "setAnswer", key: "F-04", value: "No", actor: namedActor("x") }), approved);
     // Activity (downloads, filing) is still recorded.
-    const logged = reviewReducer(approved, { type: "activity", action: "filed", detail: "Saved", actor: "Sarah Reid" });
+    const logged = reviewReducer(approved, { type: "activity", action: "filed", detail: "Saved", actor: SARAH });
     assert.equal(logged.activity.length, approved.activity.length + 1);
     assert.equal(await reportFingerprint(logged), receipt.contentSha256);
   });
@@ -499,9 +503,9 @@ describe("supersedeAcknowledgedGaps", () => {
     assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later”\)\.$/);
     assert.match(next.activity[next.activity.length - 1].detail, /no longer applies/);
     // The reducer does it when the edit is logged, and when a value is typed straight into the empty answer.
-    const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: "Sarah Reid" });
+    const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: SARAH });
     assert.equal(viaReducer.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
-    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: "Sarah Reid" });
+    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: SARAH });
     assert.equal(typedIn.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
   });
 });
@@ -523,7 +527,7 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
     assert.ok(flag);
     assert.deepEqual(nameClinicianFix(checked, flag), { name: "Tom Ellis", text: "On 06/05/2026 he told Tom Ellis that his back pain was 2/10 at worst after shifts." });
-    const fixed = reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" });
+    const fixed = reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: SARAH });
     const p = fixed.sections.find((s) => s.key === "F-03")?.paragraphs[0];
     assert.equal(p?.origin, "edited");
     assert.equal(p?.originalText, "On 06/05/2026 he told me that his back pain was 2/10 at worst after shifts.");
@@ -549,7 +553,7 @@ describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
     assert.doesNotMatch(flag.message, /Name Tom Ellis instead/);
     assert.match(flag.message, /names Tom Ellis/);
     // Unchanged by the bulk action.
-    assert.equal(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: "Sarah Reid" }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text, text);
+    assert.equal(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: SARAH }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text, text);
   });
 });
 
@@ -589,7 +593,7 @@ describe("fix round 1 (B0-24): editing an answered box keeps its acknowledged ga
     };
     const acked = resolveGap(withGap, "gap-F-03-t-dose", "acknowledged", "Not recorded in the notes – left out.", "Sarah Reid", NOW);
     assert.equal(acked.gaps.find((g) => g.id === "gap-F-03-t-dose")?.resolution?.leftBlank, false, "the box had an answer");
-    const edited = reviewReducer(reviewReducer(acked, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "On 18/03/2026 he reported a lifting injury at work." }), { type: "logEdit", key: "F-03", actor: "Sarah Reid" });
+    const edited = reviewReducer(reviewReducer(acked, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "On 18/03/2026 he reported a lifting injury at work.", actor: SARAH }), { type: "logEdit", key: "F-03", actor: SARAH });
     const gap = edited.gaps.find((g) => g.id === "gap-F-03-t-dose");
     assert.equal(gap?.resolution?.kind, "acknowledged");
     assert.equal(gap?.resolution?.text, "Not recorded in the notes – left out.", "its own reason, not “Answered on the form … (replaces “left blank”)”");
@@ -600,7 +604,7 @@ describe("fix round 1 (B0-24): editing an answered box keeps its acknowledged ga
     assert.ok(emptyGap);
     const blank = resolveGap(report, emptyGap.id, "acknowledged", "No opinion formed – left blank.", "Sarah Reid", NOW);
     assert.equal(blank.gaps.find((g) => g.id === emptyGap.id)?.resolution?.leftBlank, true);
-    const answered = reviewReducer(blank, { type: "addParagraph", key: "F-06", text: "In my opinion he will recover within 6 weeks.", actor: "Sarah Reid" });
+    const answered = reviewReducer(blank, { type: "addParagraph", key: "F-06", text: "In my opinion he will recover within 6 weeks.", actor: SARAH });
     assert.equal(answered.gaps.find((g) => g.id === emptyGap.id)?.resolution?.kind, "resolved");
   });
 });
@@ -638,7 +642,7 @@ describe("fix round 1 (B0-7): a conditional question's gaps follow the answer be
       sections: base.sections.map((s) => (s.key === "F-06" ? { ...s, title: "IF YES, PLEASE DETAIL" } : s)),
       gaps: [...base.gaps.filter((g) => g.sectionKey !== "F-06"), { id: "gap-F-06-t-1", sectionKey: "F-06", issue: "No detail is recorded.", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" }],
     };
-    const no = reviewReducer(report, { type: "setAnswer", key: "F-04", value: "No", actor: "Sarah Reid" });
+    const no = reviewReducer(report, { type: "setAnswer", key: "F-04", value: "No", actor: SARAH });
     const gap = no.gaps.find((g) => g.id === "gap-F-06-t-1");
     assert.equal(gap?.resolution?.kind, "resolved");
     assert.equal(gap?.resolution?.text, "Not applicable: “B2. Is the claimant fit for work?” is “No”.");
@@ -646,7 +650,7 @@ describe("fix round 1 (B0-7): a conditional question's gaps follow the answer be
     assert.ok(no.activity.some((a) => a.detail.startsWith("F-06: resolved gap “No detail is recorded.” – Not applicable")));
     const q = flattenQuestions(buildQuestionGroups(no, testForm(), formToTemplate(testForm()))).find((x) => x.key === "F-06")!;
     assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "blank");
-    const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: "Sarah Reid" });
+    const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: SARAH });
     assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
   });
 });
