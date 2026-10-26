@@ -74,10 +74,10 @@ async function confirmMapping(page) {
 }
 
 /**
- * bh2-rc1 (WE, map lint L5): a question that asks for a clinical judgement but is drafted from the notes blocks the
- * confirm until it is the clinician's own answer or someone who may accept it does so with a reason. The bundled
- * Meridian sample has two (F-08 daily activities, F-11 reason for discharge – both recorded in the notes): accepted
- * here with that reason, as a demo visitor would. Returns the ids accepted.
+ * bh2-rc1 (WE, map lint L5): a judgement question whose answer comes from the record holds up the confirm until the
+ * clinician answers it themselves or someone allowed to accepts it with a reason. The bundled Meridian sample has
+ * two (F-08 daily activities, F-11 reason for discharge – both facts the record holds): accepted here with that
+ * reason, as a demo visitor would. Returns the ids accepted.
  */
 async function acceptJudgementChecks(page, ids, reason) {
   const done = [];
@@ -125,7 +125,7 @@ async function analyseSample(page, title) {
     const r = await analyseSample(page, "Physiotherapy Discharge Report");
     console.log("   analysed in", r.ms, "ms:", r.dialog.slice(0, 300));
     await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 30000 });
-    const accepted = await acceptJudgementChecks(page, ["F-08", "F-11"], "Recorded in the clinical notes (the patient's own report and the discharge note).");
+    const accepted = await acceptJudgementChecks(page, ["F-08", "F-11"], "Facts the record holds: the patient's own account and the discharge entry.");
     console.log("   judgement checks accepted (L5):", accepted.join(", ") || "none");
     await confirmMapping(page);
   });
