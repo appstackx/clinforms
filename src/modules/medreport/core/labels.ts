@@ -1,5 +1,7 @@
 /**
  * Display labels for contract enums (UK English). Pure; shared by the UI and docgen.
+ * Owner: WD – docs/bh2-ownership.json (bh2 WD: the drafted-wording label is neutral, R-regression-7; flagEvidenceShown,
+ * B2-15).
  */
 import type {
   AnswerType,
@@ -218,7 +220,8 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   MISSING_PLACEHOLDER: "Missing field",
   OPEN_GAP: "Open gap",
   DATA_CHECK: "Data check",
-  DRAFT_FIT: "Check where it goes on the form",
+  // bh2 WD (R-regression-7): built-in reports are not forms – the check is about the drafted wording.
+  DRAFT_FIT: "Check the drafted wording",
   // bh2 W0 follow-up (bh2-base2): raised by WA1 and WC once they land.
   NOT_APPLICABLE_ANSWERED: "Answer in a question that does not apply",
   APPROVER_DECISION: "Needs the approving clinician's decision",
@@ -247,6 +250,20 @@ export const UNKNOWN_MEMBER_LABELS = {
 } as const;
 
 const has = (labels: object, key: string) => Object.prototype.hasOwnProperty.call(labels, key);
+
+/**
+ * The "Found: …" words a flag shows, or null when its evidence is an internal code rather than words from the answer
+ * (fix round 3 B2-15, kept by bh2 WD): DRAFT_FIT's "shorten", "repeat F-28", "later note 2026-08-19", "date 16/09/2026"…,
+ * a not-applicable code, ISO dates, and the codes the review already hides. (A data check shows its label instead.)
+ */
+export function flagEvidenceShown(flag: { code: string; evidence?: string }): string | null {
+  const e = (flag.evidence ?? "").trim();
+  if (!e) return null;
+  if (flag.code === "DRAFT_FIT" || flag.code === "NOT_APPLICABLE_ANSWERED" || flag.code === "APPROVER_DECISION") return null;
+  if (/^(?:empty section|optional field blank|validator .*|mail-merge field .*|not applicable|condition does not hold|sessions \d+)$/i.test(e)) return null;
+  if (/\b\d{4}-\d{2}-\d{2}\b/.test(e)) return null;
+  return e;
+}
 
 export function flagCodeLabel(code: string): string {
   return has(FLAG_CODE_LABELS, code) ? FLAG_CODE_LABELS[code as ReportFlagCode] : UNKNOWN_MEMBER_LABELS.flagCode;

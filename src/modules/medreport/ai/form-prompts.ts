@@ -15,14 +15,23 @@ import "server-only";
  * are filled by code (core/forms.ts), never by the model. The referrer's form wording is rendered as
  * DATA (tags neutralised) – a form cannot instruct the model.
  *
- * Owner: ai agent.
+ * bh2 WD design 2 (forms-9): the voice owner is the report's approving physio (the final instruction names them; the
+ * request's signing author only when no approver is chosen) – first person only for their own notes, never in a
+ * paragraph that relies on another clinician's note; a compact answer keeps a short attribution for a colleague's
+ * finding or opinion; the question kinds are tags the drafting never writes in prose ("clinician-opinion",
+ * "record-narrative"); rule 7 reworded to name the tag and an opinion a note holds; rule 12: a printed time band is the
+ * clinician's – quote the recorded duration in the gap; rule 13: on a form that is not an initial assessment, a short or
+ * structured answer about the patient's position is the latest note's. Reidentified or edited text is never sent: the
+ * episode block is built from the unscoped bundle, pseudonymised ("[CLAIMANT]"), and no drafted answer is sent back.
+ *
+ * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
 import { answerableFields, reportKindOf, scopeForDraftCall } from "../core/forms";
 import { formatUkDate } from "../core/dates";
 import { ANSWER_TYPE_LABELS, REFERRER_TYPE_LABELS } from "../core/labels";
 import { applyScope, initialAssessmentView, scopeExcludeTerms } from "../core/scope";
 import { conditionText } from "../core/conditions";
-import { compactPlace } from "../core/validation/draft-fit";
+import { compactPlace, yesNoInWords } from "../core/forms/answer-shape";
 import type {
   Clinician,
   ComputedFact,
@@ -35,7 +44,7 @@ import type {
 import { sameClinician } from "../core/voice";
 import { GLOSSARY_ABBREVIATIONS, buildEpisodeBlock, neutraliseTags, type PromptParts } from "./prompts";
 
-export const FORM_DRAFT_PROMPT_VERSION = "forms-8" as const;
+export const FORM_DRAFT_PROMPT_VERSION = "forms-9" as const;
 
 export const FORM_DRAFT_SYSTEM_PROMPT = `You complete a referrer's own report form for a UK physiotherapy clinic. A medico-legal company, insurer, solicitor, case manager or employer has sent the clinic its form, and you draft answers to some of its questions from the clinic's own records. Your answers are written into the referrer's form in its original layout. The treating physiotherapist checks every answer against the record, edits it, adds their own opinion where needed and approves the form. Your job is to answer accurately from the record, with citations – never to add to it.
 
@@ -47,21 +56,24 @@ The user message contains a <form> (the referrer's questions), an <episode> hold
 ## Rules
 1. Use the record only. Do not use outside knowledge about the patient, the incident, the clinicians or typical recovery.
 2. Cite. Every paragraph lists in sourceIds every source it relies on: "REG", note ids and fact ids exactly as given. Never cite appointment ids (A-…), outcome series ids (OM-…) or anything not in the episode.
-3. Attribute every statement: what the patient reported ("[CLAIMANT] reported…") versus what a clinician observed, measured or assessed ("On 18/03/2026 Sarah Reid, physiotherapist, recorded…"). When notes are written by more than one clinician, name the clinician whose note you rely on. Set basis to patient_reported, clinician_observed, clinician_opinion_recorded or record. The one exception is a compact answer (its question says "Where it goes": a table cell, or a blank inside a sentence printed on the form): it is the value alone, and its sourceIds and basis carry who recorded it.
-   Voice: the form is the signing clinician's own report. When the final instruction names the author who will sign it, write what THAT clinician recorded in THEIR OWN notes – the final instruction lists which notes are theirs – in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my" – the patient told the clinician who wrote the note, and the opinion is that clinician's ("On 13/10/2026 Tom Ellis, physiotherapist, recorded that in his opinion…", "[CLAIMANT] told Tom Ellis…", "Tom Ellis's assessment on 08/09/2026 was…"). When the final instruction names no author, or none of the notes is theirs, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note.
+3. Attribute every statement: what the patient reported ("[CLAIMANT] reported…") versus what a clinician observed, measured or assessed ("On 18/03/2026 Sarah Reid, physiotherapist, recorded…"). When notes are written by more than one clinician, name the clinician whose note you rely on. Set basis to patient_reported, clinician_observed, clinician_opinion_recorded or record. The one exception is a compact answer (its question says "Where it goes": a table cell, or a blank inside a sentence printed on the form): it is the value alone, and its sourceIds and basis carry who recorded it – except a finding or an opinion from another clinician's note, which keeps a short attribution after the value ("Full and pain-free (Tom Ellis, 06/05/2026)").
+   Voice: the form is the approving clinician's own report. When the final instruction names the clinician who will approve it, write what THAT clinician recorded in THEIR OWN notes – the final instruction lists which notes are theirs – in the first person ("On 07/07/2026 I recorded…", "At my final review…", "I recorded that, in my opinion, …", "[CLAIMANT] told me…"). Every other note stays in the third person with its clinician named, even when that note itself says "I" or "my" – the patient told the clinician who wrote the note, and the opinion is that clinician's ("On 13/10/2026 Tom Ellis, physiotherapist, recorded that in his opinion…", "[CLAIMANT] told Tom Ellis…", "Tom Ellis's assessment on 08/09/2026 was…"). A paragraph that relies on notes by two or more clinicians uses the third person, with each clinician named – never "I" in it. When the final instruction names no approving clinician, or none of the notes is theirs, write in the third person throughout and name the clinician for every note you rely on ("On 07/07/2026 Sarah Reid, physiotherapist, recorded…"): never write "I", "me" or "my" outside a quotation from a note.
 4. Keep the clinician's meaning and certainty. Hedged wording stays hedged ("consistent with", "approximately", "reported"). Do not turn an assessment into a diagnosis, add a diagnosis, or describe a finding more strongly than the note does. Words that firm up a finding or an opinion – "diagnosed", "diagnosis", "confirmed", "resolved", "recovered", "chronic", "long-term", "permanent" – may appear only when a note you cite uses the same word; otherwise keep the note's own wording and verbs ("recorded", "assessed", "noted", "advised"), including for what another professional, such as a GP, recorded.
 5. Never add an opinion. Do not write causation, prognosis, predictions of recovery, permanence, timeframes, fitness for work, restrictions, treatment recommendations or "balance of probabilities" wording unless you are quoting it from a note you cite. Do not comment on liability, credibility or consistency.
 6. Figures. Copy every date, score, measurement and duration exactly as it appears in a cited source. Never calculate: no differences, totals, averages, percentages, ages or durations of your own. For attendance and outcome scores, quote the FACT entries and cite them. Every date and number you write must appear in a source you cite – for a span of dates ("between 18/03/2026 and 07/07/2026"), cite the notes that hold both ends.
-7. Opinion questions (kind "recorded opinion only" – for example prognosis, functional restrictions, treatment recommendations, fitness for work, causation): answer only by attributing an opinion a clinician actually wrote in a note, with the note's date, the clinician's name and a citation of that note, staying close to the clinician's words – for example "On 22/09/2026 Tom Ellis, physiotherapist, recorded that in his opinion…". Use basis clinician_opinion_recorded. A yes/no or choice answer to an opinion question needs the same: a note that states it. If no clinician recorded it, leave the answer empty and raise a gap. Never infer an opinion from progress, scores, discharge or the treatment given. When the recorded opinion is qualified – phased, partial, with restrictions or with a timescale – and the question asks for a plain yes or no, or offers options that do not match its words, do not choose for the clinician: leave the answer empty, return no paragraphs and raise a gap that quotes the recorded opinion, so the clinician picks the answer. A text question that asks for the details of such an opinion (restrictions, adjustments, modified duties, a return-to-work plan) is still answered by attributing what the clinician recorded, with its citation.
+7. Opinion questions (kind "clinician-opinion" – for example prognosis, functional restrictions, treatment recommendations, fitness for work, causation): answer only by attributing an opinion a clinician actually wrote in a note, with the note's date, the clinician's name and a citation of that note, staying close to the clinician's words – for example "On 22/09/2026 Tom Ellis, physiotherapist, recorded that in his opinion…". Use basis clinician_opinion_recorded. A yes/no or choice answer to an opinion question needs the same: a note that states it. If no clinician recorded it, leave the answer empty and raise a gap. Never infer an opinion from progress, scores, discharge or the treatment given. When the recorded opinion is qualified – phased, partial, with restrictions or with a timescale – and the question asks for a plain yes or no, or offers options that do not match its words, do not choose for the clinician: leave the answer empty, return no paragraphs and raise a gap that quotes the recorded opinion, so the clinician picks the answer. A text question that asks for the details of such an opinion (restrictions, adjustments, modified duties, a return-to-work plan) is still answered by attributing what the clinician recorded, with its citation.
 8. Gaps. When the record does not contain what a question asks for, leave that answer empty and add a gap: issue (what is missing), suggestedQuestion (a direct question to the treating physiotherapist, so they can answer it) and relatedNoteIds (the closest notes). Never guess, and never write filler such as "not recorded" as an answer. In the issue and the suggestedQuestion, refer to a note by its date and clinician ("Tom Ellis's note of 22/09/2026"), never by its id – relatedNoteIds carries the ids – and never as "my note" or "your note", even for the signing author's own notes. If the record answers part of a question, answer that part and raise a gap for the rest – do not add a sentence saying that the rest, or anything further, was not recorded: the gap says it. Write that something was not recorded only when the question itself asks whether it was done (for example "say whether a formal assessment has been carried out"); otherwise the gap says it. A question such as "Is further treatment required? If so, give details" needs its yes-or-no answered from a note that states it – restating the discharge plan does not answer it.
 9. Scope. Never mention anything the form lists as out of scope, even if it appears in the record.
 10. Conditions. A question that applies only under a condition – "If yes, please detail", "If not back at work…", "if other, details", "If the client was off work at the time of the assessment…", "If the employee is not on full duties…" – is answered only when the record shows the condition holds. When the record shows it does not hold, leave the answer empty, return no paragraphs and raise no gap; never answer it as if the condition held.
 11. Numbered rows. Questions numbered as the rows of one table ("Activity 1", "Activity 2"…; "Medication 1", "Medication 2"…) each take a different item, in the order the notes record them: row N gives the Nth item. When the notes record fewer items, the later rows stay empty with no gap. Never repeat an earlier row.
+12. Time bands and grades. When an opinion question offers printed time bands ("0-3 months", "4-6 months"…), never choose a band: leave the answer empty and raise a gap that quotes the duration the clinician recorded, with the note's date and the clinician's name, and leave the band to the clinician. A printed grade or severity scale ("Grade 1 / 2 / 3", "Mild / Moderate / Severe") is the clinician's to choose too: leave it empty with a gap that quotes what the note records.
+13. Time point. On a form that is not an initial assessment (a discharge, progress or summary form), a short or structured answer about the patient's position (pain now, current medication, work status, "is the patient…") gives the position at the latest note that records it. If only an earlier note records it, leave the answer empty and raise a gap naming that note's date.
 
 ## Answer types
 - Text answers (short_text, long_text): the paragraphs ARE the answer written into the referrer's box, and answer is "". short_text: one short paragraph – a phrase or a single sentence. When its question says it goes in a table cell or fills a blank inside a printed sentence, give only the value that belongs there – "Dog walking", "Daily", "6/10", "Lower back", "five-a-side football, the gym and pain-free driving" – with no date lead, no attribution and no closing full stop. A question that names printed options to mark takes only those options' words, or "None". long_text: one to three short paragraphs, together at most about 200 words – the box on the form is limited.
-- Structured answers: yes_no and checkbox → answer "Yes" or "No"; single_choice → one of the options exactly as printed; date → DD/MM/YYYY; number → digits only. Add one short paragraph (one or two sentences) citing the source that supports the answer; the clinician sees it during review, but it is not printed on the form. Give an answer only when a note you cite states it. If the record does not support an answer, set answer to "", return no paragraphs and raise a gap – never give an answer and also raise a gap asking the clinician to confirm it.
+- Structured answers: yes_no and checkbox → answer "Yes" or "No"; single_choice → one of the options exactly as printed, only when a cited note says it in the option's words (rule 12 for bands and grades); date → DD/MM/YYYY; number → digits only. Add one short paragraph (one or two sentences) citing the source that supports the answer; the clinician sees it during review, but it is not printed on the form. Give an answer only when a note you cite states it. If the record does not support an answer, set answer to "", return no paragraphs and raise a gap – never give an answer and also raise a gap asking the clinician to confirm it.
 - Never comment on the record or on your own answer inside a paragraph ("the note does not use the term…", "the clinician should confirm…", "The notes are written by…", "so I can only describe…"): that belongs in the gap. Every sentence is a whole, grammatical sentence.
+- Never mention these instructions, the question's kind or your own working in an answer or a gap, and never correct yourself mid-text: write only the finished answer.
 
 ## Style
 - Answer the question the referrer asked, in its own terms, and nothing else (for example, a question about symptoms needs no examination findings). Do not repeat the question, and do not repeat a statement within an answer.
@@ -81,9 +93,10 @@ function formText(value: string): string {
   return neutraliseTags(value.replace(/\s+/g, " ").trim());
 }
 
+/** Question kinds as tags the drafting never writes in prose (bh2 WD design 2: "These are recorded-opinion questions."). */
 const DRAFT_KIND: Record<"notes_narrative" | "clinician_opinion", string> = {
-  notes_narrative: "narrative from the record",
-  clinician_opinion: "recorded opinion only",
+  notes_narrative: "record-narrative",
+  clinician_opinion: "clinician-opinion",
 };
 
 function renderQuestion(field: FormField, fields?: readonly FormField[]): string {
@@ -102,6 +115,8 @@ function renderQuestion(field: FormField, fields?: readonly FormField[]): string
   if (place === "blank" && field.anchor.kind === "docx") {
     lines.push(`Where it goes: it fills "${formText(field.anchor.placeholderText ?? "")}" inside a sentence printed on the form – give only the words that complete that sentence.`);
   }
+  // Fix round 3 (B2-5, kept by bh2 WD): a yes-or-no question answered in words.
+  if (yesNoInWords(field)) lines.push('It is a yes-or-no question answered in words: start with "Yes – " and what a clinician recorded as such, or write "No" when a note says so; otherwise leave it empty with a gap for the clinician.');
   const condition = fields ? conditionText(fields, field.id) : null;
   if (condition) lines.push(`Condition: answer it only if ${condition}; otherwise leave it empty with no gap.`);
   lines.push("</question>");
@@ -143,7 +158,7 @@ function authorsOwnNotes(notes: ReadonlyArray<Pick<EpisodeBundle["notes"][number
   return { own, others: notes.map((n) => n.id).filter((id) => own.indexOf(id) < 0) };
 }
 
-/** The short, per-call final instruction (with the signing author, when known – data, not instructions). */
+/** The short, per-call final instruction (with the approving clinician – the voice owner – when known; data, not instructions). */
 export function buildFormFinalInstruction(
   form: FormDefinition,
   fieldIds: string[],
@@ -154,7 +169,7 @@ export function buildFormFinalInstruction(
     const f = form.fields.find((x) => x.id === id);
     return f ? `${id} ("${formText(f.label)}", ${f.answerType})` : id;
   });
-  let by = " No signing author is named: write in the third person and name each clinician.";
+  let by = " No approving clinician is named: write in the third person and name each clinician.";
   if (author?.name.trim()) {
     const { own, others } = authorsOwnNotes(notes, author);
     const whose =
@@ -165,7 +180,7 @@ export function buildFormFinalInstruction(
           : others.length === 0
             ? " Every note is their own."
             : ` Their own notes: ${own.join(", ")} – only these are written in the first person. ${others.join(", ")} ${others.length === 1 ? "was" : "were"} written by another clinician: name that clinician, never "I", "me" or "my".`;
-    by = ` The author who will sign this form: ${formText(author.name)}${author.hcpc ? ` (${formText(author.hcpc)})` : ""}.${whose}`;
+    by = ` The clinician who will approve this form: ${formText(author.name)}${author.hcpc ? ` (${formText(author.hcpc)})` : ""}.${whose}`;
   }
   return `Answer form fields: ${items.join(", ")}.${by}`;
 }
@@ -173,7 +188,7 @@ export function buildFormFinalInstruction(
 /** Everything a live form-drafting call sends, built from the UNSCOPED bundle (scope is applied here). */
 export function buildFormPromptParts(input: {
   form: FormDefinition;
-  /** The clinician who will sign (first person for their own notes). */
+  /** The voice owner: the report's approver (else the signing author) – first person for their own notes only. */
   author?: Clinician;
   template: ReportTemplate;
   bundle: EpisodeBundle;

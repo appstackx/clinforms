@@ -8,11 +8,24 @@
  *
  * The SCOPE_TERM validator then checks the drafted text for `scopeExcludeTerms(template)`.
  *
+ * Sentences are found with the shared tokenizer under its "notes" policy (core/text/sentences.ts, bh2 WD design 5 – N-1):
+ * a decimal never ends a sentence ("PSFS 6.5" is never cut to "PSFS 6."), and terse lower-case clinic notes still split
+ * at each ". " ("pain 3/10 at rest. prev back injury 2019, settled. gym 2x/wk." is three sentences), so an out-of-scope
+ * sentence goes on its own and an in-scope figure next to it stays. A figure is either kept with its whole sentence or
+ * the whole sentence goes – never cut.
+ *
+ * Ledger hook "scope-strip" (prestrip, ledger.json): removeSentencesWithTerms applies only while hookEnabled.
+ *
  * Pure; browser and server.
  *
- * Owner: ai agent. Signatures are final.
+ * Owner: WD (drafting and text edits) – docs/bh2-ownership.json. Signatures are final.
  */
+import { removeSentences } from "./text/sentences";
 import type { EpisodeBundle, Note, ReportTemplate, ScopeField } from "./types";
+import { defineHook, hookEnabled } from "./validation/hooks";
+
+/** Ledger hook "scope-strip": the scope minimisation of note text before drafting and validation. */
+export const SCOPE_STRIP_HOOK = defineHook("scope-strip");
 
 /** Terms implied by each excludable field, added to the template's own `excludeTerms`. */
 export const FIELD_IMPLIED_TERMS: Record<ScopeField, readonly string[]> = {
@@ -49,20 +62,17 @@ export function scopeTermRegex(term: string, flags = "i"): RegExp {
   return new RegExp(`(?:^|[^A-Za-z0-9])(${body})(?![A-Za-z0-9])`, flags);
 }
 
-/** Remove every sentence that contains one of `terms`; lines left empty are dropped. */
+/**
+ * Remove every sentence that contains one of `terms` (whole sentences, by the shared tokenizer's "notes" policy);
+ * lines left empty are dropped.
+ */
 export function removeSentencesWithTerms(text: string, terms: readonly string[]): string {
-  if (!text || terms.length === 0) return text;
+  if (!text || terms.length === 0 || !hookEnabled(SCOPE_STRIP_HOOK)) return text;
   const res = terms.map((t) => scopeTermRegex(t));
   if (!res.some((re) => re.test(text))) return text;
   return text
     .split("\n")
-    .map((line) => {
-      const sentences = line.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [line];
-      return sentences
-        .filter((s) => !res.some((re) => re.test(s)))
-        .join("")
-        .trim();
-    })
+    .map((line) => removeSentences(line, (span) => res.some((re) => re.test(span.text)), "notes").after.trim())
     .filter((line) => line !== "")
     .join("\n");
 }
@@ -103,23 +113,43 @@ export function applyScope(bundle: EpisodeBundle, template: ReportTemplate): Epi
   return scoped;
 }
 
+/** When the first assessment took place: the first initial-assessment note's date, else the first note's (ISO), or null. */
+export function initialAssessmentDate(bundle: Pick<EpisodeBundle, "notes">): string | null {
+  const notes = bundle.notes.slice().sort((a, b) => (a.date + (a.time ?? "") < b.date + (b.time ?? "") ? -1 : a.date + (a.time ?? "") > b.date + (b.time ?? "") ? 1 : 0));
+  const ia = notes.find((n) => n.type === "initial_assessment") ?? notes[0];
+  return ia ? ia.date : null;
+}
+
+/**
+ * Fix round 2 (B1-21, kept by bh2 WD): the first appointment after that assessment – attended, missed or booked, not one
+ * cancelled with notice – or null. An initial assessment form asks for it.
+ */
+export function nextAppointmentAfterAssessment(bundle: Pick<EpisodeBundle, "notes" | "appointments">): EpisodeBundle["appointments"][number] | null {
+  const date = initialAssessmentDate(bundle);
+  if (!date) return null;
+  const later = bundle.appointments.filter((a) => a.date > date && a.status !== "CNC").sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
+  return later[0] ?? null;
+}
+
 /**
  * Fix round 1 (B0-6): the record as at the initial assessment, for a form that reports it – the notes up to and
  * including the first attended assessment (its date: the first initial-assessment note, else the first note), the
  * appointments up to then and the outcome scores taken by then. Registration, referral, incident and consent are kept;
- * the episode is open at that point. Null when there are no notes. Never mutates its input.
+ * the episode is open at that point. Fix round 2 (B1-21, kept by bh2 WD): the next appointment after the assessment
+ * stays – an initial assessment form asks for it – as it stood then (booked) and without its note. Null when there are
+ * no notes. Never mutates its input.
  */
 export function initialAssessmentView(bundle: EpisodeBundle): { bundle: EpisodeBundle; date: string } | null {
-  const notes = bundle.notes.slice().sort((a, b) => (a.date + (a.time ?? "") < b.date + (b.time ?? "") ? -1 : a.date + (a.time ?? "") > b.date + (b.time ?? "") ? 1 : 0));
-  const ia = notes.find((n) => n.type === "initial_assessment") ?? notes[0];
-  if (!ia) return null;
-  const date = ia.date;
+  const date = initialAssessmentDate(bundle);
+  if (!date) return null;
+  const next = nextAppointmentAfterAssessment(bundle);
+  const kept = next ? [{ id: next.id, date: next.date, time: next.time, status: "BOOKED" as const }] : [];
   return {
     date,
     bundle: {
       ...bundle,
       notes: bundle.notes.filter((n) => n.date <= date),
-      appointments: bundle.appointments.filter((a) => a.date <= date),
+      appointments: [...bundle.appointments.filter((a) => a.date <= date), ...kept],
       outcomeMeasures: bundle.outcomeMeasures.map((m) => ({ ...m, points: m.points.filter((p) => p.date <= date) })).filter((m) => m.points.length > 0),
       episodeStatus: "open",
     },

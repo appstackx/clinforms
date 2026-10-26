@@ -16,7 +16,7 @@
 import { useId, useState } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw, UserRoundCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
-import { DATA_CHECK_LABELS, flagCodeLabel } from "../../../core/labels";
+import { DATA_CHECK_LABELS, flagCodeLabel, flagEvidenceShown } from "../../../core/labels";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
@@ -133,7 +133,8 @@ export function FlagItem({
   const Icon = acked ? CheckCircle2 : blocking ? AlertOctagon : AlertTriangle;
   const dataCheck = flag.code === "DATA_CHECK" && flag.evidence && flag.evidence in DATA_CHECK_LABELS ? DATA_CHECK_LABELS[flag.evidence as DataCheckCode] : null;
   // A mail-merge field's evidence is the code as found (<<P_GROUPREF>>): the message already says it in plain words.
-  const showEvidence = flag.evidence && !dataCheck && !/^(empty section|optional field blank|validator .*|mail-merge field .*)$/.test(flag.evidence);
+  // bh2 WD (B2-15): no internal evidence code ("shorten", "repeat F-28", ISO dates) – core/labels.ts flagEvidenceShown.
+  const showEvidence = !dataCheck && flagEvidenceShown(flag) !== null;
   return (
     <div
       className={cn(
