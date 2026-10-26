@@ -163,15 +163,12 @@
     "src/modules/medreport/core/text/**",
     "src/modules/medreport/core/validation/__corpus__/**",
     "scripts/medreport/corpus-*",
-    "src/modules/medreport/core/issue-state.ts",
-    "src/modules/medreport/core/validation/conditions.ts",
     "src/modules/medreport/ui/components/new/approver-*",
     "src/modules/medreport/core/duration-bands.ts",
     "src/modules/medreport/core/form-map-lint.ts",
     "scripts/admin/apply-map-edits.ts",
     "scripts/medreport/bh-maps.test.ts",
-    "scripts/medreport/guide-terms-check.mjs",
-    "scripts/admin/check-issued.ts"
+    "scripts/medreport/guide-terms-check.mjs"
   ],
   "integratorOnly": [
     "README.md",

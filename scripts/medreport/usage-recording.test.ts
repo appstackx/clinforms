@@ -397,9 +397,9 @@ describe("usage recorded by the Report API handlers", () => {
       m = await month();
       assert.equal(m.billableReports, 9);
 
-      // An odd report id approved without drafting: it counts (it counted nothing before), once, under a hashed key.
-      await sign(reportOf("rpt odd id"));
-      await sign(reportOf("rpt odd id"));
+      // An odd report id: the clinic's store cannot hold it, so it is never approved (bh2 WA1 design 6: a clinic approves only
+      // what it holds – 409 STALE_REPORT); drafted, it counts once, under a hashed key.
+      for (let i = 0; i < 2; i++) assert.equal((await call(deps, handleSign, "/sign", signBody(reportOf("rpt odd id")))).status, 409);
       await draft({ reportId: "rpt odd id" });
       m = await month();
       assert.equal(m.billableReports, 10);

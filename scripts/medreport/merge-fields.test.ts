@@ -333,13 +333,15 @@ test("POST /sign refuses while a merge field is left (409 SIGNOFF_BLOCKED) and a
       new Request(`http://localhost/api/reports/v1${url}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${DEMO_SESSION}` }, body: JSON.stringify(body) }),
       { params: {} },
     );
-  const sign = (form: FormDefinition) => post(handleSign, "/sign", { report: reportFor(form), signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form });
-  const blocked = await sign(await mapOf(mergeDocx(), RULES_LIKE));
+  // bh2 WA1 (design 6): the public demo sends the referrer's file with the approval, for /sign's dry-run FINAL fill.
+  const bytes = mergeDocx();
+  const sign = (form: FormDefinition) => post(handleSign, "/sign", { report: reportFor(form), signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form, fileBase64: b64(bytes) });
+  const blocked = await sign(await mapOf(bytes, RULES_LIKE));
   assert.equal(blocked.status, 409);
   const problem = await blocked.json();
   assert.equal(problem.code, "SIGNOFF_BLOCKED");
   assert.ok(problem.flags.some((x: { message: string }) => /«Referral Ref» in table 1, row 2/.test(x.message)));
-  const ok = await sign(await mapOf(mergeDocx(), FIXED));
+  const ok = await sign(await mapOf(bytes, FIXED));
   assert.equal(ok.status, 200, await ok.clone().text());
 });
 

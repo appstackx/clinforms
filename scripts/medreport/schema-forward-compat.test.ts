@@ -111,7 +111,7 @@ async function approvedPair(tenantId: string) {
   const signed = (report: Report, receipt: SignReceipt): Report => ({ ...report, status: "signed", receipt });
   return {
     base: { form: baseForm, report: signed(baseDraft, await receiptFor(baseDraft, input(baseForm))) },
-    release: { form: relForm, report: signed(relDraft, await releaseReceipt(relDraft, input(relForm))) },
+    release: { form: relForm, report: signed(relDraft, await releaseReceipt(relDraft, input(relForm), { form: relForm, fileBase64: await harrowFileBase64() })) },
   };
 }
 

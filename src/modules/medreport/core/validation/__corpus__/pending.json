@@ -1,5 +1,5 @@
 {
- "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB).",
+ "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB). bh2-rc1 (integrator): each workstream merge removes the items that hold after it and the DIFF items that block again or are allowlisted once their owner lands; new one-click variants and DIFF items a merge creates are added with their owner.",
  "cases": {
   "ASAT-dc-01": {
    "owner": "WD",
@@ -553,141 +553,13 @@
    "owner": "WB",
    "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"message\":\"kept with the report|not (?:recorded|found)|commentary|about the notes\"} – subject: no flags"
   },
-  "COND-checks-03": {
+  "DIFF:ISSUE-merge-na-01": {
    "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+   "reason": "Awaiting Khuram's allowlist decision: a merge code in a box ruled out by its frozen condition is cleared from the issued form, so the box no longer blocks (WA1 design 5; the plan's sign-dry-run test). production: MISSING_PLACEHOLDER/blocking | candidate: approvable, the code cleared."
   },
-  "COND-checks-03~strip-joiner": {
+  "DIFF:ISSUE-na-person-02": {
    "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "COND-checks-03~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "COND-checks-03~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "COND-checks-03~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "COND-either-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-41 does not apply (expected applies) – depends on F-40"
-  },
-  "COND-lettered-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-19 applies (expected does not apply) – read as an ordinary question"
-  },
-  "COND-lettered-03": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-19 applies (expected does not apply) – read as an ordinary question"
-  },
-  "COND-onlyif-02": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-09 applies (expected does not apply) – read as an ordinary question"
-  },
-  "COND-pattern-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-06 applies (expected does not apply) – read as an ordinary question"
-  },
-  "COND-pattern-02": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-08 applies (expected does not apply) – read as an ordinary question"
-  },
-  "DIFF:COND-checks-03": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
-  },
-  "DIFF:COND-checks-03~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
-  },
-  "DIFF:COND-checks-03~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
-  },
-  "DIFF:COND-checks-03~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
-  },
-  "DIFF:COND-checks-03~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-figure-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-noprint-01": {
-   "owner": "WA1",
-   "reason": "A box ruled out by its condition prints nothing; bh2-r1 drops its checks (B0-7), production still checked it. By design per WA1 (checks dropped only when the box issues nothing) – needs Khuram's allowlist decision once WA1 lands. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-01": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-02": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-02~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-02~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-02~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-opinion-02~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-uncited-01": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-uncited-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-uncited-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-uncited-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-uncited-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
-  },
-  "DIFF:ISSUE-na-voice-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+   "reason": "Awaiting Khuram's allowlist decision (same rationale as the approved DIFF:ISSUE-na-noprint-01 – content never issued): the approving physio marked a clinician's box not applicable (a stored, hashed decision), so nothing of it is printed and its checks are dropped. production (no dispositions): its drafted opinion still blocks | candidate: no flags."
   },
   "DIFF:OPN-ok-f1": {
    "owner": "WB",
@@ -757,26 +629,6 @@
    "owner": "WA2",
    "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
   },
-  "ISSUE-bulk-heldback-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Sarah Reid ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
-  },
-  "ISSUE-bulk-heldback-02": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Sarah Reid ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
-  },
-  "ISSUE-copy-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL probe: F-06: copied but not printed"
-  },
-  "ISSUE-merge-na-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected PASS, blocked – subject: MISSING_PLACEHOLDER/blocking:mail-merge field <<P_TREATMENT>> in tabl || FAIL sign: /sign by Sarah Reid: 409 SIGNOFF_BLOCKED – MISSING_PLACEHOLDER/blocking:mail-merge field <<P_TREATMENT>> in tabl || FAIL fill: the FINAL fill was r"
-  },
-  "ISSUE-merge-render-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL render: /sign refused (409 SIGNOFF_BLOCKED) – no final copy"
-  },
   "ISSUE-na-figure-01": {
    "owner": "WA1",
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
@@ -798,88 +650,28 @@
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
   },
   "ISSUE-na-opinion-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+   "owner": "WC",
+   "reason": "WA1's part holds (the box applies again and /sign refuses the drafted opinion). What still fails is that only the approver may acknowledge an opinion on edited text: WC's canAcknowledge(flag, report, actor) (core/validation/acknowledge.ts) – same class as ATT-firstperson-01~origin-edited [WC]. Re-owned from WA1 (check-WA1 / ws-WA1)."
   },
   "ISSUE-na-opinion-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+   "owner": "WC",
+   "reason": "WA1's part holds (the box applies again and /sign refuses the drafted opinion). What still fails is that only the approver may acknowledge an opinion on edited text: WC's canAcknowledge(flag, report, actor) (core/validation/acknowledge.ts) – same class as ATT-firstperson-01~origin-edited [WC]. Re-owned from WA1 (check-WA1 / ws-WA1)."
   },
   "ISSUE-na-opinion-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+   "owner": "WC",
+   "reason": "WA1's part holds (the box applies again and /sign refuses the drafted opinion). What still fails is that only the approver may acknowledge an opinion on edited text: WC's canAcknowledge(flag, report, actor) (core/validation/acknowledge.ts) – same class as ATT-firstperson-01~origin-edited [WC]. Re-owned from WA1 (check-WA1 / ws-WA1)."
   },
   "ISSUE-na-opinion-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+   "owner": "WC",
+   "reason": "WA1's part holds (the box applies again and /sign refuses the drafted opinion). What still fails is that only the approver may acknowledge an opinion on edited text: WC's canAcknowledge(flag, report, actor) (core/validation/acknowledge.ts) – same class as ATT-firstperson-01~origin-edited [WC]. Re-owned from WA1 (check-WA1 / ws-WA1)."
   },
   "ISSUE-na-opinion-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+   "owner": "WC",
+   "reason": "WA1's part holds (the box applies again and /sign refuses the drafted opinion). What still fails is that only the approver may acknowledge an opinion on edited text: WC's canAcknowledge(flag, report, actor) (core/validation/acknowledge.ts) – same class as ATT-firstperson-01~origin-edited [WC]. Re-owned from WA1 (check-WA1 / ws-WA1)."
   },
-  "ISSUE-na-opinion-02": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
-  },
-  "ISSUE-na-opinion-02~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-opinion-02~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-opinion-02~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-opinion-02~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-uncited-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
-  },
-  "ISSUE-na-uncited-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-uncited-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-uncited-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-uncited-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-voice-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
-  },
-  "ISSUE-na-voice-01~strip-joiner": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-voice-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-voice-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-voice-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-unknown-choice": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  "ISSUE-na-voice-01~fix-name-instead-1": {
+   "owner": "WB",
+   "reason": "A one-click variant that did not exist before WA1: the box printed anyway now gets every check, so OTHER_CLINICIAN_VOICE is raised and WB's 'Name Tom Ellis instead' (pronoun rewrite) is offered and makes it approvable – same class as ATT-firstperson-02~fix-name-instead-1 (WB design: prefix-only attribution fix)."
   },
   "LEDGER-approver-acceptance-seam": {
    "owner": "WB",
@@ -888,10 +680,6 @@
   "LEDGER-clinician-origin-skip-seam": {
    "owner": "WC",
    "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for clinician-origin-skip in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-condition-parser-seam": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for condition-parser in core/validation/registry.ts (withHookDisabled)"
   },
   "LEDGER-draft-residue-seam": {
    "owner": "WC",
@@ -928,10 +716,6 @@
   "LEDGER-narrated-return-seam": {
    "owner": "WB",
    "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for narrated-return in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-not-applicable-drop-seam": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for not-applicable-drop in core/validation/registry.ts (withHookDisabled)"
   },
   "LEDGER-noteGivesOpinion-seam": {
    "owner": "WB",
@@ -2557,17 +2341,9 @@
    "owner": "WC",
    "reason": "Fails on bh2-r1: FAIL reducer: UNSUPPORTED 1.ownWords by Sarah Reid ⇒ expected PASS, blocked – subject: OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks"
   },
-  "ROLE-sign-edited": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
-  },
   "ROLE-sign-nonapprover": {
    "owner": "WC",
    "reason": "Fails on bh2-r1: FAIL sign: /sign by Tom Ellis: 200 – DATA_CHECK/warning:NO_PRE_INCIDENT_HISTORY"
-  },
-  "ROLE-sign-stale": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
   },
   "ROLE-takeover-01": {
    "owner": "WC",

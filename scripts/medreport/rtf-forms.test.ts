@@ -378,7 +378,8 @@ test("partner API: fill-preview and the FINAL render take the RTF itself; answer
   assert.equal(preview.headers.get("x-medreport-render"), "draft");
   assert.match(preview.headers.get("content-disposition") ?? "", /\.docx"?$/);
 
-  const signRes = await post(handleSign, "/sign", { report, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form });
+  // bh2 WA1 (design 6): the referrer's file goes with the approval too – /sign fills it as a dry run (the RTF itself).
+  const signRes = await post(handleSign, "/sign", { report, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form, fileBase64: rtfBase64 });
   assert.equal(signRes.status, 200, await signRes.clone().text());
   const { receipt } = SignResponseSchema.parse(await signRes.json());
   const signed: Report = { ...report, status: "signed", receipt: receipt as SignReceipt };

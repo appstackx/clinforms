@@ -32,6 +32,7 @@
     "admin:set-package": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/set-package.ts",
     "admin:load-forms": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/load-forms.ts",
     "admin:set-demo-clinic": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/set-demo-clinic.ts",
+    "admin:check-issued": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/check-issued.ts",
     "test:auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx --test \"src/server/auth/**/*.test.ts\" \"src/server/email/**/*.test.ts\" \"scripts/admin/**/*.test.ts\"",
     "admin:provision-auth": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/provision-auth-secrets.ts",
     "admin:with-env": "node --disable-warning=ExperimentalWarning --import ./scripts/medreport/test-setup.mjs --import tsx scripts/admin/with-env.ts",

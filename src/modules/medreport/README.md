@@ -1935,3 +1935,27 @@ keys were dropped, so fingerprints, receipt MACs and map attestations no longer 
   (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
   `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new
   shim on `main`, deployed, first).
+
+## What is issued, and the release rule (bh2 WA1 – issue state and receipt)
+
+- **One answer per box** – `core/issue-state.ts` `issueState(content, form, approval)`: answer, blank (left blank,
+  no answer, nothing in the record), not applicable (a frozen condition, a session not attended, a person's decision),
+  sign-off or referrer use, worked out from the report's hashed content only (flags, activity, status, updatedAt and
+  the receipt are stripped at run time). The forms fill (`buildFormAnswers`), Copy answers, the question summary, the
+  review's statuses and counts, the approved "On the form" line and the validators all read it.
+- **Conditions are read once**, when the report is created (`core/conditions.ts` `compileCondition`, frozen on
+  `section.condition`); a report this release made never reads the printed words again. Unresolved means applicable.
+  The server decides them, not the report: with the attested map at hand the issue state reads the map's own
+  conditions (`mapConditions`, at the reader version the report names – a reader change is a new version in `READERS`,
+  the old ones kept), so a member's store write never rules a box out; `/sign` refuses (409 `ISSUE_REFUSED`) a report
+  from before the release whose earlier reading rules out a box the map's reading keeps.
+- **`/sign`** approves only the clinic's stored revision (409 `STALE_REPORT`), runs a dry-run FINAL fill of the
+  referrer's file with the receipt's own signer and time (409 `ISSUE_REFUSED`; the public demo sends `fileBase64` for
+  a Word or PDF form) and binds `issuedContentSha256` and `acknowledgementsSha256` into the receipt. **`/render`
+  FINAL** issues exactly that document or refuses with an audited 409 `ISSUED_COPY_CHANGED`.
+- **Release rule:** no change to the forms engine (or anything a FINAL fill reads: the issue state, the conditions'
+  evaluation, buildFormAnswers, forms/) is deployed while approved trial reports exist without first running, for
+  every clinic, `npm run -s admin:check-issued -- --slug <clinic>` (read-only; `--env production` only with Khuram's go).
+  Any `CHANGED` or `ERROR` stops the deploy: those receipts would no longer issue a FINAL copy. `UNBOUND` (a receipt
+  from before the release), `MAP_CHANGED` (the clinic's map is no longer the approved one) and `NO_FILE` are listed,
+  not blocking. Storing the issued bytes (so a later engine never matters) is phase 2.

@@ -18,6 +18,10 @@
  * (a frozen condition {controllers, wants?, match?, unresolved?, text?, parser?}), sections[].tombstones, flags[].ackPolicy,
  * activity[].reportId, Report.approverTakeovers, the receipt's signerConfirmations, fields[].lintAccepted
  * {rule, reason, at, by?}, analysis.guidanceVersion, and the flag codes NOT_APPLICABLE_ANSWERED and APPROVER_DECISION.
+ *
+ * bh2-rc1 (integration of the workstreams): WA1's frozen condition also holds wantsNot (a printed option; the box
+ * applies when another is chosen) and filled (the row's text box names something), and a disposition's
+ * controllerSnapshot records a text controller's text as {kind: "text", value} (an existing FormAnswer kind).
  */
 import { createHmac } from "node:crypto";
 import { z } from "zod";
@@ -46,6 +50,8 @@ export const RELEASE_KEYS = {
     "sections[].adoptedBy",
     "sections[].answerBy",
     "sections[].condition",
+    "sections[].condition.wantsNot",
+    "sections[].condition.filled",
     "sections[].tombstones",
     "sections[].markedNotApplicable",
     "sections[].paragraphs[].by",
@@ -140,11 +146,11 @@ export function releaseReport(base: Report, mapSha256: string): Report {
   if (answered.length < 2) throw new Error("releaseReport: needs two answered boxes");
   const [first, second] = answered;
   Object.assign(first, {
-    disposition: { kind: "applies_anyway", by: APPROVER, at: RELEASE_AT, reason: "The prior question was answered Yes.", controllerSnapshot: [{ sectionKey: second.key, answer: { kind: "yes_no", value: true } }] },
+    disposition: { kind: "applies_anyway", by: APPROVER, at: RELEASE_AT, reason: "The prior question was answered Yes.", controllerSnapshot: [{ sectionKey: second.key, answer: { kind: "yes_no", value: true } }, { sectionKey: second.key, answer: { kind: "text", value: "Back at work on light duties." } }] },
     accepted: [{ check: "OPINION_LANGUAGE", phrase: "good recovery", sentenceSha: sha("c"), noteId: "N-001", by: APPROVER, at: RELEASE_AT, reason: "My own recorded opinion." }],
     adoptedBy: { by: APPROVER, at: RELEASE_AT, contentSha: sha("d") },
     answerBy: APPROVER,
-    condition: { controllers: [second.key], wants: "yes", text: "Only if the claimant is still in treatment.", parser: "conditions-2", readFrom: "label" },
+    condition: { controllers: [second.key], wants: "yes", wantsNot: "No", filled: true, text: "Only if the claimant is still in treatment.", parser: "conditions-2", readFrom: "label" },
     tombstones: [{ paragraphId: `${first.key}-deleted-1`, text: "A drafted line someone deleted.", sourceIds: ["N-001"], by: STAFF, at: RELEASE_AT }],
     markedNotApplicable: { by: STAFF.name, at: RELEASE_AT },
   });
@@ -208,12 +214,13 @@ export function receiptFor(report: Report, input: ReceiptInput): Promise<SignRec
 }
 
 /** Every key a receipt of the release holds, MAC over all of them – as the release's /sign issues it. */
-export async function releaseReceipt(report: Report, input: ReceiptInput): Promise<SignReceipt> {
+export async function releaseReceipt(report: Report, input: ReceiptInput, bind?: { form: FormDefinition; fileBase64: string }): Promise<SignReceipt> {
   const { mac: _mac, ...unsigned } = await receiptFor(report, input);
+  const bound = bind ? await releaseBindings(report, input, bind) : null;
   const signed: Loose = {
     ...unsigned,
-    issuedContentSha256: sha("e"),
-    acknowledgementsSha256: sha("f"),
+    issuedContentSha256: bound?.issuedContentSha256 ?? sha("e"),
+    acknowledgementsSha256: bound?.acknowledgementsSha256 ?? sha("f"),
     approverTakeover: { from: TOM_APPROVER, to: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc }, at: RELEASE_AT },
     signerConfirmations: RELEASE_MEMBERS.signerConfirmationKinds.map((kind) => ({
       kind,
@@ -315,4 +322,29 @@ export function valuesAt(value: unknown, path: string): unknown[] {
     current = next;
   }
   return current;
+}
+
+/**
+ * bh2 WA1 (design 6–7): on the release line the receipt's issued-document and acknowledgement hashes are bound –
+ * /render FINAL recomputes them – so a release receipt carries the real values, worked out with the release's own
+ * functions. A line without them (production + the shim, where both keys are opaque) keeps the planted values.
+ */
+async function releaseBindings(report: Report, input: ReceiptInput, bind: { form: FormDefinition; fileBase64: string }): Promise<{ issuedContentSha256: string; acknowledgementsSha256: string } | null> {
+  const RECEIPT_MODULE = ["..", "..", "src", "modules", "medreport", "api", "handlers", "sign", "receipt"].join("/");
+  let mod: Loose;
+  try {
+    mod = (await import(/* @vite-ignore */ RECEIPT_MODULE)) as Loose;
+  } catch {
+    return null;
+  }
+  if (typeof mod.issuedDocument !== "function" || typeof mod.issuedContentSha256 !== "function" || typeof mod.acknowledgementsSha256 !== "function") return null;
+  const { validateReport } = await import("../../src/modules/medreport/core/validation");
+  const { formToTemplate } = await import("../../src/modules/medreport/core/forms");
+  const { decodeFormFile } = await import("../../src/modules/medreport/forms/file");
+  const flags = validateReport(report, formToTemplate(bind.form), { form: bind.form }).flags;
+  const issued = (await (mod.issuedDocument as (i: Loose) => Promise<{ bytes: Uint8Array }>)({ report, form: bind.form, file: decodeFormFile(bind.fileBase64), approval: { signer: input.signer, signedAt: input.now.toISOString() } })).bytes;
+  return {
+    issuedContentSha256: (mod.issuedContentSha256 as (b: Uint8Array) => string)(issued),
+    acknowledgementsSha256: (mod.acknowledgementsSha256 as (f: unknown, g: unknown) => string)(flags, report.gaps ?? []),
+  };
 }

@@ -101,10 +101,11 @@ test("old records read as before: none of the follow-up's keys is invented, and 
   assert.equal("guidanceVersion" in form.analysis, false);
   for (const f of form.fields) assert.equal("lintAccepted" in f, false);
 
-  // No writers yet: a new report from the factory holds none of them either.
+  // No writers yet: a new report from the factory holds none of them either – except WA1's frozen condition (design 3:
+  // read once at creation, on a conditional question).
   const created = createFormReport({ form, bundle: old.bundleSnapshot, instructingParty: old.instructingParty, computedFacts: [], now: new Date(NEW_AT) });
   for (const key of REPORT_KEYS) assert.equal(key in created, false, `factory: ${key}`);
-  for (const s of created.sections) for (const key of SECTION_KEYS) assert.equal(key in s, false, `factory: ${s.key}.${key}`);
+  for (const s of created.sections) for (const key of SECTION_KEYS) if (key !== "condition") assert.equal(key in s, false, `factory: ${s.key}.${key}`);
 
   // A receipt minted without additions – or with empty ones – is exactly the receipt minted before the follow-up.
   const now = new Date(NEW_AT);
