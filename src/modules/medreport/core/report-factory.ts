@@ -26,6 +26,7 @@ import {
 import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
 import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
+import { REPORT_MODEL } from "./schemas";
 import { WORDING } from "./wording";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, type RecordSource } from "./labels";
 import type {
@@ -41,6 +42,7 @@ import type {
   InstructingParty,
   Paragraph,
   Report,
+  ReportApprover,
   ReportFlag,
   ReportSection,
   ReportTemplate,
@@ -85,6 +87,8 @@ export interface CreateReportInput {
   id?: string;
   now?: Date;
   actor?: string;
+  /** W0.6: the approving physio chosen when the report is created (WC's picker) – stored as Report.approver (hashed). */
+  approver?: ReportApprover | null;
 }
 
 /** Anything shaped like a POST /drafts response. */
@@ -141,6 +145,9 @@ export function createReport(input: CreateReportInput): Report {
     ],
     createdAt: at,
     updatedAt: at,
+    // W0.6: this release's report model (people's decisions are stored, never inferred – WA1), and the approver.
+    reportModel: REPORT_MODEL,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
 }
 
@@ -252,6 +259,8 @@ export interface CreateFormReportInput {
   id?: string;
   now?: Date;
   actor?: string;
+  /** W0.6: the approving physio chosen when the report is created (WC's picker) – stored as Report.approver (hashed). */
+  approver?: ReportApprover | null;
 }
 
 /**
@@ -394,6 +403,9 @@ export function createFormReport(input: CreateFormReportInput): Report {
     updatedAt: at,
     form: formRefOf(form),
     ...(authorOf(input) ? { author: authorOf(input) as Clinician } : {}),
+    // W0.6: this release's report model (people's decisions are stored, never inferred – WA1), and the approver.
+    reportModel: REPORT_MODEL,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
 }
 

@@ -11,27 +11,15 @@
  *   SYSTEM_ACTOR_NAME                            what the activity log says for code (drafting); code is never an Actor
  *
  * Not the server's caller (auth/actor.ts `Actor` says how a request authenticated); this is the person as the report
- * records them. The interface is the same shape as W0.3's ActorSchema (memberId and name non-empty, role one of the
- * member roles, canSign, optional hcpc), so either is assignable to the other; when both are on one branch the
- * integrator re-exports the inferred type from core/types.ts here. Pure; browser and server.
+ * records them. The type is W0.3's stored one (core/schemas.ts ActorSchema, inferred in core/types.ts), re-exported
+ * here. Pure; browser and server.
  *
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
+import type { Actor, ActorRole } from "./types";
 
-/** A clinic member's role (the same members as api/deps.ts MemberRole and W0.3's ActorRoleSchema). */
-export type ActorRole = "owner" | "admin" | "clinician" | "staff";
-
-export interface Actor {
-  /** The clinic member's account id; "demo" for the public demo's one user; "unknown" when the Studio has no member id. */
-  memberId: string;
-  /** The name the activity log shows ("Sarah Reid"). */
-  name: string;
-  role: ActorRole;
-  /** The member may approve (sign): a role other than staff, the clinic allows it, and signing details are on file. */
-  canSign: boolean;
-  /** The member's registration number from their profile, when they have one. */
-  hcpc?: string;
-}
+/** The stored shape (core/schemas.ts ActorSchema, W0.3): memberId, name, role, canSign, hcpc?. */
+export type { Actor, ActorRole };
 
 /** The activity log's name for code acting on its own (the drafting step) – never an Actor, never stamped as `by`. */
 export const SYSTEM_ACTOR_NAME = "System";
