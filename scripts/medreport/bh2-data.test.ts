@@ -14,6 +14,8 @@
  */
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { bindHandler, type MedreportHandler } from "@/modules/medreport/api/http";
 import { handleFormsConfirm } from "@/modules/medreport/api/handlers/forms-confirm";
 import { handleStoreFormPut } from "@/modules/medreport/api/handlers/store-forms";
@@ -259,6 +261,204 @@ describe("map lint (core/form-map-lint.ts)", () => {
     const clinicField = (guidance: string) => field("F-01", { guidance, fillSource: { kind: "registration", path: "clinic.name" } });
     assert.deepEqual(record.filter((g) => !lintErrors(lintFormMap(map([clinicField(g)]))).some((i) => i.rule === "L3")), []);
     assert.deepEqual(lintErrors(lintFormMap(map([clinicField("From your Clinic details.")]))), []);
+  });
+
+  // harden-WE (check2-WE M1): the reviewer's fresh wording, every kind, on a drafted, staff and fixed source. ("Advice
+  // on work" is left out: advice given is a fact, advice to give a judgement – a known limit of label wording.)
+  const FRESH: Array<[string, string[]?]> = [
+    ["Pain free at discharge?", ["Yes", "No"]],
+    ["Have the symptoms abated?"],
+    ["Is the patient back to full function?"],
+    ["Is the condition improving?", ["Yes", "No"]],
+    ["Condition at discharge", ["Better", "Same", "Worse"]],
+    ["Progress since the last report", ["Improved", "No change", "Deteriorated"]],
+    ["Has the injury cleared up?"],
+    ["Outcome at end of treatment", ["Discharged well", "Some symptoms remain"]],
+    ["How many more sessions?"],
+    ["Future treatment needs"],
+    ["When do you think the patient will be discharged?"],
+    ["Do you feel the patient will improve?"],
+    ["Is the patient going to need surgery?"],
+    ["Timescale for discharge"],
+    ["Can return to work", ["Yes", "No"]],
+    ["Is the claimant in a position to return to work?"],
+    ["Hours the claimant can work each week"],
+    ["Time off work required"],
+    ["Is the patient incapacitated?"],
+    ["Period of incapacity"],
+    ["Can drive", ["Yes", "No"]],
+    ["Activities the patient should avoid"],
+    ["Adjustments needed at work"],
+    ["Reasonable adjustments"],
+    ["Maximum weight the patient can lift"],
+    ["Duties the employee cannot do"],
+    ["Is there a link between the accident and the symptoms?"],
+    ["Did the accident make an existing condition worse?"],
+    ["Acceleration of a pre-existing condition (years)"],
+    ["Would the symptoms have arisen anyway?"],
+    ["Was the treatment needed because of the collision?"],
+    ["Will the claimant be left with any disability?"],
+    ["Future risk of arthritis in the joint"],
+    ["Is any loss of function expected to remain?"],
+    ["What is slowing the claimant's progress?"],
+    ["Complicating factors"],
+    ["Reasons for slow progress"],
+    ["Is the patient anxious about going back to work?"],
+    ["Fear of re-injury"],
+    ["Kinesiophobia present?", ["Yes", "No"]],
+    ["Low mood or stress affecting treatment"],
+    ["I am satisfied that the information given is correct"],
+    ["Was the treatment reasonable and necessary?"],
+    ["Confirm the patient attended all sessions listed"],
+    ["Onward referral required?", ["Yes", "No"]],
+    ["Is a referral to a consultant needed?"],
+    ["Continue treatment?", ["Yes", "No"]],
+    ["Requested sessions"],
+    ["Is imaging needed?"],
+    ["Clinical impression"],
+    ["What is your view on the claimant's progress?"],
+    ["Is it your view that the injury is soft tissue only?"],
+    ["Physiotherapist's assessment of progress"],
+    // The shapes of the Blue Heart boxes this round found (ids in the v2 edit list; fictional wording here).
+    ["Course of the condition since treatment began", ["Worsening", "No change", "Improving"]],
+    ["Were the goals agreed at the start met?", ["Yes", "No"]],
+    ["Goals of treatment – met or not, and why"],
+    ["Overall improvement so far (%)"],
+    ["Sleep: any improvement since the first session?"],
+    ["Clinical impression and details"],
+  ];
+  // Admin and factual boxes the round-2 vocabulary flagged (check2-WE minor 3) – facts, not judgements.
+  const ADMIN = [
+    "Unable to contact the patient – date of letter",
+    "Were you able to reach the claimant by phone?",
+    "Has the claim settled?",
+    "Invoice settled",
+    "Likely next appointment slot",
+    "Likely attendance day (patient preference)",
+    "Cause of accident (as described by the patient)",
+    "Recovery position used at the scene?",
+    "Solicitor's estimated settlement date",
+    "Clinic able to offer evening appointments?",
+    "Patient able to attend in person?",
+    "Appointments required to be in the morning?",
+    "Projected cost of treatment",
+    "Probable start date of treatment",
+    "Date the patient is due to be seen",
+    "Number of sessions authorised",
+    "Reason for discharge",
+    "Hours worked per week before the accident",
+    "Fitness classes attended before the accident",
+    "Previous physiotherapy for this area?",
+    "Interpreter required?",
+    "Current functional capacity",
+    "Chiropractic adjustments given",
+    "Stress fracture seen on imaging?",
+    "Area 1 – the patient's perceived change (%)",
+    "History of anxiety",
+    "Date returned to work",
+    "Long-term medication",
+  ];
+
+  test("L5 recall on fresh wording, every kind, on a drafted, staff or fixed source (harden-WE: check2-WE M1)", () => {
+    assert.deepEqual(FRESH.filter(([label, options]) => judgementOf({ label, options }) === null).map(([l]) => l), []);
+    for (const fillSource of [{ kind: "notes_narrative" }, { kind: "registration", path: "staff.entry" }, { kind: "fixed", value: "No" }] as FormField["fillSource"][]) {
+      for (const [label, options] of FRESH) {
+        const f = field("F-01", { label, ...(options ? { options, answerType: options.length === 2 ? "yes_no" : "single_choice" } : {}), fillSource });
+        assert.ok(lintErrors(lintFormMap(map([f]))).some((i) => i.rule === "L5"), `${label} (${fillSource.kind})`);
+      }
+    }
+  });
+
+  test("L5 precision: admin and factual boxes are not judgements (harden-WE: check2-WE minor 3)", () => {
+    assert.deepEqual(ADMIN.filter((label) => judgementOf({ label }) !== null).map((l) => `${l} → ${judgementOf({ label: l })}`), []);
+    // Precision holds on the bundled sample maps (above) and on every Blue Heart box that is not a judgement (T3).
+  });
+
+  test("L5: an outcome scale in the options is a judgement whatever the label says; one step alone is not a scale", () => {
+    assert.equal(judgementOf({ label: "Question 7", options: ["Worsening", "No change", "Improving"] }), "recovery");
+    assert.equal(judgementOf({ label: "Question 7", options: ["Better", "Worse"] }), "recovery");
+    assert.equal(judgementOf({ label: "Question 7", options: ["Much better", "The same"] }), "recovery");
+    assert.equal(judgementOf({ label: "Question 7", options: ["Better"] }), null);
+    assert.equal(judgementOf({ label: "Question 7", options: ["Left", "Right", "Both"] }), null);
+    assert.equal(judgementOf({ label: "Sleeping", options: ["No impact", "Some problems", "Severe problems"] }), null);
+  });
+
+  test("L5: a rating of the course of the condition is a judgement in a short answer, a choice or a question; a long narrative that is not a question is a summary of the notes", () => {
+    assert.equal(judgementOf({ label: "Overall improvement so far (%)", answerType: "short_text" }), "recovery");
+    assert.equal(judgementOf({ label: "Any improvement since the first visit?", answerType: "long_text" }), "recovery");
+    assert.equal(judgementOf({ label: "Condition at discharge", answerType: "single_choice", options: ["Discharged well", "Some symptoms remain"] }), "recovery");
+    // The bundled example question set's narrative box (a production behaviour: it confirms without a clinician).
+    assert.equal(judgementOf({ label: "Current symptoms and progress since the initial assessment", answerType: "long_text" }), null);
+    assert.equal(judgementOf({ label: "Progress since the last report", answerType: "long_text" }), null);
+    // A long box still flags every other kind, and an outcome scale in its options.
+    assert.equal(judgementOf({ label: "Is the patient fit to resume normal duties", answerType: "long_text" }), "fitness for work");
+    assert.equal(judgementOf({ label: "Progress", answerType: "long_text", options: ["Worse", "Better"] }), "recovery");
+    const confirmable = lintErrors(lintFormMap(map([field("F-01", { label: "Current symptoms and progress since the initial assessment", answerType: "long_text" })])));
+    assert.deepEqual(confirmable, []);
+  });
+
+  test("L5: the patient's own account is a fact – unless the question also asks the clinician", () => {
+    assert.equal(judgementOf({ label: "Area 2 – the patient's perceived improvement (%)" }), null);
+    assert.equal(judgementOf({ label: "Claimant's own words on going back" }), null);
+    assert.equal(judgementOf({ label: "Improvement as described by the patient" }), null);
+    assert.equal(judgementOf({ label: "In your view, is the patient's reported improvement real?" }), "a clinical opinion");
+    assert.equal(judgementOf({ label: "The physiotherapist's opinion of the patient's reported pain" }), "a clinical opinion");
+  });
+
+  test("one vocabulary: every term of the question classifier's OPINION and FORWARD_LOOKING lists is a judgement to L5 (harden-WE: check2-WE minor 5)", () => {
+    // One label per term of core/question-set.ts OPINION and FORWARD_LOOKING (as of this release): the classifier
+    // must give each to the clinician, and L5 must call each a judgement. A term added there and not here is caught by
+    // the second loop over the classifier's own source.
+    const TERMS = [
+      "Prognosis", "Opinion", "Recommendations", "Fit for work", "Fit to return", "Fit to drive", "Fit for duties", "Fitness for work",
+      "Fitness to work", "Return to work", "Return to normal activities", "Return to full hours", "Restrictions", "Adjustments", "Causation",
+      "Caused by", "Attributable", "Further treatment", "Further sessions", "Further physiotherapy", "Additional treatment", "Additional sessions",
+      "More sessions", "Future treatment", "Recovery period", "Recovery time", "Long-term", "Long term", "Permanent", "Maximum improvement",
+      "Maximum medical improvement", "Expected", "Estimated", "Anticipated", "Planned treatment", "Predicted", "Likely", "Projected", "Proposed treatment",
+    ];
+    assert.deepEqual(TERMS.filter((l) => classifyPortalQuestion(l).fillSource.kind !== "clinician_opinion"), [], "each label is one of the classifier's terms");
+    assert.deepEqual(TERMS.filter((l) => judgementOf({ label: l }) === null), [], "and a judgement to L5");
+    // The classifier's lists as written: every alternative's leading word appears in one of the labels above.
+    const source = fs.readFileSync(path.join(process.cwd(), "src/modules/medreport/core/question-set.ts"), "utf8");
+    const lists = [/const FORWARD_LOOKING = \/\\b\(\?:([^)]*)\)/, /const OPINION =\s*\/\\b\(\?:(.*)\)\\b\//].map((re) => re.exec(source)?.[1] ?? "");
+    assert.ok(lists.every(Boolean), "the classifier's lists are where this test reads them");
+    const words = lists.flatMap((l) => l.split("|")).map((alt) => alt.replace(/\\w\*|\[- \]\?|\(\?:[^)]*\)\??|\\s\+?/g, " ").trim().split(/\s+/)[0].toLowerCase()).filter(Boolean);
+    const said = TERMS.join(" ").toLowerCase();
+    assert.deepEqual(Array.from(new Set(words)).filter((w) => !said.includes(w.replace(/[^a-z-]/g, ""))), [], "a new classifier term needs a label here");
+  });
+
+  test("L1 and L3 on fresh wording (harden-WE: check2-WE minor 4)", () => {
+    const notes = [
+      "Remember to update this once the owner replies.",
+      "Will revisit after speaking to the owner.",
+      "Not sure which row – best guess for now.",
+      "Left as drafted for now.",
+      "Need sign-off from the clinic lead on this one.",
+      "Placeholder until we hear back.",
+      "Check this against the paper copy later.",
+      "Mapping may be wrong, revisit.",
+    ];
+    assert.deepEqual(notes.filter((note) => !lintErrors(lintFormMap(map([field("F-01", { note })]))).some((i) => i.rule === "L1")), []);
+    const forStaff = [
+      "Leave it blank when the patient did not attend.",
+      "The clinician completes this on each report.",
+      "Tick each treatment the notes record.",
+      "Staff type the claim number from the instruction letter.",
+      "Ask the patient whether they still take it.",
+      "The top row is used; the rows below stay empty.",
+    ];
+    assert.deepEqual(forStaff.filter((note) => lintErrors(lintFormMap(map([field("F-01", { note })]))).some((i) => i.rule === "L1")), []);
+    const record = ["Taken from the patient file.", "Comes from the clinic system record.", "Read off the record.", "Copied from the case record."];
+    const staffField = (guidance: string) => field("F-01", { guidance, label: "Claim reference", fillSource: { kind: "registration", path: "staff.entry" } });
+    assert.deepEqual(record.filter((g) => !lintErrors(lintFormMap(map([staffField(g)]))).some((i) => i.rule === "L3")), []);
+    assert.deepEqual(lintErrors(lintFormMap(map([staffField("Staff type the hospital number for every patient.")]))), []);
+  });
+
+  test("L12 reads the map's title and referrer too (shown to the clinic; harden-WE: check2-WE minor 2)", () => {
+    const f = field("F-01", { label: "Pain now (0-10)" });
+    assert.deepEqual(lintSummary(lintErrors(lintFormMap({ ...map([f]), title: "Discharge Report – mapped with GPT (fictional)" }))), "L12");
+    assert.deepEqual(lintSummary(lintErrors(lintFormMap({ ...map([f]), referrer: { name: "Claude Claims (fictional)", type: "case_manager" } }))), "L12");
+    assert.deepEqual(lintErrors(lintFormMap(map([f]))), []);
   });
 });
 

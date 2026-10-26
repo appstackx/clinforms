@@ -280,6 +280,38 @@ export function defineLoadFormsBh2Suite(label: string, factory: () => Promise<Lo
       assert.equal((await one(slug)).payload.fields.length, discharge.fields.length, "the clinic's form is as it was");
     });
 
+    it("--restore-maps still lints what the questions' digest does not cover – the map's own notes, title and referrer (check2-WE minor 2)", async () => {
+      const slug = await clinic();
+      const dir = folder({ [discharge.fileName]: dischargeBytes });
+      const v1Fields = accepted();
+      await seedEarlierRelease(slug, v1Fields);
+      const v2 = await run(slug, dir, dischargeMap(accepted("The work status the patient reports, recorded in the notes (fictional)."), { guidanceVersion: 2 }), { confirm: true, replace: true });
+      assert.equal(v2.files[0]?.status, "replaced", JSON.stringify(v2.files[0]));
+      const v1 = (extra: Record<string, unknown>) => ({ [discharge.fileName]: { title: discharge.title, referrer: discharge.referrer, fields: v1Fields, file: { sha256: "d".repeat(64) }, ...extra } });
+      // The questions are the earlier map's (their digest is in the activity log), but new map-level notes or names ride
+      // along: refused, dry run and confirm alike, and nothing changes.
+      const noisy: Array<[Record<string, unknown>, string]> = [
+        [{ warnings: ["TODO: ask the owner to confirm this mapping on Monday (fictional)."] }, "L1"],
+        [{ warnings: ["Mapped with GPT by the preparer (fictional)."] }, "L12"],
+        [{ title: "Discharge Report – Claude draft (fictional)" }, "L12"],
+        [{ referrer: { name: "Copilot Claims (fictional)", type: "case_manager" } }, "L12"],
+      ];
+      const before = JSON.stringify((await listForms(ctx, slug)).map((f) => [f.id, f.rev, f.payload]));
+      for (const [extra, rule] of noisy) {
+        for (const confirm of [false, true]) {
+          const r = await run(slug, dir, v1(extra), { confirm, replace: true, restore: true });
+          assert.equal(r.files[0]?.status, "refused", JSON.stringify(r.files[0]));
+          assert.match(r.files[0]?.reason ?? "", /^--restore-maps brings back a map's questions only: the map's own notes, title or referrer do not pass the map lint \(/);
+          assert.ok(r.files[0]?.lint?.errors.includes(rule), `${rule}: ${JSON.stringify(r.files[0]?.lint)}`);
+        }
+      }
+      assert.equal(JSON.stringify((await listForms(ctx, slug)).map((f) => [f.id, f.rev, f.payload])), before, "nothing changed");
+      // An earlier release's own "prepared" line (L9) is what a restore brings back: listed, not refused.
+      const earlierLine = await run(slug, dir, v1({ warnings: ["Prepared by ClinForms at set-up (fictional earlier wording)."] }), { replace: true, restore: true });
+      assert.equal(earlierLine.files[0]?.status, "replace", JSON.stringify(earlierLine.files[0]));
+      assert.ok(earlierLine.files[0]?.lint?.errors.includes("L9"));
+    });
+
     it("a re-run is idempotent: every form SKIP with the new fields, 0 writes, 0 audit rows", async () => {
       const slug = await clinic();
       const rtf = fs.readFileSync(path.join(FIXTURES, "initial-assessment-report.rtf"));

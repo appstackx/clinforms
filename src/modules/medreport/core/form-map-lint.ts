@@ -30,7 +30,7 @@
  *   L9  a "prepared by ClinForms" line other than load-forms' own single one
  *   L10 a conditional box whose own placeholder is a merge code
  *   L11 a converted form without a pin of its source file
- *   L12 vendor, product or technology names in a note, guidance or map warning
+ *   L12 vendor, product or technology names in a note, guidance, map warning, the map's title or its referrer
  *
  * Messages are ClinForms' own words and never quote the form's wording (load-forms prints rule + field id only).
  * Pure; browser and server.
@@ -164,6 +164,15 @@ function preparerSentence(sentence: string): string | null {
   if (/\buntil\b[^.;]*\b(?:confirms?|confirmed|says|said|decides|decided|agrees|agreed|answers|answered|replies|replied|tells|told)\b/i.test(s)) return "it waits for someone's decision";
   if (/\b(?:to be confirmed|still to confirm|open point|open question|awaiting (?:an? )?(?:answer|reply|confirmation|decision))\b/i.test(s) || /\(\s*[\w .'-]{1,30}\s+to confirm\s*\)/i.test(s)) return "it waits for someone's decision";
   if (/\b(?:confirm|check|decide)(?:ed)? later\b|\bto be (?:checked|decided) later\b/i.test(s)) return "it waits for someone's decision";
+  // harden-WE (check2-WE minor 4, fresh wording): "Remember to update this once the owner replies", "Will revisit after
+  // speaking to the owner", "best guess for now", "Left as drafted for now", "Need sign-off from the clinic lead",
+  // "Placeholder until we hear back", "Check this against the paper copy later", "Mapping may be wrong".
+  if (/^\(?remember to\b|\brevisit(?:ed|ing)?\b|\bbest guess\b|\b(?:not sure|unsure)\s+(?:which|whether|if|what|about|how)\b|\b(?:may|might|could) be wrong\b/i.test(s)) return "it is the preparer's own note";
+  if (/\bleft as\b[^.;]{0,30}\bfor now\b|\b(?:as drafted|as is|as it is)\s+for now\b|^\(?placeholder\s*(?:until|till|for now|only|[:–—-]|\.|$)|\bplaceholder (?:until|till|for now)\b|\b(?:until|till|once|when)\s+(?:we|I)\s+hear\b|\bhear back\b/i.test(s)) return "it is a reminder for later";
+  if (/\b(?:check|verify|confirm|revisit|review|update|fix)\s+(?:this|it|that)\b[^.;]{0,40}\blater\b/i.test(s)) return "it is a reminder for later";
+  if (new RegExp(String.raw`\b(?:once|when|after|as soon as)\s+(?:${DECIDER}|we|they|someone)\s+(?:replies|replied|confirms|confirmed|answers|answered|says|decides|decided|agrees|agreed|gets back|responds|responded)\b|\bafter speaking (?:to|with)\b|\b(?:need|needs|awaiting|waiting for)\s+(?:a\s+|the\s+)?(?:sign-?off|approval|go-?ahead|confirmation|ok|okay|answer|reply|decision)\s+from\b`, "i").test(s)) {
+    return "it waits for someone's decision";
+  }
   if (
     new RegExp(
       [
@@ -236,6 +245,15 @@ function optionNamingProblem(field: Pick<FormField, "options" | "guidance" | "an
 const SUBJECT = String.raw`(?:(?:the|this|your)\s+)?(?:patient|claimant|client|employee|member|individual|injured (?:person|party)|person)|he|she|they|you`;
 
 /**
+ * Whether someone could be reached or an appointment kept – an administrative fact, not fitness ("unable to contact the
+ * patient", "able to attend in person", "able to offer evening appointments"; harden-WE, check2-WE minor 3).
+ */
+const ADMIN_VERB = String.raw`(?:contact|reach|offer|book|speak|phone|call|email|e-mail|trace|locate|obtain|arrange|provide|send|pay|be\s+(?:contacted|reached|seen)|attend\s+(?:in\s+person|appointments?|sessions?|clinic|the\s+clinic|treatment|physio(?:therapy)?|for|on|at|remotely|online|by))\b`;
+
+/** An appointment, a cost or a settlement after "expected/likely/projected …" – a date in the diary, not a prognosis. */
+const ADMIN_NOUN = String.raw`(?:(?:date|day|time)\s+(?:of\s+)?(?:the\s+)?(?:next\s+)?(?:appointment|attendance|session|visit|arrival|payment|invoice|settlement|start|hearing)|(?:next\s+)?(?:appointment|attendance|arrival|costs?|fees?|price|invoice|payment|settlement|start|delivery)\b)`;
+
+/**
  * The kinds of clinical judgement a question can ask for, read from its printed label and options (plan WE design 2;
  * check-WE M1). ONE vocabulary with the rest of ClinForms, worded for a question rather than a sentence:
  * - the shapes the drafting check counts as opinion wording (core/validation/opinion-language.ts – recovery
@@ -246,11 +264,23 @@ const SUBJECT = String.raw`(?:(?:the|this|your)\s+)?(?:patient|claimant|client|e
  * - the ones the question classifier gives the clinician (core/question-set.ts OPINION and FORWARD_LOOKING:
  *   "opinion", "recommend…", "fit to drive", "return to work", "further treatment", "maximum improvement",
  *   "expected/estimated/anticipated/planned/predicted/likely/projected/proposed");
- * - explicit opinion questions ("in your opinion", "do you consider"), a statement of truth.
+ * - explicit opinion questions ("in your opinion", "do you consider", "clinical impression", "your view"), a statement of
+ *   truth;
+ * - harden-WE (check2-WE M1, fresh wording and Ascenti ML EOTS F-43): an outcome scale in the options (improving / no
+ *   change / worsening), an improvement or progress asked or measured, treatment goals met, the condition at discharge,
+ *   "can return to work" without a subject, "in a position to", incapacity, adjustments, what to avoid, a link between
+ *   the accident and the symptoms, acceleration, "anyway", "left with", future risk, complicating factors, anxiety /
+ *   fear / mood / stress, "I am satisfied that", "reasonable and necessary", onward referral, imaging needed,
+ *   "continue treatment?", requested / more sessions, future treatment.
  * Facts stay facts: a fit note, a restriction of movement or range (an examination finding), a recommendation already
  * made ("have exercises been recommended?"), a return that happened ("is the claimant back at work?"), a start date
  * ("due to start"), factors that make a pain worse ("aggravating factors"), long-term medication or conditions
- * (history).
+ * (history), the patient's own account ("patient's perceived improvement", "as described by the patient"), whether
+ * someone could be reached or an appointment kept ("unable to contact", "able to attend in person"), a diary date, a
+ * cost or a settlement ("expected date of the next appointment", "projected cost", "has the claim settled?"), how an
+ * accident happened ("cause of the accident").
+ * Label-only patterns cannot reach every free wording: what they still miss is listed in the release's known limits,
+ * and the clinician still reviews and signs every answer.
  * The first kind that matches names the finding. scripts/medreport/bh2-data.test.ts pins the recall and the
  * precision (and the corpus's LINT-l5-recall-* / LINT-l5-fact-* cases).
  */
@@ -261,9 +291,21 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
       [
         // "fit for duties", "fitness to work", "unfit" – never a fit note, nor fitness as an activity.
         String.raw`\b(?:un)?fit(?:ness)?\b(?![- ]?notes?\b)(?!\s+(?:classes?|activit(?:y|ies)|levels?|programmes?|programs?|regimes?|routines?|instructors?|training|centres?|centers?|clubs?)\b)`,
-        // "able to drive", "unable to perform", "capable of their normal job", "ability to lift".
-        String.raw`\b(?:able|unable|capable|incapable|ability|inability)\s+(?:of|to)\s+[a-z]`,
+        // "able to drive", "unable to perform", "capable of their normal job", "ability to lift" – not whether someone
+        // could be reached or an appointment kept ("unable to contact the patient", "able to attend in person";
+        // harden-WE, check2-WE minor 3).
+        String.raw`\b(?:able|unable|capable|incapable|ability|inability)\s+(?:of|to)\s+(?!${ADMIN_VERB})[a-z]`,
         String.raw`\bcan\s+(?:${SUBJECT})\s+(?:now\s+|still\s+|safely\s+)?(?:do|return|go back|get back|work|perform|carry(?: out)?|resume|manage|drive|lift|undertake|continue|cope|fulfil)\b`,
+        // "Can return to work", "Can drive" (no subject); "the hours the claimant can work", "duties the employee
+        // cannot do" (harden-WE: check2-WE M1 fresh wording).
+        String.raw`(?:^|[·?:–—(]\s*)can\s+(?:now\s+|still\s+|safely\s+)?(?:return|go back|get back|resume|drive|lift|work|undertake|carry out|perform|manage|cope|attend work|do (?:normal|usual|full|light|all|his|her|their))\b`,
+        String.raw`\b(?:${SUBJECT})\s+(?:can|could|cannot|can't|can not|should not|must not|is able to|is unable to|is not able to)\s+(?:now\s+|still\s+|safely\s+)?(?:work|return|drive|lift|do|perform|manage|undertake|carry|cope|resume|go back|get back|sit|stand|walk|fulfil)\b`,
+        // Not a description of function ("current functional capacity" is what the notes record the patient can do).
+        String.raw`\bin a position to\b|\bincapacit(?:y|ated|ies)\b|\blifting\s+capacity\b`,
+        String.raw`\btime off(?:\s+(?:work|sick))?\s+(?:required|needed|advised|recommended|expected|necessary)\b`,
+        // "Return to work", "return to normal activities" – the question classifier's own words; not one that happened
+        // ("returned to work", "back at work").
+        String.raw`\breturn(?:ing)?\s+to\s+(?:work|duties|normal|full|usual|sport|driving|pre-?(?:injury|accident|incident))\b`,
         String.raw`\b(?:suitable|ready|cleared|safe|well enough)\s+(?:for|to)\s+(?:[a-z'-]+\s+){0,2}?(?:work|duties|duty|job|role|employment|return|go back|get back|drive|driving|lift|lifting|discharge|sport|full|normal|usual)\b`,
         String.raw`\b(?:stay|stays|remain|remains|be|kept|keep)\s+off\s+(?:work|sick)\b`,
         String.raw`\b(?:work(?:ing)?\s+capacity|capacity\s+(?:for|to)\s+work)\b`,
@@ -280,6 +322,10 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
         String.raw`\b(?:modified|adjusted|amended|light|lighter|alternative|reduced|phased|graded|limited|selected)\s+(?:duties|duty|hours|work|return|role)\b`,
         String.raw`\bwork(?:place)?\s+(?:adjustments?|modifications?|limitations?)\b`,
         String.raw`\blimitations?\s+(?:on|to|at|affecting)\s+(?:work|duties|activities|activity|lifting|driving)\b|\b(?:lifting|weight|carrying)\s+limits?\b`,
+        // "Reasonable adjustments", "Adjustments" – not a change to the treatment or a manual technique.
+        String.raw`(?<!\b(?:chiropractic|spinal|postural|osteopathic|manual)\s)\badjustments?\b(?!\s+(?:to|of|in|made to)\s+(?:the\s+|his\s+|her\s+|their\s+)?(?:treatment|plan|dose|dosage|medication|exercises?|home\s+programme|programme|program|insoles?|brace|splint)\b)`,
+        String.raw`\b(?:should|must|to|needs? to|advised to|told to)\s+avoid\b|\bactivities\s+to\s+avoid\b|\bavoid(?:ing)?\s+(?:lifting|driving|work|sport|running|heavy|prolonged|repetitive)\b`,
+        String.raw`\bmaximum\s+(?:weight|load|lift(?:ing)?|hours|carrying)\b`,
       ].join("|"),
       "i",
     ),
@@ -288,7 +334,13 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
     kind: "causation",
     pattern: new RegExp(
       [
-        String.raw`\bcaus(?:e|ed|es|ation|al|ally|ative)\b`,
+        // Not how an accident happened ("cause of the accident", a mechanism the patient describes).
+        String.raw`\bcaus(?:e|ed|es|ation|al|ally|ative)\b(?!\s+of\s+(?:the\s+)?(?:accident|incident|collision|crash|fall)\b)`,
+        String.raw`\battributab(?:le|ly)\b|\battribut(?:ed|ion)\b|\blinks?\s+between\b|\bconnection\s+between\b|\blinked\s+with\b`,
+        // "Did the accident make an existing condition worse?" – not what makes a pain worse (aggravating factors).
+        String.raw`\b(?:accident|incident|collision|crash|fall|injury|event)\s+(?:\w+\s+)?ma(?:ke|de|king)\s+(?:\w+\s+){0,4}?worse\b|\bma(?:ke|de|king)\s+(?:an?\s+|the\s+|his\s+|her\s+|their\s+)?(?:pre-?existing|existing|previous|underlying|old|earlier)\s+(?:\w+\s+){0,2}?worse\b|\bworse(?:ned)?\s+(?:by|because of|since|after)\s+the\s+(?:accident|incident|collision|crash|fall)\b`,
+        String.raw`\baccelerat(?:ion|ed|ing|es|e)\s+(?:of|by)\b|\bacceleration\s+period\b|\baccelerat\w*\s+(?:an?\s+|the\s+)?(?:pre-?existing|existing|previous|underlying|degenerat\w*|symptoms?|condition)\b`,
+        String.raw`\banyway\b|\bin any event\b|\bregardless of the (?:accident|incident|collision)\b|\bwithout the (?:accident|incident|collision|crash|fall)\b`,
         // "due to the accident" – not "due to start".
         String.raw`\bdue to\b(?!\s+(?:be|start|begin|end|finish|commence|expire|attend|resume|restart|return|complete|take place|close|open|run|happen|occur|arrive|see|have|receive|book|stop|renew|review)\b)`,
         String.raw`\bbecause of\b|\bowing to\b|\bon account of\b`,
@@ -313,7 +365,11 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
       [
         String.raw`\bprognos(?:is|es|tic)\b|\boutlook\b|\bprospects?\b`,
         // The question classifier's forward-looking words (core/question-set.ts FORWARD_LOOKING).
-        String.raw`\b(?:expected|anticipated|estimated|predicted|projected|forecast|likely|probable|foreseeable)\b`,
+        // ... not an appointment, a cost or a settlement ("expected date of the next appointment", "projected cost",
+        // "probable start date"; harden-WE, check2-WE minor 3).
+        String.raw`\b(?:expected|anticipated|estimated|predicted|projected|forecast|likely|probable|foreseeable)\b(?!\s+${ADMIN_NOUN})`,
+        String.raw`\bhow many (?:more|further|additional|extra|remaining)\b|\bmore sessions\b|\bfuture\s+(?:treatment|care|needs|management|surgery|sessions?|interventions?|prognosis)\b`,
+        String.raw`\bgoing to (?:need|require|improve|recover|get better|be (?:able|fit|discharged|left))\b|\btime-?scales?\b|\btime ?frames?\b|\bwhen (?:do you (?:think|expect)|will|might|may)\b`,
         String.raw`\bwill\s+(?:${SUBJECT}|the\s+[a-z]+|it|this|symptoms?|pain)\s+(?:still\s+|ever\s+|fully\s+)?(?:recover|resolve|settle|improve|heal|return|be able|need|require|remain|persist|benefit|respond|get better|go back|make)`,
         String.raw`\b(?:further|more|continued|additional)\s+(?:improvement|progress|recovery|gains?)\b`,
         String.raw`\bmaximum\s+(?:medical\s+)?improvement\b|\bplateau(?:ed|s)?\b`,
@@ -326,11 +382,17 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
     kind: "recovery",
     pattern: new RegExp(
       [
-        String.raw`\brecover(?:y|ies|ed|ing|s)?\b|\bresol(?:ve|ves|ved|ving|ution)\b|\bsettl(?:e|es|ed|ing)\b|\bhealed\b`,
+        // Not first aid ("recovery position") nor a claim or an invoice that settled (check2-WE minor 3).
+        String.raw`\brecover(?:y|ies|ed|ing|s)?\b(?!\s+position)|\bresol(?:ve|ves|ved|ving|ution)\b|(?<!\b(?:claims?|invoices?|accounts?|bills?|cases?|matters?|payments?|fees?|debts?)\b(?:\s+(?:has|have|is|was|been|now|fully)){0,3}\s)\bsettl(?:e|es|ed|ing)\b|\bhealed\b`,
         String.raw`\b(?:symptom|problem|trouble)[- ]free\b|\basymptomatic\b|\bfree (?:of|from) (?:all |any )?(?:symptoms?|pain)\b`,
         String.raw`\b(?:fully|completely|totally)\s+(?:better|well|healed|gone|cleared)\b`,
         String.raw`\b(?:symptoms?|pain|problems?|condition|injur(?:y|ies))\s+(?:has\s+|have\s+|now\s+)?(?:fully\s+|completely\s+|all\s+)?(?:gone|cleared|disappeared|subsided|ceased)\b`,
         String.raw`\bgetting better\b|\bfull return\b|\bback to normal\b|\bfull fitness\b`,
+        // harden-WE (check2-WE M1): pain-free, abated, full function, cleared up; treatment goals met (10Bridge EOTS F-31,
+        // Proclaim EOTS F-29, Bodycare Interim F-16 – ids only, never the forms' wording). A rating of the course of the
+        // condition is RATING_STEMS (below); an outcome scale in the options is outcomeScale.
+        String.raw`\bpain[- ]free\b|\babat(?:e|ed|es|ing)\b|\bcleared up\b|\bfull function\b|\b(?:back to|regained|restored to)\s+full\b`,
+        String.raw`\bgoals?\b[^.?]{0,80}?\b(?:achieved|met|reached|attained|accomplished|achievement)\b|\b(?:achieved|met|reached|attained)\b[^.?]{0,40}?\bgoals?\b`,
         String.raw`\b(?:back|return(?:ed|ing|s)?|restored)\s+to\s+(?:(?:his|her|their|the)\s+)?(?:pre-?(?:injury|accident|incident)|normal)\b(?!\s+(?:work|duties|job|role|hours)\b)`,
       ].join("|"),
       "i",
@@ -345,6 +407,9 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
         // "is the condition chronic?" – not chronic conditions in the medical history.
         String.raw`\b(?:is|are|become|becomes|becoming|remain|remains|be|been|now|turned|turning)\s+(?:the\s+[a-z]+\s+)?chronic\b`,
         String.raw`\bongoing\s+(?:disabilit(?:y|ies)|impairments?|effects?)\b`,
+        // harden-WE: "left with any disability?", "future risk of arthritis", a bare "Long-term" box.
+        String.raw`\bleft with\b|\bfuture risk\b|\brisk of\s+(?:arthritis|osteoarthritis|degenerat\w*|recurrence|re-?injury|further (?:injury|problems|deterioration|damage)|deterioration|relapse|long[- ]term)\b|\b(?:any|lasting|residual|future)\s+disabilit(?:y|ies)\b`,
+        String.raw`^long[- ]?term\s*[:?]?\s*(?:·|$)`,
       ].join("|"),
       "i",
     ),
@@ -356,18 +421,30 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
         String.raw`\bbarriers?\b|\bobstacles?\b|\bhinder(?:s|ing|ed|ance)?\b|\bimped(?:e|es|ing|iment|iments)\b|\b(?:preventing|stopping|delaying)\s+(?:a\s+|the\s+)?(?:recovery|progress|return)\b`,
         String.raw`\bfactors?\s+(?:that\s+(?:may\s+|might\s+|could\s+)?)?(?:slow(?:s|ing)?|delay(?:s|ing)?|affect(?:s|ing)?|limit(?:s|ing)?|influenc(?:e|es|ing)|hamper(?:s|ing)?|prevent(?:s|ing)?|complicat(?:e|es|ing))\s+(?:the\s+|his\s+|her\s+|their\s+)?(?:progress|recovery|treatment|rehabilitation|rehab|outcome|return|prognosis)\b`,
         String.raw`\b(?:slow(?:ing|ed)?|delay(?:ing|ed)?)\s+(?:the\s+)?(?:progress|recovery|rehabilitation|return)\b`,
+        // harden-WE: "complicating factors", "what is slowing the patient's progress?", "reasons for slow progress",
+        // "… affecting treatment".
+        String.raw`\bcomplicating\b|\bcomplicat\w*\s+(?:factors?|the\s+(?:recovery|progress|treatment))\b|\bslow(?:ing|s|ed|er)?\b[^.?]{0,30}?\bprogress\b|\b(?:slow|poor|limited|lack of|little)\s+progress\b`,
+        String.raw`\b(?:affect(?:ing|s)?|impact(?:ing|s)?(?:\s+on)?)\s+(?:the\s+|his\s+|her\s+|their\s+)?(?:treatment|recovery|progress|rehabilitation|rehab|outcome)\b`,
       ].join("|"),
       "i",
     ),
   },
   {
     kind: "psychosocial factors",
-    pattern: /\bpsycho-?social\b|\bpsycholog(?:ical|y)\b|\bfear[- ]avoidance\b|\bcatastrophi[sz]|\bemotional\s+(?:factors?|issues?|state|impact|wellbeing|well-being|distress|problems?|health)\b|\bsocial\s+factors?\b|\bmental\s+health\s+(?:factors?|impact)\b/i,
+    pattern: new RegExp(
+      [
+        String.raw`\bpsycho-?social\b|\bpsycholog(?:ical|y)\b|\bfear[- ]avoidance\b|\bcatastrophi[sz]|\bemotional\s+(?:factors?|issues?|state|impact|wellbeing|well-being|distress|problems?|health)\b|\bsocial\s+factors?\b|\bmental\s+health\s+(?:factors?|impact)\b`,
+        // harden-WE: anxiety, fear of re-injury, kinesiophobia, mood, stress – not in the medical history, not a stress
+        // fracture or test.
+        String.raw`(?<!\b(?:history|previous|past|pre-?existing)\b[^.?]{0,20})\banxi(?:ous|ety)\b|\bfear(?:s|ful)?\s+(?:of|about|over)\b|\bkinesiophobi|\blow\s+mood\b|\bmood\b|\bstress(?:ed|ful|ors?)?\b(?!\s+(?:fracture|test|testing|incontinence|reaction|response|x-?ray))|\bworr(?:y|ied|ies)\s+(?:about|that|over)\b`,
+      ].join("|"),
+      "i",
+    ),
   },
   { kind: "yellow flags", pattern: /\b(?:yellow|blue|black|orange)\s+flags?\b/i },
   {
     kind: "a declaration",
-    pattern: /\bdeclar(?:e|es|ed|ation)\b|\bI (?:confirm|certify|declare|attest|understand|believe|accept|acknowledge|agree)\b|\bconfirmation of\b|\bcertif(?:y|ies|ied|ication)\b|\battest(?:s|ed|ation)?\b|\bstatement of truth\b|\bduty to the court\b|\bto the best of (?:my|our) (?:knowledge|belief)\b|\b(?:true|accurate) and (?:accurate|correct|complete|true)\b/i,
+    pattern: /\bdeclar(?:e|es|ed|ation)\b|\bI (?:confirm|certify|declare|attest|understand|believe|accept|acknowledge|agree)\b|\bconfirmation of\b|\bcertif(?:y|ies|ied|ication)\b|\battest(?:s|ed|ation)?\b|\bstatement of truth\b|\bduty to the court\b|\bto the best of (?:my|our) (?:knowledge|belief)\b|\b(?:true|accurate) and (?:accurate|correct|complete|true)\b|\bI\s+am\s+(?:satisfied|content|happy|sure)\s+that\b|\breasonabl[ey]\s+(?:and\s+)?necessar(?:y|ily)\b|^(?:please\s+)?confirm\s+(?:that\b|the\s+(?:patient|claimant|client)\b|all\b)/i,
   },
   {
     kind: "a recommendation",
@@ -379,7 +456,11 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
         String.raw`\bfurther\s+(?:treatment|sessions?|physio(?:therapy)?|therapy|interventions?|appointments?|care|investigations?|referrals?|rehabilitation|rehab|input)\b`,
         String.raw`\b(?:additional|more|extra)\s+(?:treatment|sessions|physio(?:therapy)?|therapy)\s+(?:needed|required|requested|advised|necessary|indicated)\b`,
         // "Appointments required from now on", "is treatment still appropriate?" – not "the treatment needed" in a detail box.
-        String.raw`\b(?:sessions?|appointments?)\s+(?:required|needed|requested|proposed|planned)\b`,
+        String.raw`\b(?:sessions?|appointments?)\s+(?:required|needed|requested|proposed|planned)\b(?!\s+to\s+be\b)`,
+        // harden-WE: an onward referral, imaging or surgery needed; continue treatment?; requested or more sessions.
+        String.raw`\b(?:onward\s+)?referrals?\b[^.?]{0,40}?\b(?:required|needed|necessary|advised|recommended|indicated|suggested|warranted)\b|\bonward\s+referral\b(?!\s+(?:made|sent|completed|done|date|letter))`,
+        String.raw`\b(?:imaging|scans?|x-?rays?|mri|investigations?|injections?|surgery|surgical|orthopaedic|consultant)\b[^.?]{0,30}?\b(?:needed|required|necessary|advised|recommended|indicated|warranted|suggested)\b`,
+        String.raw`\bcontinue\s+(?:with\s+)?(?:the\s+)?(?:treatment|physio(?:therapy)?|therapy|sessions?|rehab(?:ilitation)?|care)\b|\brequested\s+(?:sessions?|treatments?|appointments?|number of sessions)\b|\badditional\s+(?:treatment|sessions)\b|\bmore\s+(?:treatment|physio(?:therapy)?|therapy)\b`,
         String.raw`\b(?:is|are)\s+(?:further\s+|more\s+|the\s+)?(?:treatment|physiotherapy|therapy|sessions)\s+(?:currently\s+|still\s+)?(?:appropriate|indicated|necessary|warranted|needed|required)\b`,
         String.raw`\b(?:planned|proposed)\s+(?:treatment|sessions?|discharge|review|plan|number|return|date|duration|frequency|interventions?|management)\b`,
       ].join("|"),
@@ -388,14 +469,63 @@ export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> =
   },
   {
     kind: "a clinical opinion",
-    pattern: /(?<!\bsecond\s)\bopinions?\b|\bin your (?:clinical |professional )?(?:view|judge?ment|assessment|estimation)\b|\bdo you (?:consider|believe|think|expect|anticipate|foresee|regard)\b|\bwould you (?:consider|say|expect|recommend|advise|regard)\b|\byour (?:clinical |professional )?(?:view|judge?ment|impression|assessment) of\b|\bclinical (?:judge?ment|reasoning)\b/i,
+    pattern: /(?<!\bsecond\s)\bopinions?\b|\bin your (?:clinical |professional )?(?:view|judge?ment|assessment|estimation)\b|\bdo you (?:consider|believe|think|expect|anticipate|foresee|regard|feel)\b|\bwould you (?:consider|say|expect|recommend|advise|regard)\b|\byour (?:clinical |professional )?(?:view|judge?ment|impression|assessment) of\b|\bclinical (?:judge?ment|reasoning|impressions?)\b|\byour (?:clinical |professional )?(?:view|impression|opinion)\b|\bis it your view\b|\b(?:physiotherapist|clinician|therapist|physio)(?:'s|s')?\s+(?:assessment|view|impression|opinion)\s+(?:of|on)\b/i,
   },
 ];
 
-/** The judgement a question asks for, read from its printed label and options – or null. */
-export function judgementOf(field: Pick<FormField, "label"> & Partial<Pick<FormField, "options">>): string | null {
+/**
+ * A question that asks for the patient's own account – their perceived improvement, their own estimate, "as described
+ * by the patient", "in the patient's words": what the patient said is a fact the notes record, not the clinician's
+ * judgement (harden-WE: CLM EOTS F-34/F-36; check2-WE minor 3, the cause of an accident as the patient describes
+ * it). A question that also asks the clinician ("in your view", "the physiotherapist's
+ * opinion of …") stays a judgement.
+ */
+const PATIENT_ACCOUNT = /\b(?:patient|claimant|client|employee|member)(?:'s|s')?\s+(?:own\s+)?(?:perceived|perception|self-?reported|reported|estimates?|estimated|ratings?|description|account|words|preference)\b|\bas\s+(?:described|reported|told|stated|given|advised)\s+by\s+(?:the\s+)?(?:patient|claimant|client|employee)\b|\b(?:patient|self)[- ]reported\b|\bin\s+(?:the\s+|their\s+|his\s+|her\s+)?(?:(?:patient|claimant|client)(?:'s|s')?\s+)?own\s+words\b|\bin\s+the\s+(?:patient|claimant|client)(?:'s|s')\s+words\b|\baccording to the (?:patient|claimant|client)\b/i;
+const ASKS_THE_CLINICIAN = /\bin your\b|\bdo you\b|\bwould you\b|\byour (?:clinical |professional )?(?:view|opinion|judge?ment|impression|assessment)\b|\bclinical (?:judge?ment|reasoning|impressions?|opinion)\b|\b(?:clinician|physiotherapist|therapist|physio)(?:'s|s')?\s+(?:view|opinion|judge?ment|impression|assessment)\b/i;
+
+/**
+ * An outcome scale in the options, whatever the label says: two or more of "improving / better", "no change / same",
+ * "worsening / deteriorated" (harden-WE: Ascenti ML EOTS F-43; check2-WE M1 "Better / Same / Worse",
+ * "Improved / No change / Deteriorated").
+ */
+const SCALE_STEPS: readonly RegExp[] = [
+  /^(?:much\s+|slightly\s+|a\s+little\s+)?(?:improv(?:ed|ing|ement)|better|resolv(?:ed|ing)|recovered|progressing)\b/i,
+  /^(?:no\s+change|unchanged|(?:the\s+)?same|static|stable|no\s+improvement|plateau(?:ed)?|no\s+different)\b/i,
+  /^(?:much\s+|slightly\s+|a\s+little\s+)?(?:wors(?:e|ening|ened)|deteriorat(?:ed|ing|ion)|declin(?:ed|ing)|regress(?:ed|ing))\b/i,
+];
+
+function outcomeScale(options: readonly string[] | undefined): boolean {
+  if (!options || options.length < 2) return false;
+  return SCALE_STEPS.filter((step) => options.some((o) => step.test(norm(o)))).length >= 2;
+}
+
+/**
+ * A rating of the course of the condition – an improvement or progress asked or measured (a percentage, "is it
+ * improving?", "any improvement since …?"), the condition at discharge or after treatment, a question on how it is now
+ * (harden-WE: Ascenti ML EOTS F-11…F-25, F-49, Ascenti IA F-50, Proclaim EOTS F-20). A judgement in a short answer, a
+ * choice, a number or a question; a long narrative box that is not a question ("current symptoms and progress since the
+ * first assessment") summarises what the notes record, and stays a fact (the bundled example question set; a regression
+ * otherwise).
+ */
+const RATING_STEMS = new RegExp(
+  [
+    String.raw`\bimprov(?:ed|ing|ement|ements)\b|\bprogress\s+(?:since|so far|to date|made|of the|with|in)\b|\b(?:any|good|overall|expected|satisfactory|clinical)\s+progress\b|\bprogressing\b|\bprogress\s*\?`,
+    String.raw`\b(?:condition|status|outcome|symptoms?|presentation|state)\s+(?:at|on|by|following|after)\s+(?:the\s+)?(?:discharge|end of (?:the\s+)?treatment|final (?:session|appointment|review)|last (?:session|appointment)|treatment)\b`,
+    String.raw`\bhow (?:is|are|has|have)\s+(?:the\s+)?(?:(?:client|patient|claimant)(?:'s|s')?\s+)?(?:condition|symptoms?|injur(?:y|ies)|pain|problems?)\b`,
+  ].join("|"),
+  "i",
+);
+
+/** The judgement a question asks for, read from its printed label and options (and its answer type) – or null. */
+export function judgementOf(field: Pick<FormField, "label"> & Partial<Pick<FormField, "options" | "answerType">>): string | null {
+  const label = norm(field.label);
   const text = norm([field.label, ...(field.options ?? [])].join(" · "));
-  return JUDGEMENT_KINDS.find((j) => j.pattern.test(text))?.kind ?? null;
+  if (PATIENT_ACCOUNT.test(label) && !ASKS_THE_CLINICIAN.test(label)) return null;
+  const kind = JUDGEMENT_KINDS.find((j) => j.pattern.test(text))?.kind;
+  if (kind) return kind;
+  const narrative = field.answerType === "long_text" && !label.includes("?");
+  if (!narrative && RATING_STEMS.test(text)) return "recovery";
+  return outcomeScale(field.options) ? "recovery" : null;
 }
 
 /**
@@ -428,7 +558,7 @@ function nonClinicianSource(field: Pick<FormField, "fillSource">): "staff" | "fi
  * L5 for one field, as /forms/confirm and the store check it: the judgement it asks for and who would answer it
  * instead of the clinician – or null.
  */
-export function judgementOnNonClinicianSource(field: Pick<FormField, "label" | "options" | "fillSource">): { kind: string; source: "staff" | "fixed" | "drafted" } | null {
+export function judgementOnNonClinicianSource(field: Pick<FormField, "label" | "options" | "fillSource"> & Partial<Pick<FormField, "answerType">>): { kind: string; source: "staff" | "fixed" | "drafted" } | null {
   const source = nonClinicianSource(field);
   if (!source) return null;
   const kind = judgementOf(field);
@@ -568,7 +698,7 @@ const PREPARED_LINE = /\bprepared\b[^.]*\bClinForms\b|\bClinForms\b[^.]*\bprepar
  * Every finding of the map lint, in field order then map-level. Findings a field's lintAccepted covers (same rule) are
  * returned with severity "accepted"; map-level findings cannot be accepted.
  */
-export function lintFormMap(form: Pick<FormDefinition, "fields" | "analysis" | "file">, opts: LintOptions = {}): LintIssue[] {
+export function lintFormMap(form: Pick<FormDefinition, "fields" | "analysis" | "file"> & Partial<Pick<FormDefinition, "title" | "referrer">>, opts: LintOptions = {}): LintIssue[] {
   const want = new Set<LintRule>(opts.rules ?? LINT_RULES);
   const issues: LintIssue[] = [];
   const fields = form.fields;
@@ -598,7 +728,9 @@ export function lintFormMap(form: Pick<FormDefinition, "fields" | "analysis" | "
     if (f.fillSource.kind === "registration" && (f.fillSource.path.startsWith("clinic.") || f.fillSource.path === "staff.entry")) {
       // "filled from the record", "taken from the records", "from the patient's record", "from the clinic's record",
       // "comes from the patient records" – not "From the clinic system's …" (check-WE minor 6).
-      const fromRecord = /\b(?:from|out of) the (?:patient(?:'s|’s|s'|s’)? |patients(?:'|’) |clinic(?:'s|’s)? |clinical )?records?\b/i;
+      // harden-WE (check2-WE minor 4): "taken from the patient file", "comes from the clinic system record", "read off the
+      // record", "copied from the case record".
+      const fromRecord = /\b(?:from|out of|off) the (?:patient(?:'s|’s|s'|s’)? |patients(?:'|’) |clinic(?:'s|’s)? |clinic system(?:'s|’s)? |clinical |case |medical |treatment )?(?:records?|file)\b/i;
       const where = [fromRecord.test(note) ? "note" : "", fromRecord.test(guidance) ? "guidance" : ""].filter(Boolean).join(" and ");
       if (where) {
         push(
@@ -657,7 +789,8 @@ export function lintFormMap(form: Pick<FormDefinition, "fields" | "analysis" | "
   const warnings = form.analysis.warnings ?? [];
   const own = warnings.filter((w) => !isRtfConversionNote(w) && w !== PREPARED_NOTE);
   if (own.some((w) => sentencesOf(w).some((x) => preparerSentence(x)))) push("L1", null, "A note on the map is written for whoever prepared it: write it for the clinic's staff, or remove it.");
-  if (warnings.some(vendorName)) push("L12", null, "A note on the map names a product or technology.");
+  // The map's title and referrer are shown to the clinic too (check2-WE minor 2).
+  if (warnings.some(vendorName) || vendorName(form.title ?? "") || vendorName(form.referrer?.name ?? "")) push("L12", null, "A note on the map, its title or its referrer names a product or technology.");
   // L9
   const prepared = warnings.filter((w) => PREPARED_LINE.test(w));
   if (prepared.length > 1 || prepared.some((w) => w !== PREPARED_NOTE)) push("L9", null, "The map carries a “prepared by ClinForms” line besides the one ClinForms adds when it loads the form: remove it.");

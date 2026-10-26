@@ -61,8 +61,9 @@
  *   fits this conversion (the anchors are always checked). Only a map ClinForms loaded or replaced for THIS clinic
  *   before is restored (check-WE minor 1): its questions' SHA-256 (mapFieldsSha256) must be in the clinic's audit trail
  *   – "form.create"/"form.replace" record `mapSha256` of the map they store and, for a replace, `replacesMapSha256` of
- *   the maps they replace; any other map is refused (load it without --restore-maps: the lint then checks it). Only
- *   forms nobody has touched are replaced, as always.
+ *   the maps they replace; any other map is refused (load it without --restore-maps: the lint then checks it). The
+ *   match covers the questions only, so the map's own notes, title and referrer are still linted: a map-level L1 or
+ *   L12 finding refuses the restore (check2-WE minor 2). Only forms nobody has touched are replaced, as always.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -747,6 +748,21 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
         mapFrom: "json",
         lint: lintResult,
         reason: "--restore-maps brings back only a map ClinForms loaded or replaced for this clinic before, and this map is not in the clinic's activity log: load it without --restore-maps, so the map lint checks it.",
+      });
+      continue;
+    }
+    // check2-WE minor 2: a restore matches the questions only (mapFieldsSha256), so what else the maps file brings – the
+    // map's own notes, its title and its referrer – is checked as on any load: a note written for whoever prepared the
+    // map (L1) or a product or technology name (L12) at map level refuses the restore too. (An earlier release's own
+    // "prepared" line, L9, and a missing source pin, L11, are what a restore brings back: listed.)
+    const mapLevelRefused = mapped && restore ? lintErr.filter((i) => !i.fieldId && (i.rule === "L1" || i.rule === "L12")) : [];
+    if (mapLevelRefused.length > 0) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: "json",
+        lint: lintResult,
+        reason: `--restore-maps brings back a map's questions only: the map's own notes, title or referrer do not pass the map lint (${lintSummary(mapLevelRefused)}). Remove that note or name from the maps file and run again.`,
       });
       continue;
     }
