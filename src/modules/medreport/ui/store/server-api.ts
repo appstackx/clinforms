@@ -85,10 +85,19 @@ const MESSAGES = {
 /** Fix round 1 (B0-9): refusals for the member's role – signing in again changes nothing, so they are final. */
 export const ROLE_REFUSED_CODES: readonly string[] = ["ROLE_NOT_ALLOWED"];
 
+/**
+ * bh2 WC (harden-WC, check2-WC minor 6): the store refused the change itself – it records a decision as someone else or
+ * one only the approving clinician makes, or it rewrites an approved report. Signing in again changes nothing: never
+ * kept for sign-in. On an update the stored copy is loaded instead (as for a conflict), so later saves are not stuck
+ * behind the refused change.
+ */
+export const DECISION_REFUSED_CODES: readonly string[] = ["DECISION_NOT_ALLOWED", "REPORT_LOCKED"];
+
 export function classifyStatus(status: number, code?: unknown): FailureKind {
   // A change made under another sign-in (another clinic or member) is refused for good, never kept for sign-in.
   if (status === 403 && typeof code === "string" && SIGN_IN_CHANGED_CODES.includes(code)) return "rejected";
   if (status === 403 && typeof code === "string" && ROLE_REFUSED_CODES.includes(code)) return "rejected";
+  if (status === 403 && typeof code === "string" && DECISION_REFUSED_CODES.includes(code)) return "rejected";
   if (status === 401 || status === 403) return "blocked";
   if (status === 404) return "not_found";
   if (status === 409) return "conflict";
@@ -175,6 +184,8 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
       return parsed ? { ok: true, ...parsed } : { ok: false, kind: "retry", status: res.status, message: MESSAGES.server };
     }
     const { raw, detail, code } = await problemOf(res);
+    // A refused update reloads the stored copy (current: null – the caller fetches it), like a conflict.
+    if (baseRev !== null && res.status === 403 && typeof code === "string" && DECISION_REFUSED_CODES.includes(code)) return { ok: false, kind: "conflict", current: null, message: detail ?? MESSAGES.rejected };
     const kind = classifyStatus(res.status, code);
     if (kind === "conflict") return { ok: false, kind, current: readCurrent(raw), message: detail ?? MESSAGES.conflict };
     return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status) };

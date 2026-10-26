@@ -49,10 +49,15 @@ import "server-only";
  * Owner: store slice (wave 2).
  */
 import { MANAGE_ROLES, assertActorTenant, type Actor as AuthActor } from "../../auth/actor";
+import { formMapMatches } from "../../auth/attestations";
 import { verifyReceipt } from "../../auth/sign-receipt";
 import { DEMO_TENANT_ID } from "../../config.public";
 import { WORDING } from "../../core/wording";
 import { canonicalize } from "../../core/fingerprint";
+import { formToTemplate } from "../../core/forms";
+import { REPORT_MODEL } from "../../core/schemas";
+import { splitSentences } from "../../core/text/sentences";
+import { getTemplate } from "../../templates/registry";
 import { VOIDED_ADOPTION_SHA, answerSet, approverEntryLost, isClinicianBox, isClinicianGap, isSupersededBy, normaliseHcpc, supersededEntry, voidDecisionsNotBy, type BoxContext } from "../../core/provenance";
 import { StoredFormDefinitionSchema, StoredReportSchema } from "../../core/stored-schemas";
 import type { ActivityEntry, Paragraph, Report, ReportSection } from "../../core/types";
@@ -169,6 +174,25 @@ function isMember(stamp: { memberId?: string; hcpc?: string } | null | undefined
   return Boolean(m.hcpc && normaliseHcpc(stamp.hcpc) === normaliseHcpc(m.hcpc));
 }
 
+const sameName = (a: string, b: string) => a.normalize("NFKC").trim().replace(/\s+/g, " ") === b.normalize("NFKC").trim().replace(/\s+/g, " ");
+
+/** Whether the member may approve as the Studio stamps it (core/actor.ts memberActor: not staff, may sign, an HCPC number). */
+const stampMaySign = (m: StoreMember) => m.role !== "staff" && m.canSign && Boolean(m.hcpc);
+
+/**
+ * A NEW or changed stamp is the signed-in member's own (harden-WC, check2-WC minor 1): their member id (and number, as
+ * isMember) – and also the name and role the Studio stamps for them (the account's name and the member's role, the
+ * same sources the server reads: src/server/auth/studio-access.ts, medreport-actor.ts), and never "may sign" for a
+ * member who may not. So a label never names someone else ("Entered by Sarah Reid" on Pat's entry). Stamps kept as
+ * stored are not re-read: a member renamed since keeps their earlier stamps.
+ */
+function isOwnStamp(stamp: { memberId?: string; hcpc?: string; name?: string; role?: string; canSign?: boolean } | null | undefined, m: StoreMember): boolean {
+  if (!isMember(stamp, m) || !stamp) return false;
+  if (typeof stamp.name === "string" && !sameName(stamp.name, m.name)) return false;
+  if (typeof stamp.role === "string" && stamp.role !== m.role) return false;
+  return !(stamp.canSign === true && !stampMaySign(m));
+}
+
 /** The member makes the approver's decisions on this report (a report with no approver: any member who is not staff). */
 function isApprover(report: Pick<Report, "approver">, m: StoreMember): boolean {
   return report.approver ? isMember(report.approver, m) : m.role !== "staff";
@@ -187,8 +211,9 @@ const PERSON_ORIGINS: ReadonlySet<Paragraph["origin"]> = new Set<Paragraph["orig
  * Where a paragraph's text says it comes from, checked against the stored one (`b`; absent: a new paragraph – on a
  * create, everything): C-ATTR-5.
  */
-function originViolations(s: ReportSection, p: Paragraph, b: Paragraph | undefined, create: boolean): string[] {
+function originViolations(s: ReportSection, p: Paragraph, b: Paragraph | undefined, opts: { create: boolean; was?: ReportSection; redrafted: boolean }): string[] {
   const out: string[] = [];
+  const { create } = opts;
   const recordsBox = s.kind === "from_records" || s.kind === "declaration";
   const changed = !b || b.origin !== p.origin || !same(paragraphContent(p), paragraphContent(b));
   if (p.origin === "from_records" && changed) {
@@ -196,6 +221,12 @@ function originViolations(s: ReportSection, p: Paragraph, b: Paragraph | undefin
     if (!recordsBox || !create) out.push("records-origin-claimed");
   }
   if (p.origin === "staff" && changed && s.kind !== "from_records") out.push("staff-origin-misplaced");
+  // harden-WC (check2-WC minor 4): a person's paragraph whose words are exactly its drafted wording is drafted text –
+  // never added as a person's (on a create, or as a new paragraph): the review turns such text back into drafted text.
+  if (!b && PERSON_ORIGINS.has(p.origin) && p.originalText !== undefined && p.text === p.originalText) out.push("drafted-origin-relabelled");
+  // harden-WC (check2-WC minor 5): drafted text appears on an update only where drafting fills a box that was waiting
+  // for it, or where "Split it out" moves drafted sentences out of a stored paragraph of the box (splitOutParagraph).
+  if (!b && !create && p.origin === "ai" && !opts.redrafted && !splitOutParagraph(opts.was, p)) out.push("drafted-text-added");
   if (!b) return out;
   // A person's text is never relabelled as drafted text (only put back to its drafted wording: "Revert"), and drafted
   // text becomes a person's only by a change to its words (check-WC minor 8: never verbatim drafted text as "edited").
@@ -212,8 +243,107 @@ function originViolations(s: ReportSection, p: Paragraph, b: Paragraph | undefin
 }
 
 /**
+ * A drafted paragraph "Split it out" writes (ui/components/review/reducer.ts splitOutResidue): id "<id>-d<n>" next to a
+ * stored person's paragraph <id> of the same box, with that paragraph's citations and basis, its drafted wording equal
+ * to its text, and every sentence taken from the stored paragraph's words.
+ */
+function splitOutParagraph(was: ReportSection | undefined, p: Paragraph): boolean {
+  const m = /^(.+)-d\d+$/.exec(p.id);
+  const parent = m && was ? was.paragraphs.find((x) => x.id === m[1]) : undefined;
+  if (!parent || !PERSON_ORIGINS.has(parent.origin) || p.originalText !== p.text || !p.text.trim()) return false;
+  if (!same(p.sourceIds, parent.sourceIds) || !same(p.basis, parent.basis)) return false;
+  return splitSentences(p.text, "prose").every((sp) => parent.text.includes(sp.text));
+}
+
+/**
+ * The boxes this change redrafts (core/report-factory.ts applyDraftResult): waiting for drafting in the stored copy
+ * (status "pending") and named by a drafting run the change records (a new Report.generation entry). Drafting replaces
+ * such a box whole – its drafted text, a drafted answer, and its open questions.
+ */
+function redraftedKeys(before: Report | null, after: Report): Set<string> {
+  const out = new Set<string>();
+  if (!before) return out;
+  const pending = new Set(before.sections.filter((s) => s.status === "pending").map((s) => s.key));
+  for (const g of (after.generation ?? []).slice((before.generation ?? []).length)) {
+    for (const key of g.sectionKeys ?? []) if (pending.has(key)) out.add(key);
+  }
+  return out;
+}
+
+/** What makes a box the box it is: its key, kind, printed title, form field and the condition frozen when it was made. */
+const boxIdentity = (s: ReportSection) => ({ kind: s.kind, title: s.title, fieldId: s.fieldId ?? s.key, condition: s.condition ?? null });
+
+/**
+ * harden-WC (check2-WC major A, check2-WA1 N1 option b): the boxes of a report are the report factory's, never the
+ * request's. On an update (or a create amending an approved version) every box keeps its key, kind, title, form field
+ * and frozen condition, and none is added or removed; Report.reportModel never changes. On a create the store checks
+ * them, where it holds the clinic's form map the report was started from (or the built-in template), against the boxes
+ * that map makes (`made`: kind from the fill source, title = the printed label; a drafted question the records answer –
+ * session dates, core/session-dates.ts – may be filled from the records, never an opinion box).
+ */
+function boxViolations(before: Report | null, after: Report, made: BoxContext["boxes"]): string[] {
+  const out: string[] = [];
+  if (before) {
+    const stored = new Map(before.sections.map((s) => [s.key, s]));
+    const keys = new Set(after.sections.map((s) => s.key));
+    if (after.sections.length !== keys.size || stored.size !== keys.size || before.sections.some((s) => !keys.has(s.key))) out.push("box-changed");
+    for (const s of after.sections) {
+      const was = stored.get(s.key);
+      if (was && !same(boxIdentity(s), boxIdentity(was))) out.push("box-changed");
+    }
+    if (!same(before.reportModel, after.reportModel)) out.push("report-model-changed");
+    // …and it completes the same form (or template) it was started from: the map its boxes come from.
+    const formOf = (r: Report) => ({ formId: r.form?.formId ?? null, fileSha256: r.form?.fileSha256 ?? null, mapSha256: r.form?.mapSha256 ?? null, templateId: r.templateId, templateVersion: r.templateVersion ?? null });
+    if (!same(formOf(before), formOf(after))) out.push("report-form-changed");
+    return out;
+  }
+  if (after.reportModel !== undefined && after.reportModel !== REPORT_MODEL) out.push("report-model-changed");
+  if (!made) return out;
+  const keys = new Set(after.sections.map((s) => s.key));
+  // Every box of the map is there (a built-in report may leave out a section its template marks optional).
+  const optionalSection = (b: (typeof made)[number]) => !after.form && (b as { required?: boolean }).required === false;
+  if (after.sections.length !== keys.size || made.some((b) => !keys.has(b.key) && !optionalSection(b))) out.push("box-changed");
+  const byKey = new Map(made.map((b) => [b.key, b]));
+  for (const s of after.sections) {
+    const box = byKey.get(s.key);
+    if (!box || box.title !== s.title || (s.fieldId !== undefined && s.fieldId !== s.key)) {
+      out.push("box-changed");
+      continue;
+    }
+    const recordsFill = box.kind === "ai_narrative" && s.kind === "from_records" && !isClinicianBox(after, box);
+    if (box.kind !== s.kind && !recordsFill) out.push("box-changed");
+  }
+  return out;
+}
+
+/**
+ * The stored questions (gaps) stay as stored (harden-WC, check2-WC major B): none is removed and none is rewritten apart
+ * from its resolution (who settles one is checked below) – except the open questions of a box this change redrafts,
+ * which drafting replaces. Removing a question would settle it, or leave an opinion box blank, with nobody's decision.
+ */
+function gapViolations(before: Report | null, after: Report, redrafted: ReadonlySet<string>): string[] {
+  if (!before) return [];
+  const out: string[] = [];
+  // What the question is (the keys this build knows – a key a later release wrote is never sent back by this one).
+  const core = (g: Report["gaps"][number]) => ({ sectionKey: g.sectionKey, kind: g.kind ?? null, issue: g.issue, suggestedQuestion: g.suggestedQuestion, suggestedAnswer: g.suggestedAnswer ?? null, relatedNoteIds: g.relatedNoteIds, raisedBy: g.raisedBy ?? null });
+  const now = new Map(after.gaps.map((g) => [g.id, g]));
+  for (const g of before.gaps) {
+    const replaced = redrafted.has(g.sectionKey) && !g.resolution;
+    const n = now.get(g.id);
+    if (!n) {
+      if (!replaced) out.push("gap-removed");
+    } else if (!replaced && !same(core(n), core(g))) {
+      out.push("gap-rewritten");
+    }
+  }
+  return out;
+}
+
+/**
  * The new or changed decisions in `after` – against `before`: the stored revision (an update), the approved version a
  * create amends, or null (a create: everything is new) – that the member may not record. Codes only.
+ * `ctx`: the boxes as the report factory makes them (the clinic's form map the report was started from, or the built-in
+ * template – boxContextOf), when the store holds them.
  */
 export function decisionViolations(
   before: Report | null,
@@ -226,8 +356,12 @@ export function decisionViolations(
   const create = opts.create === true;
   // Who wrote a paragraph or chose an answer (not a decision): the member, or – in a case imported from the public
   // demo – the demo's fictional user, who is nobody in the clinic (what they wrote waits for the approver).
-  const author = (by: { memberId?: string; hcpc?: string }) => isMember(by, m) || (opts.demoAuthors === true && by.memberId === DEMO_MEMBER_ID);
+  const author = (by: { memberId?: string; hcpc?: string; name?: string; role?: string; canSign?: boolean }) => isOwnStamp(by, m) || (opts.demoAuthors === true && by.memberId === DEMO_MEMBER_ID);
   const approver = isApprover(after, m);
+  const redrafted = create ? new Set<string>() : redraftedKeys(before, after);
+  // What makes each box the box it is, and the questions stored about it (harden-WC majors A and B).
+  out.push(...boxViolations(before, after, ctx.boxes ?? null));
+  out.push(...gapViolations(before, after, redrafted));
   const flagsBefore = new Map((before?.flags ?? []).map((f) => [f.id, f]));
   // Paragraphs whose words or citations this change rewrote.
   const rewritten = new Set<string>();
@@ -241,45 +375,52 @@ export function decisionViolations(
   for (const f of after.flags ?? []) {
     const ack = f.acknowledged;
     if (!ack) continue;
-    const was = flagsBefore.get(f.id)?.acknowledged;
-    if (was && was.reason === ack.reason && was.at === ack.at && same(was.by, ack.by)) {
+    const stored = flagsBefore.get(f.id);
+    const was = stored?.acknowledged;
+    if (stored && was && was.reason === ack.reason && was.at === ack.at && same(was.by, ack.by)) {
+      // A kept acknowledgement stays on the check it was made on (harden-WC, check2-WC major C): the paragraph, box and
+      // question are the stored flag's – the flag id names them – never the request's.
+      const where = (x: typeof f) => ({ code: x.code, sectionKey: x.sectionKey ?? null, paragraphId: x.paragraphId ?? null, gapId: x.gapId ?? null });
+      if (!same(where(f), where(stored))) out.push("acknowledgement-moved");
       // Someone else's acknowledgement covered the words as they were: it does not survive this member rewriting them.
-      if (f.paragraphId && rewritten.has(f.paragraphId) && ack.by && !isMember(ack.by, m)) out.push("acknowledgement-stale");
+      if (stored.paragraphId && rewritten.has(stored.paragraphId) && ack.by && !isMember(ack.by, m)) out.push("acknowledgement-stale");
       continue;
     }
-    if (ack.by && !isMember(ack.by, m)) out.push("acknowledged-by-other");
+    if (ack.by && !isOwnStamp(ack.by, m)) out.push("acknowledged-by-other");
     else if (f.code === "APPROVER_DECISION") out.push("approver-decision-acknowledged");
     else if (ackPolicyOf(f, after) === "approver" && !approver) out.push("acknowledgement-approver-only");
   }
   for (const s of after.sections ?? []) {
     const was = before?.sections.find((x) => x.key === s.key);
     const clinician = isClinicianBox(after, s, ctx);
+    const redraft = redrafted.has(s.key);
     for (const p of s.paragraphs) {
       const b = was?.paragraphs.find((x) => x.id === p.id);
       const contentChanged = !b || !same(paragraphContent(p), paragraphContent(b));
       if (p.by && (contentChanged || !same(p.by, b?.by)) && !author(p.by) && !(b && !contentChanged && p.origin !== b.origin)) out.push("paragraph-by-other");
-      if (p.ownWords && !same(p.ownWords, b?.ownWords) && (!isMember(p.ownWords.by, m) || !approver)) out.push("own-words-approver-only");
+      if (p.ownWords && !same(p.ownWords, b?.ownWords) && (!isOwnStamp(p.ownWords.by, m) || !approver)) out.push("own-words-approver-only");
       if (p.ackReason && p.ackReason !== b?.ackReason && after.approver && !approver) out.push("acknowledgement-approver-only");
       // A paragraph's acknowledgement reason covered its words: someone else's change to them does not keep it.
       if (p.ackReason && b && b.ackReason === p.ackReason && contentChanged && after.approver && !approver) out.push("acknowledgement-stale");
       const nowClinician = p.origin === "clinician" && (!b || b.origin !== "clinician" || contentChanged);
       if (nowClinician && after.approver && !approver) out.push("clinician-text-approver-only");
-      out.push(...originViolations(s, p, b, create && !before));
+      out.push(...originViolations(s, p, b, { create: create && !before, was, redrafted: redraft }));
     }
     if (s.answer && !same(s.answer, was?.answer) && s.answerBy && !author(s.answerBy)) out.push("answer-by-other");
-    // A clinician box's answer replaced by another with no one's stamp (check-WC problem 3): the review stamps every
-    // answer a person sets, and drafting only fills an empty one – so it would read as drafted, or as the approver's.
-    if (before && was && clinician && after.approver && !approver && answerSet(was.answer) && answerSet(s.answer) && !same(s.answer, was.answer) && !s.answerBy) out.push("answer-unstamped");
+    // A clinician box's answer set or replaced with no one's stamp (check-WC problem 3; harden-WC, check2-WC major B: an
+    // empty box filled too): the review stamps every answer a person sets, and drafting fills only a box that waits for
+    // it – so it would read as drafted, or as the approver's.
+    if (before && was && clinician && after.approver && !approver && answerSet(s.answer) && !same(s.answer, was.answer) && !s.answerBy && !redraft) out.push("answer-unstamped");
     // Anyone's change voids the approver's adoption (the review writes VOIDED_ADOPTION_SHA); only the approver adopts.
     const voiding = Boolean(was?.adoptedBy && s.adoptedBy && same(s.adoptedBy, { ...was.adoptedBy, contentSha: VOIDED_ADOPTION_SHA }));
-    if (s.adoptedBy && !same(s.adoptedBy, was?.adoptedBy) && !voiding && (!isMember(s.adoptedBy.by, m) || !approver)) out.push("adoption-approver-only");
+    if (s.adoptedBy && !same(s.adoptedBy, was?.adoptedBy) && !voiding && (!isOwnStamp(s.adoptedBy.by, m) || !approver)) out.push("adoption-approver-only");
     // The approver's adoption is theirs to renew or remove: someone else's change leaves it stale (the box waits for them).
     if (was?.adoptedBy && !s.adoptedBy && after.approver && !approver) out.push("adoption-removed");
     const acceptedBefore = new Set((was?.accepted ?? []).map((a) => canonicalize(a)));
-    for (const a of s.accepted ?? []) if (!acceptedBefore.has(canonicalize(a)) && (!isMember(a.by, m) || !approver)) out.push("acceptance-approver-only");
+    for (const a of s.accepted ?? []) if (!acceptedBefore.has(canonicalize(a)) && (!isOwnStamp(a.by, m) || !approver)) out.push("acceptance-approver-only");
     const d = s.disposition;
     if (d && !same(d, was?.disposition)) {
-      if (!isMember(d.by, m)) out.push("disposition-by-other");
+      if (!isOwnStamp(d.by, m)) out.push("disposition-by-other");
       else if ((clinician || d.kind === "applies_anyway") && !approver) out.push("disposition-approver-only");
     }
     const tombs = was?.tombstones ?? [];
@@ -293,7 +434,7 @@ export function decisionViolations(
     if (!r) continue;
     const was = gapsBefore.get(g.id)?.resolution;
     if (was && same({ ...was, by: undefined }, { ...r, by: undefined }) && same(was.by, r.by)) continue;
-    if (r.by && !isMember(r.by, m)) out.push("gap-by-other");
+    if (r.by && !isOwnStamp(r.by, m)) out.push("gap-by-other");
     else if (!r.notApplicable && isClinicianGap(after, g, ctx) && !approver) out.push("gap-approver-only");
   }
   if (before && !same(before.approver, after.approver)) {
@@ -301,11 +442,13 @@ export function decisionViolations(
     const takeovers = after.approverTakeovers ?? [];
     const last = takeovers[takeovers.length - 1];
     const recorded = !before.approver || (last && same(last.from, before.approver) && same(last.to, after.approver) && takeovers.length === (before.approverTakeovers?.length ?? 0) + 1);
-    if (!after.approver || !isMember(after.approver, m) || !m.canSign || !m.hcpc || !recorded) out.push("approver-changed");
+    if (!after.approver || !isOwnStamp(after.approver, m) || !m.canSign || !m.hcpc || !recorded) out.push("approver-changed");
   }
   if (before?.approver && after.approver && !same(before.approver, after.approver) && takeoverKeepsOthers(before, after, m, ctx)) out.push("takeover-not-voided");
-  if (!before && after.approver && after.approver.memberId === m.memberId && (!m.canSign || !m.hcpc || !isMember(after.approver, m))) out.push("approver-claimed");
+  if (!before && after.approver && after.approver.memberId === m.memberId && (!m.canSign || !m.hcpc || !isOwnStamp(after.approver, m))) out.push("approver-claimed");
   if (before && !same((after.approverTakeovers ?? []).slice(0, (before.approverTakeovers ?? []).length), before.approverTakeovers ?? [])) out.push("takeovers-rewritten");
+  // harden-WC (check2-WC minor 3): a new report has had no takeover – the receipt of its approval would repeat a made-up one.
+  if (!before && (after.approverTakeovers ?? []).length > 0) out.push("takeovers-claimed");
   // "Superseded" entries are the server's (markSuperseded): a client never adds one (check-WC minor 7).
   const kept = new Set((before?.activity ?? []).map((e) => canonicalize(e)));
   if ((after.activity ?? []).some((e) => e.action === "superseded" && !kept.has(canonicalize(e)))) out.push("superseded-by-client");
@@ -374,16 +517,23 @@ function importedFromDemo(report: Report, m: StoreMember): Report {
     delete open.acknowledged;
     return open;
   });
-  return { ...report, sections, gaps, flags, activity: report.activity.filter((e) => e.action !== "superseded") };
+  // No takeover happened in this clinic (harden-WC, check2-WC minor 3): the demo's own are not kept.
+  const imported: Report = { ...report, sections, gaps, flags, activity: report.activity.filter((e) => e.action !== "superseded") };
+  delete imported.approverTakeovers;
+  return imported;
 }
 
-/** The approved version a create amends (report.amends, stored in this clinic) – the base its decisions are checked against. */
+/**
+ * The approved version a create amends (report.amends, stored in this clinic) – the base its decisions are checked
+ * against. Only an APPROVED report is a base (harden-WC, check2-WC minor 2): an amendment starts from an approval; a
+ * "version 2" of a draft is checked as all-new, so it carries none of the draft's decisions.
+ */
 async function amendedBase(t: TenantActor, report: Report): Promise<Report | null> {
   const id = report.amends?.reportId;
   if (!id || id === report.id) return null;
   const row = await t.store.getReport(t.tenantId, id).catch(() => null);
   const parsed = row ? StoredReportSchema.safeParse(row.payload) : null;
-  return parsed?.success ? parsed.data : null;
+  return parsed?.success && parsed.data.status === "signed" ? parsed.data : null;
 }
 
 /** An activity entry the server wrote (version 1's "superseded"): a client's older copy may lack it. */
@@ -414,12 +564,22 @@ function lockedActivity(before: Report, after: Report): ActivityEntry[] | null {
   return [...merged, ...after.activity.slice(i)];
 }
 
-/** The form map a form report was started from, for the clinician-box rules (null when it cannot be read). */
+/**
+ * The boxes as the report factory makes them, for the box and clinician-box rules (harden-WC, check2-WC major A): from
+ * the clinic's stored form map – only the very map the report was started from (report.form.mapSha256, which the
+ * approval binds) – or, for a built-in report, the template of the same version. Empty when the store holds neither:
+ * /validate and /sign then read the boxes from the attested map they are sent (core/validation/approver-decision.ts).
+ */
 async function boxContextOf(t: TenantActor, report: Report): Promise<BoxContext> {
-  if (!report.form?.formId) return {};
-  const row = await t.store.getForm(t.tenantId, report.form.formId).catch(() => null);
-  const parsed = row ? StoredFormDefinitionSchema.safeParse(row.payload) : null;
-  return parsed?.success ? { fields: parsed.data.fields } : {};
+  if (report.form?.formId) {
+    if (!report.form.mapSha256) return {};
+    const row = await t.store.getForm(t.tenantId, report.form.formId).catch(() => null);
+    const parsed = row ? StoredFormDefinitionSchema.safeParse(row.payload) : null;
+    if (!parsed?.success || !formMapMatches(parsed.data, report.form.mapSha256)) return {};
+    return { fields: parsed.data.fields, boxes: formToTemplate(parsed.data).sections };
+  }
+  const template = getTemplate(report.templateId);
+  return template && template.version === report.templateVersion ? { boxes: template.sections } : {};
 }
 
 /**
@@ -514,7 +674,8 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
     logEvent("store_decision_refused", { id, count: violations.length, first: violations[0] });
     return problem(403, "This change cannot be saved as yours", {
       code: "DECISION_NOT_ALLOWED",
-      detail: "It records a decision as someone else, or a decision only the approving clinician can make. Reload the report and try again.",
+      // An update is refused whole and the Studio loads the stored copy (ui/store/server-api.ts DECISION_REFUSED_CODES).
+      detail: `It records a decision as someone else, or a decision only the approving clinician can make, or it changes what the report is.${ifMatch === null ? "" : " The clinic's stored copy was loaded."}`,
     });
   }
   let toStore: Report = checked;

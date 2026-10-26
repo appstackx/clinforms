@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import {
   OPINION_BOX_WORDING,
   actsAsApprover,
+  factoryBoxOf,
   approverWritten,
   boxContentSha,
   isClinicianBox,
@@ -182,5 +183,41 @@ describe("amendments", () => {
   it("version 1's superseded entry names version 2 and its approval date, never a raw id in its words", () => {
     const e = supersededEntry({ id: "rpt_abc_v2", version: 2, receipt: { signedAt: "2026-10-27T10:00:00.000Z", signer: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } as never });
     assert.deepEqual(e, { at: "2026-10-27T10:00:00.000Z", actor: "Sarah Reid", action: "superseded", detail: "Superseded by version 2 (approved 27/10/2026).", reportId: "rpt_abc_v2" });
+  });
+});
+
+describe("harden-WC (check2-WC): what the map says a box is, and answers nobody vouches for", () => {
+  const fields = [
+    { id: "F-10", label: "Prognosis", guidance: "", fillSource: { kind: "clinician_opinion" } },
+    { id: "F-31", label: "History of the injury", guidance: "", fillSource: { kind: "notes_narrative" } },
+    { id: "F-02", label: "Date of birth", guidance: "", fillSource: { kind: "registration", path: "patient.dob" } },
+  ] as never;
+  it("a box relabelled in the body is still the opinion box its form map (or template) says it is", () => {
+    const relabelled = { key: "F-10", kind: "from_records" as const, title: "Notes" };
+    assert.equal(isClinicianBox({ gaps: [] }, relabelled), false, "read from the body alone");
+    assert.equal(isClinicianBox({ gaps: [] }, relabelled, { fields }), true, "the map's fill source");
+    assert.equal(isClinicianBox({ gaps: [] }, { key: "F-31", kind: "ai_narrative", title: "Notes" }, { boxes: [{ key: "F-31", kind: "ai_narrative", title: "Expected date of return to work" }] }), true, "the template's printed title");
+    assert.deepEqual(factoryBoxOf({ fields }, "F-10"), { key: "F-10", kind: "clinician_opinion", title: "Prognosis" });
+    assert.equal(factoryBoxOf({ fields }, "F-99"), null);
+    // A box as the factory made it reads exactly as before, with or without the map.
+    for (const f of [{ key: "F-10", kind: "clinician_opinion" as const, title: "Prognosis" }, { key: "F-31", kind: "ai_narrative" as const, title: "History of the injury" }, { key: "F-02", kind: "from_records" as const, title: "Date of birth" }]) {
+      assert.equal(isClinicianBox({ gaps: [] }, f, { fields }), isClinicianBox({ gaps: [] }, f), f.key);
+    }
+  });
+  it("an answer in a clinician box that no stamp, no drafted text, no record and no open question backs is a proposal", () => {
+    const report = { approver: APPROVER, gaps: [] as Gap[] };
+    const date = { kind: "date" as const, value: "2026-12-01" };
+    const bare = section([], { key: "F-09", title: "Expected date of a full return", kind: "ai_narrative", answer: date });
+    assert.equal(pendingProposal(report, bare)?.summary, "Entered by someone other than the approving clinician");
+    assert.equal(pendingProposal(report, { ...bare, answerBy: SARAH }), null, "the approver's own answer");
+    assert.equal(pendingProposal(report, { ...bare, paragraphs: [p("He expects to be back at work by 01/12/2026.", "ai")] }), null, "a drafted answer with its drafted text");
+    assert.equal(pendingProposal(report, { ...bare, paragraphs: [p("He expects to be back by 01/12/2026.", "clinician")] }), null, "the clinician's own words");
+    assert.equal(pendingProposal(report, { ...bare, kind: "from_records" }), null, "filled from the records");
+    const open: Gap = { id: "gap-F-09-cite", sectionKey: "F-09", issue: "The drafted answer cites no source.", suggestedQuestion: "?", relatedNoteIds: [], raisedBy: "system" };
+    assert.equal(pendingProposal({ ...report, gaps: [open] }, bare), null, "a drafted answer that cites nothing waits behind its open question");
+    const settledByStaff = { ...open, resolution: { kind: "acknowledged" as const, text: "Fine.", at: "2026-10-21T09:00:00.000Z", notApplicable: true } };
+    assert.ok(pendingProposal({ ...report, gaps: [settledByStaff] }, bare), "a question settled by nobody's decision backs nothing");
+    const settledBySarah = { ...open, resolution: { kind: "resolved" as const, text: "Confirmed.", at: "2026-10-21T09:00:00.000Z", by: SARAH } };
+    assert.equal(pendingProposal({ ...report, gaps: [settledBySarah] }, bare), null);
   });
 });

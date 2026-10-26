@@ -608,8 +608,11 @@ export function stampDecisions(before: Report, after: Report, actor: Actor): Rep
       }
       q.by = by;
       if (b && q.text !== b.text && q.ownWords && sameJson(q.ownWords, b.ownWords)) delete q.ownWords;
-      // A paragraph's acknowledgement reason covered its words as they were: changed words are acknowledged again.
-      if (b && q.text !== b.text && q.ackReason !== undefined && q.ackReason === b.ackReason) delete q.ackReason;
+      // A paragraph's acknowledgement reason covered its content as it was – its words, citations and drafted wording,
+      // as the store compares them (api/handlers/store-reports.ts paragraphContent; harden-WC, check2-WC minor 7):
+      // changed content is acknowledged again.
+      const contentChanged = Boolean(b) && (q.text !== b!.text || !sameJson(q.sourceIds, b!.sourceIds) || !sameJson(q.originalText ?? null, b!.originalText ?? null) || !sameJson(q.basis ?? null, b!.basis ?? null));
+      if (contentChanged && q.ackReason !== undefined && q.ackReason === b!.ackReason) delete q.ackReason;
       return q;
     });
     if (paragraphs.some((p, i) => p !== s.paragraphs[i])) next = { ...next, paragraphs };

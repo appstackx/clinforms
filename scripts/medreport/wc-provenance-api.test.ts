@@ -23,11 +23,12 @@ import type { Report, ReportFlag } from "../../src/modules/medreport/core/types"
 import { canSign, validateReport } from "../../src/modules/medreport/core/validation";
 import { boxContentSha } from "../../src/modules/medreport/core/provenance";
 import { buildCase, ownerOf, type Built } from "../../src/modules/medreport/core/validation/__corpus__/harness/build";
-import { actorOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
+import { CORPUS_TENANT, actorOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
 import { createHttpHarness, getStoredReport, postSign, putStoredReport, type HttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { CaseInputSchema } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
 import { reviewReducer } from "../../src/modules/medreport/ui/components/review/use-review-state";
 import { createAmendedVersion } from "../../src/modules/medreport/ui/components/review/review-model";
+import { classifyStatus, createServerApi } from "../../src/modules/medreport/ui/store/server-api";
 
 const SARAH = actorOf("sarah");
 /** The corpus clinic signs each fictional member in with the account id the Studio stamps (harness/http.ts). */
@@ -431,4 +432,245 @@ test("a case imported from the public demo keeps none of the demo's decisions; i
   // Nobody in the clinic is the demo's approver: /sign refuses until a member who may approve takes over.
   const b = await opinionReport();
   assert.equal((await postSign(h, { report: stored, template: b.template, form: b.form, signer: "sarah", mode: "tenant" })).status, 409);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * harden-WC (second independent review, check2-WC of 93620cf): what the report is, provenance by omission, the
+ * acknowledged paragraph, stamps' names, creates' bases and takeovers, verbatim drafted text, injected drafted text,
+ * and the Studio's handling of a refusal. Each crafted request is refused; what the review itself writes is stored.
+ * ----------------------------------------------------------------------------------------------*/
+
+const PAT_STAMP = { memberId: PAT.memberId, name: PAT.name, role: PAT.role, canSign: false };
+const CITED = "Settling well with his home exercise programme.";
+
+/** The form map the report was started from, in the clinic's store (as the Studio keeps it). */
+async function storeForm(h: HttpHarness, form: NonNullable<Built["form"]>): Promise<void> {
+  await h.store.createForm(CORPUS_TENANT, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: null, payload: form });
+}
+
+/** A report as the factory hands it to a member: nobody's stamps, no person's text. */
+function factoryCopy(r: Report): Report {
+  return {
+    ...r,
+    sections: r.sections.map((s) => {
+      const n = { ...s, paragraphs: s.paragraphs.filter((p) => p.origin === "ai" || p.origin === "from_records") };
+      delete n.answerBy;
+      delete n.adoptedBy;
+      return n;
+    }),
+    flags: [],
+  };
+}
+
+test("harden-WC major A: on an update every box keeps its kind, title, field, frozen condition and place; the report its model and form", async () => {
+  const b = await formCase({ "F-10": [] });
+  const h = createHttpHarness();
+  const rev = await seed(h, b.v);
+  const staffProg = { id: "F-10-c1", text: "He will make a full recovery within 6 weeks.", sourceIds: [], origin: "staff" as const, by: PAT_STAMP as never };
+  // N1a: the Prognosis box relabelled as a records box, holding staff's prognosis.
+  const n1a = mapBox(b.v, "F-10", (s) => ({ ...s, kind: "from_records" as const, title: "Notes", paragraphs: [staffProg] }));
+  assert.equal((await putStoredReport(h, n1a, "pat", rev)).status, 403);
+  // N1b: relabelled as a narrative box with a cited, edited prognosis.
+  const n1b = mapBox(b.v, "F-10", (s) => ({ ...s, kind: "ai_narrative" as const, title: "Notes", paragraphs: [{ id: "F-10-c1", text: CITED, sourceIds: ["N-001"], origin: "edited" as const, by: PAT_STAMP as never }] }));
+  assert.equal((await putStoredReport(h, n1b, "pat", rev)).status, 403);
+  // Nobody relabels a box – not the approver either – nor moves it to another field, removes or adds one.
+  assert.equal((await putStoredReport(h, mapBox(b.v, "F-10", (s) => ({ ...s, title: "Notes" })), "sarah", rev)).status, 403);
+  assert.equal((await putStoredReport(h, mapBox(b.v, "F-10", (s) => ({ ...s, fieldId: "F-31" })), "sarah", rev)).status, 403);
+  assert.equal((await putStoredReport(h, { ...b.v, sections: b.v.sections.filter((s) => s.key !== "F-10") }, "pat", rev)).status, 403);
+  assert.equal((await putStoredReport(h, { ...b.v, sections: [...b.v.sections, { key: "F-99", title: "Notes", kind: "ai_narrative" as const, status: "drafted" as const, paragraphs: [] }] }, "pat", rev)).status, 403);
+  // check2-WA1 N1 (b): a frozen condition, the report model and the form it completes never change after a create.
+  const conditioned = mapBox(b.v, "F-10", (s) => ({ ...s, condition: { controllers: ["F-05"], wants: "yes", parser: "conditions-1" } }));
+  assert.equal((await putStoredReport(h, conditioned, "pat", rev)).status, 403);
+  const legacy = { ...b.v };
+  delete legacy.reportModel;
+  assert.equal((await putStoredReport(h, legacy, "sarah", rev)).status, 403);
+  assert.equal((await putStoredReport(h, { ...b.v, form: { ...b.v.form!, mapSha256: "0".repeat(64) } }, "sarah", rev)).status, 403);
+  // N1d': Sarah's lifting restriction relabelled and reversed under Pat's stamp, her adoption kept – refused.
+  const h2 = createHttpHarness();
+  const sarahs = revalidate(b, reviewReducer(b.v, { type: "setAnswer", key: "F-15", value: true, actor: SARAH as never }));
+  const rev2 = await seed(h2, sarahs);
+  const n1d = mapBox(sarahs, "F-15", (s) => ({ ...s, kind: "from_records" as const, title: "Lifting", answer: { ...s.answer!, value: false }, answerBy: PAT_STAMP as never }));
+  assert.equal((await putStoredReport(h2, n1d, "pat", rev2)).status, 403);
+  // The same change as the review writes it (no relabel): stored, and a proposal Sarah must adopt.
+  const viaReview = revalidate(b, reviewReducer(sarahs, { type: "setAnswer", key: "F-15", value: false, actor: PAT as never }));
+  assert.equal((await putStoredReport(h2, viaReview, "pat", rev2)).status, 200);
+  assert.ok(proposalOn(viaReview, "F-15"));
+});
+
+test("harden-WC major A on a create: checked against the clinic's stored map; without it, /validate and /sign read the box from the attested map", async () => {
+  const b = await formCase({ "F-10": [] });
+  const prognosis = (r: Report) => mapBox(r, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: CITED, sourceIds: ["N-001"], origin: "edited" as const, by: PAT_STAMP as never }] }));
+  const relabel = (r: Report) => mapBox(prognosis(r), "F-10", (s) => ({ ...s, kind: "ai_narrative" as const, title: "Notes" }));
+  const fresh = factoryCopy(b.v);
+  const h = createHttpHarness();
+  await storeForm(h, b.form!);
+  assert.equal((await putStoredReport(h, { ...relabel(fresh), id: "rpt_relabel" }, "pat", null)).status, 403, "N1c': a relabelled box against the stored map");
+  const plain = await putStoredReport(h, { ...prognosis(fresh), id: "rpt_plain" }, "pat", null);
+  assert.equal(plain.status, 201, JSON.stringify(plain.body));
+  assert.equal((await putStoredReport(h, { ...fresh, id: "rpt_missing", sections: fresh.sections.filter((s) => s.key !== "F-10") }, "pat", null)).status, 403, "a box of the map left out");
+  // The map not in this clinic's store: stored as sent, but the box is still the map's opinion box everywhere it is checked.
+  const h2 = createHttpHarness();
+  const res = await putStoredReport(h2, { ...relabel(fresh), id: "rpt_relabel" }, "pat", null);
+  assert.equal(res.status, 201);
+  const v = revalidate(b, (res.body as { report: Report }).report);
+  assert.ok(proposalOn(v, "F-10"), "APPROVER_DECISION on the relabelled box");
+  assert.equal((await postSign(h2, { report: v, template: b.template, form: b.form, signer: "sarah", mode: "tenant" })).status, 409);
+});
+
+test("harden-WC major B: an answer set with no stamp, and a question removed or rewritten, are refused; a redraft of a waiting box is stored", async () => {
+  // N3: the empty clinician box "Expected date of a full return" (F-09) filled with no stamp.
+  const b = await formCase({});
+  const h = createHttpHarness();
+  const rev = await seed(h, b.v);
+  const date = (by?: unknown) => mapBox(b.v, "F-09", (s) => ({ ...s, answer: { kind: "date" as const, value: "2026-12-01" }, status: "complete" as const, ...(by ? { answerBy: by as never } : {}) }));
+  assert.equal((await putStoredReport(h, date(), "pat", rev)).status, 403, "N3");
+  const stamped = await putStoredReport(h, date(PAT_STAMP), "pat", rev);
+  assert.equal(stamped.status, 200);
+  assert.ok(proposalOn(revalidate(b, date(PAT_STAMP)), "F-09"), "staff's own date is a proposal");
+  // …and wherever such an answer is stored anyway (e.g. a create), it is a proposal, not nobody's.
+  const bare = revalidate(b, date());
+  assert.ok(proposalOn(bare, "F-09"));
+  assert.equal(canSign(bare.flags, bare.gaps).ok, false);
+  // N2 / N3b: the open clinician question on F-11 deleted (with an unstamped answer, or without one).
+  const g = await formCase({}, { box: "F-11", gaps: [{ box: "F-11", issue: "No clinician recorded an expected recovery time." }] });
+  const h2 = createHttpHarness();
+  const rev2 = await seed(h2, g.v);
+  const noGap = (r: Report) => ({ ...r, gaps: r.gaps.filter((x) => x.sectionKey !== "F-11"), flags: r.flags.filter((f) => f.sectionKey !== "F-11") });
+  assert.equal((await putStoredReport(h2, noGap(g.v), "pat", rev2)).status, 403, "N2");
+  assert.equal((await putStoredReport(h2, noGap(g.v), "sarah", rev2)).status, 403, "the approver settles it – she does not delete it");
+  assert.equal((await putStoredReport(h2, noGap(mapBox(g.v, "F-11", (s) => ({ ...s, answer: { ...s.answer!, value: "6-12 months" } }))), "pat", rev2)).status, 403, "N3b");
+  const rekinded = { ...g.v, gaps: g.v.gaps.map((x) => (x.sectionKey === "F-11" ? { ...x, kind: "staff_entry" as const } : x)) };
+  assert.equal((await putStoredReport(h2, rekinded, "pat", rev2)).status, 403, "a question relabelled as staff's");
+  // N2b: the open question of the optional opinion box F-08 deleted – it would print blank with nobody's decision.
+  const o = await formCase({}, { box: "F-08", answers: { "F-07": false }, gaps: [{ box: "F-08", issue: "No clinician recorded an expected date back at work." }] });
+  const h3 = createHttpHarness();
+  const rev3 = await seed(h3, o.v);
+  assert.equal((await putStoredReport(h3, { ...o.v, gaps: o.v.gaps.filter((x) => x.sectionKey !== "F-08") }, "pat", rev3)).status, 403, "N2b");
+  // Drafting a box that waits for it (as "Draft the remaining questions" does) replaces its answer, text and questions: stored.
+  const p = createHttpHarness();
+  const fresh = await formCase({});
+  const pendingKey = fresh.v.sections.find((s) => s.status === "pending" && s.answer && s.answer.kind === "date")?.key ?? fresh.v.sections.find((s) => s.status === "pending")!.key;
+  const revP = await seed(p, fresh.v);
+  const target = fresh.v.sections.find((s) => s.key === pendingKey)!;
+  const drafted = reviewReducer(fresh.v, {
+    type: "applyDraft",
+    result: {
+      sections: [{ key: pendingKey, title: target.title, kind: target.kind, status: "drafted", fieldId: pendingKey, paragraphs: [{ id: `${pendingKey}-p1`, text: CITED, sourceIds: ["N-001"], origin: "ai", originalText: CITED }], ...(target.answer ? { answer: { kind: target.answer.kind, value: target.answer.kind === "date" ? "2026-03-12" : null } } : {}) }],
+      gaps: [{ id: `gap-${pendingKey}-d1`, sectionKey: pendingKey, issue: "No clinician recorded an opinion.", suggestedQuestion: "?", relatedNoteIds: [], raisedBy: "ai" }],
+      flags: [],
+      generation: { mode: "demo_prewritten", model: "demo", promptVersion: "test", at: fresh.v.updatedAt, sectionKeys: [pendingKey] },
+    } as never,
+  });
+  // The same drafted content with no drafting run recorded: refused (drafted text added by hand).
+  assert.equal((await putStoredReport(p, { ...drafted, generation: fresh.v.generation }, "pat", revP)).status, 403);
+  const put = await putStoredReport(p, drafted, "pat", revP);
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+});
+
+test("harden-WC major C: a kept acknowledgement stays on the paragraph the stored check names", async () => {
+  const b = await formCase({ "F-31": [{ text: "He hurt his back lifting a box at work on 12/03/2026.", cites: ["N-001"] }] });
+  const pid = b.v.sections.find((s) => s.key === "F-31")!.paragraphs[0].id;
+  let r = revalidate(b, reviewReducer(b.v, { type: "editParagraph", key: "F-31", paragraphId: pid, text: "He hurt his back lifting a box at work. In my opinion he is fit for full duties.", actor: SARAH as never }));
+  const op = r.flags.find((f) => f.sectionKey === "F-31" && f.code === "OPINION_LANGUAGE")!;
+  assert.ok(op);
+  r = revalidate(b, reviewReducer(r, { type: "acknowledgeFlag", flagId: op.id, reason: "My own clinical opinion.", actor: SARAH as never }));
+  const h = createHttpHarness();
+  const rev = await seed(h, r);
+  const patText = "He hurt his back lifting a box at work. In my opinion he is fit for full duties and needs no further treatment.";
+  const rewritten = mapBox(r, "F-31", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => {
+    if (p.id !== pid) return p;
+    const q = { ...p, text: patText, by: PAT_STAMP as never };
+    delete q.ackReason;
+    return q;
+  }) }));
+  // N4b: the flag's paragraph blanked in the body.
+  const blanked = { ...rewritten, flags: rewritten.flags.map((f) => { if (f.id !== op.id) return f; const g = { ...f }; delete g.paragraphId; return g; }) };
+  assert.equal((await putStoredReport(h, blanked, "pat", rev)).status, 403);
+  // …or pointed at another paragraph.
+  assert.equal((await putStoredReport(h, { ...rewritten, flags: rewritten.flags.map((f) => (f.id === op.id ? { ...f, paragraphId: "elsewhere" } : f)) }, "pat", rev)).status, 403);
+  // As the review writes Pat's rewrite (the acknowledgement dropped): stored, and the check is open again.
+  const viaReview = revalidate(b, reviewReducer(r, { type: "editParagraph", key: "F-31", paragraphId: pid, text: patText, actor: PAT as never }));
+  assert.equal((await putStoredReport(h, viaReview, "pat", rev)).status, 200);
+  assert.ok(viaReview.flags.some((f) => f.sectionKey === "F-31" && f.code === "OPINION_LANGUAGE" && !f.acknowledged));
+});
+
+test("harden-WC minor 1: a new stamp carries the member's own name and role, and 'may sign' only for a member who may", async () => {
+  const b = await formCase({ "F-10": [] });
+  const h = createHttpHarness();
+  const rev = await seed(h, b.v);
+  const withBy = (by: unknown) => mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: CITED, sourceIds: ["N-001"], origin: "edited" as const, by: by as never }] }));
+  assert.equal((await putStoredReport(h, withBy({ ...PAT_STAMP, name: "Sarah Reid", role: "owner", canSign: true }), "pat", rev)).status, 403, "N5");
+  assert.equal((await putStoredReport(h, withBy({ ...PAT_STAMP, name: "Sarah Reid" }), "pat", rev)).status, 403);
+  assert.equal((await putStoredReport(h, withBy({ ...PAT_STAMP, role: "clinician" }), "pat", rev)).status, 403);
+  assert.equal((await putStoredReport(h, withBy({ ...PAT_STAMP, canSign: true }), "pat", rev)).status, 403);
+  const own = await putStoredReport(h, withBy(PAT_STAMP), "pat", rev);
+  assert.equal(own.status, 200);
+  const label = revalidate(b, (own.body as { report: Report }).report).flags.find((f) => f.sectionKey === "F-10" && f.code === "APPROVER_DECISION");
+  assert.match(label?.message ?? "", /^Entered by Pat Morgan \(staff\)/);
+});
+
+test("harden-WC minors 2 and 3: a create's base is an approved version; a new report has had no takeover", async () => {
+  const { validated } = await opinionReport();
+  const flag = opinionFlag(validated);
+  const h = createHttpHarness();
+  const draft = withAck(validated, flag.id, SARAH);
+  await seed(h, draft);
+  // N7: "version 2" of Sarah's draft, carrying her acknowledgement – checked as all-new, so refused.
+  const v2 = { ...draft, id: "rpt_n7", version: 2, amends: { reportId: draft.id, version: 1, approvedAt: draft.updatedAt } };
+  assert.equal((await putStoredReport(h, v2, "pat", null)).status, 403);
+  // N7b': a made-up takeover on a new report – its approval receipt would repeat it.
+  const b = await formCase({});
+  const tom = { memberId: TOM.memberId, name: TOM.name, hcpc: TOM.hcpc! };
+  const invented = { ...factoryCopy(b.v), id: "rpt_n7c", approverTakeovers: [{ from: tom, to: b.v.approver!, at: b.v.updatedAt }] } as Report;
+  assert.equal((await putStoredReport(h, invented, "pat", null)).status, 403);
+  // A case imported from the public demo keeps none of the demo's takeovers.
+  const demoApprover = { memberId: "demo", name: "Dr Demo", hcpc: "PH-DEMO-09" };
+  const demo = { ...factoryCopy(b.v), id: "rpt_demo_t", tenantId: "demo", approver: demoApprover, approverTakeovers: [{ from: demoApprover, to: demoApprover, at: b.v.updatedAt }] } as Report;
+  const imported = await putStoredReport(h, demo, "pat", null);
+  assert.equal(imported.status, 201, JSON.stringify(imported.body));
+  assert.equal((imported.body as { report: Report }).report.approverTakeovers, undefined);
+});
+
+test("harden-WC minors 4 and 5: verbatim drafted text is never a person's; drafted text appears only by drafting or 'Split it out'", async () => {
+  const D8 = "In my opinion he is fit for full duties.";
+  const b = await formCase({ "F-31": [{ text: D8, cites: ["N-001"] }] });
+  const h = createHttpHarness();
+  // M8c: a create holding drafted wording labelled as a person's edit (text = its drafted wording).
+  const m8c = { ...mapBox(factoryCopy(b.v), "F-31", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "edited" as const, originalText: p.text, by: PAT_STAMP as never })) })), id: "rpt_m8c" };
+  assert.equal((await putStoredReport(h, m8c, "pat", null)).status, 403);
+  // The same as a new paragraph on an update.
+  const rev = await seed(h, b.v);
+  const added = mapBox(b.v, "F-31", (s) => ({ ...s, paragraphs: [...s.paragraphs, { id: "F-31-c9", text: D8, sourceIds: ["N-001"], origin: "edited" as const, originalText: D8, by: PAT_STAMP as never }] }));
+  assert.equal((await putStoredReport(h, added, "pat", rev)).status, 403);
+  // AI1: a new paragraph labelled as drafted text in Sarah's prognosis box.
+  const ai1 = mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [...s.paragraphs, { id: "F-10-p9", text: CITED, sourceIds: ["N-001"], origin: "ai" as const, originalText: CITED }] }));
+  assert.equal((await putStoredReport(h, ai1, "pat", rev)).status, 403);
+  // "Split it out" by the approver: the drafted sentence kept in her paragraph moves into a drafted paragraph – stored.
+  const DRAFT = "He is expected to make a full recovery within 6 weeks of the accident.";
+  const s = await formCase({ "F-10": [{ text: `In my opinion his back should settle with exercise. ${DRAFT}`, cites: ["N-001"], origin: "edited", originalText: DRAFT, by: "sarah" }] });
+  const h2 = createHttpHarness();
+  const rev2 = await seed(h2, s.v);
+  const pid = s.v.sections.find((x) => x.key === "F-10")!.paragraphs[0].id;
+  const split = reviewReducer(s.v, { type: "splitOutResidue", key: "F-10", paragraphId: pid, actor: SARAH as never });
+  assert.notEqual(split, s.v);
+  // A "split" paragraph whose words were never in the paragraph it names: refused.
+  const fake = mapBox(s.v, "F-10", (x) => ({ ...x, paragraphs: [...x.paragraphs, { id: `${pid}-d1`, text: "He has fully recovered.", sourceIds: ["N-001"], origin: "ai" as const, originalText: "He has fully recovered." }] }));
+  assert.equal((await putStoredReport(h2, fake, "sarah", rev2)).status, 403);
+  const res = await putStoredReport(h2, split, "sarah", rev2);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+});
+
+test("harden-WC minor 6: the Studio never reads the store's refusal as a lost sign-in – an update reloads the stored copy", async () => {
+  const problemBody = JSON.stringify({ type: "about:blank", title: "This change cannot be saved as yours", status: 403, code: "DECISION_NOT_ALLOWED", detail: "It records a decision as someone else." });
+  const fake = (async () => new Response(problemBody, { status: 403, headers: { "content-type": "application/problem+json" } })) as typeof fetch;
+  const api = createServerApi(fake);
+  const { validated } = await opinionReport();
+  const update = await api.putReport(validated, 3);
+  assert.equal(update.ok, false);
+  assert.equal(!update.ok && update.kind, "conflict", "reloaded like a conflict, never queued for sign-in");
+  const create = await api.putReport(validated, null);
+  assert.equal(!create.ok && create.kind, "rejected");
+  assert.equal(classifyStatus(403, "DECISION_NOT_ALLOWED"), "rejected");
+  assert.equal(classifyStatus(403, "REPORT_LOCKED"), "rejected");
+  assert.equal(classifyStatus(403, "SOMETHING_ELSE"), "blocked");
 });

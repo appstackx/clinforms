@@ -36,6 +36,7 @@ import { sentenceKey, splitSentences } from "./text/sentences";
 import { formatUkDate } from "./dates";
 import type { ActivityEntry, Actor, FormField, Gap, Paragraph, Report, ReportApprover, ReportSection } from "./types";
 import { defineHook, hookEnabled } from "./validation/hooks";
+import { sectionKindForFillSource } from "./forms/fields";
 
 export const DRAFT_RESIDUE_HOOK = defineHook("draft-residue");
 export const CLINICIAN_ORIGIN_HOOK = defineHook("clinician-origin-skip");
@@ -178,21 +179,48 @@ function isOpinionGap(gap: Pick<Gap, "id" | "kind">): boolean {
 }
 
 export interface BoxContext {
-  /**
-   * The referrer form's fields (form reports). Not used to decide who decides: that is read from the report alone
-   * (isClinicianBox), so the review, /validate, /sign and the store always agree on it.
-   */
+  /** The referrer form's fields (form reports): the boxes as the report factory makes them (factoryBoxOf). */
   fields?: ReadonlyArray<Pick<FormField, "id" | "fillSource" | "guidance" | "label">> | null;
+  /**
+   * The boxes as the report factory makes them – the template's sections (formToTemplate(form) for a form report, the
+   * built-in template otherwise): key, kind and title. Read before `fields`.
+   */
+  boxes?: ReadonlyArray<Pick<ReportSection, "key" | "kind" | "title">> | null;
 }
 
 /**
- * A box whose answer is the clinician's decision (WC design 3), read from the report alone: an opinion box (section
- * kind clinician_opinion – the fill source clinician_opinion), the physiotherapist's choice on each report (its
- * "-physio" gap, raised when the report is created and kept once answered), a box whose printed label asks for an
- * opinion (OPINION_BOX_WORDING – also a "staff entry" such as a work-restriction tick, B1-15), or a box with an opinion
- * gap. A value filled from the records is not, unless its label asks for an opinion. When in doubt it is a clinician box.
+ * The box `key` as the report factory makes it (core/report-factory.ts: kind from the field's fill source, title = its
+ * printed label; a built-in template's section as it is), from the form map or template in `ctx`, or null (no map, no
+ * such box). harden-WC (check2-WC major A): what the report says about its own box is the client's – this is what the
+ * clinic's own map or the built-in template says.
  */
-export function isClinicianBox(report: Pick<Report, "gaps">, section: Pick<ReportSection, "key" | "kind" | "title">, _ctx?: BoxContext): boolean {
+export function factoryBoxOf(ctx: BoxContext | null | undefined, key: string): Pick<ReportSection, "key" | "kind" | "title"> | null {
+  const made = ctx?.boxes?.find((b) => b.key === key);
+  if (made) return made;
+  const field = ctx?.fields?.find((f) => f.id === key);
+  if (!field) return null;
+  const kind = sectionKindForFillSource(field.fillSource);
+  return kind ? { key, kind, title: field.label } : null;
+}
+
+/**
+ * A box whose answer is the clinician's decision (WC design 3): an opinion box (section kind clinician_opinion – the
+ * fill source clinician_opinion), the physiotherapist's choice on each report (its "-physio" gap, raised when the
+ * report is created and kept once answered), a box whose printed label asks for an opinion (OPINION_BOX_WORDING – also
+ * a "staff entry" such as a work-restriction tick, B1-15), or a box with an opinion gap. A value filled from the
+ * records is not, unless its label asks for an opinion. When in doubt it is a clinician box.
+ * harden-WC (check2-WC major A): read from the box as the report holds it AND – where `ctx` has the form map or the
+ * template – as the report factory made it (factoryBoxOf); either one makes it a clinician box. A report whose boxes
+ * are as made (every report the factory and the review write) reads exactly as before; a box relabelled in the request
+ * body (kind "from_records", title "Notes") is still the opinion box the map says it is.
+ */
+export function isClinicianBox(report: Pick<Report, "gaps">, section: Pick<ReportSection, "key" | "kind" | "title">, ctx?: BoxContext): boolean {
+  if (clinicianBoxAsHeld(report, section)) return true;
+  const made = factoryBoxOf(ctx, section.key);
+  return Boolean(made && (made.kind !== section.kind || made.title !== section.title) && clinicianBoxAsHeld(report, { key: section.key, kind: made.kind, title: made.title }));
+}
+
+function clinicianBoxAsHeld(report: Pick<Report, "gaps">, section: Pick<ReportSection, "key" | "kind" | "title">): boolean {
   if (section.kind === "declaration") return false;
   if (section.kind === "clinician_opinion") return true;
   const gaps = (report.gaps ?? []).filter((g) => g.sectionKey === section.key);
@@ -285,8 +313,15 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
     if (!p.by && p.origin === "clinician") continue;
     if (!p.by || !sameMember(p.by, approver)) add(p.by);
   }
-  const answer = section.answer;
-  if (answer && answer.kind !== "text" && answer.value !== null && answer.value !== "" && section.answerBy && !sameMember(section.answerBy, approver)) add(section.answerBy);
+  if (answerSet(section.answer)) {
+    if (section.answerBy) {
+      if (!sameMember(section.answerBy, approver)) add(section.answerBy);
+    } else if (!answerDraftedOrFromRecords(report, section)) {
+      // harden-WC (check2-WC major B): an answer nobody's stamp vouches for, which neither drafting nor the records
+      // gave (the review stamps every answer a person sets) – someone's entry, waiting for the approver.
+      add(undefined);
+    }
+  }
   const stale = Boolean(section.adoptedBy && sameMember(section.adoptedBy.by, approver));
   if (by.length === 0 && !unstamped && !stale) return null;
   const list = [...by.map((b) => enteredByName(b)), ...(unstamped ? [enteredByName(null)] : [])];
@@ -299,6 +334,25 @@ export function answerSet(answer: ReportSection["answer"]): boolean {
   if (!answer || answer.kind === "text") return false;
   const v = answer.value;
   return v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+}
+
+/**
+ * Whether a box's unstamped answer is one drafting, the records or the approver's own words give (harden-WC, check2-WC
+ * major B): a box filled from the records (by code, when the report was made), or one whose answer the box's text
+ * backs – drafted text (a drafted paragraph, or drafted text a person edited) or the clinician's own words – or a
+ * question about it that is still open or that the approver settled (a drafted answer that cites nothing raises one,
+ * ai/assemble.ts). Anything else unstamped is someone's entry: the review stamps every answer a person sets
+ * (Section.answerBy).
+ */
+function answerDraftedOrFromRecords(report: Pick<Report, "approver" | "gaps">, section: Pick<ReportSection, "key" | "kind" | "paragraphs">): boolean {
+  if (section.kind === "from_records") return true;
+  const approver = approverOf(report);
+  // The clinician's own words in the box (origin "clinician": only the approver writes it – the store refuses it from
+  // anyone else) back its answer as they always have.
+  const backs = (p: ReportSection["paragraphs"][number]) =>
+    p.origin === "ai" || (p.origin === "edited" && p.originalText !== undefined) || (p.origin === "clinician" && (!p.by || sameMember(p.by, approver)));
+  if (section.paragraphs.some((p) => p.text.trim() !== "" && backs(p))) return true;
+  return (report.gaps ?? []).some((g) => g.sectionKey === section.key && (!g.resolution || (Boolean(g.resolution.by) && sameMember(g.resolution.by, approver))));
 }
 
 const sameJson = (a: unknown, b: unknown) => canonicalize(a ?? null) === canonicalize(b ?? null);

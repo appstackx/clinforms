@@ -270,9 +270,36 @@ async function runRender(c: RunCase, built: Built, h: HttpHarness): Promise<Path
   return { path: "render", ok: same, detail: same ? `mutated (${kinds.join(", ")}): identical document text` : `mutated (${kinds.join(", ")}): DIFFERENT document text with a FINAL copy` };
 }
 
-type Forge = "ack-by-approver" | "accept-by-approver" | "own-words-by-approver" | "adopt-by-approver" | "signed-flags-change" | "signed-activity-rewrite" | "none";
+type Forge =
+  | "ack-by-approver"
+  | "accept-by-approver"
+  | "own-words-by-approver"
+  | "adopt-by-approver"
+  | "signed-flags-change"
+  | "signed-activity-rewrite"
+  // harden-WC (check2-WC, additive): what a modified client could send that the review never writes.
+  | "relabel-box"
+  | "answer-unstamped"
+  | "answer-stamped-own"
+  | "gap-removed"
+  | "stamp-name-forged"
+  | "drafted-text-added"
+  | "edited-verbatim-added"
+  | "condition-changed"
+  | "none";
 
-function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: string | null): Report {
+/** The subject box's structured answer set to another value (as a forging client would), stamped as `by` or as nobody. */
+function forgedAnswer(s: Report["sections"][number], by: ReturnType<typeof actorOf> | null): Report["sections"][number] {
+  if (!s.answer || s.answer.kind === "text") return s;
+  const kind = s.answer.kind;
+  const value = kind === "date" ? "2026-12-01" : kind === "yes_no" || kind === "checkbox" ? s.answer.value !== true : kind === "number" ? "3" : kind === "rows" ? s.answer.value : "6-12 months";
+  const next = { ...s, status: "complete" as const, answer: { kind, value } as typeof s.answer };
+  delete next.answerBy;
+  if (by) next.answerBy = by;
+  return next;
+}
+
+function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: string | null, putAs: PersonKey = "pat"): Report {
   // The release's `by` stamp is the stored Actor (core/schemas.ts ActorSchema), so a forged PUT is schema-valid and only
   // the server's role rules (WC) can refuse it.
   const by = actorOf(approver);
@@ -291,6 +318,31 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
       return { ...report, flags: [] };
     case "signed-activity-rewrite":
       return { ...report, activity: report.activity.slice(0, 1) };
+    case "relabel-box":
+      // The box claims to be a records box with a neutral title (check2-WC major A).
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, kind: "from_records" as const, title: "Notes" } : s)) };
+    case "answer-unstamped":
+    case "answer-stamped-own":
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? forgedAnswer(s, forge === "answer-stamped-own" ? actorOf(putAs) : null) : s)) };
+    case "gap-removed":
+      return { ...report, gaps: report.gaps.filter((g) => g.sectionKey !== key), flags: report.flags.filter((f) => f.sectionKey !== key) };
+    case "stamp-name-forged": {
+      // The putter's own member id under the approver's name and role (check2-WC minor 1).
+      const own = actorOf(putAs);
+      const forged = { ...own, name: person(approver).name, role: person(approver).role, canSign: true };
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: s.paragraphs.map((q, i) => (i === 0 ? ({ ...q, by: forged } as typeof q) : q)) } : s)) };
+    }
+    case "drafted-text-added":
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: [...s.paragraphs, { id: `${key}-forged-d1`, text: "Settling well with his home exercise programme.", sourceIds: ["N-001"], origin: "ai" as const, originalText: "Settling well with his home exercise programme." }] } : s)) };
+    case "edited-verbatim-added": {
+      const text = report.sections.find((s) => s.key === key)?.paragraphs[0]?.text ?? "Settling well with his home exercise programme.";
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: [...s.paragraphs, { id: `${key}-forged-e1`, text, sourceIds: ["N-001"], origin: "edited" as const, originalText: text, by: actorOf(putAs) }] } : s)) };
+    }
+    case "condition-changed": {
+      const at = report.sections.findIndex((s) => s.key === key);
+      const controller = report.sections.slice(0, Math.max(at, 0)).reverse().find((s) => s.answer && s.answer.kind !== "text")?.key ?? report.sections[0]?.key ?? key;
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, condition: { controllers: [controller], wants: "yes", parser: "forged" } } : s)) };
+    }
     default:
       return report;
   }
@@ -328,7 +380,7 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
   const seeded = await putStoredReport(h, base, seedAs, null);
   if (seeded.status !== 201) return { path: "store", ok: false, detail: `seed PUT by ${seedAs}: ${seeded.status} ${seeded.code ?? ""}` };
   const rev = (seeded.body as { rev?: number }).rev ?? 1;
-  const forged = forgeReport(base, store.forge ?? "none", built.approver ?? "sarah", built.box);
+  const forged = forgeReport(base, store.forge ?? "none", built.approver ?? "sarah", built.box, putAs);
   const res = await putStoredReport(h, forged, putAs, rev);
   const detail = `PUT by ${person(putAs).name} (${store.forge ?? "none"}): ${res.status} ${res.code ?? ""}`.trim();
   if (c.expect === "REFUSED_403") return { path: "store", ok: res.status === 403, detail };

@@ -13,6 +13,7 @@ import { actorOf } from "../../../core/validation/__corpus__/harness/fixtures";
 import { CaseInputSchema } from "../../../core/validation/__corpus__/harness/types";
 import { answerSource, ownWordsBlockers, questionStatus } from "./review-model";
 import { mayApplyFix, reviewReducer, type ReviewAction } from "./use-review-state";
+import { stampDecisions } from "./reducer";
 
 const SARAH = actorOf("sarah") as Actor;
 const TOM = actorOf("tom") as Actor;
@@ -404,5 +405,24 @@ describe("check-WC minors 10 and 11: one-click fixes and note words", () => {
       const pid = box(r, "F-10").paragraphs[0].id;
       assert.equal(reviewReducer(r, { type: "acceptNoteWords", key: "F-10", paragraphId: pid, actor: SARAH }), r);
     }
+  });
+});
+
+describe("harden-WC (check2-WC minor 7): the review and the store agree on what a paragraph's acknowledgement covers", () => {
+  it("someone else changing only the citations of an acknowledged paragraph drops its acknowledgement reason", async () => {
+    const b = await form({ "F-31": [{ text: "He hurt his back lifting a box at work on 12/03/2026.", cites: ["N-001"] }] });
+    const pid = box(b.report, "F-31").paragraphs[0].id;
+    let r = run(b, b.report, { type: "editParagraph", key: "F-31", paragraphId: pid, text: "He hurt his back lifting a box at work. In my opinion he is fit for full duties.", actor: SARAH });
+    const op = flagsOn(r, "F-31", "OPINION_LANGUAGE")[0];
+    assert.ok(op, "an opinion check on Sarah's words");
+    r = run(b, r, { type: "acknowledgeFlag", flagId: op.id, reason: "My own clinical opinion.", actor: SARAH });
+    assert.equal(box(r, "F-31").paragraphs[0].ackReason, "My own clinical opinion.");
+    // A one-click fix (WD) by Pat that changes only the citations: the reason covered the words as cited.
+    const recited = { ...r, sections: r.sections.map((s) => (s.key === "F-31" ? { ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, sourceIds: ["N-002"] })) } : s)) };
+    const stamped = stampDecisions(r, recited, PAT);
+    assert.equal(box(stamped, "F-31").paragraphs[0].ackReason, undefined);
+    assert.equal(box(stamped, "F-31").paragraphs[0].by?.memberId, PAT.memberId);
+    // The same change of her own keeps nothing stale either way: the reason is asked for again.
+    assert.equal(box(stampDecisions(r, recited, SARAH), "F-31").paragraphs[0].ackReason, undefined);
   });
 });
