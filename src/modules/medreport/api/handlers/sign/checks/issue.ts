@@ -237,6 +237,17 @@ export interface IssueCheckInput {
  * approval time and the validators' result); called as a plain pipeline check without it, there is nothing to bind and
  * it refuses nothing.
  */
+/**
+ * bh2-rc1 (WA2 x WA1): the forms engine words its refusals for a FINAL copy of an approved report ("… The final copy
+ * was not made. Correct the form's mapping, or the answer – an approved report cannot be edited, so use “Create
+ * amended version”."). At /sign nothing is approved yet, so only what is wrong is kept; the approval's own advice
+ * follows ("Nothing was approved. Correct the boxes named, then approve again.").
+ */
+export function refusalForApproval(detail: string): string {
+  const cut = detail.indexOf(" The final copy was not made.");
+  return cut > 0 ? detail.slice(0, cut) : detail;
+}
+
 export async function issuedDocumentCheck(ctx: SignCheckContext, input?: IssueCheckInput): Promise<Response | null> {
   if (!input) return null;
   const { report, form, signer } = ctx;
@@ -266,7 +277,7 @@ export async function issuedDocumentCheck(ctx: SignCheckContext, input?: IssueCh
   } catch (err) {
     if (!(err instanceof HttpError) || err.status >= 500) throw err;
     if (err.init.code === "FORM_MISMATCH" || err.init.code === "PAYLOAD_TOO_LARGE") return err.toResponse();
-    refusal = { detail: err.init.detail ?? err.message, issues: err.init.issues ?? [] };
+    refusal = { detail: refusalForApproval(err.init.detail ?? err.message), issues: err.init.issues ?? [] };
   }
   if (!refusal) return null;
   logEvent("sign_refused_issue", { report: report.id, form: form.id, items: refusal.issues.length, ms: Date.now() - ctx.started });

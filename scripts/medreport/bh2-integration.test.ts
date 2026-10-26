@@ -38,6 +38,24 @@ async function demoSign(deps: MedreportDeps, b: Built): Promise<{ status: number
 const YES_NO = { answerType: "yes_no" as const, options: ["Yes", "No"] };
 
 describe("WA2 outcomes through WA1's dry run", () => {
+  it("a decided box the fill cannot place refuses the approval: 409 ISSUE_REFUSED naming it, no receipt, worded for an approval", async () => {
+    const { deps } = createHttpHarness();
+    const answers = { "F-05": false, "F-38": true };
+    const ok = await demoSign(deps, await built({ report: "form:cf-discharge", answers }));
+    assert.equal(ok.status, 200, JSON.stringify(ok.json).slice(0, 300));
+    // The map points F-38's tick boxes at a row the referrer's file does not have (WA2: not_found is fatal on FINAL).
+    const lost = { anchor: { kind: "docx", target: "checkbox_glyph", blockId: "t0.r99.c1", optionGlyphs: [{ option: "Yes", blockId: "t0.r99.c1", glyphIndex: 0 }, { option: "No", blockId: "t0.r99.c1", glyphIndex: 1 }] } };
+    const refused = await demoSign(deps, await built({ report: "form:cf-discharge", answers, fill: { fieldPatches: { "F-38": lost } } }));
+    assert.equal(refused.status, 409);
+    assert.equal(refused.json.code, "ISSUE_REFUSED");
+    assert.equal("receipt" in refused.json, false);
+    const issues = (refused.json.issues ?? []) as Array<{ path: string; message: string }>;
+    assert.ok(issues.some((i) => /F-38/.test(i.path) || /F-38/.test(i.message)), JSON.stringify(issues));
+    const detail = String(refused.json.detail);
+    assert.match(detail, /Nothing was approved/);
+    assert.doesNotMatch(detail, /amended version|approved report cannot be edited/i, "at /sign nothing is approved yet");
+  });
+
   it("WA1's parse reads an uncertain or two-way choice answer as WA2's fill does: blank, never a definite tick", () => {
     for (const raw of ["No – patient unsure", "No, not asked", "Yes?", "Yes, I think so", "No – TBC", "No response", "No clear answer", "No evidence in the notes", "Yes and no", "Yes/No"]) {
       assert.equal(parseFormAnswerValue(YES_NO, raw).value, null, raw);
