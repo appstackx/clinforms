@@ -76,7 +76,7 @@ function assemble(output: FormDraftGroupOutput, keys: string[]) {
   });
 }
 
-test("structured answers become section.answer with cited support; [CLAIMANT] is re-identified", () => {
+test("structured answers on opinion boxes are never entered by code: held back with the cited note's words (bh2 WD review M6); [CLAIMANT] is re-identified", () => {
   const res = assemble(
     {
       sections: [
@@ -104,12 +104,21 @@ test("structured answers become section.answer with cited support; [CLAIMANT] is
   DraftsResponseSchema.parse(res);
   const [fit, review] = res.sections;
   assert.equal(fit.fieldId, "F-03");
-  assert.deepEqual(fit.answer, { kind: "choice", value: "Fit with a phased return" });
-  assert.equal(fit.status, "drafted");
-  assert.match(fit.paragraphs[0].text, /Mr Testcase is fit for a phased return/);
-  assert.deepEqual(review.answer, { kind: "yes_no", value: true });
-  assert.deepEqual(res.gaps, []);
-  assert.deepEqual(res.flags.filter((f) => f.severity === "blocking"), []);
+  // Khuram's decision on opinions: a tick is not a quote – code never ticks an opinion box, even with the option phrase
+  // in a cited note and the drafting's "recorded opinion" label; the approver answers it.
+  assert.deepEqual(fit.answer, { kind: "choice", value: null });
+  assert.equal(fit.status, "needs_input");
+  assert.match(fit.paragraphs[0].text, /Mr Testcase is fit for a phased return/, "the cited paragraph stays as context");
+  assert.deepEqual(review.answer, { kind: "yes_no", value: null });
+  const fitGap = res.gaps.find((g) => g.sectionKey === "F-03");
+  assert.match(fitGap?.issue ?? "", /“Fit with a phased return” to “Is the employee fit for work\?” has not been entered: it is the clinician's opinion/);
+  assert.equal(fitGap?.kind, "choice_held_back");
+  assert.equal(fitGap?.suggestedAnswer, undefined, "C-2: never a one-click on an opinion box");
+  const reviewGap = res.gaps.find((g) => g.sectionKey === "F-04");
+  assert.match(reviewGap?.issue ?? "", /“Yes” to “Is a review recommended\?” has not been entered/);
+  assert.deepEqual(reviewGap?.relatedNoteIds, ["N-002"]);
+  // What blocks is only that the approver has not answered yet (the open gaps and the empty required answers).
+  assert.deepEqual(Array.from(new Set(res.flags.filter((f) => f.severity === "blocking").map((f) => f.code))).sort(), ["MISSING_PLACEHOLDER", "OPEN_GAP"]);
 });
 
 test("blank, unfitting and uncited structured answers are never guessed: each leaves a gap", () => {
@@ -444,7 +453,8 @@ test("fix round 1 / bh2 WD design 1: 'I recorded' is kept as drafted – about a
     meta: { ...META, sectionKeys: ["F-02"] },
     form: FORM,
     idSeed: "v1",
-    author: sarah,
+    // bh2 WD design 2: the approver is the voice owner (the request's author is not).
+    approver: sarah,
   });
   const [own, toms] = res.sections[0].paragraphs;
   // bh2 WD design 1 (B3-4): assembly no longer runs plainClinicalWording – "On 18/03/2026, X" dated past events to the note.

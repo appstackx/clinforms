@@ -44,7 +44,7 @@ test("grade and severity scales are recognised (never ticked by code)", () => {
   assert.equal(isGradeScale(choice("How did the problem start?", ["Injury at work", "Worse because of work", "Not related to work"])), false);
 });
 
-test("C-2: an opinion box's answer is entered only when a cited note records it as an opinion – and is never a one-click", () => {
+test("C-2 / review M6: code never enters an opinion box's answer – held back with the note's words, never a one-click", () => {
   const f = field({ label: "Restriction: no heavy lifting", options: ["Yes"], answerType: "checkbox", fillSource: { kind: "clinician_opinion" } });
   const notes = [note("N-102", "She lifts boxes at work.")];
   const held = decideStructuredAnswer({ field: f, label: f.label, value: "Yes", paragraphs: [para("She lifts boxes at work.", "patient_reported")], citedNotes: notes, citedTexts: notes.map((n) => n.subjective) });
@@ -59,7 +59,36 @@ test("C-2: an opinion box's answer is entered only when a cited note records it 
     citedNotes: [note("N-102", "In my opinion she should avoid heavy lifting.")],
     citedTexts: ["In my opinion she should avoid heavy lifting."],
   });
-  assert.equal(recorded.enter, true);
+  // The drafting's "recorded opinion" label is its own word: a tick is not a quote (Khuram's decision on opinions).
+  assert.equal(recorded.enter, false);
+  assert.equal(recorded.gap?.kind, "choice_held_back");
+  assert.equal(recorded.gap?.suggestedAnswer, undefined);
+  assert.match(recorded.gap?.issue ?? "", /it is the clinician's opinion, which only the approving clinician gives\. Sarah Reid recorded: “In my opinion she should avoid heavy lifting\.” \(15\/09\/2026\)\./);
+  // A yes/no on an opinion box, labelled a recorded opinion but citing a note that says something else (ADV-opn-basis-01).
+  const yesNo = field({ label: "(c) Restriction on driving?", options: ["Yes", "No"], answerType: "yes_no", fillSource: { kind: "clinician_opinion" } });
+  const mislabelled = decideStructuredAnswer({
+    field: yesNo,
+    label: yesNo.label,
+    value: "Yes",
+    paragraphs: [para("Tom Ellis recorded that he should avoid driving for 4 weeks.", "clinician_opinion_recorded")],
+    citedNotes: [note("N-102", "Avoid repetitive lifting over 15 kg for 4 weeks.")],
+    citedTexts: ["Avoid repetitive lifting over 15 kg for 4 weeks."],
+  });
+  assert.equal(mislabelled.enter, false);
+  assert.match(mislabelled.gap?.issue ?? "", /No sentence of the cited note \(Sarah Reid, 15\/09\/2026\) says it in so many words\./);
+});
+
+test("B3-15 / review M5: a choice is never ticked from a note that negates it after the phrase, or only plans or hopes it", () => {
+  assert.equal(optionStatedIn("Manual therapy", ["Manual therapy was not used. HEP: pelvic tilts 10 x 3/day."]), null);
+  assert.equal(optionStatedIn("Acupuncture", ["HEP: pelvic tilts 10 x 3/day. Acupuncture to be considered if no progress."]), null);
+  assert.equal(optionStatedIn("Full duties", ["Full duties are not yet possible; he is on lighter duties."]), null);
+  assert.equal(optionStatedIn("Full duties", ["He hopes to return to full duties next month."]), null);
+  assert.equal(optionStatedIn("Exercise", ["Exercise was declined by the patient."]), null);
+  assert.equal(optionStatedIn("Taping", ["Taping would help but was not tried."]), null);
+  // Positive twins: the fact itself, and a negation in ANOTHER clause of the sentence.
+  assert.ok(optionStatedIn("Manual therapy", ["Manual therapy to the lumbar spine was given at each session."]));
+  assert.ok(optionStatedIn("Exercise", ["Exercise programme given; no pain on exercise."]));
+  assert.ok(optionStatedIn("Lighter duties", ["Full duties are not yet possible; he is on lighter duties."]));
 });
 
 test("R-safety-7: a printed time band on an opinion box is never ticked and never offered; the arithmetic is information only", () => {

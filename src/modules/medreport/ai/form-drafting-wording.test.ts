@@ -78,7 +78,7 @@ test("R-regression-1: 'recorded opinion' is ordinary wording, never meta – the
     "Actual range of movement was 80% of normal.",
   ]) {
     assert.equal(hasMetaWording(text), false, text);
-    assert.deepEqual(holdBackMeta(text), { text, heldBack: [] });
+    assert.deepEqual(holdBackMeta(text), { text, heldBack: [], retracted: [] });
   }
 });
 
@@ -124,4 +124,59 @@ test("the token-level helpers assembly keeps are idempotent and keep figures, ne
     const named = notesNamedByAuthor(text, notes);
     assert.equal(notesNamedByAuthor(named, notes), named, `notesNamedByAuthor idempotent: ${text}`);
   }
+});
+
+/* bh2 WD review (check-WD) M4 and minors 5–6: meta-wording in every sentence, forms-9's bare tags, retractions. */
+
+test("review M4: a self-correction later in the paragraph is caught – and the sentence it retracts is held back with it", () => {
+  for (const text of [
+    "Lumbar movement was limited by 50% at discharge. Actually, that was at the first assessment; at discharge it was full and pain-free.",
+    "Lumbar movement was full and pain-free at discharge. Wait, that is from the first note.",
+    "Pain was 2/10 at discharge. Correction: it was 3/10.",
+    "Pain was 2/10 at discharge. On reflection, the note says 3/10.",
+    "Lumbar movement was full at discharge. No, wait – that was the first note.",
+    "Lumbar movement was full at discharge. Actually that was at the first review.",
+  ]) {
+    const out = holdBackMeta(text);
+    assert.equal(out.text, "", `nothing of it prints: ${text}`);
+    assert.equal(out.retracted.length, 1, text);
+    assert.equal(out.retracted[0], text, "held back as written, for the clinician to check");
+  }
+  // What follows a retraction and stands on its own is kept and checked as drafted text.
+  const after = holdBackMeta("Pain was 2/10 at discharge. Correction: it was 3/10. He was discharged to self-management.");
+  assert.equal(after.text, "He was discharged to self-management.");
+});
+
+test("review M4: forms-9's question-kind tags are held back on their own too", () => {
+  const cases: Array<[string, string]> = [
+    ["Lumbar movement was full and pain-free at discharge. (clinician-opinion)", "Lumbar movement was full and pain-free at discharge."],
+    ["Lumbar movement was full and pain-free at discharge. (record-narrative)", "Lumbar movement was full and pain-free at discharge."],
+    ["Kind: record-narrative. Lumbar movement was full and pain-free at discharge.", "Lumbar movement was full and pain-free at discharge."],
+    ["Kind: clinician-opinion. Tom Ellis recorded a phased return over 2 weeks.", "Tom Ellis recorded a phased return over 2 weeks."],
+    ["As a clinician-opinion, the answer is left to the clinician. Pain was 2/10.", "Pain was 2/10."],
+    ["This is a clinician opinion question, so it is left blank. Pain was 2/10.", "Pain was 2/10."],
+  ];
+  for (const [input, kept] of cases) {
+    const out = holdBackMeta(input);
+    assert.equal(out.text, kept, input);
+    assert.equal(out.heldBack.length, 1, input);
+    assert.deepEqual(out.retracted, []);
+  }
+});
+
+test("review minor 6: a self-correction inside quoted speech is the patient's words; ordinary 'sorry' and 'actually' stay", () => {
+  for (const text of [
+    "Mr Testcase said: “it is sore, I mean, really sore when lifting”.",
+    "Mr Testcase said “wait, it hurts when I bend”.",
+    "Mr Testcase reported that he actually felt better after the second session.",
+    "Mr Testcase was sorry he missed a session.",
+    "He was advised to rest, wait for the scan and return in 2 weeks.",
+    "No clinician opinion on prognosis was recorded.",
+  ]) assert.deepEqual(holdBackMeta(text), { text, heldBack: [], retracted: [] }, text);
+});
+
+test("review minor 5: 'Yes – A&E …' keeps the acronym's capital; an ordinary opener still takes lower case", () => {
+  assert.equal(yesNoInWordsCase("Yes – A&E attendance was recorded by Sarah Reid on 18/03/2026."), "Yes – A&E attendance was recorded by Sarah Reid on 18/03/2026.");
+  assert.equal(yesNoInWordsCase("Yes – A home programme was given."), "Yes – a home programme was given.");
+  assert.equal(yesNoInWordsCase("No – Not since the injury."), "No – not since the injury.");
 });

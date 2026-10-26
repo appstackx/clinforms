@@ -6,11 +6,14 @@
  * - "earlier note" (B1-6, B3-7): on any other form, a drafted text answer to a question about the present position
  *   ("… now", "current …", "at discharge") that cites only notes older than the latest note. Compact and structured
  *   answers in that situation are held back at drafting (ai/assemble.ts) and never reach here as drafted text.
- * - "date" (B3-7): a sentence dated to a day ("On 16/09/2026 …", "At the discharge assessment on 16/09/2026 …") that
- *   none of the paragraph's cited sources has: not a cited note's own date, and not a date a cited note, the
- *   registration or a computed fact records (the incident, attendance, outcome scores).
- * - "dose" (B3-12): a medicine the patient was taking, named without a dose that no cited note gives either – a
- *   deterministic one-click adds "(dose not stated)" (ui/components/review/fixes.ts).
+ * - "date" (B3-7): a sentence dated to a day that none of the paragraph's cited sources has – not a cited note's own
+ *   date, and not a date a cited note, the registration or a computed fact records (the incident, attendance, outcome
+ *   scores). A sentence is dated by its lead ("On 16/09/2026 …", "At the discharge assessment on 16/09/2026 …",
+ *   "16/09/2026: …") or, anywhere in it, by an attendance dated to a day ("I recorded at the discharge assessment on
+ *   16/09/2026 …", "… at the review of 06/05/2026", "in the note dated 06/05/2026").
+ * - "dose" (B3-12): a medicine the patient was taking, named without a dose that no cited source gives either – every
+ *   mention of the medicine (or its brand name) in every cited source is read, each in its own sentence; a deterministic
+ *   one-click adds "(dose not stated)" (ui/components/review/fixes.ts) next to the mention the flag is about.
  *
  * The time-point helpers are shared with drafting assembly (ai/assemble.ts) so both read the same rule.
  *
@@ -95,7 +98,7 @@ export function laterNotePart(input: ValidatorInput): DraftFitPart {
         }
       } else if (later && latest) {
         // bh2 WD design 8 (B1-6, B3-7): a printed text answer about the present position from an older note.
-        const field = fields.get(section.key) as FormField | undefined;
+        const field = fields.get(section.fieldId ?? section.key) as FormField | undefined;
         const printed = !section.answer || section.answer.kind === "text";
         const older = printed && field && PRESENT_LABEL.test(field.label) ? onlyOlderNotes(p.sourceIds, input.bundle) : null;
         if (older && section.paragraphs[0] === p) {
@@ -123,6 +126,20 @@ export function laterNotePart(input: ValidatorInput): DraftFitPart {
 const UK_DATE = /\b(\d{2})\/(\d{2})\/(\d{4})\b/g;
 /** "On 16/09/2026 …", "At the discharge assessment on 16/09/2026, …", "16/09/2026: …" at the start of a sentence. */
 const DATE_LEAD = /^(?:On (\d{2}\/\d{2}\/\d{4})\b|At (?:my |the |his |her |a |an )?[A-Za-z][A-Za-z -]{0,40}? on (\d{2}\/\d{2}\/\d{4})\b|(\d{2}\/\d{2}\/\d{4}):)/;
+/** An attendance dated to a day anywhere in a sentence: "… at the discharge assessment on 16/09/2026", "the review of …". */
+const DATED_ATTENDANCE =
+  /\b(?:assessment|review|appointment|session|visit|consultation|examination|discharge|follow-up|note)\s+(?:on|of|dated)\s+(\d{2}\/\d{2}\/\d{4})\b/gi;
+
+/** The days a sentence is dated to: its lead, and every dated attendance in it. */
+function datedDays(sentence: string): string[] {
+  const out: string[] = [];
+  const m = DATE_LEAD.exec(sentence);
+  if (m) out.push(m[1] ?? m[2] ?? m[3]);
+  const re = new RegExp(DATED_ATTENDANCE.source, "gi");
+  let a: RegExpExecArray | null;
+  while ((a = re.exec(sentence)) !== null) if (out.indexOf(a[1]) < 0) out.push(a[1]);
+  return out;
+}
 
 function ukToIso(d: string): string {
   const [dd, mm, yyyy] = d.split("/");
@@ -155,9 +172,8 @@ export function datedLeadPart(input: ValidatorInput): DraftFitPart {
         for (const d of datesIn(ctx.sourceTexts.get(id) ?? "")) days.add(d);
       }
       for (const s of splitSentences(p.text)) {
-        const m = DATE_LEAD.exec(s.text.slice(s.bodyStart - s.start));
-        const lead = m ? (m[1] ?? m[2] ?? m[3]) : null;
-        if (!lead || days.has(ukToIso(lead))) continue;
+        const lead = datedDays(s.text.slice(s.bodyStart - s.start)).find((d) => !days.has(ukToIso(d))) ?? null;
+        if (!lead) continue;
         flags.push(
           makeFlag({
             code: "DRAFT_FIT",
@@ -185,28 +201,63 @@ const MEDICINES = [
   "morphine", "oramorph", "aspirin", "celecoxib", "etoricoxib", "meloxicam", "amitriptyline", "nortriptyline", "gabapentin",
   "pregabalin", "duloxetine", "prednisolone", "diazepam", "baclofen", "methocarbamol", "nurofen", "voltarol", "solpadeine",
 ];
-const MEDICINE = new RegExp(`\\b(${MEDICINES.map((m) => m.replace(/-/g, "\\-")).join("|")})\\b`, "i");
+const MEDICINE = new RegExp(`\\b(${MEDICINES.map((m) => m.replace(/-/g, "\\-")).join("|")})\\b`, "gi");
+/** The same medicine under another name (a brand, a spelling): a dose given under either name is a dose given. */
+const SAME_MEDICINE: Readonly<Record<string, readonly string[]>> = {
+  ibuprofen: ["nurofen"],
+  nurofen: ["ibuprofen"],
+  diclofenac: ["voltarol"],
+  voltarol: ["diclofenac"],
+  "co-codamol": ["cocodamol", "solpadeine"],
+  cocodamol: ["co-codamol", "solpadeine"],
+  solpadeine: ["co-codamol", "cocodamol"],
+  morphine: ["oramorph"],
+  oramorph: ["morphine"],
+};
 /** Taking it (not "stopped", "no", "declined"). */
 const TAKING = /\b(?:tak(?:es|ing|en)|took|prescribed|using|uses|used|on regular|started|continu(?:es|ing|ed)\s+(?:with|to take))\b/i;
 const NOT_TAKING = /\b(?:no|not|never|stopped|declined|without|nil|refused|avoid(?:s|ed|ing)?)\b/i;
-/** A dose or a frequency next to it: "400 mg", "1 g", "30/500", "two tablets", "as needed", "PRN", "when required". */
+/**
+ * A dose: an amount ("400 mg", "1 g", "5 ml"), a strength ("30/500"), a count of tablets or capsules ("two tablets"), or
+ * the word "dose". A frequency alone ("as needed", "PRN", "three times a day") is not a dose – "(dose not stated)" is
+ * then still true.
+ */
 const DOSE = /\b\d+(?:\.\d+)?\s?(?:mg|g|mcg|µg|micrograms?|milligrams?|ml|mls)\b|\b\d+\/\d+\b|\b(?:one|two|three|four|\d+)\s+(?:tablets?|capsules?|puffs?|doses?)\b|\b(?:dose|doses|dosage)\b/i;
 
-/** The first medicine of the text that is taken, named without a dose, that the cited notes give no dose for either. */
-export function undosedMedicine(text: string, citedText: string): string | null {
+/** A medicine the text says is taken, named without a dose in its sentence: its name (lower case) and where it ends. */
+export interface UndosedMention {
+  name: string;
+  /** The offset in the text just after the name (where "(dose not stated)" goes). */
+  end: number;
+}
+
+/** Every medicine the text says is taken, named without a dose in that sentence, in order. */
+export function medicinesWithoutDose(text: string): UndosedMention[] {
+  const out: UndosedMention[] = [];
   for (const s of splitSentences(text)) {
-    const m = MEDICINE.exec(s.text);
-    if (!m) continue;
-    const before = s.text.slice(0, m.index);
-    if (!TAKING.test(before) || NOT_TAKING.test(before)) continue;
     if (DOSE.test(s.text)) continue;
-    const name = m[1].toLowerCase();
-    // The note gives a dose for it: the clinician adds it (no one-click "not stated").
-    const noted = citedText.toLowerCase();
-    const at = noted.indexOf(name);
-    if (at >= 0 && DOSE.test(citedText.slice(at, at + name.length + 40))) continue;
-    return m[1];
+    const re = new RegExp(MEDICINE.source, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s.text)) !== null) {
+      const before = s.text.slice(0, m.index);
+      if (!TAKING.test(before) || NOT_TAKING.test(before)) continue;
+      if (/^\s*\(dose/i.test(s.text.slice(m.index + m[0].length))) continue;
+      out.push({ name: m[1].toLowerCase(), end: s.start + m.index + m[0].length });
+    }
   }
+  return out;
+}
+
+/** Whether the cited text gives a dose for the medicine: any of its sentences that names it (or its brand) holds a dose. */
+export function citedDoseFor(name: string, citedText: string): boolean {
+  const names = [name, ...(SAME_MEDICINE[name] ?? [])];
+  const named = new RegExp(`\\b(?:${names.map((n) => n.replace(/-/g, "\\-")).join("|")})\\b`, "i");
+  return splitSentences(citedText, "notes").some((s) => named.test(s.text) && DOSE.test(s.text));
+}
+
+/** The first medicine of the text that is taken, named without a dose, that the cited sources give no dose for either. */
+export function undosedMedicine(text: string, citedText: string): string | null {
+  for (const m of medicinesWithoutDose(text)) if (!citedDoseFor(m.name, citedText)) return m.name;
   return null;
 }
 
@@ -224,8 +275,8 @@ export function dosePart(input: ValidatorInput): DraftFitPart {
           severity: "warning",
           sectionKey: section.key,
           paragraphId: p.id,
-          evidence: `dose ${medicine.toLowerCase()}`,
-          message: `No dose is given for ${medicine.toLowerCase()}, and the notes it cites record none: say “(dose not stated)”, or add the dose.`,
+          evidence: `dose ${medicine}`,
+          message: `No dose is given for ${medicine}, and the notes it cites record none: say “(dose not stated)”, or add the dose.`,
         }),
       ];
     },

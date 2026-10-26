@@ -16,9 +16,13 @@
  * Also the "value-only" one-click (B2-16, plan WD design 6; ledger hook "value-only"): valueOnlyFix() – the value with a
  * trailing attribution clause taken off ("7/10 at worst, as recorded by Sarah Reid using the Numeric Pain Rating
  * Scale" → "7/10 at worst"). Offered only in a compact place, on a box the record answers, when every note the
- * paragraph cites is the voice owner's own (C-REV-1: a colleague's finding keeps their name), and only when the clause
+ * paragraph cites is the voice owner's own (C-REV-1: a colleague's finding keeps their name), only when the clause
  * holds no date or figure (a dated attribution – "measured by Sarah Reid on 18/03/2026" – tells the reader which time
- * point the value is from, B1-6). ui/components/review/fixes.ts builds the proposal.
+ * point the value is from, B1-6), and only when the clause is the attribution and nothing else: who recorded it, their
+ * job title, the scale or tool, and where ("at the first assessment") – never a clause of the answer ("…, and no red
+ * flags were noted", "…, with no pain on overpressure", "…, with pain at end of range": bh2 WD review M3). A clause that
+ * names a time point goes only when the printed question names the same one (ui/components/review/fixes.ts, with
+ * valueOnlyTimePoint). ui/components/review/fixes.ts builds the proposal.
  *
  * Split out of core/validation/draft-fit.ts by W0.4 (bh2 module split); the triggers and value-only are bh2 WD.
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
@@ -79,9 +83,22 @@ const TRAILING_ATTRIBUTION =
   /(?:,\s*|\s+\(\s*|\s+)(?:as\s+)?(?:(?:recorded|reported|noted|measured|assessed|documented|scored|rated|described)\s+(?:by|on|at|using|in)\b|(?:[A-Z][a-z]+\s+[A-Z][a-z'’-]+)\s+(?:recorded|noted|measured|assessed|documented)\b)[^.;]*?\)?\s*[.;]?\s*$/;
 
 /**
+ * The lower-case words an attribution clause may hold: the attribution itself (how, by whom), the job title, the tool,
+ * and where or when it was recorded. Anything else – "and", "with", "but", a negation, a finding – is a clause of the
+ * answer, which value-only never drops. Capitalised words (names, "Numeric Pain Rating Scale") are allowed.
+ */
+const ATTRIBUTION_CLAUSE_WORDS = new Set(
+  (
+    "as recorded reported noted measured assessed documented scored rated described by on at in using use of the a an " +
+    "her his their my our first initial latest last final most recent assessment review appointment session visit discharge note notes " +
+    "physiotherapist physio clinician therapist senior extended scope practitioner scale score tool questionnaire"
+  ).split(" "),
+);
+
+/**
  * The value alone: the paragraph's text without its trailing attribution clause and closing full stop, or null when
- * there is no such clause, nothing is left, or the clause holds a date or figure (it shows which time point the value
- * is from).
+ * there is no such clause, nothing is left, the clause holds a date or figure (it shows which time point the value
+ * is from), or the clause holds anything but the attribution (see ATTRIBUTION_CLAUSE_WORDS).
  */
 export function valueOnlyText(text: string): string | null {
   const t = text.trim();
@@ -89,8 +106,24 @@ export function valueOnlyText(text: string): string | null {
   if (!m || m.index === 0) return null;
   const clause = t.slice(m.index);
   if (figuresOf(clause).length > 0) return null;
+  const lower = clause.match(/\b[a-z][a-z'’-]*\b/g) ?? [];
+  if (lower.some((w) => !ATTRIBUTION_CLAUSE_WORDS.has(w))) return null;
+  // Two attributions joined ("…, as recorded by Sarah Reid, and …") or a second clause after a comma or a dash.
+  if (/[,;–—]\s*(?:and|but|with|without|though|although|while|whereas|which|who)\b/i.test(clause)) return null;
   const value = t.slice(0, m.index).replace(/[\s,;:–-]+$/, "").trim();
   return value && value !== t ? value : null;
+}
+
+/** Time point words: the start of the episode, or where it is now. */
+const START_TIME = /\b(?:initial(?:ly)?|first|baseline|pre[- ]?(?:injury|accident|incident)|on (?:referral|admission|presentation)|at (?:the )?(?:outset|start|presentation)|onset)\b/i;
+const END_TIME = /\b(?:now|current(?:ly)?|latest|last|final|most recent|discharge|present(?:ly)?|today)\b/i;
+
+/** The time point a phrase names ("at the first assessment" → "start", "Lumbar flexion – now" → "end"), or null. */
+export function valueOnlyTimePoint(phrase: string): "start" | "end" | null {
+  const start = START_TIME.test(phrase);
+  const end = END_TIME.test(phrase);
+  if (start === end) return null;
+  return start ? "start" : "end";
 }
 
 /** Every note a paragraph cites is the owner's own (C-REV-1); false when it cites none, or the owner is unknown. */
@@ -105,7 +138,7 @@ export function shortenPart(input: ValidatorInput): DraftFitPart {
   return {
     paragraph(p, section) {
       const flags: ReportFlag[] = [];
-      const field = fields.get(section.key);
+      const field = fields.get(section.fieldId ?? section.key);
       const place = section.paragraphs[0] === p ? compactPlace(field) : null;
       const trigger = place && field ? shortenTrigger(p.text, field) : null;
       if (place && trigger) {

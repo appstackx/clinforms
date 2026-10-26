@@ -9,6 +9,8 @@ import "server-only";
  *   (bh2 WD design 1: core/voice.ts plainClinicalWording is NOT run here – only the pinned token-level substitutions of
  *   ai/form-drafting-wording.ts);
  * - drafting meta-wording held back as an audited gap "Drafted text held back – check it", never dropped (WD design 3);
+ *   a sentence the drafting retracted ("… Actually, that was at the first assessment …") is held back with the
+ *   retraction, as its own audited gap, never printed;
  * - the time point (WD design 8): on an initial assessment form a paragraph citing a later note is held back; on any
  *   other form a compact or structured answer about the latest position that cites only older notes is held back;
  * - on another insurer's form, the insurer on record named as "the insurer" (core/form-record-rules.ts
@@ -20,11 +22,12 @@ import "server-only";
  *   (core/forms.ts parseFormAnswerValue – a value that does not fit is left blank with a gap; an
  *   uncited value gets a gap asking the clinician to confirm it; a value the draft raised a gap about
  *   is left blank, with its paragraphs, for the clinician to pick; a structured answer is entered only when the
- *   record says it – ai/form-drafting-answers.ts: never an opinion no note records, never a grade scale, never a
- *   printed time band on an opinion box, a choice only when one cited sentence holds its whole option phrase
- *   (WD design 4)), `fieldId` set; every gap gets a Gap.kind;
- * - the voice owner (whose "I" the report speaks in) is the report's approver, else the signing author named in the
- *   request; with neither, nobody's (third person) – never guessed from who wrote most notes (WD design 2);
+ *   record says it – ai/form-drafting-answers.ts: never on an opinion box (held back with the cited note's words for
+ *   the approver), never a grade scale, never a printed time band, a choice only when one cited sentence states its
+ *   whole option phrase as a fact (WD design 4)), `fieldId` set; every gap gets a Gap.kind;
+ * - the voice owner (whose "I" the report speaks in) is the report's approver; with none, nobody's (third person) –
+ *   never the author the request names (the client defaults it to the clinician who wrote most notes) and never
+ *   guessed (WD design 2);
  * - the validators run on the drafted sections (flags for those sections only).
  *
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
@@ -61,7 +64,7 @@ import { laterThanAssessment, latestNoteDate, onlyOlderNotes } from "../core/val
 import { describeSourceIds, expandNoteShorthand, fictionalNames, keepFictionalLabels, normaliseJobTitles, notesNamedByAuthor } from "../core/voice";
 import { TICK_SUGGESTED_HOOK, decideStructuredAnswer, draftedGapKind, isClinicianBox } from "./form-drafting-answers";
 import { hookEnabled } from "../core/validation/hooks";
-import { holdBackMeta, pinnedWording } from "./form-drafting-wording";
+import { holdBackMeta, opensWithRetraction, pinnedWording } from "./form-drafting-wording";
 import type { DraftOutput } from "./types";
 
 export interface AssembleDraftInput {
@@ -77,11 +80,11 @@ export interface AssembleDraftInput {
   form?: FormDefinition;
   /** Fixed ID seed (tests); random otherwise. */
   idSeed?: string;
-  /** The clinician who will sign (named in the request; the voice owner when no approver is given). */
+  /** The clinician named as the report's author in the request (never the voice owner – WD design 2). */
   author?: Clinician;
   /**
    * bh2 WD design 2: the report's approving physio – the voice owner. First person only for their own notes; everyone
-   * else stays named. null or absent: the author above, else nobody (third person).
+   * else stays named. null or absent: nobody (third person).
    */
   approver?: { name: string; hcpc?: string | null; memberId?: string } | null;
 }
@@ -182,9 +185,10 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   // dated past events to the note, B3-4, and left fragments, B1-3/B2-6); only pinned token-level substitutions run.
   const otherInsurer = form ? otherInsurerOnForm(form, bundle) : null;
   const fictional = fictionalNames(stringsOf([bundle, input.instructingParty]));
-  // bh2 WD design 2: the voice owner is the approver (else the author the request names) – never a guess.
+  // bh2 WD design 2: the voice owner is the approver – never the request's author (the client's default for it is the
+  // clinician who wrote most notes, the guess design 2 removes), never a guess.
   const approver = input.approver?.name?.trim() ? input.approver : null;
-  const voiceOwner: Clinician | null = approver ? { name: approver.name, hcpc: approver.hcpc ?? "" } : (input.author ?? null);
+  const voiceOwner: Clinician | null = approver ? { name: approver.name, hcpc: approver.hcpc ?? "" } : null;
   const readable = (raw: string) => {
     let text = describeSourceIds(reidentify(raw.trim(), name), { notes: bundle.notes, facts: input.computedFacts });
     if (otherInsurer) text = withoutOtherInsurerName(text, otherInsurer);
@@ -240,7 +244,30 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
           );
         }
         // bh2 WD design 3: drafting meta-wording is held back as an audited item – the rest of the paragraph stays.
-        const meta = holdBackMeta(drafted);
+        let meta = holdBackMeta(drafted);
+        let retractedFrom = valid;
+        // A paragraph that opens by retracting the one before it ("Actually, that was at the first assessment.") puts
+        // that paragraph in doubt too: both are held back together (the same rule as inside one paragraph).
+        const previous = paragraphs[paragraphs.length - 1];
+        if (previous && opensWithRetraction(drafted)) {
+          const joint = holdBackMeta(`${previous.text} ${drafted}`);
+          if (joint.retracted.length > 0) {
+            paragraphs.pop();
+            meta = joint;
+            retractedFrom = Array.from(new Set([...previous.sourceIds, ...valid]));
+          }
+        }
+        if (meta.retracted.length > 0) {
+          holdBack(
+            `retract${paragraphs.length + heldGaps.length + 1}`,
+            {
+              kind: "meta_held_back",
+              issue: `Drafted text held back – check it: ${meta.retracted.map((t) => quoted(t, 240)).join(" ")} The draft corrected itself here, so none of this is printed: check it against the notes.`,
+              suggestedQuestion: `What should “${label}” say? Add what the notes record in your own words, or mark this checked.`,
+            },
+            retractedFrom,
+          );
+        }
         if (meta.heldBack.length > 0) {
           holdBack(
             `meta${paragraphs.length + heldGaps.length + 1}`,

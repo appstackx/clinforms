@@ -58,7 +58,7 @@ export function printedLeadPart(input: ValidatorInput): DraftFitPart {
   return {
     paragraph(p, section) {
       const flags: ReportFlag[] = [];
-      const field = fields.get(section.key);
+      const field = fields.get(section.fieldId ?? section.key);
       if (!field || section.paragraphs[0] !== p) return flags;
       const lead = printedLeadOf(field, input.form ? { analysis: input.form.analysis } : null);
       if (!lead || !repeatsPrintedVerb(p.text, lead)) return flags;

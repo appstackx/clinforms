@@ -39,7 +39,7 @@ export function fragmentsPart(input: ValidatorInput): DraftFitPart {
     paragraph(p, section) {
       const flags: ReportFlag[] = [];
       if (section.answer && section.answer.kind !== "text") return flags;
-      if (compactPlace(fields.get(section.key)) !== null) return flags;
+      if (compactPlace(fields.get(section.fieldId ?? section.key)) !== null) return flags;
       const piece = wordingFragment(p.text);
       if (!piece) return flags;
       const excerpt = piece.length > 60 ? `${piece.slice(0, 57).trimEnd()}…` : piece;

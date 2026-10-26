@@ -10,14 +10,27 @@
  *     an attribution fix may add);
  *   - no sentence the edit creates starts in lower case, with a digit or with a comma (a compact value – "7/10 at worst",
  *     "lighter work" – is a value, not a sentence);
- *   - no "He/She recorded …" loses the sentence that said who recorded it (B3-5);
- *   - the repeated twin still prints, and the box's answer is never removed (the box keeps text);
- *   - a clinical negative ("No red flags were reported.") is never removed;
+ *   - no sentence is left without the clinician or the date it relied on (B3-5 a): when the removed sentences named a
+ *     clinician or a date (or "I recorded …"), the sentence after them must name one itself – "He recorded …", "At
+ *     that review he recorded …", "His review also recorded …", "The Oswestry Disability Index was 18%." would each be
+ *     left saying a finding without who recorded it or when;
+ *   - the repeated twin still prints (its box keeps it, prints text and is not set aside), and it says every figure and
+ *     date the removed sentence says – removing "limited by 10%" because another box says "limited by 50%" is refused;
+ *   - the box's answer is never removed: the box keeps text, and keeps a sentence that answers its question when the
+ *     removed one did – by the question's own words or by its topic ("Treatment provided": a home programme, manual
+ *     therapy, advice … – B3-5 c);
+ *   - a clinical negative is never removed or reworded away: a removal never takes a sentence that says something was
+ *     absent ("No red flags were reported."), and a rewrite keeps every negation ("no", "not", "without", "denies" …);
+ *   - a rewrite of WD's (value-only, printed lead) drops only the words it is for – the attribution, or the repeated
+ *     printed verb – never a clause of the answer ("…, and no red flags were noted", "…, with pain at end of range");
  *   - re-validation adds no blocking flag and clears none but the one the fix answers – a wording fix never makes
  *     unsafe text approvable;
  *   - the paragraph's other warnings stay: the fixed paragraph keeps origin "ai" and records the fix in
  *     Paragraph.fixes {kind, by, at, edits}, so every drafted-text check keeps running on it.
- * Every proposal is shown with its before and after (fix-preview.tsx) and can be undone (undoProposal()).
+ * Who may apply one: a text fix in a clinician's box (an opinion, or the physiotherapist's own choice) is the
+ * approver's (WC design 4); elsewhere any member working on the report.
+ * Every proposal is shown with its before and after (fix-preview.tsx) and can be undone (undoProposal() – a removed
+ * duplicate paragraph is put back where it was).
  *
  * Generators: "repeat-removal" (the sentences another box already says, draft-fit/repeats.ts), "duplicate-paragraph"
  * (an exact second copy in the same box), "value-only" (a compact value from the voice owner's own note,
@@ -34,14 +47,15 @@ import { appendActivity } from "../../../core/report-factory";
 import type { Actor } from "../../../core/actor";
 import type { FixProposal, TextSpan as FixSpan } from "../../../core/fix-types";
 import { compactPlace, printedLeadOf } from "../../../core/forms/answer-shape";
-import { checkSafeEdit, figureChanges, removeSentences, sentenceKey, splitSentences, type TextSpan } from "../../../core/text/sentences";
-import type { Clinician, FormDefinition, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
+import { recordSourceOf } from "../../../core/forms/record-paths";
+import { checkSafeEdit, figureChanges, figuresOf, removeSentences, sentenceKey, splitSentences, type TextSpan } from "../../../core/text/sentences";
+import type { Clinician, EpisodeBundle, FormDefinition, FormField, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { ATTRIBUTION_FIX_GENERATORS } from "../../../core/validation/attribution-fixes";
-import { undosedMedicine } from "../../../core/validation/draft-fit/measure";
+import { medicinesWithoutDose } from "../../../core/validation/draft-fit/measure";
 import { withoutPrintedVerb } from "../../../core/validation/draft-fit/printed-lead";
 import { REPEAT_REMOVAL_HOOK, duplicateParagraphs, repeatedSentences } from "../../../core/validation/draft-fit/repeats";
-import { VALUE_ONLY_HOOK, citesOnlyOwnersNotes, valueOnlyText } from "../../../core/validation/draft-fit/shorten";
+import { VALUE_ONLY_HOOK, citesOnlyOwnersNotes, valueOnlyText, valueOnlyTimePoint } from "../../../core/validation/draft-fit/shorten";
 import { hookEnabled } from "../../../core/validation/hooks";
 import { editParagraph, removeParagraph } from "./reducer";
 
@@ -62,6 +76,16 @@ export interface FixCandidate {
   /** The flags the fix answers (their blocking flag may go). */
   answers: ReportFlag[];
   ackPolicy?: FixProposal["ackPolicy"];
+  /**
+   * A repeat removal: for each removed sentence, the earlier box's sentence it repeats (its twin) – which must still
+   * print, and say every figure and date the removed sentence says.
+   */
+  twins?: Array<{ sectionKey: string; paragraphId: string; text: string; removed: string }>;
+  /**
+   * A rewrite of WD's own: the words (lower case) it may drop besides the attribution wording – e.g. a printed lead's
+   * verb. Absent for another workstream's rewrite (WB's), which is checked by every other rule.
+   */
+  droppable?: ReadonlySet<string>;
 }
 
 export interface FixContext {
@@ -86,9 +110,74 @@ function boxText(report: Pick<Report, "sections">, key: string): string {
 
 /** A sentence of clinical content that says something was absent or negative ("No red flags were reported."). */
 const CLINICAL_NEGATIVE = /\b(?:no|not|nil|none|never|without|denie[sd]|negative|absent|unremarkable)\b/i;
-/** "He recorded …", "She noted …": a sentence whose subject is the clinician named before it. */
-const RECORDER_PRONOUN = /^(?:He|She|They)\s+(?:also\s+|then\s+|later\s+)?(?:recorded|noted|found|assessed|measured|observed|examined|documented)\b/;
+/** The negations a rewrite must keep, counted ("No red flags" → "Red flags" is refused). */
+const NEGATION =
+  /\b(?:no|not|nil|none|never|nothing|neither|nor|without|denie[sd]|deny|negative|absent|unremarkable|unable|cannot|can['’]t|isn['’]t|wasn['’]t|weren['’]t|aren['’]t|doesn['’]t|didn['’]t|don['’]t|hasn['’]t|haven['’]t|hadn['’]t|won['’]t|couldn['’]t|wouldn['’]t|shouldn['’]t)\b/gi;
 
+function negationsOf(text: string): string[] {
+  return (text.match(NEGATION) ?? []).map((w) => w.toLowerCase().replace("’", "'"));
+}
+
+/** Items of `a` (a multiset) that `b` does not have. */
+function missingFrom(a: readonly string[], b: readonly string[]): string[] {
+  const pool = [...b];
+  const out: string[] = [];
+  for (const x of a) {
+    const i = pool.indexOf(x);
+    if (i >= 0) pool.splice(i, 1);
+    else out.push(x);
+  }
+  return out;
+}
+
+/** Attribution wording a value-only rewrite may drop: who recorded it, how, and where ("as recorded by …, using the …"). */
+const ATTRIBUTION_WORDS = new Set(
+  (
+    "as recorded reported noted measured assessed documented scored rated described stated using by on at in the a an of " +
+    "her his their my our first initial latest last final assessment review appointment session visit note notes " +
+    "physiotherapist physiotherapists physio clinician therapist senior scale score"
+  ).split(" "),
+);
+/** The repeated printed verb a printed-lead rewrite drops ("returning to", "to go back to", "resuming"). */
+const PRINTED_VERB_WORDS: ReadonlySet<string> = new Set(
+  "to return returns returning returned go goes going back get gets getting come comes coming went got resume resumes resuming resumed improve improves improving improved be being able".split(" "),
+);
+
+/** The lower-case words of `before` a rewrite no longer has (capitalised names and terms aside). */
+function droppedWords(before: string, after: string): string[] {
+  const lower = (t: string) => (t.match(/\b[a-z][a-z'’-]*\b/g) ?? []).map((w) => w.replace("’", "'"));
+  const afterAll = (after.toLowerCase().match(/\b[a-z][a-z'’-]*\b/g) ?? []).map((w) => w.replace("’", "'"));
+  return missingFrom(lower(before), afterAll);
+}
+
+/** The clinicians of the record, as their full names and surnames ("Tom Ellis", "Ellis"). */
+function clinicianNames(bundle: Pick<EpisodeBundle, "clinicians" | "notes">): string[] {
+  const out = new Set<string>();
+  const add = (name: string | undefined) => {
+    const n = (name ?? "").trim();
+    if (!n) return;
+    out.add(n);
+    const last = n.split(/\s+/).pop() ?? "";
+    if (last.length >= 3) out.add(last);
+  };
+  for (const c of bundle.clinicians ?? []) add(c.name);
+  for (const n of bundle.notes ?? []) add(n.author?.name);
+  return Array.from(out);
+}
+
+const JOB_TITLE = /\b(?:physiotherapists?|physio|clinicians?|therapists?|consultants?|surgeons?|doctors?|GPs?)\b/i;
+const TITLED_NAME = /\b(?:Dr|Prof)\.?\s+[A-Z]/;
+const FIRST_PERSON_RECORD = /\bI (?:recorded|noted|found|assessed|measured|observed|examined|documented|saw|reviewed)\b/;
+const DATE_FIGURE = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/;
+
+/** Whether a sentence says who recorded it or when: a clinician's name or job title, "I recorded …", or a date. */
+function attributes(sentence: string, names: readonly string[]): boolean {
+  if (JOB_TITLE.test(sentence) || TITLED_NAME.test(sentence) || FIRST_PERSON_RECORD.test(sentence)) return true;
+  if (names.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(sentence))) return true;
+  return figuresOf(sentence).some((f) => DATE_FIGURE.test(f)) || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/.test(sentence);
+}
+
+/** Question words that say nothing about what is asked. */
 const QUESTION_STOPWORDS = new Set("a an the and or of to in on at for with by from is are was were be been if yes no please give state describe details detail any other what which when how does do did has have had this that these those there their his her its patient claimant".split(" "));
 
 /** The words of a question that say what it asks ("If yes, describe the treatment advised" → treatment, advised). */
@@ -96,11 +185,72 @@ function questionWords(question: string): string[] {
   return (question.toLowerCase().match(/[a-z]+/g) ?? []).filter((w) => w.length > 2 && !QUESTION_STOPWORDS.has(w));
 }
 
-/** Whether a sentence uses a word of the question (compared on their first five letters: "advised" ~ "advise"). */
-function answersQuestion(sentence: string, question: string): boolean {
+/**
+ * The topics a question can ask about, each with the words of a sentence that answers it – so a sentence that answers
+ * "Treatment provided" without the question's own words ("He was given a home programme of pelvic tilts") still counts
+ * as the box's answering sentence (B3-5 c, bh2 WD review M2).
+ */
+const QUESTION_TOPICS: ReadonlyArray<{ question: RegExp; sentence: RegExp }> = [
+  {
+    question: /\b(?:treat\w*|therap\w*|intervention\w*|management|managed|exercis\w*|rehab\w*|advice|advised|care)\b/i,
+    sentence:
+      /\b(?:treat\w*|therap\w*|exercis\w*|programmes?|programs?|HEP|manual|mobilis\w*|mobiliz\w*|manipulat\w*|massage|soft[- ]tissue|acupunct\w*|needl\w*|tap(?:e|ed|ing)|advice|advised|educat\w*|reassur\w*|stretch\w*|strengthen\w*|hydrotherap\w*|ultrasound|TENS|shockwave|injections?|sessions?|prescrib\w*|pilates|gym|tilts?|squats?|bridges?|rehab\w*)\b/i,
+  },
+  {
+    question: /\b(?:examin\w*|findings?|objective|range|movement|flexion|extension|tests?|measure\w*|scores?|outcome)\b/i,
+    sentence:
+      /\b(?:range|flexion|extension|rotation|abduction|movement|tender\w*|palpat\w*|strength|power|reflex\w*|tests?|tested|positive|negative|limited|restricted|full|pain-free|ROM|examin\w*|observ\w*|measur\w*|scor\w*|index|oswestry|ODI|NPRS|PSFS|QuickDASH|degrees?|neurolog\w*|sensation)\b/i,
+  },
+  {
+    question: /\b(?:symptoms?|complaints?|pain|presenting|problems?)\b/i,
+    sentence: /\b(?:pain\w*|ache\w*|aching|stiff\w*|sore\w*|symptom\w*|numb\w*|tingl\w*|sleep\w*|swell\w*|weak\w*|discomfort|headaches?|spasms?)\b/i,
+  },
+  {
+    question: /\b(?:work\w*|employ\w*|job|dut(?:y|ies)|occupation\w*)\b/i,
+    sentence: /\b(?:work\w*|job|dut(?:y|ies)|employ\w*|shifts?|office|occupation\w*|fit note)\b/i,
+  },
+  {
+    question: /\b(?:incident|accident|injur\w*|mechanism|history|onset)\b/i,
+    sentence: /\b(?:lift\w*|fell|fall\w*|slip\w*|twist\w*|collision|accident|incident|injur\w*|struck|hit|onset|began|started)\b/i,
+  },
+  {
+    question: /\b(?:medic\w*|drugs?|analges\w*|tablets?|prescri\w*)\b/i,
+    sentence: /\b(?:medic\w*|tablets?|analges\w*|ibuprofen|paracetamol|naproxen|codeine|co-codamol|tramadol|diclofenac|gabapentin|pregabalin|amitriptyline|prescri\w*|dose)\b/i,
+  },
+  {
+    question: /\b(?:progress|current|status|now|discharg\w*|recover\w*|outcome)\b/i,
+    sentence: /\b(?:progress\w*|improv\w*|better|worse|resolv\w*|settl\w*|discharg\w*|recover\w*|currently|now|status|returned)\b/i,
+  },
+  {
+    question: /\b(?:goals?|aims?|targets?)\b/i,
+    sentence: /\b(?:goals?|aim\w*|return\w*|targets?)\b/i,
+  },
+];
+
+/**
+ * Whether a sentence answers the question: it uses a word of the question (compared on their first five letters:
+ * "advised" ~ "advise"), or the words of a topic the question asks about.
+ */
+export function answersQuestion(sentence: string, question: string): boolean {
   const stems = new Set(questionWords(question).map((w) => w.slice(0, 5)));
-  if (stems.size === 0) return false;
-  return (sentence.toLowerCase().match(/[a-z]+/g) ?? []).some((w) => w.length > 2 && stems.has(w.slice(0, 5)));
+  if (stems.size > 0 && (sentence.toLowerCase().match(/[a-z]+/g) ?? []).some((w) => w.length > 2 && stems.has(w.slice(0, 5)))) return true;
+  return QUESTION_TOPICS.some((t) => t.question.test(question) && t.sentence.test(sentence));
+}
+
+/** A box only the clinician decides: an opinion, or the physiotherapist's own choice (WC design 3). */
+function clinicianBox(section: Pick<ReportSection, "kind">, field: Pick<FormField, "fillSource" | "guidance"> | undefined): boolean {
+  if (section.kind === "clinician_opinion") return true;
+  return field ? field.fillSource.kind === "clinician_opinion" || recordSourceOf(field) === "physio_choice" : false;
+}
+
+/** Whether a box prints the text of its paragraphs as the report stands (not a structured answer, not set aside). */
+function printsText(section: ReportSection | undefined): boolean {
+  if (!section) return false;
+  if (section.answer && section.answer.kind !== "text") return false;
+  if (section.disposition && section.disposition.kind !== "applies_anyway") return false;
+  // A box with a condition may not be asked at all (WA1's issue state decides) – the twin is not relied on.
+  if (section.condition) return false;
+  return true;
 }
 
 /** The text with one paragraph's text replaced (or the paragraph removed when `text` is ""). */
@@ -145,12 +295,37 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
       // A compact value is a value, not a sentence: it may start with a figure or in lower case.
       const first = splitSentences(c.after, "notes")[0]?.text === p.sentence;
       if (!(compact && first && (p.problem === "digit" || p.problem === "lower_case"))) problems.push(`a sentence would start badly (“${p.sentence.slice(0, 30)}”)`);
-    } else if (p.kind === "orphaned_pronoun" && RECORDER_PRONOUN.test(p.sentence.trim())) problems.push(`“${p.sentence.slice(0, 30)}…” would lose who recorded it`);
+    }
+  }
+  // No sentence is left leaning on a clinician or a date the removal takes out (B3-5 a): "At that review he recorded …".
+  if (c.removedSpans.length > 0) {
+    const names = clinicianNames(report.bundleSnapshot);
+    const spans = splitSentences(c.before);
+    const removed = (i: number) => c.removedSpans.some((r) => spans[i].start >= r.start && spans[i].end <= r.end);
+    for (let i = 0; i < spans.length; i++) {
+      if (!removed(i)) continue;
+      let j = i;
+      while (j + 1 < spans.length && removed(j + 1)) j++;
+      const next = spans[j + 1];
+      const tookAttribution = spans.slice(i, j + 1).some((x) => attributes(x.text, names));
+      if (next && tookAttribution && !attributes(next.text, names)) {
+        problems.push(`“${next.text.slice(0, 30)}…” would lose the clinician or date it relies on`);
+      }
+      i = j;
+    }
   }
   if (c.removedSpans.length === 0 && c.after !== "" && c.before !== c.after) {
     // A rewrite keeps every figure (bar the cited note's own date it may add) – checked above with no removed spans.
     const { lost } = figureChanges(c.before, c.after);
     if (lost.length && !problems.some((x) => x.startsWith("it would change"))) problems.push(`it would drop a figure (${lost.join(", ")})`);
+    // A rewrite keeps every negation (bh2 WD review M3): "No red flags were reported" never becomes "Red flags …".
+    const lostNegations = missingFrom(negationsOf(c.before), negationsOf(c.after));
+    if (lostNegations.length) problems.push(`it would drop a negation (“${lostNegations.join("”, “")}”)`);
+    // A rewrite of WD's drops only what it is for (the attribution, the printed verb) – never a clause of the answer.
+    if (c.droppable) {
+      const extra = droppedWords(c.before, c.after).filter((w) => !ATTRIBUTION_WORDS.has(w) && !c.droppable!.has(w));
+      if (extra.length) problems.push(`it would drop words of the answer (“${extra.slice(0, 4).join("”, “")}”)`);
+    }
   }
   // Clinical negatives are never removed.
   const kept = splitSentences(c.after).map((s) => s.text);
@@ -169,7 +344,18 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
     const stillAnswering = splitSentences(boxText(next, c.sectionKey)).some((x) => answering(x.text));
     if (removedAnswering && !stillAnswering) problems.push("it would remove the only sentence that answers the question");
   }
-  // The repeated twin still prints (a removal of a repeat leaves the earlier box untouched – checked for safety).
+  // The repeated twin still prints, and says every figure and date the removed sentence says (bh2 WD review M1).
+  for (const t of c.twins ?? []) {
+    const twinSection = next.sections.find((s) => s.key === t.sectionKey);
+    const twinParagraph = twinSection?.paragraphs.find((p) => p.id === t.paragraphId);
+    const label = twinSection?.title.trim() || t.sectionKey;
+    if (!twinParagraph || !printsText(twinSection) || !splitSentences(twinParagraph.text).some((x) => sentenceKey(x.text) === sentenceKey(t.text))) {
+      problems.push(`what it repeats (“${label}”) would not print`);
+      continue;
+    }
+    const lost = figureChanges(t.removed, t.text).lost;
+    if (lost.length) problems.push(`“${label}” does not say ${lost.join(", ")}`);
+  }
   // Re-validation: no blocking flag added, none cleared but the ones the fix answers.
   const after = validationOf({ ...next, flags: [] }, ctx);
   const was = countBy(blockingBefore);
@@ -222,12 +408,12 @@ function repeatCandidates(report: Report, ctx: FixContext): FixCandidate[] {
   for (const flag of flags) {
     const at = paragraphOf(report, flag.sectionKey, flag.paragraphId);
     if (!at) continue;
-    const spans = repeats.filter((r) => r.paragraphId === at.paragraph.id).map((r) => r.sentence);
-    if (spans.length === 0) continue;
-    const { after, removedSpans } = removeSentences(at.paragraph.text, spans.map((s) => s.index));
+    const mine = repeats.filter((r) => r.paragraphId === at.paragraph.id);
+    if (mine.length === 0) continue;
+    const { after, removedSpans } = removeSentences(at.paragraph.text, mine.map((r) => r.sentence.index));
     out.push({
       generator: "repeat-removal",
-      label: spans.length === 1 ? "Remove the repeated sentence" : `Remove the ${spans.length} repeated sentences`,
+      label: mine.length === 1 ? "Remove the repeated sentence" : `Remove the ${mine.length} repeated sentences`,
       sectionKey: at.section.key,
       paragraphId: at.paragraph.id,
       before: at.paragraph.text,
@@ -235,6 +421,7 @@ function repeatCandidates(report: Report, ctx: FixContext): FixCandidate[] {
       removedSpans,
       answers: [flag],
       ackPolicy: "member",
+      twins: mine.map((r) => ({ sectionKey: r.of.key, paragraphId: r.of.paragraphId, text: r.of.sentence, removed: r.sentence.text })),
     });
   }
   return out;
@@ -254,6 +441,11 @@ function duplicateCandidates(report: Report): FixCandidate[] {
   return out;
 }
 
+/** The time point a printed question names: "start" (initial, first, pre-injury …), "end" (now, current, discharge …), or null. */
+function labelTimePoint(field: Pick<FormField, "label">): "start" | "end" | null {
+  return valueOnlyTimePoint(field.label);
+}
+
 /** "Use the value only" (B2-16): a compact value from the voice owner's own note, without its undated attribution. */
 function valueOnlyCandidates(report: Report, ctx: FixContext): FixCandidate[] {
   if (!hookEnabled(VALUE_ONLY_HOOK)) return [];
@@ -268,6 +460,10 @@ function valueOnlyCandidates(report: Report, ctx: FixContext): FixCandidate[] {
     if (!citesOnlyOwnersNotes(at.paragraph, report.bundleSnapshot, owner)) continue;
     const value = valueOnlyText(at.paragraph.text);
     if (!value) continue;
+    // The attribution may say which time point the value is from ("… at the first assessment"): it goes only when the
+    // printed question says the same time point.
+    const said = valueOnlyTimePoint(at.paragraph.text.slice(value.length));
+    if (said && said !== labelTimePoint(field)) continue;
     out.push({
       generator: "value-only",
       label: `Use the value only (${value.length > 40 ? `${value.slice(0, 37)}…` : value})`,
@@ -278,25 +474,26 @@ function valueOnlyCandidates(report: Report, ctx: FixContext): FixCandidate[] {
       removedSpans: [],
       answers: [flag],
       ackPolicy: "member",
+      droppable: new Set<string>(),
     });
   }
   return out;
 }
 
-/** "(dose not stated)" (B3-12): a medicine named without a dose no cited note gives. */
+/**
+ * "(dose not stated)" (B3-12): a medicine named without a dose no cited source gives. The finding is the validator's
+ * own (draft-fit/measure.ts dosePart, which reads every cited source – notes, REG, facts – and every mention of the
+ * medicine in them): the fix uses the flag's medicine and re-checks only the paragraph's own wording.
+ */
 function doseCandidates(report: Report): FixCandidate[] {
   const out: FixCandidate[] = [];
   for (const flag of open(report).filter((f) => (f.evidence ?? "").startsWith("dose "))) {
     const at = paragraphOf(report, flag.sectionKey, flag.paragraphId);
     if (!at) continue;
-    const cited = at.paragraph.sourceIds.map((id) => report.bundleSnapshot.notes.find((n) => n.id === id)).filter(Boolean);
-    const citedText = cited.map((n) => [n!.subjective, n!.objective, n!.assessment, n!.plan, n!.freeText ?? ""].join("\n")).join("\n");
-    const medicine = undosedMedicine(at.paragraph.text, citedText);
-    if (!medicine) continue;
-    const re = new RegExp(`\\b${medicine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b(?!\\s*\\(dose)`);
-    const m = re.exec(at.paragraph.text);
-    if (!m) continue;
-    const end = m.index + m[0].length;
+    const flagged = (flag.evidence ?? "").slice("dose ".length).trim().toLowerCase();
+    const mention = medicinesWithoutDose(at.paragraph.text).find((m) => m.name === flagged);
+    if (!mention) continue;
+    const end = mention.end;
     const after = `${at.paragraph.text.slice(0, end)} (dose not stated)${at.paragraph.text.slice(end)}`;
     out.push({ generator: "dose-not-stated", label: "Add “(dose not stated)”", sectionKey: at.section.key, paragraphId: at.paragraph.id, before: at.paragraph.text, after, removedSpans: [], answers: [flag], ackPolicy: "member" });
   }
@@ -313,7 +510,7 @@ function printedLeadCandidates(report: Report, ctx: FixContext): FixCandidate[] 
     const lead = field ? printedLeadOf(field, ctx.form) : null;
     const after = withoutPrintedVerb(at.paragraph.text, lead);
     if (!after || after === at.paragraph.text) continue;
-    out.push({ generator: "printed-lead", label: `Take out the repeated “${lead}”`, sectionKey: at.section.key, paragraphId: at.paragraph.id, before: at.paragraph.text, after, removedSpans: [], answers: [flag], ackPolicy: "member" });
+    out.push({ generator: "printed-lead", label: `Take out the repeated “${lead}”`, sectionKey: at.section.key, paragraphId: at.paragraph.id, before: at.paragraph.text, after, removedSpans: [], answers: [flag], ackPolicy: "member", droppable: PRINTED_VERB_WORDS });
   }
   return out;
 }
@@ -348,14 +545,15 @@ function mayApply(policy: FixProposal["ackPolicy"], report: Pick<Report, "approv
  */
 export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor }): FixProposal[] {
   if (report.status === "signed") return [];
-  const candidates = [
-    ...repeatCandidates(report, ctx),
-    ...duplicateCandidates(report),
-    ...valueOnlyCandidates(report, ctx),
-    ...doseCandidates(report),
-    ...printedLeadCandidates(report, ctx),
-    ...attributionCandidates(report, ctx.actor),
-  ].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
+  // A text fix in a clinician's box is the approver's (WC design 4); WB's generators set their own policy.
+  const own = [...repeatCandidates(report, ctx), ...duplicateCandidates(report), ...valueOnlyCandidates(report, ctx), ...doseCandidates(report), ...printedLeadCandidates(report, ctx)].map(
+    (c): FixCandidate => {
+      const section = report.sections.find((s) => s.key === c.sectionKey);
+      const field = ctx.form?.fields.find((f) => f.id === (section?.fieldId ?? c.sectionKey));
+      return section && clinicianBox(section, field) ? { ...c, ackPolicy: "approver" } : c;
+    },
+  );
+  const candidates = [...own, ...attributionCandidates(report, ctx.actor)].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
   if (candidates.length === 0) return [];
   const blockingBefore = validationOf({ ...report, flags: [] }, ctx);
   const out: FixProposal[] = [];
@@ -371,9 +569,23 @@ export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor })
   return out;
 }
 
-/** The proposal that undoes an applied one (its after back to its before). */
-export function undoProposal(applied: FixProposal): FixProposal {
-  return { generator: `undo-${applied.generator}`.slice(0, 64), sectionKey: applied.sectionKey, paragraphId: applied.paragraphId, label: "Undo", before: applied.after, after: applied.before, removedSpans: [] };
+/** An undo: a FixProposal, plus – for a removed duplicate paragraph – the paragraph to put back and where. */
+export interface UndoProposal extends FixProposal {
+  restore?: { paragraph: Paragraph; index: number };
+}
+
+/**
+ * The proposal that undoes an applied one: its after back to its before. A removed duplicate paragraph (after "")
+ * is put back as it was, where it was – pass the report as it stood when the fix was applied (`before`), which holds
+ * the paragraph; without it the removal cannot be undone (the undo changes nothing).
+ */
+export function undoProposal(applied: FixProposal, before?: Pick<Report, "sections">): UndoProposal {
+  const base: UndoProposal = { generator: `undo-${applied.generator}`.slice(0, 64), sectionKey: applied.sectionKey, paragraphId: applied.paragraphId, label: "Undo", before: applied.after, after: applied.before, removedSpans: [] };
+  if (applied.after.trim() !== "" || !before) return base;
+  const section = before.sections.find((s) => s.key === applied.sectionKey);
+  const index = section ? section.paragraphs.findIndex((p) => p.id === applied.paragraphId) : -1;
+  if (!section || index < 0 || section.paragraphs[index].text !== applied.before) return base;
+  return { ...base, restore: { paragraph: section.paragraphs[index], index } };
 }
 
 const quoteExcerpt = (s: string) => `“${s.length > 70 ? `${s.slice(0, 67).trimEnd()}…` : s}”`;
@@ -385,8 +597,10 @@ const quoteExcerpt = (s: string) => `“${s.length > 70 ? `${s.slice(0, 67).trim
  * "ai", so the drafted-text checks keep running – and the fix is recorded in Paragraph.fixes {kind, by, at, edits} and
  * in the activity log.
  */
-export function applyFixProposal(report: Report, proposal: FixProposal, actor: Actor, now?: Date): Report {
+export function applyFixProposal(report: Report, proposal: FixProposal | UndoProposal, actor: Actor, now?: Date): Report {
   if (report.status === "signed") return report;
+  const restore = "restore" in proposal ? proposal.restore : undefined;
+  if (restore) return restoreParagraph(report, proposal, restore, actor, now);
   const at = paragraphOf(report, proposal.sectionKey, proposal.paragraphId);
   if (!at || at.paragraph.text !== proposal.before || proposal.before === proposal.after) return report;
   const when = (now ?? new Date()).toISOString();
@@ -405,6 +619,21 @@ export function applyFixProposal(report: Report, proposal: FixProposal, actor: A
   return appendActivity(
     { ...report, sections, updatedAt: when },
     { actor: actor.name, action: "edited", detail: `${section.key}: one-click fix “${proposal.label}” – ${quoteExcerpt(proposal.before)} → ${proposal.after.trim() ? quoteExcerpt(proposal.after) : "removed"}.` },
+    now,
+  );
+}
+
+/** Undo of "Remove the second copy": the paragraph back where it was, while the box does not have it. */
+function restoreParagraph(report: Report, proposal: FixProposal, restore: NonNullable<UndoProposal["restore"]>, actor: Actor, now?: Date): Report {
+  const section = report.sections.find((s) => s.key === proposal.sectionKey);
+  if (!section || section.paragraphs.some((p) => p.id === restore.paragraph.id) || restore.paragraph.text !== proposal.after) return report;
+  const when = (now ?? new Date()).toISOString();
+  const paragraphs = [...section.paragraphs];
+  paragraphs.splice(Math.min(restore.index, paragraphs.length), 0, restore.paragraph);
+  const sections = report.sections.map((s) => (s.key !== section.key ? s : { ...s, paragraphs }));
+  return appendActivity(
+    { ...report, sections, updatedAt: when },
+    { actor: actor.name, action: "edited", detail: `${section.key}: one-click fix undone – ${quoteExcerpt(restore.paragraph.text)} put back.` },
     now,
   );
 }

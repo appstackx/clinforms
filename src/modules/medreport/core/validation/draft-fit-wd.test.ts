@@ -14,8 +14,8 @@ import type { FormDefinition, FormField, Paragraph, Report, ReportFlag } from ".
 import { runValidators } from "./index";
 import { repeatsPrintedVerb, withoutPrintedVerb } from "./draft-fit/printed-lead";
 import { sentencesRepeat, nameWords, timePointPair } from "./draft-fit/repeats";
-import { shortenTrigger, valueOnlyText } from "./draft-fit/shorten";
-import { undosedMedicine } from "./draft-fit/measure";
+import { shortenTrigger, valueOnlyText, valueOnlyTimePoint } from "./draft-fit/shorten";
+import { medicinesWithoutDose, undosedMedicine } from "./draft-fit/measure";
 import { wordingFragment } from "./draft-fit/fragments";
 import { TEST_FACTS_DATE, testBundle, testReport, withSection } from "./test-fixtures";
 
@@ -167,4 +167,65 @@ test("printed lead (B2-8, B3-8): a repeated printed verb blocks, from analysis.p
 
 test("R-regression-6: a printed fact never carries drafting-only 'In words:' text", () => {
   for (const fact of computeFacts(testBundle(), { asOf: TEST_FACTS_DATE })) assert.doesNotMatch(`${fact.value} ${fact.detail}`, /In words:/);
+});
+
+/* bh2 WD review (check-WD): initial/current pairs, figures, dated attendances, every dose mention, the field lookup. */
+
+test("review M1 / AC-DRF-6: initial/current pairs whose labels differ in more than the time words are never compared", () => {
+  for (const [a, b] of [
+    ["Which symptoms were there on the first visit?", "Which symptoms are there today?"],
+    ["Outline the client's condition when first seen", "Outline the client's condition today"],
+    ["Spinal mobility at first appointment", "Spinal mobility at last appointment"],
+    ["Sleep quality on presentation", "Sleep quality on discharge"],
+    ["Planned care at the outset", "Care planned now"],
+  ]) assert.ok(timePointPair(a, b), `${a} / ${b}`);
+  for (const [a, b] of [
+    ["History of the incident (as reported)", "Presenting complaints"],
+    ["Examination findings (as recorded)", "Progress and current status"],
+    ["Pain and stiffness at first appointment", "Sleep now"],
+  ]) assert.equal(timePointPair(a, b), false, `${a} / ${b}`);
+});
+
+test("review M1: sentences that say different figures are never a repeat; one inside the other may be", () => {
+  const names = nameWords(testBundle());
+  assert.equal(sentencesRepeat("On 18/03/2026 Sarah Reid recorded lumbar flexion limited by 50% with pain at the end of range.", "On 06/05/2026 Tom Ellis recorded lumbar flexion limited by 10% with pain at the end of range.", names), false);
+  assert.equal(sentencesRepeat("Mr Testcase rated his central lower back pain at 7/10 at worst after his shifts.", "Mr Testcase rated his central lower back pain at 2/10 at worst after his shifts.", names), false);
+  assert.equal(sentencesRepeat("On 18/03/2026 Sarah Reid recorded lumbar flexion limited with pain at the end of range.", "On 06/05/2026 Tom Ellis recorded lumbar flexion limited with pain at the end of range.", names), false, "two dated observations are two time points");
+  assert.ok(sentencesRepeat("Her Patient-Specific Functional Scale score was 2.7 at the first session.", "Her Patient-Specific Functional Scale score went from 2.7 at the first session to 5.3.", names), "PSFS 2.7 is inside the longer sentence");
+});
+
+test("review minor 4: a sentence dated by an attendance anywhere in it is checked against its sources", () => {
+  const dc = form("Treatment Summary Report", [box("F-21", "Mechanism of injury")]);
+  const flags = draftFit(formReport(dc, { "F-21": [ai("I recorded at the discharge assessment on 16/09/2026 that the injury happened at work.", ["N-001"])] }), dc);
+  assert.ok(flags.some((x) => x.sectionKey === "F-21" && x.evidence === "date 16/09/2026"));
+  const fine = draftFit(formReport(dc, { "F-21": [ai("He lifted a box at work on 12/03/2026 (Sarah Reid's assessment on 18/03/2026).", ["N-001"])] }), dc);
+  assert.ok(!fine.some((x) => (x.evidence ?? "").startsWith("date ")), "the note's own day and the day it records");
+});
+
+test("review M7: every mention of the medicine in the cited text is read, in its own sentence; a brand name counts", () => {
+  assert.equal(undosedMedicine("Mr Testcase reported taking ibuprofen for the pain.", "Tried ibuprofen last year without benefit. Now taking ibuprofen 400 mg three times a day."), null);
+  assert.equal(undosedMedicine("He is taking ibuprofen.", "Nurofen 200 mg as needed."), null);
+  assert.equal(undosedMedicine("He is taking ibuprofen.", "Takes ibuprofen when needed."), "ibuprofen", "a frequency alone is not a dose");
+  assert.deepEqual(
+    medicinesWithoutDose("He stopped naproxen. Now taking ibuprofen and paracetamol.").map((m) => m.name),
+    ["ibuprofen", "paracetamol"],
+  );
+});
+
+test("review M3: value-only never drops a clause of the answer – only the attribution", () => {
+  assert.equal(valueOnlyText("7/10 at worst, as recorded by Sarah Reid, and no red flags were noted."), null);
+  assert.equal(valueOnlyText("Full and pain-free, as recorded by Sarah Reid, with no pain on overpressure."), null);
+  assert.equal(valueOnlyText("7/10 at worst (recorded by Sarah Reid, worse at night)."), null);
+  assert.equal(valueOnlyText("Full, as assessed by Sarah Reid at the first assessment with no pain."), null);
+  assert.equal(valueOnlyText("No pain on overpressure, as recorded by Sarah Reid."), "No pain on overpressure");
+  assert.equal(valueOnlyTimePoint(", noted on the first visit."), "start");
+  assert.equal(valueOnlyTimePoint("Lumbar flexion – now"), "end");
+  assert.equal(valueOnlyTimePoint(", as recorded by Sarah Reid."), null);
+});
+
+test("review minor 12: the printed-lead check finds the field by section.fieldId", () => {
+  const f = form("Initial Assessment Report", [cell("F-27", "Next step – to return to", { guidance: "Completes the printed words “To return to”." })]);
+  const base = formReport(f, { "F-27": [ai("returning to work as a delivery driver", ["N-001"])] });
+  const renamed: Report = { ...base, sections: base.sections.map((s) => (s.key === "F-27" ? { ...s, key: "F-27~row", fieldId: "F-27" } : s)) };
+  assert.ok(draftFit(renamed, f).some((x) => x.evidence === "printed lead"));
 });

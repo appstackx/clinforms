@@ -15,7 +15,7 @@ import { checkSafeEdit, figuresOf } from "../../../core/text/sentences";
 import type { FormDefinition, FormField, Paragraph, Report, ReportTemplate } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { TEST_FACTS_DATE, testBundle, testReport, withSection } from "../../../core/validation/test-fixtures";
-import { applyFixProposal, offeredFixes, undoProposal } from "./fixes";
+import { answersQuestion, applyFixProposal, fixRuleProblems, offeredFixes, undoProposal, type FixCandidate } from "./fixes";
 
 const SOL = SOLICITOR_RTA_TEMPLATE;
 const AT = "2026-10-06T09:00:00.000Z";
@@ -177,4 +177,141 @@ test("I8 property: every fix offered on these drafts keeps the text-level rules 
       assert.doesNotMatch(fix.before.replace(fix.after, ""), /\bNo red flags\b/, "a clinical negative is never removed");
     }
   }
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * bh2 WD review (check-WD): the engine's rules against paraphrases and changed figures
+ * ----------------------------------------------------------------------------------------------*/
+
+const pat = namedActor("Pat Morgan", "staff", { memberId: "mem_pat" });
+const repeatFixes = (r: Report) => fixesOf(r).filter((f) => f.generator === "repeat-removal");
+
+test("review M1: two measurements that differ only in their figures are not a repeat – nothing is offered", () => {
+  const flexion = builtIn({
+    examination_findings: ["On 18/03/2026 Sarah Reid, physiotherapist, recorded lumbar flexion limited by 50% with pain at the end of range."],
+    progress_current_status: ["On 06/05/2026 Tom Ellis, physiotherapist, recorded lumbar flexion limited by 10% with pain at the end of range. Mr Testcase was discharged to self-management."],
+  });
+  assert.ok(!flexion.flags.some((f) => (f.evidence ?? "").startsWith("repeat")), "50% and 10% are two measurements");
+  assert.deepEqual(repeatFixes(flexion), []);
+  const pain = builtIn({
+    presenting_complaints: ["Mr Testcase rated his central lower back pain at 7/10 at worst after his shifts."],
+    progress_current_status: ["Mr Testcase rated his central lower back pain at 2/10 at worst after his shifts. He was discharged to self-management."],
+  });
+  assert.ok(!pain.flags.some((f) => (f.evidence ?? "").startsWith("repeat")));
+  assert.deepEqual(repeatFixes(pain), []);
+});
+
+test("review M1: a repeat that says more figures than its twin keeps its warning, but is never removed", () => {
+  const r = builtIn({
+    presenting_complaints: ["Mr Testcase rated his central lower back pain at 7/10 at worst after his shifts."],
+    progress_current_status: ["Mr Testcase rated his central lower back pain at 7/10 at worst after his shifts, and 2/10 at rest. He was discharged to self-management."],
+  });
+  assert.ok(r.flags.some((f) => f.sectionKey === "progress_current_status" && (f.evidence ?? "").startsWith("repeat")), "advice stays");
+  assert.deepEqual(repeatFixes(r), [], "removing it would lose 2/10 at rest");
+});
+
+test("review M1: the repeated twin must still print – a twin box set aside, or answered by a structured value, is not relied on", () => {
+  const boxes = {
+    examination_findings: ["Mr Testcase described pain across the lower back after lifting a box at work."],
+    progress_current_status: ["Mr Testcase described pain across the lower back after lifting a box at work. He was sleeping poorly."],
+  };
+  const r = builtIn(boxes);
+  assert.equal(repeatFixes(r).length, 1, "the ordinary case is offered (REP-remove-pass-01)");
+  const setAside: Report = {
+    ...r,
+    sections: r.sections.map((s) => (s.key === "examination_findings" ? { ...s, disposition: { kind: "not_applicable" as const, by: sarah, at: AT } } : s)),
+  };
+  assert.deepEqual(repeatFixes(setAside), [], "the earlier box will not print");
+});
+
+test("review M2: a removal never leaves a finding without the clinician or date it relied on (paraphrases of 'He recorded …')", () => {
+  for (const second of [
+    "At that review he recorded an Oswestry Disability Index of 18%.",
+    "His review also recorded an Oswestry Disability Index of 18%.",
+    "The Oswestry Disability Index was 18%.",
+  ]) {
+    const r = builtIn({
+      examination_findings: ["On 06/05/2026 Tom Ellis, physiotherapist, recorded that the lower back pain was improving."],
+      progress_current_status: [`On 06/05/2026 Tom Ellis, physiotherapist, recorded that the lower back pain was improving. ${second}`],
+    });
+    assert.ok(r.flags.some((f) => f.sectionKey === "progress_current_status" && (f.evidence ?? "").startsWith("repeat")), second);
+    assert.deepEqual(repeatFixes(r), [], second);
+  }
+});
+
+test("review M2: the box's answering sentence is recognised by its topic, not only by the question's own words", () => {
+  assert.ok(answersQuestion("Mr Testcase was given a home programme of pelvic tilts ten times three times a day.", "Treatment provided"));
+  assert.ok(!answersQuestion("He was discharged to self-management.", "Treatment provided"));
+  assert.ok(answersQuestion("Lumbar flexion was limited by 50%.", "Examination findings (as recorded)"));
+  const r = builtIn({
+    examination_findings: ["Mr Testcase was given a home programme of pelvic tilts ten times three times a day."],
+    treatment_provided: ["Mr Testcase was given a home programme of pelvic tilts ten times three times a day. He was discharged to self-management."],
+  });
+  assert.deepEqual(repeatFixes(r), [], "the treatment box's only treatment sentence stays");
+});
+
+test("review M3: a rewrite never drops a negation or a clause of the answer", () => {
+  const r = builtIn({ examination_findings: ["No red flags were reported at the assessment."] });
+  const p = r.sections.find((s) => s.key === "examination_findings")!.paragraphs[0];
+  const ctx = { form: null, template: SOL };
+  const blocking = validateReport(r, SOL).blocking;
+  const candidate = (after: string, droppable?: ReadonlySet<string>): FixCandidate => ({ generator: "probe", label: "probe", sectionKey: "examination_findings", paragraphId: p.id, before: p.text, after, removedSpans: [], answers: [], ...(droppable ? { droppable } : {}) });
+  assert.ok(fixRuleProblems(r, candidate("Red flags were reported at the assessment."), ctx, blocking).some((x) => /negation/.test(x)), "any rewrite keeps its negations");
+  const r2 = builtIn({ examination_findings: ["Lumbar flexion was limited by 50%, with pain at the end of range."] });
+  const p2 = r2.sections.find((s) => s.key === "examination_findings")!.paragraphs[0];
+  const c2: FixCandidate = { generator: "probe", label: "probe", sectionKey: "examination_findings", paragraphId: p2.id, before: p2.text, after: "Lumbar flexion was limited by 50%.", removedSpans: [], answers: [], droppable: new Set() };
+  assert.ok(fixRuleProblems(r2, c2, ctx, validateReport(r2, SOL).blocking).some((x) => /words of the answer/.test(x)), "a WD rewrite drops only the attribution");
+});
+
+test("review M3: 'Use the value only' is never offered when the clause holds more than the attribution", () => {
+  const f = cellForm([cell("F-12", "Pain now (0-10)"), cell("F-13", "Lumbar flexion – at first assessment"), cell("F-14", "Lumbar flexion – now")]);
+  for (const [key, text] of [
+    ["F-12", "7/10 at worst, as recorded by Sarah Reid, and no red flags were noted."],
+    ["F-14", "Full and pain-free, as recorded by Sarah Reid, with no pain on overpressure."],
+    ["F-14", "Full, as recorded by Sarah Reid, with pain at end of range."],
+    // The clause names a time point the box does not ask about: the value would lose which assessment it is from.
+    ["F-14", "Full, as recorded by Sarah Reid at the first assessment."],
+  ] as const) {
+    const r = formWith(f, { [key]: [ai(text, ["N-001"])] });
+    assert.deepEqual(fixesOf(r, formToTemplate(f), f).filter((x) => x.generator === "value-only"), [], text);
+  }
+  const ok = formWith(f, { "F-13": [ai("Limited by 50%, as recorded by Sarah Reid at the first assessment.", ["N-001"])] });
+  assert.equal(fixesOf(ok, formToTemplate(f), f).find((x) => x.generator === "value-only")?.after, "Limited by 50%", "the box says the same time point");
+});
+
+test("review M7: '(dose not stated)' is never offered when a cited note gives the dose at a later mention; it goes next to the flagged mention", () => {
+  const base = builtIn({});
+  const bundle = { ...base.bundleSnapshot, notes: base.bundleSnapshot.notes.map((x) => (x.id === "N-001" ? { ...x, subjective: "Tried ibuprofen last year without benefit. Now taking ibuprofen 400 mg three times a day, prescribed by his GP." } : x)) };
+  let r: Report = withSection({ ...base, bundleSnapshot: bundle }, "presenting_complaints", [ai("Mr Testcase reported taking ibuprofen for the pain.")]);
+  r = { ...r, flags: validateReport(r, SOL).flags };
+  assert.ok(!r.flags.some((f) => (f.evidence ?? "").startsWith("dose")), "the note gives 400 mg");
+  assert.deepEqual(fixesOf(r).filter((f) => f.generator === "dose-not-stated"), []);
+  const two = builtIn({ presenting_complaints: ["He stopped naproxen. He is now taking paracetamol."] });
+  const fix = fixesOf(two).find((f) => f.generator === "dose-not-stated");
+  assert.equal(fix?.after, "He stopped naproxen. He is now taking paracetamol (dose not stated).");
+});
+
+test("review minor 7: 'Remove the second copy' can be undone – the paragraph is put back where it was", () => {
+  const r = builtIn({ progress_current_status: ["He was discharged to self-management.", "He was discharged to self-management."] });
+  const fix = fixesOf(r).find((f) => f.generator === "duplicate-paragraph");
+  assert.ok(fix, "offered");
+  const applied = applyFixProposal(r, fix, sarah, new Date(AT));
+  const box = (x: Report) => x.sections.find((s) => s.key === "progress_current_status")!.paragraphs;
+  assert.equal(box(applied).length, 1);
+  const undone = applyFixProposal(applied, undoProposal(fix, r), sarah, new Date(AT));
+  assert.deepEqual(box(undone), box(r), "the same paragraph, in the same place");
+  assert.equal(applyFixProposal(undone, undoProposal(fix, r), sarah), undone, "an undo applies once");
+});
+
+test("review minor 12: a text fix in a clinician's box is the approver's; in a record box any member's", () => {
+  const boxes = {
+    examination_findings: ["Mr Testcase described pain across the lower back after lifting a box at work."],
+    prognosis: ["Mr Testcase described pain across the lower back after lifting a box at work. Tom Ellis recorded a phased return over 2 weeks."],
+    progress_current_status: ["Mr Testcase described pain across the lower back after lifting a box at work. He was sleeping poorly."],
+  };
+  const r = builtIn(boxes);
+  const by = (actor: typeof sarah) => offeredFixes(r, { actor, template: SOL, form: null }).filter((f) => f.generator === "repeat-removal").map((f) => `${f.sectionKey}:${f.ackPolicy}`);
+  assert.ok(by(pat).includes("progress_current_status:member"));
+  assert.ok(!by(pat).some((x) => x.startsWith("prognosis")), "staff never edit a clinician's box in one click");
+  assert.ok(by(sarah).includes("prognosis:approver"), "the approver may");
 });

@@ -41,7 +41,8 @@ import "server-only";
  * (api/usage.ts usageEpisodeFp). Demo answers never count.
  *
  * bh2 WD design 2: `approver` (the report's approving physio) is the drafting voice owner – the prompt's first person and
- * assembly's voice check; `author` only when no approver is sent.
+ * assembly's voice check. With no approver the draft is in the third person: `author` is never the voice owner (the
+ * client defaults it to the clinician who wrote most notes – the guess design 2 removes).
  *
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
@@ -149,9 +150,9 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     failedCallCounted = true;
     await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: false, ...usageOfError(err) });
   };
-  // bh2 WD design 2: the drafting voice owner is the report's approving physio (the request's `approver`), else the
-  // signing author it names; with neither, nobody's – the draft is in the third person. Never guessed from the notes.
-  const voiceOwner = form ? (body.approver ? { name: body.approver.name, hcpc: body.approver.hcpc } : (body.author ?? null)) : null;
+  // bh2 WD design 2: the drafting voice owner is the report's approving physio (the request's `approver`); with none,
+  // nobody's – the draft is in the third person. Never the request's author, never guessed from the notes.
+  const voiceOwner = form && body.approver ? { name: body.approver.name, hcpc: body.approver.hcpc } : null;
   const run = (m: typeof mode) =>
     generateDraftGroup({
       template,

@@ -6,24 +6,33 @@
  * may be acknowledged with a reason (ackPolicy "member").
  *
  * How two sentences are compared (the shared tokenizer, core/text/sentences.ts – never a split inside "8.0"):
- * - only alphabetic content words count: no figures, dates, units, frequency words ("2–3 times a week" against "3–4
- *   times a week" is not a repeat, B3-11), names, titles, or the reporting frame ("On 18/03/2026 Sarah Reid,
- *   physiotherapist, recorded that …" against "Mr Testcase reported that …" is a repeat, B3-11 (b));
- * - the shorter sentence has at least 5 words and 3 content words, and at least 0.8 of its content words are in the
- *   other sentence;
- * - never across an initial / current / now / at-discharge pair of the same question (R-regression-4), never between
+ * - the words: only alphabetic content words count – no figures, dates, units, frequency words, names, titles, or the
+ *   reporting frame ("On 18/03/2026 Sarah Reid, physiotherapist, recorded that …" against "Mr Testcase reported that …"
+ *   is a repeat, B3-11 (b)); the shorter sentence has at least 5 words and 3 content words, and at least 0.8 of its
+ *   content words are in the other sentence;
+ * - the figures (bh2 WD review M1): two sentences that say different figures are never a repeat – "flexion limited by
+ *   50%" and "flexion limited by 10%", pain "7/10" and "2/10", "2–3 times a week" and "3–4 times a week" (B3-11) each
+ *   report a different measurement. The figures other than dates of one sentence must all be in the other (as a
+ *   multiset: "PSFS 2.7" is repeated inside "PSFS from 2.7 to 5.3", never by "PSFS 5.3"); when both sentences are
+ *   dated, they must share a date (two dated observations of the same finding are two time points). Which of the two
+ *   may be removed is the one-click engine's rule: only a sentence whose every figure and date its twin also says;
+ * - never across an initial / current / now / at-discharge pair of questions (R-regression-4, AC-DRF-6) – the two
+ *   labels name different time points and otherwise ask the same thing ("Which symptoms were there on the first
+ *   visit?" / "Which symptoms are there today?", "Sleep quality on presentation" / "Sleep quality on discharge"); never between
  *   the columns of numbered rows ("Session 1 – date", "Session 2 – date"), never between compact values (a cell's
  *   value is not a sentence).
  * Messages name the other box by its printed label, and say "in this report" on a built-in report (R-regression-7).
  *
  * The one-click "Remove the repeated sentence" (ui/components/review/fixes.ts, generator "repeat-removal") is built
- * from repeatedSentences() and offered only when the engine's rules hold (whole sentences, figures kept, never the
- * box's only answering sentence, never an orphaned "He recorded …" – B3-2, B3-5, R-regression-3).
+ * from repeatedSentences() – each with the earlier sentence it repeats (its twin) – and offered only when the engine's
+ * rules hold (whole sentences; the twin still prints and says every figure and date the removed sentence says; never
+ * the box's only answering sentence; never a sentence left without the clinician or date it relied on – B3-2, B3-5,
+ * R-regression-3).
  *
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
 import { compactPlace } from "../../forms/answer-shape";
-import { splitSentences, sentenceKey, type SentenceSpan } from "../../text/sentences";
+import { figuresOf, splitSentences, sentenceKey, type SentenceSpan } from "../../text/sentences";
 import { defineHook } from "../hooks";
 import type { EpisodeBundle, FormDefinition, Paragraph, ReportFlag, ReportSection } from "../../types";
 import { makeFlag } from "../context";
@@ -93,10 +102,43 @@ export function contentWords(sentence: string, names: ReadonlySet<string>): Set<
   return out;
 }
 
+/** A figure that is a date ("06/05/2026", "6.5.26", "2026-05-06"). */
+const DATE_FIGURE = /^(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})$/;
+
+/** The figures of a sentence, split into its dates and its other figures (measurements, scores, counts). */
+export function figuresByKind(sentence: string): { dates: string[]; values: string[] } {
+  const all = figuresOf(sentence);
+  return { dates: all.filter((f) => DATE_FIGURE.test(f)), values: all.filter((f) => !DATE_FIGURE.test(f)).sort() };
+}
+
+/** Whether every item of `a` is in `b` (multisets). */
+function within(a: readonly string[], b: readonly string[]): boolean {
+  const pool = [...b];
+  for (const x of a) {
+    const i = pool.indexOf(x);
+    if (i < 0) return false;
+    pool.splice(i, 1);
+  }
+  return true;
+}
+
+/**
+ * Whether two sentences can report the same thing by their figures (see the header): the figures other than dates of
+ * one all in the other, and – when both are dated – a date in common.
+ */
+export function sameFigures(a: string, b: string): boolean {
+  const x = figuresByKind(a);
+  const y = figuresByKind(b);
+  if (!within(x.values, y.values) && !within(y.values, x.values)) return false;
+  if (x.dates.length > 0 && y.dates.length > 0 && !x.dates.some((d) => y.dates.indexOf(d) >= 0)) return false;
+  return true;
+}
+
 /** Whether two sentences say the same thing (see the header). */
 export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>): boolean {
   const [short, long] = alphaWords(a).length <= alphaWords(b).length ? [a, b] : [b, a];
   if (alphaWords(short).length < 5) return false;
+  if (!sameFigures(a, b)) return false;
   const ws = contentWords(short, names);
   const wl = contentWords(long, names);
   if (ws.size < 3 || wl.size < 3) return false;
@@ -108,18 +150,59 @@ export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>
 }
 
 const TIME_WORDS =
-  /\b(?:at (?:the )?(?:first|initial|final|latest|last) (?:assessment|appointment|session|review)|at (?:the )?(?:assessment|discharge|start|end|outset)|on (?:discharge|admission|referral)|initial(?:ly)?|first|now|current(?:ly)?|latest|final|present|today|pre[- ]?injury|before|after|baseline|start|end|discharge|assessment|previous(?:ly)?)\b/gi;
+  /\b(?:at (?:the )?(?:first|initial|final|latest|last|most recent) (?:assessment|appointment|session|review|visit)|at (?:the )?(?:assessment|discharge|start|end|outset|presentation|review)|on (?:discharge|admission|referral|presentation|assessment)|at the end of treatment|so far|to date|initial(?:ly)?|first|now|current(?:ly)?|latest|final|present(?:ly)?|presenting|presentation|today|pre[- ]?(?:injury|accident|incident)|before|after|baseline|start|end|onset|outset|admission|referral|intake|original(?:ly)?|recent(?:ly)?|since|discharge|assessment|previous(?:ly)?)\b/gi;
 
 /** A label without its time point: "Lumbar flexion – at first assessment" and "Lumbar flexion – now" give the same. */
 function withoutTimePoint(label: string): string {
   return label.toLowerCase().replace(TIME_WORDS, " ").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-/** Two boxes that ask the same question at two time points (an initial / current pair). */
+/** The time point words of a label ("on the first visit" → first; "today" → today). */
+function timeWordsOf(label: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of label.toLowerCase().match(new RegExp(TIME_WORDS.source, "gi")) ?? []) out.add(m.replace(/\s+/g, " ").trim());
+  return out;
+}
+
+/** Words of a question that do not say what it asks about ("What were …", "Please describe the patient's …"). */
+const QUESTION_FRAME = new Set(
+  "a an the and or of to in on at for with by from as is are was were be been has have had do does did what which when how who please describe give state detail details list any patient patients patient's claimant client s his her their its".split(" "),
+);
+
+/** A word without its common endings ("planned" → plan, "symptoms" → symptom), for comparing two labels. */
+function stem(w: string): string {
+  const s = w.replace(/(?:ning|ned|ing|ed|es|s)$/, "");
+  return s.length >= 3 ? s : w;
+}
+
+/** What a label asks about, its time point and the question's frame aside (as word stems). */
+function labelSubject(label: string): Set<string> {
+  return new Set(withoutTimePoint(label).split(" ").filter((w) => w && !QUESTION_FRAME.has(w)).map(stem));
+}
+
+/**
+ * Two boxes that ask the same question at two time points (an initial / current pair, R-regression-4, AC-DRF-6): the
+ * same label once the time words are taken out ("Lumbar flexion – at first assessment" / "Lumbar flexion – now"), or two
+ * labels that each name a different time point and otherwise ask about the same thing – the same subject words, or
+ * mostly the same ("Which symptoms were there on the first visit?" / "Which symptoms are there today?", "Outline the
+ * client's condition when first seen" / "Outline the client's condition today", "Sleep quality on presentation" /
+ * "Sleep quality on discharge"). In doubt the pair is not compared: a repeat is only advice.
+ */
 export function timePointPair(a: string, b: string): boolean {
+  if (a.trim().toLowerCase() === b.trim().toLowerCase()) return false;
   const x = withoutTimePoint(a);
   const y = withoutTimePoint(b);
-  return x !== "" && x === y && a.trim().toLowerCase() !== b.trim().toLowerCase();
+  if (x !== "" && x === y) return true;
+  const ta = timeWordsOf(a);
+  const tb = timeWordsOf(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  if (ta.size === tb.size && Array.from(ta).every((w) => tb.has(w))) return false;
+  const sa = labelSubject(a);
+  const sb = labelSubject(b);
+  if (sa.size === 0 && sb.size === 0) return true;
+  const shared = Array.from(sa).filter((w) => sb.has(w)).length;
+  const union = new Set([...Array.from(sa), ...Array.from(sb)]).size;
+  return union > 0 && shared / union >= 0.5;
 }
 
 /** "Activity 2 – frequency" → {stem "activity#– frequency", n 2, column "– frequency"}; null when not a numbered row. */
@@ -151,8 +234,8 @@ export interface RepeatedSentence {
   key: string;
   paragraphId: string;
   sentence: SentenceSpan;
-  /** The earlier box (and paragraph) that already says it. */
-  of: { key: string; title: string; paragraphId: string };
+  /** The earlier box (and paragraph) that already says it, and the sentence there that says it (its twin). */
+  of: { key: string; title: string; paragraphId: string; sentence: string };
 }
 
 interface Printed {
@@ -190,16 +273,13 @@ export function repeatedSentences(
   for (const later of drafts) {
     if (later.compact) continue;
     for (const sentence of splitSentences(later.paragraph.text)) {
-      const earlier = drafts.find(
-        (e) =>
-          !e.compact &&
-          (order.get(e.section.key) ?? 0) < (order.get(later.section.key) ?? 0) &&
-          !timePointPair(e.section.title, later.section.title) &&
-          !sameNumberedColumn(e.section.title, later.section.title) &&
-          splitSentences(e.paragraph.text).some((t) => sentencesRepeat(t.text, sentence.text, names)),
-      );
-      if (earlier) {
-        out.push({ key: later.section.key, paragraphId: later.paragraph.id, sentence, of: { key: earlier.section.key, title: earlier.section.title.trim(), paragraphId: earlier.paragraph.id } });
+      for (const e of drafts) {
+        if (e.compact || (order.get(e.section.key) ?? 0) >= (order.get(later.section.key) ?? 0)) continue;
+        if (timePointPair(e.section.title, later.section.title) || sameNumberedColumn(e.section.title, later.section.title)) continue;
+        const twin = splitSentences(e.paragraph.text).find((t) => sentencesRepeat(t.text, sentence.text, names));
+        if (!twin) continue;
+        out.push({ key: later.section.key, paragraphId: later.paragraph.id, sentence, of: { key: e.section.key, title: e.section.title.trim(), paragraphId: e.paragraph.id, sentence: twin.text } });
+        break;
       }
     }
   }

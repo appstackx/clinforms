@@ -5,7 +5,8 @@
  * (ui/components/review/fixes.ts offeredFixes – each already checked by the engine's rules) shows its before and after
  * first, is applied only when the person confirms, and can be undone straight after. Applying dispatches the reducer's
  * `applyFix {proposal}` (use-review-state.ts, WC) through `onApply`; Undo dispatches the inverse proposal
- * (fixes.ts undoProposal), which applies only while the paragraph still reads what the fix wrote.
+ * (fixes.ts undoProposal), which applies only while the paragraph still reads what the fix wrote – a removed duplicate
+ * paragraph is put back from the report as it stood when the fix was made.
  *
  * WC places this component next to a flag (issues.tsx / question-card.tsx, its files). Neutral wording, no colours that
  * read as "approve": a fix is the person's choice, never the default button.
@@ -43,25 +44,23 @@ export function FixPreview(props: FixPreviewProps) {
     [props.proposals, template, report, flag, actor, form],
   );
   const [open, setOpen] = useState<FixProposal | null>(null);
-  const [applied, setApplied] = useState<FixProposal | null>(null);
+  const [applied, setApplied] = useState<{ fix: FixProposal; before: Report } | null>(null);
 
   if (readOnly) return null;
   if (applied) {
     return (
       <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-        <span>Changed: {applied.label}.</span>
-        {applied.after.trim() !== "" && (
-          <button
-            type="button"
-            className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2.5 font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
-            onClick={() => {
-              onApply(undoProposal(applied));
-              setApplied(null);
-            }}
-          >
-            Undo
-          </button>
-        )}
+        <span>Changed: {applied.fix.label}.</span>
+        <button
+          type="button"
+          className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2.5 font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
+          onClick={() => {
+            onApply(undoProposal(applied.fix, applied.before));
+            setApplied(null);
+          }}
+        >
+          Undo
+        </button>
       </div>
     );
   }
@@ -80,7 +79,7 @@ export function FixPreview(props: FixPreviewProps) {
             className="inline-flex h-7 items-center rounded-md bg-slate-800 px-2.5 font-semibold text-white hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
             onClick={() => {
               onApply(open);
-              setApplied(open);
+              setApplied({ fix: open, before: report });
               setOpen(null);
             }}
           >

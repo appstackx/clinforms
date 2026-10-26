@@ -162,3 +162,61 @@ test("B2-5: a yes-or-no question answered in words is never answered with a list
   const yes = assemble(fm, { sections: [{ sectionKey: "F-20", answer: "", paragraphs: [{ text: "No – none were found.", sourceIds: ["N-001"], basis: "record" }] }], gaps: [] });
   assert.equal(yes.sections[0].paragraphs.length, 1);
 });
+
+/* bh2 WD review (check-WD): a retraction is its own audited gap; the request's author is never the voice owner. */
+
+test("review M4: a sentence the drafting retracted is never printed – held back with the retraction as its own audited gap", () => {
+  const text = "Lumbar movement was limited by 50% at discharge. Actually, that was at the first assessment; at discharge it was full and pain-free.";
+  const res = assemble(form("Treatment Summary Report"), { sections: [{ sectionKey: "F-15", answer: "", paragraphs: [{ text, sourceIds: ["N-002"], basis: "clinician_observed" }] }], gaps: [] });
+  assert.deepEqual(res.sections[0].paragraphs, []);
+  const gap = res.gaps.find((g) => g.sectionKey === "F-15" && g.kind === "meta_held_back");
+  assert.ok(gap);
+  assert.match(gap.issue, /^Drafted text held back – check it: “Lumbar movement was limited by 50% at discharge\. Actually, that was at the first assessment; at discharge it was full and pain-free\.” The draft corrected itself here, so none of this is printed: check it against the notes\.$/);
+  assert.deepEqual(gap.relatedNoteIds, ["N-002"], "keeps its notes");
+});
+
+test("review M4: a paragraph that opens by retracting the one before it holds both back", () => {
+  const res = assemble(form("Treatment Summary Report"), {
+    sections: [
+      {
+        sectionKey: "F-15",
+        answer: "",
+        paragraphs: [
+          { text: "Lumbar movement was limited by 50% at discharge.", sourceIds: ["N-002"], basis: "clinician_observed" },
+          { text: "Actually, that was at the first assessment. He was discharged to self-management.", sourceIds: ["N-001"], basis: "clinician_observed" },
+        ],
+      },
+    ],
+    gaps: [],
+  });
+  assert.deepEqual(res.sections[0].paragraphs.map((p) => p.text), ["He was discharged to self-management."]);
+  const gap = res.gaps.find((g) => g.sectionKey === "F-15" && g.kind === "meta_held_back");
+  assert.match(gap?.issue ?? "", /“Lumbar movement was limited by 50% at discharge\. Actually, that was at the first assessment\.” The draft corrected itself here/);
+  assert.deepEqual(gap?.relatedNoteIds, ["N-002", "N-001"]);
+});
+
+test("review minor 8: the request's author is never the drafting voice owner – with no approver the draft is nobody's first person", () => {
+  const text = "On 18/03/2026 I recorded that the presentation was consistent with acute mechanical low back pain.";
+  const bundle = testBundle();
+  const fm = form("Treatment Summary Report");
+  const run = (author: { name: string; hcpc: string } | undefined, approver: { name: string; hcpc: string } | null) =>
+    assembleDraft({
+      template: formToTemplate(fm),
+      bundle,
+      instructingParty: bundle.referral,
+      sectionKeys: ["F-15"],
+      computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }),
+      output: { sections: [{ sectionKey: "F-15", answer: "", paragraphs: [{ text, sourceIds: ["N-001"], basis: "clinician_observed" }] }], gaps: [] },
+      meta: { mode: "demo_prewritten", sectionKeys: ["F-15"], at: AT, promptVersion: FORM_DRAFT_PROMPT_VERSION },
+      form: fm,
+      idSeed: "asm",
+      ...(author ? { author } : {}),
+      approver,
+    });
+  const tom = { name: "Tom Ellis", hcpc: "PH-DEMO-02" };
+  // The client defaults the author to the clinician who wrote most notes: Sarah Reid's note in "Tom Ellis's" first
+  // person is checked against the APPROVER only – with no approver nobody's "I" is assumed.
+  assert.ok(!run(tom, null).flags.some((x) => x.code === "OTHER_CLINICIAN_VOICE"), "the author is not the voice owner");
+  assert.equal(run(tom, null).sections[0].paragraphs[0].text, text, "printed as drafted");
+  assert.ok(run(undefined, tom).flags.some((x) => x.code === "OTHER_CLINICIAN_VOICE" && x.evidence === "Sarah Reid"), "the approver is");
+});

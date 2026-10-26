@@ -3,9 +3,12 @@
  *
  * The model proposes an answer ("Yes", "0-3 months", "Grade 2", "Some difficulty"); code enters it only when the record
  * says it, and never when the answer is the clinician's judgement:
- * - an opinion box (fill source clinician_opinion): only an answer whose supporting paragraph attributes an opinion a
- *   clinician recorded (basis clinician_opinion_recorded) in a cited note – "She lifts boxes at work" never ticks
- *   "Restriction: no heavy lifting". A held-back opinion answer is never offered as a one-click tick (C-2).
+ * - an opinion box (fill source clinician_opinion): code never enters its structured answer (bh2 WD review M6; Khuram's
+ *   decision on opinions: an opinion is a physio's note quoted, or the approver's own). The drafting's label "recorded
+ *   opinion" (basis clinician_opinion_recorded) is the model's own word, not a quote – so a drafted "Yes" to
+ *   "Restriction on driving?" is held back with the cited note's own words ("Tom Ellis recorded: “…” (06/05/2026)"),
+ *   for the approver to answer; with no recorded basis the gap says no cited note records it ("She lifts boxes at work"
+ *   never ticks "Restriction: no heavy lifting"). A held-back opinion answer is never offered as a one-click tick (C-2).
  * - a grade or severity scale (core/forms/answer-shape.ts isGradeScale): never ticked by code, never offered as a
  *   one-click tick – the clinician grades.
  * - a printed duration band on an opinion box ("0-3 months"): never ticked, never offered (R-safety-7). When a cited
@@ -42,7 +45,11 @@ export function isClinicianBox(field: Pick<FormField, "fillSource" | "guidance">
   return field.fillSource.kind === "clinician_opinion" || recordSourceOf(field) === "physio_choice";
 }
 
-const NEGATOR = /\b(?:no|not|never|nil|none|without|denie[sd]|den(?:y|ies)|free of|absence of|ruled out|isn't|wasn't|doesn't|didn't|hasn't|hadn't)\b/i;
+const NEGATOR = /\b(?:no|not|never|nil|none|without|denie[sd]|den(?:y|ies)|free of|absence of|ruled out|isn't|wasn't|doesn't|didn't|hasn't|hadn't|aren't|weren't|cannot|can't|unable|declin(?:ed|es|ing)|refus(?:ed|es|ing)|stopp(?:ed|ing)|discontinued|unsuitable|contraindicated|avoid(?:ed|s|ing)?|yet)\b/i;
+/** Words that make a statement a plan, a hope, an advice or a condition rather than a fact. */
+const NOT_ASSERTED = /\b(?:to be|plan(?:s|ned|ning)?|consider(?:s|ed|ing)?|if|unless|hope(?:s|d)?|hoping|aim(?:s|ed|ing)?|goal|would|could|may|might|should|will|shall|going to|intend(?:s|ed)?|expect(?:s|ed)?|recommend(?:s|ed|ation)?|advis(?:e|es|ed)|suggest(?:s|ed)?|propos(?:e|es|ed)|discuss(?:ed|ion)?|offer(?:s|ed)?|referr?(?:al|ed)? for|await(?:s|ed|ing)?|pending|possible|possibly|trial of|next session|in future|later)\b/i;
+/** Where one clause of a sentence ends and another begins (a negation in one clause is not about the other). */
+const CLAUSE_BREAK = /;|\s+(?:but|however|whereas|although|though)\b/i;
 
 function normalise(s: string): string {
   return s
@@ -66,9 +73,12 @@ export function optionWords(option: string): string[] {
 /**
  * The sentence of a cited note that states the whole option (B3-15): the words of the option in their order in ONE
  * sentence, with at most two linking words between them – "fit for a phased return" states "Fit with a phased return",
- * "some stiffness … no difficulty" never states "Some difficulty" – and no negation before it in that sentence (a
- * negation the option itself holds, as in "Not fit", is part of the phrase). Never a word found somewhere else in the
- * notes. Null when none does.
+ * "some stiffness … no difficulty" never states "Some difficulty" – and stated as a fact: no negation anywhere in the
+ * clause that holds it ("Manual therapy was not used", "Full duties are not yet possible", "Exercise was declined"), and
+ * nothing that makes it a plan, a hope or a condition ("Acupuncture to be considered if no progress", "hopes to return
+ * to full duties", "would benefit from manual therapy" – bh2 WD review M5). A negation or modal word the option itself
+ * holds ("Not fit") is part of the phrase. The clause is the sentence up to a ";", "but", "however", "whereas" or
+ * "although". Never a word found somewhere else in the notes. Null when none does.
  */
 export function optionStatedIn(option: string, notes: readonly string[]): string | null {
   const words = optionWords(option);
@@ -91,13 +101,25 @@ export function optionStatedIn(option: string, notes: readonly string[]): string
     }
     return true;
   };
+  const optionText = ` ${normalise(option)} `;
+  /** A clause, without the option's own words, says the option is negated or not a fact. */
+  const doubted = (clause: string): boolean => {
+    let rest = ` ${normalise(clause)} `;
+    for (const w of words) rest = rest.replace(new RegExp(` ${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w* `), " ");
+    const negated = NEGATOR.exec(rest);
+    if (negated && !(optionNegated && optionText.includes(` ${negated[0].toLowerCase()} `))) return true;
+    const modal = NOT_ASSERTED.exec(rest);
+    return Boolean(modal && !optionText.includes(` ${modal[0].toLowerCase()} `));
+  };
   for (const text of notes) {
     for (const s of splitSentences(text, "notes")) {
-      const tokens = normalise(s.text).split(" ");
-      for (let i = 0; i < tokens.length; i++) {
-        if (!phraseAt(tokens, i)) continue;
-        if (!optionNegated && NEGATOR.test(tokens.slice(0, i).join(" "))) continue;
-        return s.text;
+      for (const clause of s.text.split(CLAUSE_BREAK)) {
+        const tokens = normalise(clause).split(" ");
+        for (let i = 0; i < tokens.length; i++) {
+          if (!phraseAt(tokens, i)) continue;
+          if (doubted(clause)) continue;
+          return s.text;
+        }
       }
     }
   }
@@ -159,7 +181,8 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
   const options = field.options?.length ? ` (${field.options.join(" / ")})` : "";
   const which = `Which answer should be given to “${label}”${options}?`;
 
-  if (field.fillSource.kind === "clinician_opinion") {
+  const opinion = field.fillSource.kind === "clinician_opinion";
+  if (opinion) {
     const recorded = input.paragraphs.some((p) => p.basis === "clinician_opinion_recorded" && p.sourceIds.some((id) => input.citedNotes.some((n) => n.id === id)));
     if (!recorded) {
       return {
@@ -172,7 +195,7 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
       };
     }
   }
-  if (field.answerType !== "single_choice") return { enter: true };
+  if (field.answerType !== "single_choice") return opinion ? opinionHeldBack(input, which) : { enter: true };
 
   if (isGradeScale(field)) {
     return {
@@ -195,7 +218,7 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
     };
   }
   const stated = optionStatedIn(value, input.citedTexts);
-  if (stated) return { enter: true };
+  if (stated) return opinion ? opinionHeldBack(input, which) : { enter: true };
   // A held-back choice: offered as one click only on a box a person may tick (C-2), while the hook is enabled.
   const oneClick = !clinician && hookEnabled(TICK_SUGGESTED_HOOK);
   return {
@@ -205,6 +228,47 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
       issue: `The suggested answer “${value}” is not stated in the cited notes (${missingWording(optionWordsMissing(value, input.citedTexts))}), so it has not been ticked.`,
       suggestedQuestion: oneClick ? `Is “${value}” the right answer to “${label}”? Tick it in one click if it is, or choose another${options}.` : which,
       ...(oneClick ? { suggestedAnswer: value } : {}),
+    },
+  };
+}
+
+/** Words that say nothing about what a sentence is about (for matching a drafted sentence to a note's). */
+const COMMON = new Set(
+  ("that this with from were was have has had been will would should could recorded noted reported said told stated their there they them his her him she he the and for not into over after before about which when what " +
+    "week weeks days months years hours times daily since until opinion").split(" "),
+);
+
+/** The sentence of a cited note that shares the most words with the drafted support (at least two), with its note. */
+export function noteWordsFor(paragraphs: readonly Paragraph[], notes: readonly Note[]): { note: Note; sentence: string } | null {
+  const wordsOf = (t: string) => new Set((t.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !COMMON.has(w)));
+  const drafted = wordsOf(paragraphs.map((p) => p.text).join(" "));
+  let best: { note: Note; sentence: string; score: number } | null = null;
+  for (const n of notes) {
+    const text = [n.subjective, n.objective, n.assessment, n.plan, n.freeText ?? ""].filter(Boolean).join("\n");
+    for (const s of splitSentences(text, "notes")) {
+      const score = Array.from(wordsOf(s.text)).filter((w) => drafted.has(w)).length;
+      if (score >= 2 && (!best || score > best.score)) best = { note: n, sentence: s.text.trim(), score };
+    }
+  }
+  return best ? { note: best.note, sentence: best.sentence } : null;
+}
+
+/**
+ * An opinion box's drafted answer, held back with the cited note's own words (bh2 WD review M6): the approver answers
+ * it; code never ticks an opinion, and it is never a one-click (C-2).
+ */
+function opinionHeldBack(input: AnswerInput, which: string): AnswerDecision {
+  const found = noteWordsFor(input.paragraphs, input.citedNotes);
+  const cut = (t: string) => (t.length > 200 ? `${t.slice(0, 199).trimEnd()}…` : t);
+  const words = found
+    ? ` ${found.note.author.name} recorded: “${cut(found.sentence)}” (${formatUkDate(found.note.date)}).`
+    : ` No sentence of the cited ${input.citedNotes.length === 1 ? "note" : "notes"} (${input.citedNotes.map((n) => `${n.author.name}, ${formatUkDate(n.date)}`).join("; ")}) says it in so many words.`;
+  return {
+    enter: false,
+    gap: {
+      kind: "choice_held_back",
+      issue: `The drafted answer “${input.value}” to “${input.label}” has not been entered: it is the clinician's opinion, which only the approving clinician gives.${words}`,
+      suggestedQuestion: `${which} Check the note and answer it yourself, or leave it blank.`,
     },
   };
 }
