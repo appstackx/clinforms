@@ -8,9 +8,9 @@
  * mapping page); buildQuestionGroups builds the review's questions from it.
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
-import { notApplicable } from "../../../core/conditions";
 import { isBlankByDesign, isSectionAnswered } from "../../../core/forms";
 import { formOutline } from "../../../core/forms/headings";
+import { issueDetails, type BoxIssue, type IssueContent } from "../../../core/issue-state";
 import type { AnswerType, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate, TemplateSection } from "../../../core/types";
 
 /* ------------------------------------------------------------------------------------------------
@@ -120,7 +120,12 @@ export type QuestionStatus =
   | "blank"
   | "left_blank"
   /** Fix round 1 (B0-22): a record line the record leaves empty on purpose (an address line it does not have). */
-  | "record_empty";
+  | "record_empty"
+  /**
+   * bh2 WA1 (B2-24, B3-16): the box is not asked – its condition rules it out, a person decided so, or a session the
+   * patient did not attend – so nothing is printed. Counted apart and left out of the percentage.
+   */
+  | "not_applicable";
 
 export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short: string; dot: string; text: string }> = {
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
@@ -134,10 +139,11 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
   left_blank: { label: "Left blank on approval", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-600" },
   record_empty: { label: "Left blank – nothing in the record", short: "Left blank (nothing in the record)", dot: "border border-dashed border-teal-500 bg-white", text: "text-slate-600" },
+  not_applicable: { label: "Not applicable – nothing is printed", short: "Not applicable", dot: "border border-dashed border-slate-300 bg-slate-100", text: "text-slate-500" },
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "record_empty", "not_applicable", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -161,9 +167,23 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
 }
 
 /**
+ * What a question's box issues (core/issue-state.ts): from the whole report when the caller passes it (its approver
+ * decides whether an "applies anyway" counts), else from the report's sections alone, else from the box alone.
+ */
+function boxOf(q: Pick<ReviewQuestion, "section" | "field">, content: IssueContent | readonly ReportSection[] | undefined): BoxIssue | null {
+  const section = q.section;
+  if (!section) return null;
+  const report: IssueContent = content === undefined ? { sections: [section] } : Array.isArray(content) ? { sections: content as ReportSection[] } : (content as IssueContent);
+  const sections = report.sections.some((s) => s.key === section.key) ? report : { ...report, sections: [...report.sections, section] };
+  return issueDetails(sections, q.field ? { fields: [q.field] } : null).find((b) => b.key === section.key) ?? null;
+}
+
+/**
  * - pending: not drafted yet;
  * - signoff / blank: filled on approval / left for the referrer – or an optional box a person chose to leave blank
  *   (its gap or its "no answer" warning acknowledged, nothing open on it: fix 10/2026);
+ * - not_applicable (bh2 WA1): the box is not asked – nothing is printed (a report from before the release: blank, and
+ *   left_blank once approved, as before);
  * - needs_input: no answer yet (an opinion nobody recorded, a value the record lacks);
  * - left_blank: the report was approved without an answer here, so nothing is waiting for anyone;
  * - confirm: a person has answered it and only its gap is still open (one click: "Mark resolved");
@@ -178,14 +198,28 @@ export function questionStatus(
   byPerson = false,
   /** The report is approved (read-only). */
   approved = false,
-  /** The report's sections, for conditional questions (fix round 1, B0-7). */
-  conditionSections?: readonly ReportSection[],
+  /**
+   * The report (bh2 WA1: what each box issues – its approver, frozen conditions and decisions), or its sections (fix
+   * round 1, B0-7: conditional questions).
+   */
+  conditionSections?: IssueContent | readonly ReportSection[],
 ): QuestionStatus {
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
-  // Fix round 1 (B0-7): not asked – the answer before it says it does not apply.
-  if (conditionSections && notApplicable(conditionSections, section.key)) return approved ? "left_blank" : "blank";
+  const box = boxOf(q, conditionSections);
+  if (box?.state.kind === "not_applicable") {
+    // Not asked: nothing is printed. A box ruled out by the earlier run-time reading (a report from before the release,
+    // its sections passed) reads as it did then.
+    if (box.state.reason === "condition" && !box.frozenCondition) return conditionSections ? (approved ? "left_blank" : "blank") : statusOfAsked(q, flags, gaps, byPerson, approved);
+    return "not_applicable";
+  }
+  if (box?.state.kind === "blank" && box.state.reason === "record_empty") return "record_empty";
+  return statusOfAsked(q, flags, gaps, byPerson, approved);
+}
+
+function statusOfAsked(q: Pick<ReviewQuestion, "section" | "field">, flags: readonly ReportFlag[], gaps: readonly Gap[], byPerson: boolean, approved: boolean): QuestionStatus {
+  const section = q.section as ReportSection;
   // Fix round 1 (B0-22): counted as left blank (as "Copy answers" says), not as filled from the records.
   if (isBlankByDesign(section, q.field) && !section.paragraphs.some((p) => p.text.trim() !== "")) return "record_empty";
   const answered = isSectionAnswered(section);
@@ -215,8 +249,18 @@ export interface StatusCounts {
   counts: Record<QuestionStatus, number>;
 }
 
+/**
+ * bh2 WA1 (B2-24, B3-16): the questions "answered and clear" is out of – every question but those that need nothing
+ * more: left for the referrer or blank on purpose, filled on approval, not applicable, nothing in the record, and (once
+ * approved) left blank. A complete form shows 100%.
+ */
+export function answerableCount(counts: StatusCounts): number {
+  const c = counts.counts;
+  return counts.total - c.blank - c.signoff - c.not_applicable - c.record_empty - c.left_blank;
+}
+
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0, not_applicable: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
