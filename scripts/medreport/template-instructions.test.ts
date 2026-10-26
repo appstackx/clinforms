@@ -224,9 +224,11 @@ test("completed form: a note beside options is left off only once an answer has 
   const partly = await lineOf(oneRestriction);
   assert.ok(partly.xml.includes("Delete those which are not required"));
   assert.ok(partly.xml.includes("No overhead work"));
-  // An answer that is none of the options, or "Not recorded", chooses nothing: the list and its instruction stay.
+  // An answer that is none of the options, or "Not recorded", chooses nothing: the list and its instruction stay – and
+  // (bh2 WA2, Q-1) a FINAL copy with such an answer is refused rather than issued with every option as printed.
   for (const text of ["Hand", "Not recorded"]) {
-    const none = await lineOf({ ...ANSWERS, "F-16": { text } });
+    await assert.rejects(() => lineOf({ ...ANSWERS, "F-16": { text } }), /could not be completed exactly as approved/, `${text}: the FINAL copy is refused`);
+    const none = { lists: tables(fillDocx(TEMPLATE, FORM, { ...ANSWERS, "F-16": { text } }, { draft: false }))[4] };
     assert.equal(none.lists[0][1], "Area affected: Delete as necessary\nSpine\nArm\nLeg", text);
   }
   // A list the map does not handle: nothing chooses from it, so its instruction stays even on a final copy.
