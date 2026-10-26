@@ -24,11 +24,19 @@ export interface ClinicContact {
   postcode: string | null;
 }
 
-/** The clinic's name and contact details (its profile; the message settings' phone and email win). */
+/**
+ * The clinic's name and contact details: its profile (Settings → Clinic), the message settings' phone and email
+ * winning; without a profile, the clinic's account name.
+ */
 export async function clinicContact(ctx: DbContext, tenantId: string, settings: Pick<CommsSettings, "replyPhone" | "replyEmail">, fallbackName?: string): Promise<ClinicContact> {
   const profile = await getClinicProfile(ctx, tenantId);
+  let name = profile?.displayName ?? fallbackName ?? null;
+  if (!name) {
+    const org = await ctx.db.selectFrom("organization").select("name").where("slug", "=", tenantId).executeTakeFirst();
+    name = org?.name ?? tenantId;
+  }
   return {
-    name: profile?.displayName ?? fallbackName ?? tenantId,
+    name,
     phone: settings.replyPhone ?? profile?.phone ?? null,
     email: settings.replyEmail ?? profile?.email ?? null,
     address: profile?.address ?? null,
