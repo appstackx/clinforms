@@ -9,7 +9,7 @@ import { computeFacts } from "../computed-facts";
 import { notApplicable } from "../conditions";
 import { todayIso } from "../dates";
 import type { ComputedFact, DataCheck, FormDefinition, Gap, Report, ReportFlag, ReportFlagCode, ReportTemplate } from "../types";
-import { canAcknowledge } from "./acknowledge";
+import { acknowledgementStands } from "./acknowledge";
 import { dedupeFlags, makeFlag } from "./context";
 import { runDataChecks } from "./data-checks";
 import { VALIDATORS, type ValidatorInput } from "./registry";
@@ -136,8 +136,9 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
     const prev = previous.get(f.id);
     // A flag that arrives acknowledged (edited OPINION_LANGUAGE with a paragraph ackReason) keeps it;
     // only the original timestamp is carried over.
-    if (f.acknowledged) return prev ? { ...f, acknowledged: { reason: f.acknowledged.reason, at: prev.at } } : f;
-    return prev && canAcknowledge(f, input.report) ? { ...f, acknowledged: prev } : f;
+    if (f.acknowledged) return prev ? { ...f, acknowledged: { reason: f.acknowledged.reason, at: prev.at, ...(prev.by ? { by: prev.by } : {}) } } : f;
+    // bh2 WC: an acknowledgement stands only where its own author (`by`, stamped by the review) may make it.
+    return prev && acknowledgementStands(f, input.report, prev) ? { ...f, acknowledged: prev } : f;
   });
 }
 
