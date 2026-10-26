@@ -543,3 +543,47 @@ test("ADV-5: left blank, a label ending in a preposition stays whole; an opener 
   assert.equal(out.t["t0.r3.c1"], "", "a clause opener still goes (B3-19)");
   assert.ok(out.outcomes.every((o) => !o.fatal), JSON.stringify(out.outcomes));
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Harden 26/10 (check2-WA2 minors N-3 and N-4)
+ * ----------------------------------------------------------------------------------------------*/
+
+test("N-4: left blank, labels holding “to” + a noun or “to be” + a participle stay whole; clause openers still go; the repeated-words check keeps its reach", () => {
+  for (const label of ["Referred to physio by", "Copy to GP and", "Date to be reviewed by", "Report to be sent to"]) assert.equal(openerLead(label), "", label);
+  for (const opener of ["To return to", "to return to", "Expected to be fit in", "Likely to return to", "Plan to return to", "He has been off work since", "Patient is due to return to"]) assert.equal(openerLead(opener), opener, opener);
+  const lines = ["Referred to physio by ……", "Copy to GP and ……", "Date to be reviewed by ……", "Report to be sent to ……", "To return to ……"];
+  const bytes = docx(tbl(...lines.map((line, i) => tr(cell(`Box ${i}`), cell(line)))));
+  const fields = lines.map((_, i) => field(`F-0${i + 1}`, `Box ${i}`, { kind: "docx", target: "replace_placeholder", blockId: `t0.r${i}.c1`, placeholderText: "……" }));
+  const out = fill(Object.fromEntries(fields.map((f) => [f.id, { leftBlank: true }])), { form: formOf(bytes, fields), bytes });
+  lines.slice(0, 4).forEach((line, i) => assert.equal(out.t[`t0.r${i}.c1`], line, `${line}: the referrer's label stays`));
+  assert.equal(out.t["t0.r4.c1"], "", "a clause opener still loses its words (B3-19)");
+  assert.deepEqual(out.outcomes.map((o) => o.outcome), ["as_printed", "as_printed", "as_printed", "as_printed", "removed"]);
+  assert.ok(out.outcomes.every((o) => !o.fatal));
+  // Answered with the label's last word again: a word printed twice is still fatal.
+  const twice = fill({ "F-01": { text: "by her GP" }, "F-04": { text: "to the case manager" } }, { form: formOf(bytes, fields), bytes });
+  assert.equal(twice.by["F-01"].fatal, true);
+  assert.match((twice.by["F-01"].residue ?? []).join(" "), /“by” are repeated/);
+  assert.equal(twice.by["F-04"].fatal, true);
+});
+
+test("N-3: an uncertain or two-way Yes / No answer is not a definite tick – as printed, fatal, and the approval check refuses it; clinical negatives and printed options still read", () => {
+  const options = ["Yes", "No"];
+  const uncertain = ["No – patient unsure", "No, patient not sure", "No (patient unsure)", "No, not asked", "No clear answer", "No evidence in notes", "No response", "Yes?", "Yes – patient unsure", "Yes – possibly", "No, can't recall", "Yes, I think so", "No – to be checked", "No – TBC", "No, not that she recalls"];
+  const twoWay = ["Yes and no", "Yes or no", "Yes/No", "No / yes"];
+  for (const text of [...uncertain, ...twoWay]) {
+    const kind = resolveChoice(F.glyph, { text }, options).kind;
+    assert.equal(kind, twoWay.includes(text) ? "unmatched" : "unknown", text);
+    assert.notEqual(resolveChoice(F.glyph, { text, value: text.startsWith("Yes") }, options).kind, "chosen", `${text}: a value read from the text is not trusted`);
+    assert.equal(choiceAnswerMatches(F.glyph, { kind: "text", value: text }), false, text);
+    const out = fill({ "F-01": { text } });
+    assert.equal(out.t["t0.r0.c1"], "☒ Yes  ☐ No", `${text}: as printed`);
+    assert.equal(out.by["F-01"].fatal, true, text);
+  }
+  for (const [text, want] of [["No response to treatment", "No"], ["No clear signs of nerve root irritation", "No"], ["Yes – no restrictions", "Yes"], ["Yes, no equipment needed", "Yes"], ["No – no further treatment needed", "No"], ["No, no", "No"]] as const) {
+    assert.deepEqual(resolveChoice(F.glyph, { text }, options), { kind: "chosen", options: [want] }, text);
+  }
+  // A form that prints such an option reads it as that option; "Unable to perform" is an option, not a hedge.
+  const single = { ...F.glyph, answerType: "single_choice" as const };
+  assert.deepEqual(resolveChoice(single, { text: "Unsure" }, ["Yes", "No", "Unsure"]), { kind: "chosen", options: ["Unsure"] });
+  assert.deepEqual(resolveChoice(single, { text: "Unable to perform" }, ["Yes", "No", "Unable to perform"]), { kind: "chosen", options: ["Unable to perform"] });
+});

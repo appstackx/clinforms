@@ -79,3 +79,21 @@ test("the helpers' warnings fail safe: only an answer continued on the continuat
   // A warning in words nobody listed – reworded, or new – refuses rather than passes.
   assert.equal(helperWarningFault("F-01 (“Ticks”): some new problem nobody listed.")?.outcome, "as_printed");
 });
+
+test("harden 26/10 (check2-WA2 N-5): a character the font cannot print in a table cell is fatal, as in a single box – never a silent “?”", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.addPage([595, 842]).drawText("Sessions", { x: 40, y: 400, size: 9, font });
+  const bytes = await doc.save();
+  const table = field("F-01", { kind: "pdf_overlay_table", page: 1, columns: [{ key: "date", header: "Date", x: 40, width: 80 }, { key: "service", header: "Treatment", x: 120, width: 300 }], rowTops: [380, 360], rowHeight: 20 } as FormAnchor, { answerType: "table", fillSource: { kind: "appointments_table", columns: { date: "date", service: "service" } } as never });
+  const box = field("F-02", { kind: "pdf_overlay", page: 1, x: 40, y: 300, width: 300, height: 14 });
+  const form = { ...formOf([table, box]), kind: "pdf_flat" as const };
+  const bad = "Wrote 痛 on the chart (fictional)";
+  const out = await fillPdfReport(bytes, form, { "F-01": { text: "", rows: [{ date: "18/03/2026", service: bad }] }, "F-02": { text: bad } }, { draft: false, flatten: true });
+  const by = Object.fromEntries(out.outcomes.map((o) => [o.fieldId, o]));
+  assert.equal(by["F-02"].fatal, true, "a single box");
+  assert.equal(by["F-01"].fatal, true, "a table cell");
+  assert.match(by["F-01"].note ?? "", /cannot be printed with the form's font/);
+  const fine = await fillPdfReport(bytes, form, { "F-01": { text: "", rows: [{ date: "18/03/2026", service: "Exercise and advice" }] } }, { draft: false, flatten: true });
+  assert.equal(fine.outcomes.find((o) => o.fieldId === "F-01")?.fatal, false);
+});

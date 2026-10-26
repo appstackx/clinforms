@@ -225,21 +225,28 @@ export const FILL_LEAVE_BLANK_HOOK = defineHook("fill-leave-blank");
 
 /**
  * Bounded work (R-security-2/3, plan WA2 design 4; review 26/10 – counted in what the document holds, not in lines).
- * The work a fill does for its questions is counted in steps, against one budget:
+ * All the work a fill does that grows with the document – for its questions and (harden 26/10) for the form author's
+ * instructions it leaves off – is counted in steps, against one budget:
  * - each read of a line (a paragraph) for a question – a placeholder looked for, a tick box or option found, a cell's
  *   answer space, a residue check, the typography beside an answer – counts the line's size: its nodes (runs, their
  *   properties, text pieces, tabs, bookmarks), one step per TEXT_PER_STEP characters of its text and LINE_STEPS for the
  *   read itself (sizeOf, readLines); a copy counts COPY_STEPS per node copied;
- * - each change counts the children its parent re-indexes (xmldom re-indexes a parent's children on every removal and
- *   every insertion before a sibling – a run split, a line or row left off, an answer line added).
- * Blue Heart's 17 forms hold at most 613 blocks (paragraphs and table cells), 20 paragraphs in a cell and 13 runs in a
- * line; filling one takes at most about 34,000 steps, long answers included – 1.7% of the budget (DocxFillReport.work).
- * At the budget a fill has done well under 2 s of work on the hostile shapes of the review. Past any bound the form is
- * refused 422 FORM_TOO_COMPLEX before or while it is filled:
- * - MAX_FILL_BLOCKS blocks in the body (the passes over the whole body – the template instructions – stay linear up to
- *   the 200,000-line files of the security review, scripts/medreport/template-instructions.test.ts, and are not counted);
+ * - each change counts the children its parent re-indexes, one step per REINDEX_PER_STEP of them (xmldom re-indexes a
+ *   parent's children on every removal and every insertion before a sibling – a run split, a line or row left off, an
+ *   answer line added).
+ * The weights follow what each costs (xmldom 0.9, measured 26/10 on the release machine): a node walked ≈ 23 ns, a
+ * child re-indexed ≈ 12 ns, a node copied ≈ 3.7 µs. At the budget a fill has done at most about 0.05 s of reading,
+ * 0.4 s of re-indexing or 0.9 s of copying – bounded whatever the shape. Blue Heart's 17 forms hold at most 613 blocks
+ * (paragraphs and table cells), 20 paragraphs in a cell and 13 runs in a line; filling one takes a few per cent of the
+ * budget at most, long answers included (DocxFillReport.work). A long ordinary questionnaire – 3,000 lines, 300 answers
+ * of 10 paragraphs – takes about half (check2-WA2 minor N-2: re-indexing was counted one step per child, and such a form
+ * was refused). The passes that only read the whole body for the instructions stay linear up to the 200,000-line files
+ * of the security review (scripts/medreport/template-instructions.test.ts) and are not counted; what leaving one off
+ * changes is (check2-WA2 major N-1). Past any bound the form is refused 422 FORM_TOO_COMPLEX before or while it is filled:
+ * - MAX_FILL_BLOCKS blocks in the body;
  * - MAX_BLOCK_PARAGRAPHS paragraphs in a cell that a question fills, ticks or clears (each such question reads all of it);
- * - MAX_LINE_SIZE of the form's own content in a line a question reads (refused when the line is first read);
+ * - MAX_LINE_SIZE of the form's own content in a line a question reads (refused when the line is first read – an
+ *   instruction in a line that holds more is left as printed, instructionsIn);
  * - MAX_FILL_STEPS steps in all.
  */
 export const MAX_FILL_BLOCKS = 300_000;
@@ -250,6 +257,12 @@ export const MAX_FILL_STEPS = 2_000_000;
 const TEXT_PER_STEP = 32;
 /** Steps counted per line read, whatever its size (reading even an empty line has its own cost). */
 const LINE_STEPS = 8;
+/**
+ * Children re-indexed per step: re-indexing a child costs about half a node walked, so at one step per child the budget
+ * stopped re-index work after about 0.02 s – long ordinary forms were refused (check2-WA2 N-2). At 16 per step it stops
+ * it after about 0.4 s, still well inside the bound the budget sets for copies.
+ */
+const REINDEX_PER_STEP = 16;
 /** Typography sources: at most this many paragraphs of a cell, and cells of a row, are read (plan WA2 design 4). */
 const MAX_SOURCE_PARAGRAPHS = 64;
 const MAX_SOURCE_CELLS = 16;
@@ -312,16 +325,18 @@ function clearsBlank(t: Track | null | undefined): boolean {
   return hookEnabled(FILL_LEAVE_BLANK_HOOK) && !t?.checkOnly;
 }
 
-/** Count work against the step budget; 422 FORM_TOO_COMPLEX past it. Nothing is counted outside the questions' work. */
+/**
+ * Count work against the step budget; 422 FORM_TOO_COMPLEX past it. Always on (harden 26/10, check2-WA2 N-1): the
+ * changes the instructions pass makes are counted like every other change – there is no uncounted mode.
+ */
 function step(ctx: Ctx, n = 1): void {
-  if (!ctx.counting) return;
   ctx.steps += n;
   if (ctx.steps > MAX_FILL_STEPS) throw tooComplex("Filling this form takes more work than any real form needs.");
 }
 
-/** xmldom re-indexes a parent's children when one is removed or inserted before another: counted. */
+/** xmldom re-indexes a parent's children when one is removed or inserted before another: counted (REINDEX_PER_STEP). */
 function reindexed(ctx: Ctx, parent: XmlNode): void {
-  if (ctx.counting) step(ctx, parent.childNodes.length);
+  step(ctx, Math.ceil(parent.childNodes.length / REINDEX_PER_STEP));
 }
 
 /**
@@ -362,7 +377,6 @@ function sizeOf(root: XmlNode, printedLimit: number, allLimit = Infinity): { all
  * largest line is a few hundred) – and so is the read that passes the budget.
  */
 function readLines(ctx: Ctx, lines: readonly XmlElement[], passes = 1): void {
-  if (!ctx.counting) return;
   for (const p of lines) {
     const size = sizeOf(p, MAX_LINE_SIZE, (MAX_FILL_STEPS - ctx.steps) / passes + 1);
     if (size.printed > MAX_LINE_SIZE) throw tooComplex(`A line of this Word file holds more than ${MAX_LINE_SIZE.toLocaleString("en-GB")} pieces of text and formatting; a line that is filled here holds at most ${MAX_LINE_SIZE.toLocaleString("en-GB")}.`);
@@ -370,18 +384,33 @@ function readLines(ctx: Ctx, lines: readonly XmlElement[], passes = 1): void {
   }
 }
 
-/** Steps counted per node copied (xmldom's copy of a node costs about this many reads of one). */
+/**
+ * A line beside a question read `passes` times when it holds at most MAX_LINE_SIZE of the form's own content (counted
+ * as readLines does); false when it holds more – counted for the bounded walk that found it, and never refused.
+ */
+function readsAsLine(ctx: Ctx, p: XmlElement, passes = 1): boolean {
+  const size = sizeOf(p, MAX_LINE_SIZE, (MAX_FILL_STEPS - ctx.steps) / passes + 1);
+  if (size.printed > MAX_LINE_SIZE) {
+    step(ctx, size.all + LINE_STEPS);
+    return false;
+  }
+  step(ctx, (size.all + LINE_STEPS) * passes);
+  return true;
+}
+
+/**
+ * Steps counted per node copied. A copy costs far more than a read (about 3.7 µs against 23 ns, measured 26/10): at 8
+ * steps per node the budget bounds copying at under a second, the largest of its bounds (see MAX_FILL_STEPS).
+ */
 const COPY_STEPS = 8;
 
 /** A copy of `el` for a question: counted by its size (COPY_STEPS per node), the walk bounded by what is left. */
 function countCopy(ctx: Ctx, el: XmlElement): void {
-  if (!ctx.counting) return;
   step(ctx, sizeOf(el, Infinity, (MAX_FILL_STEPS - ctx.steps) / COPY_STEPS + 1).all * COPY_STEPS);
 }
 
 /** A part of the form read whole for a question (a cell's content controls or form fields): counted by its size. */
 function readPart(ctx: Ctx, el: XmlElement): void {
-  if (!ctx.counting) return;
   step(ctx, sizeOf(el, Infinity, MAX_FILL_STEPS - ctx.steps + 1).all);
 }
 
@@ -402,8 +431,6 @@ interface Ctx {
   nextClaimId: number;
   /** Work done so far (step budget). */
   steps: number;
-  /** The questions' work is being counted (false while the form author's instructions are left off – bounded on their own). */
-  counting: boolean;
   /** How many times typography sources were read from the document (cells and answer space) – DocxFillReport.work. */
   typographyReads: number;
   /** Typography sources, resolved once per paragraph, cell and row (RTF forms only). */
@@ -830,7 +857,9 @@ function followingSpace(ctx: Ctx, p: XmlElement, limit = 12): XmlElement[] {
     if (!isElement(n)) continue;
     if (isW(n, "bookmarkStart") || isW(n, "bookmarkEnd") || isW(n, "proofErr")) continue;
     if (!isW(n, "p")) break;
-    readLines(ctx, [n], ANSWER_SPACE_PASSES);
+    // A neighbour larger than MAX_LINE_SIZE (a drawing group anchored after the question) is not answer space: the
+    // space ends there, and the form is not refused over a line no question reads (harden 26/10, check2-WA2 note).
+    if (!readsAsLine(ctx, n, ANSWER_SPACE_PASSES)) break;
     if (firstW(firstW(n, "pPr"), "sectPr") || !isAnswerSpaceParagraph(n)) break;
     out.push(n);
   }
@@ -857,8 +886,9 @@ function normaliseRuns(ctx: Ctx, p: XmlElement): void {
       const clone = run.ownerDocument!.createElementNS(run.namespaceURI, run.nodeName) as XmlElement;
       copyWrittenMarks(run, clone);
       if (rPr) clone.appendChild(cloneCounted(ctx, rPr));
-      // Moving the child out of the run re-indexes the run's children.
+      // Moving the child out of the run re-indexes the run's children; the new run is a node made (counted).
       reindexed(ctx, run);
+      step(ctx);
       clone.appendChild(child);
       insertAfter(ctx, clone, run);
     }
@@ -1280,7 +1310,7 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     if (!label) {
       const head = fullText.slice(0, target.index).replace(/[\s\u00A0]+$/, "").toLowerCase();
       const known = ctx.form.analysis?.printedLeads?.[field.id]?.trim();
-      const lead = known && head.endsWith(known.toLowerCase()) ? known : openerLead(leadBefore(fullText, target.index));
+      const lead = known && head.endsWith(known.toLowerCase()) ? known : repeatCheckLead(leadBefore(fullText, target.index));
       const repeated = repeatedLead(lead, inline[0] ?? "");
       if (repeated) t.residue.push(`the printed words “${repeated}” are repeated by the answer`);
     }
@@ -1322,19 +1352,58 @@ const OPEN_ENDINGS = new Set(
   ).split(" "),
 );
 
-/** Auxiliary and linking verbs (a closed class): a lead holding one is a clause, not a label. */
+/** Auxiliary and linking verbs (a closed class): a lead holding one reads as a clause (the repeated-words check). */
 const AUXILIARIES = new Set("is are was were be been being has have had will would can could should shall may might must do does did".split(" "));
 
 /**
+ * Finite auxiliary and linking verbs only (a closed class) – the opener rule's (harden 26/10, check2-WA2 N-4): "be",
+ * "been" and "being" without one of them follow a noun in labels ("Report to be sent to ……", "Date to be reviewed by
+ * ……"); a clause holding them holds a finite verb too ("He has been off work since …").
+ */
+const FINITE_AUXILIARIES = new Set("am is are was were has have had will would can could should shall may might must do does did".split(" "));
+
+/**
+ * Words "to" starts an infinitive after (a closed class of English grammar words – adjectives and verbs that take one):
+ * "Expected to be fit in …", "Likely to return to …", "Plan to return to …". After a noun or a participle "to" is a
+ * preposition: "Referred to physio by ……", "Copy to GP and ……" (check2-WA2 N-4).
+ */
+const TAKES_INFINITIVE = new Set(
+  (
+    "expected expect expects expecting likely unlikely able unable due fit unfit ready keen willing unwilling going " +
+    "plan plans planned planning aim aims aimed aiming hope hopes hoped hoping intend intends intended intending " +
+    "want wants wanted wish wishes wished need needs needed advised asked told allowed cleared"
+  ).split(" "),
+);
+
+/** The words of a lead, lower case. */
+const leadWords = (lead: string): string[] => lead.toLowerCase().match(/[a-zÀ-ɏ']+/g) ?? [];
+
+/**
  * The lead when it opens a sentence the answer completes, else "" – a label, which a blank box leaves as printed. A
- * sentence opener ends in a word that leaves it open (OPEN_ENDINGS) and reads as a clause: it holds an auxiliary verb
- * ("He has been off work since …", "Pain is …") or an infinitive – "to" before a verb ("To return to …", "Expected to
- * be fit in …"). Labels end in a noun ("Name of physiotherapist ……", "Date ……") or a preposition after a participle or
- * noun ("Assessed by ……", "Referred to ……", "Signed on behalf of ……", "Copy to …", "Date of …") – review 26/10: those
- * stay. A verb-ending opener ("He reported …") is not recognised either: it stays as printed, as before B3-19.
+ * sentence opener ends in a word that leaves it open (OPEN_ENDINGS) and reads as a clause: it holds a finite auxiliary
+ * verb ("He has been off work since …", "Pain is …") or an infinitive – "to" that starts the lead or follows a word that
+ * takes one, with a verb after it ("To return to …", "Expected to be fit in …"). Labels end in a noun ("Name of
+ * physiotherapist ……", "Date ……") or a preposition after a participle or noun ("Assessed by ……", "Referred to ……",
+ * "Signed on behalf of ……", "Copy to …", "Date of …") – review 26/10 – and (harden 26/10, check2-WA2 N-4) hold "to"
+ * after a noun or participle, or "to be" + a participle ("Referred to physio by ……", "Copy to GP and ……", "Date to be
+ * reviewed by ……", "Report to be sent to ……"): those stay. A verb-ending opener ("He reported …") is not recognised
+ * either: it stays as printed, as before B3-19. When in doubt the lead stays as printed – the form as published.
  */
 export function openerLead(lead: string): string {
-  const words = lead.toLowerCase().match(/[a-z\u00C0-\u024F']+/g) ?? [];
+  const words = leadWords(lead);
+  const last = words[words.length - 1] ?? "";
+  if (!last || !OPEN_ENDINGS.has(last)) return "";
+  const infinitive = words.some((w, i) => w === "to" && i + 1 < words.length - 1 && (i === 0 || TAKES_INFINITIVE.has(words[i - 1])));
+  return words.some((w) => FINITE_AUXILIARIES.has(w)) || infinitive ? lead : "";
+}
+
+/**
+ * The printed lead an answer must not repeat (repeatedLead): broader than openerLead – any lead ending in an open word
+ * that holds an auxiliary, or "to" with another word after it ("Referred to physio by" + "by her GP" would print a word
+ * twice). The repeated-words check keeps the reach it had; only the rule that removes a blank opener's words narrows.
+ */
+function repeatCheckLead(lead: string): string {
+  const words = leadWords(lead);
   const last = words[words.length - 1] ?? "";
   if (!last || !OPEN_ENDINGS.has(last)) return "";
   const clause = words.some((w) => AUXILIARIES.has(w)) || words.some((w, i) => w === "to" && i + 1 < words.length - 1);
@@ -2208,10 +2277,14 @@ function belowLabelInCell(p: XmlElement): boolean {
 /**
  * The form's own instructions in a paragraph (core/template-instructions.ts) – never one touching a written run. A line
  * of more than MAX_SIBLINGS_TO_LEAVE_OFF runs or text pieces is left as printed: leaving text off splits and removes
- * them one by one, and xmldom re-indexes the line each time (hostile sizes, integration review 25/10/2026).
+ * them one by one, and xmldom re-indexes the line each time (hostile sizes, integration review 25/10/2026). So is
+ * (harden 26/10, check2-WA2 N-1) a line holding more of the form's own content than MAX_LINE_SIZE – a run of 40,000
+ * tabs beside "(Delete this text)": the bound a question's line has, measured by a bounded walk; what leaving an
+ * instruction off changes in a smaller line is counted (step budget).
  */
 function instructionsIn(p: XmlElement): TemplateInstruction[] {
   if (!mayHoldInstruction(p.textContent ?? "")) return [];
+  if (sizeOf(p, MAX_LINE_SIZE).printed > MAX_LINE_SIZE) return [];
   if (descendantsW(p, "r").length > MAX_SIBLINGS_TO_LEAVE_OFF || descendantsW(p, "t").length > MAX_SIBLINGS_TO_LEAVE_OFF) return [];
   let text = "";
   const colours: Array<{ at: number; colour: string }> = [];
@@ -2656,7 +2729,6 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
     claimIds: new WeakMap(),
     nextClaimId: 0,
     steps: 0,
-    counting: true,
     typographyReads: 0,
     sources: { firstRun: new WeakMap(), row: new WeakMap(), spaces: new WeakMap() },
     skipped: new Map(),
@@ -2710,11 +2782,10 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
       throw tooComplex(`A table cell of this Word file holds ${ref.paragraphs.length.toLocaleString("en-GB")} lines; a cell that is filled here holds at most ${MAX_BLOCK_PARAGRAPHS.toLocaleString("en-GB")}.`);
     }
   }
-  // The form author's instructions are read in one pass over the body, bounded on its own (not counted).
-  ctx.counting = false;
+  // The form author's instructions are read in one pass over the body: linear in what it holds, it only reads (the
+  // lines it would change are bounded by MAX_LINE_SIZE, instructionsIn).
   const instructions = planInstructions(ctx, listsByElement(ctx, jobs));
   const answered = instructions?.rows.length ? answeredRows(ctx, form, effective) : new Set<XmlElement>();
-  ctx.counting = true;
 
   // 2. Tick boxes first: they only swap characters, so nothing else moves. Then the marked cells (each in its own cell).
   for (const g of glyphJobs) {
@@ -2813,10 +2884,9 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
   ctx.current = null;
 
   // 4. The form author's instructions for whoever completes it are left off (10/2026, core/template-instructions.ts) –
-  //    bounded on their own (MAX_INSTRUCTIONS_PER_FORM, fewSiblings, MAX_ROWS_LEFT_OFF), so not counted.
-  ctx.counting = false;
+  //    bounded (MAX_INSTRUCTIONS_PER_FORM, MAX_LINE_SIZE, fewSiblings, MAX_ROWS_LEFT_OFF) and, harden 26/10 (check2-WA2
+  //    N-1), counted against the same budget: every run split, line and row it leaves off is a change like any other.
   leaveOffInstructions(ctx, instructions, answered);
-  ctx.counting = true;
 
   // 5. What the fill did (plan WA2 design 1), on the elements resolved before anything changed: an answer that is no
   //    longer on the form, and residue on a decided box.

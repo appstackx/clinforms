@@ -52,7 +52,7 @@ import {
 } from "pdf-lib";
 import { isAnswerableField, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
 import type { FillOutcome, FillOutcomeKind } from "../core/issue-types";
-import type { FormDefinition, FormField, PdfCharFieldsAnchor, PdfFieldAnchor, PdfOptionField } from "../core/types";
+import type { FormAnswerRow, FormDefinition, FormField, PdfCharFieldsAnchor, PdfFieldAnchor, PdfOptionField } from "../core/types";
 import {
   answerIsoDate,
   charBoxFontSize,
@@ -349,14 +349,34 @@ function sameRowFontSizes(ctx: Ctx): void {
 function encodeAnswer(ctx: Ctx, field: FormField, raw: string): string {
   const lost: string[] = [];
   const text = ctx.encode(raw, lost);
-  if (lost.length > 0) {
-    const chars = Array.from(new Set(lost)).slice(0, 5).map((c) => `“${c}”`).join(", ");
-    ctx.warn(
-      `${where(field)}: ${lost.length} character${lost.length === 1 ? "" : "s"} (${chars}) cannot be printed with the form's font and appear as “?”. Check the answer on the completed form.`,
-    );
-    ctx.fault("written", `${lost.length === 1 ? "a character" : `${lost.length} characters`} of the answer (${chars}) cannot be printed with the form's font and would show as “?”`);
-  }
+  reportUnprintable(ctx, field, lost);
   return text;
+}
+
+/** Characters of an answer the form's font cannot print (they would show as “?”): a warning, and a fault on the field. */
+function reportUnprintable(ctx: Ctx, field: FormField, lost: readonly string[]): void {
+  if (lost.length === 0) return;
+  const chars = Array.from(new Set(lost)).slice(0, 5).map((c) => `“${c}”`).join(", ");
+  ctx.warn(
+    `${where(field)}: ${lost.length} character${lost.length === 1 ? "" : "s"} (${chars}) cannot be printed with the form's font and appear as “?”. Check the answer on the completed form.`,
+  );
+  ctx.fault("written", `${lost.length === 1 ? "a character" : `${lost.length} characters`} of the answer (${chars}) cannot be printed with the form's font and would show as “?”`);
+}
+
+/**
+ * Harden 26/10 (check2-WA2 N-5): the table helpers (forms/pdf-table.ts) print a character the form's font cannot print
+ * as “?” without saying so. Every cell of a table answer is read here first, as printed (in capitals on an overlay
+ * table of a form that prints them), so such a character is met like a single box's: a decided FINAL copy is refused.
+ */
+function checkTableRows(ctx: Ctx, field: FormField, rows: readonly FormAnswerRow[], capitals: boolean): void {
+  const lost: string[] = [];
+  for (const row of rows) {
+    for (const value of Object.values(row)) {
+      if (typeof value !== "string" || !value.trim()) continue;
+      ctx.encode(capitals ? value.trim().toLocaleUpperCase("en-GB") : value.trim(), lost);
+    }
+  }
+  reportUnprintable(ctx, field, lost);
 }
 
 function cutError(field: FormField, max: number, full: string, written: string): string {
@@ -927,6 +947,7 @@ export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answe
         printedText: printedText ?? (printedText = printedTextLoader(buf)),
       };
       if (answer.rows?.length) {
+        checkTableRows(ctx, field, answer.rows, anchor.kind === "pdf_overlay_table" && Boolean(form.uppercase));
         if (anchor.kind === "pdf_table") await fillPdfFieldTable(deps, field, anchor, answer.rows);
         else drawOverlayTable(deps, field, anchor, answer.rows);
       }

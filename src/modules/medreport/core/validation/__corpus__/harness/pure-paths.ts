@@ -118,10 +118,16 @@ function docParts(bytes: Uint8Array): { xml: string; text: string } {
  * holding `besideLines` empty lines each. kind "placeholders": replace_placeholder questions with clearPlaceholder;
  * kind "typography": after_paragraph questions on a form whose file name marks it converted from RTF; kind "runs" (WA2,
  * review 26/10): one line of `runs` one-character runs holding `questions` blanks "……", each question mapped to them –
- * refused or filled within maxMs, with no re-check (runHostile).
+ * refused or filled within maxMs, with no re-check (runHostile); kind "instructions" (WA2 harden 26/10, check2-WA2
+ * N-1): `lines` lines each holding a form author's note "(delete this text)" beside one run of `tabs` tabs, then one
+ * answered question – the work of leaving the notes off; kind "long" (WA2 harden 26/10, check2-WA2 N-2): an ordinary
+ * long questionnaire – `lines` printed lines, `questions` questions answered after their line with `paras`
+ * paragraphs each, and a table of `rows` rows answered cell by cell.
  */
-function hostileForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+function hostileForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array; answers?: ReturnType<typeof buildFormAnswers> } {
   if (spec.kind === "runs") return hostileRunsForm(spec);
+  if (spec.kind === "instructions") return hostileInstructionsForm(spec);
+  if (spec.kind === "long") return longForm(spec);
   const lines = Number(spec.lines ?? 2000);
   const cells = Number(spec.cells ?? 0);
   const besideLines = Number(spec.besideLines ?? Math.min(lines, 200));
@@ -194,11 +200,82 @@ function hostileRunsForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array
   return { form, bytes };
 }
 
+const W_MAIN = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+/**
+ * A Word file from a body's raw XML (shapes the layout builder cannot write: a run of thousands of tabs) – the layout
+ * builder's package with its document part replaced (core/ never imports a zip library itself).
+ */
+function rawDocx(body: string): Uint8Array {
+  const zip = openZipSafely(buildDocx([]));
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W_MAIN}"><w:body>${body}<w:sectPr/></w:body></w:document>`);
+  return zip.generate({ type: "uint8array" });
+}
+
+function hostileFormOf(bytes: Uint8Array, fields: FormField[]): FormDefinition {
+  return {
+    id: "frm_hostile",
+    tenantId: "demo",
+    referrer: { name: "Hostile Size Ltd (fictional)", type: "other" },
+    title: "Hostile size check",
+    file: { fileName: "hostile.docx", mimeType: DOCX_MIME, sha256: fileSha256(bytes), sizeBytes: bytes.byteLength },
+    kind: "docx",
+    fields,
+    status: "proposed",
+    analysis: { mode: "rules", promptVersion: "corpus", at: CORPUS_AT, warnings: [] },
+    createdAt: CORPUS_AT,
+    updatedAt: CORPUS_AT,
+  };
+}
+
+/** kind "instructions": `lines` lines of a note beside a run of `tabs` tabs, then "Name ______" (answered). */
+function hostileInstructionsForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+  const lines = Number(spec.lines ?? 1);
+  const tabs = Number(spec.tabs ?? 40000);
+  const note = `<w:p><w:r><w:t xml:space="preserve">Sample line (delete this text)</w:t></w:r><w:r>${"<w:tab/>".repeat(tabs)}</w:r></w:p>`;
+  const bytes = rawDocx(`${note.repeat(lines)}<w:p><w:r><w:t xml:space="preserve">Name ______</w:t></w:r></w:p>`);
+  const fields: FormField[] = [
+    { id: "F-01", label: "Name", guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "replace_placeholder", blockId: `p${lines}`, placeholderText: "______" }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" },
+  ];
+  return { form: hostileFormOf(bytes, fields), bytes };
+}
+
+/** kind "long": an ordinary long questionnaire (fictional) – its answers are the case's, not "x". */
+function longForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array; answers: ReturnType<typeof buildFormAnswers> } {
+  const lines = Number(spec.lines ?? 2000);
+  const questions = Number(spec.questions ?? 300);
+  const paras = Number(spec.paras ?? 3);
+  const rows = Number(spec.rows ?? 0);
+  const every = Math.max(1, Math.floor(lines / Math.max(1, questions)));
+  const run = (t: string) => `<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const table = rows > 0 ? `<w:tbl>${Array.from({ length: rows }, (_, r) => `<w:tr><w:tc><w:p>${run(`Item ${r + 1}`)}</w:p></w:tc><w:tc><w:p/></w:tc></w:tr>`).join("")}</w:tbl>` : "";
+  const body: string[] = [];
+  const fields: FormField[] = [];
+  const answers: ReturnType<typeof buildFormAnswers> = {};
+  const sentence = "The fictional patient reports steady progress with the home programme and has returned to light duties.";
+  for (let i = 0; i < lines; i++) {
+    if (i % every === 0 && fields.length < questions) {
+      const id = `F-${String(fields.length + 1).padStart(3, "0")}`;
+      body.push(`<w:p>${run(`Question ${fields.length + 1} of the fictional form:`)}</w:p>`);
+      fields.push({ id, label: `Question ${fields.length + 1}`, guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "after_paragraph", blockId: `p${i}` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+      answers[id] = { text: Array.from({ length: paras }, () => sentence).join("\n\n") };
+    } else body.push(`<w:p>${run(`Printed line ${i + 1} of the fictional form.`)}</w:p>`);
+  }
+  for (let r = 0; r < rows; r++) {
+    const id = `T-${String(r + 1).padStart(3, "0")}`;
+    fields.push({ id, label: `Item ${r + 1}`, guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "table_cell", blockId: `t0.r${r}.c1` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+    answers[id] = { text: "Fictional short answer" };
+  }
+  // The table comes first, so the body's paragraphs keep the ids p0…p(lines-1).
+  const bytes = rawDocx(`${table}${body.join("")}`);
+  return { form: hostileFormOf(bytes, fields), bytes, answers };
+}
+
 /** One timed FINAL fill of a hostile file (ms, or a 4xx refusal). */
 async function timedHostileFill(spec: Loose): Promise<{ ms: number; refusal: string | null }> {
-  const { form, bytes } = hostileForm(spec);
-  const answers: ReturnType<typeof buildFormAnswers> = {};
-  if (spec.answered !== false) for (const f of form.fields) answers[f.id] = spec.blank ? { leftBlank: true } : { text: "x" };
+  const { form, bytes, answers: own } = hostileForm(spec);
+  const answers: ReturnType<typeof buildFormAnswers> = own ?? {};
+  if (!own && spec.answered !== false) for (const f of form.fields) answers[f.id] = spec.blank ? { leftBlank: true } : { text: "x" };
   const started = Date.now();
   try {
     await renderFormFile({ form, file: { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength }, answers, draft: false, format: "original" });
@@ -222,11 +299,15 @@ async function runHostile(c: RunCase): Promise<PathOutcome> {
   const spec = (c.input.fill?.hostile ?? {}) as Loose;
   const maxMs = Number((c.check?.fill as Loose | undefined)?.maxMs ?? 3000);
   const big = await timedHostileFill(spec);
+  // WA2 harden 26/10: BLOCK – the size must be refused (422), however fast; mustFill (kind "long", an ordinary form) –
+  // it must be filled within maxMs, never refused.
+  if (c.expect === "BLOCK") return big.refusal ? { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` } : { path: "fill", ok: false, detail: `the FINAL copy was made in ${big.ms} ms, not refused` };
+  if (spec.mustFill === true && big.refusal) return { path: "fill", ok: false, detail: `an ordinary form was refused (${big.refusal}) after ${big.ms} ms` };
   if (big.refusal) return { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` };
   if (big.ms <= maxMs) return { path: "fill", ok: true, detail: `filled in ${big.ms} ms (budget ${maxMs} ms)` };
-  // kind "runs": no real form has such a line, so it must be refused or filled within the budget – no linear excuse.
-  if (spec.kind === "runs") return { path: "fill", ok: false, detail: `filled in ${big.ms} ms, over the ${maxMs} ms budget, and not refused` };
-  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)), ...(spec.kind === "runs" && { runs: Math.max(1, Math.round(Number(spec.runs ?? 200000) / 10)) }) };
+  // kinds "runs", "instructions" and "long": refused or filled within the budget – no linear excuse.
+  if (spec.kind === "runs" || spec.kind === "instructions" || spec.kind === "long") return { path: "fill", ok: false, detail: `filled in ${big.ms} ms, over the ${maxMs} ms budget, and not refused` };
+  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)) };
   const small1 = await timedHostileFill(smallSpec);
   const big2 = await timedHostileFill(spec);
   if (big2.refusal) return { path: "fill", ok: true, detail: `refused (${big2.refusal}) after ${big2.ms} ms` };

@@ -230,3 +230,87 @@ test("copies, insertions and removals are counted: run properties of thousands o
   const lines = Array.from({ length: 60_000 }, () => "a").join("\n");
   assert.equal(timed(cells, tall, "hostile.docx", Object.fromEntries(tall.map((f) => [f.id, { text: lines }]))).refused, "FORM_TOO_COMPLEX");
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Harden 26/10 (check2-WA2 major N-1, minor N-2): the instructions pass is counted; long ordinary forms are filled
+ * ----------------------------------------------------------------------------------------------*/
+
+const note = (tabs: number) => `<w:p><w:r><w:t xml:space="preserve">Sample line (delete this text)</w:t></w:r><w:r>${"<w:tab/>".repeat(tabs)}</w:r></w:p>`;
+const nameLine = p(r("Name ______"));
+const nameField = (blockId: string) => [field("F-01", { kind: "docx", target: "replace_placeholder", blockId, placeholderText: "______" })];
+
+test("N-1: a form author's note beside one run of 40,000 tabs is left as printed at once – FINAL, draft and the preview path", async () => {
+  const { renderFormFile } = await import("./render-form");
+  const bytes = docx(note(40_000) + nameLine);
+  const fields = nameField("p1");
+  const base = neutral(bytes);
+  const res = timed(bytes, fields);
+  assert.equal(res.refused, null);
+  assert.ok(res.ms < 3000 || res.ms < base * 3 + 1500, `${res.ms} ms (the file alone: ${base} ms)`);
+  const xml = new PizZip(res.out!).file("word/document.xml")!.asText();
+  assert.match(xml, /Sample line \(delete this text\)/, "a line past MAX_LINE_SIZE keeps its note (as a question's line would be refused)");
+  assert.match(xml, /<w:t[^>]*>x<\/w:t>/, "the question is answered");
+  assert.doesNotMatch(xml, /______/);
+  const form = formOf(bytes, fields, "hostile.docx");
+  const started = Date.now();
+  await renderFormFile({ form, file: { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength }, answers: { "F-01": { text: "Fictional name" } }, draft: true, reviewMarkers: true, format: "original" });
+  const ms = Date.now() - started;
+  assert.ok(ms < 3000 || ms < base * 3 + 1500, `the draft preview: ${ms} ms (the file alone: ${base} ms)`);
+});
+
+test("N-1: notes beside runs just under the line cap – the work of leaving them off is counted: refused 422 within 3 s; an ordinary note is still left off, its work counted", () => {
+  for (const [lines, tabs] of [[10, 4_900], [200, 1_000]] as const) {
+    const bytes = docx(note(tabs).repeat(lines) + nameLine);
+    const res = timed(bytes, nameField(`p${lines}`));
+    assert.equal(res.refused, "FORM_TOO_COMPLEX", `${lines} × ${tabs}: ${res.ms} ms`);
+    assert.ok(within(res, neutral(bytes)), `${lines} × ${tabs}: ${res.ms} ms`);
+  }
+  const plain = docx(`<w:p><w:r><w:t xml:space="preserve">Sample line</w:t></w:r><w:r>${"<w:tab/>".repeat(40)}</w:r></w:p>` + nameLine);
+  const noted = docx(note(40) + nameLine);
+  const answers = { "F-01": { text: "Fictional name" } };
+  const without = fillDocxReport(plain, formOf(plain, nameField("p1"), "a.docx"), answers, { draft: false });
+  const withNote = fillDocxReport(noted, formOf(noted, nameField("p1"), "a.docx"), answers, { draft: false });
+  assert.doesNotMatch(new PizZip(withNote.bytes).file("word/document.xml")!.asText(), /delete this text/, "the note is left off");
+  assert.ok(withNote.work.steps > without.work.steps, `leaving the note off is counted: ${withNote.work.steps} > ${without.work.steps} steps`);
+});
+
+/** A long ordinary questionnaire (fictional): `lines` printed lines, `questions` answered after their line with `paras` paragraphs, a table of `rows` rows. */
+function longForm(lines: number, questions: number, paras: number, rows: number): { bytes: Uint8Array; fields: FormField[]; answers: FormFillAnswers } {
+  const every = Math.floor(lines / questions);
+  const body: string[] = [];
+  const fields: FormField[] = [];
+  const answers: FormFillAnswers = {};
+  const sentence = "The fictional patient reports steady progress with the home programme and has returned to light duties.";
+  for (let i = 0; i < lines; i++) {
+    if (i % every === 0 && fields.length < questions) {
+      const id = `F-${fields.length + 1}`;
+      body.push(p(r(`Question ${fields.length + 1} of the fictional form:`)));
+      fields.push({ ...field(id, { kind: "docx", target: "after_paragraph", blockId: `p${i}` }), answerType: "long_text" });
+      answers[id] = { text: Array.from({ length: paras }, () => sentence).join("\n\n") };
+    } else body.push(p(r(`Printed line ${i + 1} of the fictional form.`)));
+  }
+  const table = rows ? `<w:tbl>${Array.from({ length: rows }, (_, k) => `<w:tr><w:tc>${p(r(`Item ${k + 1}`))}</w:tc><w:tc>${p("")}</w:tc></w:tr>`).join("")}</w:tbl>` : "";
+  for (let k = 0; k < rows; k++) {
+    fields.push(field(`T-${k + 1}`, { kind: "docx", target: "table_cell", blockId: `t0.r${k}.c1` }));
+    answers[`T-${k + 1}`] = { text: "Fictional short answer" };
+  }
+  return { bytes: docx(table + body.join("")), fields, answers };
+}
+
+test("N-2: long ordinary questionnaires are filled, well inside the budget (re-indexing is counted at its cost, not one step per child)", () => {
+  for (const [lines, questions, paras, rows, most] of [[2_000, 300, 3, 100, 0.25], [1_500, 200, 6, 0, 0.25], [3_000, 300, 10, 0, 0.75]] as const) {
+    const { bytes, fields, answers } = longForm(lines, questions, paras, rows);
+    const out = fillDocxReport(bytes, formOf(bytes, fields, "long.docx"), answers, { draft: false });
+    assert.ok(out.work.steps < MAX_FILL_STEPS * most, `${lines} lines, ${questions} × ${paras} paragraphs, ${rows} rows: ${out.work.steps} steps`);
+    assert.ok(out.outcomes.every((o) => !o.fatal), `${lines} lines: no fatal outcome`);
+  }
+});
+
+test("note (check2-WA2): a line after a question holding more than MAX_LINE_SIZE (a drawing group anchored there) ends the answer space – the form is not refused", () => {
+  const big = `<w:p>${Array.from({ length: Math.ceil(MAX_LINE_SIZE / 3) + 50 }, () => r("·")).join("")}</w:p>`;
+  const bytes = docx(p(r("Question of the fictional form:")) + big + p(r("Next printed line.")));
+  const fields = [field("F-01", { kind: "docx", target: "after_paragraph", blockId: "p0" })];
+  const res = timed(bytes, fields, "neighbour.docx", { "F-01": { text: "Fictional answer." } });
+  assert.equal(res.refused, null);
+  assert.match(new PizZip(res.out!).file("word/document.xml")!.asText(), /Fictional answer\./);
+});
