@@ -99,8 +99,23 @@ export const RELEASE_MEMBERS = {
   ],
   /** New keys, so production keeps whatever they hold; listed so the fixture holds every member the release writes. */
   ackPolicies: ["never", "approver", "member"],
-  /** bh2-rc1: Paragraph.fixes[].kind – the one-click fixes applied (a new key; free strings ≤ 64). WB's generators. */
-  fixKinds: ["attribution", "attribution-prefix", "use-note-words", "name-instead", "remove-commentary"],
+  /**
+   * bh2-rc1: Paragraph.fixes[].kind – the one-click fixes applied (a new key; free strings ≤ 64): WB's generators and
+   * WD's engine (an Undo records "undo-<kind>").
+   */
+  fixKinds: [
+    "attribution",
+    "attribution-prefix",
+    "use-note-words",
+    "name-instead",
+    "remove-commentary",
+    "repeat-removal",
+    "duplicate-paragraph",
+    "value-only",
+    "dose-not-stated",
+    "printed-lead",
+    "undo-repeat-removal",
+  ],
   /** bh2-rc1: ActivityEntry.action – an open string on both lines; the release's review and fixes write these codes. */
   activityActions: ["adopted", "disposition_set", "disposition_cleared", "approver_taken_over", "note_words_accepted", "own_words", "fix_applied", "held_back"],
   signerConfirmationKinds: ["assessed_patient", "treated_patient", "own_registration_number"],

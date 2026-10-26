@@ -1,22 +1,6 @@
 {
  "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB). bh2-rc1 (integrator): each workstream merge removes the items that hold after it and the DIFF items that block again or are allowlisted once their owner lands; new one-click variants and DIFF items a merge creates are added with their owner.",
  "cases": {
-  "ASAT-dc-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “7/10” – printed: \"Pain 7/10 at worst.\"; gaps: none"
-  },
-  "ASAT-ia-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “by 20/10/2026” – printed: \"She was taking no medication by 20/10/2026.\"; gaps: none"
-  },
-  "ASSEMBLE-fragment-02": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “2026: in my” – printed: \"On 18/03/2026: in my assessment mild lumbar stiffness.\"; gaps: none"
-  },
-  "ASSEMBLE-fragment-03": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “consistent with lifting, and noted” – printed: \"The symptoms were consistent with lifting, and noted mild stiffness when sitting.\"; gaps: none"
-  },
   "ATT-nameinstead-05": {
    "owner": "WC",
    "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Tom Ellis instead”) to pat"
@@ -57,46 +41,6 @@
    "owner": "WC",
    "reason": "Awaiting Khuram's allowlist decision (his opinion rule of 26/10: an opinion written by the approver is allowed): the approving physio rewrote the drafted prognosis in their own words (no drafted residue left; WC design 6 stamps it as the approver's), so it is not checked as unrecorded opinion. production: OPINION_LANGUAGE/blocking 'should settle' on edited text (acknowledgeable) | candidate: no flags. The case expects PASS (B1-10)."
   },
-  "EDIT-abbr-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
-  "EDIT-builtin-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
-  "EDIT-compact-02": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: flagged: DRAFT_FIT/warning:shorten"
-  },
-  "EDIT-compact-04": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: subject: DRAFT_FIT/warning:shorten; no value-only fix offered"
-  },
-  "EDIT-compact-04~fix-own-voice-1": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: F-12: a sentence starts with a digit – “7/10 at worst, as recorded by me using t”"
-  },
-  "EDIT-decimal-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
-  "EDIT-decimal-02": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
-  "EDIT-dose-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\"} – subject: no flags"
-  },
-  "EDIT-mustwork-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
-  "EDIT-orphan-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
-  },
   "ISSUE-na-figure-01": {
    "owner": "WA1",
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
@@ -116,30 +60,6 @@
   "ISSUE-na-voice-01~fix-name-instead-1": {
    "owner": "WB",
    "reason": "A one-click variant that did not exist before WA1: the box printed anyway now gets every check, so OTHER_CLINICIAN_VOICE is raised and WB's 'Name Tom Ellis instead' (pronoun rewrite) is offered and makes it approvable – same class as ATT-firstperson-02~fix-name-instead-1 (WB design: prefix-only attribution fix)."
-  },
-  "LEDGER-meta-wording-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for meta-wording in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-plain-wording-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for plain-wording in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-repeat-removal-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for repeat-removal in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-scope-strip-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for scope-strip in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-tick-suggested-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for tick-suggested in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-value-only-seam": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for value-only in core/validation/registry.ts (withHookDisabled)"
   },
   "LINT-l1-fail-01": {
    "owner": "WE",
@@ -329,25 +249,13 @@
    "owner": "WE",
    "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
   },
-  "META-heldback-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “so there is no 4th..” – printed: \"Lumbar movement was full and pain-free at discharge. so there is no 4th... wait, the 4th attended session is 13/10/2026\"; gaps: none"
-  },
-  "META-heldback-02": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “These are recorded-o” – printed: \"Lumbar movement was full and pain-free at discharge. These are recorded-opinion questions.\"; gaps: none"
-  },
-  "META-heldback-03": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: printed: “(recorded” – printed: \"Lumbar movement was full and pain-free at discharge. (recorded opinion only)\"; gaps: none"
-  },
   "OPN-twin-priya~origin-staff": {
    "owner": "WC",
    "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
   },
-  "REP-true-01": {
+  "REP-remove-pass-02": {
    "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+   "reason": "Escalated (WD x WB contradiction, not a product fault): holds on ws/bh2-drafting alone; with WB's attribution check (plan WB design 8: every finding a drafted sentence takes from a colleague's note names that colleague) its subject 'Lumbar movement was full and pain-free.' citing Tom Ellis's note blocks as unattributed (OTHER_CLINICIAN_VOICE) on Sarah Reid's report, with the one-click 'Tom Ellis recorded that …' offered. The case's PASS predates WB's rule; cases are append-only, so retiring or superseding it is Khuram's / W0's call."
   },
   "ROLE-forge-ack": {
    "owner": "WC",
@@ -356,22 +264,6 @@
   "ROLE-forge-signedactivity": {
    "owner": "WC",
    "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (signed-activity-rewrite): 200"
-  },
-  "SCALE-grade-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: \"Grade 2\" – printed: \"Priya Shah recorded a grade 2 sprain.\"; gaps: none"
-  },
-  "SCALE-negation-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: \"Some difficulty\" – printed: \"Some stiffness in the morning; no difficulty sleeping since the second week.\"; gaps: none"
-  },
-  "SCALE-restriction-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: true – printed: \"She lifts boxes at work.\"; gaps: none"
-  },
-  "SCOPE-decimal-01": {
-   "owner": "WD",
-   "reason": "Fails on bh2-r1: FAIL scope: matches /PSFS 6\\.(?!5)/ → \"PSFS 6.\""
   }
  }
 }
