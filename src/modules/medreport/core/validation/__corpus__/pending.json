@@ -605,30 +605,6 @@
    "owner": "WD",
    "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
   },
-  "FILL-collision-01": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
-  },
-  "FILL-frame-01": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: “Next step” cell 1 still prints “To return to” (\"To return to …\"); “Next step” cell 1 still prints “…” (\"To return to …\")"
-  },
-  "FILL-frame-03": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: “Goal” cell 1 still prints “To return to” (\"To return to …\"); “Goal” cell 1 still prints “…” (\"To return to …\")"
-  },
-  "FILL-notfound-01": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
-  },
-  "FILL-unknown-01": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: “Main treatment given (strike out the others)” cell 1 still prints “Acupuncture” (\"Exercise / Manual therapy / Acupuncture / Taping\")"
-  },
-  "FILL-unknown-03": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
-  },
   "ISSUE-na-figure-01": {
    "owner": "WA1",
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
@@ -692,10 +668,6 @@
   "LEDGER-exerciseOnBalance-seam": {
    "owner": "WB",
    "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for exerciseOnBalance in core/validation/registry.ts (withHookDisabled)"
-  },
-  "LEDGER-fill-leave-blank-seam": {
-   "owner": "WA2",
-   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for fill-leave-blank in core/validation/registry.ts (withHookDisabled)"
   },
   "LEDGER-first-person-licence-seam": {
    "owner": "WB",
