@@ -40,7 +40,10 @@ import "server-only";
  * Which report: the body's reportId / amendsReportId bound to the server's fingerprint of the bundle and form drafted
  * (api/usage.ts usageEpisodeFp). Demo answers never count.
  *
- * Owner: ai agent.
+ * bh2 WD design 2: `approver` (the report's approving physio) is the drafting voice owner – the prompt's first person and
+ * assembly's voice check; `author` only when no approver is sent.
+ *
+ * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
 import { assembleDraft } from "../../ai/assemble";
 import { hasDemoDraft } from "../../ai/draft-demo";
@@ -146,6 +149,9 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     failedCallCounted = true;
     await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: false, ...usageOfError(err) });
   };
+  // bh2 WD design 2: the drafting voice owner is the report's approving physio (the request's `approver`), else the
+  // signing author it names; with neither, nobody's – the draft is in the third person. Never guessed from the notes.
+  const voiceOwner = form ? (body.approver ? { name: body.approver.name, hcpc: body.approver.hcpc } : (body.author ?? null)) : null;
   const run = (m: typeof mode) =>
     generateDraftGroup({
       template,
@@ -157,7 +163,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       effort: body.effort,
       signal: req.signal,
       form,
-      ...(form && body.author ? { author: body.author } : {}),
+      ...(voiceOwner ? { author: voiceOwner } : {}),
     });
   try {
     let result;
@@ -186,6 +192,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       meta: result.meta,
       form,
       ...(form && body.author ? { author: body.author } : {}),
+      ...(form && body.approver ? { approver: body.approver } : {}),
     });
     const usage = result.meta.usage;
     logEvent("draft_ok", {
