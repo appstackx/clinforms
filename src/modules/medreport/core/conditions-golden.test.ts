@@ -6,8 +6,9 @@
  *   … CLINFORMS_CONDITION_GOLDEN_WRITE=1   writes the golden from the parser as it reads now (review it, then keep it)
  *
  * The golden holds ids and enums only – per form, per field id: the controlling field ids, what they must be
- * (yes / no / other), how several combine (any / all), unresolved – never wording. Without both variables no test is
- * registered (the default chain allows no extra skips). On a difference it prints the field ids only.
+ * (yes / no / other – "w"; a choice's printed option, by its position – "wo"; any option but that one – "wn"; a text
+ * box naming something – "f"), how several combine (any / all), unresolved – never wording. Without both variables no
+ * test is registered (the default chain allows no extra skips). On a difference it prints the field ids only.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -18,7 +19,7 @@ import { compileCondition, type ConditionField } from "./conditions";
 const MAPS = process.env.CLINFORMS_THIRD_PARTY_MAPS;
 const GOLDEN = process.env.CLINFORMS_CONDITION_GOLDEN;
 
-type Reading = { c: string[]; w?: string; m?: string; u?: true } | null;
+type Reading = { c: string[]; w?: string; wo?: number; wn?: number; f?: true; m?: string; u?: true } | null;
 type Golden = Record<string, Record<string, Record<string, Reading>>>;
 
 function readMaps(dir: string): Array<{ file: string; map: string; fields: ConditionField[] }> {
@@ -37,7 +38,19 @@ function readMaps(dir: string): Array<{ file: string; map: string; fields: Condi
 function reading(fields: readonly ConditionField[], id: string): Reading {
   const c = compileCondition(fields, id);
   if (!c) return null;
-  return { c: c.controllers, ...(c.wants ? { w: c.wants } : {}), ...(c.match ? { m: c.match } : {}), ...(c.unresolved ? { u: true as const } : {}) };
+  const more = c as typeof c & { wantsNot?: string; filled?: true };
+  // A choice's printed option is recorded by its position among the controller's options (no wording in the golden).
+  const optionIndex = (option: string) => (fields.find((f) => f.id === c.controllers[0])?.options ?? []).indexOf(option);
+  const isOption = Boolean(c.wants && !["yes", "no", "other"].includes(c.wants));
+  return {
+    c: c.controllers,
+    ...(c.wants && !isOption ? { w: c.wants } : {}),
+    ...(isOption ? { wo: optionIndex(c.wants as string) } : {}),
+    ...(more.wantsNot ? { wn: optionIndex(more.wantsNot) } : {}),
+    ...(more.filled ? { f: true as const } : {}),
+    ...(c.match ? { m: c.match } : {}),
+    ...(c.unresolved ? { u: true as const } : {}),
+  };
 }
 
 if (MAPS && GOLDEN) {

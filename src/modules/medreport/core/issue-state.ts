@@ -66,9 +66,12 @@ function sameAnswer(a: FormAnswer | undefined, b: FormAnswer | undefined): boole
   return norm(a) === norm(b);
 }
 
-/** The controlling answers of `key` now – what a person's decision about it records (disposition.controllerSnapshot). */
-export function controllerSnapshotOf(sections: readonly ReportSection[], key: string): ControllerSnapshot[] {
-  const condition = conditionOf(sections, key);
+/**
+ * The controlling answers of `key` now – what a person's decision about it records (disposition.controllerSnapshot).
+ * `release`: the report was made by this release (isReleaseModel) – its frozen conditions only.
+ */
+export function controllerSnapshotOf(sections: readonly ReportSection[], key: string, opts: { release?: boolean } = {}): ControllerSnapshot[] {
+  const condition = conditionOf(sections, key, opts);
   if (!condition) return [];
   return condition.controllers.map((c) => {
     const section = sections.find((s) => s.key === c.key);
@@ -93,11 +96,25 @@ function byTheApprover(by: SectionDisposition["by"] | undefined, content: Pick<I
 export type DispositionVerdict = "none" | "valid" | "stale" | "not_allowed" | "cancelled";
 
 /**
+ * A clinician's box: the attested form map says the physio answers it (fillSource clinician_opinion). The section's own
+ * kind (report content a client could rewrite) counts only where there is no map (a built-in template's report).
+ */
+function isClinicianBox(section: ReportSection, field: Pick<FormField, "fillSource"> | null): boolean {
+  if (field) return field.fillSource.kind === "clinician_opinion";
+  return section.kind === "clinician_opinion";
+}
+
+/**
  * Whether a box's stored decision counts: "valid", or why not – "stale" (a controlling answer changed since),
  * "not_allowed" (applies anyway by anyone but the approver; not applicable on a clinician's box by anyone but the
  * approver; left blank on a required box), "cancelled" (left blank on a box that now has an answer).
  */
-export function dispositionVerdict(content: IssueContent, section: ReportSection, field: Pick<FormField, "required"> | null, answered: boolean): DispositionVerdict {
+export function dispositionVerdict(
+  content: IssueContent,
+  section: ReportSection,
+  field: (Pick<FormField, "required"> & Partial<Pick<FormField, "fillSource">>) | null,
+  answered: boolean,
+): DispositionVerdict {
   const d = section.disposition;
   if (!d) return "none";
   switch (d.kind) {
@@ -108,7 +125,7 @@ export function dispositionVerdict(content: IssueContent, section: ReportSection
       if (!byTheApprover(d.by, content)) return "not_allowed";
       return dispositionIsStale(d, content.sections) ? "stale" : "valid";
     case "not_applicable":
-      if (section.kind === "clinician_opinion" && !byTheApprover(d.by, content)) return "not_allowed";
+      if (isClinicianBox(section, field?.fillSource ? { fillSource: field.fillSource } : null) && !byTheApprover(d.by, content)) return "not_allowed";
       return dispositionIsStale(d, content.sections) ? "stale" : "valid";
     default:
       return "not_allowed";
@@ -154,7 +171,12 @@ function answeredBy(section: ReportSection): Actor | null {
   return last?.by ?? null;
 }
 
-/** A gap of the box was acknowledged as leaving it blank and nothing on it is open (content: gaps are hashed). */
+/**
+ * A gap of the box was acknowledged as leaving it blank and nothing on it is open (content: gaps are hashed). Read for
+ * every report, not only those from before the release (design 8 would keep it to them): the review's "Leave optional
+ * boxes blank" still records its decision this way until it writes a left_blank disposition (WC). It only ever turns an
+ * optional box's "no answer" into "left blank" – the FINAL copy is the same either way ({leftBlank: true}).
+ */
 function blankByAcknowledgement(content: IssueContent, key: string): boolean {
   const gaps = (content.gaps ?? []).filter((g) => g.sectionKey === key);
   if (gaps.length === 0 || gaps.some((g) => !g.resolution)) return false;
@@ -172,7 +194,8 @@ function boxIssue(content: IssueContent, field: FormField | null, section: Repor
   const answered = isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign });
   const verdict = dispositionVerdict(content, section, field, answered);
   const decided = verdict === "valid" ? section.disposition : null;
-  const condition = conditionOf(content.sections, section.key);
+  // A report this release made reads only the conditions frozen when it was created (no run-time fallback, design 8).
+  const condition = conditionOf(content.sections, section.key, { release: isReleaseModel(content) });
   const issue = { ...base, condition, frozenCondition: Boolean(condition?.frozen), dispositionVerdict: verdict };
 
   if (decided?.kind === "not_applicable") return { ...issue, state: { kind: "not_applicable", reason: "person" } };
@@ -230,7 +253,21 @@ export function boxIssueOf(report: IssueContent | Report, form: IssueForm | null
  */
 export function notApplicableBecause(report: IssueContent | Report, form: IssueForm | null, key: string): string | null {
   const box = boxIssueOf(report, form, key);
-  if (!box || box.state.kind !== "not_applicable") return null;
+  return box ? reasonNotAsked(box) : null;
+}
+
+/** Why each box that is not asked is not asked (box key → the card's words) – the whole report worked out once. */
+export function notApplicableReasons(report: IssueContent | Report, form: IssueForm | null): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const box of issueDetails(report, form)) {
+    const why = reasonNotAsked(box);
+    if (why) out.set(box.key, why);
+  }
+  return out;
+}
+
+function reasonNotAsked(box: BoxIssue): string | null {
+  if (box.state.kind !== "not_applicable") return null;
   if (box.state.reason === "condition") return box.condition?.because || "the answer it depends on rules it out";
   if (box.state.reason === "session_not_attended") return "no attended session in the notes matches it";
   const by = box.disposition?.by?.name;

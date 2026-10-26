@@ -6,7 +6,7 @@
  * Pure: no React, no Node built-ins, no env. Split out of core/forms.ts by W0.4 (bh2 module split, pure move; core/forms.ts re-exports it).
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
-import { issueDetails } from "../issue-state";
+import { isReleaseModel, issueDetails } from "../issue-state";
 import { formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "../dates";
 import { hasRowContent, rowsToText } from "../form-tables";
 import type { FormAnswer, FormAnswerRow, FormDefinition, FormField, Report, ReportSection, SignReceipt, SignoffPart } from "../types";
@@ -363,6 +363,8 @@ export function buildFormAnswers(
   const approvedDraft = !final && report.status === "signed";
   const answers: FormFillAnswers = {};
   const boxes = new Map(issueDetails(report, form).map((b) => [b.key, b]));
+  // A report from before this release with no section for a field printed it as it is (AC-ISSUE-6: byte-identical).
+  const legacyWithout = isReleaseModel(report) ? null : new Set(report.sections.map((s) => s.key));
   for (const field of answerableFields(form)) {
     const box = boxes.get(field.id);
     const state = box?.state;
@@ -381,7 +383,8 @@ export function buildFormAnswers(
         else answers[field.id] = notAsked(field);
         break;
       case "blank":
-        if (state.reason === "record_empty") answers[field.id] = { text: "", blank: true };
+        if (legacyWithout && !legacyWithout.has(field.id)) answers[field.id] = {};
+        else if (state.reason === "record_empty") answers[field.id] = { text: "", blank: true };
         else answers[field.id] = final || approvedDraft || state.reason === "left_blank" || leftBlankByPerson(report, field.id) ? { leftBlank: true } : {};
         break;
     }

@@ -7,7 +7,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { copyEntries } from "./answer-copy";
-import { compileCondition, conditionOf, conditionText, legacyConditionOf, type ConditionField } from "./conditions";
+import { compileCondition, conditionOf, conditionText, evaluateCondition, legacyConditionOf, type ConditionField } from "./conditions";
 import { buildFormAnswers, formToTemplate } from "./forms";
 import { boxIssueOf, countOutcomes, controllerSnapshotOf, dispositionVerdict, issueContentOf, issueState, migrateDraftToReleaseModel, notApplicableBecause } from "./issue-state";
 import { ISSUE_EXCLUDED_KEYS } from "./issue-types";
@@ -22,6 +22,7 @@ import { renderFormFile } from "../forms/render-form";
 import { openZipSafely } from "../forms/zip-guard";
 import { buildQuestionSummaryViewModel } from "../docgen/question-summary";
 import { answerableCount, countStatuses, questionStatus } from "../ui/components/review/status";
+import { issuedSummary } from "../ui/components/review/approved-banner";
 import { buildQuestionGroups, flattenQuestions } from "../ui/components/review/status";
 
 process.env.MEDREPORT_AI_MODE = "demo";
@@ -395,6 +396,180 @@ describe("conditions are read once and frozen (WA1 design 3, the S-COND set)", (
     assert.deepEqual(migrated.sections.find((s) => s.key === "F-06")?.condition, b.report.sections.find((s) => s.key === "F-06")?.condition);
     const signed = { ...legacy, status: "signed" as const };
     assert.equal(migrateDraftToReleaseModel(signed, b.form), signed);
+  });
+});
+
+describe("conditions read by what they name (check-WA1 M2: B2-4, B1-9, B2-13 kept) – never guessed (minor 1)", () => {
+  const f = (id: string, label: string, answerType = "long_text", more: Partial<ConditionField> = {}): ConditionField => ({ id, label, answerType, guidance: "", ...more });
+  const yn = (id: string, label: string) => f(id, label, "yes_no");
+  const tick = (id: string, label: string) => f(id, label, "checkbox");
+  const choice = (id: string, label: string, options: string[]) => f(id, label, "single_choice", { options });
+  type Ans = Record<string, boolean | string | null>;
+  /** The frozen reading of `id`, evaluated against `answers` (and `texts` in text boxes): applies true / false / null. */
+  function applies(fields: ConditionField[], id: string, answers: Ans, texts: Record<string, string> = {}): boolean | null {
+    const c = compileCondition(fields, id);
+    if (!c) return true;
+    const kindOf = (t: string) => (t === "single_choice" ? "choice" : t === "checkbox" ? "checkbox" : t === "yes_no" ? "yes_no" : "text");
+    const sections = fields.map((x) => ({
+      key: x.id,
+      title: x.label,
+      ...(x.id in answers ? { answer: { kind: kindOf(x.answerType), value: answers[x.id] } as NonNullable<Report["sections"][number]["answer"]> } : {}),
+      paragraphs: texts[x.id] ? [para(`${x.id}-p1`, texts[x.id])] : [],
+    }));
+    return evaluateCondition(c, sections).applies;
+  }
+
+  it("a positive clause in the guidance names the tick it depends on: “Only when the tape restriction is kept”", () => {
+    const fields = [tick("F-01", "Restriction required – no kneeling"), tick("F-02", "Restriction required – tape support"), f("F-03", "Tape (hours)", "short_text", { guidance: "Only when the tape restriction is kept: how many hours." })];
+    assert.deepEqual(pick(compileCondition(fields, "F-03")), { controllers: ["F-02"], wants: "yes" });
+    assert.equal(applies(fields, "F-03", { "F-02": false }), false);
+    assert.equal(applies(fields, "F-03", { "F-02": true }), true);
+    assert.equal(applies(fields, "F-03", {}), null, "not known yet: it applies");
+    assert.equal(conditionText(fields, "F-03"), "F-02 (“Restriction required – tape support”) is ticked");
+  });
+
+  it("a tick it names can come just after it, or further up: “If you do not advise a brace …”", () => {
+    const after = [f("F-01", "Support – please specify", "short_text", { guidance: "Only when a brace or a sling is planned: which one." }), tick("F-02", "Support plan – Brace/Sling")];
+    assert.deepEqual(pick(compileCondition(after, "F-01")), { controllers: ["F-02"], wants: "yes" });
+    const far = [tick("F-01", "Plan – Knee brace"), yn("F-02", "Is a full recovery expected?"), f("F-03", "Reasons"), f("F-04", "If you do not advise a knee brace at this stage, say why")];
+    assert.deepEqual(pick(compileCondition(far, "F-04")), { controllers: ["F-01"], wants: "no" });
+    assert.equal(applies(far, "F-04", { "F-01": true }), false);
+    assert.equal(applies(far, "F-04", { "F-01": false }), true);
+    // A one-word topic is read only against the nearest question before it: never bound further up.
+    assert.equal(compileCondition([tick("F-01", "Plan – Brace"), yn("F-02", "Is a full recovery expected?"), f("F-03", "If you do not advise a brace, say why")], "F-03")?.unresolved, true);
+  });
+
+  it("a printed option of a choice: “If the knee is getting worse” after a choice that prints “Getting worse”", () => {
+    const fields = [choice("F-01", "How is the knee since treatment?", ["Better", "No change", "Getting worse"]), f("F-02", "If the knee is getting worse, what is advised?")];
+    assert.deepEqual(pick(compileCondition(fields, "F-02")), { controllers: ["F-01"], wants: "Getting worse" });
+    assert.equal(applies(fields, "F-02", { "F-01": "Better" }), false);
+    assert.equal(applies(fields, "F-02", { "F-01": "Getting worse" }), true);
+    assert.equal(conditionText(fields, "F-02"), "F-01 (“How is the knee since treatment?”) is “Getting worse”");
+  });
+
+  it("a condition in the printed heading – “not yet working full duties” – reads the choice: any other option applies", () => {
+    const heading = "If he is not on his full duties, list each problem";
+    const fields = [choice("F-01", "Work status", ["Back in his normal role", "Shorter shifts", "Absent from work"]), f("F-02", "Problem 1", "short_text", { section: heading }), f("F-03", "Problem 1 – weeks", "short_text", { section: heading })];
+    for (const id of ["F-02", "F-03"]) {
+      const c = compileCondition(fields, id) as (ReturnType<typeof compileCondition> & { wantsNot?: string }) | null;
+      assert.deepEqual([c?.controllers, c?.wantsNot, c?.wants], [["F-01"], "Back in his normal role", undefined], id);
+      assert.equal(applies(fields, id, { "F-01": "Back in his normal role" }), false);
+      assert.equal(applies(fields, id, { "F-01": "Shorter shifts" }), true);
+      assert.equal(applies(fields, id, {}), null);
+    }
+    // A heading that is an earlier question's own label is a sub-question, not a condition.
+    assert.equal(compileCondition([yn("F-01", "If he is not on his full duties, list each problem"), f("F-02", "Problem 1", "short_text", { section: "If he is not on his full duties, list each problem" })], "F-02"), null);
+  });
+
+  it("a text box of the same row that names nothing (“None”) rules out the row's choice and details (B2-13)", () => {
+    const fields = [
+      f("F-01", "Home tasks – task still limited", "short_text"),
+      choice("F-02", "Home tasks – status", ["Limited", "Cannot do"]),
+      f("F-03", "Home tasks – details", "short_text"),
+    ];
+    fields[1].guidance = "Limited or Cannot do – the other is struck out. Only when a task is still limited.";
+    for (const id of ["F-02", "F-03"]) {
+      assert.deepEqual([compileCondition(fields, id)?.controllers, (compileCondition(fields, id) as { filled?: true } | null)?.filled], [["F-01"], true], id);
+      assert.equal(applies(fields, id, {}, { "F-01": "None." }), false);
+      assert.equal(applies(fields, id, {}, { "F-01": "Carrying shopping" }), true);
+      assert.equal(applies(fields, id, {}, {}), null, "nothing drafted yet: it applies");
+    }
+    assert.equal(conditionText(fields, "F-02"), "F-01 (“Home tasks – task still limited”) names something (not “None”)");
+  });
+
+  it("“Reasons for …” and “<X> – details” belong to the yes/no just before them that asks about it (B1-9, B2-5)", () => {
+    const reasons = [yn("F-01", "Is more treatment advised?"), f("F-02", "If yes, how many sessions", "short_text"), f("F-03", "Reasons for advising more treatment")];
+    assert.deepEqual(pick(compileCondition(reasons, "F-03")), { controllers: ["F-01"], wants: "yes" });
+    const details = [yn("F-01", "Is there any swelling at rest?"), f("F-02", "Swelling at rest – details")];
+    assert.deepEqual(pick(compileCondition(details, "F-02")), { controllers: ["F-01"], wants: "yes" });
+    // About something else: an ordinary question.
+    assert.equal(compileCondition([yn("F-01", "Is he taking painkillers?"), f("F-02", "Swelling at rest – details")], "F-02"), null);
+  });
+
+  it("never guessed (check-WA1 minor 1): a turned question, a shared word, a numbered reference, an “and” list, a widened clause", () => {
+    // (a) "If not <content>" is a clause, not a bare "If not": never read against a question that is itself turned.
+    const off = [yn("F-01", "Is he signed off work?"), f("F-02", "If not gone back to work, the expected date", "date")];
+    assert.equal(compileCondition(off, "F-02")?.unresolved, true);
+    assert.equal(applies(off, "F-02", { "F-01": true }), null);
+    // …and read by its words when the question asks exactly that, even past a nearer question.
+    const back = [yn("F-01", "Has he gone back to work?"), yn("F-02", "Any pain at night?"), f("F-03", "If not gone back to work, the expected date", "date")];
+    assert.deepEqual(pick(compileCondition(back, "F-03")), { controllers: ["F-01"], wants: "no" });
+    // (b) One shared word never turns a reading round.
+    const shared = [yn("F-01", "Does he need more treatment?"), f("F-02", "If the treatment has not finished, how many sessions remain?")];
+    assert.equal(compileCondition(shared, "F-02")?.unresolved, true);
+    // (c) A numbered reference is never bound to the nearest question.
+    const numbered = [yn("F-01", "1. Is he working?"), yn("F-02", "2. Any pain at night?"), f("F-03", "3. If yes to question 1, give the job")];
+    assert.equal(compileCondition(numbered, "F-03")?.unresolved, true);
+    // (d) "If no <content>" with nothing it names: unresolved.
+    const noImprovement = [yn("F-01", "Is the knee improving?"), yn("F-02", "Was a home programme given?"), f("F-03", "If no improvement, what is planned next")];
+    assert.equal(applies(noImprovement, "F-03", { "F-01": false, "F-02": true }) !== false, true);
+    // An "and" list is any one of them; "all of" is all of them.
+    const lettered = [yn("F-01", "(a) Lifting limited?"), yn("F-02", "(b) Standing limited?"), yn("F-03", "(c) Driving limited?")];
+    assert.deepEqual(pick(compileCondition([...lettered, f("F-04", "If yes to a, b and c, give details")], "F-04")), { controllers: ["F-01", "F-02", "F-03"], wants: "yes", match: "any" });
+    assert.deepEqual(pick(compileCondition([...lettered, f("F-04", "If yes to all of (a)–(c), give details")], "F-04")), { controllers: ["F-01", "F-02", "F-03"], wants: "yes", match: "all" });
+    // A second clause that widens it is never dropped; one that only narrows it ("and if he still takes them") is.
+    assert.equal(compileCondition([yn("F-01", "Any red flags?"), f("F-02", "If yes, or if unsure, give details")], "F-02")?.unresolved, true);
+    assert.deepEqual(pick(compileCondition([yn("F-01", "Taken painkillers"), f("F-02", "Taken painkillers - If yes, give details and if he still takes them")], "F-02")), { controllers: ["F-01"], wants: "yes" });
+  });
+
+  it("a frozen reading the evaluator does not know is unresolved, never “does not apply” (minor 1e)", () => {
+    const sections = [
+      { key: "F-01", title: "Q", answer: { kind: "yes_no" as const, value: true } },
+      { key: "F-02", title: "Kind", answer: { kind: "choice" as const, value: "Light" } },
+      { key: "F-03", title: "D" },
+    ];
+    for (const condition of [
+      { controllers: ["F-01"], wants: "Modified duties" },
+      { controllers: ["F-01"], wants: "other" },
+      { controllers: ["F-02"], wantsNot: 3 },
+      { controllers: ["F-01"], filled: true },
+      { controllers: ["F-01"], wants: "yes", filled: true },
+      { controllers: ["F-01"] },
+      { controllers: ["F-01"], wants: "no", match: "most" },
+    ]) {
+      assert.equal(evaluateCondition(condition as never, sections).applies, null, JSON.stringify(condition));
+    }
+  });
+
+  it("a report this release made reads only its frozen conditions: a section without one is an ordinary question (design 8)", async () => {
+    const b = await built({ report: "form:cf-discharge", answers: { "F-05": false }, boxes: { "F-06": [{ text: "More physiotherapy is advised.", cites: ["N-002"] }] } });
+    assert.equal(b.report.reportModel, 2);
+    assert.equal(boxIssueOf(b.report, b.form, "F-06")?.state.kind, "not_applicable");
+    const dropped = { ...b.report, sections: b.report.sections.map((s) => (s.key === "F-06" ? (({ condition: _c, ...rest }) => rest)(s) : s)) } as Report;
+    assert.equal(boxIssueOf(dropped, b.form, "F-06")?.state.kind, "answer", "never read again from the printed words");
+    // A report from before the release keeps the earlier reading.
+    const legacy = { ...dropped, reportModel: undefined } as Report;
+    assert.equal(boxIssueOf(legacy, b.form, "F-06")?.state.kind, "not_applicable");
+  });
+});
+
+describe("check-WA1 minors: the clinician box from the map, the approved counts, a legacy fill", () => {
+  it("a clinician's box is the attested map's (fillSource), not the section's own kind (minor 3)", async () => {
+    const b = await built({ report: "form:cf-discharge", box: "F-10", paragraph: { text: "He will make a full recovery within 6 weeks.", cites: ["N-002"] } });
+    const rewritten = { ...b.report, sections: b.report.sections.map((s) => (s.key === "F-10" ? { ...s, kind: "ai_narrative" as const } : s)) };
+    const forged = withDisposition(rewritten, "F-10", { kind: "not_applicable", reason: "Not needed." }, actorOf("pat"));
+    assert.equal(boxIssueOf(forged, b.form, "F-10")?.state.kind, "answer");
+    assert.equal(boxIssueOf(forged, b.form, "F-10")?.dispositionVerdict, "not_allowed");
+    assert.equal(boxIssueOf(withDisposition(rewritten, "F-10", { kind: "not_applicable", reason: "Not needed." }), b.form, "F-10")?.state.kind, "not_applicable", "the approver's counts");
+  });
+
+  it("the approved summary counts with the form map, as the review and Copy answers do (minor 2)", async () => {
+    const b = await built({ report: "form:cf-discharge", answers: { "F-05": false } });
+    const lb = withDisposition(b.report, "F-25", { kind: "left_blank" });
+    const approved = { ...lb, status: "signed" as const, receipt: { ...RECEIPT, mac: "x" } as unknown as Report["receipt"] };
+    const c = countOutcomes(issueState(lb, b.form));
+    const summary = issuedSummary(approved as Report, b.form);
+    assert.ok(summary?.includes(`${c.notApplicable} not applicable`), summary ?? "");
+    assert.ok(summary?.includes(`${c.leftBlank + c.noAnswer} left blank`), summary ?? "");
+    assert.equal(issuedSummary(approved as Report, null), null, "nothing said without the map");
+  });
+
+  it("a report from before the release with no section for a field fills it as printed – {} (AC-ISSUE-6, minor 5)", async () => {
+    const b = await built({ report: "form:cf-discharge" });
+    const legacy = { ...b.report, reportModel: undefined, sections: b.report.sections.filter((s) => s.key !== "F-31").map(({ condition: _c, ...s }) => s) } as Report;
+    assert.deepEqual(buildFormAnswers(legacy, b.form as FormDefinition, { receipt: RECEIPT })["F-31"], {});
+    const release = { ...b.report, sections: b.report.sections.filter((s) => s.key !== "F-31") };
+    assert.deepEqual(buildFormAnswers(release, b.form as FormDefinition, { receipt: RECEIPT })["F-31"], { leftBlank: true });
   });
 });
 

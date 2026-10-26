@@ -394,7 +394,9 @@ export function createFormReport(input: CreateFormReportInput): Report {
 
   // bh2 WA1 design 3: each box's condition is read ONCE, now, from the form's questions, and frozen on its section
   // (hashed). What the report issues never depends on a later reading of the printed words (core/conditions.ts).
-  const conditions = compileConditions(answerableFields(form).map((f) => ({ id: f.id, label: f.label, guidance: f.guidance, answerType: f.answerType })));
+  const conditions = compileConditions(
+    answerableFields(form).map((f) => ({ id: f.id, label: f.label, guidance: f.guidance, answerType: f.answerType, section: f.section ?? null, ...(f.options ? { options: f.options } : {}) })),
+  );
   const withConditions = sections.map((s) => {
     const condition = conditions.get(s.key);
     return condition ? { ...s, condition } : s;
