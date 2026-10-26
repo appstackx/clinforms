@@ -1215,6 +1215,17 @@ export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "
  * - appointments_table: a table answer filled by CODE, one row per attended appointment; `columns`
  *   maps each table column key to what it holds (S2, additive).
  */
+/**
+ * The `part` of a registration fill source: line `index` of the `of` lines a form prints (an address over several
+ * lines), or – for SESSION_PART_PATHS – which attended appointment (1 = the first) of how many the form prints. Up to
+ * MAX_SESSION_PART here; the registration fill source keeps an address part at most MAX_ADDRESS_PART (bh2, plan W0.3).
+ * Named as on fix/schema-forward-compat (the rollback shim), whose read schemas swap it for a looser one.
+ */
+export const RegistrationPartSchema = z.object({
+  index: z.number().int().min(1).max(MAX_SESSION_PART),
+  of: z.number().int().min(1).max(MAX_SESSION_PART),
+});
+
 export const FillSourceSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -1229,7 +1240,7 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
        * bh2 (plan W0.3): up to MAX_SESSION_PART (30) for the attended-appointment paths (SESSION_PART_PATHS); an address
        * part stays at most MAX_ADDRESS_PART (12) – checked below.
        */
-      part: z.object({ index: z.number().int().min(1).max(MAX_SESSION_PART), of: z.number().int().min(1).max(MAX_SESSION_PART) }).optional(),
+      part: RegistrationPartSchema.optional(),
       /**
        * Additive (bh2, plan W0.3): "episode.attendedDates" – the attended appointments listed from session `fromSession`
        * (1 = the first; 2 = after the first assessment), at most `of` of them (absent: all that follow).
