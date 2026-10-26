@@ -15,6 +15,7 @@
  */
 import { nameClinicianFix, ownVoiceCandidates, supersededAbsenceSentences } from "../../../../ui/components/review/review-model";
 import { reviewReducer } from "../../../../ui/components/review/use-review-state";
+import { actsAsApprover } from "../../../provenance";
 import type { FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../types";
 import { actorOf, person } from "./fixtures";
 import type { PersonKey } from "./types";
@@ -74,8 +75,11 @@ async function releaseFixes(report: Report, ctx: { actor: PersonKey; form: FormD
 /** Every one-click fix offered to `actor` on `report` (with its flags already validated). */
 export async function offeredFixes(report: Report, ctx: { actor: PersonKey; voiceOwner: PersonKey | null; form: FormDefinition | null; template: ReportTemplate }): Promise<OfferedFix[]> {
   const out: OfferedFix[] = [];
+  // "Name X instead" is the approver's (WC design 4): the review offers it to them alone (flags-panel.tsx) and its
+  // reducer action refuses anyone else (use-review-state.ts nameClinicians) – bh2-rc1, as the review does.
+  const approverHere = actsAsApprover(actorOf(ctx.actor), report);
   for (const f of report.flags.filter((x) => !x.acknowledged)) {
-    const named = nameClinicianFix(report, f);
+    const named = approverHere ? nameClinicianFix(report, f) : null;
     if (named) {
       out.push({ kind: "name-instead", label: `Name ${named.name} instead`, box: f.sectionKey ?? null, apply: (r) => dispatch(r, { type: "nameClinicians", flags: [f] as ReportFlag[] }, ctx.actor) });
     }

@@ -15,6 +15,7 @@
  * Every result says what it saw, so a failing case reads as a bug report.
  */
 import type { Report, ReportFlag } from "../../../types";
+import { validateReport } from "../../index";
 import { buildCase, ownerOf, rolesOf, type Built } from "./build";
 import type { ValidatorEngine } from "./engine";
 import { checkFixRules, offeredFixes, type OfferedFix } from "./fixes";
@@ -345,7 +346,10 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
     case "signed-flags-change":
       return { ...report, flags: [] };
     case "signed-activity-rewrite":
-      return { ...report, activity: report.activity.slice(0, 1) };
+      // bh2-rc1: an entry dropped – or, with one entry only, its words rewritten – so the forgery is never a no-op.
+      return report.activity.length > 1
+        ? { ...report, activity: report.activity.slice(0, 1) }
+        : { ...report, activity: report.activity.map((a, i) => (i === 0 ? { ...a, detail: `${a.detail} (rewritten)` } : a)) };
     case "relabel-box":
       // The box claims to be a records box with a neutral title (check2-WC major A).
       return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, kind: "from_records" as const, title: "Notes" } : s)) };
@@ -399,7 +403,9 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
   const store = (c.input.store ?? {}) as { seedAs?: PersonKey; putAs?: PersonKey; forge?: Forge; signFirst?: boolean };
   const seedAs = store.seedAs ?? built.approver ?? "sarah";
   const putAs = store.putAs ?? built.actor;
-  let base = built.report;
+  // bh2-rc1: the report as the review holds it – with the validators' flags – so a forged acknowledgement has a flag
+  // to acknowledge (the forge was a no-op on a report with no flags).
+  let base: Report = { ...built.report, flags: validateReport(built.report, built.template, { computedFacts: built.computedFacts, form: built.form, ...(ownerOf(built) ? { voice: { owner: ownerOf(built) as never } } : {}) }).flags };
   if (store.signFirst) {
     const signed = await postSign(h, { report: base, template: built.template, form: built.form, signer: built.signer, mode: "tenant", fileBytes: built.fileBytes });
     if (!signed.receipt) return { path: "store", ok: false, detail: `could not approve first (${signed.status} ${signed.code ?? ""})` };
