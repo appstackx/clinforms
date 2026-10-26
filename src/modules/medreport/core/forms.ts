@@ -44,37 +44,13 @@ import { fieldGuidance } from "./forms/guidance";
 import { parseFormAnswerValue } from "./forms/answers";
 import type { FormDefinition, FormField, InstructingParty, ReferrerType, Report, ReportFormRef, ReportTemplate, TemplateScope, TemplateSection } from "./types";
 
-export { answerKindFor, answerableFields, isAnswerableField, sectionKindForFillSource } from "./forms/fields";
-export { fieldGuidance } from "./forms/guidance";
-export { sectionHeadings } from "./forms/headings";
-export type { AddressPart, FormValueContext, ResolvedFormValue } from "./forms/record-paths";
-export {
-  addressPartValue,
-  formFactText,
-  insurerNameOnRecord,
-  primaryTreatingClinician,
-  recordSourceOf,
-  resolveComputedFactValue,
-  resolveRegistrationValue,
-  splitUkAddress,
-} from "./forms/record-paths";
-export type { FormFillAnswer, FormFillAnswers, SignoffValues } from "./forms/answers";
-export {
-  answerToText,
-  buildFormAnswers,
-  isBlankByDesign,
-  isSectionAnswered,
-  isUnknownAnswer,
-  leftBlankByPerson,
-  leftBlankEffect,
-  matchOption,
-  namedOptions,
-  parseFormAnswerValue,
-  printsDefault,
-  signoffValuesFromReceipt,
-  toFormAnswer,
-  yesNoOption,
-} from "./forms/answers";
+// bh2-base2 (W0 follow-up): whole-module re-exports of the split files, so a workstream changes its own file's exports
+// without editing this barrel.
+export * from "./forms/fields";
+export * from "./forms/guidance";
+export * from "./forms/headings";
+export * from "./forms/record-paths";
+export * from "./forms/answers";
 
 /* ------------------------------------------------------------------------------------------------
  * Form ↔ template identity

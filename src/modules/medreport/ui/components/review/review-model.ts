@@ -14,67 +14,11 @@
  *   fixes.ts       one-click fixes (own voice, name the clinician, "not recorded" sentences)   (WD)
  * Owners per docs/bh2-ownership.json; this barrel is the integrator's. New code imports from the file itself.
  */
-export type { QuestionStatus, ReviewGroup, ReviewQuestion, StatusCounts } from "./status";
-export {
-  QUESTION_STATUS_META,
-  QUESTION_STATUS_ORDER,
-  buildQuestionGroups,
-  countStatuses,
-  flattenQuestions,
-  groupBySection,
-  isOpenBlocking,
-  questionStatus,
-} from "./status";
-export type { AnswerOption, GenerationSummary, SourceKind } from "./labels";
-export {
-  ORIGIN_PILL_CLASSES,
-  answerOptions,
-  answerText,
-  blockingLines,
-  citationAriaLabel,
-  citationLabel,
-  citationsBySource,
-  filedEntries,
-  generationSummary,
-  originLabel,
-  sourceKind,
-  staffApprovalNote,
-  wordFormPdfNote,
-} from "./labels";
-export {
-  addClinicianParagraph,
-  canRecordConsent,
-  createAmendedVersion,
-  editParagraph,
-  markApproved,
-  nextClinicianParagraphId,
-  overrideRecordValue,
-  recordConsent,
-  removeParagraph,
-  revertParagraph,
-  setStructuredAnswer,
-} from "./reducer";
-export { answerChangedByClinician, answeredByPerson } from "./provenance";
-export type { GapResolutionOptions } from "./gaps";
-export {
-  MIN_GAP_REASON,
-  acknowledgeFlag,
-  gapResolutionOptions,
-  isClinicianGap,
-  reopenGap,
-  requiredAnswerFirst,
-  resolutionOptionsFor,
-  resolveGap,
-  settleConditionalGaps,
-  settleGapsByAnswer,
-  supersedeAcknowledgedGaps,
-} from "./gaps";
-export {
-  nameClinicianFix,
-  nameCliniciansInstead,
-  notRecordedSentences,
-  ownVoiceCandidates,
-  removeAbsenceSentences,
-  supersededAbsenceSentences,
-  writeInOwnVoice,
-} from "./fixes";
+// bh2-base2 (W0 follow-up): whole-module re-exports, so a workstream adds, renames or removes an export in its own file
+// without editing this barrel (WC design 7 removes provenance helpers this barrel used to name one by one).
+export * from "./status";
+export * from "./labels";
+export * from "./reducer";
+export * from "./provenance";
+export * from "./gaps";
+export * from "./fixes";

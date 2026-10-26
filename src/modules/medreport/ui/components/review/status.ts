@@ -3,10 +3,14 @@
  * the form's own headings) and derives each question's status for its card, the navigator and the counts.
  *
  * Pure, no React. Split out of review-model.ts by W0.4 (bh2 module split, pure move; review-model.ts re-exports it).
+ * bh2 W0 follow-up (seam "review-groups", bh2-base2): how the form's questions are grouped – headings, sub-questions
+ * and the untitled run – moved, unchanged, to core/forms/headings.ts formOutline (WE: one outline for the review and the
+ * mapping page); buildQuestionGroups builds the review's questions from it.
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
 import { notApplicable } from "../../../core/conditions";
-import { isBlankByDesign, isSectionAnswered, sectionHeadings } from "../../../core/forms";
+import { isBlankByDesign, isSectionAnswered } from "../../../core/forms";
+import { formOutline } from "../../../core/forms/headings";
 import type { AnswerType, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate, TemplateSection } from "../../../core/types";
 
 /* ------------------------------------------------------------------------------------------------
@@ -40,14 +44,10 @@ export interface ReviewGroup {
   questions: ReviewQuestion[];
 }
 
-const UNTITLED_GROUP = "Form questions";
-
 /**
- * The questions in form order, grouped by the form's own headings. A field whose "section" is the label
- * of an earlier question (a sub-question such as "If modified duties, please give details") stays in
- * that question's group; consecutive fields with no heading share one group – unless the fields around them share a
- * heading, which they then take (fix round 1, core/forms.ts sectionHeadings). Fields left blank for the
- * referrer's use are included (no section) so every question on the form is accounted for.
+ * The questions in form order, grouped by the form's own headings (core/forms/headings.ts formOutline: a sub-question
+ * stays in its question's group, a run with no heading takes the heading around it or shares one untitled group).
+ * Fields left blank for the referrer's use are included (no section) so every question on the form is accounted for.
  * Built-in template reports: one group, one question per section.
  */
 export function buildQuestionGroups(
@@ -76,43 +76,25 @@ export function buildQuestionGroups(
     return questions.length ? [{ id: "g-1", title: "Report sections", questions }] : [];
   }
 
-  const groups: ReviewGroup[] = [];
-  const groupOfLabel = new Map<string, ReviewGroup>();
-  let current: ReviewGroup | null = null;
-  // Fix round 1 (B0-21): questions with no heading inside a section keep it (core/forms.ts sectionHeadings).
-  const headings = sectionHeadings(form.fields);
-  form.fields.forEach((field, i) => {
-    const heading = headings[i];
-    const parentGroup = heading ? groupOfLabel.get(heading.toLowerCase()) : undefined;
-    let group: ReviewGroup;
-    let context: string | undefined;
-    if (parentGroup) {
-      group = parentGroup;
-      context = heading;
-    } else if (heading) {
-      group = current && current.title === heading ? current : { id: `g-${groups.length + 1}`, title: heading, questions: [] };
-    } else {
-      group = current && current.title === UNTITLED_GROUP ? current : { id: `g-${groups.length + 1}`, title: UNTITLED_GROUP, questions: [] };
-    }
-    if (groups.indexOf(group) < 0) groups.push(group);
-    current = group;
-    const section = sections.get(field.id) ?? null;
-    const spec = specs.get(field.id) ?? null;
-    group.questions.push({
-      key: field.id,
-      section,
-      field,
-      spec,
-      label: field.label,
-      context,
-      guidance: field.guidance,
-      answerType: field.answerType,
-      required: field.required,
-      number: i + 1,
-    });
-    groupOfLabel.set(field.label.trim().toLowerCase(), group);
-  });
-  return groups;
+  return formOutline(form.fields).map((g, gi): ReviewGroup => ({
+    id: `g-${gi + 1}`,
+    title: g.title,
+    questions: g.entries.map(({ index: i, context }): ReviewQuestion => {
+      const field = form.fields[i];
+      return {
+        key: field.id,
+        section: sections.get(field.id) ?? null,
+        field,
+        spec: specs.get(field.id) ?? null,
+        label: field.label,
+        context,
+        guidance: field.guidance,
+        answerType: field.answerType,
+        required: field.required,
+        number: i + 1,
+      };
+    }),
+  }));
 }
 
 /** Every question of the groups, in order. */

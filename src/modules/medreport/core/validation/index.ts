@@ -28,8 +28,8 @@
  *
  * Owner: ai agent (runValidators). `canSign` keeps the foundation's signature.
  */
-export type { Validator, ValidatorInput } from "./registry";
-export { VALIDATORS } from "./registry";
-export { canAcknowledge } from "./acknowledge";
-export type { CanSignResult, ValidateReportResult } from "./run";
-export { canSign, reportFactsDate, runValidators, validateReport } from "./run";
+// bh2-base2 (W0 follow-up): whole-module re-exports, so a workstream changes its own file's exports without editing
+// this barrel.
+export * from "./registry";
+export * from "./acknowledge";
+export * from "./run";
