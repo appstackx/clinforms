@@ -18,7 +18,7 @@ import { planDraftGroups } from "../../../core/report-factory";
 import { ReportSchema } from "../../../core/schemas";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
-import { flushStore } from "../../store";
+import { flushStore, saveReportDurable } from "../../store";
 import type { HostHooks } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { downloadFormat, reportEventProps } from "../../studio-events";
@@ -103,6 +103,9 @@ export function useReviewActions(opts: {
         // bh2 W0 follow-up (WA1 design 6): the public demo sends the referrer's original file with the approval, for /sign's
         // dry-run FINAL fill (a clinic's Studio fills the file it stores). /sign reads it once WA1 lands; ignored until then.
         const demoFile = form && form.kind !== "questions" && hooks.mode !== "tenant" && file.status === "ready" ? { fileBase64: file.base64 } : {};
+        // bh2 WA1 design 6: a clinic's /sign approves exactly the stored revision (409 STALE_REPORT otherwise) – store
+        // what is being approved first.
+        if (hooks.mode === "tenant") await saveReportDurable(fresh);
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}), ...demoFile }, { sessionToken });
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
@@ -124,7 +127,8 @@ export function useReviewActions(opts: {
         if (err instanceof ApiError) {
           const p = err.problem;
           if (err.code === "SIGNOFF_BLOCKED") return { ok: false, title: "Blocking items remain", detail: p.detail, blocking: p.flags };
-          if (err.code === "VALIDATION_FAILED") return { ok: false, title: p.title, detail: p.detail, issues: (p.issues ?? []).map((i) => i.message) };
+          // bh2 WA1: ISSUE_REFUSED lists the boxes the dry-run FINAL fill could not issue as approved.
+          if (err.code === "VALIDATION_FAILED" || err.code === "ISSUE_REFUSED") return { ok: false, title: p.title, detail: p.detail, issues: (p.issues ?? []).map((i) => i.message) };
           if (err.code === "SIGNER_MISMATCH" || err.code === "SESSION_MISMATCH" || err.code === "FORM_NOT_CONFIRMED" || err.code === "FORM_MISMATCH") {
             return { ok: false, title: p.title, detail: p.detail };
           }
