@@ -22,13 +22,20 @@
  *   cancels "applies anyway" and a person's "not applicable". Rule outcomes – a condition, a session not attended, a
  *   record line that is empty by design – are worked out each time and never stored.
  * - Conditions are read once, when the report is created, and frozen on the section (core/conditions.ts). A report
- *   from before this release (no reportModel) keeps the earlier reading of its printed questions, as it was approved.
+ *   from before this release (no reportModel, no frozen condition) keeps the earlier reading of its printed questions,
+ *   as it was approved.
+ * - The server decides which conditions a box has, never the report (harden-WA1, check2 N1): with the form map at hand,
+ *   a report of this release reads the conditions the attested map's questions carry (core/conditions.ts
+ *   mapConditions – what report creation froze on an honest report), whatever its sections hold; a built-in template's
+ *   report has none (creation never freezes one there). Only a form report read without its map (a browser view
+ *   without the map) reads the copy on its sections. /sign also refuses a report from before this release whose earlier
+ *   reading rules out a box that the map's reading keeps (legacyRuleOutsBeyondServer).
  * - "Approved" (sign-off values, every blank box printed blank) comes only from a verified receipt passed in by the
  *   caller – never from the report's own status.
  *
  * Pure; browser and server. Owner: WA1 (issue state and receipt) – docs/bh2-ownership.json.
  */
-import { compileCondition, conditionOf, type Condition } from "./conditions";
+import { conditionFieldsOf, compileConditions, conditionOf, heldText, mapConditions, type Condition } from "./conditions";
 import { answerToText, isBlankByDesign, isSectionAnswered } from "./forms/answers";
 import { ISSUE_EXCLUDED_KEYS, type BoxState, type IssueExcludedKey, type IssueOutcomeCounts, type IssueState } from "./issue-types";
 import { REPORT_MODEL } from "./schemas";
@@ -43,6 +50,21 @@ export type IssueApproval = Pick<SignReceipt, "signer" | "signedAt">;
 type IssueForm = Pick<FormDefinition, "fields">;
 
 /**
+ * How a caller reads the boxes. `conditions`: "map" (the default with a form map – the server's reading of the attested
+ * map) or "report" (the conditions as the sections hold them: only for a caller that passes a form with some of its
+ * fields, such as one box's status, which cannot work the map's reading out).
+ */
+export interface IssueOptions {
+  conditions?: "map" | "report";
+  /**
+   * The caller has a report's sections only (no reportModel at hand – one box's status from a list of sections): which
+   * release made the report is then read from reportModel alone, as before (a list of sections says nothing about it).
+   * Display only; the server always reads a whole report.
+   */
+  sectionsOnly?: boolean;
+}
+
+/**
  * The report without flags, activity, status, updatedAt and receipt – removed at run time (a forging client can send
  * any of them; none of them may change what is issued).
  */
@@ -52,38 +74,98 @@ export function issueContentOf<T extends object>(report: T): Omit<T, IssueExclud
   return out as Omit<T, IssueExcludedKey>;
 }
 
-/** A report made by this release (people's decisions stored, conditions frozen) – Report.reportModel 2. */
-export function isReleaseModel(content: Pick<IssueContent, "reportModel">): boolean {
-  return (content.reportModel ?? 0) >= 2;
+/**
+ * A report made by this release (people's decisions stored, conditions frozen): Report.reportModel 2, or any section
+ * carrying a frozen condition – only this release freezes them, so removing reportModel never turns a report of this
+ * release into one from before it (harden-WA1, check2 N1).
+ */
+export function isReleaseModel(content: Pick<IssueContent, "reportModel"> & Partial<Pick<IssueContent, "sections">>): boolean {
+  return (content.reportModel ?? 0) >= 2 || (content.sections ?? []).some((s) => Boolean(s.condition));
+}
+
+/**
+ * A built-in template's report (no referrer's form): report creation never freezes a condition on one. ("form:" is
+ * core/forms.ts FORM_TEMPLATE_PREFIX – not imported: core/forms.ts reads this file through core/forms/answers.ts.)
+ */
+function builtInTemplateReport(content: IssueContent): boolean {
+  return typeof content.templateId === "string" && !content.templateId.startsWith("form:") && !content.form;
+}
+
+/**
+ * The content the boxes are read from, with each section's condition as the SERVER reads it (see the file comment): a
+ * report of this release with the form map – the map's conditions, at the reader version its frozen conditions name; a
+ * built-in template's report – none. Otherwise the sections as they are. A report of this release stays one
+ * (reportModel 2 on the copy read) even when the map gives it no condition.
+ */
+function serverReading(content: IssueContent, form: IssueForm | null, opts: IssueOptions): IssueContent {
+  if (opts.sectionsOnly || !isReleaseModel(content)) return content;
+  const release = { ...content, reportModel: Math.max(content.reportModel ?? 0, REPORT_MODEL) };
+  if (form && opts.conditions !== "report") {
+    const version = content.sections.find((s) => s.condition?.parser)?.condition?.parser;
+    const conditions = mapConditions(form.fields, version);
+    return { ...release, sections: content.sections.map((s) => withCondition(s, conditions.get(s.key))) };
+  }
+  if (!form && builtInTemplateReport(content)) return { ...release, sections: content.sections.map((s) => withCondition(s, undefined)) };
+  return content;
+}
+
+function withCondition(section: ReportSection, condition: ReportSection["condition"]): ReportSection {
+  if (condition) return section.condition === condition ? section : { ...section, condition };
+  if (!section.condition) return section;
+  const { condition: _dropped, ...rest } = section;
+  void _dropped;
+  return rest;
 }
 
 /* ------------------------------------------------------------------------------------------------
  * People's decisions (ReportSection.disposition)
  * ----------------------------------------------------------------------------------------------*/
 
-function sameAnswer(a: FormAnswer | undefined, b: FormAnswer | undefined): boolean {
-  const norm = (x: FormAnswer | undefined) => (x === undefined || x.value === null || x.value === undefined || x.value === "" ? "∅" : `${x.kind}:${JSON.stringify(x.value)}`);
-  return norm(a) === norm(b);
+const normText = (t: string) => t.normalize("NFKC").replace(/\s+/g, " ").trim();
+
+/** One controlling answer, compared: a structured value by kind and value; a text box's text, whitespace aside. */
+function answerKey(x: FormAnswer | undefined): string {
+  if (x === undefined || x.value === null || x.value === undefined || x.value === "") return "∅";
+  if (x.kind === "text") return typeof x.value === "string" && normText(x.value) ? `text:${normText(x.value)}` : "∅";
+  return `${x.kind}:${JSON.stringify(x.value)}`;
 }
 
 /**
- * The controlling answers of `key` now – what a person's decision about it records (disposition.controllerSnapshot).
- * `release`: the report was made by this release (isReleaseModel) – its frozen conditions only.
+ * What a controlling box holds now, as a person's decision records it: its structured answer, else – a text box (the
+ * B2-13 "filled" readings: "Only when a task is still limited") – the text it holds, drafted paragraphs included
+ * (harden-WA1, check2 N4: a drafted text box keeps its text in paragraphs, not in `answer`).
+ */
+function controllerValue(section: ReportSection | undefined): FormAnswer | undefined {
+  if (!section) return undefined;
+  const a = section.answer;
+  if (a && a.kind !== "text") return a.value === null || a.value === "" ? undefined : a;
+  const text = normText(heldText(section));
+  return text ? { kind: "text", value: text } : undefined;
+}
+
+/**
+ * The controlling answers of `key` now – what a person's decision about it records (disposition.controllerSnapshot):
+ * a structured answer, or a text box's text. `release`: the report was made by this release (isReleaseModel) – its
+ * frozen conditions only.
  */
 export function controllerSnapshotOf(sections: readonly ReportSection[], key: string, opts: { release?: boolean } = {}): ControllerSnapshot[] {
   const condition = conditionOf(sections, key, opts);
   if (!condition) return [];
   return condition.controllers.map((c) => {
-    const section = sections.find((s) => s.key === c.key);
-    return { sectionKey: c.key, ...(section?.answer && section.answer.value !== null ? { answer: section.answer } : {}) };
+    const value = controllerValue(sections.find((s) => s.key === c.key));
+    return { sectionKey: c.key, ...(value ? { answer: value } : {}) };
   });
 }
 
-/** Whether a controlling answer changed since the decision was taken (its snapshot no longer matches). */
+/**
+ * Whether a controlling answer changed since the decision was taken (its snapshot no longer matches what the box holds
+ * now – a text box's text included). A snapshot that recorded no text for a text box that holds some now counts as a
+ * change: the decision is cancelled rather than kept on a guess.
+ */
 export function dispositionIsStale(disposition: Pick<SectionDisposition, "controllerSnapshot">, sections: readonly ReportSection[]): boolean {
   for (const snap of disposition.controllerSnapshot ?? []) {
     const now = sections.find((s) => s.key === snap.sectionKey);
-    if (!sameAnswer(snap.answer, now?.answer)) return true;
+    if (answerKey(snap.answer) !== answerKey(controllerValue(now))) return true;
   }
   return false;
 }
@@ -183,7 +265,7 @@ function blankByAcknowledgement(content: IssueContent, key: string): boolean {
   return gaps.some((g) => g.resolution?.kind === "acknowledged" && g.resolution.leftBlank !== false);
 }
 
-function boxIssue(content: IssueContent, field: FormField | null, section: ReportSection | undefined): BoxIssue {
+function boxIssue(content: IssueContent, field: FormField | null, section: ReportSection | undefined, release: boolean): BoxIssue {
   const key = field?.id ?? section?.key ?? "";
   const base = { key, condition: null, frozenCondition: false, disposition: section?.disposition ?? null, dispositionVerdict: "none" as DispositionVerdict, personContent: section ? holdsPersonContent(section) : false };
   if (field?.fillSource.kind === "leave_blank") return { ...base, state: { kind: "referrer_use" } };
@@ -195,7 +277,7 @@ function boxIssue(content: IssueContent, field: FormField | null, section: Repor
   const verdict = dispositionVerdict(content, section, field, answered);
   const decided = verdict === "valid" ? section.disposition : null;
   // A report this release made reads only the conditions frozen when it was created (no run-time fallback, design 8).
-  const condition = conditionOf(content.sections, section.key, { release: isReleaseModel(content) });
+  const condition = conditionOf(content.sections, section.key, { release });
   const issue = { ...base, condition, frozenCondition: Boolean(condition?.frozen), dispositionVerdict: verdict };
 
   if (decided?.kind === "not_applicable") return { ...issue, state: { kind: "not_applicable", reason: "person" } };
@@ -223,11 +305,12 @@ function boxIssue(content: IssueContent, field: FormField | null, section: Repor
  * Every box with why it issues what it does, in form order (the form's fields, else the report's sections). The
  * report is stripped of flags, activity, status, updatedAt and the receipt first.
  */
-export function issueDetails(report: IssueContent | Report, form: IssueForm | null): BoxIssue[] {
-  const content = issueContentOf(report) as IssueContent;
+export function issueDetails(report: IssueContent | Report, form: IssueForm | null, opts: IssueOptions = {}): BoxIssue[] {
+  const content = serverReading(issueContentOf(report) as IssueContent, form, opts);
+  const release = opts.sectionsOnly ? (content.reportModel ?? 0) >= REPORT_MODEL : isReleaseModel(content);
   const sections = new Map(content.sections.map((s) => [s.key, s]));
-  if (form) return form.fields.map((field) => boxIssue(content, field, sections.get(field.id)));
-  return content.sections.map((section) => boxIssue(content, null, section));
+  if (form) return form.fields.map((field) => boxIssue(content, field, sections.get(field.id), release));
+  return content.sections.map((section) => boxIssue(content, null, section, release));
 }
 
 /**
@@ -240,6 +323,32 @@ export function issueState(content: IssueContent | Report, form: IssueForm | nul
   const out: IssueState = {};
   for (const box of issueDetails(content, form)) out[box.key] = box.state;
   return out;
+}
+
+/**
+ * harden-WA1 (check2 N1, server trust): the boxes a report from before this release rules out by the earlier run-time
+ * reading of its printed questions that the server's own reading does NOT rule out – with the form map, this release's
+ * reading of the attested map; on a built-in template's report, the template's own questions (`templateSections`;
+ * none of them is conditional). /sign refuses such a report, so a client can never rule a box out by presenting a
+ * report as one from before the release (Report.reportModel and the frozen conditions removed) or by rewriting a
+ * printed question. [] for a report of this release (its conditions are the server's already).
+ */
+export function legacyRuleOutsBeyondServer(report: IssueContent | Report, form: IssueForm | null, templateSections?: ReadonlyArray<{ key: string; title: string }>): string[] {
+  const content = issueContentOf(report) as IssueContent;
+  if (isReleaseModel(content)) return [];
+  const asReported = issueDetails(content, form);
+  let server: BoxIssue[];
+  if (form) {
+    // This release's reading of the map, as a draft migrating on load would get it (design 8).
+    const conditions = mapConditions(form.fields);
+    server = issueDetails({ ...content, reportModel: REPORT_MODEL, sections: content.sections.map((s) => withCondition(s, conditions.get(s.key))) }, form);
+  } else {
+    // The template's own printed questions, at run time (the reading the report itself claims).
+    const titles = new Map((templateSections ?? []).map((t) => [t.key, t.title]));
+    server = issueDetails({ ...content, sections: content.sections.map((s) => (titles.has(s.key) ? { ...s, title: titles.get(s.key) as string } : s)) }, null);
+  }
+  const ruledOut = new Set(server.filter((b) => b.state.kind === "not_applicable").map((b) => b.key));
+  return asReported.filter((b) => b.state.kind === "not_applicable" && b.state.reason === "condition" && !ruledOut.has(b.key)).map((b) => b.key);
 }
 
 /** One box's issue details (null when neither the form nor the report has it). */
@@ -320,10 +429,11 @@ export function clearsItsPlaceholder(box: BoxIssue): boolean {
  */
 export function migrateDraftToReleaseModel<R extends Report>(report: R, form: Pick<FormDefinition, "fields"> | null): R {
   if (isReleaseModel(report) || report.status === "signed" || report.receipt || !form) return report;
-  const fields = form.fields.filter((f) => f.fillSource.kind !== "leave_blank");
+  // Exactly as report creation reads them (core/conditions.ts conditionFieldsOf).
+  const conditions = compileConditions(conditionFieldsOf(form.fields));
   const sections = report.sections.map((s) => {
     if (s.condition || !s.fieldId) return s;
-    const condition = compileCondition(fields, s.key);
+    const condition = conditions.get(s.key);
     return condition ? { ...s, condition } : s;
   });
   return { ...report, sections, reportModel: REPORT_MODEL };

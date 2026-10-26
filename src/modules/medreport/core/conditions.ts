@@ -50,8 +50,9 @@
  *
  * Pure; browser and server. Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
+import { FrozenConditionSchema } from "./schemas";
 import { defineHook, hookEnabled } from "./validation/hooks";
-import type { FrozenCondition, ReportSection } from "./types";
+import type { FormField, FrozenCondition, ReportSection } from "./types";
 
 /** The ledger hook this file owns (__corpus__/ledger.json "condition-parser"). */
 export const CONDITION_PARSER_HOOK = defineHook("condition-parser");
@@ -61,6 +62,9 @@ export const CONDITION_PARSER_VERSION = "wa1-c3";
 
 /** Most questions one condition can name (core/schemas.ts MAX_CONDITION_CONTROLLERS). */
 const MAX_CONTROLLERS = 26;
+
+/** The longest printed option a frozen condition holds (core/schemas.ts FrozenConditionSchema `wants`). */
+const MAX_FROZEN_OPTION = 200;
 
 type Wants = "yes" | "no" | "other";
 
@@ -187,7 +191,7 @@ function saidFrozen(s: Section): string {
 const NAMES_NOTHING = /^(?:none(?: (?:reported|recorded|noted))?|n\/?a|nil|nothing(?: (?:reported|recorded|noted))?|not applicable|no(?:ne)? restrictions?|no limitations?)\.?$/i;
 
 /** The text a box holds (a structured text value, else its paragraphs), trimmed. */
-function heldText(s: Section): string {
+export function heldText(s: Pick<ReportSection, "answer"> & Partial<Pick<ReportSection, "paragraphs">>): string {
   const v = s.answer?.value;
   if (typeof v === "string" && v.trim()) return v.trim();
   return (s.paragraphs ?? [])
@@ -302,10 +306,14 @@ const FUNCTION_WORDS = new Set(
  */
 const FRAME_STEMS = new Set(["expect", "anticipat", "recommend", "advis", "consider", "think", "feel", "believ", "intend", "propos", "suggest", "request", "keep", "kept", "tick", "select", "chos", "chosen", "plan", "giv", "given"]);
 
-/** The same thing said two ways on referrers' forms: "normal role" / "full duties"; "returned to work" / "back at work". */
+/**
+ * The same thing said two ways on referrers' forms: "normal role" / "full duties"; "returned to work" / "back at work".
+ * "Return" reads as "back" only before "to" / "at" (harden-WA1, check2 N2: "if the pain has returned" never meets "low
+ * back pain").
+ */
 const SYNONYMS: ReadonlyArray<[RegExp, string]> = [
   [/\b(?:normal|full)\s+(?:role|duties|duty)\b/g, "full duties"],
-  [/\breturn(?:ed|ing|s)?\b/g, "back"],
+  [/\breturn(?:ed|ing|s)?\b(?=\s+(?:to|at)\b)/g, "back"],
 ];
 
 /** "at this stage", "at present", "currently", "now", "so far": when, not what. */
@@ -317,10 +325,11 @@ const PRONOUN_PAIRS = /\b(?:he or she|she or he|him or her|her or him|his or her
 /** "(Yes / No)", "Y/N" printed after a question: its answer boxes, not a negation. */
 const ANSWER_BOXES = /\(?\b(?:yes\s*\/\s*no|no\s*\/\s*yes|y\s*\/\s*n)\b\)?/g;
 
-function canonical(text: string): string {
+function canonical(text: string, opts: { keepTimeWords?: boolean } = {}): string {
   let t = text.normalize("NFKC").toLowerCase().replace(/[’']/g, "'").replace(ANSWER_BOXES, " ");
   for (const [re, to] of SYNONYMS) t = t.replace(re, to);
-  return t.replace(TIME_WORDS, " ").replace(PRONOUN_PAIRS, " person ");
+  if (!opts.keepTimeWords) t = t.replace(TIME_WORDS, " ");
+  return t.replace(PRONOUN_PAIRS, " person ");
 }
 
 /** A crude stem, so "returned" meets "return", "restricted" meets "restriction" and "duty" meets "duties". */
@@ -331,13 +340,31 @@ function stem(word: string): string {
   return w.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
 }
 
-function contentWords(text: string): string[] {
+/**
+ * The content words of some printed words, as stems. `all`: keep the words that only frame a clause and the when-words
+ * too (what a controlling question says beyond the clause – controllerSaysMore).
+ */
+function contentWords(text: string, opts: { all?: boolean } = {}): string[] {
+  // The same label is read for every question near it: worked out once (bounded – harden-WA1, bounded work on big maps).
+  const cacheKey = `${opts.all ? 1 : 0}${text}`;
+  const cached = WORDS.get(cacheKey);
+  if (cached) return cached;
+  const out = wordsOf(text, opts);
+  if (WORDS.size >= MAX_CACHED_WORDS) WORDS.clear();
+  WORDS.set(cacheKey, out);
+  return out;
+}
+
+const WORDS = new Map<string, string[]>();
+const MAX_CACHED_WORDS = 4000;
+
+function wordsOf(text: string, opts: { all?: boolean }): string[] {
   const out: string[] = [];
-  for (const raw of canonical(text).split(/[^a-z0-9']+/)) {
+  for (const raw of canonical(text, { keepTimeWords: opts.all }).split(/[^a-z0-9']+/)) {
     const word = raw.replace(/'s$/, "").replace(/'/g, "");
     if (word.length < 3 || FUNCTION_WORDS.has(word)) continue;
     const s = stem(word);
-    if (FRAME_STEMS.has(s) || out.includes(s)) continue;
+    if ((!opts.all && FRAME_STEMS.has(s)) || out.includes(s)) continue;
     out.push(s);
   }
   return out;
@@ -357,8 +384,12 @@ function covers(topic: readonly string[], words: readonly string[]): boolean {
 }
 
 const NEGATION = /\b(?:no longer|not|never|no|nor|cannot)\b|n't\b/gi;
-/** Every word that turns a clause the other way – a plain negation, or a word that negates by itself ("off", "unable"). */
-const POLARITY_CUES = /\b(?:no longer|not|never|no|nor|cannot|unable|without|off|absent|unfit|unless|except|neither)\b|n't\b/gi;
+/**
+ * Every word that turns a clause the other way – a plain negation, a word that negates by itself ("off", "unable"), or
+ * a verb that means not doing it ("declined", "stopped", "failed to", "missed" – harden-WA1, check2 N2).
+ */
+const POLARITY_CUES =
+  /\b(?:no longer|not|never|no|nor|cannot|unable|without|off|absent|unfit|unless|except|neither|declin(?:e|ed|es|ing)|refus(?:e|ed|es|ing|al)|stop(?:s|ped|ping)?|ceas(?:e|ed|es|ing)|fail(?:s|ed|ing|ure)?|miss(?:es|ed|ing)?|withdr(?:aw|awn|awal|awing|ew)|discontinu(?:e|ed|es|ing)|quit(?:s|ting)?|abandon(?:s|ed|ing)?)\b|n't\b/gi;
 
 const count = (re: RegExp, text: string) => (text.match(re) ?? []).length;
 const turned = (text: string) => count(POLARITY_CUES, canonical(text)) > 0;
@@ -500,11 +531,30 @@ interface Candidate {
   option?: string;
 }
 
+/** Frame words that make a question one of plan or opinion ("Do you RECOMMEND …?", "Do you EXPECT …?"), not of fact. */
+const OPINION_FRAMES = new Set(["expect", "anticipat", "recommend", "advis", "consider", "think", "feel", "believ", "intend", "propos", "suggest", "request", "plan"]);
+
 /**
- * The one structured question near field `i` whose own words cover the whole topic (rule 5), or null: none, more than
- * one, or a one-word topic that is not the nearest question before it.
+ * A yes/no says MORE than the clause, so its "No" is not the clause's "no" (harden-WA1, check2 N2), when:
+ * - it asks about a plan or an opinion and the clause about a fact ("Do you ADVISE that he goes back to his job?"
+ *   against "If he goes back to his job"); a clause that is itself framed ("If you do not foresee …") may be read
+ *   against it;
+ * - the clause names one thing and the question more than it – a when-word or any other word of its own ("If working"
+ *   against "Is the patient working FULL TIME?" or "… working BEFORE THE INJURY?"): a part-time worker still works.
  */
-function namedController(fields: readonly ConditionField[], i: number, topic: readonly string[]): Candidate | null {
+function controllerSaysMore(body: string, label: string, topic: readonly string[]): boolean {
+  const clause = contentWords(body.replace(NEGATION, " "), { all: true });
+  const question = contentWords(label, { all: true });
+  if (question.some((w) => OPINION_FRAMES.has(w)) && !clause.some((w) => OPINION_FRAMES.has(w))) return true;
+  return topic.length === 1 && !covers(question.filter((w) => !FRAME_STEMS.has(w)), clause);
+}
+
+/**
+ * The one structured question near field `i` whose own words cover the whole topic (rule 5) – and, a yes/no, says
+ * nothing more than the clause `body` (controllerSaysMore) – or null: none, more than one, or a one-word topic that
+ * is not the nearest question before it.
+ */
+function namedController(fields: readonly ConditionField[], i: number, topic: readonly string[], body: string): Candidate | null {
   const found: Candidate[] = [];
   for (let j = Math.max(0, i - 20); j <= Math.min(fields.length - 1, i + 3); j++) {
     const f = fields[j];
@@ -521,7 +571,7 @@ function namedController(fields: readonly ConditionField[], i: number, topic: re
     } else {
       // A yes/no that asks two things at once ("worse or better?") is never read against.
       if (f.answerType === "yes_no" && /\bor\b/i.test(canonical(f.label))) continue;
-      if (covers(topic, words)) found.push({ field: f, index: j });
+      if (covers(topic, words) && !(f.answerType === "yes_no" && controllerSaysMore(body, f.label, topic))) found.push({ field: f, index: j });
     }
   }
   if (found.length !== 1) return null;
@@ -607,8 +657,11 @@ function readClause(fields: readonly ConditionField[], i: number, clause: Clause
   if (!polarity) return null;
   const topic = topicOf(body);
   if (topic.length === 0 || topic.length < (opts.minTopic ?? 1)) return null;
-  const named = namedController(fields, i, topic);
+  const named = namedController(fields, i, topic, body);
   if (named) {
+    // A printed option longer than a frozen condition holds (FrozenConditionSchema: 200) is never frozen: unresolved
+    // (harden-WA1, check2 N3 – it would make every report of the form unreadable).
+    if (named.option && named.option.length > MAX_FROZEN_OPTION) return null;
     if (named.option) return frozen([named.field.id], polarity === "yes" ? { wants: named.option } : { wantsNot: named.option }, clause.text);
     return frozen([named.field.id], { wants: polarity }, clause.text);
   }
@@ -628,7 +681,21 @@ function headingClause(fields: readonly ConditionField[], i: number): Clause | n
   return clauseOf(heading, "lead");
 }
 
+/**
+ * While compileConditions reads a whole form: each question's reading, worked out once (a run of "<X> – details" rows
+ * reads the row before it – linear, not quadratic, on a big map). Null outside such a call.
+ */
+let readings: { fields: readonly ConditionField[]; memo: Map<number, Frozen | null> } | null = null;
+
 function newReading(fields: readonly ConditionField[], i: number): Frozen | null {
+  if (!readings || readings.fields !== fields) return readingOf(fields, i);
+  if (readings.memo.has(i)) return readings.memo.get(i) ?? null;
+  const read = readingOf(fields, i);
+  readings.memo.set(i, read);
+  return read;
+}
+
+function readingOf(fields: readonly ConditionField[], i: number): Frozen | null {
   const field = fields[i];
   // The question's own words: what they say, or unresolved.
   const own = clauseOf(field.label, "label");
@@ -681,6 +748,10 @@ function newReading(fields: readonly ConditionField[], i: number): Frozen | null
 export function compileCondition(fields: readonly ConditionField[], id: string): FrozenCondition | null {
   const i = fields.findIndex((f) => f.id === id);
   if (i < 0) return null;
+  return storable(compiled(fields, i));
+}
+
+function compiled(fields: readonly ConditionField[], i: number): Frozen | null {
   const read = newReading(fields, i);
   if (fields[i].answerType === "single_choice") return read && read.filled === true ? read : null;
   if (read) return read;
@@ -690,12 +761,66 @@ export function compileCondition(fields: readonly ConditionField[], id: string):
   return unresolvedCondition(fields[i].label);
 }
 
+/** A reading the report's schema cannot hold is never frozen: it is unresolved (the box applies) – harden-WA1, check2 N3. */
+function storable(c: Frozen | null): FrozenCondition | null {
+  if (!c || FrozenConditionSchema.safeParse(c).success) return c;
+  return unresolvedCondition(c.text ?? "");
+}
+
 /** Every frozen condition of a form's questions (field id → condition), for report creation. */
 export function compileConditions(fields: readonly ConditionField[]): Map<string, FrozenCondition> {
   const out = new Map<string, FrozenCondition>();
-  for (const f of fields) {
-    const c = compileCondition(fields, f.id);
-    if (c) out.set(f.id, c);
+  const outer = readings;
+  readings = { fields, memo: new Map() };
+  try {
+    for (const f of fields) {
+      const c = compileCondition(fields, f.id);
+      if (c) out.set(f.id, c);
+    }
+  } finally {
+    readings = outer;
+  }
+  return out;
+}
+
+/**
+ * The questions the reader reads, from a form map's fields – exactly as report creation passes them (every field but
+ * those left for the referrer's own use, in form order).
+ */
+export function conditionFieldsOf(fields: readonly FormField[]): ConditionField[] {
+  return fields
+    .filter((f) => f.fillSource.kind !== "leave_blank")
+    .map((f) => ({ id: f.id, label: f.label, guidance: f.guidance, answerType: f.answerType, section: f.section ?? null, ...(f.options ? { options: f.options } : {}) }));
+}
+
+/**
+ * The readers this build knows, by the version they record (FrozenCondition.parser). A change to the reading is a new
+ * version added here, the old ones kept – so a report keeps the reading it was created with (frozen) while the server can
+ * still work it out again from the attested map (mapConditions).
+ */
+const READERS: Readonly<Record<string, (fields: readonly ConditionField[]) => Map<string, FrozenCondition>>> = {
+  [CONDITION_PARSER_VERSION]: compileConditions,
+};
+
+const fromMap = new WeakMap<readonly FormField[], Map<string, Map<string, FrozenCondition>>>();
+
+/**
+ * harden-WA1 (check2 N1, server trust): the conditions the attested map's questions carry, as the reader of `version`
+ * reads them (a version this build does not know: the current reader) – what report creation froze on an honest report
+ * of this map. The issue state reads these, not the report's own copy, whenever the form map is at hand: a member's store
+ * write cannot rule a box out. Worked out once per map object.
+ */
+export function mapConditions(fields: readonly FormField[], version?: string): Map<string, FrozenCondition> {
+  const v = version && READERS[version] ? version : CONDITION_PARSER_VERSION;
+  let byVersion = fromMap.get(fields);
+  if (!byVersion) {
+    byVersion = new Map();
+    fromMap.set(fields, byVersion);
+  }
+  let out = byVersion.get(v);
+  if (!out) {
+    out = READERS[v](conditionFieldsOf(fields));
+    byVersion.set(v, out);
   }
   return out;
 }

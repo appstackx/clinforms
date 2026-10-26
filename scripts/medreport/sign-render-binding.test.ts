@@ -223,7 +223,7 @@ describe("a clinic's /sign never approves what it cannot check (check-WA1 M1: it
     assert.deepEqual([renamed.status, renamed.code], [409, "STALE_REPORT"]);
   });
 
-  it("a store that cannot be read refuses (409 STALE_REPORT); only a deployment without data keys has no store to check", async () => {
+  it("a store that cannot be read refuses (409 STALE_REPORT) – a wrong or missing data keyring too (harden-WA1, check2 N5)", async () => {
     const h = createHttpHarness();
     const b = await built(TEXT_CASE, "tenant");
     assert.equal((await h.store.createReport(CORPUS_TENANT, storeRow(b.report))).ok, true);
@@ -235,11 +235,50 @@ describe("a clinic's /sign never approves what it cannot check (check-WA1 M1: it
       };
       const failed = await tenantSign(h, b, b.report);
       assert.deepEqual([failed.status, failed.code], [409, "STALE_REPORT"], JSON.stringify(failed.json));
-      // No data keys at all (src/server/crypto DataCryptoError "BAD_KEYRING"): nothing can be held, so there is nothing to check.
+      // A hosted deployment (production or a preview) whose data keys are missing or wrong (src/server/crypto
+      // DataCryptoError "BAD_KEYRING") cannot check the approval either: refused, never skipped. Only a local or test
+      // server (no VERCEL_ENV) without data keys has no clinic store to check.
       store.getReport = async () => {
         throw Object.assign(new Error("CLINFORMS_DATA_KEYS is not set."), { name: "DataCryptoError", code: "BAD_KEYRING" });
       };
-      assert.equal((await tenantSign(h, b, b.report)).status, 200);
+      const edited = { ...b.report, sections: b.report.sections.map((s) => (s.key === "progress_current_status" ? { ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, text: `${p.text} Edited.` })) } : s)) };
+      const was = process.env.VERCEL_ENV;
+      // (The fictional test secrets stand in for a deployment's own here.)
+      const demoSecrets = process.env.MEDREPORT_ALLOW_DEMO_SECRETS;
+      process.env.MEDREPORT_ALLOW_DEMO_SECRETS = "1";
+      try {
+        for (const deployment of ["production", "preview"]) {
+          process.env.VERCEL_ENV = deployment;
+          const keyring = await tenantSign(h, b, edited);
+          assert.deepEqual([keyring.status, keyring.code, keyring.receipt], [409, "STALE_REPORT", null], `${deployment}: ${JSON.stringify(keyring.json)}`);
+        }
+        delete process.env.VERCEL_ENV;
+        assert.equal((await tenantSign(h, b, b.report)).status, 200, "a local or test server without data keys");
+      } finally {
+        if (was === undefined) delete process.env.VERCEL_ENV;
+        else process.env.VERCEL_ENV = was;
+      }
+      // The form file read on production fails the same way: refused (409 ISSUE_REFUSED), never an unbound approval.
+      store.getReport = getReport;
+      const files = h.store as unknown as { getFile: (...a: unknown[]) => Promise<unknown> };
+      const getFile = files.getFile.bind(files);
+      files.getFile = async () => {
+        throw Object.assign(new Error("CLINFORMS_DATA_KEY_ID is not set."), { name: "DataCryptoError", code: "BAD_KEYRING" });
+      };
+      try {
+        process.env.VERCEL_ENV = "production";
+        const nb = await built(NA_CASE, "tenant");
+        const form = { ...nb.report, id: `${nb.report.id}_form` };
+        assert.equal((await h.store.createReport(CORPUS_TENANT, storeRow(form))).ok, true);
+        const fileRead = await tenantSign(h, nb, form);
+        assert.deepEqual([fileRead.status, fileRead.code], [409, "ISSUE_REFUSED"], JSON.stringify(fileRead.json));
+      } finally {
+        files.getFile = getFile;
+        if (was === undefined) delete process.env.VERCEL_ENV;
+        else process.env.VERCEL_ENV = was;
+        if (demoSecrets === undefined) delete process.env.MEDREPORT_ALLOW_DEMO_SECRETS;
+        else process.env.MEDREPORT_ALLOW_DEMO_SECRETS = demoSecrets;
+      }
     } finally {
       store.getReport = getReport;
     }

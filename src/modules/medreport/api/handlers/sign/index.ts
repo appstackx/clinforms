@@ -61,7 +61,7 @@ import { json, logEvent, parseBody, problem, type MedreportHandler } from "../..
 import { checkAttestedForm, resolveTemplate } from "../../resolve-template";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
 import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
-import { issuedDocumentCheck, staleReportCheck, validationCheck } from "./checks/issue";
+import { issuedDocumentCheck, legacyReadingCheck, staleReportCheck, validationCheck } from "./checks/issue";
 import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
 import { signerConfirmationsCheck, voiceRefusal } from "./checks/voice";
 import { mintReceipt } from "./receipt";
@@ -71,9 +71,11 @@ import { mintReceipt } from "./receipt";
  * report's approver (WC). Before the validators: is the body the stored revision (WA1 – checks/issue.ts). After them:
  * the signer's confirmations (WB), then what would be issued – the dry-run FINAL fill with the receipt's own signer and
  * time (WA1, checks/issue.ts issuedDocumentCheck, run last below with the approval time and the validators' result).
+ * harden-WA1: before the validators also legacyReadingCheck – a report from before the release never rules out a box the
+ * server's own reading keeps.
  */
 const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
-const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
+const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck, legacyReadingCheck];
 const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck];
 
 async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {

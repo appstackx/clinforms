@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { copyEntries } from "./answer-copy";
 import { compileCondition, conditionOf, conditionText, evaluateCondition, legacyConditionOf, type ConditionField } from "./conditions";
 import { buildFormAnswers, formToTemplate } from "./forms";
-import { boxIssueOf, countOutcomes, controllerSnapshotOf, dispositionVerdict, issueContentOf, issueState, migrateDraftToReleaseModel, notApplicableBecause } from "./issue-state";
+import { boxIssueOf, countOutcomes, controllerSnapshotOf, dispositionVerdict, isReleaseModel, issueContentOf, issueState, migrateDraftToReleaseModel, notApplicableBecause } from "./issue-state";
 import { ISSUE_EXCLUDED_KEYS } from "./issue-types";
 import { applyDraftResult } from "./report-factory";
 import type { FormDefinition, Paragraph, Report, ReportFlag, SectionDisposition } from "./types";
@@ -531,14 +531,18 @@ describe("conditions read by what they name (check-WA1 M2: B2-4, B1-9, B2-13 kep
     }
   });
 
-  it("a report this release made reads only its frozen conditions: a section without one is an ordinary question (design 8)", async () => {
+  it("a report this release made never falls back to the earlier run-time reading (design 8); with the map, the server's reading counts (harden-WA1 N1)", async () => {
     const b = await built({ report: "form:cf-discharge", answers: { "F-05": false }, boxes: { "F-06": [{ text: "More physiotherapy is advised.", cites: ["N-002"] }] } });
     assert.equal(b.report.reportModel, 2);
     assert.equal(boxIssueOf(b.report, b.form, "F-06")?.state.kind, "not_applicable");
     const dropped = { ...b.report, sections: b.report.sections.map((s) => (s.key === "F-06" ? (({ condition: _c, ...rest }) => rest)(s) : s)) } as Report;
-    assert.equal(boxIssueOf(dropped, b.form, "F-06")?.state.kind, "answer", "never read again from the printed words");
-    // A report from before the release keeps the earlier reading.
+    // Without the map (a browser view): the sections as they are – no run-time reading of the printed words.
+    assert.equal(boxIssueOf(dropped, null, "F-06")?.state.kind, "answer", "never read again from the printed words");
+    // With the map: the attested map's own condition, whatever the section holds.
+    assert.equal(boxIssueOf(dropped, b.form, "F-06")?.state.kind, "not_applicable", "the map's condition, not the report's copy");
+    // Removing reportModel too: still a report of this release (its other sections carry frozen conditions).
     const legacy = { ...dropped, reportModel: undefined } as Report;
+    assert.equal(isReleaseModel(legacy), true);
     assert.equal(boxIssueOf(legacy, b.form, "F-06")?.state.kind, "not_applicable");
   });
 });

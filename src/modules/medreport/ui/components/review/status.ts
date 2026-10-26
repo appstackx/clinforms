@@ -173,9 +173,12 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
 function boxOf(q: Pick<ReviewQuestion, "section" | "field">, content: IssueContent | readonly ReportSection[] | undefined): BoxIssue | null {
   const section = q.section;
   if (!section) return null;
+  const sectionsOnly = content === undefined || Array.isArray(content);
   const report: IssueContent = content === undefined ? { sections: [section] } : Array.isArray(content) ? { sections: content as ReportSection[] } : (content as IssueContent);
   const sections = report.sections.some((s) => s.key === section.key) ? report : { ...report, sections: [...report.sections, section] };
-  return issueDetails(sections, q.field ? { fields: [q.field] } : null).find((b) => b.key === section.key) ?? null;
+  // Only the box's own field is at hand, so its conditions are read as the sections hold them (the server reads the map's
+  // own at /sign and /render – core/issue-state.ts serverReading); a list of sections alone says nothing of its model.
+  return issueDetails(sections, q.field ? { fields: [q.field] } : null, { conditions: "report", sectionsOnly }).find((b) => b.key === section.key) ?? null;
 }
 
 /**
