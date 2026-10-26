@@ -1649,3 +1649,28 @@ templates themselves are gitignored and never committed).
 - Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
   its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
   per report when another site treated the patient).
+
+## Rollback shim: reading what a later release stored (10/2026, branch `fix/schema-forward-compat`)
+
+Review finding R-regression-9: release/bh-trial-2 writes new optional keys and enum members into stored reports,
+receipts and form maps (plan W0.3). Rolled back to a build that reads them with the strict schemas, those records were
+unreadable (`GET /store/reports/{id}` 500, the public demo's list dropped them) – and where they parsed, the unknown
+keys were dropped, so fingerprints, receipt MACs and map attestations no longer matched.
+- **Reads** of stored records use `core/stored-schemas.ts`: `StoredReportSchema`, `StoredSignReceiptSchema`,
+  `StoredFormDefinitionSchema` – the write schemas with every object loose (unknown keys kept as written) and three
+  open enums (`FORWARD_OPEN_ENUMS`: flag codes, paragraph origins, record paths; any other enum, literal, fill kind or
+  anchor kind stays closed, as do all bounds – except a registration `part`, up to 30 session lines). Used by the
+  store GETs and 409 copies, the Studio's store client, the browser store, `verifyReceipt`/`verifyReceiptMac`, and the
+  request bodies that carry stored records for reading (`/validate`, `/render`, `/forms/fill-preview`, the write-back
+  receipt, and the form map of `/drafts`, `/sign` and `/ai/payload-preview`).
+- **Writes stay strict** (`core/schemas.ts`): PUT bodies, `/sign`'s report, `/forms/confirm`. The Studio approves the
+  report as `/sign` signs it (`ReportSchema`, keys it does not know left out), so the stored approval is that shape.
+- **Unknown members:** generic labels (`core/labels.ts` `UNKNOWN_MEMBER_LABELS`, `flagCodeLabel`,
+  `registrationPathLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap for staff). The
+  validators recompute flags with this build's codes only.
+- **Nothing that verified before changes:** `verifyReceipt` checks the MAC and the content hash as stored and, failing
+  that, as this build knows the records (exactly the pre-shim check).
+- Tests: `scripts/medreport/schema-forward-compat.test.ts` with the fixture `forward-compat-fixture.ts`
+  (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
+  `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new
+  shim on `main`, deployed, first).

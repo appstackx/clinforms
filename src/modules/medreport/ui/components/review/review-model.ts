@@ -9,6 +9,7 @@
  */
 import { inOwnClinicalWording, isOwnVoiceCandidate } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
+import { UNKNOWN_MEMBER_LABELS } from "../../../core/labels";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
 import { WORDING } from "../../wording";
@@ -299,7 +300,10 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
  * Labels: origins and citations
  * ----------------------------------------------------------------------------------------------*/
 
-/** Origin pill text. From-records answers name the clinic system they came from. */
+/**
+ * Origin pill text. From-records answers name the clinic system they came from. An origin this build does not know
+ * (a stored report from a later release, core/stored-schemas.ts) gets the generic label.
+ */
 export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId): string {
   switch (origin) {
     case "from_records":
@@ -310,6 +314,8 @@ export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId): 
       return "Edited";
     case "clinician":
       return "Clinician";
+    default:
+      return UNKNOWN_MEMBER_LABELS.paragraphOrigin;
   }
 }
 

@@ -11,7 +11,7 @@
 import { useId, useState } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
-import { DATA_CHECK_LABELS, FLAG_CODE_LABELS } from "../../../core/labels";
+import { DATA_CHECK_LABELS, flagCodeLabel } from "../../../core/labels";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
 import type { GapResolutionOptions } from "./review-model";
@@ -119,7 +119,7 @@ export function FlagItem({
       <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", acked ? "text-slate-500" : blocking ? "text-red-600" : "text-amber-600")} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-medium">
-          {dataCheck ? `Record check: ${dataCheck}` : FLAG_CODE_LABELS[flag.code]}
+          {dataCheck ? `Record check: ${dataCheck}` : flagCodeLabel(flag.code)}
           <span className="sr-only">{acked ? " (acknowledged)" : blocking ? " (blocks approval)" : " (warning)"}</span>
           {!compact && flag.sectionKey && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{flag.sectionKey}</span>}
         </p>
