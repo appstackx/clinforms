@@ -9,8 +9,25 @@
  */
 import { formatUkDate, nowIso } from "../../../core/dates";
 import { isSectionAnswered } from "../../../core/forms";
+import {
+  actsAsApprover,
+  approverRefOf,
+  boxContentSha,
+  isClinicianBox,
+  isClinicianGap,
+  isPersonParagraph,
+  mayApprove,
+  paragraphResidue,
+  pendingProposal,
+  personOrigin as personOriginOf,
+  residueSentences,
+  sameMember,
+  sentenceSha,
+  type BoxContext,
+} from "../../../core/provenance";
 import { appendActivity } from "../../../core/report-factory";
-import type { Paragraph, Report, ReportFlag, ReportSection, SignReceipt } from "../../../core/types";
+import { splitSentences } from "../../../core/text/sentences";
+import type { Actor, Paragraph, PhraseAcceptance, Report, ReportFlag, ReportSection, SectionDisposition, SectionDispositionKind, SignReceipt } from "../../../core/types";
 
 /* ------------------------------------------------------------------------------------------------
  * Edits (immutable; each bumps updatedAt)
@@ -120,16 +137,33 @@ export function addClinicianParagraph(report: Report, key: string, text = "", no
   return { report: touch(report, sections, now), paragraphId };
 }
 
-/** Remove a paragraph (not from-records text). */
-export function removeParagraph(report: Report, key: string, paragraphId: string, now?: Date): Report {
+/** The most drafted paragraphs a box keeps as tombstones (core/schemas.ts DraftTombstoneSchema). */
+const MAX_TOMBSTONES = 500;
+
+/**
+ * Remove a paragraph (not from-records text). WC design 6: a DRAFTED paragraph (origin "ai", or edited drafted text)
+ * removed by a person (`opts.by`) is kept as a tombstone of its drafted wording, never printed, so a delete-then-add
+ * or a paste back still reads as drafted text (core/provenance.ts draftedSentences).
+ */
+export function removeParagraph(report: Report, key: string, paragraphId: string, now?: Date, opts: { by?: Actor } = {}): Report {
   let changed = false;
+  const at = nowIso(now);
   const sections = mapSection(report, key, (s) => {
+    let removed: Paragraph | null = null;
     const paragraphs = s.paragraphs.filter((p) => {
       const drop = p.id === paragraphId && p.origin !== "from_records";
-      if (drop) changed = true;
+      if (drop) {
+        changed = true;
+        removed = p;
+      }
       return !drop;
     });
-    return changed ? { ...s, paragraphs } : s;
+    if (!changed) return s;
+    const gone = removed as Paragraph | null;
+    const drafted = gone && (gone.origin === "ai" || (gone.origin === "edited" && gone.originalText !== undefined));
+    if (!gone || !drafted || !opts.by) return { ...s, paragraphs };
+    const tombstone = { paragraphId: gone.id, text: gone.originalText ?? gone.text, sourceIds: gone.sourceIds, by: opts.by, at };
+    return { ...s, paragraphs, tombstones: [...(s.tombstones ?? []), tombstone].slice(-MAX_TOMBSTONES) };
   });
   return changed ? touch(report, sections, now) : report;
 }
@@ -149,7 +183,7 @@ export function setStructuredAnswer(
   report: Report,
   key: string,
   value: string | boolean | null,
-  actor: string,
+  actor: string | Actor,
   now?: Date,
 ): Report {
   const section = report.sections.find((s) => s.key === key);
@@ -157,12 +191,28 @@ export function setStructuredAnswer(
   const before = section.answer.value;
   if (before === value) return report;
   const kind = section.answer.kind;
-  const sections = mapSection(report, key, (s) => ({ ...s, answer: { kind, value } }));
+  // WC design 7: who set it is stamped on the box (Section.answerBy) – the labels read the stamp, never the log.
+  const by = stampOf(actor);
+  const sections = mapSection(report, key, (s) => {
+    const next: ReportSection = { ...s, answer: { kind, value } };
+    if (value === null || value === "" || !by) delete next.answerBy;
+    else next.answerBy = by;
+    return next;
+  });
+  const name = typeof actor === "string" ? actor : actor.name;
   return appendActivity(touch(report, sections, now), {
-    actor,
+    actor: name,
     action: "answer_set",
     detail: `${key}: answer to “${section.title}” set to ${answerDisplay(value, kind)} (was ${answerDisplay(before, kind)}).`,
   }, now);
+}
+
+/** The stamp for a person: their Actor, or – where only a name is known – that name as a clinician of unknown id. */
+export function stampOf(actor: string | Actor | null | undefined): Actor | null {
+  if (!actor) return null;
+  if (typeof actor !== "string") return actor.name.trim() && actor.memberId ? actor : null;
+  const name = actor.trim();
+  return name ? { memberId: "unknown", name, role: "clinician", canSign: false } : null;
 }
 
 /**
@@ -230,4 +280,493 @@ export function createAmendedVersion(approved: Report, actor: string, newId: str
     },
     now,
   );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The approving clinician's decisions (bh2 WC designs 1, 4, 5, 6) – each refuses anyone else (returns the report
+ * unchanged), stamps who decided and when, and writes one activity entry.
+ * ----------------------------------------------------------------------------------------------*/
+
+function sectionOf(report: Report, key: string): ReportSection | undefined {
+  return report.sections.find((s) => s.key === key);
+}
+
+/** Replace one section (no status recomputation: these decisions never change what the box answers). */
+function withSection(report: Report, key: string, fn: (s: ReportSection) => ReportSection): ReportSection[] {
+  return report.sections.map((s) => (s.key === key ? fn(s) : s));
+}
+
+/**
+ * "Adopt" (WC design 5): the approver takes what someone else entered in a clinician box as their own decision, with
+ * one audited click. The person's paragraphs become the approver's own words ("clinician"; who typed them stays in
+ * `by`) – except a paragraph that still holds drafted residue, which stays drafted text; Section.adoptedBy records
+ * the adoption with the SHA-256 of the box's answer and paragraphs, so any later change by someone else clears it;
+ * the box's open gaps are settled by the approver (reopened if the answer is removed again). Never in bulk.
+ */
+export function adoptBox(report: Report, key: string, actor: Actor, ctx: BoxContext = {}, now?: Date): Report {
+  const section = sectionOf(report, key);
+  if (!section || !report.approver || !actsAsApprover(actor, report)) return report;
+  const proposal = pendingProposal(report, section, ctx);
+  if (!proposal) return report;
+  const at = nowIso(now);
+  const paragraphs = section.paragraphs.map((p): Paragraph => {
+    if (!isPersonParagraph(p) || (p.by && sameMember(p.by, report.approver))) return p;
+    if (paragraphResidue(section, p).length > 0) return p;
+    return { ...p, origin: "clinician" };
+  });
+  const adopted: ReportSection = { ...section, paragraphs };
+  adopted.adoptedBy = { by: actor, at, contentSha: boxContentSha(adopted) };
+  const text = `Adopted by ${actor.name}: the answer entered by ${proposal.names}.`;
+  const gaps = report.gaps.map((g) => (g.sectionKey === key && !g.resolution ? { ...g, resolution: { kind: "resolved" as const, text, at, byAnswer: true, by: actor } } : g));
+  return appendActivity(
+    { ...report, sections: withSection(report, key, () => adopted), gaps, updatedAt: at },
+    { actor: actor.name, action: "adopted", detail: `${key}: adopted the answer to “${section.title}” entered by ${proposal.names}.` },
+    now,
+  );
+}
+
+/** The drafted residue that stops "These are my own words" on a paragraph (sentences), or [] when nothing does. */
+export function ownWordsBlockers(section: ReportSection, paragraph: Paragraph): string[] {
+  const spans = paragraphResidue(section, paragraph);
+  return spans.length ? residueSentences(paragraph.text, spans) : [];
+}
+
+/**
+ * "These are my own words" (WC design 6): the approver records a paragraph they rewrote as their own words – origin
+ * "clinician", Paragraph.ownWords {by, at} (hashed), audited. Refused while drafted residue remains (a drafted
+ * sentence kept, pasted back or changed by a word or a mark: ownWordsBlockers – "Split it out" moves it into its own
+ * drafted paragraph first), and never offered to anyone but the approver.
+ */
+export function markOwnWords(report: Report, key: string, paragraphId: string, actor: Actor, now?: Date): Report {
+  const section = sectionOf(report, key);
+  const p = section?.paragraphs.find((x) => x.id === paragraphId);
+  if (!section || !p || !actsAsApprover(actor, report) || !p.text.trim()) return report;
+  if (p.origin !== "edited" && p.origin !== "clinician" && p.origin !== "staff") return report;
+  if (ownWordsBlockers(section, p).length > 0) return report;
+  const at = nowIso(now);
+  const next: Paragraph = { ...p, origin: "clinician", by: actor, ownWords: { by: actor, at } };
+  return appendActivity(
+    { ...report, sections: withSection(report, key, (s) => ({ ...s, paragraphs: s.paragraphs.map((x) => (x.id === paragraphId ? next : x)) })), updatedAt: at },
+    { actor: actor.name, action: "own_words", detail: `${key}: recorded a paragraph of “${section.title}” as ${actor.name}'s own words.` },
+    now,
+  );
+}
+
+/**
+ * "Split it out" (WC design 6): the drafted sentences kept in a person's paragraph move into a paragraph of their own,
+ * as drafted text (origin "ai", checked as such), so the rest can be recorded as the approver's own words. Nothing
+ * happens when the whole paragraph is drafted residue (revert it instead) or none of it is.
+ */
+export function splitOutResidue(report: Report, key: string, paragraphId: string, actor: Actor, now?: Date): Report {
+  const section = sectionOf(report, key);
+  const p = section?.paragraphs.find((x) => x.id === paragraphId);
+  if (!section || !p || !actsAsApprover(actor, report) || p.origin === "ai" || p.origin === "from_records") return report;
+  const kept = ownWordsBlockers(section, p);
+  if (kept.length === 0) return report;
+  const rest = splitSentences(p.text, "prose")
+    .filter((sp) => kept.indexOf(sp.text) < 0)
+    .map((sp) => sp.text)
+    .join(" ")
+    .trim();
+  if (!rest) return report;
+  const drafted = kept.join(" ");
+  const ids = new Set(section.paragraphs.map((x) => x.id));
+  let n = 1;
+  while (ids.has(`${p.id}-d${n}`)) n += 1;
+  const residue: Paragraph = { id: `${p.id}-d${n}`, text: drafted, sourceIds: p.sourceIds, origin: "ai", originalText: drafted, ...(p.basis ? { basis: p.basis } : {}) };
+  const at = nowIso(now);
+  const own: Paragraph = { ...p, text: rest, by: actor };
+  delete own.ackReason;
+  delete own.ownWords;
+  return appendActivity(
+    {
+      ...report,
+      sections: mapSection(report, key, (s) => ({ ...s, paragraphs: s.paragraphs.flatMap((x) => (x.id === paragraphId ? [own, residue] : [x])) })),
+      updatedAt: at,
+    },
+    { actor: actor.name, action: "edited", detail: `${key}: moved the drafted sentence${kept.length === 1 ? "" : "s"} kept in a paragraph of “${section.title}” into a drafted paragraph of ${kept.length === 1 ? "its" : "their"} own.` },
+    now,
+  );
+}
+
+export interface NoteWordsInput {
+  /** The check the acceptance answers (a flag code such as OPINION_LANGUAGE). */
+  check: string;
+  /** The drafted phrase accepted. */
+  phrase: string;
+  /** The drafted sentence it is accepted in (the acceptance covers exactly that sentence). */
+  sentence: string;
+  /** The approver's own note that records it. */
+  noteId?: string;
+  reason?: string;
+}
+
+/** The notes a paragraph cites that the approver wrote. */
+function approverNotesCited(report: Report, p: Paragraph): string[] {
+  const approver = report.approver;
+  if (!approver) return [];
+  return p.sourceIds.filter((id) => {
+    const note = report.bundleSnapshot.notes.find((n) => n.id === id);
+    return Boolean(note && (note.author.hcpc && approver.hcpc ? note.author.hcpc.replace(/\s+/g, "").toUpperCase() === approver.hcpc.replace(/\s+/g, "").toUpperCase() : note.author.name === approver.name));
+  });
+}
+
+/**
+ * "Accept as the note's words" (Khuram 26/10, WB design 5, WC design 4): the approver – only the approver – accepts,
+ * one phrase at a time, a drafted phrase in a sentence their OWN cited note records. Recorded in Section.accepted
+ * {check, phrase, sentenceSha, noteId, by, at} (hashed, audited); a changed sentence is no longer covered. Which
+ * phrases may be accepted (a work-status or return line the note records) is the opinion check's rule (WB): it
+ * honours an acceptance only there. `input` absent: every open OPINION_LANGUAGE phrase of the paragraph whose sentence
+ * cites the approver's own note.
+ */
+export function acceptNoteWords(report: Report, key: string, paragraphId: string, actor: Actor, input?: NoteWordsInput | null, now?: Date): Report {
+  const section = sectionOf(report, key);
+  const p = section?.paragraphs.find((x) => x.id === paragraphId);
+  if (!section || !p || !report.approver || !actsAsApprover(actor, report) || p.origin === "from_records") return report;
+  const own = approverNotesCited(report, p);
+  if (own.length === 0) return report;
+  const wanted: NoteWordsInput[] = input
+    ? [input]
+    : report.flags
+        .filter((f) => f.paragraphId === paragraphId && f.code === "OPINION_LANGUAGE" && !f.acknowledged && f.evidence)
+        .map((f) => {
+          const sentence = splitSentences(p.text, "prose").find((sp) => sp.text.toLowerCase().includes((f.evidence ?? "").toLowerCase()))?.text ?? "";
+          return { check: f.code, phrase: f.evidence ?? "", sentence, noteId: own[0] };
+        });
+  const at = nowIso(now);
+  const accepted: PhraseAcceptance[] = [...(section.accepted ?? [])];
+  for (const w of wanted) {
+    if (!w.sentence || !w.phrase || !p.text.includes(w.sentence) || !w.sentence.toLowerCase().includes(w.phrase.toLowerCase())) continue;
+    if (w.noteId && own.indexOf(w.noteId) < 0) continue;
+    const sha = sentenceSha(w.sentence);
+    if (accepted.some((a) => a.check === w.check && a.phrase === w.phrase && a.sentenceSha === sha)) continue;
+    accepted.push({ check: w.check, phrase: w.phrase, sentenceSha: sha, ...(w.noteId ? { noteId: w.noteId } : {}), by: actor, at, ...(w.reason ? { reason: w.reason } : {}) });
+  }
+  if (accepted.length === (section.accepted ?? []).length) return report;
+  const added = accepted.slice((section.accepted ?? []).length);
+  return appendActivity(
+    { ...report, sections: withSection(report, key, (s) => ({ ...s, accepted })), updatedAt: at },
+    { actor: actor.name, action: "note_words_accepted", detail: `${key}: accepted ${added.map((a) => `“${a.phrase}”`).join(", ")} as the words of ${actor.name}'s own note ${added[0].noteId ?? ""}`.trim() + "." },
+    now,
+  );
+}
+
+/**
+ * A person's decision about a box (WC design 4; read by the issue state, WA1): not applicable, applies anyway, or left
+ * blank. On a clinician box only the approver decides, and "applies anyway" is always the approver's. Not applicable
+ * settles the box's open gaps (by this decision, reopened when it is cleared); `kind` null clears the decision.
+ */
+export function setDisposition(report: Report, key: string, kind: SectionDispositionKind | null, actor: Actor, opts: { reason?: string; ctx?: BoxContext; now?: Date } = {}): Report {
+  const section = sectionOf(report, key);
+  if (!section || section.kind === "declaration") return report;
+  const clinician = isClinicianBox(report, section, opts.ctx);
+  if ((clinician || kind === "applies_anyway") && !actsAsApprover(actor, report)) return report;
+  if (kind === null && section.disposition && (clinician || section.disposition.kind === "applies_anyway") && !actsAsApprover(actor, report)) return report;
+  const at = nowIso(opts.now);
+  if (kind === null) {
+    const was = section.disposition;
+    if (!was) return report;
+    const sections = withSection(report, key, (s) => {
+      const next = { ...s };
+      delete next.disposition;
+      return next;
+    });
+    // Gaps this decision settled open again.
+    const gaps = report.gaps.map((g) => {
+      if (g.sectionKey !== key || !g.resolution || g.resolution.at !== was.at || !sameMember(g.resolution.by, was.by)) return g;
+      const open = { ...g };
+      delete open.resolution;
+      return open;
+    });
+    return appendActivity({ ...report, sections, gaps, updatedAt: at }, { actor: actor.name, action: "disposition_cleared", detail: `${key}: cancelled the decision about “${section.title}”.` }, opts.now);
+  }
+  if (section.disposition?.kind === kind) return report;
+  const reason = opts.reason?.trim();
+  const controllers = (section.condition?.controllers ?? []).map((ck) => {
+    const c = sectionOf(report, ck);
+    return { sectionKey: ck, ...(c?.answer ? { answer: c.answer } : {}) };
+  });
+  const disposition: SectionDisposition = { kind, by: actor, at, ...(reason ? { reason } : {}), ...(controllers.length ? { controllerSnapshot: controllers } : {}) };
+  const words = kind === "not_applicable" ? "does not apply" : kind === "applies_anyway" ? "applies although the answer before it rules it out" : "is left blank on purpose";
+  const gaps =
+    kind === "not_applicable"
+      ? report.gaps.map((g) => (g.sectionKey === key && !g.resolution ? { ...g, resolution: { kind: "resolved" as const, text: `Not applicable – decided by ${actor.name}${reason ? `: ${reason}` : ""}.`, at, by: actor } } : g))
+      : report.gaps;
+  return appendActivity(
+    { ...report, sections: withSection(report, key, (s) => ({ ...s, disposition })), gaps, updatedAt: at },
+    { actor: actor.name, action: "disposition_set", detail: `${key}: “${section.title}” ${words}${reason ? ` – ${reason}` : ""}.` },
+    opts.now,
+  );
+}
+
+/**
+ * "Take over as approver" (WC design 1): a member who may approve becomes the report's approving clinician
+ * (Report.approver, hashed; Report.approverTakeovers records from, to and when). The previous approver's decisions
+ * are void – their acceptances, adoptions, acknowledgements, own-words records and approver-only dispositions – and
+ * what they wrote becomes a proposal the new approver adopts or rewrites; their settled clinician gaps open again. The
+ * validators then run with the new owner.
+ */
+export function takeOverApprover(report: Report, actor: Actor, now?: Date): Report {
+  if (report.status === "signed" || !mayApprove(actor)) return report;
+  const to = approverRefOf(actor);
+  if (!to || (report.approver && sameMember(report.approver, to))) return report;
+  const at = nowIso(now);
+  const from = report.approver ?? null;
+  const mine = (by: { memberId?: string } | undefined) => Boolean(by && sameMember(by, to));
+  const sections = report.sections.map((s): ReportSection => {
+    const next: ReportSection = { ...s };
+    if (next.accepted?.length) {
+      const kept = next.accepted.filter((a) => mine(a.by));
+      if (kept.length) next.accepted = kept;
+      else delete next.accepted;
+    }
+    if (next.adoptedBy && !mine(next.adoptedBy.by)) delete next.adoptedBy;
+    if (next.disposition && !mine(next.disposition.by) && (next.disposition.kind === "applies_anyway" || isClinicianBox(report, s))) delete next.disposition;
+    next.paragraphs = s.paragraphs.map((p): Paragraph => {
+      const q: Paragraph = { ...p };
+      delete q.ackReason;
+      if (q.ownWords && !mine(q.ownWords.by)) delete q.ownWords;
+      if (q.origin === "clinician" && !mine(q.by)) q.origin = s.kind === "from_records" ? "staff" : "edited";
+      return q;
+    });
+    return next;
+  });
+  const voided = { ...report, sections };
+  const gaps = report.gaps.map((g) => {
+    if (!g.resolution || g.resolution.notApplicable || mine(g.resolution.by) || !isClinicianGap(voided, g)) return g;
+    const open = { ...g };
+    delete open.resolution;
+    return open;
+  });
+  const flags = report.flags.map((f) => {
+    if (!f.acknowledged || mine(f.acknowledged.by) || f.severity === "warning") return f;
+    const open = { ...f };
+    delete open.acknowledged;
+    return open;
+  });
+  const takeovers = from ? [...(report.approverTakeovers ?? []), { from, to, at }].slice(-50) : report.approverTakeovers;
+  const next: Report = { ...voided, gaps, flags, approver: to, updatedAt: at, ...(takeovers ? { approverTakeovers: takeovers } : {}) };
+  return appendActivity(
+    next,
+    {
+      actor: actor.name,
+      action: "approver_taken_over",
+      detail: from ? `${actor.name} took over as the approving clinician from ${from.name}; ${from.name}'s decisions on this report need ${actor.name}'s own.` : `${actor.name} is now the approving clinician.`,
+    },
+    now,
+  );
+}
+
+/** Who may take each approver-only decision on this report, in words ("Only Sarah Reid, the approving clinician, can …"). */
+export function approverOnlyLine(report: Pick<Report, "approver">, what: string): string {
+  return report.approver ? `Only ${report.approver.name}, the approving clinician, can ${what}.` : `Only a clinician who may approve can ${what}.`;
+}
+
+/** The names behind a proposal, for the review's labels ("Entered by Pat Morgan (staff)"). */
+export function proposalLabel(report: Report, section: ReportSection, ctx: BoxContext = {}): string | null {
+  const p = pendingProposal(report, section, ctx);
+  return p ? `Entered by ${p.names} – the approving physio must adopt it` : null;
+}
+
+
+/* ------------------------------------------------------------------------------------------------
+ * After every person's action (use-review-state.ts reviewReducer): the provenance the server checks (WC design 2)
+ * ----------------------------------------------------------------------------------------------*/
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function changedParagraph(p: Paragraph, before: Paragraph | undefined): boolean {
+  return !before || p.text !== before.text || p.origin !== before.origin || !sameJson(p.sourceIds, before.sourceIds);
+}
+
+function resolutionCore(r: Report["gaps"][number]["resolution"]): unknown {
+  if (!r) return null;
+  const { by: _by, ...rest } = r;
+  return rest;
+}
+
+/**
+ * The origin of every paragraph a person wrote or changed in this step (core/provenance.ts personOrigin): only the
+ * approver's own new words become "clinician"; drafted text a person changed stays "edited"; a value typed into a
+ * record box is the approver's ("clinician") or someone else's ("staff").
+ */
+export function withPersonOrigins(before: Report, after: Report, actor: Actor): Report {
+  let touched = false;
+  const sections = after.sections.map((s) => {
+    const was = before.sections.find((x) => x.key === s.key);
+    let changed = false;
+    const paragraphs = s.paragraphs.map((p) => {
+      const b = was?.paragraphs.find((x) => x.id === p.id);
+      if (!changedParagraph(p, b) || p.origin === "ai" || p.origin === "from_records") return p;
+      const origin = personOriginFor(after, s, p, b, actor);
+      if (origin === p.origin) return p;
+      changed = true;
+      return { ...p, origin };
+    });
+    if (!changed) return s;
+    touched = true;
+    return { ...s, paragraphs };
+  });
+  return touched ? { ...after, sections } : after;
+}
+
+function personOriginFor(report: Report, section: ReportSection, p: Paragraph, before: Paragraph | undefined, actor: Actor): Paragraph["origin"] {
+  // core/provenance.ts personOrigin, inlined here to keep this file's imports in one place.
+  return personOriginOf({ report, section, paragraph: p, before, actor });
+}
+
+/**
+ * Stamp who made each change of this step (WC design 2): a person's paragraph written or changed (Paragraph.by; a
+ * paragraph turned back into drafted text loses its stamps; changed text loses "my own words"), a structured answer
+ * (Section.answerBy), a gap resolution and a flag acknowledgement (`by`). Decisions an action stamped itself keep their stamp.
+ */
+export function stampDecisions(before: Report, after: Report, actor: Actor): Report {
+  const by = stampOf(actor);
+  if (!by) return after;
+  const sections = after.sections.map((s) => {
+    const was = before.sections.find((x) => x.key === s.key);
+    let next = s;
+    const paragraphs = s.paragraphs.map((p) => {
+      const b = was?.paragraphs.find((x) => x.id === p.id);
+      if (!changedParagraph(p, b)) return p;
+      const q: Paragraph = { ...p };
+      if (q.origin === "ai" || q.origin === "from_records") {
+        delete q.by;
+        delete q.ownWords;
+        return q;
+      }
+      q.by = by;
+      if (b && q.text !== b.text && q.ownWords && sameJson(q.ownWords, b.ownWords)) delete q.ownWords;
+      return q;
+    });
+    if (paragraphs.some((p, i) => p !== s.paragraphs[i])) next = { ...next, paragraphs };
+    if (was && !sameJson(s.answer, was.answer)) {
+      const a = s.answer;
+      const set = a && a.kind !== "text" && a.value !== null && a.value !== "";
+      if (set && !sameMember(s.answerBy, by)) next = { ...next, answerBy: by };
+      else if (!set && next.answerBy) {
+        next = { ...next };
+        delete next.answerBy;
+      }
+    }
+    return next;
+  });
+  const gaps = after.gaps.map((g) => {
+    if (!g.resolution) return g;
+    const b = before.gaps.find((x) => x.id === g.id);
+    if (b && sameJson(resolutionCore(g.resolution), resolutionCore(b.resolution))) return g;
+    if (g.resolution.by && b?.resolution?.by !== g.resolution.by && g.resolution.by.memberId === by.memberId) return g;
+    return { ...g, resolution: { ...g.resolution, by } };
+  });
+  const flags = after.flags.map((f) => {
+    if (!f.acknowledged) return f;
+    const b = before.flags.find((x) => x.id === f.id);
+    if (b?.acknowledged && b.acknowledged.reason === f.acknowledged.reason && b.acknowledged.at === f.acknowledged.at) return f;
+    return { ...f, acknowledged: { ...f.acknowledged, by } };
+  });
+  return { ...after, sections, gaps, flags };
+}
+
+/**
+ * A decision this person may not take is undone (WC design 4) – whichever helper made it: a clinician gap settled by
+ * someone other than the approver (a gap the conditions settle follows the answers and stays), a flag acknowledged
+ * against its policy (core/validation/acknowledge.ts), "my own words", an adoption or an acceptance stamped by anyone
+ * but the approver, an approver-only decision about a box, and a change of approver other than a takeover.
+ */
+export function enforceDecisionRoles(before: Report, after: Report, actor: Actor, canAck: (flag: ReportFlag, report: Report, actor: Actor) => boolean): Report {
+  // A takeover in this step makes the actor the approver (the approver change itself is checked below).
+  const approver = actsAsApprover(actor, before) || (Boolean(after.approver) && sameMember(after.approver, actor));
+  const gaps = after.gaps.map((g) => {
+    const b = before.gaps.find((x) => x.id === g.id);
+    if (sameJson(resolutionCore(g.resolution), resolutionCore(b?.resolution))) return g;
+    if (approver || g.resolution?.notApplicable || !isClinicianGap(after, g)) return g;
+    // Someone else's resolution of a clinician gap is not theirs to make.
+    if (!b) return g;
+    return b;
+  });
+  const reverted = new Set<string>();
+  const flags = after.flags.map((f) => {
+    const b = before.flags.find((x) => x.id === f.id);
+    if (!f.acknowledged || (b?.acknowledged && b.acknowledged.reason === f.acknowledged.reason)) return f;
+    if (canAck(b ?? f, before, actor)) return f;
+    if (f.paragraphId) reverted.add(f.paragraphId);
+    return b ?? (() => {
+      const open = { ...f };
+      delete open.acknowledged;
+      return open;
+    })();
+  });
+  const sections = after.sections.map((s) => {
+    const was = before.sections.find((x) => x.key === s.key);
+    let next = s;
+    if (!approver) {
+      if (!sameJson(s.adoptedBy, was?.adoptedBy) && s.adoptedBy && (!was?.adoptedBy || !sameJson(s.adoptedBy.by, was.adoptedBy.by))) {
+        next = { ...next };
+        if (was?.adoptedBy) next.adoptedBy = was.adoptedBy;
+        else delete next.adoptedBy;
+      }
+      if (!sameJson(s.accepted, was?.accepted)) {
+        next = { ...next };
+        if (was?.accepted) next.accepted = was.accepted;
+        else delete next.accepted;
+      }
+      const d = s.disposition;
+      if (!sameJson(d, was?.disposition) && (d?.kind === "applies_anyway" || was?.disposition?.kind === "applies_anyway" || isClinicianBox(before, s))) {
+        next = { ...next };
+        if (was?.disposition) next.disposition = was.disposition;
+        else delete next.disposition;
+      }
+    }
+    const paragraphs = next.paragraphs.map((p) => {
+      const b = was?.paragraphs.find((x) => x.id === p.id);
+      let q = p;
+      if (!approver && p.ownWords && !sameJson(p.ownWords, b?.ownWords)) {
+        q = { ...q };
+        if (b?.ownWords) q.ownWords = b.ownWords;
+        else delete q.ownWords;
+        if (q.origin === "clinician" && b?.origin !== "clinician") q.origin = b?.origin ?? "edited";
+      }
+      if (reverted.has(p.id) && p.ackReason !== b?.ackReason) {
+        q = { ...q };
+        if (b?.ackReason) q.ackReason = b.ackReason;
+        else delete q.ackReason;
+      }
+      return q;
+    });
+    if (paragraphs.some((p, i) => p !== next.paragraphs[i])) next = { ...next, paragraphs };
+    return next;
+  });
+  let next: Report = { ...after, gaps, flags, sections };
+  // The approver changes only through "Take over as approver" (takeOverApprover records it).
+  if (!sameJson(after.approver, before.approver) && !sameMember(after.approver, actor)) {
+    next = { ...next };
+    if (before.approver) next.approver = before.approver;
+    else delete next.approver;
+    if (before.approverTakeovers) next.approverTakeovers = before.approverTakeovers;
+    else delete next.approverTakeovers;
+  }
+  return next;
+}
+
+/**
+ * The approver's adoption follows the box (WC design 5): their own later change keeps it current (its contentSha is
+ * renewed); anyone else's change clears it, so the box waits for the approver again.
+ */
+export function maintainAdoptions(before: Report, after: Report, actor: Actor): Report {
+  let touched = false;
+  const sections = after.sections.map((s) => {
+    if (!s.adoptedBy) return s;
+    const sha = boxContentSha(s);
+    if (sha === s.adoptedBy.contentSha) return s;
+    const was = before.sections.find((x) => x.key === s.key);
+    if (was && boxContentSha(was) === sha) return s;
+    touched = true;
+    if (after.approver && actsAsApprover(actor, after) && sameMember(s.adoptedBy.by, actor)) return { ...s, adoptedBy: { ...s.adoptedBy, contentSha: sha } };
+    const next = { ...s };
+    delete next.adoptedBy;
+    return next;
+  });
+  return touched ? { ...after, sections } : after;
 }

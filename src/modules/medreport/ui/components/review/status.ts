@@ -9,8 +9,9 @@
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
 import { notApplicable } from "../../../core/conditions";
-import { isBlankByDesign, isSectionAnswered } from "../../../core/forms";
+import { isBlankByDesign, isSectionAnswered, recordSourceOf } from "../../../core/forms";
 import { formOutline } from "../../../core/forms/headings";
+import { answerSource } from "./provenance";
 import type { AnswerType, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate, TemplateSection } from "../../../core/types";
 
 /* ------------------------------------------------------------------------------------------------
@@ -112,7 +113,11 @@ export type QuestionStatus =
   | "records"
   | "drafted"
   | "clinician"
+  /** bh2 WC design 7 (B1-7, B2-21): answered by a staff member (a staff entry, or a proposal the approver adopted). */
+  | "staff"
   | "needs_input"
+  /** bh2 WC (B2-21): a record value or staff entry with no answer yet – for staff to enter, not the clinician. */
+  | "staff_input"
   | "confirm"
   | "blocked"
   | "pending"
@@ -126,7 +131,9 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
   drafted: { label: "Drafted from the notes", short: "Drafted", dot: "bg-sky-500", text: "text-sky-800" },
   clinician: { label: "Answered by the clinician", short: "Clinician", dot: "bg-indigo-500", text: "text-indigo-800" },
+  staff: { label: "Entered by staff", short: "Staff", dot: "bg-amber-500 ring-2 ring-amber-100", text: "text-amber-800" },
   needs_input: { label: "Needs clinician input", short: "Needs input", dot: "bg-amber-500", text: "text-amber-800" },
+  staff_input: { label: "To be entered by staff", short: "Staff to enter", dot: "bg-amber-300", text: "text-amber-800" },
   confirm: { label: "Answered – confirm the gap", short: "Confirm", dot: "bg-amber-400 ring-2 ring-amber-200", text: "text-amber-800" },
   blocked: { label: "Blocked – check required", short: "Blocked", dot: "bg-red-600", text: "text-red-700" },
   pending: { label: "Not drafted yet", short: "Not drafted", dot: "border-2 border-slate-400 bg-white", text: "text-slate-600" },
@@ -137,7 +144,7 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "record_empty", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "staff", "left_blank", "record_empty", "needs_input", "staff_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -191,16 +198,19 @@ export function questionStatus(
   const answered = isSectionAnswered(section);
   if (!answered && approved) return "left_blank";
   if (section.status === "pending" && !answered) return "pending";
-  if (!answered) return q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps) ? "blank" : "needs_input";
+  if (!answered) {
+    if (q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps)) return "blank";
+    // B2-21: a record value or staff entry the record lacks is for staff to type, never "Needs clinician input".
+    return section.kind === "from_records" && !(q.field && recordSourceOf(q.field) === "physio_choice") ? "staff_input" : "needs_input";
+  }
   const blockingFlags = flags.filter((f) => f.sectionKey === section.key && isOpenBlocking(f, gaps));
   const openGap = gaps.some((g) => g.sectionKey === section.key && !g.resolution);
   // Answered by a person and only the gap itself is open: not a failed check, just confirm it.
   if (openGap && byPerson && blockingFlags.every((f) => f.code === "OPEN_GAP")) return "confirm";
   if (blockingFlags.length > 0 || openGap) return "blocked";
-  const origins = section.paragraphs.filter((p) => p.text.trim()).map((p) => p.origin);
-  if (origins.every((o) => o === "from_records")) return section.kind === "from_records" || origins.length > 0 ? "records" : "clinician";
-  if (origins.some((o) => o === "ai" || o === "edited")) return "drafted";
-  return "clinician";
+  // bh2 WC design 7: who answered, from the stamps (provenance.ts answerSource) – a person's choice beside drafted
+  // supporting text is theirs (B2-20), a value a person typed into a record box is never "filled from records" (B1-7).
+  return answerSource(section);
 }
 
 /** Nothing open on the box, and a person acknowledged its gap or its "optional and has no answer" warning. */
@@ -216,7 +226,7 @@ export interface StatusCounts {
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, staff: 0, needs_input: 0, staff_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0, record_empty: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
