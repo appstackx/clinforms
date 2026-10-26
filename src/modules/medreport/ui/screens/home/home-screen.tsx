@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   Download,
   FileInput,
+  FilePlus2,
   FileStack,
   FileUp,
   Files,
@@ -754,6 +755,15 @@ function RowActions({ report, onExport, onDelete }: { report: Report; onExport()
       <Button asChild size="sm" variant="ghost">
         <Link href={paths.report(report.id)}>{report.status === "signed" ? "Open" : "Review"}</Link>
       </Button>
+      {tenant ? (
+        // 25/10/2026: another referrer form for this patient from the report's checked notes – no new upload.
+        <Button asChild size="sm" variant="ghost">
+          <Link href={paths.newReportFrom(report.id)} aria-label={`${TENANT_COPY.reuse.action}: ${report.patientLabel}`} title={TENANT_COPY.reuse.action} data-reuse-notes>
+            <FilePlus2 className="mr-1.5 h-4 w-4" aria-hidden />
+            {TENANT_COPY.reuse.rowAction}
+          </Link>
+        </Button>
+      ) : null}
       {tenant ? null : (
         <Button size="sm" variant="ghost" onClick={onExport} title="Export case JSON" aria-label={`Export case JSON for ${report.patientLabel}`}>
           <Download className="h-4 w-4" aria-hidden />

@@ -19,6 +19,7 @@
 import type { BundleResponse } from "../../../api/contract";
 import { formToTemplate, isFormReport, primaryTreatingClinician } from "../../../core/forms";
 import { appendActivity, applyDraftResult, createFormReport, createReport, planDraftGroups } from "../../../core/report-factory";
+import { NOTES_REUSED_ACTION, notesReusedDetail, type ReuseSource } from "../../../core/reuse";
 import type {
   Clinician,
   EpisodeBundle,
@@ -85,6 +86,11 @@ export interface GenerateInput {
   concurrency?: number;
   signal?: AbortSignal;
   actor?: string;
+  /**
+   * 25/10/2026: the record is an earlier report's checked notes ("Complete another form for this patient",
+   * core/reuse.ts). The new report – a new id, never an amendment – says so in its activity.
+   */
+  reusedFrom?: Pick<ReuseSource, "formTitle" | "status" | "consentReset">;
   /** Called with the latest report after creation and after every merge (persist it here). */
   onReport?(report: Report): void;
   onProgress?(groups: DraftGroupProgress[]): void;
@@ -146,7 +152,7 @@ export function templateOf(target: GenerateTarget): ReportTemplate {
 }
 
 /** Create the report (no drafting) – code-filled answers only. */
-export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now">): Report {
+export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now" | "reusedFrom">): Report {
   const now = input.now?.() ?? new Date();
   const common = {
     bundle: input.data.bundle,
@@ -155,7 +161,7 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
     now,
     actor: input.actor,
   };
-  const created =
+  const made =
     input.target.kind === "form"
       ? createFormReport({
           ...common,
@@ -164,6 +170,9 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
           ...(input.author !== undefined ? { author: input.author } : {}),
         })
       : createReport({ ...common, template: input.target.template });
+  const created = input.reusedFrom
+    ? appendActivity(made, { actor: input.actor ?? "System", action: NOTES_REUSED_ACTION, detail: notesReusedDetail(input.reusedFrom) }, now)
+    : made;
   // Remember whether this deployment holds demo answers for this record (review's "Draft them now").
   const demo = input.data.demoDrafts;
   if (!demo) return created;

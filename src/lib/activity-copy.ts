@@ -64,6 +64,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
     label: "Reports",
     actions: [
       "notes.imported",
+      "notes.reused",
       "report.create",
       "report.update",
       "report.draft_live",
@@ -122,6 +123,9 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "form.delete": "Form removed from the library",
   "settings.update": "Referrer form links updated",
   "notes.imported": "Patient notes imported",
+  // Review fix 25/10/2026: written each time the wizard reads an earlier report's notes (a reload counts again), so it
+  // says the notes were opened – a new report shows as its own "Report started" row.
+  "notes.reused": "Patient notes opened from an earlier report",
   "report.create": "Report started",
   "report.update": "Report saved",
   "report.draft_live": "Answers drafted from the notes",
@@ -256,6 +260,15 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const counts = [n("notes", "note", "notes"), n("appointments", "appointment", "appointments"), n("outcomeScores", "outcome score", "outcome scores")].filter(Boolean);
       const from = NOTES_FORMATS[String(detail.format)];
       const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
+      return parts.length ? parts.join(" · ") : null;
+    }
+    case "notes.reused": {
+      // 25/10/2026: the earlier report's checked notes were opened for another form (the row links to that report).
+      const n = (key: string, one: string, many: string) => (typeof detail[key] === "number" ? `${detail[key]} ${detail[key] === 1 ? one : many}` : null);
+      const counts = [n("notes", "note", "notes"), n("appointments", "appointment", "appointments"), n("outcomeScores", "outcome score", "outcome scores")].filter(Boolean);
+      const from = detail.sourceStatus === "signed" ? "from an approved report" : detail.sourceStatus === "draft" ? "from a draft report" : null;
+      const consent = detail.consentReset === true ? "consent to be recorded again" : null;
+      const parts = [counts.join(", "), from, consent].filter(Boolean);
       return parts.length ? parts.join(" · ") : null;
     }
     case "report.render_final": {

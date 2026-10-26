@@ -4,6 +4,8 @@
  * Review header: who and what (patient, referrer, form), status (Draft / Approved), an honest badge
  * for how the answers were drafted, the save state, and the primary actions (Draft copy, Approve).
  * After approval: the approved banner with the fingerprint, downloads and "Save to clinic record".
+ * A clinic's Studio (25/10/2026), draft or approved: "Complete another form for this patient" – a new report on another
+ * referrer form from this report's checked notes, without uploading them again (core/reuse.ts).
  *
  * Owner: studio-b agent.
  */
@@ -14,6 +16,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  FilePlus2,
   FileText,
   History,
   Loader2,
@@ -199,6 +202,19 @@ export function ReviewHeader({
               )}
             </span>
           </div>
+          {tenant ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+              <Button asChild size="sm" variant="outline">
+                <Link href={paths.newReportFrom(report.id)} aria-describedby="reuse-notes-hint" data-reuse-notes>
+                  <FilePlus2 className="mr-2 h-4 w-4" aria-hidden />
+                  {TENANT_COPY.reuse.action}
+                </Link>
+              </Button>
+              <span id="reuse-notes-hint" className="text-xs text-slate-500">
+                {TENANT_COPY.reuse.actionHint}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {!signed && (

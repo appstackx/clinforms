@@ -530,6 +530,7 @@ same `auth/actor.ts` `requireActor` as every other endpoint (`store-actor.ts` `r
 |---|---|---|
 | GET | `/store/snapshot` | `{tenantId, reports, forms, settings, limits}` – summaries only |
 | GET / PUT / DELETE | `/store/reports/{id}` | `{rev, updatedAt, report}`, `ETag: "<rev>"`; PUT without If-Match creates, with `If-Match: "<rev>"` updates; 409 `REV_CONFLICT` `{current}`; `signed` only with a receipt that verifies for this clinic and content (422 `RECEIPT_INVALID`); an approved report cannot become a draft (409 `REPORT_LOCKED`) |
+| POST | `/store/reports/{id}/reuse` | (25/10/2026) "Complete another form for this patient": `{data: BundleResponse, source}` – the record the clinic's stored report was completed from, for a NEW report on another form (no upload); 404 `NOT_FOUND` for a missing, deleted or another clinic's report; audit `notes.reused`. See "Another form for the same patient" below |
 | GET / PUT / DELETE | `/store/forms/{id}` | as reports; an unattested (or another clinic's) confirmation is stored as `proposed` (`downgraded: true`); delete removes the file with its last map |
 | POST | `/store/files` | `{sha256, size, name, mime}` → `{complete, chunkCount, present}` (start / resume) |
 | PUT | `/store/files/{sha256}/chunks/{idx}` | one 512 KiB chunk (raw with `?size=`, or JSON `{size, dataBase64}`) |
@@ -1828,3 +1829,55 @@ Not fixed in code (production data, for Khuram): Dell's stored map notes written
 B0-12); his RTF forms re-loaded to gain their logos (B0-14); switching Medcare / Ascenti time questions to the new record
 values (B0-15); the duplicate "Blue Heart Clinics" before the site code on two forms (B0-4) and whether WAD grade stays
 required (B0-3) are Dell's call.
+
+## Another form for the same patient (25/10/2026, a clinic's Studio)
+
+Khuram (25/10): a patient's notes are uploaded once per report and there is no patient list, so a second referrer form
+for the same patient meant uploading the notes again. Now a clinic report (draft or approved, any version) offers
+**"Complete another form for this patient"** – in the report's header and as "Another form" on its row in the Reports
+list (tenant mode only; the public demo keeps its browser-only flow). It opens "Complete a form" at
+`/app/studio/new?from=<reportId>` (`routes.ts newReportFrom`):
+
+1. The Studio calls `POST /store/reports/{id}/reuse` (`api/handlers/store-report-reuse.ts`, `api-client.ts
+   reuseReportRecord`, with the page's clinic/member headers). The server reads the report from the clinic's OWN store
+   – nothing from the browser but the id – and answers like a notes upload: the record re-stamped with the clinic's
+   current details (`bundleResponseFor`), the figures and data checks of today, plus `source` (form, title, status,
+   version, `consentReset`). Rules as for a fresh upload: sign-in + two-step + same origin (a write), any role, 403
+   `TRIAL_ENDED` once a trial has ended, 403 `CONNECTOR_NOT_AVAILABLE` for a record of the demo's simulated system,
+   403 `SESSION_MISMATCH` for a launch session narrowed to another episode; another clinic's, a deleted and a missing
+   report are the same 404 in plain words (`WORDING.server.access.reuseGone*`: deleted or removed by retention –
+   upload the notes). Audit `notes.reused` (target: the earlier report; counts, source status/version, consentReset –
+   never names or notes), written on every read (a reload reads again), so the activity page calls it "Patient notes
+   opened from an earlier report" and links it to that report – a new report shows as its own "Report started".
+2. Step 1 is skipped: the banner "Using the notes already checked for <patient> in the report on “<form>” (approved):
+   N notes · N appointments · N scores. Nothing was uploaded again.", the usual data check (step 2, back = "Upload
+   other notes instead"), then the referrer form (step 3): the earlier report's form is marked "Already completed for
+   this patient" and never preselected (`FormStep completedFormId`). When the library holds no other confirmed form,
+   the step says so and points to Referrer forms or a built-in report. The screen is keyed by `from`
+   (`src/app/app/studio/new/page.tsx`): Next keeps a page mounted when only its search parameters change, so "Complete
+   a form" in the top bar starts afresh instead of keeping the earlier report's notes.
+3. The new report is made exactly as after an upload (`createTargetReport`): a NEW id, version 1, no `amends` – so it
+   counts as a report of its own when drafted or approved (src/server/repos/usage.ts; even on the same form again, as a
+   fresh upload would) and is never taken for an amendment. Its activity has `notes_reused` ("Started from the
+   patient's notes as already checked for the report on “…” (approved) – the notes were not uploaded again.").
+   Its own trail starts with `report.create` (and usage `report_started`) when the Studio stores it.
+
+**Consent** (`core/reuse.ts recordForAnotherForm`, review fix 25/10/2026): for a record from UPLOADED notes the
+patient's consent to share the earlier report is NEVER carried over, however it was recorded – shown by the notes,
+entered by staff at the notes check ("Consent to share the report: Recorded" + date), or recorded on the report (Flags →
+"Record consent", activity `consent_recorded`). The stored record cannot tell the first two apart, and the other form
+may go to another organisation. The new report shows CONSENT_NOT_RECORDED (blocking) and needs consent recorded on it
+("Record consent") before approval; the banner and the new report's activity say so. A record from a clinic system
+keeps the consent the clinic system holds (fetching it afresh gives the same; it is recorded there, not in ClinForms).
+Opinion attribution, the merge-code block and every approval check are unchanged (the new report is an ordinary
+report).
+
+**Retention:** the new report holds its own copy of the record with its own retention clock; reusing reads the
+earlier report and does not change it (no save, no new revision). Once the earlier report is deleted or removed by
+retention, its notes cannot be reused – upload them again.
+
+Tests: `scripts/medreport/report-reuse.test.ts` (handler rules, audit, consent – incl. consent entered at the notes
+check through a real read → check → confirm –, the new report, usage on the host's real counters with a fake drafting
+client), `ui/tenant-mode.test.ts` (row action, header action draft/approved, the wizard with `?from=`, the page key,
+the form step incl. a library with one form), `ui/routes.test.ts`, `src/server/admin/admin.test.ts` (label and group of
+`notes.reused`). Browser check: `scripts/e2e/reuse-notes.cjs` (local SQLite clinic, demo mode).
