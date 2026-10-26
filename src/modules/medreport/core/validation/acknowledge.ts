@@ -20,6 +20,7 @@
  */
 import type { AckPolicy, FlagWithAckPolicy } from "../fix-types";
 import { actsAsApprover, evidenceInSpans, paragraphResidue } from "../provenance";
+import { firstPersonUses } from "../voice";
 import type { Actor, Report, ReportFlag } from "../types";
 import { defineHook, hookEnabled } from "./hooks";
 
@@ -50,7 +51,15 @@ function derivedPolicy(flag: ReportFlag, report?: Pick<Report, "sections">): Ack
         if (p.origin === "ai" || p.origin === "from_records") return "never";
         if (!hookEnabled(EDITED_ACK_HOOK)) return "never";
         // Drafted residue keeps drafted-text strictness: nobody acknowledges a drafted opinion.
-        return evidenceInSpans(p.text, flag.evidence, paragraphResidue(s, p, { forAcknowledgement: true })) ? "never" : "approver";
+        const residue = paragraphResidue(s, p, { forAcknowledgement: true });
+        // bh2-rc1 (WB x WC): a voice flag's evidence names the colleague, not the words at fault – those are the
+        // first-person words (core/voice.ts firstPersonUses). Only a first person inside drafted residue is drafted
+        // text's; a person's own "I recorded …" beside a kept drafted sentence is theirs, for the approver to confirm.
+        if (flag.code === "OTHER_CLINICIAN_VOICE") {
+          const uses = firstPersonUses(p.text);
+          if (uses.length > 0) return uses.some((u) => residue.some((r) => u.index < r.end && u.index + u.word.length > r.start)) ? "never" : "approver";
+        }
+        return evidenceInSpans(p.text, flag.evidence, residue) ? "never" : "approver";
       }
       return "never";
     }
@@ -59,10 +68,29 @@ function derivedPolicy(flag: ReportFlag, report?: Pick<Report, "sections">): Ack
   }
 }
 
-/** Who may acknowledge this flag (W0.6 AckPolicy): the flag's own `ackPolicy`, never weaker than what it warrants. */
+/** The paragraph a flag is about is drafted text (origin "ai"), on this report. */
+function onDraftedText(flag: ReportFlag, report?: Pick<Report, "sections">): boolean {
+  if (!report || !flag.paragraphId) return false;
+  for (const s of report.sections ?? []) {
+    const p = s.paragraphs.find((x) => x.id === flag.paragraphId);
+    if (p) return p.origin === "ai";
+  }
+  return false;
+}
+
+/**
+ * Who may acknowledge this flag (W0.6 AckPolicy): the flag's own `ackPolicy`, never weaker than what it warrants –
+ * with one exception the voice check owns (bh2-rc1, WB x WC): on drafted text the voice check (validation/voice.ts,
+ * WB) raises OTHER_CLINICIAN_VOICE with "approver" only for the first-person licence (ii) – "my" / "me" / "our" beside
+ * a colleague's note that names the approver ("covering my annual leave", AC-OPN-4) – and with "never" for every other
+ * drafted first person. That licence is the approver's to confirm, so it stands; drafted text anywhere else stays
+ * "never", and a person's text keeps the stricter of the two (drafted residue: never).
+ */
 export function ackPolicyOf(flag: FlagWithAckPolicy, report?: Pick<Report, "sections">): AckPolicy {
   const derived = derivedPolicy(flag, report);
-  return flag.ackPolicy ? strictestPolicy(flag.ackPolicy, derived) : derived;
+  if (!flag.ackPolicy) return derived;
+  if (flag.code === "OTHER_CLINICIAN_VOICE" && flag.ackPolicy === "approver" && derived === "never" && hookEnabled(EDITED_ACK_HOOK) && onDraftedText(flag, report)) return "approver";
+  return strictestPolicy(flag.ackPolicy, derived);
 }
 
 /**

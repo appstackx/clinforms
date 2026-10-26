@@ -5,6 +5,10 @@
  * - WA2 outcomes through WA1's dry run: a fatal fill outcome refuses the approval (409 ISSUE_REFUSED) before anything is
  *   approved, in words that fit an approval (nothing was approved – never "use Create amended version"); and WA1's
  *   parse reads an uncertain or two-way choice answer as WA2's fill does – never a definite tick.
+ * - WB's voice flags through WC's acknowledgement policy: the first-person licence (ii) on drafted text ("while
+ *   covering my annual leave", a colleague's note naming the approver) is the approver's to confirm; any other drafted
+ *   first person is never acknowledged; a person's own "I recorded …" beside a kept drafted sentence is the approver's
+ *   to confirm, a first person inside drafted residue never.
  *
  * Fictional data only: the safety corpus's fictional clinic and synthetic forms.
  */
@@ -15,9 +19,11 @@ import { bindHandler } from "../../src/modules/medreport/api/http";
 import type { MedreportDeps } from "../../src/modules/medreport/api/deps";
 import { createSessionToken } from "../../src/modules/medreport/auth/session-token";
 import { parseFormAnswerValue } from "../../src/modules/medreport/core/forms";
+import type { Report, ReportFlag } from "../../src/modules/medreport/core/types";
+import { canAcknowledge, validateReport } from "../../src/modules/medreport/core/validation";
 import { CaseInputSchema, type CaseInput } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
 import { buildCase, type Built } from "../../src/modules/medreport/core/validation/__corpus__/harness/build";
-import { clinicianOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
+import { actorOf, clinicianOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
 import { bytesToBase64, createHttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { resolveChoice } from "../../src/modules/medreport/forms/choice-marks";
 
@@ -71,5 +77,42 @@ describe("WA2 outcomes through WA1's dry run", () => {
     assert.equal(parseFormAnswerValue(course, "Improved?").value, null);
     assert.equal(parseFormAnswerValue(course, "Improved").value, "Improved");
     assert.equal(parseFormAnswerValue(course, "Unsure").value, "Unsure");
+  });
+});
+
+/** The case's report with the validators' flags, the voice owner being its approver (as /validate and /sign run it). */
+async function validated(input: Record<string, unknown>): Promise<{ report: Report; flags: ReportFlag[] }> {
+  const b = await buildCase(CaseInputSchema.parse(input) as CaseInput, {});
+  const owner = b.report.approver ? { name: b.report.approver.name, hcpc: b.report.approver.hcpc } : null;
+  const res = validateReport(b.report, b.template, { form: b.form, ...(owner ? { voice: { owner } } : {}) });
+  return { report: { ...b.report, flags: res.flags }, flags: res.flags };
+}
+
+const voiceFlag = (flags: readonly ReportFlag[]) => flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+const COVERING = { id: "N-003", author: "tom", date: "2026-04-15", type: "follow_up", subjective: "Covering Sarah Reid's annual leave. Pain 3/10.", objective: "Lumbar flexion 80%." };
+
+describe("WB's voice flags through WC's acknowledgement policy", () => {
+  it("drafted text: the first-person licence (ii) is the approver's to confirm – staff and colleagues may not; other drafted first person: never", async () => {
+    const licence = await validated({ notes: [COVERING], box: "treatment_provided", paragraph: { text: "Tom Ellis, physiotherapist, saw Mr Testcase on 15/04/2026 while covering my annual leave.", cites: ["N-003"] } });
+    const f = voiceFlag(licence.flags);
+    assert.ok(f, "flagged");
+    assert.equal(canAcknowledge(f!, licence.report, actorOf("sarah")), true, "the approver");
+    for (const who of ["pat", "tom", "chris"] as const) assert.equal(canAcknowledge(f!, licence.report, actorOf(who)), false, who);
+    const drafted = await validated({ box: "examination_findings", paragraph: { text: "At that appointment I recorded full, pain-free lumbar range of movement.", cites: ["N-002"] } });
+    const g = voiceFlag(drafted.flags);
+    assert.ok(g, "flagged");
+    assert.equal(canAcknowledge(g!, drafted.report, actorOf("sarah")), false, "a drafted first person over a colleague's note: never");
+  });
+
+  it("a person's text: their own first person beside a kept drafted sentence is the approver's to confirm; a first person inside drafted residue never", async () => {
+    const own = await validated({ author: null, box: "examination_findings", paragraph: { text: "No further treatment was given. At that appointment I recorded full, pain-free lumbar range of movement.", cites: ["N-002"], origin: "edited", originalText: "No further treatment was given. (drafted wording)" } });
+    const f = voiceFlag(own.flags);
+    assert.ok(f, "flagged");
+    assert.equal(canAcknowledge(f!, own.report, actorOf("sarah")), true, "the approver confirms the person's own words");
+    assert.equal(canAcknowledge(f!, own.report, actorOf("pat")), false, "never staff");
+    const residue = await validated({ author: null, box: "examination_findings", paragraph: { text: "No further treatment was given. At that appointment I recorded full, pain-free lumbar range of movement.", cites: ["N-002"], origin: "edited", originalText: "At that appointment I recorded full, pain-free lumbar range of movement." } });
+    const g = voiceFlag(residue.flags);
+    assert.ok(g, "flagged");
+    assert.equal(canAcknowledge(g!, residue.report, actorOf("sarah")), false, "the drafted first person kept: drafted-text strictness");
   });
 });
