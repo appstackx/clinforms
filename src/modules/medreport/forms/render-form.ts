@@ -23,8 +23,9 @@ import "server-only";
  * written or written over another, its place not on the form, residue on a decided box (a pre-printed mark, an option
  * list, a printed default, a merge code, a blank sentence opener's words) – is refused 422 FORM_INVALID with one issue
  * per field (FillRefusedError, which also carries the outcomes: WA1's /sign dry run reads them). `strict: false`
- * (report-only) returns the outcomes without refusing – for the verification runs only. `states` passes WA1's issue
- * state through to the fill (forms/docx-fill.ts DocxFillOptions).
+ * (report-only) returns the outcomes without refusing for them – for the verification runs only; the whole-document
+ * merge-code guard still refuses every FINAL copy, as on production (review 26/10). `states` passes WA1's issue state
+ * through to the fill (forms/docx-fill.ts DocxFillOptions).
  *
  * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
  */
@@ -64,7 +65,8 @@ export interface FormRenderInput {
   states?: Readonly<Record<string, BoxState | undefined>>;
   /**
    * FINAL only: refuse a copy with a fatal fill outcome (default true). false = report-only – the copy is made and the
-   * outcomes say what is wrong (plan WA2 design 1: the 17 × 3 verification run before strict mode).
+   * outcomes say what is wrong (plan WA2 design 1: the 17 × 3 verification run before strict mode). A FINAL copy still
+   * printing a mail-merge field is refused either way.
    */
   strict?: boolean;
 }
@@ -168,7 +170,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     if (draft) {
       const left = withoutSignoffFields(await mergeTokensInOutput(docx, "docx"), form);
       if (left.length > 0) warnings.unshift(`${mergeFieldsLeft(left)} The form cannot be approved until each is answered or replaced.`);
-    } else if (strict) await assertNoMergeFields(docx, "docx");
+    } else await assertNoMergeFields(docx, "docx"); // every FINAL copy, report-only too (review 26/10)
     if (input.format === "original") return { bytes: docx, contentType: CONTENT_TYPES.docx, extension: "docx", warnings, outcomes };
     let pdf: Uint8Array | null;
     try {
@@ -207,7 +209,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
     });
   }
   const pdf = await stampPdfDemoNotice(filled, notice, { draft });
-  if (strict) await assertNoMergeFields(pdf, "pdf");
+  if (!draft) await assertNoMergeFields(pdf, "pdf"); // every FINAL copy, report-only too (review 26/10)
   return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings: [...errors, ...warnings], ...(errors.length > 0 && { errors }), outcomes };
 }
 

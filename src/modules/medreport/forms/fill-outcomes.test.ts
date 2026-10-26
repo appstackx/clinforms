@@ -10,7 +10,11 @@
  * - strict FINAL (render-form.ts): refused 422 with one issue per field; report-only and drafts are not refused; the
  *   outcomes header;
  * - choiceAnswerMatches (forms/choice-marks.ts, WA1's approval check) on the same reading;
- * - the request caps (forms/request-caps.ts).
+ * - the request caps (forms/request-caps.ts);
+ * - review 26/10 (check-WA2): a blank left printed never takes a later answer's place; "No" + missing knowledge and
+ *   several options of a single choice are never a choice; a chosen mark cleared later is caught; record-empty and
+ *   undecided FINAL boxes are checked; report-only FINAL still refuses a merge code; labels ending in a preposition stay;
+ *   a word repeated across the blank is caught; PDF outcomes are recorded where the problem is met.
  *
  * Fictional data only; ClinForms' own wording.
  */
@@ -305,14 +309,19 @@ test("an answer never takes a placeholder inside another answer (masked search);
   assert.ok(out.outcomes.every((o) => o.outcome === "written" && !o.fatal));
 });
 
-test("repeated printed words: an answer repeating the opener's lead is fatal residue (B2-8, B3-8)", () => {
+test("repeated printed words: an answer repeating the opener's lead is fatal residue (B2-8, B3-8) – one repeated word too (review 26/10)", () => {
   const out = fill({ "F-06": { text: "return to lighter duties" } });
   assert.equal(out.by["F-06"].fatal, true);
   assert.match(out.by["F-06"].residue?.[0] ?? "", /“return to” are repeated/);
   assert.equal(repeatedLead("To return to", "return to work"), "return to");
   assert.equal(repeatedLead("To return to", "lighter duties"), "");
-  assert.equal(repeatedLead("Expected in", "in 6 weeks"), "", "one shared word is not counted on a longer lead");
   assert.equal(repeatedLead("Since", "since March"), "since");
+  // ADV-6: one word printed twice across the blank ("To return to to work", "fit in in 6 weeks") is never right.
+  assert.equal(repeatedLead("To return to", "to work"), "to");
+  assert.equal(repeatedLead("Expected to be fit in", "in 6 weeks"), "in");
+  const once = fill({ "F-06": { text: "to work" } });
+  assert.equal(once.by["F-06"].fatal, true);
+  assert.match(once.by["F-06"].residue?.[0] ?? "", /the printed words “to” are repeated by the answer/);
 });
 
 test("the printed lead of a blank: a sentence opener ends in a word that needs one more; a label does not", () => {
@@ -324,6 +333,11 @@ test("the printed lead of a blank: a sentence opener ends in a word that needs o
   assert.equal(openerLead("He has been off work since"), "He has been off work since");
   assert.equal(openerLead("Name of physiotherapist"), "");
   assert.equal(openerLead("Date"), "");
+  // ADV-5 (review 26/10): a sentence opener reads as a clause – an auxiliary, or "to" before a verb; a label ending in a
+  // preposition after a participle or noun is a label.
+  assert.equal(openerLead("Expected to be fit in"), "Expected to be fit in");
+  assert.equal(openerLead("Pain is"), "Pain is");
+  for (const label of ["Assessed by", "Referred by", "Referred to", "Signed on behalf of", "Copy to", "Date of", "Name of"]) assert.equal(openerLead(label), "", label);
   // The map's printedLeads entry is used when the line ends with it.
   const known = formOf(FORM_BYTES, FIELDS);
   known.analysis.printedLeads = { "F-07": "Name of physiotherapist" };
@@ -415,4 +429,114 @@ test("request caps: at most 400 questions and 20 sharing a place; Blue Heart-lik
   // Option cells count in their own blocks.
   const grid = field("F-01", "Grid", { kind: "docx", target: "mark_cell", blockId: "t0.r0.c1", optionCells: [{ option: "A", blockId: "t0.r0.c1" }, { option: "B", blockId: "t0.r0.c2" }] });
   assert.equal(formRequestCapIssues({ fields: [grid] }).length, 0);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Review 26/10 (check-WA2): the minors
+ * ----------------------------------------------------------------------------------------------*/
+
+test("ADV-11: a blank left printed is skipped – a later answer mapped to the same placeholder takes the next blank", () => {
+  const bytes = docx(tbl(tr(cell("Signed"), cell("Name ______ Date ______"))));
+  const fields = [
+    field("F-01", "Name", { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c1", placeholderText: "______" }),
+    field("F-02", "Date", { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c1", placeholderText: "______" }),
+  ];
+  const form = formOf(bytes, fields);
+  const want = "Name ______ Date 26/10/2026";
+  const out = fill({ "F-01": { leftBlank: true }, "F-02": { text: "26/10/2026" } }, { form, bytes });
+  assert.equal(out.t["t0.r0.c1"], want, "left blank");
+  assert.ok(out.outcomes.every((o) => !o.fatal), JSON.stringify(out.outcomes));
+  const na = fill({ "F-02": { text: "26/10/2026" } }, { form, bytes, states: { "F-01": { kind: "not_applicable", reason: "condition" } } });
+  assert.equal(na.t["t0.r0.c1"], want, "not applicable");
+  // The record has nothing for it: its blank is removed (as a clinic system's code is), the date still in its own place.
+  const empty = fill({ "F-01": { text: "", blank: true }, "F-02": { text: "26/10/2026" } }, { form, bytes });
+  assert.equal(empty.t["t0.r0.c1"], "Name  Date 26/10/2026", "record empty");
+  // The draft shows it the same way.
+  assert.equal(fill({ "F-02": { text: "26/10/2026" } }, { form, bytes, draft: true }).t["t0.r0.c1"], want, "draft");
+});
+
+test("Q-1 (ADV-1): “No” followed by words for missing knowledge is not a definite No – as printed, fatal, and the approval check refuses it", () => {
+  const unknowns = ["No idea", "No info", "No mention in the notes", "No answer recorded", "No recollection", "No response from patient", "No notes on this"];
+  const options = ["Yes", "No"];
+  for (const text of unknowns) {
+    assert.equal(resolveChoice(F.glyph, { text }, options).kind, "unknown", text);
+    assert.equal(resolveChoice(F.glyph, { text, value: false }, options).kind, "unknown", `${text}: a value read from the text is not trusted`);
+    assert.equal(choiceAnswerMatches(F.glyph, { kind: "text", value: text }), false, text);
+    const out = fill({ "F-01": { text } });
+    assert.equal(out.t["t0.r0.c1"], "☒ Yes  ☐ No", `${text}: as printed`);
+    assert.equal(out.by["F-01"].fatal, true, text);
+  }
+  // A clinical negative is still a No.
+  for (const text of ["No", "No pain", "No restrictions", "No evidence of instability", "No – full range"]) assert.deepEqual(resolveChoice(F.glyph, { text }, options), { kind: "chosen", options: ["No"] }, text);
+});
+
+test("ADV-2: an answer naming several options of a single choice is none of them – never the first only; a yes beside a no reads as its first", () => {
+  const options = ["Exercise", "Manual therapy", "Taping"];
+  for (const text of ["Exercise and taping", "Manual therapy, exercise", "Taping / Exercise"]) {
+    assert.equal(resolveChoice(F.list, { text }, options).kind, "unmatched", text);
+    const out = fill({ "F-03": { text } });
+    assert.equal(out.t["t0.r3.c1"], "Exercise / Manual therapy / Taping", `${text}: as printed`);
+    assert.equal(out.by["F-03"].fatal, true, text);
+  }
+  assert.deepEqual(resolveChoice(F.list, { text: "Manual therapy" }, options), { kind: "chosen", options: ["Manual therapy"] });
+  assert.deepEqual(resolveChoice(F.list, { text: "Taping – left knee" }, options), { kind: "chosen", options: ["Taping"] });
+  const yn = { ...F.glyph, answerType: "single_choice" as const };
+  assert.deepEqual(resolveChoice(yn, { text: "Yes – no restrictions" }, ["Yes", "No"]), { kind: "chosen", options: ["Yes"] });
+  // A "tick all that apply" row still takes several.
+  assert.deepEqual(resolveChoice(F.grid, { text: "Neck and back" }, ["Neck", "Back", "Knee"]), { kind: "chosen", options: ["Neck", "Back"] });
+});
+
+test("ADV-7b: a chosen column's mark cleared later by another answer mapped onto the same cell is fatal", () => {
+  const misMapped = field("F-13", "Mis-mapped", { kind: "docx", target: "mark_cell", blockId: "t0.r2.c1", optionCells: [{ option: "Yes", blockId: "t0.r2.c1" }, { option: "No", blockId: "t0.r13.c2" }], mark: "x" }, { answerType: "single_choice", options: ["Yes", "No"] });
+  const form = formOf(FORM_BYTES, [...FIELDS, misMapped]);
+  const out = fill({ "F-12": { text: "Neck, Back" }, "F-13": { text: "Yes", value: "Yes" } }, { form });
+  assert.equal(out.t["t0.r13.c2"], "", "Back's mark was cleared by the mis-mapped question");
+  assert.equal(out.by["F-12"].fatal, true);
+  assert.match((out.by["F-12"].residue ?? []).join(" "), /the chosen “Back” is not marked/);
+  // Mapped correctly, both hold.
+  const ok = fill({ "F-12": { text: "Neck, Back" } });
+  assert.equal(ok.by["F-12"].fatal, false);
+});
+
+test("ADV-3: a record-empty choice box is a blank box (pre-printed tick cleared); an undecided FINAL box keeps its print but a pre-printed tick refuses it", () => {
+  const empty = fill({}, { states: { "F-01": { kind: "blank", reason: "record_empty" } } });
+  assert.equal(empty.t["t0.r0.c1"], "☐ Yes  ☐ No");
+  assert.deepEqual([empty.by["F-01"].outcome, empty.by["F-01"].fatal], ["cleared", false]);
+  const blankText = fill({ "F-01": { text: "", blank: true }, "F-02": { text: "", blank: true } });
+  assert.equal(blankText.t["t0.r0.c1"], "☐ Yes  ☐ No");
+  assert.equal(blankText.t["t0.r2.c2"], "", "the pre-printed mark is cleared");
+  // {} on a FINAL copy (a box without a report section): written as before – but what it issues reads as an answer.
+  const undecided = fill({});
+  assert.equal(undecided.t["t0.r0.c1"], "☒ Yes  ☐ No", "nothing is cleared");
+  assert.equal(undecided.by["F-01"].fatal, true);
+  assert.match(undecided.by["F-01"].residue?.[0] ?? "", /“Yes” is ticked/);
+  assert.equal(undecided.by["F-02"].fatal, true, "the pre-printed mark");
+  assert.equal(undecided.by["F-04"].fatal, true, "its default “30 minutes”");
+  for (const id of ["F-03", "F-06", "F-07", "F-08", "F-11"]) assert.equal(undecided.by[id].fatal, false, `${id}: a list, opener, label, frame or empty cell left as printed is not an answer`);
+  // A draft: no answer yet, never fatal.
+  assert.ok(fill({}, { draft: true }).outcomes.every((o) => !o.fatal));
+});
+
+test("ADV-4: report-only (strict: false) never makes a FINAL copy that prints a mail-merge field", async () => {
+  const bytes = docx(p(r("Reference: &lt;&lt;P_REF&gt;&gt;")) + tbl(tr(cell("Findings"), cell(""))));
+  const form = formOf(bytes, [field("F-01", "Findings", { kind: "docx", target: "table_cell", blockId: "t0.r0.c1" })]);
+  const file = { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength };
+  for (const strict of [true, false]) {
+    await assert.rejects(() => renderFormFile({ form, file, answers: { "F-01": { text: "Full range." } }, draft: false, format: "original", strict }), /mail-merge field/, `strict ${strict}`);
+  }
+  const draft = await renderFormFile({ form, file, answers: { "F-01": { text: "Full range." } }, draft: true, format: "original", strict: false });
+  assert.match(draft.warnings[0] ?? "", /mail-merge field/);
+});
+
+test("ADV-5: left blank, a label ending in a preposition stays whole; an opener in a printed question stays", () => {
+  const bytes = docx(tbl(tr(cell("Assessment"), cell("Assessed by ……")), tr(cell("Copy"), cell("Copy to …")), tr(cell("Work"), cell("Was she able to …?")), tr(cell("Plan"), cell("Expected to be fit in …"))));
+  const ids = ["F-01", "F-02", "F-03", "F-04"];
+  const placeholders = ["……", "…", "…", "…"];
+  const fields = ids.map((id, i) => field(id, `Box ${i}`, { kind: "docx", target: "replace_placeholder", blockId: `t0.r${i}.c1`, placeholderText: placeholders[i] }));
+  const out = fill(Object.fromEntries(ids.map((id) => [id, { leftBlank: true }])), { form: formOf(bytes, fields), bytes });
+  assert.equal(out.t["t0.r0.c1"], "Assessed by ……");
+  assert.equal(out.t["t0.r1.c1"], "Copy to …");
+  assert.equal(out.t["t0.r2.c1"], "Was she able to …?");
+  assert.equal(out.t["t0.r3.c1"], "", "a clause opener still goes (B3-19)");
+  assert.ok(out.outcomes.every((o) => !o.fatal), JSON.stringify(out.outcomes));
 });

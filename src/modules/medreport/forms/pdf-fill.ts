@@ -23,9 +23,12 @@ import "server-only";
  *
  * bh2 WA2 (plan WA2 design 1): fillPdfReport also returns one FillOutcome per answerable field – written; as printed
  * (nothing to write, or an answer that matches none of the form's boxes or options); not found (no such field, page or
- * box) – read from the problems met while that field was filled. A decided answer not found or not matched is fatal (a
- * FINAL copy is refused, forms/render-form.ts). A box left blank is reported as printed: clearing a PDF's printed
- * defaults is phase 2 (Blue Heart's forms are Word or RTF).
+ * box) – recorded where the fill meets the problem (Ctx.fault; review 26/10: never read back from the warning's words).
+ * A decided answer not found or not matched is fatal (a FINAL copy is refused, forms/render-form.ts), and so is one
+ * whose characters the form's font cannot print (they would show as "?"). The table and tick helpers report through
+ * their warnings: one that says an answer continues on the continuation sheet is informational, any other is fatal.
+ * A box left blank is reported as printed: clearing a PDF's printed defaults is phase 2 (Blue Heart's forms are Word
+ * or RTF).
  *
  * Owner: WA2 (forms engine) – docs/bh2-ownership.json. fillPdf's signature is unchanged.
  */
@@ -314,6 +317,8 @@ interface Ctx {
   warn(message: string): void;
   /** The written form would be wrong (a value cut to fit): onError, else onWarning. */
   error(message: string): void;
+  /** What went wrong at the field being filled (its outcome, plan WA2 design 1): fatal on a decided answer unless said. */
+  fault(outcome: FillOutcomeKind, problem: string, fatal?: boolean): void;
   continuations: Continuation[];
   /** Multi-line text fields written so far, for one font size per printed row (sameRowFontSizes). */
   textBoxes?: Array<{ tf: PDFTextField; page: string; y: number; height: number; size: number }>;
@@ -349,6 +354,7 @@ function encodeAnswer(ctx: Ctx, field: FormField, raw: string): string {
     ctx.warn(
       `${where(field)}: ${lost.length} character${lost.length === 1 ? "" : "s"} (${chars}) cannot be printed with the form's font and appear as “?”. Check the answer on the completed form.`,
     );
+    ctx.fault("written", `${lost.length === 1 ? "a character" : `${lost.length} characters`} of the answer (${chars}) cannot be printed with the form's font and would show as “?”`);
   }
   return text;
 }
@@ -423,6 +429,7 @@ function getPdfField(ctx: Ctx, field: FormField, name: string): PDFField | null 
     return ctx.pdfForm.getField(name);
   } catch {
     ctx.warn(`${where(field)}: the form has no field called “${name}”, so it was left blank. Check the form mapping.`);
+    ctx.fault("not_found", "its place is not on this PDF form");
     return null;
   }
 }
@@ -443,14 +450,20 @@ function fillField(ctx: Ctx, field: FormField, answer: FormFillAnswer, anchor: P
   if (pdfField instanceof PDFCheckBox) {
     const choice = checkBoxChoice(pdfField, anchor, answer);
     if (choice.kind === "set") setCheckBoxState(pdfField, choice.on);
-    else if (choice.kind === "unmatched") ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's tick boxes, so none was ticked.`);
+    else if (choice.kind === "unmatched") {
+      ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's tick boxes, so none was ticked.`);
+      ctx.fault("as_printed", UNMATCHED);
+    }
     return;
   }
   if (pdfField instanceof PDFRadioGroup) {
     if (!text && typeof answer.value !== "boolean") return;
     const opt = pickExportValue(field, anchor, answer, pdfField.getOptions());
     if (opt && pdfField.getOptions().includes(opt)) pdfField.select(opt);
-    else ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's options, so none was selected.`);
+    else {
+      ctx.warn(`${where(field)}: the answer “${text}” does not match any of the form's options, so none was selected.`);
+      ctx.fault("as_printed", UNMATCHED);
+    }
     return;
   }
   if (pdfField instanceof PDFDropdown || pdfField instanceof PDFOptionList) {
@@ -458,11 +471,19 @@ function fillField(ctx: Ctx, field: FormField, answer: FormFillAnswer, anchor: P
     const opt = pickExportValue(field, anchor, answer, pdfField.getOptions());
     if (opt && pdfField.getOptions().includes(opt)) pdfField.select(opt);
     else if (pdfField instanceof PDFDropdown && pdfField.isEditable()) pdfField.select(encodeAnswer(ctx, field, text), true);
-    else ctx.warn(`${where(field)}: the answer “${text}” is not one of the list's options, so it was left blank.`);
+    else {
+      ctx.warn(`${where(field)}: the answer “${text}” is not one of the list's options, so it was left blank.`);
+      ctx.fault("as_printed", UNMATCHED);
+    }
     return;
   }
   ctx.warn(`${where(field)}: “${name}” is not a field that can be filled (button or signature).`);
+  ctx.fault("not_found", NOT_ON_FORM);
 }
+
+/** The outcome problems of a PDF fill (plain words, FillOutcome.note). */
+const NOT_ON_FORM = "its place is not on this PDF form";
+const UNMATCHED = "the answer matches none of the form's boxes or options";
 
 /**
  * One question across several tick-box fields: tick the box of the chosen option and clear the others.
@@ -478,6 +499,7 @@ function fillOptionFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, op
   }
   if (chosen < 0 && !(wanted.kind === "bool" && !wanted.value)) {
     ctx.warn(`${where(field)}: the answer “${answerText(answer)}” does not match any of the form's tick boxes, so none was ticked.`);
+    ctx.fault("as_printed", UNMATCHED);
     return;
   }
   const pick = chosen >= 0 ? options[chosen] : null;
@@ -490,6 +512,7 @@ function fillOptionFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, op
       const on = mine ? onValueFor(pdfField, mine.onValue) : null;
       if (mine && !on) {
         ctx.warn(`${where(field)}: the tick box “${name}” has no “${mine.onValue}” box, so it was left blank. Check the form mapping.`);
+        ctx.fault("not_found", NOT_ON_FORM);
         continue;
       }
       setCheckBoxState(pdfField, on);
@@ -498,6 +521,7 @@ function fillOptionFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, op
       if (exportValue) pdfField.select(exportValue);
     } else {
       ctx.warn(`${where(field)}: “${name}” is not a tick box, so it was left blank. Check the form mapping.`);
+      ctx.fault("not_found", NOT_ON_FORM);
     }
   }
 }
@@ -509,6 +533,7 @@ function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anch
   if (res.kind === "none") return;
   if (res.kind === "not_a_date") {
     ctx.warn(`${where(field)}: the boxes take a date, but the answer “${raw}” is not one, so they were left blank.`);
+    ctx.fault("as_printed", "no date could be read from it for these boxes");
     return;
   }
   if (res.cut) ctx.error(cutError(field, anchor.fieldNames.length, res.value, res.chars.join("")));
@@ -517,6 +542,7 @@ function fillCharFields(ctx: Ctx, field: FormField, answer: FormFillAnswer, anch
     if (!pdfField) return;
     if (!(pdfField instanceof PDFTextField)) {
       ctx.warn(`${where(field)}: “${name}” is not a text box, so it was left blank. Check the form mapping.`);
+      ctx.fault("not_found", NOT_ON_FORM);
       return;
     }
     const ch = res.chars[i] ?? "";
@@ -590,6 +616,7 @@ function drawOverlay(ctx: Ctx, field: FormField, text: string, a: OverlayBox): v
   const page = ctx.doc.getPages()[a.page - 1];
   if (!page) {
     ctx.warn(`${where(field)}: page ${a.page} does not exist in this PDF.`);
+    ctx.fault("not_found", NOT_ON_FORM);
     return;
   }
   const encoded = encodeAnswer(ctx, field, text);
@@ -819,17 +846,15 @@ export function trimPrintMarks(doc: PDFDocument): void {
 }
 
 /**
- * What a problem met while a field was filled says about its outcome (the messages this engine and its table and tick
- * helpers write for a field): null when the answer was still written.
+ * A warning of the table and tick helpers (forms/pdf-table.ts, pdf-overlay-marks.ts) as the field's outcome: one that
+ * says the answer continues on the continuation sheet is informational (the answer is printed in full there); any other
+ * is fatal – a place not on the form, or an answer none of the printed boxes takes – so a reworded warning can only ever
+ * refuse a copy, never let a wrong one through (review 26/10).
  */
-export function pdfProblemOutcome(message: string): { outcome: FillOutcomeKind; problem: string } | null {
-  if (/does not exist in this PDF|has no field called|cannot be written into a PDF|is not a field that can be filled|is not a (?:tick|text) box|has no “[^”]*” box/.test(message)) {
-    return { outcome: "not_found", problem: "its place is not on this PDF form" };
-  }
-  if (/does not match any of the (?:form's|printed) (?:tick boxes|options)|is not one of the list's options|is not one, so they were left blank/.test(message)) {
-    return { outcome: "as_printed", problem: "the answer matches none of the form's boxes or options" };
-  }
-  return null;
+export function helperWarningFault(message: string): { outcome: FillOutcomeKind; problem: string } | null {
+  if (/continuation sheet/.test(message)) return null;
+  if (/does not exist in this PDF|has no field called/.test(message)) return { outcome: "not_found", problem: NOT_ON_FORM };
+  return { outcome: "as_printed", problem: UNMATCHED };
 }
 
 /** The completed PDF and what the fill did at each answerable field (form order). */
@@ -843,11 +868,11 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
 }
 
 export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: PdfFillOptions): Promise<PdfFillReport> {
-  // The problems met per field while it is filled (plan WA2 design 1).
+  // What went wrong per field while it is filled (plan WA2 design 1).
   let current: FormField | null = null;
-  const problems = new Map<FormField, string[]>();
-  const note = (m: string) => {
-    if (current) problems.set(current, [...(problems.get(current) ?? []), m]);
+  const faults = new Map<FormField, Array<{ outcome: FillOutcomeKind; problem: string; fatal: boolean }>>();
+  const fault = (outcome: FillOutcomeKind, problem: string, fatal = true) => {
+    if (current) faults.set(current, [...(faults.get(current) ?? []), { outcome, problem, fatal }]);
   };
   const doc = await loadPdfDocument(buf);
   trimPrintMarks(doc);
@@ -861,13 +886,18 @@ export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answe
     bold,
     encode: makeEncoder(font),
     opts,
-    warn: (m) => {
-      note(m);
-      opts.onWarning?.(m);
-    },
+    warn: (m) => opts.onWarning?.(m),
     error: (m) => (opts.onError ? opts.onError(m) : opts.onWarning?.(m)),
+    fault,
     continuations: [],
   };
+  // The table and tick helpers report through their warnings (helperWarningFault).
+  const helperWarn = (m: string) => {
+    ctx.warn(m);
+    const f = helperWarningFault(m);
+    if (f) fault(f.outcome, f.problem);
+  };
+  const helperCtx: Ctx = { ...ctx, warn: helperWarn };
   if (pdfForm.hasXFA()) {
     pdfForm.deleteXFA();
     ctx.warn("This was an XFA (dynamic) form: its standard fillable fields were used and the dynamic layout was removed.");
@@ -884,12 +914,12 @@ export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answe
     else if (anchor.kind === "pdf_overlay") {
       const text = answerText(answer);
       // A date box with printed slashes takes DD, MM and YYYY in their own slots (pdf-overlay-marks.ts).
-      if (text && !drawOverlayDateSlots(ctx, field, answer, anchor)) drawOverlay(ctx, field, form.uppercase ? text.toLocaleUpperCase("en-GB") : text, anchor);
-    } else if (anchor.kind === "pdf_overlay_ticks") drawOverlayTicks(ctx, field, answer, anchor);
+      if (text && !drawOverlayDateSlots(helperCtx, field, answer, anchor)) drawOverlay(ctx, field, form.uppercase ? text.toLocaleUpperCase("en-GB") : text, anchor);
+    } else if (anchor.kind === "pdf_overlay_ticks") drawOverlayTicks(helperCtx, field, answer, anchor);
     else if (anchor.kind === "pdf_table" || anchor.kind === "pdf_overlay_table") {
       // Table answers (forms/pdf-table.ts); rows beyond the printed table go to the continuation sheet.
       const deps: TableFillDeps = {
-        ...ctx,
+        ...helperCtx,
         fitText,
         wrapText,
         uppercase: Boolean(form.uppercase),
@@ -900,7 +930,10 @@ export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answe
         if (anchor.kind === "pdf_table") await fillPdfFieldTable(deps, field, anchor, answer.rows);
         else drawOverlayTable(deps, field, anchor, answer.rows);
       }
-    } else ctx.warn(`${where(field)}: this question has a Word position, so it cannot be written into a PDF.`);
+    } else {
+      ctx.warn(`${where(field)}: this question has a Word position, so it cannot be written into a PDF.`);
+      fault("not_found", "it has a place on a Word form, not on this PDF form");
+    }
   }
 
   current = null;
@@ -921,7 +954,7 @@ export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answe
     const answer = answers[field.id] ?? {};
     const has = answerText(answer) !== "" || Boolean(answer.rows?.length) || typeof answer.value === "boolean";
     const intended = field.fillSource.kind === "signoff" ? "signoff" : has ? "answer" : "blank";
-    const miss = (problems.get(field) ?? []).map(pdfProblemOutcome).find((x) => x !== null) ?? null;
+    const miss = (faults.get(field) ?? []).find((f) => f.fatal) ?? null;
     if (!has) return { fieldId: field.id, intended, outcome: "as_printed", fatal: false };
     if (miss) return { fieldId: field.id, intended, outcome: miss.outcome, fatal: true, note: miss.problem };
     return { fieldId: field.id, intended, outcome: "written", fatal: false };

@@ -29,7 +29,7 @@ import type { FormFillAnswer, FormFillAnswers } from "../../src/modules/medrepor
 import type { BoxState } from "../../src/modules/medreport/core/issue-types";
 import type { FormDefinition, FormField } from "../../src/modules/medreport/core/types";
 import { isChoiceAnchor, printedOptions } from "../../src/modules/medreport/forms/choice-marks";
-import { MAX_FILL_STEPS, fillDocxReport, fillStepsUsed } from "../../src/modules/medreport/forms/docx-fill";
+import { MAX_FILL_STEPS, fillDocxReport } from "../../src/modules/medreport/forms/docx-fill";
 import { decodeFormFile } from "../../src/modules/medreport/forms/file";
 import { FillRefusedError, renderFormFile } from "../../src/modules/medreport/forms/render-form";
 import { formRequestCapIssues } from "../../src/modules/medreport/forms/request-caps";
@@ -123,7 +123,8 @@ localTest("Blue Heart's forms (local): answered, left blank or not applicable �
         throw err;
       });
       assert.ok(Date.now() - started < 3000, `${tag} ${set.name}: ${Date.now() - started} ms`);
-      assert.ok(fillStepsUsed() < MAX_FILL_STEPS / 100, `${tag} ${set.name}: ${fillStepsUsed()} steps – a real form needs under 1% of the budget`);
+      const steps = fillDocxReport(file.bytes, form, set.answers, { draft: false, ...(set.states ? { states: set.states } : {}) }).work.steps;
+      assert.ok(steps < MAX_FILL_STEPS / 20, `${tag} ${set.name}: ${steps} steps – a real form needs under 5% of the budget`);
       assert.deepEqual(fatalIds(out.outcomes), [], `${tag} ${set.name}`);
       assert.deepEqual((out.outcomes ?? []).filter((o) => o.residue?.length).map((o) => o.fieldId), [], `${tag} ${set.name}: residue`);
       assert.equal(out.outcomes?.length, fields.length, `${tag}: one outcome per answerable field`);

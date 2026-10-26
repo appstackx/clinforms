@@ -18,8 +18,12 @@
  * - text answers on a yes / no or tick box: "Yes…", "True", "Ticked" / "No…", "False" read as yes / no;
  * - a "tick all that apply" row read as text ("Neck, Back"; a mark_cell anchor on a short or long text question): every
  *   printed option named is chosen, "None" / "Nil" chooses none, and anything else named makes the answer unmatched;
- * - otherwise core/forms matchOption (exact, a leading whole option, or the unambiguous start of one).
- * "Not recorded", "Unknown", "N/A"… (core/forms isUnknownAnswer) never choose anything – never a definite "No".
+ * - otherwise core/forms matchOption (exact, a leading whole option, or the unambiguous start of one) – but (review
+ *   26/10) an answer naming two or more printed options of a single choice ("Arm and leg" for "Spine / Arm / Leg") is
+ *   unmatched, never read as its first option; a yes and a no ("Yes – no restrictions") is still read as its first;
+ * "Not recorded", "Unknown", "N/A"… (core/forms isUnknownAnswer) never choose anything – never a definite "No"; nor
+ * (review 26/10) does "No" followed by words that say the information is missing ("No idea", "No info", "No mention in
+ * the notes", "No answer recorded", "No recollection"), whatever a value beside the text says.
  *
  * Pure – no server-only code: core/validation imports it, and core runs in the browser.
  * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
@@ -73,18 +77,47 @@ export function printedOptions(field: Pick<FormField, "anchor" | "options">): st
 const YES_TEXT = /^(?:yes|true|ticked|checked)\b/i;
 const NO_TEXT = /^(?:no|false)\b/i;
 
+/**
+ * "No" followed by words that say the information is missing (Q-1, review 26/10): "No idea", "No info", "No mention in
+ * the notes", "No answer recorded", "No recollection", "No response from the patient". A narrow class of words for
+ * knowing or recording – a clinical negative ("No pain", "No restrictions", "No evidence of instability") stays a No.
+ */
+const NO_BUT_NOT_KNOWN = /^no\s+(?:idea|info|information|mention(?:ed)?|answers?|recollection|memory|knowledge|notes?|record(?:s|ed)?|documentation|data|details|comments?|reply|entry|response\s+(?:from|given|received|recorded|yet))\b/i;
+
+/** The answer says the information is not known (core/forms isUnknownAnswer, or "No" + a word for missing knowledge). */
+function saysNotKnown(text: string, options: readonly string[]): boolean {
+  if (isUnknownAnswer(text, options)) return true;
+  const t = text.trim().replace(/\s+/g, " ");
+  if (options.some((o) => o.trim().replace(/\s+/g, " ").toLowerCase() === t.toLowerCase())) return false;
+  return NO_BUT_NOT_KNOWN.test(t);
+}
+
+/** Two or more printed options named in one answer to a single choice (not a yes beside a no: "Yes – no restrictions"). */
+function namesSeveral(options: readonly string[], text: string): boolean {
+  if (options.length < 2) return false;
+  const { matched } = namedOptions(options, text);
+  if (matched.length < 2) return false;
+  const yes = yesNoOption(options, true);
+  const no = yesNoOption(options, false);
+  return !(matched.length === 2 && yes && no && matched.includes(yes) && matched.includes(no));
+}
+
 /** What `answer` chooses among `options` (the anchor's printed options, in the anchor's order). Pure. */
 export function resolveChoice(field: ChoiceField, answer: ChoiceAnswer, options: readonly string[]): ChoiceResolution {
   const value = answer.value;
   const text = (answer.text ?? "").trim();
   if (isTextGrid(field, answer)) {
     if (!text) return { kind: "none_given" };
-    if (isUnknownAnswer(text, options)) return { kind: "unknown", text };
+    if (saysNotKnown(text, options)) return { kind: "unknown", text };
     const named = namedOptions(options, text);
     return named.unmatched ? { kind: "unmatched", text: named.unmatched } : { kind: "chosen", options: named.matched };
   }
   const yes = yesNoOption(options, true);
   const no = yesNoOption(options, false);
+  // Text that says it is not known, or names several options of a single choice, is never a choice – whatever value
+  // was read from it (review 26/10).
+  if (text && saysNotKnown(text, options)) return { kind: "unknown", text };
+  if (text && namesSeveral(options, text) && !options.some((o) => o.trim().toLowerCase() === text.toLowerCase())) return { kind: "unmatched", text };
   if (typeof value === "boolean") {
     if (options.length === 1) return { kind: "chosen", options: value ? options.slice() : [] };
     const pick = value ? yes : no;
@@ -92,7 +125,7 @@ export function resolveChoice(field: ChoiceField, answer: ChoiceAnswer, options:
   }
   const raw = typeof value === "string" && value.trim() ? value.trim() : text;
   if (!raw) return { kind: "none_given" };
-  if (isUnknownAnswer(raw, options)) return { kind: "unknown", text: raw };
+  if (saysNotKnown(raw, options)) return { kind: "unknown", text: raw };
   if (field.answerType === "yes_no" || field.answerType === "checkbox") {
     if (YES_TEXT.test(raw)) {
       if (options.length === 1) return { kind: "chosen", options: options.slice() };
@@ -103,6 +136,10 @@ export function resolveChoice(field: ChoiceField, answer: ChoiceAnswer, options:
       return options.length === 1 ? { kind: "chosen", options: [] } : { kind: "unmatched", text: raw };
     }
   }
+  const exact = options.find((o) => o.trim().toLowerCase().replace(/\s+/g, " ") === raw.toLowerCase().replace(/\s+/g, " "));
+  if (exact) return { kind: "chosen", options: [exact] };
+  // A single choice answered with several of its printed options is none of them (review 26/10): never the first only.
+  if (namesSeveral(options, raw)) return { kind: "unmatched", text: raw };
   const match = matchOption(options, raw);
   return match ? { kind: "chosen", options: [match] } : { kind: "unmatched", text: raw };
 }
