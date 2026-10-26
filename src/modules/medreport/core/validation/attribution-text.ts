@@ -97,6 +97,9 @@ export interface IgnoreNames {
 const TITLE_NAME = /\b(?:mr|mrs|ms|miss|mx|dr)\.? [a-z][a-z'’-]+\b/g;
 const DATE = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g;
 
+/** Side shorthand in notes, read as the word (content stems only; the text is never rewritten). */
+const SIDE: Readonly<Record<string, string>> = { l: "left", lt: "left", r: "right", rt: "right", bilat: "bilateral" };
+
 /** The content stems of normalised text: claim words and figures, in order (duplicates kept once). */
 export function contentStems(norm: string, ignore: IgnoreNames = { people: [] }): string[] {
   let s = ` ${norm} `.replace(/\[claimant\]/g, " ").replace(TITLE_NAME, " ").replace(DATE, " ");
@@ -106,7 +109,9 @@ export function contentStems(norm: string, ignore: IgnoreNames = { people: [] })
     const whole = m[0].replace(/[’]/g, "'");
     // A hyphenated word counts by its parts ("full-time" is "full time", "pain-free" is "pain free"); figures stay whole.
     const words = /\d/.test(whole) ? [whole] : whole.split("-");
-    for (const w of words) {
+    for (const raw of words) {
+      // A note's side shorthand is the drafted word: "positive FRT L" is "on the left", "SLR 70° R" "on the right".
+      const w = SIDE[raw] ?? raw;
       if (STOP.has(w) || (w.length < 3 && !/\d/.test(w))) continue;
       const st = stem(w);
       if (!out.includes(st)) out.push(st);
@@ -192,6 +197,175 @@ export function stanceOf(norm: string): Stance {
     question: /\?/.test(norm),
     modality: POSSIBLE_RE.test(norm) ? 1 : PROBABLE_RE.test(norm) ? 2 : 3,
   };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Frames: whose statement a note sentence makes, and on what condition (check-WB M1, M2)
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Words that make a note sentence something other than the clinician asserting it: a belief, feeling, worry or wish
+ * ("Pt is worried he will never fully recover", "Wants to return to full duties"), someone's report or question ("GP
+ * told him …", "Asked about being back on full duties"), a third party or another person ("Employer wants him to …",
+ * "His brother made a full recovery"), a risk to watch or a question to rule out ("Risk of chronic pain", "Monitor
+ * for …"), a condition ("when pain allows", "once symptoms settle", "assuming no setbacks"), a refusal ("Employer
+ * refused his request …") or an earlier time ("a 2019 back injury", "previously"). Each is [key, words]: a draft keeps
+ * a frame when it has a word of the same key.
+ */
+const FRAMES: ReadonlyArray<readonly [string, string]> = [
+  ["worry", "worr(?:y|ies|ied|ying)"],
+  ["concern", "concern(?:s|ed|ing)?"],
+  ["fear", "fear(?:s|ed|ful|ing)?|afraid|anxious"],
+  ["think", "think(?:s|ing)?|thought"],
+  ["believe", "believ(?:e|es|ed|ing)|belief"],
+  ["feel", "feel(?:s|ing)?|felt"],
+  ["perceive", "perceiv(?:e|es|ed)|perception"],
+  ["convinced", "convinced|unsure|not sure"],
+  ["doubt", "doubts?|doubted"],
+  ["wonder", "wonder(?:s|ed|ing)?"],
+  ["want", "want(?:s|ed|ing)?"],
+  ["wish", "wish(?:es|ed|ing)?"],
+  ["keen", "keen|eager"],
+  ["like", "would like|'d like|would love"],
+  ["hope", "hop(?:e|es|ed|ing|eful|efully)"],
+  ["ideally", "ideally|ideal"],
+  ["aspire", "aspir(?:e|es|ed|ation|ations)"],
+  ["prefer", "prefer(?:s|red|ence)?"],
+  ["forward", "looking forward|looks forward"],
+  ["tell", "told|tells?|telling"],
+  ["say", "says?|said|saying"],
+  ["report", "report(?:s|ed|ing)?|self-report(?:s|ed)?"],
+  ["state", "states|stated|stating"],
+  ["claim", "claim(?:s|ed|ing)?"],
+  ["ask", "asks?|asked|asking"],
+  ["question", "question(?:s|ed|ing)?"],
+  ["request", "request(?:s|ed|ing)?"],
+  ["according", "according to|as per"],
+  ["gp", "gp|general practitioner|doctor|consultant|surgeon|radiologist"],
+  ["solicitor", "solicitors?|lawyers?|insurers?|case manager"],
+  ["employer", "employers?|managers?|boss|supervisor|occupational health|oh|hr"],
+  ["family", "family|wife|husband|partner|brother|sister|mother|father|son|daughter|friends?|relatives?|parents?|mum|dad|children|child"],
+  ["colleague", "colleagues?|chiropractor|osteopath|coach|teammates?"],
+  ["risk", "risks?|at risk"],
+  ["monitor", "monitor(?:s|ed|ing)?|watch(?:ing)? for|keep an eye on"],
+  ["screen", "screen(?:s|ed|ing)? for"],
+  ["rule out", "rule out|ruled out|ruling out|r/o|exclude|excluded"],
+  ["discuss", "discuss(?:ed|es|ing|ion)?"],
+  ["consider", "consider(?:s|ed|ing|ation)?"],
+  ["await", "await(?:s|ed|ing)?|pending|waiting for"],
+  ["if", "if"],
+  ["unless", "unless"],
+  ["until", "until|till"],
+  ["provided", "provided(?: that)?|providing"],
+  ["as long as", "as long as|so long as"],
+  ["assume", "assum(?:e|es|ed|ing)"],
+  ["depend", "depend(?:s|ent|ing)?"],
+  ["subject to", "subject to"],
+  ["once", "once"],
+  ["whether", "whether"],
+  ["when", "when|whenever"],
+  ["after", "after"],
+  ["refuse", "refus(?:e|es|ed|ing|al)"],
+  ["decline", "declin(?:e|es|ed|ing)"],
+  ["deny", "den(?:y|ies|ied|ying)"],
+  ["reject", "reject(?:s|ed|ing|ion)?"],
+  ["previous", "previous(?:ly)?|prior|formerly|former"],
+  ["before", "before (?:the |his |her |their )?(?:accident|collision|crash|rta|road traffic accident|incident|injury|fall|lift)"],
+  ["pre-injury", "pre-?(?:accident|injury|incident|morbid)"],
+  ["history", "history|hx|pmh"],
+  ["ago", "ago|last year|years ago"],
+  ["earlier", "earlier"],
+  ["similar", "similar"],
+  ["year", "(?:19|20)\\d\\d"],
+];
+const FRAME_RES: ReadonlyArray<readonly [string, RegExp]> = FRAMES.map(([k, w]) => [k, new RegExp(`(?<![a-z0-9'/-])(?:${w})(?![a-z0-9'-])`, "g")]);
+/** "when" and "after" frame a condition only in a clause with no past tense ("Return to full duties when pain allows"). */
+const TIME_FRAMES = new Set(["when", "after"]);
+const PAST_TENSE = /\b(?:was|were|had|did)\b|\b(?!(?:expect|anticipat|predict|forecast|plann|advis|recommend|hop|requir|need|indicat|propos|suggest|intend|schedul|book|arrang|agre)ed\b)[a-z]{3,}ed\b/;
+
+/** The frame keys of normalised text (dates "dd/mm/yyyy" are not years). */
+export function framesIn(norm: string): string[] {
+  const s = norm.replace(DATE, " ");
+  const out: string[] = [];
+  for (const [key, re] of FRAME_RES) {
+    re.lastIndex = 0;
+    if (re.test(s)) out.push(key);
+  }
+  if (PAST_TENSE.test(s)) return out.filter((k) => !TIME_FRAMES.has(k));
+  return out;
+}
+
+/** The frames of `noteScope` that `draft` does not keep (both normalised). */
+export function droppedFrames(noteScope: string, draft: string): string[] {
+  const kept = new Set(framesIn(draft));
+  return framesIn(noteScope).filter((k) => !kept.has(k));
+}
+
+/** A segment that governs its clause from the side: a condition or a report lead ("assuming no setbacks", "according to his GP"). */
+const GOVERNING_LEAD = /^(?:if|unless|until|provided|providing|as long as|so long as|assuming|depending|subject to|once|when|whenever|whether|according to|as per|per)\b/;
+const FRAME_ANY = new RegExp(FRAMES.map(([, w]) => `(?<![a-z0-9'/-])(?:${w})(?![a-z0-9'-])`).join("|"));
+const FRAME_ANY_G = new RegExp(FRAME_ANY.source, "g");
+/** Negators and hedges, as words to take out of a segment (stanceOf reads them). */
+const STANCE_WORDS = /\b(?:not|no|never|neither|nor|nil|without|cannot|unable|yet|unlikely|likely|doubtful|unclear|uncertain|unknown|possible|possibly|probable|probably|perhaps|maybe|query|queried|questionable|suspected|suspect|potential|potentially|at this stage|too early)\b|n't\b|\?/g;
+
+/**
+ * A segment that only modifies its neighbour – a negator, hedge or frame with no claim of its own: "…, probably",
+ * "… – not yet", "…, he hopes", "Possibly, …". A segment with its own content ("no neurological signs") is another
+ * statement, and its negation is not this one's.
+ */
+function isModifier(text: string): boolean {
+  const rest = text.replace(STANCE_WORDS, " ").replace(FRAME_ANY_G, " ");
+  return rest.replace(/\s+/g, " ").trim() !== text.replace(/\s+/g, " ").trim() && contentStems(rest).length === 0;
+}
+
+/**
+ * The part of a note sentence that says [start, end), and so whose stance and frames are its own: the clause's conjunct
+ * segments the span touches, the segments of the clause that govern it from the side (a lead condition or report –
+ * "Assuming no setbacks, …"; a modifier – "…, probably", "… – not yet", "…, he hopes"), and the sentence's inline label
+ * ("Solicitor asks for an opinion: …") – with `exclude` (a quotation's own words) left out. Another conjunct with its own
+ * content ("…, no neurological signs") is not part of it.
+ */
+export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: number, end: number, exclude?: { start: number; end: number }): string {
+  const norm = s.norm;
+  let a = start;
+  while (a > 0 && !/[;:.!?]/.test(norm.charAt(a - 1))) a -= 1;
+  let b = end;
+  while (b < norm.length && !/[;.!?]/.test(norm.charAt(b))) b += 1;
+  const clause = norm.slice(a, b);
+  const parts: string[] = [];
+  for (const g of segmentsOf(clause)) {
+    const gs = a + g.start;
+    const ge = a + g.end;
+    const text = g.text.trim();
+    if (gs < end && start < ge) parts.push(exclude ? `${norm.slice(gs, Math.max(gs, exclude.start))} ${norm.slice(Math.min(ge, exclude.end), ge)}` : norm.slice(gs, ge));
+    else if (ge <= start && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
+    else if (gs >= end && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
+  }
+  if (s.label && a > 0 && norm.slice(0, a).replace(/[\s:]+$/, "").endsWith(s.label)) parts.push(s.label);
+  return parts.join(" ; ");
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Segment stems (bounded work on hostile text – check-WB M6)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** At most this many conjunct segments make one claim or one note window (a longer run is never one statement). */
+export const MAX_WINDOW_SEGMENTS = 12;
+/** A drafted claim with more conjunct segments than this is not anchored segment by segment (it blocks in an opinion place). */
+export const MAX_CLAIM_SEGMENTS = 40;
+
+const segmentCache = new Map<string, { segs: Segment[]; stems: string[][] }>();
+
+/** A normalised text's segments and each one's content stems (remembered for the last few hundred texts). */
+export function segmentStems(norm: string, ignore?: IgnoreNames): { segs: Segment[]; stems: string[][] } {
+  const key = `${(ignore?.people ?? []).join("|")}\u0000${norm}`;
+  const hit = segmentCache.get(key);
+  if (hit) return hit;
+  const segs = segmentsOf(norm);
+  const out = { segs, stems: segs.map((g) => contentStems(g.text, ignore)) };
+  if (segmentCache.size >= 512) segmentCache.clear();
+  segmentCache.set(key, out);
+  return out;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -285,6 +459,27 @@ export function clauseAround(norm: string, start: number, end: number): string {
   let b = end;
   while (b < norm.length && !/[;.!]/.test(norm.charAt(b))) b += 1;
   return norm.slice(a, b + (norm.charAt(b) === "?" ? 1 : 0)).trim();
+}
+
+/**
+ * What a drafted sentence says around a quotation at [start, end) of its normalised text: the rest of the conjunct
+ * segments of the quotation's own clause that the quotation touches ("he was not “fit for full duties”" → "he was
+ * not"), never another conjunct ("there were no red flags and the pain was “…”") or a clause before a ";" or ":" – a
+ * framed quotation's frame ("Tom Ellis recorded on 06/05/2026:") says nothing about it.
+ */
+export function quoteOutside(norm: string, start: number, end: number): string {
+  let a = start;
+  while (a > 0 && !/[;:.!?]/.test(norm.charAt(a - 1))) a -= 1;
+  let b = end;
+  while (b < norm.length && !/[;.!?]/.test(norm.charAt(b))) b += 1;
+  const clause = norm.slice(a, b);
+  const parts: string[] = [];
+  for (const g of segmentsOf(clause)) {
+    const gs = a + g.start;
+    const ge = a + g.end;
+    if (gs < end && start < ge) parts.push(`${norm.slice(gs, Math.max(gs, start))} ${norm.slice(Math.min(ge, end), ge)}`);
+  }
+  return parts.join(" ").replace(/["“”]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /* ------------------------------------------------------------------------------------------------

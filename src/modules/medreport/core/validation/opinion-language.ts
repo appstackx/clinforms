@@ -22,7 +22,23 @@
  *   need for treatment ("needs more physiotherapy", "is advised", "is not required") – and every present or future
  *   modal clause ("needs to", "is required to", "has to", "should", "will", "must", "aims to", "would", "can", "may")
  *   is a need, a plan, an ability or a prediction that a note must record (the anti-deny-list mutations).
- * - A verbatim quotation of a cited note by the clinician the sentence names is never checked inside its quotes.
+ * - check-WB (26/10/2026) fix round:
+ *   - M1: a pattern with its own allow (work status, restriction, causal wording, holder) never absorbs the need,
+ *     plan, ability or prediction beside it – "He will return to full duties" is judged as "will return" too, which
+ *     the note must record (what blocks on production still blocks); a condition, wish, refusal or question in the
+ *     note sentence keeps it from anchoring (attribution-text.ts frames).
+ *   - M2: findAnchor and the causal allow accept only the clinician's own statement – not the patient's worry,
+ *     belief, feeling or wish, a GP's or employer's words, another person, a risk to monitor or an earlier time –
+ *     unless the draft keeps that frame.
+ *   - M5: recall in other words – "consistent with / in keeping with / compatible with / typical of a …", "responsible
+ *     for", "originates from", "cleared for work", "signed off as fit", "no ongoing limitations", "regained full
+ *     function", "doing well", "good progress", "for good", "not going to go away", "on track to", "a good chance",
+ *     "appropriate", "a candidate for", "he'll …", "in a fortnight".
+ *   - Approver acceptances clear only a narrated work-status return the accepted note records (minor 1); an origin
+ *     this build does not know is checked (minor 2).
+ * - A verbatim quotation of a cited note by the clinician the sentence names is never checked inside its quotes – and
+ *   is verbatim only when it is the note's whole statement (attribution-anchor.ts quotedVerbatim: a quotation that
+ *   leaves out a "not", a hedge, a "?", a goal label, a weaker modal or a condition is checked like any other words).
  * - Origins: drafted text ("ai") is blocking and never acknowledged; text edited or written by staff (origin "edited"
  *   or "staff", or a person's paragraph stamped by someone other than the approver) is blocking and only the approving
  *   clinician may acknowledge it (ackPolicy "approver"); the approver's own words (origin "clinician" not stamped by
@@ -38,13 +54,14 @@
 import type { Note, Paragraph, Report, ReportFlag, ReportSection } from "../types";
 import { findAnchor, quotedVerbatim, type NoteAnchor } from "./attribution-anchor";
 import { unsupportedNegatives } from "./attribution-negatives";
-import { clinicianNames, draftSentences, holderAt, sameName, sha256HexSync, type DraftSentence, type Holder } from "./attribution-text";
+import { clinicianNames, draftSentences, droppedFrames, holderAt, quoteOutside, sameName, sha256HexSync, type DraftSentence, type Holder } from "./attribution-text";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { defineHook, hookEnabled } from "./hooks";
 import type { ValidatorInput } from "./registry";
 import { noteSourceText } from "./sources";
 import { escapeRegExp, normaliseForMatch } from "./text";
 import { sentenceKey } from "../text/sentences";
+import { expandNoteShorthand } from "../voice";
 
 /* Ledger hooks (ledger.json). Each applies only while hookEnabled(id) (the corpus disables them one by one). */
 export const STATUS_RECORDED = defineHook("statusRecorded");
@@ -142,7 +159,7 @@ const NOT_A_FACT_BEFORE =
  * avoiding lifting", "other than running", "full duties: no").
  */
 const NOT_A_FACT_AFTER =
-  /\b(?:not|\w+n't|never|yet|cannot|unable|should|would|could|may|might|will|must|(?:un)?likely|unrealistic|plan\w*|expect\w*|anticipat\w*|hop(?:e|es|ed|ing)|aim\w*|goals?|target\w*|until|unless|if|pending|due|other than)\b|^(?: ?:|,? (?:from|by|within|next|soon|for|but|except|apart|only|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b|,? in (?:\d|a |an |the next |several )[^ ]* ?(?:days?|weeks?|months?|fortnight))|\?$/;
+  /\b(?:not|\w+n't|never|yet|cannot|unable|should|would|could|may|might|will|must|(?:un)?likely|unrealistic|plan\w*|expect\w*|anticipat\w*|hop(?:e|es|ed|ing)|aim\w*|goals?|target\w*|until|unless|if|pending|due|other than)\b|\b(?:before|prior to) (?:the |his |her |their )?(?:accident|collision|crash|rta|incident|injury|fall|lift)\b|^(?: ?:|,? (?:from|by|within|next|soon|for|but|except|apart|only|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b|,? in (?:\d|a |an |the next |several )[^ ]* ?(?:days?|weeks?|months?|fortnight))|\?$/;
 
 /** A note's history fields (always its last lines) describe life before the injury, never a current status. */
 const HISTORY_FIELDS = /\b(?:past medical history|social history): [^\n]*/g;
@@ -353,7 +370,24 @@ function sameCausalWording(hit: OpinionHit, source: string): boolean {
   }
   if (!prev || !next || skippedBefore.length > 3 || skippedAfter.length > 3) return false;
   const gap = "(?:[a-z0-9'-]+ ){0,3}";
-  return noteRecords(source, `${escapeRegExp(prev)} ${gap}caus(?:e|es|ed|ing) ${gap}${escapeRegExp(next)}`);
+  const recorded = `${escapeRegExp(prev)} ${gap}caus(?:e|es|ed|ing) ${gap}${escapeRegExp(next)}`;
+  // Said by the clinician, not the patient's belief or report ("He believes the pain was caused by …") – unless the
+  // draft says whose it is (check-WB M2).
+  return noteRecords(source, recorded) && framesKeptInSource(source, recorded, `${hit.before} ${hit.phrase} ${hit.after}`);
+}
+
+/** Whether some sentence of `source` that records `recorded` as a fact frames it only as the draft does (attribution-text.ts frames). */
+function framesKeptInSource(source: string, recorded: string, draft: string): boolean {
+  const text = source.replace(HISTORY_FIELDS, "");
+  const re = new RegExp(`\\b(?:${recorded})\\b`, "g");
+  for (let r = re.exec(text); r !== null; r = re.exec(text)) {
+    const end = r.index + r[0].length;
+    const before = textBefore(text, r.index, SENTENCE_END);
+    const after = textAfter(text, end, SENTENCE_END);
+    if (NOT_A_FACT_BEFORE.test(before) || NOT_A_FACT_AFTER.test(after)) continue;
+    if (droppedFrames(`${before} ${r[0]} ${after}`, draft).length === 0) return true;
+  }
+  return false;
 }
 
 /** B2-1: "in Tom Ellis's opinion" passes only when a cited note (that clinician's – the holder rule) records an opinion. */
@@ -368,6 +402,9 @@ const SUBJECT_MODAL =
 
 /** Months that look like "may": "in May", "by May 2027", "May 2026". */
 const MONTH_MAY_BEFORE = /\b(?:in|on|of|by|since|until|from|during|early|late|mid|end of|beginning of|before|after)\s+$/;
+
+/** The label of the work-status and return pattern (the one phrase an approver may accept as their note's words). */
+export const RETURN_LABEL = "return to normal work or activity";
 
 /** The phrase list. Order matters only for the order of flags. */
 export const OPINION_PATTERNS: readonly OpinionPattern[] = [
@@ -386,6 +423,10 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "recovery", kind: "outcome", re: /\bsymptom[- ]free\b|\b(?:is|are|was|were|be|been|being|now|remains?|remained|became|become|feels?|felt) (?:now |completely |totally |fully |entirely )?(?:pain|problem|trouble)[- ]free\b(?! (?:lumbar|cervical|thoracic|active|passive|range|movement|motion|flexion|extension|rotation|walking|sitting|standing|squat|lifting|knee|hip|shoulder|neck|back))|\bfree (?:of|from) (?:all |any |his |her |their )?(?:symptoms?|pain)\b|\basymptomatic\b/g },
   { label: "recovery", kind: "outcome", re: /\b(?:has|have|had|is|are|was|were) (?:now |fully |completely |all |since )?(?:settled|cleared(?: up)?|gone away|gone(?! (?:back|to|on|into|out|up|down|through|off|in)\b)|disappeared|subsided|abated|ceased|vanished|eased off|worn off)\b/g },
   { label: "recovery", kind: "outcome", re: /\bno longer\b/g },
+  // check-WB M5: the same claim in everyday words.
+  { label: "recovery", kind: "outcome", re: /\bon the mend\b|\bas good as new\b|\bback on (?:his|her|their) feet\b|\bbounced back\b|\bdoing (?:very |really |extremely )?well\b|\b(?:good|excellent|great|steady|significant|remarkable|satisfactory|slow|limited|poor|no) progress\b|\bprogressing (?:very |really )?well\b/g },
+  { label: "recovery", kind: "outcome", re: /\b(?:fully|completely) functional\b|\b(?:full|normal) function\b|\bregain(?:ed|s|ing)? (?:his |her |their )?(?:full |normal |complete )?(?:function|movement|strength|range|mobility|fitness)\b/g },
+  { label: "recovery", kind: "outcome", re: /\bno (?:ongoing|residual|lasting|remaining|persisting) (?:limitations?|restrictions?|problems?|symptoms?|issues?|impairment|disability|effects?|deficits?)\b/g },
   {
     label: "recovery",
     kind: "outcome",
@@ -397,7 +438,7 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   {
     // bh2 (C-ATTR-1): a return to a FULL level of work or activity – normal, full, usual, regular, all, pre-injury
     // ("returned to full duties" from a note's "back on amended duties" is a strengthened status).
-    label: "return to normal work or activity",
+    label: RETURN_LABEL,
     kind: "outcome",
     re: new RegExp(`\\b(?:back (?:to|on|at|in)|return(?:ed|ing|s)? to|resum(?:e|ed|es|ing)) (?:all )?(?:his |her |their |the )?(?:normal|full|usual|regular|pre-?(?:accident|injury|incident))${STATUS_TAIL}`, "g"),
     allow: statusRecorded,
@@ -406,6 +447,7 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   },
   { label: "prediction", kind: "outcome", re: /\bwill (?:make an? |go on to |continue to )?(?:recover|resolve|settle|improve|heal|return|be able|need|require|have|experience|suffer|remain|persist)\w*/g },
   { label: "prediction", kind: "outcome", re: /\b(?:should|would) (?:recover|resolve|settle|improve|heal)\w*/g },
+  { label: "prediction", kind: "outcome", re: /\b(?:he|she|they|it|we|i|you)'(?:ll|d) [a-z]+/g },
   { label: "prediction", kind: "outcome", re: /\b(?:should|would|could|may|might) (?:now )?be (?:able|fit|ready|back)\b/g },
   { label: "prediction", kind: "outcome", re: /\bcould (?:now )?(?:return|resume|go back|get back)\b/g },
   { label: "prediction", kind: "outcome", re: /\b(?:expected|anticipated|predicted|forecast) to\b/g },
@@ -418,11 +460,13 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "prediction", kind: "outcome", re: /\blikelihood\b/g },
   { label: "prognosis", kind: "outcome", re: /\bprognos(?:is|es|tic)\b/g },
   { label: "prognosis", kind: "outcome", re: /\b(?:outlook|prospects?)\b/g },
+  { label: "prognosis", kind: "outcome", re: /\b(?:good|fair|reasonable|high|low|small|slim|strong|every) (?:chance|likelihood|possibility)\b|\bforesee(?:n|able)?\b|\bon track (?:to|for)\b|\b(?:i|we)'d (?:expect|anticipate|predict)\b/g },
   { label: "timeframe", kind: "outcome", re: new RegExp(`\\bwithin (?:the next |a further |another )?${RANGE} ${PERIOD}\\b`, "g") },
   { label: "timeframe", kind: "outcome", re: new RegExp(`\\bin (?:the next |a further |another )?${RANGE} ${PERIOD}'? time\\b`, "g") },
   { label: "timeframe", kind: "outcome", re: new RegExp(`\\b${RANGE} ${PERIOD} (?:from|after|post|following) (?:the )?${EVENT}\\b`, "g") },
   { label: "timeframe", kind: "outcome", re: new RegExp(`\\b${RANGE} ${PERIOD} post-${EVENT}\\b`, "g") },
   { label: "timeframe", kind: "outcome", re: /\b(?:over|in) the (?:coming|next few|following) (?:days|weeks|months)\b|\bin (?:due )?time\b/g },
+  { label: "timeframe", kind: "outcome", re: /\b(?:in|within) (?:a|one|another|the next) (?:week|fortnight|month|year)(?:'s time)?\b/g },
 
   // Permanence
   { label: "permanence", kind: "outcome", re: /\bpermanent(?:ly)?\b/g },
@@ -433,6 +477,7 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "permanence", kind: "outcome", re: /\birreversible\b|\b(?:be |been )?reversed\b|\breversible\b/g },
   { label: "permanence", kind: "outcome", re: /\ba lasting\b|\blasting (?:weakness|damage|effects?|impairment|disability|problems?|symptoms?|restrictions?|limitations?|pain|stiffness)\b|\bfor (?:the rest of (?:his|her|their) )?life\b|\bhere to stay\b|\bleft with\b|\bforever\b/g },
   { label: "permanence", kind: "outcome", re: /\bnever (?:fully |completely )?(?:recover|regain|return|resolve|heal|settle|go away|get better|be the same)\w*/g },
+  { label: "permanence", kind: "outcome", re: /\bfor good\b|\b(?:not|never) (?:going|likely|expected) to (?:go away|disappear|resolve|clear|settle|improve)\b|\bwon't (?:go away|disappear|resolve|clear|settle|improve)\b|\bnot (?:go away|disappear|resolve|clear up)\b/g },
 
   // Causation
   { label: "causation", re: /\bcaus(?:ed|ation|al|ally|ative)\b/g, allow: sameCausalWording, hook: SAME_CAUSAL_WORDING },
@@ -442,6 +487,11 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "causation", re: new RegExp(`\\bdue to (?:the |this |that |his |her |their )?${EVENT}\\b`, "g") },
   { label: "causation", re: /\bsecondary to\b/g },
   { label: "causation", re: new RegExp(`\\bconsistent with (?:the |this |that |his |her |their )?(?:reported )?(?:${EVENT}|mechanism)\\b`, "g") },
+  // check-WB M5: any article, the injury's own words, and the other ways of saying it.
+  { label: "causation", re: new RegExp(`\\b(?:consistent with|in keeping with|compatible with|typical of|characteristic of|in line with) (?:the |this |that |his |her |their |a |an )?(?:[a-z-]+ ){0,3}?(?:${EVENT}|mechanism|impact|whiplash(?:-associated disorder)?|trauma|collision|strain|sprain)\\b`, "g") },
+  { label: "causation", re: /\bresponsible for (?:his |her |their |the |this |these )?(?:[a-z-]+ ){0,2}?(?:pain|symptoms?|injur(?:y|ies)|condition|problems?|stiffness|restrictions?|limitations?|disability)\b/g },
+  { label: "causation", re: /\boriginat(?:e|es|ed|ing) (?:from|in)\b|\bset (?:it|this|them|(?:the|his|her|their) (?:pain|symptoms?)) off\b/g },
+  { label: "causation", re: new RegExp(`\\b(?:${EVENT}) (?:has |had )?(?:gave|given|left) (?:him|her|them)\\b|\\b(?:injur(?:y|ies)|pain|whiplash|strain|sprain|damage) from (?:the |this |that |his |her |their |a |an )?(?:[a-z-]+ ){0,2}?${EVENT}\\b`, "g") },
   { label: "causation", re: new RegExp(`\\b(?:${EVENT})-? ?related\\b`, "g") },
   { label: "causation", re: new RegExp(`\\brelated to (?:the |this |that |his |her |their )?${EVENT}\\b`, "g") },
   { label: "causation", re: /\bwould not have (?:occurred|happened|developed|arisen)\b/g },
@@ -464,9 +514,11 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "fitness for work", kind: "outcome", re: /\b(?:un)?fit (?:for|to)\b[^.;:!?]{0,80}?\b(?:work|duties|duty|employment|job|role|shifts?)\b/g },
   { label: "fitness for work", kind: "outcome", re: /\b(?:no|without) (?:further |any )?(?:restrictions?|limitations?)\b/g, allow: sameRestrictionWording, hook: SAME_RESTRICTION_WORDING },
   { label: "fitness for work", kind: "outcome", re: /\b(?:in)?capable of\b|\bready (?:for|to)\b/g },
+  { label: "fitness for work", kind: "outcome", re: /\bcleared (?:for|to)\b|\bsigned off (?:as )?(?:fully )?fit\b|\bgood to go\b/g },
 
   // The need for treatment, advice and recommendations (present and future – a past "I advised" reports a recorded act)
   { label: "need for treatment", re: /\b(?:needs?|requires?)\b|\bneed for\b|\b(?:is|are|was|were|be|been|not) (?:not )?(?:needed|required|necessary|indicated|warranted)\b/g },
+  { label: "need for treatment", re: /\b(?:is|are|was|were|be|been|seems?|remains?) (?:clinically |entirely |also |still )?(?:appropriate|justified|warranted|worthwhile|worth (?:continuing|pursuing|trying)|beneficial|advisable)\b|\b(?:good |suitable |an appropriate )?candidate for\b/g },
   { label: "advice", re: /\b(?:is|are|be|being|been) (?:strongly )?(?:advised|recommended|suggested)\b|\b(?:i|we) (?:would )?(?:strongly )?(?:recommend|advise|suggest)\b|\brecommend(?:s|ing)\b|\badvis(?:es|ing|able)\b|\b(?:my|our) recommendations?\b|\bbenefit from\b/g },
 
   // Modal clauses (the anti-deny-list: "needs to", "is required to", "has to", "should", "will", "must", "aims to" …)
@@ -483,6 +535,7 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "credibility", re: /\b(?:exaggerat|malinger|embellish|feign)\w*/g },
   { label: "credibility", re: /\b(?:symptom magnification|non-? ?organic|functional overlay|waddell)\w*/g },
   { label: "credibility", re: /\b(?:genuine|credible|reliable|honest|consistent) (?:historian|account|presentation|witness)\b/g },
+  { label: "credibility", re: /\b(?:symptoms?|pain|account|presentation|complaints?|history) (?:is|are|was|were|appears?|seems?) (?:entirely |wholly |completely |fully )?(?:genuine|credible|plausible|reliable)\b/g },
   { label: "liability", re: /\b(?:negligen\w*|liab(?:le|ility)|at fault|to blame)\b/g },
 
   // Whose opinion it is (B2-1): "In Tom Ellis's opinion …" names an opinion – a cited note by that clinician must record one.
@@ -541,14 +594,36 @@ export function rawOpinionHits(norm: string): RawHit[] {
       all.push({ pattern, label: pattern.label, phrase, start, end, hit: { phrase, before: textBefore(norm, start, CLAUSE_END), after: textAfter(norm, end, CLAUSE_END) } });
     }
   }
-  // Keep the widest: drop a hit inside another one (ties: the earlier pattern).
+  // Keep the widest: drop a hit inside another one (ties: the earlier pattern). Sorted by start, then the longest first,
+  // a hit lies inside an earlier one exactly when some earlier hit reaches as far (linear after the sort – M6).
+  const order = all.map((h, i) => ({ h, i })).sort((a, b) => a.h.start - b.h.start || b.h.end - a.h.end || a.i - b.i);
+  // (As below, a hit with its own allow never swallows one without.)
   const wide: Array<{ h: RawHit; i: number }> = [];
-  const order = all.map((h, i) => ({ h, i })).sort((a, b) => b.h.end - b.h.start - (a.h.end - a.h.start) || a.i - b.i);
-  for (const o of order) if (!wide.some((k) => k.h.start <= o.h.start && o.h.end <= k.h.end)) wide.push(o);
-  // Two hits that share words read one claim: the earlier pattern judges it ("is expected to" is one prediction;
-  // "can return to normal activities" is the return pattern's, which refuses a modal before it – statusRecorded).
+  let reachAll = -1;
+  let reachAllowed = -1;
+  for (const o of order) {
+    const allowed = Boolean(o.h.pattern.allow);
+    if (o.h.end <= reachAll || (allowed && o.h.end <= reachAllowed)) continue;
+    wide.push(o);
+    if (allowed) reachAllowed = Math.max(reachAllowed, o.h.end);
+    else reachAll = Math.max(reachAll, o.h.end);
+  }
+  // Two hits that share words read one claim: the earlier pattern judges it ("is expected to" is one prediction). But
+  // a pattern with its own allow (the work-status, restriction, causal and holder rules) never absorbs a need, plan,
+  // ability or prediction beside it: "He will return to full duties" over a note's "Return to full duties when pain
+  // allows" is judged as the prediction "will return" too, which the note must record (check-WB M1 – the differential
+  // principle: what blocks on production still blocks).
+  const absorbAll = new Uint8Array(norm.length + 1);
+  const absorbAllowed = new Uint8Array(norm.length + 1);
   const kept: RawHit[] = [];
-  for (const { h } of wide.sort((a, b) => a.i - b.i)) if (!kept.some((k) => k.start < h.end && h.start < k.end)) kept.push(h);
+  for (const { h } of wide.sort((a, b) => a.i - b.i)) {
+    const allowed = Boolean(h.pattern.allow);
+    let absorbed = false;
+    for (let c = h.start; c < h.end && !absorbed; c++) absorbed = absorbAll[c] === 1 || (allowed && absorbAllowed[c] === 1);
+    if (absorbed) continue;
+    kept.push(h);
+    (allowed ? absorbAllowed : absorbAll).fill(1, h.start, h.end);
+  }
   return kept.sort((a, b) => a.start - b.start);
 }
 
@@ -595,7 +670,9 @@ function quotedSpans(s: DraftSentence, notes: readonly Note[], holder: string | 
   for (const m of [...Array.from(s.norm.matchAll(/"([^"]{3,})"/g)), ...Array.from(s.norm.matchAll(/(?:^|[\s(])'([^']{3,}?)'(?=[\s.,;:!?)]|$)/g))]) {
     const inner = m[1];
     const at = (m.index ?? 0) + m[0].indexOf(inner);
-    const verbatim = Boolean(quotedVerbatim(normaliseForMatch(inner), notes, holder ?? null));
+    // What the sentence says outside the quotation keeps a negation, hedge or frame the quotation leaves out (M3).
+    const outside = quoteOutside(s.norm, at, at + inner.length);
+    const verbatim = Boolean(quotedVerbatim(normaliseForMatch(expandNoteShorthand(inner)), notes, holder ?? null, outside));
     out.push({ start: at, end: at + inner.length, verbatim });
   }
   return out;
@@ -606,18 +683,24 @@ export function sentenceSha(sentence: string): string {
   return sha256HexSync(sentenceKey(sentence));
 }
 
-/** Whether the approver accepted `phrase` in `sentence` as their own cited note's words (an entry by the approver). */
-function acceptedByApprover(section: ReportSection, report: Pick<Report, "approver">, phrase: string, sentence: string, notes: readonly Note[], cited: readonly string[]): boolean {
+/**
+ * Whether the approver accepted this hit in `sentence` as their own cited note's words (an entry by the approver). Only
+ * what Khuram's decision (26/10/2026) lets them accept counts, whatever is stored (check-WB minor 1): a drafted
+ * work-status or return line told as a past narrative (narratedReturn) that the accepted note – theirs, and cited –
+ * records (noteRecordsReturn). Any other stored entry clears nothing.
+ */
+function acceptedByApprover(section: ReportSection, report: Pick<Report, "approver">, raw: RawHit, sentence: string, notes: readonly Note[], cited: readonly string[]): boolean {
   if (!hookEnabled(APPROVER_ACCEPTANCE)) return false;
   const approver = report.approver;
   if (!approver || !section.accepted?.length) return false;
+  if (raw.label !== RETURN_LABEL || !narratedReturn(raw.hit)) return false;
   const sha = sentenceSha(sentence);
   return section.accepted.some((a) => {
-    if (a.check !== "OPINION_LANGUAGE" || a.phrase !== phrase || a.sentenceSha !== sha) return false;
+    if (a.check !== "OPINION_LANGUAGE" || a.phrase !== raw.phrase || a.sentenceSha !== sha) return false;
     if (a.by.memberId !== approver.memberId || !a.by.canSign) return false;
     if (!a.noteId || !cited.includes(a.noteId)) return false;
     const note = notes.find((n) => n.id === a.noteId);
-    return Boolean(note) && sameName(note!.author.name, approver.name);
+    return Boolean(note) && sameName(note!.author.name, approver.name) && noteRecordsReturn(raw.hit, normaliseForMatch(noteSourceText(note!)));
   });
 }
 
@@ -665,7 +748,7 @@ export function judgeParagraphOpinions(input: {
         const clause = clauseOf(s, raw);
         anchor = findAnchor({ phrase: raw.phrase, sentence: clause, notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) } });
       }
-      const accepted = !anchor && acceptedByApprover(section, report, raw.phrase, s.text, notes, cited);
+      const accepted = !anchor && acceptedByApprover(section, report, raw, s.text, notes, cited);
       hits.push({ ...raw, anchor, accepted, holder: hName });
     }
     out.push({ sentence: s, hits });
@@ -738,12 +821,16 @@ export function authorshipOf(p: Pick<Paragraph, "origin"> & { by?: { memberId: s
       return "person";
     case "from_records":
       return "record";
-    default: {
+    case "clinician": {
       const by = p.by;
       if (by && report.approver && by.memberId !== report.approver.memberId) return "person";
       if (by && !report.approver) return "person";
       return "approver";
     }
+    default:
+      // An origin this build does not know (paragraph origins are an open set): checked, and only the approving
+      // clinician may acknowledge it – never taken as the approver's own words (check-WB minor 2; design 4).
+      return "person";
   }
 }
 

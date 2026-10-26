@@ -11,9 +11,12 @@
 import type { Clinician, FormDefinition, FormField, Note, Report, SignerConfirmation } from "../types";
 import { sameClinician } from "../voice";
 
-const ASSESSOR = /\b(?:assess(?:ing|or|ors|ed by|ment by)|examin(?:ing|er|ed by)|clinician (?:who|that) assessed)\b/i;
-const TREATING = /\b(?:treat(?:ing|ed by|ment (?:given|provided) by)|clinician (?:who|that) treated)\b/i;
-const REGISTRATION = /\b(?:hcpc|csp|registration|regist(?:ered|ry))\b[^.;]{0,30}?\b(?:no\.?|number|num|reg|id)\b|\bregistration number\b|\bhcpc\b|\bcsp (?:no|number|membership)\b/i;
+const ASSESSOR =
+  /\b(?:assess(?:ing|or|ors|ed by|ment by)|examin(?:ing|er|ed by)|(?:who|that) (?:assessed|examined|saw|has seen)\b|(?:who|that) (?:carried out|conducted|performed|undertook|completed|did) the (?:[a-z-]+ )?(?:assessment|examination)|(?:conducting|carrying out|performing|undertaking|completing) the (?:[a-z-]+ )?(?:assessment|examination)|(?:assessment|examination) (?:was )?(?:carried out|conducted|performed|undertaken|completed|done) by|seen by)\b/i;
+const TREATING =
+  /\b(?:treat(?:ing|ed by|ment (?:given|provided|delivered) by)|(?:who|that) (?:treated|has treated|is treating)\b|(?:who|that) (?:provided|gave|delivered|is providing) (?:the |his |her |their )?(?:[a-z-]+ )?(?:treatment|care|physiotherapy|rehabilitation)|(?:providing|delivering|giving|responsible for)(?: the| his| her| their)? (?:[a-z-]+ )?(?:treatment|care|physiotherapy|rehabilitation))\b/i;
+const REGISTRATION =
+  /\b(?:hcpc|csp|registration|regist(?:ered|ry)|professional body|reg)\b\.?[^.;]{0,30}?\b(?:no\.?|number|num|reg|id|pin)\b|\bregistration number\b|\bhcpc\b|\bcsp (?:no|number|membership)\b|\breg\.? ?no\b/i;
 
 /** A registration number as compared: no spaces, upper case. */
 export const normaliseRegistration = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();

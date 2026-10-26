@@ -345,7 +345,9 @@ test("opinion: a note that says the opposite, or names another activity, does no
     ["He can't return to normal duties.", "Not yet back on normal duties."],
   ];
   for (const [draft, note] of cases) {
-    assert.deepEqual(opinionLabels(draft, note), ["return to normal work or activity"], `${draft} | ${note}`);
+    // bh2 check-WB M1: a modal beside the return ("He can return …") is judged as well – the return is flagged either way.
+    const labels = opinionLabels(draft, note);
+    assert.ok(labels.includes("return to normal work or activity"), `${draft} | ${note}: ${labels.join(", ")}`);
   }
 });
 

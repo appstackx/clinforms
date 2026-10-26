@@ -9,13 +9,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SOLICITOR_RTA_TEMPLATE } from "../../templates/registry";
 import { requiredConfirmations, signVoiceOwner } from "../../api/handlers/sign/checks/voice";
-import type { Clinician, FormDefinition, Note, Report } from "../types";
-import { findAnchor, quotedVerbatim } from "./attribution-anchor";
+import type { Clinician, FormDefinition, Note, Paragraph, Report } from "../types";
+import { anchorClaim, findAnchor, quotedVerbatim } from "./attribution-anchor";
 import { namedActs, wrongClinician } from "./attribution-clinician-named";
-import { acceptNoteWords, noteWordsOffers, offeredFixes } from "./attribution-fixes";
+import { acceptNoteWords, attributionActions, noteWordsOffers, offeredFixes } from "./attribution-fixes";
 import { negativeFindings, negativeRecorded } from "./attribution-negatives";
 import { defaultVoiceOwner } from "./attribution-owner";
+import { requiredConfirmations as confirmationsFor } from "./attribution-confirmations";
 import { commentarySentences } from "./draft-fit/commentary";
+import { authorshipOf, rawOpinionHits, sentenceSha } from "./opinion-language";
 import { validateReport } from "./index";
 import { para, testBundle, testReport, withSection } from "./test-fixtures";
 import { normaliseForMatch } from "./text";
@@ -297,4 +299,194 @@ test("sign-time confirmations: an assessor sign-off the approver did not assess,
   const other = requiredConfirmations(report("PH-DEMO-07"), form, SARAH);
   assert.deepEqual(other.map((c) => [c.kind, c.value]), [["own_registration_number", "PH-DEMO-07"]]);
   assert.deepEqual(requiredConfirmations(report("PH-DEMO-01"), null, SARAH), [], "no form, nothing to confirm");
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * check-WB review (26/10/2026): frames, conditions, truncated quotations, the wrong clinician's other forms, the
+ * opinion-box rule without a word list, approver acceptance re-checked, unknown origins, hostile sizes
+ * ----------------------------------------------------------------------------------------------*/
+
+const subjectFlags = (r: Report, pid: string) => validateReport(r, SOL).blocking.filter((f) => f.paragraphId === pid && (f.code === "OPINION_LANGUAGE" || f.code === "OTHER_CLINICIAN_VOICE"));
+
+function drafted(text: string, notes: Record<string, Partial<Note>>, opts: { box?: string; cites?: string[]; basis?: Paragraph["basis"]; origin?: Paragraph["origin"] } = {}): { report: Report; pid: string } {
+  const b = testBundle();
+  for (const [id, over] of Object.entries(notes)) {
+    const i = b.notes.findIndex((n) => n.id === id);
+    b.notes[i] = { ...b.notes[i], subjective: "", objective: "", assessment: "", plan: "", ...over } as Note;
+  }
+  const p = para(text, opts.cites ?? Object.keys(notes), { ...(opts.basis ? { basis: opts.basis } : {}), ...(opts.origin ? { origin: opts.origin } : {}) });
+  return { report: { ...withSection(testReport(SOL, b), opts.box ?? "progress_current_status", [p]), approver: SARAH_APPROVER }, pid: p.id };
+}
+
+test("findAnchor frames (M2): someone's worry, belief, feeling, wish, report or condition does not anchor the clinician's opinion – unless the draft keeps the frame", () => {
+  const rows: Array<[name: string, phrase: string, sentence: string, fields: Partial<Note>, anchored: boolean]> = [
+    ["a worry", "never fully recover", "He will never fully recover.", { subjective: "Pt is worried he will never fully recover." }, false],
+    ["the worry kept", "never fully recover", "He is worried he will never fully recover.", { subjective: "Pt is worried he will never fully recover." }, true],
+    ["a belief", "make a full recovery", "He will make a full recovery.", { subjective: "Pt thinks he will make a full recovery." }, false],
+    ["a feeling", "fully recovered", "He has fully recovered.", { subjective: "Feels fully recovered." }, false],
+    ["the feeling kept", "fully recovered", "He feels fully recovered.", { subjective: "Feels fully recovered." }, true],
+    ["a GP's words", "make a full recovery", "He will make a full recovery.", { subjective: "GP told him he will make a full recovery." }, false],
+    ["another person", "made a full recovery", "He made a full recovery.", { subjective: "His brother made a full recovery from a similar injury." }, false],
+    ["an earlier injury", "made a full recovery", "He has made a full recovery.", { subjective: "Had made a full recovery from a 2019 back injury." }, false],
+    ["a risk", "chronic", "He has chronic pain.", { assessment: "Risk of chronic pain." }, false],
+    ["to monitor", "chronic", "He has chronic pain.", { assessment: "Monitor for chronic pain." }, false],
+    ["hopefully", "full recovery", "Full recovery in 6 weeks.", { assessment: "Hopefully full recovery in 6 weeks." }, false],
+    ["a solicitor's question as the label", "permanent", "There is a permanent restriction of neck movement.", { subjective: "Solicitor asks for an opinion: permanent restriction of neck movement." }, false],
+    ["a wish", "return to full duties", "He will return to full duties next month.", { subjective: "Wants to return to full duties next month." }, false],
+    ["a condition (when)", "return to full duties", "He will return to full duties.", { assessment: "Return to full duties when pain allows." }, false],
+    ["a condition (once)", "return to full duties", "He will return to full duties.", { assessment: "Return to full duties once symptoms settle." }, false],
+    ["a lead condition", "full recovery", "Full recovery in 6 weeks.", { assessment: "Assuming no setbacks, full recovery in 6 weeks." }, false],
+    ["a refusal", "return to full duties", "He will return to full duties.", { subjective: "Employer refused his request to return to full duties." }, false],
+    ["a question asked", "can return", "He can return to normal duties.", { subjective: "Asking when he can return to normal duties." }, false],
+    ["the clinician's own statement", "fit for full duties", "He is fit for full duties.", { assessment: "Pt keen to get back to running, lumbar ROM full, fit for full duties." }, true],
+    ["a past 'after' is narrative", "fully recovered", "He fully recovered after 6 sessions.", { assessment: "Fully recovered after 6 sessions." }, true],
+  ];
+  for (const [name, phrase, sentence, fields, anchored] of rows) {
+    const a = findAnchor({ phrase: normaliseForMatch(phrase), sentence: normaliseForMatch(sentence), notes: [note(fields)], kind: "outcome" });
+    assert.equal(Boolean(a), anchored, name);
+  }
+});
+
+test("the overlap rule (M1): a pattern with its own allow never absorbs the prediction beside it", () => {
+  const labels = (t: string) => rawOpinionHits(normaliseForMatch(t)).map((h) => `${h.label}:${h.phrase}`);
+  assert.deepEqual(labels("He will return to full duties."), ["prediction:will return", "return to normal work or activity:return to full duties"]);
+  assert.deepEqual(labels("He is expected to return to normal duties."), ["prediction:is expected", "return to normal work or activity:return to normal duties"], "two predictions sharing words are one claim");
+  for (const [n, text] of [
+    ["Return to full duties when pain allows.", "He will return to full duties."],
+    ["Wants to return to full duties next month.", "He will return to full duties next month."],
+    ["Employer refused his request to return to full duties.", "He will return to full duties."],
+    ["Asked about being back on full duties next month.", "He should be back on full duties next month."],
+  ] as const) {
+    const r = drafted(text, { "N-001": { assessment: n } });
+    assert.ok(subjectFlags(r.report, r.pid).length > 0, `${text} | ${n}`);
+  }
+  const ok = drafted("He will return to full duties next month.", { "N-001": { assessment: "Will return to full duties next month." } });
+  assert.deepEqual(subjectFlags(ok.report, ok.pid), [], "the note records the same prediction");
+});
+
+test("quotations (M3): a quotation that leaves out a negator, hedge, '?', goal label, weaker modal or condition is a misquotation", () => {
+  const q = (s: string) => normaliseForMatch(s);
+  const rows: Array<[name: string, quoted: string, fields: Partial<Note>, ok: boolean, outside?: string]> = [
+    ["'not' left out", "fit for full duties", { assessment: "Not fit for full duties." }, false],
+    ["the whole statement", "not fit for full duties", { assessment: "Not fit for full duties." }, true],
+    ["'not' kept outside the quotation", "fit for full duties", { assessment: "Not fit for full duties." }, true, "he was not"],
+    ["'unlikely' left out", "make a full recovery", { assessment: "Unlikely to make a full recovery." }, false],
+    ["'?' left out", "permanent restriction of lumbar flexion", { assessment: "?Permanent restriction of lumbar flexion." }, false],
+    ["'Goal:' left out", "full recovery in 6 weeks", { plan: "Goal: full recovery in 6 weeks." }, false],
+    ["the label quoted", "goal: full recovery in 6 weeks", { plan: "Goal: full recovery in 6 weeks." }, true],
+    ["a condition left out", "full recovery expected in 6 weeks", { assessment: "Full recovery expected in 6 weeks if he complies with HEP." }, false],
+    ["a lead condition left out", "full recovery in 6 weeks", { assessment: "Assuming no setbacks, full recovery in 6 weeks." }, false],
+    ["'should' left out", "make a full recovery", { assessment: "Should make a full recovery." }, false],
+    ["the patient's worry left out", "he will never fully recover", { subjective: "Pt is worried he will never fully recover." }, false],
+    ["another conjunct's negative is not this statement's", "fit for full duties", { assessment: "Lumbar ROM full, no neurological signs, fit for full duties." }, true],
+  ];
+  for (const [name, quoted, fields, ok, outside] of rows) {
+    assert.equal(Boolean(quotedVerbatim(q(quoted), [note(fields, TOM)], "Tom Ellis", outside ?? "")), ok, name);
+  }
+  const box = drafted("Tom Ellis recorded on 06/05/2026: “fit for full duties”.", { "N-002": { assessment: "Not fit for full duties." } }, { box: "prognosis", basis: "clinician_opinion_recorded" });
+  assert.ok(subjectFlags(box.report, box.pid).length > 0, "in the opinion box");
+  const inline = drafted("The pain was “caused by the lifting incident”.", { "N-001": { assessment: "Not caused by the lifting incident." } });
+  assert.ok(subjectFlags(inline.report, inline.pid).length > 0, "inline, the approver's own note");
+});
+
+test("the wrong clinician (M4): stated / wrote / reported, 'according to', 'per', title and surname, a role between, an attribution suffix", () => {
+  const people = ["Sarah Reid", "Tom Ellis"];
+  const n1 = testBundle().notes.filter((n) => n.id === "N-001");
+  for (const t of [
+    "Tom Ellis stated that lumbar flexion was 50% limited.",
+    "Tom Ellis wrote that lumbar flexion was 50% limited.",
+    "Tom Ellis reported that lumbar flexion was 50% limited.",
+    "According to Tom Ellis, lumbar flexion was 50% limited.",
+    "Lumbar flexion was 50% limited, per Tom Ellis.",
+    "Mr Ellis recorded that lumbar flexion was 50% limited.",
+    "Tom Ellis, our senior physiotherapist, recorded that lumbar flexion was 50% limited.",
+    "Lumbar flexion was 50% limited (Tom Ellis, 18/03/2026).",
+  ]) {
+    const acts = namedActs(t, people, { patientSurname: "Testcase" });
+    assert.ok(acts.length > 0 && acts.some((a) => wrongClinician(a, n1)), t);
+  }
+  assert.deepEqual(namedActs("Mr Testcase reported pain of 7/10.", ["Sarah Reid", "Tom Testcase"], { patientSurname: "Testcase" }), [], "the patient's surname is never a clinician's");
+  const seen = drafted("He was seen by Tom Ellis on 01/04/2026, who advised rest.", { "N-001": { subjective: "Seen by Tom Ellis on 01/04/2026 while SR on leave; advised rest." } });
+  assert.deepEqual(validateReport(seen.report, SOL).flags.filter((f) => f.paragraphId === seen.pid && /names Tom Ellis/.test(f.evidence ?? "")), [], "the cited note's own account of his act");
+});
+
+test("the opinion-box rule (M5): every content segment is held by a cited note or the record – no word list", () => {
+  for (const text of ["He is doing well.", "Excellent progress.", "Normal function.", "His back is as good as new.", "His presentation was consistent with a lumbar disc prolapse."]) {
+    const r = drafted(text, { "N-001": testBundle().notes[0] }, { box: "prognosis", basis: "clinician_opinion_recorded" });
+    assert.ok(subjectFlags(r.report, r.pid).length > 0, text);
+  }
+  const ok = drafted("His presentation was consistent with acute mechanical low back pain.", { "N-001": testBundle().notes[0] }, { box: "prognosis", basis: "clinician_opinion_recorded" });
+  assert.deepEqual(subjectFlags(ok.report, ok.pid), [], "held by the approver's own cited note");
+  for (const text of [
+    "His injuries are consistent with a rear-end collision.",
+    "His symptoms are in keeping with the lifting incident.",
+    "The lifting incident is responsible for his back pain.",
+    "His pain originates from the lifting incident.",
+    "He has been cleared for work.",
+    "He has been signed off as fit.",
+    "He has no ongoing limitations at work.",
+    "He has regained full function.",
+    "The stiffness is there for good.",
+    "The pain is not going to go away.",
+  ]) {
+    const r = drafted(text, { "N-001": testBundle().notes[0] });
+    assert.ok(subjectFlags(r.report, r.pid).length > 0, text);
+  }
+});
+
+test("approver acceptance (minor 1): a stored entry clears only a narrated return the accepted note records", () => {
+  const text = "He will never fully recover and the accident caused his permanent disability.";
+  const r = drafted(text, { "N-001": testBundle().notes[0] });
+  const by = { memberId: "mem_sarah", name: "Sarah Reid", role: "clinician" as const, canSign: true };
+  const before = subjectFlags(r.report, r.pid);
+  assert.ok(before.length > 0);
+  const accepted = before.map((f) => ({ check: "OPINION_LANGUAGE", phrase: (f.evidence ?? "").toLowerCase(), sentenceSha: sentenceSha(text), noteId: "N-001", by, at: "2026-10-26T10:00:00.000Z" }));
+  const forged = { ...r.report, sections: r.report.sections.map((s) => (s.key === "progress_current_status" ? { ...s, accepted } : s)) } as Report;
+  assert.equal(subjectFlags(forged, r.pid).length, before.length, "nothing else is ever accepted");
+});
+
+test("an unknown paragraph origin is checked (minor 2: fail closed)", () => {
+  assert.equal(authorshipOf({ origin: "imported" as never }, { approver: SARAH_APPROVER }), "person");
+  assert.equal(authorshipOf({ origin: "clinician" }, { approver: SARAH_APPROVER }), "approver");
+});
+
+test("sign-time confirmations (minor 7): the generic assessor, treating and registration labels", () => {
+  const b = testBundle();
+  const tomOnly = { ...b, notes: b.notes.map((n) => ({ ...n, author: TOM })) };
+  const ask = (label: string, fillSource: unknown, value = "") =>
+    confirmationsFor({ sections: value ? [{ key: "R1", paragraphs: [{ text: value }] }] : [], bundleSnapshot: tomOnly } as unknown as Report, { fields: [{ id: "R1", label, fillSource, answerType: "short_text" }] } as unknown as Pick<FormDefinition, "fields">, SARAH).map((c) => c.kind);
+  for (const label of ["Physiotherapist who saw the claimant", "Clinician who carried out the assessment", "Physiotherapist conducting the initial assessment"]) assert.deepEqual(ask(label, { kind: "signoff", part: "name" }), ["assessed_patient"], label);
+  for (const label of ["Clinician providing treatment", "Physio responsible for treatment"]) assert.deepEqual(ask(label, { kind: "signoff", part: "name" }), ["treated_patient"], label);
+  for (const label of ["Reg. no", "Professional body number"]) assert.deepEqual(ask(label, { kind: "static" }, "PH-DEMO-02"), ["own_registration_number"], label);
+  assert.deepEqual(ask("Name of the person who completed this form", { kind: "signoff", part: "name" }), [], "not an assessor label");
+});
+
+test("'Accept as my note's words' and 'Remove the note link' are report actions any review engine can list (minor 6)", () => {
+  const b = testBundle();
+  b.notes.push(note({ id: "N-003", date: "2026-03-20", subjective: "Took 3 days off work after the lifting incident, then back on normal duties with breaks from lifting." }));
+  const p = para("He took 3 days off work before going back to normal duties.", ["N-003"], { basis: "patient_reported" });
+  const report = withSection({ ...testReport(SOL, b), approver: SARAH_APPROVER }, "incident_history", [p]);
+  const validated = { ...report, flags: validateReport(report, SOL).flags };
+  assert.deepEqual(attributionActions(validated, { actor: SARAH_ACTOR }).map((a) => a.kind), ["accept-note-words"]);
+  assert.ok(offeredFixes(validated, { actor: SARAH_ACTOR, template: SOL }).some((f) => f.kind === "accept-note-words"));
+});
+
+test("hostile sizes (M6): an opinion box of thousands of comma segments and a note sentence of thousands are validated in linear time", () => {
+  for (const n of [400, 4000]) {
+    const commas = Array.from({ length: n }, (_, i) => `w${i}`).join(", ");
+    const r = drafted(`He will recover, ${commas}.`, { "N-001": testBundle().notes[0] }, { box: "prognosis", basis: "clinician_opinion_recorded" });
+    const t0 = Date.now();
+    const flags = subjectFlags(r.report, r.pid);
+    const ms = Date.now() - t0;
+    // Linear: well under a second here; the O(S^4) search took 52 s at 400 segments.
+    assert.ok(ms < 10_000, `${n} segments: ${ms} ms`);
+    assert.ok(flags.length > 0, "a claim no note holds still blocks");
+    const claim = anchorClaim({ clause: `He will recover, ${commas}`, notes: [testBundle().notes[0]] });
+    assert.ok(claim.segments.every((g) => g.anchor === null));
+  }
+  const long = Array.from({ length: 3000 }, (_, i) => `x${i}`).join(", ");
+  const r = drafted("He will make a full recovery.", { "N-001": { assessment: `Will make a full recovery, ${long}.` } });
+  const t0 = Date.now();
+  subjectFlags(r.report, r.pid);
+  assert.ok(Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
 });

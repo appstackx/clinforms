@@ -46,7 +46,7 @@ import { defaultVoiceOwner } from "./attribution-owner";
 import { clinicianNames, noteSentences, sameName, type DraftSentence } from "./attribution-text";
 import { commentarySentences } from "./draft-fit/commentary";
 import { defineHook, hookEnabled } from "./hooks";
-import { judgeParagraphOpinions, narratedReturn, noteRecordsReturn, sentenceSha } from "./opinion-language";
+import { RETURN_LABEL, judgeParagraphOpinions, narratedReturn, noteRecordsReturn, sentenceSha } from "./opinion-language";
 import { noteSourceText } from "./sources";
 import { normaliseForMatch } from "./text";
 import { expandNoteShorthand } from "../voice";
@@ -319,7 +319,7 @@ export function noteWordsOffers(report: Report, actor: Pick<Actor, "memberId" | 
         // One phrase at a time, and only when it is the sentence's only open phrase: a need, plan or prediction beside it is not accepted.
         if (open.length !== 1) continue;
         const h = open[0];
-        if (h.label !== "return to normal work or activity" || !narratedReturn(h.hit)) continue;
+        if (h.label !== RETURN_LABEL || !narratedReturn(h.hit)) continue;
         const note = own.find((n) => noteRecordsReturn(h.hit, normaliseForMatch(noteSourceText(n))));
         if (!note) continue;
         const words = h.phrase.split(/\s+/).pop() ?? "";
@@ -377,8 +377,33 @@ export interface OfferedAttributionFix {
 }
 
 /**
- * Every WB one-click fix offered to `actor` on `report` (its flags already validated), each with its own apply. "Name X
- * instead" is offered by the review's own nameClinicianFix (ui/components/review/fixes.ts) and is not repeated here.
+ * WB's one-click actions that are not text fixes (a FixProposal is a text before/after): "Accept as my note's words"
+ * (ReportSection.accepted) and "Remove the note link" (Paragraph.sourceIds). Any review engine that lists one-click
+ * fixes lists these too – WD's offeredFixes in ui/components/review/fixes.ts concatenates them with the generators'
+ * proposals (check-WB minor 6: without them Khuram's one-click acceptance disappears).
+ */
+export function attributionActions(report: Report, ctx: { actor: Actor }): OfferedAttributionFix[] {
+  const out: OfferedAttributionFix[] = [];
+  for (const section of report.sections) {
+    for (const p of section.paragraphs) {
+      for (const flag of report.flags.filter((f) => f.paragraphId === p.id && !f.acknowledged)) {
+        const unlink = noteLinkToRemove(report, section, p, flag, ctx.actor);
+        if (unlink && !out.some((o) => o.kind === "remove-note-link" && o.key === section.key)) {
+          out.push({ kind: "remove-note-link", label: "Remove the note link", key: section.key, apply: (r) => removeNoteLink(r, section.key, p.id, unlink, ctx.actor) });
+        }
+      }
+    }
+  }
+  for (const offer of noteWordsOffers(report, ctx.actor)) {
+    out.push({ kind: "accept-note-words", label: offer.label, key: offer.sectionKey, apply: (r) => acceptNoteWords(r, offer, ctx.actor) });
+  }
+  return out;
+}
+
+/**
+ * Every WB one-click fix offered to `actor` on `report` (its flags already validated), each with its own apply: the
+ * generators' proposals (ATTRIBUTION_FIX_GENERATORS but "Name X instead", which the review's own nameClinicianFix in
+ * ui/components/review/fixes.ts offers) and attributionActions.
  */
 export function offeredFixes(report: Report, ctx: { actor: Actor; form?: FormDefinition | null; template?: ReportTemplate }): OfferedAttributionFix[] {
   const out: OfferedAttributionFix[] = [];
@@ -393,18 +418,13 @@ export function offeredFixes(report: Report, ctx: { actor: Actor; form?: FormDef
               out.push({ kind: prop.generator, label: prop.label, key: prop.sectionKey, apply: (r) => applyAttributionProposal(r, prop, ctx.actor) });
             }
           }
-          const unlink = noteLinkToRemove(report, section, p, flag, ctx.actor);
-          if (unlink && !out.some((o) => o.kind === "remove-note-link" && o.key === section.key)) {
-            out.push({ kind: "remove-note-link", label: "Remove the note link", key: section.key, apply: (r) => removeNoteLink(r, section.key, p.id, unlink, ctx.actor) });
-          }
         }
       }
     }
   } finally {
     generatorForm = null;
   }
-  for (const offer of noteWordsOffers(report, ctx.actor)) {
-    out.push({ kind: "accept-note-words", label: offer.label, key: offer.sectionKey, apply: (r) => acceptNoteWords(r, offer, ctx.actor) });
-  }
-  return out;
+  const actions = attributionActions(report, ctx);
+  // The order the review lists them: the text fixes, "Remove the note link", then the acceptances.
+  return [...out, ...actions];
 }

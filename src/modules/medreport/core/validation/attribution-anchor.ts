@@ -8,8 +8,13 @@
  * one: "in X's opinion" anchors only to a note X wrote) holds it, and that sentence
  * - is not a goal, aim, plan, target, STG or LTG (by its inline label, its words, or – for an outcome such as a
  *   recovery, a return or fitness – the note's plan field), and not a question;
- * - has no negator or hedge before or after the phrase in its clause (not, no, never, unlikely, doubtful, unclear,
- *   possible, "?", not yet, at this stage, if, whether …);
+ * - has no negator or hedge in the part of the sentence that says it – its conjunct segments, a modifier beside them
+ *   (", probably", " – not yet") and a lead condition (attribution-text.ts frameScope) – that the draft drops (not, no,
+ *   never, unlikely, doubtful, unclear, possible, "?", not yet, at this stage, if, whether …);
+ * - is the clinician's own statement (check-WB M1, M2): no belief, worry, feeling, wish, someone else's report or
+ *   question, third party, another person, risk or monitoring, condition (when / once / after / provided / assuming /
+ *   until / unless), refusal or earlier time frames it – unless the draft keeps that frame ("He is worried he will
+ *   never fully recover");
  * - is not weaker than the draft (no may → is: the draft's modal strength may not exceed the note's), with the same
  *   polarity (the draft does not negate what the note asserts);
  * - holds every content word of the drafted clause around the phrase (so a changed figure, a different cause or an
@@ -25,7 +30,7 @@
  * Pure; browser and server. Owner: WB (opinion guard and attribution) – docs/bh2-ownership.json.
  */
 import type { Note } from "../types";
-import { clauseAround, contentStems, covers, noteSentences, sameName, segmentsOf, stanceOf, wordIndexOf, type IgnoreNames, type NoteSentence } from "./attribution-text";
+import { MAX_CLAIM_SEGMENTS, MAX_WINDOW_SEGMENTS, contentStems, covers, droppedFrames, frameScope, noteSentences, sameName, segmentStems, segmentsOf, stanceOf, wordIndexOf, type IgnoreNames, type NoteSentence, type Segment } from "./attribution-text";
 import { defineHook, hookEnabled } from "./hooks";
 import { normaliseForMatch } from "./text";
 
@@ -59,8 +64,6 @@ export interface FindAnchorInput {
   ignore?: IgnoreNames;
 }
 
-/** Words that say the phrase is not asserted, before or after it in its clause. */
-const NOT_ASSERTED = /\b(?:not|no|never|neither|nor|nil|without|cannot|unable|unlikely|doubtful|unclear|uncertain|unknown|possible|possibly|probable|probably|perhaps|maybe|query|queried|questionable|suspected|potential|potentially|if|whether|unless|until)\b|n't\b|\?|\bnot yet\b|\bat this stage\b|\btoo early\b/;
 /** The goal and plan words that frame a note sentence. */
 const GOAL_WORDS = /\b(?:goals?|aims?|aiming|targets?|objectives?|stg|ltg|hopes?|hoping|plans?|planned|planning|intends?|intended|expectations?)\b/;
 
@@ -74,24 +77,52 @@ function noteOk(s: NoteSentence, kind: FindAnchorInput["kind"], draft: { goal: b
   return true;
 }
 
+/** A run of a note sentence's text: [start, end) and the text. */
+export interface NoteSpan {
+  start: number;
+  end: number;
+  text: string;
+}
+
 /**
  * The shortest run of a note sentence's conjunct segments that holds every one of `want` (and, when given, the span
  * [mustStart, mustEnd)) – the part of the note that says it, whose own negation, hedges and modality count (a "no
  * neurological signs" later in the sentence does not negate "consistent with whiplash-associated disorder grade II").
+ * Bounded (check-WB M6): each segment's stems are read once, and a run is at most MAX_WINDOW_SEGMENTS segments – a
+ * longer one is never one statement – so the work is linear in the sentence.
  */
-export function coveringWindow(norm: string, want: readonly string[], ignore?: IgnoreNames, must?: { start: number; end: number }): string | null {
-  const segs = segmentsOf(norm);
+export function coveringSpan(norm: string, want: readonly string[], ignore?: IgnoreNames, must?: { start: number; end: number }): NoteSpan | null {
+  const { segs, stems } = segmentStems(norm, ignore);
   if (segs.length === 0) return null;
-  let best: string | null = null;
+  let best: { start: number; end: number } | null = null;
   for (let i = 0; i < segs.length; i++) {
-    for (let j = i; j < segs.length; j++) {
-      if (must && !(segs[i].start <= must.start && must.end <= segs[j].end)) continue;
-      const text = norm.slice(segs[i].start, segs[j].end);
-      if (best !== null && text.length >= best.length) continue;
-      if (covers(want, contentStems(text, ignore)).ok) best = text;
+    if (must && segs[i].start > must.start) break;
+    const have: string[] = [];
+    for (let j = i; j < segs.length && j < i + MAX_WINDOW_SEGMENTS; j++) {
+      for (const st of stems[j]) have.push(st);
+      if (must && segs[j].end < must.end) continue;
+      if (best !== null && segs[j].end - segs[i].start >= best.end - best.start) break;
+      if (covers(want, have).ok) {
+        best = { start: segs[i].start, end: segs[j].end };
+        break;
+      }
     }
   }
-  return best;
+  return best ? { ...best, text: norm.slice(best.start, best.end) } : null;
+}
+
+/** The text of coveringSpan (see there). */
+export function coveringWindow(norm: string, want: readonly string[], ignore?: IgnoreNames, must?: { start: number; end: number }): string | null {
+  return coveringSpan(norm, want, ignore, must)?.text ?? null;
+}
+
+/**
+ * Whether the note sentence asserts what [start, end) says by itself (check-WB M2): no belief, worry, wish, report,
+ * third party, risk, condition, refusal or earlier time frames it (attribution-text.ts frameScope) – unless the drafted
+ * clause keeps that frame ("He is worried he will never fully recover").
+ */
+function framesKept(s: NoteSentence, start: number, end: number, draft: string): boolean {
+  return droppedFrames(frameScope(s, start, end), draft).length === 0;
 }
 
 /** Where one cited note sentence asserts `phrase` (see the file header), or null. */
@@ -106,8 +137,12 @@ export function findAnchor(input: FindAnchorInput): NoteAnchor | null {
   const segs = segmentsOf(clause);
   const touched = at0 < 0 ? segs : segs.filter((g) => g.start < at0 + phrase.length && at0 < g.end);
   const run = touched.length ? clause.slice(touched[0].start, touched[touched.length - 1].end) : clause;
-  // The stance is the clause's (a negation, hedge, goal or modal anywhere in the drafted clause), the content the run's.
-  const dStance = stanceOf(clause);
+  // The stance is the part of the drafted clause that says it – the segments the phrase touches, with their modifiers
+  // and lead conditions ("He will not, in my opinion, return …") – not another conjunct ("…, with neck pain and no
+  // neurological signs"); the content is the run's.
+  // A goal, plan or recommendation frame anywhere in the drafted clause ("His recommendation … was a phased return …")
+  // still makes it a plan statement.
+  const dStance = { ...stanceOf(at0 < 0 ? clause : frameScope({ norm: clause, label: null }, at0, at0 + phrase.length)), goal: stanceOf(clause).goal };
   const want = contentStems(run, input.ignore);
   for (const note of input.notes) {
     if (input.holder && !sameName(note.author.name, input.holder)) continue;
@@ -116,15 +151,16 @@ export function findAnchor(input: FindAnchorInput): NoteAnchor | null {
       const at = wordIndexOf(s.norm, phrase);
       if (at < 0) continue;
       // The part of the note sentence that says it: the phrase's clause, widened to the drafted claim's content words.
-      const window = coveringWindow(s.norm, want, input.ignore, { start: at, end: at + phrase.length });
+      const window = coveringSpan(s.norm, want, input.ignore, { start: at, end: at + phrase.length });
       if (!window) continue;
-      const around = clauseAround(s.norm, at, at + phrase.length);
-      // A negator or hedge before or after the phrase means the note does not assert it – unless the draft says the same
-      // ("Not fit for full warehouse duties at present" drafted as "was not fit for full warehouse duties at present").
-      const n = stanceOf(around);
-      if (NOT_ASSERTED.test(around.replace(phrase, " ")) && !NOT_ASSERTED.test(phrase)) {
-        if (n.negated !== dStance.negated || !n.hedges.every((h) => dStance.hedges.includes(h))) continue;
-      }
+      // The part of the note that says it (the window, a lead condition, a modifier, the label – attribution-text.ts
+      // frameScope): said by the clinician, not someone's worry, wish, report or condition (unless the draft says whose
+      // it is), and with no negator or hedge the draft drops ("Not fit for full warehouse duties at present" drafted as
+      // "was not fit for full warehouse duties at present" keeps it). Another conjunct's own negation ("…, no
+      // neurological signs") is not this statement's.
+      const scope = frameScope(s, window.start, window.end);
+      if (droppedFrames(scope, clause).length > 0) continue;
+      const n = stanceOf(scope);
       if (n.negated !== dStance.negated) continue;
       if (!n.hedges.every((h) => dStance.hedges.includes(h))) continue;
       if (dStance.modality > n.modality) continue;
@@ -159,8 +195,10 @@ export function anchorClause(input: AnchorClauseInput): NoteAnchor | null {
       if (!covers(want, s.stems).ok) continue;
       // The part of the note that holds the claim decides its stance ("…fit for a phased return; he should avoid
       // lifting" – the second clause's "should" does not weaken the first, "no neurological signs" does not negate it).
-      const holding = coveringWindow(s.norm, want, input.ignore) ?? s.norm;
-      const n = stanceOf(holding);
+      const span = coveringSpan(s.norm, want, input.ignore);
+      if (span && !framesKept(s, span.start, span.end, clause)) continue;
+      // Its stance: the window with its modifiers and lead conditions (frameScope), not another conjunct's.
+      const n = stanceOf(span ? frameScope(s, span.start, span.end) : s.norm);
       if (n.negated !== d.negated) continue;
       if ((s.goalLabel || n.goal) && !d.goal) continue;
       if (!n.hedges.every((h) => d.hedges.includes(h))) continue;
@@ -182,10 +220,29 @@ export interface ClaimAnchors {
  * twice a week" is held by three sentences of the note, while one conjunct ("fit for normal duties") is never pieced
  * together from two.
  */
+/** "consistent with", "in keeping with", "compatible with", "associated with", "in line with": the opinion and its object are one statement. */
+const OPINION_WITH = /\b(?:consistent|keeping|compatible|associated|line|accordance)$/;
+
+/** A claim's conjunct segments, an opinion and its "with …" object kept together (see OPINION_WITH). */
+export function claimSegments(claim: string, ignore?: IgnoreNames): { segs: Segment[]; stems: string[][] } {
+  const base = segmentStems(claim, ignore);
+  if (!base.segs.some((g) => OPINION_WITH.test(g.text.trim()))) return base;
+  const segs: Segment[] = [];
+  for (const g of base.segs) {
+    const last = segs[segs.length - 1];
+    if (last && OPINION_WITH.test(last.text.trim()) && /^\s+with\s+$/.test(claim.slice(last.end, g.start))) {
+      segs[segs.length - 1] = { start: last.start, end: g.end, text: claim.slice(last.start, g.end) };
+    } else segs.push(g);
+  }
+  return { segs, stems: segs.map((g) => contentStems(g.text, ignore)) };
+}
+
 export function anchorClaim(input: AnchorClauseInput): ClaimAnchors {
   const claim = normaliseForMatch(input.clause);
-  const segs = segmentsOf(claim);
-  const out: ClaimAnchors["segments"] = segs.map((g) => ({ text: g.text, content: contentStems(g.text, input.ignore).length > 0, anchor: null }));
+  const { segs, stems } = claimSegments(claim, input.ignore);
+  const out: ClaimAnchors["segments"] = segs.map((g, k) => ({ text: g.text, content: stems[k].length > 0, anchor: null }));
+  // A claim of more segments than one statement ever has is not pieced together (check-WB M6): nothing is anchored.
+  if (segs.length > MAX_CLAIM_SEGMENTS) return { segments: out };
   let i = 0;
   while (i < segs.length) {
     if (!out[i].content) {
@@ -193,7 +250,7 @@ export function anchorClaim(input: AnchorClauseInput): ClaimAnchors {
       continue;
     }
     let done = false;
-    for (let j = segs.length - 1; j >= i; j--) {
+    for (let j = Math.min(segs.length, i + MAX_WINDOW_SEGMENTS) - 1; j >= i; j--) {
       const a = anchorClause({ ...input, clause: claim.slice(segs[i].start, segs[j].end) });
       if (!a) continue;
       for (let k = i; k <= j; k++) out[k].anchor = a;
@@ -206,15 +263,36 @@ export function anchorClaim(input: AnchorClauseInput): ClaimAnchors {
   return { segments: out };
 }
 
-/** Whether `quoted` (normalised, shorthand written out) is word for word in one sentence of a cited note by `holder`. */
-export function quotedVerbatim(quoted: string, notes: readonly Note[], holder: string | null): NoteAnchor | null {
+/** A goal or plan label outside the quotation, a negator, hedge, "?", weaker modal or condition, or a dropped frame. */
+function quoteDropsStance(s: NoteSentence, at: number, quoted: string, outside: string): boolean {
+  const scope = frameScope(s, at, at + quoted.length, { start: at, end: at + quoted.length });
+  const rest = stanceOf(scope);
+  const kept = stanceOf(outside);
+  if (rest.negated && !kept.negated) return true;
+  if (!rest.hedges.every((h) => kept.hedges.includes(h) || quoted.includes(h))) return true;
+  if (s.question && !quoted.includes("?") && !kept.question) return true;
+  if ((s.goalLabel || rest.goal) && !kept.goal && !stanceOf(quoted).goal) return true;
+  if (rest.modality < 3 && stanceOf(quoted).modality === 3 && kept.modality > rest.modality) return true;
+  return droppedFrames(scope, outside).length > 0;
+}
+
+/**
+ * Whether `quoted` (normalised, shorthand written out) is word for word in one sentence of a cited note by `holder`,
+ * and is the whole statement (check-WB M3): what the quotation leaves out of its part of the note sentence holds no
+ * negator, hedge, "?", goal or plan label, weaker modal, condition or frame – "Not fit for full duties." quoted as
+ * “fit for full duties” is a misquotation – unless the drafted sentence outside the quotation (`outside`, normalised)
+ * says it ("He was not “fit for full duties”").
+ */
+export function quotedVerbatim(quoted: string, notes: readonly Note[], holder: string | null, outside = ""): NoteAnchor | null {
   const q = quoted.replace(/[.,;:!]+$/, "").trim();
   if (q.length < 3) return null;
   for (const note of notes) {
     if (holder && !sameName(note.author.name, holder)) continue;
     for (const s of noteSentences(note)) {
       if (s.field === "history") continue;
-      if (wordIndexOf(s.norm, q) >= 0) return { noteId: note.id, author: note.author, sentence: s.text };
+      for (let at = wordIndexOf(s.norm, q); at >= 0; at = wordIndexOf(s.norm, q, at + 1)) {
+        if (!quoteDropsStance(s, at, q, outside)) return { noteId: note.id, author: note.author, sentence: s.text };
+      }
     }
   }
   return null;
