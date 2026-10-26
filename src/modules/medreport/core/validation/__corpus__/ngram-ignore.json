@@ -20,6 +20,10 @@
   {
    "text": ": filled from the record.",
    "why": "ClinForms' converter note ending (ai/practice-merge-binding.ts)."
+  },
+  {
+   "text": "From your Clinic details: the clinic system's merge code",
+   "why": "ClinForms' converter note for a clinic detail (ai/practice-merge-binding.ts SOURCE_WORDS.clinic + recordNote, bh2 WE design 3); the prepared v2 maps hold it."
   }
  ],
  "generic": [
@@ -46,6 +50,14 @@
   {
    "text": "if you do not",
    "why": "Everyday English; the conditional construct the condition parser must read (B1-9)."
+  },
+  {
+   "text": "as the patient reports",
+   "why": "Everyday clinical English for a patient-reported fact; the clinician's acceptance reasons in the v2 maps (lintAccepted.reason) and the L5 cases use it."
+  },
+  {
+   "text": "recorded in the notes",
+   "why": "Everyday clinical English; ClinForms' own guidance and the clinician's acceptance reasons use it, as do the L5 acceptance cases."
   }
  ]
 }
