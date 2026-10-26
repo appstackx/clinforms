@@ -52,7 +52,11 @@ export const Sha256HexSchema = z.string().regex(/^[0-9a-f]{64}$/, "Expected a SH
  * Enumerations
  * ----------------------------------------------------------------------------------------------*/
 
-export const ConnectorIdSchema = z.enum(["tm3-sim", "tm3", "file-import"]);
+/**
+ * "native" (10/2026, additive): the clinic system's own patient record (src/server/pms/native-connector.ts, host side –
+ * registered in the app glue for clinics with the clinic-system package; never listed on GET /connectors).
+ */
+export const ConnectorIdSchema = z.enum(["tm3-sim", "tm3", "file-import", "native"]);
 export const ConnectorStatusSchema = z.enum(["connected", "available", "not_configured"]);
 /**
  * Who instructs a report / sends the form. "mlc" = medico-legal company (medical reporting agency).
