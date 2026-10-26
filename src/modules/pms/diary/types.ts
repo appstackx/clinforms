@@ -122,3 +122,20 @@ export type DiarySaveResult =
   | { ok: true; item: DiaryItem; warnings: DiaryWarning[] }
   | Exclude<PmsSaveResult, { ok: true }>
   | { ok: false; reason: "clash"; clashes: DiaryClash[] };
+
+/** What the diary's server actions answer (plain words; the forms show them). */
+export type DiaryActionResult =
+  | { ok: true; message: string; warnings: string[]; itemId?: string }
+  | {
+      ok: false;
+      error: string;
+      fieldErrors?: Record<string, string>;
+      /** What is in the way, in plain words. */
+      clashes?: string[];
+      /** A recurring booking whose free dates could still be booked. */
+      canSkipClashes?: boolean;
+      /** Only the patient clashes (two practitioners seeing them together can be allowed). */
+      patientOnly?: boolean;
+      /** The screen was stale: refresh it. */
+      conflict?: boolean;
+    };
