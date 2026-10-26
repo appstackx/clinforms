@@ -116,9 +116,12 @@ function docParts(bytes: Uint8Array): { xml: string; text: string } {
  * A Word file that makes the fill do work proportional to lines × cells (the R-security-2 / R-security-3 shapes), and
  * its map: `questions` questions in one cell followed by `lines` empty lines, and `cells` more cells in the same row
  * holding `besideLines` empty lines each. kind "placeholders": replace_placeholder questions with clearPlaceholder;
- * kind "typography": after_paragraph questions on a form whose file name marks it converted from RTF.
+ * kind "typography": after_paragraph questions on a form whose file name marks it converted from RTF; kind "runs" (WA2,
+ * review 26/10): one line of `runs` one-character runs holding `questions` blanks "……", each question mapped to them –
+ * refused or filled within maxMs, with no re-check (runHostile).
  */
 function hostileForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+  if (spec.kind === "runs") return hostileRunsForm(spec);
   const lines = Number(spec.lines ?? 2000);
   const cells = Number(spec.cells ?? 0);
   const besideLines = Number(spec.besideLines ?? Math.min(lines, 200));
@@ -159,6 +162,38 @@ function hostileForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
   return { form, bytes };
 }
 
+/** kind "runs": one line of many runs with blanks among them (the size of a line, not the number of lines). */
+function hostileRunsForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+  const runs = Number(spec.runs ?? 200000);
+  const questions = Number(spec.questions ?? 20);
+  const every = Math.max(1, Math.floor(runs / questions));
+  const bytes = buildDocx([{ p: { runs: Array.from({ length: runs }, (_, i) => ({ text: i % every === 0 ? "……" : "x" })) } }]);
+  const fields: FormField[] = Array.from({ length: questions }, (_, i) => ({
+    id: `F-${String(i + 1).padStart(2, "0")}`,
+    label: `Question ${i}`,
+    guidance: "",
+    answerType: "short_text",
+    anchor: { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "……" },
+    fillSource: { kind: "notes_narrative" },
+    required: false,
+    confidence: "high",
+  }));
+  const form: FormDefinition = {
+    id: "frm_hostile",
+    tenantId: "demo",
+    referrer: { name: "Hostile Size Ltd (fictional)", type: "other" },
+    title: "Hostile size check",
+    file: { fileName: "hostile.docx", mimeType: DOCX_MIME, sha256: fileSha256(bytes), sizeBytes: bytes.byteLength },
+    kind: "docx",
+    fields,
+    status: "proposed",
+    analysis: { mode: "rules", promptVersion: "corpus", at: CORPUS_AT, warnings: [] },
+    createdAt: CORPUS_AT,
+    updatedAt: CORPUS_AT,
+  };
+  return { form, bytes };
+}
+
 /** One timed FINAL fill of a hostile file (ms, or a 4xx refusal). */
 async function timedHostileFill(spec: Loose): Promise<{ ms: number; refusal: string | null }> {
   const { form, bytes } = hostileForm(spec);
@@ -189,7 +224,9 @@ async function runHostile(c: RunCase): Promise<PathOutcome> {
   const big = await timedHostileFill(spec);
   if (big.refusal) return { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` };
   if (big.ms <= maxMs) return { path: "fill", ok: true, detail: `filled in ${big.ms} ms (budget ${maxMs} ms)` };
-  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)) };
+  // kind "runs": no real form has such a line, so it must be refused or filled within the budget – no linear excuse.
+  if (spec.kind === "runs") return { path: "fill", ok: false, detail: `filled in ${big.ms} ms, over the ${maxMs} ms budget, and not refused` };
+  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)), ...(spec.kind === "runs" && { runs: Math.max(1, Math.round(Number(spec.runs ?? 200000) / 10)) }) };
   const small1 = await timedHostileFill(smallSpec);
   const big2 = await timedHostileFill(spec);
   if (big2.refusal) return { path: "fill", ok: true, detail: `refused (${big2.refusal}) after ${big2.ms} ms` };
