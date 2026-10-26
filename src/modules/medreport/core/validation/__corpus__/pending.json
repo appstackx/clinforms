@@ -1,10 +1,6 @@
 {
  "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB). bh2-rc1 (integrator): each workstream merge removes the items that hold after it and the DIFF items that block again or are allowlisted once their owner lands; new one-click variants and DIFF items a merge creates are added with their owner.",
  "cases": {
-  "ATT-nameinstead-05": {
-   "owner": "WC",
-   "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Tom Ellis instead”) to pat"
-  },
   "COM-colleague-01": {
    "owner": "WB",
    "reason": "Fails on bh2-r1: FAIL validate: expected FLAG – subject: no flags"
@@ -41,209 +37,9 @@
    "owner": "WC",
    "reason": "Awaiting Khuram's allowlist decision (his opinion rule of 26/10: an opinion written by the approver is allowed): the approving physio rewrote the drafted prognosis in their own words (no drafted residue left; WC design 6 stamps it as the approver's), so it is not checked as unrecorded opinion. production: OPINION_LANGUAGE/blocking 'should settle' on edited text (acknowledgeable) | candidate: no flags. The case expects PASS (B1-10)."
   },
-  "ISSUE-na-figure-01": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
-  },
-  "ISSUE-na-figure-01~strip-prefix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-figure-01~strip-suffix": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-na-figure-01~strip-wrapper": {
-   "owner": "WA1",
-   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
   "ISSUE-na-voice-01~fix-name-instead-1": {
    "owner": "WB",
    "reason": "A one-click variant that did not exist before WA1: the box printed anyway now gets every check, so OTHER_CLINICIAN_VOICE is raised and WB's 'Name Tom Ellis instead' (pronoun rewrite) is offered and makes it approvable – same class as ATT-firstperson-02~fix-name-instead-1 (WB design: prefix-only attribution fix)."
-  },
-  "LINT-l1-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-03": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-04": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-05": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-06": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l1-fail-07": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l10-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l11-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l12-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l12-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l12-fail-03": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l2-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l2-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l2-fail-03": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l3-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l3-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l4-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l4-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-03": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-04": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-05": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-06": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-07": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l5-fail-08": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l6-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l6-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l7-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l7-fail-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l8-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-l9-fail-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-01": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-02": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-03": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-04": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-05": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-06": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-07": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-08": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-09": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-10": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-11": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-12": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
-  },
-  "LINT-pass-13": {
-   "owner": "WE",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
   },
   "LINT-pass-headingless": {
    "owner": "WE",
@@ -256,14 +52,6 @@
   "REP-remove-pass-02": {
    "owner": "WD",
    "reason": "Escalated (WD x WB contradiction, not a product fault): holds on ws/bh2-drafting alone; with WB's attribution check (plan WB design 8: every finding a drafted sentence takes from a colleague's note names that colleague) its subject 'Lumbar movement was full and pain-free.' citing Tom Ellis's note blocks as unattributed (OTHER_CLINICIAN_VOICE) on Sarah Reid's report, with the one-click 'Tom Ellis recorded that …' offered. The case's PASS predates WB's rule; cases are append-only, so retiring or superseding it is Khuram's / W0's call."
-  },
-  "ROLE-forge-ack": {
-   "owner": "WC",
-   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (ack-by-approver): 200"
-  },
-  "ROLE-forge-signedactivity": {
-   "owner": "WC",
-   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (signed-activity-rewrite): 200"
   }
  }
 }
