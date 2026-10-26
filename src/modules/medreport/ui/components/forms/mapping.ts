@@ -9,7 +9,8 @@
  */
 import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
 import { UNTITLED_HEADING, formOutline } from "../../../core/forms/headings";
-import { lintFormMap, type LintIssue } from "../../../core/form-map-lint";
+import { acceptsJudgement, lintFormMap, type LintIssue } from "../../../core/form-map-lint";
+import { memberActor } from "../../../core/actor";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
 import { findPracticeCodes, humaniseMergeCodes, practiceCode, practiceCodeWords, practiceCodesInWords } from "../../../core/practice-merge-codes";
 import { REGISTRATION_PATH_LABELS } from "../../../core/labels";
@@ -520,6 +521,11 @@ export interface MappingLint {
   mapLevel: LintIssue[];
   /** What blocks confirming, as /forms/confirm refuses it: L5 not accepted. */
   blocking: string[];
+  /**
+   * The questions whose clinical judgement the map accepts as worded (L5 accepted): /forms/confirm lets only a
+   * clinician – or a member who may sign – confirm such a map (check-WE minor 9: the page says so before the click).
+   */
+  acceptedJudgements: string[];
 }
 
 /** The map lint as the mapping page shows it (core/form-map-lint.ts). */
@@ -535,14 +541,26 @@ export function mappingLint(form: Pick<FormDefinition, "fields" | "analysis" | "
     byField.set(i.fieldId, [...(byField.get(i.fieldId) ?? []), i]);
   }
   const blocking = issues.filter((i) => i.rule === "L5" && i.severity === "error").map((i) => `${i.fieldId}: ${i.message}`);
-  return { byField, mapLevel, blocking };
+  const acceptedJudgements = issues.filter((i) => i.rule === "L5" && i.severity === "accepted" && i.fieldId).map((i) => i.fieldId as string);
+  return { byField, mapLevel, blocking, acceptedJudgements };
 }
 
 /**
  * Whether this member may accept a clinical judgement as the map words it (L5): a clinician – the role, or a member
- * who may sign. The server decides in the end (/forms/confirm stamps the acceptance with the confirming clinician).
+ * who may sign with a registration number – the same rule /forms/confirm applies to the Actor it stamps
+ * (core/form-map-lint.ts acceptsJudgement on core/actor.ts memberActor).
  */
-export function mayAcceptJudgement(member: Pick<StudioMember, "role" | "canSign"> | undefined): boolean {
+export function mayAcceptJudgement(member: Pick<StudioMember, "role" | "canSign" | "hcpc"> | undefined): boolean {
   if (!member) return true; // the public demo acts as a clinician
-  return member.role === "clinician" || member.canSign === true;
+  return acceptsJudgement(memberActor({ name: "", role: member.role, canSign: member.canSign, hcpc: member.hcpc }, ""));
+}
+
+/**
+ * What the mapping page lists before confirming when this member may not accept the map's clinical judgements (the
+ * server would refuse the confirmation with 403): who confirms it instead. Null when nothing stands in the way.
+ */
+export function judgementConfirmProblem(lint: Pick<MappingLint, "acceptedJudgements">, mayAccept: boolean): string | null {
+  if (mayAccept || lint.acceptedJudgements.length === 0) return null;
+  const ids = lint.acceptedJudgements;
+  return `This mapping accepts a clinical judgement as worded on ${ids.length === 1 ? "question" : "questions"} ${ids.slice(0, 6).join(", ")}${ids.length > 6 ? ` and ${ids.length - 6} more` : ""}: a clinician (or a member who may sign) confirms it.`;
 }

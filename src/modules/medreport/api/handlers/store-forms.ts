@@ -43,21 +43,22 @@ import type { TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { recordUsage } from "../usage";
-import { judgementOnNonClinicianSource } from "../../core/form-map-lint";
+import { acceptanceFor, acceptsJudgement, judgementOnNonClinicianSource } from "../../core/form-map-lint";
 
 /**
  * L5 for a confirmed map: every question that asks for a clinical judgement but would be answered by staff, a fixed
- * value or a draft carries an acceptance stamped by a clinician (the role clinician, or a member who may sign). The
- * problems found, as API issues (empty: none).
+ * value or a draft carries an acceptance (with a reason that is not blank) stamped by a clinician (the role clinician, or
+ * a member who may sign – acceptsJudgement, the rule /forms/confirm applies to the caller). The problems found, as API
+ * issues (empty: none).
  */
 export function confirmedJudgementIssues(form: Pick<FormDefinition, "fields">): Array<{ path: string; message: string }> {
   const issues: Array<{ path: string; message: string }> = [];
   for (const f of form.fields) {
     const j = judgementOnNonClinicianSource(f);
     if (!j) continue;
-    const acceptance = f.lintAccepted?.find((a) => a.rule === "L5");
+    const acceptance = acceptanceFor(f, "L5");
     if (!acceptance) issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) not left to the clinician, and not accepted.` });
-    else if (!acceptance.by || !(acceptance.by.role === "clinician" || acceptance.by.canSign)) {
+    else if (!acceptsJudgement(acceptance.by)) {
       issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) accepted, but not by a clinician.` });
     }
   }

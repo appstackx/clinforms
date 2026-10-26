@@ -24,7 +24,7 @@ import { getFormFile, listFormFiles, putFormFile } from "../../repos/form-files"
 import { MAX_REPLACED_FORMS, createForm, deleteForm, getForm, listFormMeta, listForms, replaceForms, updateForm } from "../../repos/forms";
 import { createReport } from "../../repos/reports";
 import { putTenantSettings } from "../../repos/tenant-settings";
-import { loadClinicForms, parseMapsJson } from "../load-forms";
+import { loadClinicForms, mapFieldsSha256, parseMapsJson } from "../load-forms";
 
 export interface LoadFormsSuiteDb {
   db: Kysely<Database>;
@@ -361,7 +361,9 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
         assert.ok(added.every((e) => e.userId === PLATFORM_USER_ID));
         const replacedRows = added.filter((e) => e.action === "form.replace");
         assert.deepEqual(replacedRows.map((e) => e.targetId).sort(), [a.id, harrow.id].sort());
-        assert.deepEqual(replacedRows.find((e) => e.targetId === a.id)?.detail, { via: "onboarding", status: "proposed", replaces: [oldA.id], fields: a.form.fields.length, kind: a.form.kind, mapFrom: "reading" });
+        // bh2 WE (check-WE minor 1): the row also records the digests a later restore matches – the questions' SHA-256 of
+        // the new map and of the map it replaced.
+        assert.deepEqual(replacedRows.find((e) => e.targetId === a.id)?.detail, { via: "onboarding", status: "proposed", replaces: [oldA.id], fields: a.form.fields.length, kind: a.form.kind, mapFrom: "reading", mapSha256: mapFieldsSha256(a.form.fields), replacesMapSha256: [mapFieldsSha256((JSON.parse(oldA.payload) as FormDefinition).fields)] });
         assert.deepEqual(replacedRows.find((e) => e.targetId === harrow.id)?.detail?.mapFrom, "json");
         const run1 = added.filter((e) => e.action === "clinic.forms_replaced");
         assert.equal(run1.length, 1);

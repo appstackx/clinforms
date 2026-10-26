@@ -21,7 +21,8 @@ import { verifyFormConfirmation, withAttestedConfirmation } from "@/modules/medr
 import { buildDocxOutline } from "@/modules/medreport/forms/docx-outline";
 import { bindPracticeMergeCodes } from "@/modules/medreport/ai/practice-merge-binding";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
-import { lintFormMap, lintErrors, lintSummary, judgementOf } from "@/modules/medreport/core/form-map-lint";
+import { acceptanceFor, lintFormMap, lintErrors, lintSummary, judgementOf } from "@/modules/medreport/core/form-map-lint";
+import { classifyPortalQuestion } from "@/modules/medreport/core/question-set";
 import { resolveRegistrationValue } from "@/modules/medreport/core/forms";
 import { currentGuidance, guidanceIsCurrent, withheldReference } from "@/modules/medreport/core/forms/guidance";
 import { UNTITLED_HEADING, formOutline } from "@/modules/medreport/core/forms/headings";
@@ -36,7 +37,7 @@ import { buildForm } from "@/modules/medreport/core/validation/__corpus__/harnes
 import { createHttpHarness } from "@/modules/medreport/core/validation/__corpus__/harness/http";
 import { buildQuestionGroups } from "@/modules/medreport/ui/components/review/status";
 import { guidanceForEditing } from "@/modules/medreport/ui/components/forms/field-editor";
-import { firstQuestionToCheck, mappingGroups, mappingLint, mayAcceptJudgement } from "@/modules/medreport/ui/components/forms/mapping";
+import { firstQuestionToCheck, judgementConfirmProblem, mappingGroups, mappingLint, mayAcceptJudgement } from "@/modules/medreport/ui/components/forms/mapping";
 
 const AT = "2026-10-26T09:00:00.000Z";
 
@@ -122,6 +123,142 @@ describe("map lint (core/form-map-lint.ts)", () => {
     assert.equal(judgementOf({ label: "Usual duties (as described)" }), null);
     assert.equal(judgementOf({ label: "Red flags noted" }), null);
     assert.equal(judgementOf({ label: "Date returned to work" }), null);
+  });
+
+  // check-WE M1: the judgement questions L5 must see – every kind of the plan's list, in other words, plus explicit
+  // opinion questions and recommendations (fictional labels in ClinForms' own wording). The corpus pins the same
+  // shapes (LINT-l5-recall-*, LINT-l5-fact-*) through lintFormMap.
+  const RECALL: Array<[string, string[]?]> = [
+    ["Fit to resume normal duties?", ["Yes", "No"]],
+    ["Is the claimant able to drive a car?", ["Yes", "No"]],
+    ["Can the employee lift boxes at work?", ["Yes", "No"]],
+    ["Is the member capable of their usual role?"],
+    ["Suitable for full shifts?"],
+    ["Is the patient ready to go back to the warehouse?"],
+    ["Should the claimant stay off work for now?"],
+    ["Work restrictions advised"],
+    ["Lighter duties needed?"],
+    ["Lifting limit at work (kg)"],
+    ["Was the knee injury sustained in the collision?", ["Yes", "No"]],
+    ["Symptoms resulting from the fall at work"],
+    ["Is the back pain the result of the lift at work?"],
+    ["Details of injuries directly related to the crash"],
+    ["Aggravation of a pre-existing condition?"],
+    ["Any unrelated conditions?"],
+    ["Expected date the shoulder is better"],
+    ["Anticipated number of weeks to discharge"],
+    ["Is more progress likely?"],
+    ["Maximum improvement reached?"],
+    ["Time until full recovery (weeks)"],
+    ["Symptoms all gone by the final session?", ["Yes", "No"]],
+    ["Has the back settled?"],
+    ["Is the patient symptom-free now?"],
+    ["Status at discharge", ["Resolved", "Improving", "No change"]],
+    ["Returned to pre-injury level?"],
+    ["Any permanent loss of movement?"],
+    ["Will the condition become chronic?"],
+    ["Some lasting weakness?"],
+    ["Ongoing impairment"],
+    ["Factors delaying recovery"],
+    ["Issues stopping a return to the office"],
+    ["Emotional state since the accident"],
+    ["Social factors to consider"],
+    ["Statement of truth (tick)", ["Yes"]],
+    ["Sign-off wording", ["I agree"]],
+    ["Return to work recommended?"],
+    ["Should the patient continue with physiotherapy?"],
+    ["Further sessions needed?"],
+    ["Appointments required from now on"],
+    ["Is treatment still appropriate?"],
+    ["In your opinion, is the wrist improving?"],
+    ["Do you consider the shoulder injury minor?"],
+    ["Would you expect the ankle to heal?"],
+  ];
+  // Facts that only look like judgements: a fit note, a restriction of movement, a return that happened, "due to start",
+  // a recommendation already made, history, a second opinion obtained.
+  const FACTS = [
+    "Is the claimant back at work already?",
+    "Date returned to work",
+    "Fit note from the GP received?",
+    "Fitness level before the fall, in the patient's words",
+    "Lumbar range – restricted",
+    "Restriction to movement on examination",
+    "Treatment due to start on",
+    "Aggravating factors",
+    "Injuries noted at the first session",
+    "Has a home programme been recommended?",
+    "Long-term medication",
+    "Chronic conditions in the medical history",
+    "Second opinion obtained?",
+    "Visits attended so far",
+    "Was the claimant working before the incident?",
+    "Advice given at the session",
+    "Patient's goals – hobbies to take up again",
+    "Benefit of treatment – hobbies to take up again",
+    "If yes, the treatment needed",
+    "Mechanism of injury",
+  ];
+
+  test("L5 recall: every judgement kind in other words, on a drafted, staff or fixed source (check-WE M1)", () => {
+    const missed = RECALL.filter(([label, options]) => judgementOf({ label, options }) === null).map(([l]) => l);
+    assert.deepEqual(missed, []);
+    const sources: FormField["fillSource"][] = [{ kind: "notes_narrative" }, { kind: "registration", path: "staff.entry" }, { kind: "fixed", value: "No" }];
+    for (const fillSource of sources) {
+      for (const [label, options] of RECALL) {
+        const f = field("F-01", { label, ...(options ? { options, answerType: options.length === 2 ? "yes_no" : "single_choice" } : {}), fillSource });
+        assert.ok(lintErrors(lintFormMap(map([f]))).some((i) => i.rule === "L5"), `${label} (${fillSource.kind})`);
+      }
+    }
+    // A clinician's own answer, a box left blank and a sign-off are never L5.
+    for (const fillSource of [{ kind: "clinician_opinion" }, { kind: "leave_blank" }] as FormField["fillSource"][]) {
+      assert.deepEqual(lintErrors(lintFormMap(map([field("F-01", { label: "Fit to resume normal duties?", fillSource })]))), []);
+    }
+  });
+
+  test("L5 precision: facts that only look like judgements are not judgements", () => {
+    assert.deepEqual(FACTS.filter((label) => judgementOf({ label }) !== null).map((l) => `${l} → ${judgementOf({ label: l })}`), []);
+  });
+
+  test("one vocabulary: every question the question classifier gives the clinician is a judgement to L5 (documented exceptions only)", () => {
+    // The classifier counts any restriction (an examination's restriction of movement too), any "recommended" (one
+    // already made too), any "long-term" (medication in the history too) and any "opinion" (a second opinion obtained
+    // too) as the clinician's: L5 leaves those facts to the notes.
+    const EXCEPTIONS = new Set(["Restriction to movement on examination", "Has a home programme been recommended?", "Long-term medication", "Second opinion obtained?"]);
+    const labels = [...RECALL.map(([l]) => l), ...FACTS];
+    const drift = labels.filter((l) => classifyPortalQuestion(l).fillSource.kind === "clinician_opinion" && !EXCEPTIONS.has(l) && judgementOf({ label: l }) === null);
+    assert.deepEqual(drift, []);
+    for (const l of Array.from(EXCEPTIONS)) assert.equal(classifyPortalQuestion(l).fillSource.kind, "clinician_opinion", `${l}: still an exception`);
+  });
+
+  test("the acceptance needs a reason that says something: a blank one accepts nothing (lint, load-forms, confirm and store alike)", () => {
+    const f = field("F-01", { label: "Fit to resume normal duties?", lintAccepted: [{ rule: "L5", reason: "   ", at: AT }] });
+    assert.deepEqual(lintSummary(lintErrors(lintFormMap(map([f])))), "L5@F-01");
+    assert.equal(acceptanceFor(f, "L5"), undefined);
+    assert.ok(acceptanceFor({ lintAccepted: [{ rule: "L5", reason: "The patient reports it.", at: AT }] }, "L5"));
+  });
+
+  test("L1 and L3 recall: preparer's notes and record wording in other words (check-WE minors 5, 6)", () => {
+    const notes = [
+      "Need to ask the owner what this box is for.",
+      "Owner to confirm whether this is required.",
+      "Waiting on the clinic's answer about the score.",
+      "Pending the owner's reply.",
+      "Query for the owner: is the solicitor always typed?",
+      "Double-check against the printed copy on Monday.",
+      "To do: map the second row.",
+      "Fixed 24/10: was the wrong cell.",
+      "Previously mapped as a staff entry.",
+      "Changed from drafted to the record.",
+      "We still need the owner's decision here.",
+      "I have assumed the top row; confirm later.",
+    ];
+    assert.deepEqual(notes.filter((note) => !lintErrors(lintFormMap(map([field("F-01", { note })]))).some((i) => i.rule === "L1")), []);
+    const forStaff = ["Ask the patient whether they still take it.", "The top row is used; the rows below stay empty.", "Tick the box that matches the notes.", "The clinician picks the answer on every report."];
+    assert.deepEqual(forStaff.filter((note) => lintErrors(lintFormMap(map([field("F-01", { note })]))).some((i) => i.rule === "L1")), []);
+    const record = ["Taken from the records.", "From the clinic's record: the site name.", "Comes from the patient records.", "Read from the record."];
+    const clinicField = (guidance: string) => field("F-01", { guidance, fillSource: { kind: "registration", path: "clinic.name" } });
+    assert.deepEqual(record.filter((g) => !lintErrors(lintFormMap(map([clinicField(g)]))).some((i) => i.rule === "L3")), []);
+    assert.deepEqual(lintErrors(lintFormMap(map([clinicField("From your Clinic details.")]))), []);
   });
 });
 
@@ -319,9 +456,17 @@ describe("guidance: a v2 map as stored, an earlier map as it reads now; the fiel
     const accepted = map([{ ...f.fields[0], lintAccepted: [{ rule: "L5", reason: "The patient reports it.", at: AT }] }]);
     assert.deepEqual(mappingLint(accepted).blocking, []);
     assert.equal(mayAcceptJudgement({ role: "clinician", canSign: false }), true);
-    assert.equal(mayAcceptJudgement({ role: "owner", canSign: true }), true);
+    assert.equal(mayAcceptJudgement({ role: "owner", canSign: true, hcpc: "PH-DEMO-01" }), true);
+    // check-WE minor 3: "may sign" without a registration number is stamped as one who may not – the server's rule.
+    assert.equal(mayAcceptJudgement({ role: "owner", canSign: true }), false);
     assert.equal(mayAcceptJudgement({ role: "admin", canSign: false }), false);
     assert.equal(mayAcceptJudgement({ role: "staff" }), false);
+    assert.equal(mayAcceptJudgement(undefined), true, "the public demo acts as a clinician");
+    // check-WE minor 9: a map that accepts a judgement as worded says before the click who confirms it.
+    assert.deepEqual(mappingLint(accepted).acceptedJudgements, ["F-01"]);
+    assert.equal(judgementConfirmProblem(mappingLint(accepted), true), null);
+    assert.equal(judgementConfirmProblem(mappingLint(accepted), false), "This mapping accepts a clinical judgement as worded on question F-01: a clinician (or a member who may sign) confirms it.");
+    assert.equal(judgementConfirmProblem(mappingLint(f), false), null, "nothing accepted: the open L5 is listed on its own");
   });
 
   test("B1-17(c), B2-30: the page opens on 'Needs review' before 'Check', a required clinical question before a staff entry or sign-off", () => {
@@ -400,6 +545,44 @@ describe("L5 on the server: a clinical judgement is the clinician's, or a clinic
     const row = audit.find((e) => e.action === "form.lint_accepted");
     assert.deepEqual(row?.detail, { rule: "L5", fieldId: "F-04", judgement: "restrictions", reason: "Patient-reported work status (fictional)." });
     assert.ok(audit.some((e) => e.action === "form.confirm"));
+  });
+
+  test("/forms/confirm stamps EVERY acceptance with the confirming person – another rule, or L5 on a question that is no judgement (check-WE minor 2)", async () => {
+    const { h, audit } = harness();
+    const forged = { memberId: "mem_tom", name: "Tom Ellis", role: "clinician", canSign: true, hcpc: "PH-DEMO-02" };
+    const base = withAcceptance(await proposed());
+    const form: FormDefinition = {
+      ...base,
+      fields: base.fields.map((f) =>
+        f.id === "F-12"
+          ? ({ ...f, lintAccepted: [{ rule: "L6", reason: "Held elsewhere (fictional).", at: "2020-01-01T00:00:00.000Z", by: forged }, { rule: "L5", reason: "Not a judgement (fictional).", at: "2020-01-01T00:00:00.000Z", by: forged }, { rule: "L7", reason: "   ", at: AT }] } as FormField)
+          : f,
+      ),
+    };
+    const ok = await call(h, handleFormsConfirm, "/forms/confirm", "priya", { form, confirmedBy: "Priya Shah" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const confirmed = ok.body.form as FormDefinition;
+    const stamped = confirmed.fields.flatMap((f) => (f.lintAccepted ?? []).map((a) => `${f.id} ${a.rule} ${a.by?.name} ${a.at === "2020-01-01T00:00:00.000Z" ? "browser time" : "server time"}`));
+    assert.deepEqual(stamped, ["F-04 L5 Priya Shah server time", "F-12 L6 Priya Shah server time", "F-12 L5 Priya Shah server time"], "no forged author survives; a blank reason is dropped");
+    assert.equal(verifyFormConfirmation(confirmed, { tenantId: CORPUS_TENANT }).ok, true);
+    assert.deepEqual(audit.filter((e) => e.action === "form.lint_accepted").map((e) => e.detail?.fieldId), ["F-04"], "the judgement acceptance has its own row");
+    assert.deepEqual(audit.find((e) => e.action === "form.confirm")?.detail?.lintAccepted, ["L6@F-12", "L5@F-12"], "the others are listed on the confirmation's row");
+  });
+
+  test("/forms/confirm decides 'a clinician' on the Actor it stamps: 'may sign' without a registration number is refused, not stored and then refused (check-WE minor 3)", async () => {
+    const { h } = harness();
+    const signedIn = h.deps.authenticate as (req: Request) => Promise<unknown>;
+    h.deps.authenticate = (async (req: Request) =>
+      req.headers.get(MEMBER) === "olive"
+        ? { userId: "usr_olive", authSessionId: "sess_olive", tenantId: CORPUS_TENANT, role: "owner", name: "Olive Grant", clinician: { name: "Olive Grant", canSign: true }, twoFactorVerified: true }
+        : signedIn(req)) as typeof h.deps.authenticate;
+    const form = withAcceptance(await proposed());
+    const refused = await call(h, handleFormsConfirm, "/forms/confirm", "olive", { form, confirmedBy: "Olive Grant" });
+    assert.equal(refused.status, 403, JSON.stringify(refused.body));
+    assert.equal(refused.body.code, "ROLE_NOT_ALLOWED");
+    // The same map without an L5 acceptance on a judgement question: an owner confirms it as before.
+    const plain = await call(h, handleFormsConfirm, "/forms/confirm", "olive", { form: { ...form, fields: form.fields.map((f) => (f.id === "F-04" ? { ...f, fillSource: { kind: "clinician_opinion" }, lintAccepted: undefined } : f)) }, confirmedBy: "Olive Grant" });
+    assert.equal(plain.status, 200, JSON.stringify(plain.body));
   });
 
   test("a store PUT to confirmed: refused while an L5 is open or accepted by someone who is not a clinician; stored when a clinician accepted it", async () => {

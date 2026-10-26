@@ -2,8 +2,8 @@
  * admin:load-forms – bh2 WE design 1 and 2 (the d6c779f --replace-proposed suite, extended): the analysis fields every
  * load and replace writes (file.sourceSha256, analysis.convertedWith, analysis.printedLeads, guidanceVersion), the map
  * lint before any write (refused unless accepted per field, the acceptance recorded in the audit row), the source pin,
- * the revision check, the restore of earlier maps (the rollback), and the clinic's own rows – members, invitation,
- * plan, package, usage, settings, reports – identical before and after.
+ * the revision check, the restore of earlier maps (the rollback – only maps the clinic's audit trail records), and the
+ * clinic's own rows – members, invitation, plan, package, usage, settings, reports – identical before and after.
  *
  * On node:sqlite and PGlite here (`npm run test:db`); on D1 through the gateway and real local D1 in
  * workers/data-gateway/test/load-forms-bh2.test.ts. Fictional templates and fictional clinics only.
@@ -29,10 +29,13 @@ import { appendAudit, listAudit } from "../repos/audit";
 import type { RepoContext } from "../repos/context";
 import { setClinicPackage } from "../repos/clinic-package";
 import { setClinicTrial } from "../repos/clinic-plan";
-import { listForms } from "../repos/forms";
+import { createForm, listForms } from "../repos/forms";
+import { putFormFile } from "../repos/form-files";
 import { createReport } from "../repos/reports";
 import { putTenantSettings } from "../repos/tenant-settings";
-import { clinicFingerprint, loadClinicForms, parseMapsJson, printedLeadsOf } from "./load-forms";
+import { clinicFingerprint, loadClinicForms, mapFieldsSha256, parseMapsJson, printedLeadsOf } from "./load-forms";
+import { PREPARED_NOTE } from "../../modules/medreport/core/form-map-lint";
+import { storedFormFileName } from "../../modules/medreport/api/store-contract";
 
 export interface LoadFormsBh2SuiteDb {
   db: Kysely<Database>;
@@ -191,28 +194,59 @@ export function defineLoadFormsBh2Suite(label: string, factory: () => Promise<Lo
       assert.match(wrongSource.files[0]?.reason ?? "", /^The map was made from another file \(its source pin does not match this file\)/);
     });
 
+    /**
+     * What an earlier release's admin:load-forms stored (production's maps-v1): the form, its file and its creation row –
+     * no map lint, no source pin, no map digest in the audit row.
+     */
+    const seedEarlierRelease = async (slug: string, fields: unknown[]) => {
+      const id = `frm_earlier_${slug.replace(/-/g, "_")}`;
+      const file = { fileName: discharge.fileName, mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const, sha256: sha(dischargeBytes), sizeBytes: dischargeBytes.length };
+      await putFormFile(ctx, slug, { bytes: new Uint8Array(dischargeBytes), fileName: storedFormFileName(file.mimeType), mimeType: file.mimeType, expectedSha256: file.sha256 });
+      const payload: FormDefinition = {
+        id,
+        tenantId: slug,
+        referrer: discharge.referrer,
+        title: discharge.title,
+        file,
+        kind: "docx",
+        fields: fields as FormField[],
+        status: "proposed",
+        analysis: { mode: "demo_prewritten", promptVersion: "onboarding-1", at: AT, warnings: [PREPARED_NOTE] },
+        createdAt: AT,
+        updatedAt: AT,
+      };
+      assert.ok((await createForm(ctx, slug, { id, fileSha256: file.sha256, status: "proposed", title: payload.title, referrer: payload.referrer.name, kind: "docx", sampleId: null, payload })).ok);
+      await appendAudit(ctx, slug, { userId: PLATFORM_USER_ID, action: "form.create", targetType: "form", targetId: id, detail: { via: "onboarding", status: "proposed", fields: fields.length, kind: "docx", mapFrom: "json" } });
+      return id;
+    };
+
     it("replace + restore (the rollback): the earlier map comes back over an untouched form, its findings listed, the restore audited", async () => {
       const slug = await clinic();
       const dir = folder({ [discharge.fileName]: dischargeBytes });
-      // v1 as production holds it: pinned to an earlier conversion and carrying a note written for the preparer.
+      // v1 as production holds it: loaded by an earlier release, pinned to an earlier conversion and carrying a note
+      // written for the preparer.
       const v1Fields = accepted().map((f) => (f.id === "F-12" ? { ...f, note: "Ask the clinic manager what this score means (fictional)." } : f));
       const v1 = { [discharge.fileName]: { title: discharge.title, referrer: discharge.referrer, fields: v1Fields, file: { sha256: "d".repeat(64) } } };
-      const first = await run(slug, dir, v1, { confirm: true, replace: true, restore: true });
-      assert.equal(first.files[0]?.status, "loaded", JSON.stringify(first.files[0]));
-      assert.deepEqual(first.files[0]?.lint?.errors, ["L1@F-12"], "listed, not refused (a Word file needs no source pin: L11 is for converted files)");
-      const v1Form = await one(slug);
-      // v2: the clean map, pinned to the source – replaces it.
+      const v1Id = await seedEarlierRelease(slug, v1Fields);
+      // Before v2 replaced it, --restore-maps knows no map of this clinic: nothing is brought back.
+      const early = await run(slug, dir, v1, { replace: true, restore: true });
+      assert.equal(early.files[0]?.status, "refused", JSON.stringify(early.files[0]));
+      // v2: the clean map, pinned to the source – replaces it, and its row records the map it replaced.
       const second = await run(slug, dir, dischargeMap(accepted(), { guidanceVersion: 2 }), { confirm: true, replace: true });
       assert.equal(second.files[0]?.status, "replaced", JSON.stringify(second.files[0]));
-      assert.deepEqual(second.files[0]?.replaces, [v1Form.id]);
+      assert.deepEqual(second.files[0]?.replaces, [v1Id]);
       const v2Form = await one(slug);
       assert.equal(v2Form.payload.fields.find((f) => f.id === "F-12")?.note, undefined);
+      const replaceRow = (await listAudit(ctx, slug, { action: "form.replace" }))[0];
+      assert.deepEqual(replaceRow?.detail?.replacesMapSha256, [mapFieldsSha256(v1Fields)]);
+      assert.equal(replaceRow?.detail?.mapSha256, mapFieldsSha256(v2Form.payload.fields));
       // Without --restore-maps the earlier map is refused (its pin and its findings); with it, it comes back.
       const refused = await run(slug, dir, v1, { replace: true });
       assert.equal(refused.files[0]?.status, "refused");
       const back = await run(slug, dir, v1, { confirm: true, replace: true, restore: true });
       assert.equal(back.files[0]?.status, "replaced", JSON.stringify(back.files[0]));
       assert.deepEqual(back.files[0]?.replaces, [v2Form.id]);
+      assert.deepEqual(back.files[0]?.lint?.errors, ["L1@F-12"], "listed, not refused (a Word file needs no source pin: L11 is for converted files)");
       const restored = await one(slug);
       assert.equal(restored.rev, 1, "a fresh proposal, revision 1");
       assert.equal(restored.payload.fields.find((f) => f.id === "F-12")?.note, "Ask the clinic manager what this score means (fictional).");
@@ -221,6 +255,29 @@ export function defineLoadFormsBh2Suite(label: string, factory: () => Promise<Lo
       assert.equal(rows.length, 2);
       assert.equal(rows.filter((e) => e.detail?.restore === true).length, 1, "the restore is audited as one");
       assert.ok(rows.every((e) => e.userId === PLATFORM_USER_ID));
+      // And v2 can come back over the restored v1 the same way (its own row recorded it).
+      const forward = await run(slug, dir, dischargeMap(accepted(), { guidanceVersion: 2 }), { replace: true, restore: true });
+      assert.equal(forward.files[0]?.status, "replace", JSON.stringify(forward.files[0]));
+    });
+
+    it("--restore-maps never loads a map ClinForms did not load or replace for this clinic (check-WE minor 1)", async () => {
+      const slug = await clinic();
+      const dir = folder({ [discharge.fileName]: dischargeBytes });
+      await seedEarlierRelease(slug, accepted());
+      // A brand-new map with an open L5 (the work status left to staff, not accepted): refused with and without restore.
+      for (const restore of [false, true]) {
+        for (const confirm of [false, true]) {
+          const r = await run(slug, dir, dischargeMap(discharge.fields), { confirm, replace: true, restore });
+          assert.equal(r.files[0]?.status, "refused", JSON.stringify(r.files[0]));
+          if (restore) assert.match(r.files[0]?.reason ?? "", /^--restore-maps brings back only a map ClinForms loaded or replaced for this clinic before/);
+        }
+      }
+      // A map another clinic had: still not this clinic's.
+      const other = await clinic();
+      await run(other, dir, dischargeMap(accepted(), { guidanceVersion: 2 }), { confirm: true });
+      const elsewhere = await run(slug, dir, dischargeMap(accepted(), { guidanceVersion: 2 }), { replace: true, restore: true });
+      assert.equal(elsewhere.files[0]?.status, "refused");
+      assert.equal((await one(slug)).payload.fields.length, discharge.fields.length, "the clinic's form is as it was");
     });
 
     it("a re-run is idempotent: every form SKIP with the new fields, 0 writes, 0 audit rows", async () => {

@@ -60,6 +60,7 @@ import { FieldEditor } from "../../components/forms/field-editor";
 import {
   anchorFromPick,
   firstQuestionToCheck,
+  judgementConfirmProblem,
   listedInOrder,
   mappingGroups,
   mappingLint,
@@ -164,15 +165,19 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   // Referrer to be confirmed refers").
   // bh2 WE design 2: the map lint – checks on the page; an unaccepted L5 blocks confirming (as /forms/confirm does).
   const lint = useMemo(() => mappingLint(draft), [draft]);
+  const mayAccept = mayAcceptJudgement(hooks.member);
+  // check-WE minor 9: a map that accepts a clinical judgement as worded is confirmed by a clinician (or a member who may
+  // sign) – said here, before the click, instead of the server's refusal.
+  const judgementProblem = judgementConfirmProblem(lint, mayAccept);
   const problems = useMemo(
     () => [
       ...checkFormDefinition(draft),
       ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
       ...lint.blocking,
+      ...(judgementProblem ? [judgementProblem] : []),
     ],
-    [draft, tenant, lint],
+    [draft, tenant, lint, judgementProblem],
   );
-  const mayAccept = mayAcceptJudgement(hooks.member);
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
   const toCheck = draft.fields.filter((f) => f.confidence !== "high").length;

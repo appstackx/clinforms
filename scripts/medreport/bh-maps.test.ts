@@ -13,10 +13,13 @@
  * findings listed); no merge code in a conditional box; the per-file question and merge-code counts and the expected
  * source per field id (BLUE_HEART_EXPECT); every attended-session field's index = the number in its printed label +
  * the template's offset (CLM and Physio-Link: + 1, stored in table reading order).
- * T3b: what the runtime reads from each field – its condition, recordSourceOf, compactPlace, the printed lead, the
- * session question, the guidance as it reads, the source, required – compared between the maps the clinic holds and
- * the v2 maps: every difference must be on the allowlist (template → field id → reader; "added" for a new question);
- * allowlist entries no field uses are listed.
+ * T3b: what the runtime reads from each field – its condition (conditionText), recordSourceOf, compactPlace, the
+ * printed lead (printedLeadsOf on the template's text, with BLUE_HEART_TEMPLATES_DIR), the session question
+ * (sessionQuestionOf), the guidance as it reads (currentGuidance), the source, required – compared between the maps the
+ * clinic holds and the v2 maps: every difference must be on the allowlist (template → field id → reader; "added" for a
+ * new question), and every allowlist entry must be a difference (an unused entry fails: the allowlist says exactly
+ * what changes). The plan's yesNoInWords and sessionNotInRecord readers are not on this tree (WD's and WA1's
+ * workstreams); the integrator adds them to readers() when those land.
  *
  * Owner: WE (data, maps and mapping page).
  */
@@ -35,7 +38,9 @@ import { hasMergeToken } from "@/modules/medreport/core/merge-fields";
 import { sessionNumberOf, sessionQuestionOf } from "@/modules/medreport/core/session-dates";
 import { FormFieldSchema } from "@/modules/medreport/core/schemas";
 import type { FormField } from "@/modules/medreport/core/types";
-import { loadClinicForms, parseMapsJson, type LoadFormsFileResult } from "@/server/admin/load-forms";
+import { loadClinicForms, parseMapsJson, printedLeadsOf, type LoadFormsFileResult } from "@/server/admin/load-forms";
+import { buildDocxOutline } from "@/modules/medreport/forms/docx-outline";
+import { decodeFormFile } from "@/modules/medreport/forms/file";
 import { testCipher } from "@/server/db/testing/databases";
 import { NodeSqliteDialect, openSqliteDatabase } from "@/server/db/dialects/sqlite-local";
 import { applySqliteMigrations } from "@/server/db/migrations";
@@ -66,12 +71,24 @@ function folderOf(root: string, template: string): string | null {
 
 const fieldsOf = (m: { fields: unknown[] }) => m.fields.map((f) => FormFieldSchema.parse(f));
 
+/** The template's printed text per Word block (the release converter's file), for the printed-lead reader. */
+function templateBlocks(template: string): ((id: string) => string | null) | undefined {
+  if (!TEMPLATES) return undefined;
+  const dir = folderOf(TEMPLATES, template);
+  if (!dir) return undefined;
+  const file = decodeFormFile(fs.readFileSync(path.join(dir, template)).toString("base64"), { convertRtf: true });
+  if (!/wordprocessingml/.test(file.mimeType)) return undefined;
+  const blocks = new Map(buildDocxOutline(file.bytes).blocks.map((b) => [b.id, b.text] as const));
+  return (id: string) => blocks.get(id) ?? blocks.get(id.replace(/\.p\d+$/, "")) ?? null;
+}
+
 /** What the runtime reads from one field (T3b), as comparable strings – never printed. */
-function readers(fields: FormField[], f: FormField, analysis: { guidanceVersion?: number }): Record<string, string> {
+function readers(fields: FormField[], f: FormField, analysis: { guidanceVersion?: number }, leads: Record<string, string>): Record<string, string> {
   return {
     condition: conditionText(fields, f.id) ?? "",
     recordSource: recordSourceOf(f) ?? "",
     compactPlace: compactPlace(f) ?? "",
+    printedLead: leads[f.id] ?? "",
     session: JSON.stringify(sessionQuestionOf(f)),
     guidance: currentGuidance(f.guidance, f, { guidanceVersion: analysis.guidanceVersion }),
     source: JSON.stringify(f.fillSource),
@@ -177,6 +194,9 @@ if (MAPS) {
           const a = fieldsOf(before);
           const b = fieldsOf(map);
           const vB = (map as { guidanceVersion?: number }).guidanceVersion;
+          const blockText = templateBlocks(template);
+          const leadsA = printedLeadsOf(a, blockText);
+          const leadsB = printedLeadsOf(b, blockText);
           for (const f of b) {
             const old = a.find((x) => x.id === f.id);
             if (!old) {
@@ -185,8 +205,8 @@ if (MAPS) {
               else unexpected.push(`${template} ${f.id}: new question`);
               continue;
             }
-            const ra = readers(a, old, {});
-            const rb = readers(b, f, { guidanceVersion: vB });
+            const ra = readers(a, old, {}, leadsA);
+            const rb = readers(b, f, { guidanceVersion: vB }, leadsB);
             for (const k of Object.keys(ra)) {
               if (ra[k] === rb[k]) continue;
               const key = `${template} ${f.id} ${k}`;
@@ -198,10 +218,12 @@ if (MAPS) {
         }
       }
       const stale = Object.entries(allow).flatMap(([t, ids]) => Object.entries(ids).flatMap(([id, ks]) => ks.map((k) => `${t} ${id} ${k}`))).filter((k) => !seen.has(k));
-      // Unused entries are listed, not failed: an edit may intend a reader that does not change for that field (a drafted
-      // box made the clinician's own reads the same record source, null, before and after).
       console.log(`# T3b ${seen.size} intended changes; ${unexpected.length} not on the allowlist; ${stale.length} allowlist entries unused`);
+      for (const k of stale) console.log(`# T3b unused: ${k}`);
       assert.deepEqual(unexpected, [], "every runtime change is intended");
+      // check-WE minor 7: the allowlist says exactly what changes – an entry no field changes would let a later,
+      // unintended change of that reader pass.
+      assert.deepEqual(stale, [], "every allowlist entry is a change");
     });
   });
 }

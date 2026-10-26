@@ -58,7 +58,11 @@
  *   non-zero), because the tool never touches them;
  * - `restore` (the rollback: the same command with the earlier maps, e.g. maps-v1): maps exactly as they were – their
  *   lint findings are listed, not refused, and a pin to an earlier converter's output is accepted when every anchor
- *   fits this conversion (the anchors are always checked). Only forms nobody has touched are replaced, as always.
+ *   fits this conversion (the anchors are always checked). Only a map ClinForms loaded or replaced for THIS clinic
+ *   before is restored (check-WE minor 1): its questions' SHA-256 (mapFieldsSha256) must be in the clinic's audit trail
+ *   – "form.create"/"form.replace" record `mapSha256` of the map they store and, for a replace, `replacesMapSha256` of
+ *   the maps they replace; any other map is refused (load it without --restore-maps: the lint then checks it). Only
+ *   forms nobody has touched are replaced, as always.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -78,7 +82,7 @@ import { decodeFormFile, type DecodedFormFile } from "../../modules/medreport/fo
 import { findFormMergeFields } from "../../modules/medreport/forms/merge-scan";
 import { PLATFORM_USER_ID } from "../auth/create-auth";
 import type { Database } from "../db/schema";
-import { appendAudit, listAuditAbout, type AuditEntryInput } from "../repos/audit";
+import { appendAudit, listAudit, listAuditAbout, type AuditEntryInput } from "../repos/audit";
 import { RepoInputError, type RepoContext } from "../repos/context";
 import { deleteFormFileIfUnused, putFormFile } from "../repos/form-files";
 import { MAX_REPLACED_FORMS, createForm, getForm, listFormMeta, replaceForms, type FormMeta } from "../repos/forms";
@@ -388,6 +392,39 @@ function mapContent(form: FormDefinition): string {
   });
 }
 
+/**
+ * The SHA-256 of a map's questions as this release reads them (each through FormFieldSchema, keys sorted) – what a
+ * restore matches against the clinic's audit trail. Null when a question does not parse (such a map is never restored).
+ */
+export function mapFieldsSha256(fields: readonly unknown[]): string | null {
+  const parsed: FormField[] = [];
+  for (const f of fields) {
+    const r = FormFieldSchema.safeParse(f);
+    if (!r.success) return null;
+    parsed.push(r.data);
+  }
+  return createHash("sha256").update(stableJson(parsed)).digest("hex");
+}
+
+/** Every map ClinForms loaded for this clinic or replaced there: the audit trail's mapSha256 and replacesMapSha256. */
+async function loadedMapHashes(ctx: RepoContext, tenantId: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const action of ["form.create", "form.replace"]) {
+    let beforeId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const rows = await listAudit(ctx, tenantId, { action, userId: PLATFORM_USER_ID, limit: 500, ...(beforeId ? { beforeId } : {}) });
+      for (const r of rows) {
+        if (r.detail?.via !== "onboarding") continue;
+        if (typeof r.detail.mapSha256 === "string") out.add(r.detail.mapSha256);
+        if (Array.isArray(r.detail.replacesMapSha256)) for (const h of r.detail.replacesMapSha256) if (typeof h === "string") out.add(h);
+      }
+      if (rows.length < 500) break;
+      beforeId = rows[rows.length - 1].id;
+    }
+  }
+  return out;
+}
+
 const CONFIRM_ACTIONS = new Set(["form.confirm", "form.store_confirmed"]);
 
 /** What the replace rule found for one form of the library. */
@@ -500,6 +537,8 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
   const at = now.toISOString();
   const replace = input.replaceProposed === true;
   const restore = input.restore === true;
+  // check-WE minor 1: a restore brings back only maps ClinForms loaded or replaced for this clinic before.
+  const knownMaps = restore ? await loadedMapHashes(ctx, tenantId) : new Set<string>();
   // WE design 1: the clinic's own rows, read before a confirmed run and compared after it.
   const invariantsBefore = input.confirm ? await clinicFingerprint(ctx.db, tenantId) : null;
   const existing = new Set((await listFormMeta(ctx, tenantId)).map((m) => m.fileSha256));
@@ -700,6 +739,17 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     const lintErr = lintErrors(lint);
     const lintAccepted = lint.filter((i) => i.severity === "accepted");
     const lintResult = { errors: lintErr.map((i) => lintSummary([i])), accepted: lintAccepted.map((i) => lintSummary([i])) };
+    const mapSha256 = mapFieldsSha256(form.fields);
+    if (mapped && restore && (!mapSha256 || !knownMaps.has(mapSha256))) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: "json",
+        lint: lintResult,
+        reason: "--restore-maps brings back only a map ClinForms loaded or replaced for this clinic before, and this map is not in the clinic's activity log: load it without --restore-maps, so the map lint checks it.",
+      });
+      continue;
+    }
     if (mapped && !restore && lintErr.length > 0) {
       results.push({
         ...base,
@@ -714,6 +764,8 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     const auditExtra = {
       ...(lintAccepted.length ? { lintAccepted: lintAccepted.map((i) => ({ rule: i.rule, fieldId: i.fieldId ?? null, reason: (i.acceptedReason ?? "").slice(0, 200) })) } : {}),
       ...(restore ? { restore: true } : {}),
+      // check-WE minor 1: what a later restore may bring back (the questions' SHA-256 – ids and digests only).
+      ...(mapSha256 ? { mapSha256 } : {}),
     };
     const counts = countSources(form);
     const ready: LoadFormsFileResult = {
@@ -776,7 +828,17 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
               action: "form.replace",
               targetType: "form",
               targetId: form.id,
-              detail: { via: "onboarding", status: "proposed", replaces, fields: form.fields.length, kind: form.kind, mapFrom, ...auditExtra },
+              detail: {
+                via: "onboarding",
+                status: "proposed",
+                replaces,
+                fields: form.fields.length,
+                kind: form.kind,
+                mapFrom,
+                ...auditExtra,
+                // The maps it replaces (the rollback restores them): their questions' SHA-256, as this release reads them.
+                replacesMapSha256: plan.targets.map((t) => mapFieldsSha256(t.form.fields)).filter((h): h is string => typeof h === "string"),
+              },
             },
           ],
         });

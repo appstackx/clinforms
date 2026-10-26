@@ -26,17 +26,19 @@ import "server-only";
  * causation, prognosis, recovery, permanence, barriers, psychosocial factors, yellow flags, a declaration) whose answer
  * would come from staff, a fixed value or a draft from the notes blocks confirming (422 VALIDATION_FAILED, one issue
  * per question) – unless the map records an acceptance for that question (FormField.lintAccepted, rule L5, with its
- * reason). Only a clinician may confirm a map that carries one (the role clinician, or a member who may sign; 403
- * ROLE_NOT_ALLOWED otherwise): the server stamps every such acceptance with the confirming clinician and the time (what
- * the browser sent as `by`/`at` is replaced), the attestation covers it (it is inside `fields`), and each one is
- * written to the audit trail ("form.lint_accepted").
+ * reason that is not blank). Only a clinician may confirm a map that carries one (the role clinician, or a member who
+ * may sign – as the stamp records them, core/form-map-lint.ts acceptsJudgement: one rule here, in the store check and on
+ * the mapping page; 403 ROLE_NOT_ALLOWED otherwise). The server stamps EVERY acceptance in the map – of any rule, on any
+ * question – with the confirming person and the time (what the browser sent as `by`/`at` is never kept, check-WE minor
+ * 2), the attestation covers them (they are inside `fields`), each L5 acceptance of a judgement question is written to
+ * the audit trail ("form.lint_accepted"), and the confirmation's own row lists the others (rule@field ids).
  *
  * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import { AUDIT_ACTIONS, CONFIRM_ROLES, assertActorTenant, auditActor, requireActor, type Actor as RequestActor } from "../../auth/actor";
 import { demoActor, memberActor, type Actor } from "../../core/actor";
-import { judgementOnNonClinicianSource } from "../../core/form-map-lint";
-import type { FormDefinition } from "../../core/types";
+import { acceptanceFor, acceptsJudgement, judgementOnNonClinicianSource } from "../../core/form-map-lint";
+import type { FormDefinition, FormField } from "../../core/types";
 import { withAttestedConfirmation } from "../../auth/attestations";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { checkFormDefinition } from "../../core/forms";
@@ -45,16 +47,12 @@ import { FormsConfirmRequestSchema, type FormsConfirmResponse } from "../contrac
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { formRequestCapIssues } from "../../forms/request-caps";
 
-/** Whether the caller is a clinician (the role, or a member who may sign; the public demo acts as one). */
-export function isClinicalCaller(actor: Pick<RequestActor, "via" | "role" | "clinician">): boolean {
-  return actor.via === "demo" || actor.role === "clinician" || actor.clinician?.canSign === true;
-}
-
 /** The person who confirms, as the map records them (core/actor.ts: the stored Actor). */
-function confirmingActor(actor: RequestActor, name: string): Actor {
+export function confirmingActor(actor: Pick<RequestActor, "via" | "role" | "clinician" | "userId">, name: string): Actor {
   if (actor.via === "demo") return demoActor(name, actor.clinician?.hcpc);
   return memberActor({ userId: actor.userId, name, role: actor.role, canSign: actor.clinician?.canSign, hcpc: actor.clinician?.hcpc }, name);
 }
+
 
 /**
  * The map lint's L5 at confirmation: the questions that ask for a clinical judgement but would be answered by staff, a
@@ -66,21 +64,28 @@ export function judgementChecks(form: Pick<FormDefinition, "fields">): { open: A
   for (const f of form.fields) {
     const j = judgementOnNonClinicianSource(f);
     if (!j) continue;
-    const acceptance = f.lintAccepted?.find((a) => a.rule === "L5" && a.reason.trim());
+    const acceptance = acceptanceFor(f, "L5");
     if (acceptance) accepted.push({ fieldId: f.id, kind: j.kind, reason: acceptance.reason.trim() });
     else open.push({ fieldId: f.id, kind: j.kind });
   }
   return { open, accepted };
 }
 
-/** The map with every L5 acceptance stamped by `by` at `at` (what the browser sent is not kept). */
-function withStampedAcceptances(form: FormDefinition, fieldIds: ReadonlySet<string>, by: Actor, at: string): FormDefinition {
-  if (fieldIds.size === 0) return form;
+/**
+ * The map with EVERY acceptance stamped by `by` at `at` – any rule, any question (what the browser sent as `by`/`at` is
+ * not kept: the confirmation is who accepted them); a blank reason accepts nothing and is dropped.
+ */
+export function withStampedAcceptances(form: FormDefinition, by: Actor, at: string): FormDefinition {
+  if (!form.fields.some((f) => f.lintAccepted)) return form;
   return {
     ...form,
-    fields: form.fields.map((f) =>
-      fieldIds.has(f.id) && f.lintAccepted ? { ...f, lintAccepted: f.lintAccepted.map((a) => (a.rule === "L5" ? { rule: a.rule, reason: a.reason.trim().slice(0, 500), at, by } : a)) } : f,
-    ),
+    fields: form.fields.map((f) => {
+      if (!f.lintAccepted) return f;
+      const kept = f.lintAccepted.filter((a) => a.reason.trim()).map((a) => ({ rule: a.rule, reason: a.reason.trim().slice(0, 500), at, by }));
+      const next: FormField = { ...f, lintAccepted: kept };
+      if (kept.length === 0) delete next.lintAccepted;
+      return next;
+    }),
   };
 }
 
@@ -111,23 +116,28 @@ export const handleFormsConfirm: MedreportHandler = async (req, _ctx, deps) => {
       issues: judgement.open.map((j) => ({ path: `form.fields.${j.fieldId}`, message: `A clinical judgement (${j.kind}) not left to the clinician: make it the clinician's own answer, or accept it with the reason.` })),
     });
   }
-  if (judgement.accepted.length > 0 && !isClinicalCaller(actor)) {
+  // Who confirmed it: a clinic member's own name from the sign-in; the demo keeps the typed name.
+  const confirmedBy = (actor.via === "demo" ? parsed.data.confirmedBy : (actor.name ?? actor.clinician?.name ?? parsed.data.confirmedBy)).trim().slice(0, 120);
+  // Whether the caller may accept a judgement is decided on the Actor the server stamps (check-WE minor 3): a member
+  // "who may sign" without a registration number is stamped as one who may not – refused here, not later at the store.
+  const stamp = confirmingActor(actor, confirmedBy);
+  if (judgement.accepted.length > 0 && !acceptsJudgement(stamp)) {
     return problem(403, "Only a clinician can accept a clinical judgement as it is", {
       code: "ROLE_NOT_ALLOWED",
       detail: "This mapping accepts a clinical judgement on a question staff or the notes would answer. A clinician (or a member who may sign) confirms it.",
     });
   }
-  // Who confirmed it: a clinic member's own name from the sign-in; the demo keeps the typed name.
-  const confirmedBy = (actor.via === "demo" ? parsed.data.confirmedBy : (actor.name ?? actor.clinician?.name ?? parsed.data.confirmedBy)).trim().slice(0, 120);
   const at = new Date().toISOString();
-  const stamped = withStampedAcceptances(form, new Set(judgement.accepted.map((j) => j.fieldId)), confirmingActor(actor, confirmedBy), at);
+  const stamped = withStampedAcceptances(form, stamp, at);
+  const judged = new Set(judgement.accepted.map((j) => j.fieldId));
+  const otherAcceptances = stamped.fields.flatMap((f) => (f.lintAccepted ?? []).filter((a) => !(a.rule === "L5" && judged.has(f.id))).map((a) => `${a.rule}@${f.id}`));
   const confirmed = withAttestedConfirmation({ ...stamped, updatedAt: at }, confirmedBy, at);
   logEvent("form_confirmed", { form: form.id, kind: form.kind, fields: form.fields.length, session: actor.via });
   await auditActor(deps, actor, {
     action: AUDIT_ACTIONS.formConfirm,
     targetType: "form",
     targetId: form.id,
-    detail: { kind: form.kind, fields: form.fields.length, mapSha256: confirmed.confirmed?.mapSha256?.slice(0, 16) ?? null },
+    detail: { kind: form.kind, fields: form.fields.length, mapSha256: confirmed.confirmed?.mapSha256?.slice(0, 16) ?? null, ...(otherAcceptances.length ? { lintAccepted: otherAcceptances.slice(0, 50) } : {}) },
   });
   for (const j of judgement.accepted) {
     await auditActor(deps, actor, {

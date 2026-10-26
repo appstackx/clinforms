@@ -26,7 +26,9 @@
  * question accepts that rule (lintAccepted, with the reason). With --confirm the clinic's own rows (members, invitations,
  * plan, package, usage, settings, reports) are compared before and after: any change exits non-zero.
  * --restore-maps (with --replace-proposed): the rollback – the earlier maps as they were; their lint findings are listed,
- * not refused, and a pin to an earlier converter's output is accepted when every anchor fits this conversion.
+ * not refused, and a pin to an earlier converter's output is accepted when every anchor fits this conversion. Only a map
+ * ClinForms loaded or replaced for this clinic before is restored (its questions' SHA-256 is in the clinic's activity
+ * log – a replace records the maps it replaces); any other map is refused.
  */
 import fs from "node:fs";
 import { loadClinicForms, parseMapsJson, type LoadFormsFileResult, type MapsJson } from "../../src/server/admin/load-forms";
