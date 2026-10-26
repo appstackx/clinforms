@@ -165,8 +165,7 @@
     "src/modules/medreport/core/text/**",
     "src/modules/medreport/core/validation/__corpus__/**",
     "scripts/medreport/corpus-*",
-    "src/modules/medreport/ui/components/new/approver-*",
-    "scripts/medreport/guide-terms-check.mjs"
+    "src/modules/medreport/ui/components/new/approver-*"
   ],
   "integratorOnly": [
     "README.md",

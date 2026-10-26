@@ -80,6 +80,14 @@ export function GenerationBadge({ summary }: { summary: GenerationSummary | null
   );
 }
 
+/** The most of a reference the header shows; a longer one (a typed answer) ends in "…", in full on hover. */
+export const REFERENCE_SHOWN = 40;
+
+export function shortReference(reference: string): string {
+  const flat = reference.replace(/\s+/g, " ").trim();
+  return flat.length > REFERENCE_SHOWN ? `${flat.slice(0, REFERENCE_SHOWN - 1).trimEnd()}…` : flat;
+}
+
 /**
  * The reference shown next to the referrer. On a form from ANOTHER organisation than the referral, the
  * referral's reference is not theirs (it is never copied into their form), so the header shows the
@@ -183,7 +191,13 @@ export function ReviewHeader({
                 {template?.name ?? report.templateId}
               </>
             )}
-            {reference && <span className="whitespace-nowrap text-slate-500"> · Ref. {reference}</span>}
+            {reference && (
+              // bh2 WF: a long typed reference wraps and is shortened (the header overflowed by 302 px at 375 px wide).
+              <span className="text-slate-500 [overflow-wrap:anywhere]" title={reference.length > REFERENCE_SHOWN ? reference : undefined}>
+                {" "}
+                · Ref. {shortReference(reference)}
+              </span>
+            )}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <GenerationBadge summary={generation} />
