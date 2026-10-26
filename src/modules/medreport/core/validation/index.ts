@@ -150,6 +150,11 @@ function dataCheckFlags(checks: DataCheck[]): ReportFlag[] {
     );
 }
 
+/** placeholders.ts's "this box has no answer yet" flag – the only MISSING_PLACEHOLDER a not-applicable box drops. */
+function isUnansweredBoxFlag(f: ReportFlag): boolean {
+  return f.code === "MISSING_PLACEHOLDER" && !f.paragraphId && (f.evidence === "empty section" || f.evidence === "optional field blank");
+}
+
 /**
  * Run every validator and return the full, fresh list of flags for the report.
  *
@@ -180,9 +185,19 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
   }
   // Fix round 1 (B0-7): a conditional question that does not apply ("IF YES, PLEASE DETAIL" after a "No") is not asked:
   // nothing of it is printed, so none of its checks blocks (its gaps are settled as not applicable by the review).
+  // Safety amendment (R-safety-8, release/bh-trial-2): MISSING_PLACEHOLDER is never dropped – a mail-merge code the
+  // question owns stays on the completed form when its box prints nothing, and the final copy refuses to issue a form
+  // with a merge code left on it, so approval stays blocked too (never "approved but cannot be issued"). The one
+  // exception is the box's own "no answer yet" flag (evidence "empty section" / "optional field blank"): a question
+  // that is not asked needs no answer.
   const inapplicable = new Set((input.report.sections ?? []).filter((s) => notApplicable(input.report.sections, s.key)).map((s) => s.key));
   if (inapplicable.size > 0) {
-    for (let i = flags.length - 1; i >= 0; i--) if (flags[i].sectionKey && inapplicable.has(flags[i].sectionKey as string) && flags[i].code !== "OPEN_GAP") flags.splice(i, 1);
+    for (let i = flags.length - 1; i >= 0; i--) {
+      const f = flags[i];
+      if (!f.sectionKey || !inapplicable.has(f.sectionKey) || f.code === "OPEN_GAP") continue;
+      if (f.code === "MISSING_PLACEHOLDER" && !isUnansweredBoxFlag(f)) continue;
+      flags.splice(i, 1);
+    }
   }
   try {
     flags.push(...dataCheckFlags(runDataChecks(input.bundle)));

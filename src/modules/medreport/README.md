@@ -1805,7 +1805,9 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
   defaults are byte-identical.
 - **Conditional questions** (`core/conditions.ts`): "IF YES, PLEASE DETAIL" after a "No" prints nothing, blocks nothing,
   and its gaps are settled as not applicable (audited, reopened if the answer changes) – right after drafting
-  (`ui/components/new/generate.ts`) and after each answer in the review.
+  (`ui/components/new/generate.ts`) and after each answer in the review. Safety amendment (R-safety-8): a mail-merge code
+  or placeholder it owns still blocks (MISSING_PLACEHOLDER is never dropped, except the box's own "no answer yet"), since
+  the code stays printed and the final copy would refuse to issue the form.
 - **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
 - **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`); held-back choices in one click
   (`Gap.suggestedAnswer`); opinion boxes in "Leave optional boxes blank" only when ticked one by one.

@@ -655,6 +655,37 @@ test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back
 
 type ReportSection_ = import("../types").ReportSection;
 
+test("safety amendment (R-safety-8): a mail-merge code owned by a question that does not apply still blocks approval", async () => {
+  const { conditionOf } = await import("../conditions");
+  // A fictional two-question form: "ANY FURTHER TREATMENT RECOMMENDED?" then "IF YES, PLEASE DETAIL: <<P_TREATMENT>>".
+  const sections = [
+    { key: "F-32", title: "ANY FURTHER TREATMENT RECOMMENDED?", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-32", paragraphs: [], answer: { kind: "yes_no" as const, value: false } },
+    { key: "F-33", title: "IF YES, PLEASE DETAIL", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-33", paragraphs: [] },
+  ];
+  assert.equal(conditionOf(sections, "F-33")?.applies, false, "the detail question does not apply after “No”");
+  const fields = [
+    { id: "F-32", label: "ANY FURTHER TREATMENT RECOMMENDED?", guidance: "", answerType: "yes_no", options: ["Yes", "No"], anchor: { kind: "docx", target: "delete_options", blockId: "p0", placeholderText: "Yes / No" }, fillSource: { kind: "clinician_opinion" }, required: true, confidence: "high" },
+    { id: "F-33", label: "IF YES, PLEASE DETAIL", guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "replace_placeholder", blockId: "p1", placeholderText: "<<P_TREATMENT>>" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" },
+  ];
+  const mergeFields = [{ text: "<<P_TREATMENT>>", where: "the form's text", blockId: "p1" }];
+  const form = { fields, analysis: { mode: "rules", promptVersion: "x", at: "2026-10-25T09:00:00.000Z", warnings: [], mergeFields } } as never;
+  const base = testReport(SOL);
+  const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
+  const result = validateReport(report, template, { form });
+  const code = result.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === "F-33");
+  assert.equal(code.length, 1, "the code the not-applicable question owns is still reported");
+  assert.equal(code[0].severity, "blocking");
+  assert.equal(canAcknowledge(code[0], report), false);
+  assert.ok(result.blocking.some((f) => f.id === code[0].id));
+  assert.equal(result.canSign, false, "never approved with a merge code that the final copy would refuse to issue");
+  // The rest of the not-applicable question's checks are still dropped (fix round 1, B0-7).
+  assert.deepEqual(result.flags.filter((f) => f.sectionKey === "F-33" && f.code !== "MISSING_PLACEHOLDER" && f.code !== "OPEN_GAP"), []);
+  // An answer-level merge code in the not-applicable box is never dropped either.
+  const typed = { ...report, sections: report.sections.map((s) => (s.key === "F-33" ? { ...s, paragraphs: [{ id: "F-33-p1", text: "See <<P_TREATMENT>>.", sourceIds: [], origin: "clinician" as const }] } : s)) } as unknown as Report;
+  assert.ok(run(typed, template).some((f) => f.code === "MISSING_PLACEHOLDER" && f.paragraphId === "F-33-p1"));
+});
+
 /* ------------------------------------------------------------------------------------------------
  * Fix round 1 (B0-5, B0-6, B0-16, B0-23): drafted wording that does not fit its place on the form (warnings)
  * ----------------------------------------------------------------------------------------------*/
