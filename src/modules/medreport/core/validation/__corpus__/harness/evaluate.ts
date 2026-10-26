@@ -165,9 +165,30 @@ function withEditedSubject(built: Built): Report {
   };
 }
 
+/**
+ * harden-WA1 (check2 N1): what a member's store write may rewrite in the report it stores – a box's frozen condition or
+ * printed question (input.store.rewrite: box → {condition (null: removed), title}), every frozen condition
+ * (dropConditions) and Report.reportModel (dropReportModel). Report content the server must not trust.
+ */
+type StoreRewrite = { rewrite?: Record<string, { condition?: Record<string, unknown> | null; title?: string }>; dropConditions?: boolean; dropReportModel?: boolean };
+
+function rewrittenReport(report: Report, r: StoreRewrite): Report {
+  const sections = report.sections.map((s) => {
+    const patch = r.rewrite?.[s.key];
+    let next = { ...s } as Report["sections"][number];
+    if (r.dropConditions || (patch && patch.condition === null)) delete next.condition;
+    if (patch?.condition) next = { ...next, condition: patch.condition as unknown as NonNullable<typeof s.condition> };
+    if (patch?.title !== undefined) next = { ...next, title: patch.title };
+    return next;
+  });
+  const out = { ...report, sections } as Report;
+  if (r.dropReportModel) delete (out as { reportModel?: number }).reportModel;
+  return out;
+}
+
 async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
-  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" };
-  let report = built.report;
+  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" } & StoreRewrite;
+  let report = store.rewrite || store.dropConditions || store.dropReportModel ? rewrittenReport(built.report, store) : built.report;
   if (store.seedAs) {
     const seeded = await putStoredReport(h, report, store.seedAs, null);
     if (seeded.status !== 201 && seeded.status !== 200) return { path: "sign", ok: false, detail: `could not store the report first (${seeded.status} ${seeded.code ?? ""})` };
@@ -178,7 +199,7 @@ async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOu
       if (newer.status !== 200) return { path: "sign", ok: false, detail: `could not store the newer revision (${newer.status} ${newer.code ?? ""})` };
     }
   }
-  const res = await postSign(h, { report, template: built.template, form: built.form, signer: built.signer, mode: signMode(c) });
+  const res = await postSign(h, { report, template: built.template, form: built.form, signer: built.signer, mode: signMode(c), fileBytes: built.fileBytes });
   const got = `${res.status}${res.code ? ` ${res.code}` : ""}`;
   const flags = ((res.body as { flags?: ReportFlag[] } | null)?.flags ?? []).filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }));
   const detail = `/sign by ${person(built.signer).name}: ${got}${flags.length ? ` – ${describeFlags(flags)}` : ""}`;
@@ -245,7 +266,7 @@ export function mutateOutsideReceipt(report: Report, kinds: readonly string[]): 
 
 async function runRender(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
   const mode = signMode(c);
-  const signed = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode });
+  const signed = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode, fileBytes: built.fileBytes });
   if (!signed.receipt) {
     const blocked = `/sign refused (${signed.status} ${signed.code ?? ""}) – no final copy`;
     // A case about what happens AFTER approval needs the approval first.
@@ -298,13 +319,13 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
 
 /** An approved report amended and the amendment approved: the stored v1 must read as superseded (B2-25, B3-3). */
 async function runAmend(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
-  const s1 = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode: "tenant" });
+  const s1 = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode: "tenant", fileBytes: built.fileBytes });
   if (!s1.receipt) return { path: "store", ok: false, detail: `could not approve v1 (${s1.status} ${s1.code ?? ""})` };
   const v1: Report = { ...built.report, status: "signed", receipt: s1.receipt };
   const p1 = await putStoredReport(h, v1, built.signer, null);
   if (p1.status !== 201) return { path: "store", ok: false, detail: `could not store v1 (${p1.status} ${p1.code ?? ""})` };
   const v2draft = createAmendedVersion(v1, person(built.signer).name, `${v1.id}_v2`);
-  const s2 = await postSign(h, { report: v2draft, template: built.template, form: built.form, signer: built.signer, mode: "tenant" });
+  const s2 = await postSign(h, { report: v2draft, template: built.template, form: built.form, signer: built.signer, mode: "tenant", fileBytes: built.fileBytes });
   if (!s2.receipt) return { path: "store", ok: false, detail: `could not approve v2 (${s2.status} ${s2.code ?? ""})` };
   const p2 = await putStoredReport(h, { ...v2draft, status: "signed", receipt: s2.receipt }, built.signer, null);
   if (p2.status !== 201) return { path: "store", ok: false, detail: `could not store v2 (${p2.status} ${p2.code ?? ""})` };
@@ -321,7 +342,7 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
   const putAs = store.putAs ?? built.actor;
   let base = built.report;
   if (store.signFirst) {
-    const signed = await postSign(h, { report: base, template: built.template, form: built.form, signer: built.signer, mode: "tenant" });
+    const signed = await postSign(h, { report: base, template: built.template, form: built.form, signer: built.signer, mode: "tenant", fileBytes: built.fileBytes });
     if (!signed.receipt) return { path: "store", ok: false, detail: `could not approve first (${signed.status} ${signed.code ?? ""})` };
     base = { ...base, status: "signed", receipt: signed.receipt, flags: (signed.body as { flags?: ReportFlag[] }).flags ?? base.flags };
   }

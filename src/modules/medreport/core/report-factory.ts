@@ -9,6 +9,7 @@
 import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
 import { RELEASE_ACTIVITY_ACTIONS } from "./activity-actions";
 import { bundleClinic } from "./clinic";
+import { compileConditions, conditionFieldsOf } from "./conditions";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
   answerKindFor,
@@ -211,6 +212,12 @@ export function applyDraftResult(report: Report, draft: DraftResultLike, opts: {
     if (!drafted) return s;
     const merged: ReportSection = { ...drafted, title: s.title, kind: s.kind };
     if (s.fieldId) merged.fieldId = s.fieldId;
+    // bh2 WA1 design 3 (B2-4): the condition frozen at creation, and a person's decision about the box, are the box's –
+    // never the draft's. A decision a later answer makes stale is set aside by the issue state (core/issue-state.ts).
+    if (s.condition) merged.condition = s.condition;
+    else delete merged.condition;
+    if (s.disposition) merged.disposition = s.disposition;
+    else delete merged.disposition;
     const answer = drafted.answer ?? s.answer;
     if (answer) merged.answer = answer;
     return merged;
@@ -385,6 +392,15 @@ export function createFormReport(input: CreateFormReportInput): Report {
     });
   }
 
+  // bh2 WA1 design 3: each box's condition is read ONCE, now, from the form's questions, and frozen on its section
+  // (hashed). What the report issues never depends on a later reading of the printed words (core/conditions.ts).
+  // The same questions the server reads them from again (core/conditions.ts conditionFieldsOf, mapConditions).
+  const conditions = compileConditions(conditionFieldsOf(form.fields));
+  const withConditions = sections.map((s) => {
+    const condition = conditions.get(s.key);
+    return condition ? { ...s, condition } : s;
+  });
+
   return {
     id: input.id ?? createId("rpt"),
     tenantId: bundle.tenantId,
@@ -398,7 +414,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
     },
     instructingParty: input.instructingParty,
     bundleSnapshot: bundle,
-    sections,
+    sections: withConditions,
     gaps,
     flags: [],
     status: "draft",

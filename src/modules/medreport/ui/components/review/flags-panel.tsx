@@ -334,7 +334,8 @@ export function leaveBlankSummaryText(n: number, summary?: { total: number; opin
   const other = total - n;
   const box = (k: number) => `${k} optional box${k === 1 ? "" : "es"}`;
   if (opinion === 0 && other === 0) return `${box(n)} ${n === 1 ? "has" : "have"} no answer. You can leave ${n === 1 ? "it" : "them"} blank on the form in one step, with one reason.`;
-  const parts = [`${inStep} can be left blank in one step, with one reason`];
+  // bh2 WA1 (B0-28): never "0 can be left blank" – only the parts that have boxes are said.
+  const parts = inStep > 0 ? [`${inStep} can be left blank in one step, with one reason`] : [];
   if (opinion) parts.push(`${opinion} ${opinion === 1 ? "asks" : "ask"} for your opinion – tick ${opinion === 1 ? "it" : "them"} in the list only if you decide to leave ${opinion === 1 ? "it" : "them"} blank`);
   if (other) parts.push(`the other ${other} ${other === 1 ? "needs" : "need"} a decision first`);
   return `${box(total)} ${total === 1 ? "has" : "have"} no answer: ${parts.join("; ")}.`;

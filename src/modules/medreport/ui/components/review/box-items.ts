@@ -20,6 +20,7 @@
  */
 import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect, recordSourceOf } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
+import { issueDetails } from "../../../core/issue-state";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
 import type { Actor, FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { canSign, validateReport } from "../../../core/validation";
@@ -114,7 +115,7 @@ function mergeOwners(report: Report, form: BoxContext["form"]): Map<string, stri
   for (const section of report.sections) {
     const field = fields.get(section.key);
     if (!field || section.kind === "declaration" || answeredByRules(section, field)) continue;
-    const after = new Set(unresolvedMergeFields(form, { sections: report.sections.map((s) => (s === section ? asAnswered(s) : s)) }).map(mergeEvidence));
+    const after = new Set(unresolvedMergeFields(form, { ...report, sections: report.sections.map((s) => (s === section ? asAnswered(s) : s)) }).map(mergeEvidence));
     for (const m of before) if (!after.has(mergeEvidence(m)) && !owners.has(mergeEvidence(m))) owners.set(mergeEvidence(m), section.key);
   }
   return owners;
@@ -277,9 +278,29 @@ export interface BlankCandidate {
   opinion?: boolean;
 }
 
-/** A gap where the draft proposed an answer that was held back (core: ai/assemble.ts "-fit", "-choice"): a person decides. */
+/**
+ * Gap kinds that say the record holds nothing for the box (core/schemas.ts GapKindSchema): only these may be settled by
+ * "Leave optional boxes blank". Every other kind is about an answer that was proposed and held back, or a decision only
+ * a person makes (a choice, a band, a condition) – default deny, so a kind added later is never bulk-settled.
+ */
+const NOTHING_RECORDED_KINDS: ReadonlySet<NonNullable<Gap["kind"]>> = new Set<NonNullable<Gap["kind"]>>(["no_opinion_recorded", "record_value", "staff_entry"]);
+
+/**
+ * The marks drafting puts on the gaps it raises itself about a proposed answer (ai/assemble.ts: "-fit", "-choice",
+ * "-cite"; earlier rounds also "-yesno", "-condition", "-band", "-meta") – for gaps written before every gap carried a
+ * `kind` (WD).
+ */
+const HELD_BACK_MARK = /-(?:fit|choice|cite|yesno|yes-no|condition|band|meta|value|option|scale)$/;
+
+/**
+ * A gap a person has to decide (bh2 WA1, the latent bulk leave-blank -yesno / -condition holes): the draft proposed an
+ * answer that was held back (a one-click suggestion, a held-back kind, a hold-back mark), or the box depends on
+ * something only a person settles. "Leave optional boxes blank" never acknowledges one.
+ */
 function heldBackAnswer(gap: Gap): boolean {
-  return /-(?:fit|choice)$/.test(gap.id);
+  if (gap.suggestedAnswer !== undefined) return true;
+  if (gap.kind !== undefined) return !NOTHING_RECORDED_KINDS.has(gap.kind);
+  return HELD_BACK_MARK.test(gap.id);
 }
 
 /**
@@ -298,12 +319,19 @@ export function optionalOpinionBlankCandidates(report: Report, ctx: BoxContext):
   return blankCandidatesOf(report, ctx, true);
 }
 
+/** bh2 WA1: the boxes that are not asked (core/issue-state.ts) – nothing to leave blank, and nothing to count as "no answer". */
+function notAskedKeys(report: Report, ctx: BoxContext): Set<string> {
+  return new Set(issueDetails(report, ctx.form).filter((b) => b.state.kind === "not_applicable").map((b) => b.key));
+}
+
 function blankCandidatesOf(report: Report, ctx: BoxContext, opinion: boolean): BlankCandidate[] {
   if (report.status === "signed") return [];
   const fields = new Map((ctx.form?.fields ?? []).map((f) => [f.id, f]));
+  const notAsked = notAskedKeys(report, ctx);
   const out: BlankCandidate[] = [];
   for (const section of report.sections) {
     if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
+    if (notAsked.has(section.key)) continue;
     if ((section.kind === "clinician_opinion") !== opinion) continue;
     if (!mayLeaveBlankInBulk(report, section, ctx.actor ?? null)) continue;
     const field = fields.get(section.key);
@@ -327,9 +355,10 @@ function blankCandidatesOf(report: Report, ctx: BoxContext, opinion: boolean): B
 export function emptyOptionalSummary(report: Report, ctx: BoxContext, candidates: readonly BlankCandidate[]): { total: number; opinion: number; other: number } {
   const fields = new Map((ctx.form?.fields ?? []).map((f) => [f.id, f]));
   const chosen = new Set(candidates.map((c) => c.key));
+  const notAsked = notAskedKeys(report, ctx);
   let total = 0;
   for (const section of report.sections) {
-    if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
+    if (!section.fieldId || section.kind === "declaration" || section.status === "pending" || notAsked.has(section.key)) continue;
     const field = fields.get(section.key);
     if (isRequired(section, ctx) || field?.required !== false || answeredByRules(section, field) || section.paragraphs.some((p) => p.text.trim() !== "")) continue;
     const open = (report.gaps ?? []).some((g) => g.sectionKey === section.key && !g.resolution) || (report.flags ?? []).some((f) => f.sectionKey === section.key && !f.acknowledged && f.code !== "OPEN_GAP");

@@ -392,6 +392,8 @@ export interface AnswersCopyWording {
   toComplete: string;
   /** Shown, once approved, for an (optional) question the clinician left blank. */
   leftBlank: string;
+  /** bh2 WA1: shown for a question that does not apply (its condition rules it out, or a person decided so). */
+  notApplicable: string;
   /** Shown for a sign-off answer before approval. */
   onApproval: string;
   panelTitle: string;
@@ -438,6 +440,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   draftMarker: "Draft – not yet approved",
   toComplete: "[to complete]",
   leftBlank: "[left blank]",
+  notApplicable: "[not applicable]",
   onApproval: "[completed on approval]",
   panelTitle: "Copy answers",
   panelTitlePortal: "Answers for the portal",

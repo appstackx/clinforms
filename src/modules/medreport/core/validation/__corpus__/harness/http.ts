@@ -93,6 +93,11 @@ export interface SignInput {
   form: FormDefinition | null;
   signer: PersonKey;
   mode: "tenant" | "demo";
+  /**
+   * bh2 WA1 design 6: the referrer's file, sent as fileBase64 – the demo Studio sends it with every approval (required
+   * there for a Word or PDF form); a clinic's /sign fills its stored copy and takes this one only when it holds none.
+   */
+  fileBytes?: Uint8Array | null;
 }
 
 /** POST /sign as `signer` (a member of the corpus clinic, or the demo's typed signer). */
@@ -107,8 +112,22 @@ export async function postSign(h: HttpHarness, input: SignInput): Promise<CallRe
     statementAccepted: true,
     attestations: [...input.template.attestations],
     ...(input.form ? { form: input.form } : {}),
+    ...(input.form && input.form.kind !== "questions" && input.fileBytes ? { fileBase64: bytesToBase64(input.fileBytes) } : {}),
   };
-  const res = await call(h, handleSign, "/sign", { method: "POST", body, ...(input.mode === "tenant" ? { member: input.signer } : { demo: true }) });
+  // bh2 WA1 design 6: a clinic approves only the revision it holds. Like the Studio, which saves the report before it asks
+  // for approval, store it first when the clinic holds no revision of it – and take it out again afterwards, so the store
+  // is as the case set it up. A revision the case stored itself (an edited or overtaken body) is left as it is.
+  const seeded = input.mode === "tenant" && !(await h.store.getReport(CORPUS_TENANT, input.report.id));
+  if (seeded) {
+    const r = input.report;
+    await h.store.createReport(CORPUS_TENANT, { id: r.id, status: r.status, templateId: r.templateId, formId: r.form?.formId ?? null, payload: r });
+  }
+  let res: CallResult;
+  try {
+    res = await call(h, handleSign, "/sign", { method: "POST", body, ...(input.mode === "tenant" ? { member: input.signer } : { demo: true }) });
+  } finally {
+    if (seeded) await h.store.deleteReport(CORPUS_TENANT, input.report.id);
+  }
   const receipt = res.status === 200 ? ((res.body as { receipt?: SignReceipt }).receipt ?? null) : null;
   return { ...res, receipt };
 }

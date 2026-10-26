@@ -14,7 +14,8 @@ import Link from "next/link";
 import { CheckCircle2, Download, ExternalLink, Loader2, PenLine, Save, ShieldCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
 import { shortFingerprint } from "../../../core/fingerprint";
-import type { ActivityEntry, Report } from "../../../core/types";
+import { countOutcomes, issueState } from "../../../core/issue-state";
+import type { ActivityEntry, FormDefinition, Report } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
@@ -25,6 +26,8 @@ export const ApprovedBanner = forwardRef<
   HTMLDivElement,
   {
     report: Report;
+    /** The report's form map (bh2 WA1: "On the form: …" is counted from it, as the review and Copy answers are). */
+    form?: Pick<FormDefinition, "fields"> | null;
     isWordForm: boolean;
     isPdfForm: boolean;
     downloading: DownloadKind | null;
@@ -45,11 +48,12 @@ export const ApprovedBanner = forwardRef<
     prefillFor?: string | null;
   }
 >(function ApprovedBanner(props, ref) {
-  const { report, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet, prefillFor } = props;
+  const { report, form, isWordForm, isPdfForm, downloading, pdfUnavailable, filing, filed, canFile, clinicRecordUrl, fileMissing, onDownload, onSave, onAmend, questionSet, prefillFor } = props;
   const tenant = useStudioMode() === "tenant";
   const receipt = report.receipt;
   if (!receipt) return null;
   const isForm = Boolean(report.form);
+  const issued = isForm ? issuedSummary(report, form ?? null) : null;
   const lastFiled = filed[filed.length - 1];
   const spin = (k: DownloadKind) => (downloading === k ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Download className="mr-2 h-4 w-4" aria-hidden />);
 
@@ -86,6 +90,12 @@ export const ApprovedBanner = forwardRef<
           )}
         </div>
       </div>
+
+      {issued && (
+        <p className="mt-3 text-[12px] text-teal-900/90" data-testid="approved-issued-summary">
+          {issued}
+        </p>
+      )}
 
       {fileMissing && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900 ring-1 ring-amber-200">
@@ -187,3 +197,24 @@ export const ApprovedBanner = forwardRef<
     </div>
   );
 });
+
+/**
+ * bh2 WA1 design 4 (B2-24, B3-16): what the approved form issues, from the issue state with the form map – the same
+ * answer the completed form, "Copy answers" and the review's counts give: "On the form: 41 answered · 6 not applicable
+ * · 3 left blank · 1 nothing in the record · 4 filled on approval." Parts with no boxes are left out. Without the form
+ * map (not loaded in this browser) nothing is said: a count from the report alone could misstate what is issued (a
+ * session not attended, a box left blank on purpose).
+ */
+export function issuedSummary(report: Report, form: Pick<FormDefinition, "fields"> | null): string | null {
+  if (!form) return null;
+  const c = countOutcomes(issueState(report, form));
+  if (c.total === 0) return null;
+  const parts = [
+    c.answered ? `${c.answered} answered` : "",
+    c.notApplicable ? `${c.notApplicable} not applicable` : "",
+    c.leftBlank + c.noAnswer ? `${c.leftBlank + c.noAnswer} left blank` : "",
+    c.recordEmpty ? `${c.recordEmpty} nothing in the record` : "",
+    c.signoff ? `${c.signoff} filled on approval` : "",
+  ].filter(Boolean);
+  return parts.length ? `On the form: ${parts.join(" · ")}.` : null;
+}

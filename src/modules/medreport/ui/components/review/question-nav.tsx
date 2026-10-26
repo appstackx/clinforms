@@ -6,12 +6,13 @@
  *
  * Owner: studio-b agent.
  */
-import { QUESTION_STATUS_META, QUESTION_STATUS_ORDER, type QuestionStatus, type ReviewGroup, type StatusCounts } from "./review-model";
+import { QUESTION_STATUS_META, QUESTION_STATUS_ORDER, answerableCount, type QuestionStatus, type ReviewGroup, type StatusCounts } from "./review-model";
 import { StatusDot } from "./review-ui";
 import { cn } from "../../primitives";
 
 export function ProgressSummary({ counts, className }: { counts: StatusCounts; className?: string }) {
-  const answerable = counts.total - counts.counts.blank - counts.counts.signoff;
+  // bh2 WA1 (B2-24, B3-16): not applicable, nothing in the record and left blank on approval need nothing more.
+  const answerable = answerableCount(counts);
   const done = counts.counts.records + counts.counts.drafted + counts.counts.clinician;
   const pct = answerable > 0 ? Math.round((done / answerable) * 100) : 100;
   return (

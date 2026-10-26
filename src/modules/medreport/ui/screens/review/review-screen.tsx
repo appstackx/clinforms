@@ -29,7 +29,7 @@ import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
-import { notApplicable } from "../../../core/conditions";
+import { notApplicableReasons } from "../../../core/issue-state";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useDemoClinic, useHostHooks, useStudioMode } from "../../host-hooks";
@@ -294,10 +294,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report.sections));
+    // bh2 WA1: the whole report – what each box issues depends on its approver's decisions too (core/issue-state.ts).
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report));
     return map;
-  }, [questions, flagsBySection, report.gaps, report.sections, personAnswered, signed]);
+  }, [questions, flagsBySection, report, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
+  // bh2 WA1: why each box that is not asked is not asked – worked out once per report, not once per card.
+  const notAskedBecause = useMemo(() => notApplicableReasons(report, form), [report, form]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
@@ -665,6 +668,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         <ApprovedBanner
           ref={approvedRef}
           report={report}
+          form={form}
           isWordForm={report.form?.kind === "docx"}
           isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat" || questionSet}
           questionSet={questionSet}
@@ -734,7 +738,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   canAcknowledge={canAck}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
-                  notApplicableBecause={notApplicable(report.sections, q.key)?.because ?? null}
+                  notApplicableBecause={notAskedBecause.get(q.key) ?? null}
                   onDraft={
                     draftingUnavailable
                       ? undefined
