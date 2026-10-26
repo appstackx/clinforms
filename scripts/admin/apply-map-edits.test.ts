@@ -75,7 +75,7 @@ describe("apply-map-edits", () => {
   });
 
   it("adds a question after an existing one (a new id, listed in form order)", () => {
-    const added = field("F-09", "Treatment received to date (fictional)", { answerType: "long_text", fillSource: { kind: "clinician_opinion" } });
+    const added = field("F-09", "Treatment given so far (fictional)", { answerType: "long_text", fillSource: { kind: "clinician_opinion" } });
     const { map, changed } = applyTemplateEdits(maps()["orchard.maps.json"]["Orchard EOTS.rtf"], { add: [{ after: "F-02", field: added }] }, "t");
     assert.deepEqual(map.fields.map((f) => f.id), ["F-01", "F-02", "F-09", "F-03", "F-04", "F-05"]);
     assert.deepEqual(changed, { "F-09": ["added"] });

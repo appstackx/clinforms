@@ -330,7 +330,7 @@ export function printedLeadIn(blockText: string, placeholder: string, occurrence
   if (at < 0) return null;
   const before = text.slice(0, at);
   // The clause the blank completes: after the last sentence end, label colon, tab-like gap, an earlier blank, or a
-  // comma before a capital ("Yes, Physiotherapy, To return to …").
+  // comma before a capital (“Plan agreed, To return to …”).
   const clause = before.split(/(?:[.!?]\s|:\s|\s{2,}|[|•]|…|\.{2,}|_{2,}|,\s+(?=[A-Z]))/).pop() ?? "";
   const lead = clause.replace(/^[\s\-–—,;]+/, "").trimEnd().slice(-80).trim();
   return /[A-Za-z]/.test(lead) ? lead : null;

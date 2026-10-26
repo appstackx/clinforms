@@ -98,7 +98,7 @@ describe("map lint (core/form-map-lint.ts)", () => {
       { p: "Clinic postcode: <<P_LOCATION_POSTCODE>>" },
       { p: "Hospital number: <<P_HOSP_NUM>>" },
       { p: "Something else: <<P_CORPUS_UNKNOWN>>" },
-      { p: "Patient: <<P_FIRSTNAM>> <<P_SURNAME>>" },
+      { p: "Patient: <<P_SURNAME>>" },
     ];
     const parsed = buildDocxOutline(buildDocx(layout));
     const r = bindPracticeMergeCodes({ kind: "docx", blocks: parsed.blocks, warnings: [] }, []);
