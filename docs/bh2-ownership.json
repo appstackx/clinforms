@@ -170,7 +170,6 @@
     "src/modules/medreport/core/form-map-lint.ts",
     "scripts/admin/apply-map-edits.ts",
     "scripts/medreport/bh-maps.test.ts",
-    "scripts/medreport/guide-terms-check.mjs",
     "scripts/admin/check-issued.ts"
   ],
   "integratorOnly": [
