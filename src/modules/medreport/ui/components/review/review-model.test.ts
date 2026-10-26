@@ -635,7 +635,17 @@ describe("fix round 1 (B0-22): one count of answered and left-blank questions", 
 
 describe("fix round 1 (B0-7): a conditional question's gaps follow the answer before it", () => {
   it("“No” settles the gaps of “IF YES, PLEASE DETAIL” as not applicable (audited); “Yes” reopens them", () => {
-    const { report: base } = drafted();
+    const { report: release } = drafted();
+    // bh2-rc1: a report from before the release – the review reads its printed questions at run time. A report this
+    // release made reads only the conditions frozen when it was created (WA1 design 3; gaps.ts settleConditionalGaps),
+    // and its questions cannot be renamed (WC: the store pins each box's title).
+    const sections = release.sections.map((s) => {
+      const legacy = { ...s };
+      delete legacy.condition;
+      return legacy;
+    });
+    const base = { ...release, sections } as Report;
+    delete (base as { reportModel?: number }).reportModel;
     // F-06 printed as "IF YES, PLEASE DETAIL" under F-04 (yes / no / modified duties).
     const report: Report = {
       ...base,

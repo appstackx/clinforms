@@ -319,7 +319,9 @@ test("check-WC 3: an amended version is checked against the version it amends â€
   const { validated } = built;
   const h = createHttpHarness();
   const withSarahAck: Report = { ...validated, flags: validated.flags.map((f) => (f.code === "OPINION_LANGUAGE" ? { ...f, acknowledged: { reason: "My own clinical opinion.", at: validated.updatedAt, by: SARAH } } : f)) };
-  const s = await postSign(h, { report: withSarahAck, template: built.template, form: built.form, signer: "sarah", mode: "tenant" });
+  // bh2-rc1 (WA1 x WC): a clinic's /sign fills the referrer's form file as a dry run and refuses without one (WA1
+  // design 6, fail closed) â€“ the approval sends it, as the corpus harness's other /sign calls do.
+  const s = await postSign(h, { report: withSarahAck, template: built.template, form: built.form, signer: "sarah", mode: "tenant", fileBytes: built.fileBytes });
   assert.ok(s.receipt, JSON.stringify(s.body));
   const v1: Report = { ...withSarahAck, status: "signed", receipt: s.receipt, flags: (s.body as { flags: ReportFlag[] }).flags };
   await seed(h, v1);
