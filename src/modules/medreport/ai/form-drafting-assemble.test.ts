@@ -215,8 +215,11 @@ test("review minor 8: the request's author is never the drafting voice owner –
     });
   const tom = { name: "Tom Ellis", hcpc: "PH-DEMO-02" };
   // The client defaults the author to the clinician who wrote most notes: Sarah Reid's note in "Tom Ellis's" first
-  // person is checked against the APPROVER only – with no approver nobody's "I" is assumed.
-  assert.ok(!run(tom, null).flags.some((x) => x.code === "OTHER_CLINICIAN_VOICE"), "the author is not the voice owner");
+  // person is checked against the APPROVER only – with no approver nobody's "I" is assumed. bh2-rc1 (WB x WD): with no
+  // approver WB's voice check runs in strict mode (D1/E5, Khuram's call), so the first person is flagged for the
+  // approving clinician to settle – as nobody's, never as the author's.
+  const strict = run(tom, null).flags.filter((x) => x.code === "OTHER_CLINICIAN_VOICE");
+  assert.ok(strict.every((x) => /No approving clinician is chosen yet/.test(x.message)), "the author is not the voice owner");
   assert.equal(run(tom, null).sections[0].paragraphs[0].text, text, "printed as drafted");
   assert.ok(run(undefined, tom).flags.some((x) => x.code === "OTHER_CLINICIAN_VOICE" && x.evidence === "Sarah Reid"), "the approver is");
 });

@@ -154,7 +154,9 @@ test("value-only: offered for the approver's own note, hidden for a colleague's 
 
 test("the printed-lead fix takes the repeated verb out and answers its own block", () => {
   const f = cellForm([cell("F-27", "Next step – to return to", { guidance: "Completes the printed words “To return to”.", anchor: { kind: "docx", target: "replace_placeholder", blockId: "t0.r27.c1", placeholderText: "…" } })]);
-  const r = formWith(f, { "F-27": [ai("returning to work as a delivery driver", ["N-002"])] });
+  // bh2-rc1: the approver's own note (N-001, Sarah Reid) – a colleague's (N-002, Tom Ellis) also needs his name on
+  // Sarah Reid's form (WB design 8), a separate block this test is not about.
+  const r = formWith(f, { "F-27": [ai("returning to work as a delivery driver", ["N-001"])] });
   assert.ok(r.flags.some((x) => x.evidence === "printed lead" && x.severity === "blocking"));
   const fix = fixesOf(r, formToTemplate(f), f).find((x) => x.generator === "printed-lead");
   assert.ok(fix);
