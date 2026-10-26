@@ -48,6 +48,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.package_set",
       "clinic.package_removed",
       "clinic.forms_loaded",
+      "clinic.forms_replaced",
       "clinic.demo_on",
       "clinic.demo_off",
       "api_key.create",
@@ -57,7 +58,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Forms",
-    actions: ["file.upload", "form.create", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
+    actions: ["file.upload", "form.create", "form.replace", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
   },
   {
     label: "Reports",
@@ -104,6 +105,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.package_set": "Package set by ClinForms",
   "clinic.package_removed": "Package removed by ClinForms",
   "clinic.forms_loaded": "Forms added to the library by ClinForms",
+  "clinic.forms_replaced": "Forms updated in the library by ClinForms",
   "clinic.demo_on": "Made a demo clinic by ClinForms",
   "clinic.demo_off": "Demo clinic switched off by ClinForms",
   "api_key.create": "API key created",
@@ -112,6 +114,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   // The Studio and the Report API (src/modules/medreport: auth/actor.ts AUDIT_ACTIONS and the /store handlers).
   "file.upload": "Form file uploaded",
   "form.create": "Form added to the library",
+  "form.replace": "Form replaced by an updated version from ClinForms",
   "form.update": "Form mapping saved",
   "form.analyse_live": "Form questions read from the file",
   "form.confirm": "Form mapping confirmed",
@@ -278,6 +281,13 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     }
     case "clinic.forms_loaded":
       return typeof detail.forms === "number" ? `${detail.forms} ${detail.forms === 1 ? "form" : "forms"} to check and confirm` : null;
+    case "clinic.forms_replaced": {
+      const n = (key: string) => (typeof detail[key] === "number" ? (detail[key] as number) : 0);
+      const changed = n("replaced") + n("forms");
+      return changed > 0 ? `${changed} ${changed === 1 ? "form" : "forms"} to check and confirm` : null;
+    }
+    case "form.replace":
+      return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"} to check and confirm` : null;
     case "clinic.trial_started":
       return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
     case "clinic.trial_extended":

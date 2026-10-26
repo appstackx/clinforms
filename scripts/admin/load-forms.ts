@@ -5,7 +5,15 @@
  *
  *   npm run admin:load-forms -- --slug blue-heart --dir ~/secure/blue-heart-templates --maps ~/secure/blue-heart-maps.json
  *       [--read-missing [--referrer "Provider name" --referrer-type mlc]]   # files without a map: layout-rules reading
+ *       [--replace-proposed]   # corrected maps/conversions: replace the clinic's unconfirmed, unused forms of these templates
  *       [--confirm] [--env preview|production] [--yes]
+ *
+ * --replace-proposed (10/2026): per file REPLACE (the clinic's form for this template is still a proposal, unchanged
+ * since ClinForms loaded it and never used by a report – it is replaced by a fresh proposal from this file and map),
+ * LOAD (no form for this template yet), SKIP (already this file and this map; or no map for a form made from one) or
+ * REFUSED (with the reason – e.g. the form was confirmed or used, a second file for the same template, or the form
+ * changed while it was being replaced: it is kept untouched). Two runs at the same time never duplicate a form.
+ * Rules: src/server/admin/load-forms.ts.
  *
  * --maps: JSON – {"<file name>": {title, referrer: {name, type}, fields: [FormField…], file?: {sha256}}, …}, the same
  * under "maps", or a list of maps each naming file.fileName. A map is checked against its file (SHA-256 when given,
@@ -13,7 +21,7 @@
  * Production needs --confirm --yes and Khuram's go. Prints file names and counts only – never template wording.
  */
 import fs from "node:fs";
-import { loadClinicForms, parseMapsJson, type MapsJson } from "../../src/server/admin/load-forms";
+import { loadClinicForms, parseMapsJson, type LoadFormsFileResult, type MapsJson } from "../../src/server/admin/load-forms";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
 import { ReferrerTypeSchema } from "../../src/modules/medreport/core/schemas";
@@ -25,7 +33,14 @@ export interface LoadFormsArgs {
   mapsPath: string | null;
   readMissing: boolean;
   confirm: boolean;
+  replaceProposed: boolean;
   referrer?: { name: string; type: ReturnType<typeof ReferrerTypeSchema.parse> };
+}
+
+/** The status word printed per file; --replace-proposed says what would happen (REPLACE / LOAD / SKIP / REFUSED). */
+export function statusLabel(status: LoadFormsFileResult["status"], replaceMode: boolean): string {
+  if (!replaceMode) return status.toUpperCase();
+  return { ready: "LOAD", loaded: "LOADED", replace: "REPLACE", replaced: "REPLACED", skipped: "SKIP", refused: "REFUSED" }[status];
 }
 
 export function loadFormsArgs(args: Map<string, string | true>): LoadFormsArgs {
@@ -43,6 +58,7 @@ export function loadFormsArgs(args: Map<string, string | true>): LoadFormsArgs {
     mapsPath: mapsPath ? mapsPath.replace(/^~(?=$|\/)/, process.env.HOME ?? "~") : null,
     readMissing,
     confirm: flag(args, "confirm"),
+    replaceProposed: flag(args, "replace-proposed"),
     ...(name ? { referrer: { name, type: ReferrerTypeSchema.parse(type ?? "other") } } : {}),
   };
 }
@@ -57,19 +73,36 @@ if (process.argv[1] && /load-forms\.ts$/.test(process.argv[1])) {
     const maps: MapsJson = a.mapsPath ? parseMapsJson(fs.readFileSync(a.mapsPath, "utf8")) : {};
     const result = await loadClinicForms(
       { db: getDb(), cipher: getDataCipher() },
-      { tenantId: a.slug, dir: a.dir, maps, readMissing: a.readMissing, confirm: a.confirm, ...(a.referrer ? { defaultReferrer: a.referrer } : {}) },
+      {
+        tenantId: a.slug,
+        dir: a.dir,
+        maps,
+        readMissing: a.readMissing,
+        confirm: a.confirm,
+        replaceProposed: a.replaceProposed,
+        ...(a.referrer ? { defaultReferrer: a.referrer } : {}),
+      },
     );
     const where = target === "current" ? `the ${getDbKind()} database` : target;
-    console.log(`${result.dryRun ? "PREVIEW – nothing stored." : "Stored."} Clinic ${result.tenantId} on ${where}:`);
+    console.log(`${result.dryRun ? "PREVIEW – nothing stored." : "Stored."}${result.replaceProposed ? " Replace mode." : ""} Clinic ${result.tenantId} on ${where}:`);
     // Security fix 24/10/2026: file names come from the clinic – control characters (terminal escapes) are shown as "?".
     const safe = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
     for (const f of result.files) {
       const what = f.questions !== undefined ? `${f.questions} questions (${f.fromRecords ?? 0} from the record, ${f.forStaff ?? 0} for staff), ${f.mergeFields ?? 0} merge codes, map from ${f.mapFrom}` : "";
       const conv = f.convertedFromRtf ? ` RTF ${((f.rtfBytes ?? 0) / 1048576).toFixed(1)} MB → Word ${((f.sizeBytes ?? 0) / 1024).toFixed(0)} KB,` : "";
-      console.log(`  ${f.status.toUpperCase().padEnd(8)} ${safe(f.file)}${conv ? ` –${conv}` : ""} ${what}${f.reason ? ` – ${safe(f.reason)}` : ""}`);
+      const replaces = f.replaces?.length ? ` – replaces ${f.replaces.join(", ")}` : "";
+      console.log(`  ${statusLabel(f.status, result.replaceProposed).padEnd(8)} ${safe(f.file)}${conv ? ` –${conv}` : ""} ${what}${replaces}${f.reason ? ` – ${safe(f.reason)}` : ""}`);
     }
     const counts = (s: string) => result.files.filter((f) => f.status === s).length;
-    console.log(`  ready ${counts("ready")} · loaded ${counts("loaded")} · skipped ${counts("skipped")} · refused ${counts("refused")}`);
+    if (result.replaceProposed) {
+      console.log(
+        result.dryRun
+          ? `  replace ${counts("replace")} · load ${counts("ready")} · skip ${counts("skipped")} · refused ${counts("refused")}`
+          : `  replaced ${counts("replaced")} · loaded ${counts("loaded")} · skipped ${counts("skipped")} · refused ${counts("refused")}`,
+      );
+    } else {
+      console.log(`  ready ${counts("ready")} · loaded ${counts("loaded")} · skipped ${counts("skipped")} · refused ${counts("refused")}`);
+    }
     if (result.dryRun) console.log("Run again with --confirm to store them (proposed maps: the clinic's staff confirm each one).");
   });
 }
