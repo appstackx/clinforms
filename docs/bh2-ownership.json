@@ -43,6 +43,10 @@
     "scripts/medreport/w0-plumbing.test.ts": "W0",
     "scripts/medreport/schema-expansion.test.ts": "W0",
     "scripts/medreport/schema-expansion-fixtures.ts": "W0",
+    "src/modules/medreport/core/stored-schemas.ts": "W0",
+    "scripts/medreport/schema-forward-compat.test.ts": "W0",
+    "scripts/medreport/forward-compat-fixture.ts": "W0",
+    "scripts/medreport/fixtures/forward-compat/**": "W0",
     "src/modules/medreport/core/actor.test.ts": "W0",
     "src/modules/medreport/api/handlers/sign/checks/context.ts": "W0",
 

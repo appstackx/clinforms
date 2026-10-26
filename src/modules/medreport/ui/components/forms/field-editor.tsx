@@ -13,6 +13,8 @@ import {
   COMPUTED_FACT_FORMAT_LABELS,
   REGISTRATION_PATH_LABELS,
   SIGNOFF_PART_LABELS,
+  isKnownRegistrationPath,
+  registrationPathLabel,
 } from "../../../core/labels";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import {
@@ -162,6 +164,12 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
                 setSource({ kind: "registration", path, ...(part ? { part } : {}) });
               }}
             >
+              {/* A record value a later release set (this build does not offer it): shown as kept, never as another value. */}
+              {isKnownRegistrationPath(src.path) ? null : (
+                <option value={src.path} disabled>
+                  {registrationPathLabel(src.path)}
+                </option>
+              )}
               {RegistrationPathSchema.options.map((p) => (
                 <option key={p} value={p}>
                   {REGISTRATION_PATH_LABELS[p]}

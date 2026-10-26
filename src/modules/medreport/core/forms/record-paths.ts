@@ -227,6 +227,10 @@ export function resolveRegistrationValue(
       if (path === "clinician.hcpc") return textValue(clinician.hcpc, ids);
       return textValue(clinician.role ?? "Physiotherapist", ids);
     }
+    // A record path a later release added (a form map read as stored, core/stored-schemas.ts): this build does not
+    // know where that value is, so it is not held here – left blank for staff, never guessed.
+    default:
+      return null;
   }
 }
 

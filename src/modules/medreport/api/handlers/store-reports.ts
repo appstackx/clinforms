@@ -8,7 +8,8 @@ import "server-only";
  *        No If-Match = create; If-Match: "<rev>" = update of exactly that revision.
  *        409 REV_CONFLICT {current: {rev, updatedAt, report} | null} when the stored revision differs (or the
  *        report already exists on a create) – the Studio reloads the stored copy.
- *        Rules: the body passes ReportSchema (422); report.id = the path id (422); the clinic is the
+ *        Rules: the body passes ReportSchema (422 – strict; a stored copy is READ with core/stored-schemas.ts
+ *        StoredReportSchema, which keeps what a later release wrote); report.id = the path id (422); the clinic is the
  *        member's (report.tenantId is set from the sign-in, never trusted); a report marked "signed" needs an
  *        approval receipt that verifies for this clinic and this exact content (422 RECEIPT_INVALID); any receipt
  *        on a draft must at least be genuine and for this report and clinic; an approved (signed) report cannot be
@@ -29,7 +30,7 @@ import { MANAGE_ROLES, assertActorTenant } from "../../auth/actor";
 import { verifyReceipt } from "../../auth/sign-receipt";
 import { DEMO_TENANT_ID } from "../../config.public";
 import { WORDING } from "../../core/wording";
-import { ReportSchema } from "../../core/schemas";
+import { StoredReportSchema } from "../../core/stored-schemas";
 import type { Report } from "../../core/types";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import {
@@ -55,9 +56,12 @@ function readIfMatch(req: Request): number | null {
   return rev;
 }
 
-/** A stored payload that no longer parses is a server fault, never shown to the client as data. */
+/**
+ * A stored payload that no longer parses is a server fault, never shown to the client as data. Read as stored
+ * (core/stored-schemas.ts): keys and flag codes a later release wrote stay in, so its receipt still verifies.
+ */
 function parseStoredReport(payload: unknown, id: string): Report {
-  const parsed = ReportSchema.safeParse(payload);
+  const parsed = StoredReportSchema.safeParse(payload);
   if (!parsed.success) {
     logEvent("store_report_unreadable", { id });
     throw new HttpError(500, "The stored report could not be read", { code: "INTERNAL", detail: "Please try again, or contact support." });
@@ -68,7 +72,7 @@ function parseStoredReport(payload: unknown, id: string): Report {
 async function currentCopy(store: TenantStore, tenantId: string, id: string): Promise<StoreReportResponse | null> {
   const stored = await store.getReport(tenantId, id);
   if (!stored) return null;
-  const parsed = ReportSchema.safeParse(stored.payload);
+  const parsed = StoredReportSchema.safeParse(stored.payload);
   return parsed.success ? { rev: stored.rev, updatedAt: stored.updatedAt, report: parsed.data } : null;
 }
 

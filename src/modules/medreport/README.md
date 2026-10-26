@@ -1895,3 +1895,39 @@ check through a real read → check → confirm –, the new report, usage on th
 client), `ui/tenant-mode.test.ts` (row action, header action draft/approved, the wizard with `?from=`, the page key,
 the form step incl. a library with one form), `ui/routes.test.ts`, `src/server/admin/admin.test.ts` (label and group of
 `notes.reused`). Browser check: `scripts/e2e/reuse-notes.cjs` (local SQLite clinic, demo mode).
+
+## Rollback shim: reading what a later release stored (10/2026, branch `fix/schema-forward-compat`)
+
+Review finding R-regression-9: release/bh-trial-2 writes new optional keys and enum members into stored reports,
+receipts and form maps (plan W0.3). Rolled back to a build that reads them with the strict schemas, those records were
+unreadable (`GET /store/reports/{id}` 500, the public demo's list dropped them) – and where they parsed, the unknown
+keys were dropped, so fingerprints, receipt MACs and map attestations no longer matched.
+- **Reads** of stored records use `core/stored-schemas.ts`: `StoredReportSchema`, `StoredSignReceiptSchema`,
+  `StoredFormDefinitionSchema` – the write schemas with every object loose (unknown keys kept as written) and three
+  open enums (`FORWARD_OPEN_ENUMS`: flag codes, paragraph origins, record paths; any other enum, literal, fill kind or
+  anchor kind stays closed, as do all bounds – except a registration `part`, up to 30 session lines). Used by the
+  store GETs and 409 copies, the Studio's store client, the browser store, `verifyReceipt`/`verifyReceiptMac`, and the
+  request bodies that carry stored records for reading (`/validate`, `/render`, `/forms/fill-preview`, the write-back
+  receipt, and the form map of `/drafts`, `/sign` and `/ai/payload-preview`).
+- **Writes stay strict** (`core/schemas.ts`): PUT bodies, `/sign`'s report, `/forms/confirm`. The Studio approves the
+  report as `/sign` signs it (`ReportSchema`, keys it does not know left out), so the stored approval is that shape.
+- **Unknown members:** generic labels (`core/labels.ts` `UNKNOWN_MEMBER_LABELS`, `flagCodeLabel`,
+  `registrationPathLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap for staff). The
+  validators recompute flags with this build's codes only.
+- **Nothing that verified before changes:** `verifyReceipt` checks the MAC and the content hash as stored and, failing
+  that, as this build knows the records (exactly the pre-shim check). The form map's hash works the same way
+  (`auth/attestations.ts` `formMapMatches`: `verifyFormConfirmation`, the `report.form.mapSha256` check in
+  `api/resolve-template.ts`), so an API client's copy of a map with a key of its own in a field is accepted as before;
+  `/sign` records the map's **attested** hash in the receipt and a FINAL compares the receipt with it – the value e132057
+  recorded for every map it accepted.
+- **Values no ClinForms build writes** (JSON `1e400` → Infinity, nesting deep enough to exhaust the stack) can only sit
+  under a key this build does not know – the read schemas keep them, `canonicalize()` throws on them. Every hash or
+  MAC over a record as read is computed inside a try (`sign-receipt.ts` `macMatches` / `readReportFingerprint`,
+  `attestations.ts` `formMapMatches`): no match as read, then the check as this build knows the record – never a 500.
+- **`x-medreport-content-sha256`:** on a FINAL, the hash the verified receipt records (also when it verified over the
+  report as this build knows it); on a draft, the report's fingerprint as read (else as known; 422 for a report e132057
+  refused outright and that holds such a value).
+- Tests: `scripts/medreport/schema-forward-compat.test.ts` with the fixture `forward-compat-fixture.ts`
+  (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
+  `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new
+  shim on `main`, deployed, first).

@@ -15,6 +15,7 @@ import { BATCH_CONCURRENCY, NOTICES } from "../../../config.public";
 import { sha256HexBytes } from "../../../core/fingerprint";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import { planDraftGroups } from "../../../core/report-factory";
+import { ReportSchema } from "../../../core/schemas";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
 import { flushStore } from "../../store";
@@ -88,7 +89,12 @@ export function useReviewActions(opts: {
 
   const approve = useCallback(
     async (input: ApproveInput): Promise<ApproveResult> => {
-      const fresh = validateNow();
+      const validated = validateNow();
+      // /sign signs the report as this build knows it (core/schemas.ts) and the store keeps exactly that, so the approved
+      // copy is that same shape: keys a later release wrote into a stored draft (kept on reading, core/stored-schemas.ts)
+      // are not part of it. For a report written by this build both are the same.
+      const strict = ReportSchema.safeParse(validated);
+      const fresh = strict.success ? strict.data : validated;
       try {
         // Approval is authenticated: the tab's launch session for this patient (bound to the clinician
         // the clinic system opened it for), else a demo-tenant session.

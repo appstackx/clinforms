@@ -9,9 +9,8 @@ import "server-only";
  * Owner: WA1 (issue state and receipt) – docs/bh2-ownership.json.
  */
 import type { Actor } from "../../../auth/actor";
-import { formMapSha256 } from "../../../auth/attestations";
 import { createReceipt } from "../../../auth/sign-receipt";
-import type { Clinician, FormDefinition, Report, ReportTemplate, SignReceipt } from "../../../core/types";
+import type { Clinician, Report, ReportTemplate, SignReceipt } from "../../../core/types";
 
 export function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"]> {
   if (actor.via === "demo") {
@@ -31,15 +30,18 @@ export function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"
   };
 }
 
-/** The receipt for an approval that passed every check. */
-export async function mintReceipt(input: { report: Report; signer: Clinician; template: ReportTemplate; form: FormDefinition | null; actor: Actor }): Promise<SignReceipt> {
+/**
+ * The receipt for an approval that passed every check. `formMapSha256`: the form map's attested hash
+ * (resolve-template.ts checkAttestedForm – the map as read, or as this build knows it; rollback shim).
+ */
+export async function mintReceipt(input: { report: Report; signer: Clinician; template: ReportTemplate; formMapSha256?: string; actor: Actor }): Promise<SignReceipt> {
   const { report, signer, template, actor } = input;
   return createReceipt({
     report,
     signer,
     statementAccepted: true,
     attestations: [...template.attestations],
-    ...(input.form ? { formMapSha256: formMapSha256(input.form) } : {}),
+    ...(input.formMapSha256 ? { formMapSha256: input.formMapSha256 } : {}),
     approvedVia: approvedVia(actor),
   });
 }

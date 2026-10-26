@@ -54,7 +54,7 @@ import { MAX_FORM_REQUEST_BYTES } from "../../../config.public";
 import { normaliseDemoHcpc } from "../../../core/demo-clinic";
 import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../../http";
-import { requireAttestedForm, resolveTemplate } from "../../resolve-template";
+import { checkAttestedForm, resolveTemplate } from "../../resolve-template";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
 import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
 import { issuedDocumentCheck, staleReportCheck, validationCheck } from "./checks/issue";
@@ -116,9 +116,13 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (!resolved.ok) return resolved.response;
   const { template } = resolved;
 
+  // The receipt records the map's attested hash: the hash of the map as read, or (an API client's copy with a key of
+  // its own) as this build knows it – exactly what it recorded before the rollback shim (auth/attestations.ts formMapMatches).
+  let attestedMapSha256: string | undefined;
   if (resolved.form) {
-    const unconfirmed = requireAttestedForm(resolved.form, actor.tenantId);
-    if (unconfirmed) return unconfirmed;
+    const attested = checkAttestedForm(resolved.form, actor.tenantId);
+    if (!attested.ok) return attested.response;
+    attestedMapSha256 = attested.mapSha256;
   }
 
   const issues: ProblemIssue[] = [];
@@ -142,7 +146,7 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
   if (demoRefusal) return demoRefusal;
 
-  const receipt = await mintReceipt({ report, signer, template, form: resolved.form, actor });
+  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor });
   const body: SignResponse = { receipt, flags: result.flags };
   logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
   const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;

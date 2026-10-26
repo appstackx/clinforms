@@ -12,7 +12,7 @@
 import { useId, useState } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
-import { DATA_CHECK_LABELS, FLAG_CODE_LABELS } from "../../../core/labels";
+import { DATA_CHECK_LABELS, flagCodeLabel } from "../../../core/labels";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
@@ -93,7 +93,8 @@ function ReasonForm({
 function flagTitle(flag: ReportFlag): string {
   if (flag.code === "MISSING_PLACEHOLDER" && flag.evidence === "optional field blank") return "Optional – no answer";
   if (flag.code === "MISSING_PLACEHOLDER" && flag.evidence?.startsWith("mail-merge field ")) return "Mail-merge field left on the form";
-  return FLAG_CODE_LABELS[flag.code];
+  // A flag code this build does not know (a stored report from a later release, core/stored-schemas.ts): the generic label.
+  return flagCodeLabel(flag.code);
 }
 
 export function FlagItem({

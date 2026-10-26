@@ -231,3 +231,28 @@ export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {
   INCIDENT_DATE_MISSING: "Incident date missing",
   MULTIPLE_CLINICIANS: "Notes written by more than one clinician",
 };
+
+/* ------------------------------------------------------------------------------------------------
+ * Members this build does not know (the rollback shim, core/stored-schemas.ts FORWARD_OPEN_ENUMS): a stored record
+ * written by a later release may carry a flag code, paragraph origin or record path that is not listed above.
+ * ----------------------------------------------------------------------------------------------*/
+
+export const UNKNOWN_MEMBER_LABELS = {
+  flagCode: "Other check",
+  paragraphOrigin: "Entered",
+  registrationPath: "Another value from the record (kept as saved)",
+} as const;
+
+const has = (labels: object, key: string) => Object.prototype.hasOwnProperty.call(labels, key);
+
+export function flagCodeLabel(code: string): string {
+  return has(FLAG_CODE_LABELS, code) ? FLAG_CODE_LABELS[code as ReportFlagCode] : UNKNOWN_MEMBER_LABELS.flagCode;
+}
+
+export function isKnownRegistrationPath(path: string): path is RegistrationPath {
+  return has(REGISTRATION_PATH_LABELS, path);
+}
+
+export function registrationPathLabel(path: string): string {
+  return isKnownRegistrationPath(path) ? REGISTRATION_PATH_LABELS[path] : UNKNOWN_MEMBER_LABELS.registrationPath;
+}

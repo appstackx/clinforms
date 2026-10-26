@@ -48,7 +48,8 @@ export function Pill({ className, children, title }: { className?: string; child
 }
 
 export function OriginPill({ origin, label }: { origin: ParagraphOrigin; label: string }) {
-  return <Pill className={ORIGIN_PILL_CLASSES[origin]}>{label}</Pill>;
+  // An origin this build does not know (a later release's stored report) looks like a person's entry.
+  return <Pill className={ORIGIN_PILL_CLASSES[origin] ?? ORIGIN_PILL_CLASSES.clinician}>{label}</Pill>;
 }
 
 export function StatusDot({ status, className }: { status: QuestionStatus; className?: string }) {

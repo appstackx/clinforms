@@ -6,6 +6,7 @@
  * Owner: WC (review roles and provenance) – docs/bh2-ownership.json.
  */
 import { formatUkDate, formatUkDayMonth } from "../../../core/dates";
+import { UNKNOWN_MEMBER_LABELS } from "../../../core/labels";
 import { answerKindFor, answerToText, parseFormAnswerValue } from "../../../core/forms";
 import { NOTICES } from "../../../config.public";
 import { TENANT_COPY } from "../../studio-copy";
@@ -78,7 +79,8 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
 
 /**
  * Origin pill text. From-records answers name the clinic system they came from. Once the report is approved
- * (`approved`), a drafted paragraph says where it came from rather than "Draft" (test run 24/10/2026, finding 6).
+ * (`approved`), a drafted paragraph says where it came from rather than "Draft" (test run 24/10/2026, finding 6). An
+ * origin this build does not know (a stored report from a later release, core/stored-schemas.ts) gets the generic label.
  */
 export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, approved = false): string {
   switch (origin) {
@@ -93,6 +95,8 @@ export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, a
     // bh2 (plan W0.3): defined for WC, which writes it; WC words the full label ("Entered by <name> (staff) – …").
     case "staff":
       return "Entered by staff";
+    default:
+      return UNKNOWN_MEMBER_LABELS.paragraphOrigin;
   }
 }
 
