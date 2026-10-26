@@ -210,6 +210,10 @@ export function resolveRegistrationValue(
     // A detail the record here does not hold: never filled by code – staff enter it (the caller raises the gap).
     case "staff.entry":
       return null;
+    // bh2 (plan W0.3): the list of attended appointment dates (fill source `sessions`) is defined in core/schemas.ts and
+    // resolved by WE's record paths; until then nothing is filled (the caller raises the gap), so nothing is guessed.
+    case "episode.attendedDates":
+      return null;
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
