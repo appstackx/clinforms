@@ -140,11 +140,15 @@ export function checkFixRules(before: Report, after: Report, blockingBefore: rea
     if (was === now) continue;
     const extra = multisetSubset(figures(now), figures(was));
     if (extra.length) problems.push(`${s.key}: figures changed or added (${extra.join(", ")})`);
-    for (const sentence of roughSentences(now)) {
+    // A box whose answer already started with a figure ("7/10 at worst, as recorded by …" → "7/10 at worst", WD
+    // EDIT-compact-04) keeps that start; a figure start the fix created ("0, a mild ache…") is still refused.
+    const leadFigure = (t: string) => (/^\d+(?:[.,:/]\d+)*/.exec(t) ?? [""])[0];
+    const keptLead = leadFigure(now) !== "" && leadFigure(now) === leadFigure(was);
+    roughSentences(now).forEach((sentence, i) => {
       if (/^[,;:]/.test(sentence)) problems.push(`${s.key}: a sentence starts with punctuation – “${sentence.slice(0, 40)}”`);
       else if (/^[a-z]/.test(sentence)) problems.push(`${s.key}: a sentence starts in lower case – “${sentence.slice(0, 40)}”`);
-      else if (/^\d/.test(sentence) && !DATE_LEAD.test(sentence)) problems.push(`${s.key}: a sentence starts with a digit – “${sentence.slice(0, 40)}”`);
-    }
+      else if (/^\d/.test(sentence) && !DATE_LEAD.test(sentence) && !(i === 0 && keptLead)) problems.push(`${s.key}: a sentence starts with a digit – “${sentence.slice(0, 40)}”`);
+    });
     if (/^(?:He|She|They) (?:recorded|noted|found|assessed|measured)\b/.test(now) && !/^(?:He|She|They) /.test(was)) {
       problems.push(`${s.key}: “${now.slice(0, 30)}…” has lost who recorded it`);
     }

@@ -49,11 +49,12 @@ describe("W0.6 plumbing", () => {
     assert.equal(new Set(names).size, names.length, "validator names are unique (they name the check that could not run)");
   });
 
-  it("WD's DRAFT_FIT stub parts give no flags", () => {
+  it("WD's DRAFT_FIT parts (once W0.6 stubs) are per-paragraph parts", () => {
     const report = voiceReport(sarah);
     const input = { report, bundle: report.bundleSnapshot, template: SOL, computedFacts: [] };
-    assert.deepEqual(fragmentsPart(input), {});
-    assert.deepEqual(printedLeadPart(input), {});
+    // bh2 WD filled the two stubs in (wording fragments, the printed lead): each is a per-paragraph part now.
+    assert.equal(typeof fragmentsPart(input).paragraph, "function");
+    assert.equal(typeof printedLeadPart(input).paragraph, "function");
   });
 
   it("the /sign stub checks refuse nothing", async () => {
