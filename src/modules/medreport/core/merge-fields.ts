@@ -19,9 +19,10 @@
  *
  * Browser-safe and pure.
  */
-import { docxAnchorBlockIds, formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
+import { docxAnchorBlockIds, formAnchorPdfFieldNames } from "./forms";
+import { clearsItsPlaceholder, issueDetails, type BoxIssue, type IssueContent } from "./issue-state";
 import { findPracticeCodes, practiceCodeWords } from "./practice-merge-codes";
-import type { FormDefinition, FormField, FormMergeField, Report } from "./types";
+import type { FormDefinition, FormMergeField } from "./types";
 
 const TOKEN = "«[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}»|<<[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}>>|\\bMERGEFIELD\\b";
 
@@ -76,10 +77,14 @@ export interface UnresolvedMergeField extends FormMergeField {
   fieldId?: string;
 }
 
-function answeredOrSignoff(field: FormField, report: Pick<Report, "sections">): boolean {
-  if (field.fillSource.kind === "signoff") return true; // written from the approval receipt
-  const section = report.sections.find((s) => s.key === field.id);
-  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: isBlankByDesign(section, field) }));
+/**
+ * bh2 WA1 design 5: whether a box's fill removes what is printed in its place – its issue state
+ * (core/issue-state.ts): answered, filled at approval (sign-off), ruled out by a frozen condition or a person, a session
+ * not attended, or empty by design. A box with no answer, left blank on purpose, or ruled out only by the earlier
+ * run-time reading leaves its code there.
+ */
+function clears(box: BoxIssue | undefined): boolean {
+  return Boolean(box && clearsItsPlaceholder(box));
 }
 
 function inBlock(anchorBlockId: string, blockId: string): boolean {
@@ -88,14 +93,15 @@ function inBlock(anchorBlockId: string, blockId: string): boolean {
 
 /**
  * The form's recorded mail-merge fields that the completed form would still contain: a Word body field
- * is cleared only by as many answered questions replacing exactly that text in that place (sign-off
- * questions count – they are written at approval); a fillable PDF field's printed value by an answered
- * question in that field; a `fixed` one (page header or footer, a Word field code, text printed on a PDF
- * page) never.
+ * is cleared only by as many questions replacing exactly that text in that place whose box clears it (answered,
+ * sign-off – written at approval –, not asked, or empty by design: see clears() above); a fillable PDF field's printed
+ * value by such a question in that field; a `fixed` one (page header or footer, a Word field code, text printed on a
+ * PDF page) never. `report` is the whole report (its approver decides whether an "applies anyway" counts).
  */
-export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "fields">, report: Pick<Report, "sections">): UnresolvedMergeField[] {
+export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "fields">, report: IssueContent): UnresolvedMergeField[] {
   const entries = form.analysis.mergeFields ?? [];
   if (entries.length === 0) return [];
+  const boxes = new Map(issueDetails(report, form).map((b) => [b.key, b]));
   const groups = new Map<string, UnresolvedMergeField>();
   for (const e of entries) {
     const key = `${e.blockId ?? ""}|${e.fieldName ?? ""}|${e.fixed ? "fixed" : ""}|${e.where}|${e.text}`;
@@ -120,14 +126,14 @@ export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "f
         // (A question that writes AFTER the printed text – writeAfter, 10/2026 – leaves the code there.)
         const replaces = f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0;
         if (replaces) owner ??= f.id;
-        if (replaces && answeredOrSignoff(f, report)) cleared += 1;
+        if (replaces && clears(boxes.get(f.id))) cleared += 1;
       }
       near = owner ?? near;
     } else if (!g.fixed && g.fieldName) {
       for (const f of form.fields) {
         if (!formAnchorPdfFieldNames(f.anchor).includes(g.fieldName)) continue;
         near ??= f.id;
-        if (answeredOrSignoff(f, report)) cleared += 1;
+        if (clears(boxes.get(f.id))) cleared += 1;
       }
     }
     const left = g.count - cleared;

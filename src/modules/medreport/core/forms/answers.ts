@@ -6,7 +6,7 @@
  * Pure: no React, no Node built-ins, no env. Split out of core/forms.ts by W0.4 (bh2 module split, pure move; core/forms.ts re-exports it).
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
-import { notApplicable } from "../conditions";
+import { issueDetails } from "../issue-state";
 import { formatUkDate, isValidIsoDate, parseUkDate, todayIso } from "../dates";
 import { hasRowContent, rowsToText } from "../form-tables";
 import type { FormAnswer, FormAnswerRow, FormDefinition, FormField, Report, ReportSection, SignReceipt, SignoffPart } from "../types";
@@ -337,47 +337,64 @@ export function printsDefault(placeholder: string | undefined): boolean {
 }
 
 /**
- * The answers to write into the referrer's original file. Signoff fields are filled only when a
- * (verified) receipt is passed – on a DRAFT they stay blank. Unanswered fields map to {} (left as printed) – or, fix
- * round 1 (B0-2), to {leftBlank: true} when a person left the question blank or the report is approved (a receipt is
- * passed, or the report is signed): then no printed default reads as an answer.
+ * The answers to write into the referrer's original file – a thin adapter over the issue state (bh2 WA1 design 4,
+ * core/issue-state.ts): what each box issues is decided there, from the report's hashed content alone.
+ *
+ * - answer → its text, structured value or rows;
+ * - sign-off → the values of the (verified) receipt passed in; blank on a DRAFT;
+ * - not applicable (ruled out by a frozen condition, a person's decision or a session not attended) → nothing: the
+ *   printed placeholder, a merge code, a default, a tick or a "delete as necessary" list in its place is removed (the
+ *   forms engine's `blank` + `leftBlank`); a box ruled out by the earlier run-time reading (a report from before this
+ *   release) keeps its earlier output, `{leftBlank: true}`;
+ * - nothing in the record (an address line it does not have) → `{text: "", blank: true}`;
+ * - no answer → `{leftBlank: true}` once approved (a receipt is passed) or left blank by a person; else `{}` (as
+ *   printed, on a DRAFT).
+ * A FINAL copy (receipt passed) depends on the issue state and the receipt only. Only a DRAFT copy also takes the
+ * report's own status and acknowledged "optional and has no answer" warnings as "left blank" (fix round 1, B0-2), so the
+ * review's preview shows a decision before it is approved.
  */
 export function buildFormAnswers(
-  report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status">>,
+  report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status" | "reportModel" | "approver">>,
   form: Pick<FormDefinition, "fields">,
   opts: { receipt?: Pick<SignReceipt, "signer" | "signedAt"> | null } = {},
 ): FormFillAnswers {
   const signoff = opts.receipt ? signoffValuesFromReceipt(opts.receipt) : null;
-  const approved = Boolean(opts.receipt) || report.status === "signed";
+  const final = Boolean(opts.receipt);
+  const approvedDraft = !final && report.status === "signed";
   const answers: FormFillAnswers = {};
+  const boxes = new Map(issueDetails(report, form).map((b) => [b.key, b]));
   for (const field of answerableFields(form)) {
-    if (field.fillSource.kind === "signoff") {
-      answers[field.id] = signoffAnswer(field.fillSource.part, signoff);
+    const box = boxes.get(field.id);
+    const state = box?.state;
+    if (!state || state.kind === "referrer_use") continue;
+    if (state.kind === "signoff") {
+      answers[field.id] = field.fillSource.kind === "signoff" ? signoffAnswer(field.fillSource.part, signoff) : {};
       continue;
     }
-    const section = report.sections.find((s) => s.key === field.id);
-    const blankByDesign = isBlankByDesign(section, field);
-    // Fix round 1 (B0-7): a conditional question that does not apply prints nothing, whatever it holds.
-    if (section && notApplicable(report.sections, field.id)) {
-      answers[field.id] = { leftBlank: true };
-      continue;
+    switch (state.kind) {
+      case "answer":
+        answers[field.id] = state.rows ? { text: state.text, rows: state.rows } : state.value === undefined ? { text: state.text } : { text: state.text, value: state.value };
+        break;
+      case "not_applicable":
+        if (state.reason === "session_not_attended") answers[field.id] = { text: "", blank: true };
+        else if (state.reason === "condition" && !box.frozenCondition) answers[field.id] = { leftBlank: true };
+        else answers[field.id] = notAsked(field);
+        break;
+      case "blank":
+        if (state.reason === "record_empty") answers[field.id] = { text: "", blank: true };
+        else answers[field.id] = final || approvedDraft || state.reason === "left_blank" || leftBlankByPerson(report, field.id) ? { leftBlank: true } : {};
+        break;
     }
-    if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
-      answers[field.id] = section && (approved || leftBlankByPerson(report, field.id)) ? { leftBlank: true } : {};
-      continue;
-    }
-    const text = answerToText(section);
-    // 10/2026: left empty on purpose by the record – the forms engine removes the clinic system's code there.
-    if (blankByDesign && text.trim() === "") {
-      answers[field.id] = { text: "", blank: true };
-      continue;
-    }
-    const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
-    if (Array.isArray(structured)) {
-      answers[field.id] = { text, rows: structured };
-      continue;
-    }
-    answers[field.id] = structured === undefined ? { text } : { text, value: structured };
   }
   return answers;
+}
+
+/**
+ * A box that is not asked prints nothing in its place: the placeholder (a merge code, a default, dots) is removed
+ * (`blank`, the forms engine's clearPlaceholder) and a printed tick, mark or default is cleared (`leftBlank`). A "delete
+ * as necessary" list is removed whole (`leftBlank` alone: `blank` would leave it as printed).
+ */
+function notAsked(field: Pick<FormField, "anchor">): FormFillAnswer {
+  if (field.anchor.kind === "docx" && field.anchor.target === "delete_options") return { leftBlank: true };
+  return { text: "", blank: true, leftBlank: true };
 }

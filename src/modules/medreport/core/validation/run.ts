@@ -6,10 +6,11 @@
  * Owner: WA1 (issue state) – docs/bh2-ownership.json.
  */
 import { computeFacts } from "../computed-facts";
-import { notApplicable } from "../conditions";
+import { issueDetails } from "../issue-state";
 import { todayIso } from "../dates";
 import type { ComputedFact, DataCheck, FormDefinition, Gap, Report, ReportFlag, ReportFlagCode, ReportTemplate } from "../types";
 import { canAcknowledge } from "./acknowledge";
+import { notApplicableAnsweredFlags, withoutChecksOfBoxesNotAsked } from "./conditions";
 import { dedupeFlags, makeFlag } from "./context";
 import { runDataChecks } from "./data-checks";
 import { VALIDATORS, type ValidatorInput } from "./registry";
@@ -54,11 +55,6 @@ function dataCheckFlags(checks: DataCheck[]): ReportFlag[] {
     );
 }
 
-/** placeholders.ts's "this box has no answer yet" flag – the only MISSING_PLACEHOLDER a not-applicable box drops. */
-function isUnansweredBoxFlag(f: ReportFlag): boolean {
-  return f.code === "MISSING_PLACEHOLDER" && !f.paragraphId && (f.evidence === "empty section" || f.evidence === "optional field blank");
-}
-
 /**
  * Run every validator and return the full, fresh list of flags for the report.
  *
@@ -87,21 +83,28 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
       );
     }
   }
-  // Fix round 1 (B0-7): a conditional question that does not apply ("IF YES, PLEASE DETAIL" after a "No") is not asked:
-  // nothing of it is printed, so none of its checks blocks (its gaps are settled as not applicable by the review).
-  // Safety amendment (R-safety-8, release/bh-trial-2): MISSING_PLACEHOLDER is never dropped – a mail-merge code the
-  // question owns stays on the completed form when its box prints nothing, and the final copy refuses to issue a form
-  // with a merge code left on it, so approval stays blocked too (never "approved but cannot be issued"). The one
-  // exception is the box's own "no answer yet" flag (evidence "empty section" / "optional field blank"): a question
-  // that is not asked needs no answer.
-  const inapplicable = new Set((input.report.sections ?? []).filter((s) => notApplicable(input.report.sections, s.key)).map((s) => s.key));
-  if (inapplicable.size > 0) {
-    for (let i = flags.length - 1; i >= 0; i--) {
-      const f = flags[i];
-      if (!f.sectionKey || !inapplicable.has(f.sectionKey) || f.code === "OPEN_GAP") continue;
-      if (f.code === "MISSING_PLACEHOLDER" && !isUnansweredBoxFlag(f)) continue;
-      flags.splice(i, 1);
-    }
+  // bh2 WA1 design 5 (fix round 1 B0-7, R-safety-2, R-safety-8): a box's content checks are dropped only when it issues
+  // nothing – its issue state (core/issue-state.ts, from the report's hashed content alone) is "not applicable". A box
+  // the approver says applies anyway is an ordinary box: every check runs. Kept on a box that issues nothing: its open
+  // gaps, a mail-merge code the issued form would still hold, and the warning that a person's answer there will not be
+  // printed (validation/conditions.ts).
+  try {
+    const boxes = issueDetails(input.report, input.form ?? null);
+    const titles = new Map((input.report.sections ?? []).map((s) => [s.key, s.title]));
+    flags.push(...notApplicableAnsweredFlags(boxes, (key) => titles.get(key) ?? key));
+    const kept = withoutChecksOfBoxesNotAsked(flags, boxes);
+    flags.length = 0;
+    flags.push(...kept);
+  } catch {
+    // Malformed content: nothing is dropped, and the report cannot be signed until it reads.
+    flags.push(
+      makeFlag({
+        code: "DATA_CHECK",
+        severity: "blocking",
+        evidence: "validator issue-state",
+        message: 'The automatic "what each box issues" check could not run on this report, so it cannot be signed. Reload the report or contact support.',
+      }),
+    );
   }
   try {
     flags.push(...dataCheckFlags(runDataChecks(input.bundle)));
