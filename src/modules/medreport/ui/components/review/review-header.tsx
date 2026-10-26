@@ -259,6 +259,7 @@ export const ApprovedBanner = forwardRef<
     isWordForm: boolean;
     isPdfForm: boolean;
     downloading: DownloadKind | null;
+    /** Why a Word form has no PDF copy here (shown instead of its PDF button), or null. */
     pdfUnavailable: string | null;
     filing: boolean;
     filed: ActivityEntry[];
@@ -333,15 +334,16 @@ export const ApprovedBanner = forwardRef<
                 {spin("original")} Completed form (Word)
               </Button>
             )}
-            <Button
-              type="button"
-              variant={isPdfForm ? "default" : "outline"}
-              onClick={() => onDownload(isPdfForm ? "original" : "pdf")}
-              disabled={downloading !== null || fileMissing || (!isPdfForm && pdfUnavailable !== null)}
-              aria-describedby={!isPdfForm && pdfUnavailable ? "pdf-unavailable" : undefined}
-            >
-              {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
-            </Button>
+            {(isPdfForm || pdfUnavailable === null) && (
+              <Button
+                type="button"
+                variant={isPdfForm ? "default" : "outline"}
+                onClick={() => onDownload(isPdfForm ? "original" : "pdf")}
+                disabled={downloading !== null || fileMissing}
+              >
+                {spin(isPdfForm ? "original" : "pdf")} {questionSet ? WORDING.questionSet.summaryPdf : "Completed form (PDF)"}
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -366,6 +368,12 @@ export const ApprovedBanner = forwardRef<
           </Button>
         )}
       </div>
+      {/* Directly under the Word download it is about. */}
+      {pdfUnavailable && (
+        <p id="pdf-unavailable" role="status" className="mt-2 text-[13px] text-slate-700">
+          {pdfUnavailable}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
         {lastFiled && canFile && !fileMissing && (
           <button
@@ -385,11 +393,6 @@ export const ApprovedBanner = forwardRef<
         )}
       </div>
 
-      {pdfUnavailable && (
-        <p id="pdf-unavailable" role="status" className="mt-2 text-[13px] text-slate-700">
-          {pdfUnavailable}
-        </p>
-      )}
       {!canFile && (
         <p className="mt-2 text-[12px] text-slate-600">
           {report.episodeRef.connectorId === "file-import"

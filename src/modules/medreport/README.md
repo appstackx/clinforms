@@ -80,7 +80,8 @@ src/modules/medreport/
     merge-scan.ts         mail-merge fields in a form file (analysis record) and in a completed file (final-render refusal)
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
-    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
+    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers;
+                          the form author's instructions left off – core/template-instructions.ts)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
     pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
     pdf-widgets.ts        printed label beside each radio / tick-box widget; runs of one-character boxes
@@ -176,7 +177,7 @@ options rather than merging them, so the script writes one full pattern list per
   tooltips, aria-labels, toasts, problem titles/details shown in the UI, the activity log, the Security
   & GDPR page, generated documents, the case export and the demo video – describes what the product
   does, never the technology or the vendor ("drafted from the notes", "reads the form and identifies
-  each question and answer space", origin pill "Draft", "Live drafting" / "Demo mode"). All of it comes
+  each question and answer space", origin pill "Draft" – "Drafted from notes" once approved, a drafted tick or choice "Answer proposed from the notes – check it" – "Answer drafted from the notes" once approved, "Live drafting" / "Demo mode"). All of it comes
   from `core/wording.ts` (`WORDING`, re-exported by `ui/wording.ts`); switch `DISCLOSURE` there
   (`"neutral"` default, `"ai-assisted"` kept for later). API responses the Studio stores or renders
   name the engine `publicEngineName()` (`"drafting-service"` while neutral); the real model id stays in
@@ -745,8 +746,9 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   `TenantHome`): no hero, badges or tiles; the clinic's forms with In progress (first) / Approved / All, a search over
   patient, referrer, form and approver, "Amended – vN", the next step and who approved; a new clinic sees a two-step
   first run (a confirmed referrer form, then the notes). **Word → PDF:** `/health` carries `pdfFromWord` (LibreOffice
-  present – false on every hosted deployment), and the approved banner says up front "A PDF copy of a Word form is not
-  available yet – download the completed Word file" instead of failing on the click; `NOTICES.pdfConversionUnavailable`
+  present – false on every hosted deployment); in both Studios a Word form's approved banner offers its PDF copy only
+  when `pdfFromWord` is true, and otherwise shows the Word download alone with `NOTICES.wordFormPdfHint` ("Need a PDF?
+  …save it as a PDF") – no greyed-out button (test run 24/10/2026); `NOTICES.pdfConversionUnavailable`
   is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
   "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
   (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a
@@ -1435,6 +1437,14 @@ and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-impo
   admin hint, other details, and the clinic's own clinicians (`HostHooks.clinic.clinicians`, from
   `src/server/auth/studio-access.ts`: members other than staff, name + HCPC) in every clinician list; a member named in
   the notes without a number gets the member's number (`withMemberNumbers`).
+  10/2026 (Blue Heart trial, finding 5): each person is listed once (`notes-review-model.ts` `matchPeople`). Two
+  clinicians are one person when their full names match (case, accents, full stops, apostrophes and hyphens ignored)
+  and they do not carry two different valid HCPC numbers; no number, "Not recorded" or another format (PH-DEMO-01)
+  counts as no number, so "Sarah Reid (PH-DEMO-01)" in the notes is the member "Sarah Reid (ZZ0001)". Different names
+  are never merged, nor two different valid numbers; a clinician without a valid number whose name several numbered
+  people share stays separate. Entries take the person's details (member's name, first valid number), so the record,
+  the treating clinician on the form and the drafting block see one person; a number in the notes shown as another
+  gets a line under "Also check" (`clinicianMatchNotices`). Tests: `scripts/medreport/notes-review-clinicians.test.ts`.
 - `review-bundle.ts`: a missed or cancelled appointment is an appointment with its reason (the entry's reason, else
   its text without the "Status" line or the e-signature), not a clinical note (unless the text is too long for a
   reason); bare section headings ("Subjective", "Objective", "Plan", "Clinical Impression"…) fill their fields, other
@@ -1606,6 +1616,42 @@ now completes – each on the ORIGINAL layout, and never in the wrong place:
 - Tests: `forms/docx-choices.test.ts` (fictional fixtures for every pattern). The bundled forms and the RTF fixtures
   are byte-identical (forms-regression.cjs 5/5 IDENTICAL, rtf-forms.cjs 2/2 IDENTICAL, practice-codes.cjs all parts
   identical vs `fix/blue-heart-verify`), and the rules reading of the bundled forms is unchanged (reading baseline).
+- **The form author's instructions** (25/10, Blue Heart test-run finding 14: a provider template's red "Delete unused
+  cells" reached the completed Word file) – `core/template-instructions.ts` says what counts, deliberately narrowly:
+  "[Please] delete/remove" + what ("unused cells/rows", "as necessary/appropriate", "other choices", "those which are
+  not required", "if not applicable", "this text before sending"…) where it stands apart from the referrer's wording – in
+  brackets, after ":" ";" "–" or a tab, where the colour changes, or at the start of a line printed in a colour (a line
+  in the default colour stays, as `docx-choices.test.ts` expects); "Copy and paste from …" as the whole line; "Please
+  give … in this box" as a coloured line below a label in the same cell. Question wording ("(please circle/tick)",
+  "if applicable", "Please specify:") never matches. `forms/docx-fill.ts` runs last, on DRAFT and FINAL alike: each
+  instruction leaves its line (with its brackets, the spaces before it and a dash or ";" that introduces it; a label's
+  colon stays), a line it emptied goes (a cell keeps its last line), and for "Delete unused cells/rows/lines" its own row
+  goes and so do the repeat rows the report left exactly as printed – at least two plain rows directly above, alike once
+  instructions are left out (no merged cells, controls, fields or merge codes, and no row an answered question writes in
+  or ticks); the first stays when none was used. A note beside a list of options ("Delete as necessary", "(Please delete
+  other choices)", "Delete those which are not required") is only left off once an answer has chosen from every list
+  next to it – its line, else its cell, else its row, else the blocks right after it – so a list nobody chose from (an
+  optional question left unanswered, or a list the map does not handle) never reads as chosen. Never an answer: runs
+  the fill wrote are tracked (`WRITTEN`, also through run splits). One fill note lists what was left off ("Notes from
+  filling the form" on the review screen's Preview tab); the mapping screen's preview strikes the instructions in the
+  page body through (`ui/components/shared/docx-instructions.ts`) under the notice "Left off the completed form" (rows
+  only promised where they can go). Works for forms already loaded (no map change, no re-load); a form without such
+  notes is written byte for byte as before; page headers and footers are not read (none of Blue Heart's 17 templates
+  prints one there); PDF forms are unchanged. Hostile sizes (security review 25/10: removing 40,000 emptied lines one
+  by one was quadratic, 7.5 s against 0.4 s, reachable through the public demo's `/forms/fill-preview`): a line with
+  more than 20 instructions, or a form with more than 200 (`MAX_INSTRUCTIONS_PER_FORM`; Blue Heart's have at most 6),
+  is left as printed, read before anything changes; at most 500 rows are left off per form; a line or row is only
+  removed where its parent holds at most 2,000 children; the whole-line rules read the line without its trailing
+  spaces and dots (a plain loop, no backtracking). Inside a line (integration review 25/10: one run of 40,000 text
+  pieces beside "(delete as appropriate)" took 39 s through `/forms/fill-preview`, against 0.2 s on main): a run's
+  colour is read once, not once per text piece; a line of more than 2,000 runs or text pieces is left as printed; an
+  instruction's words are at most 10 spaces apart, so one instruction never spans thousands of runs. An emptied line
+  that keeps a table apart from the next table, or from the end of its cell or of the document, stays (Word would join
+  the tables or call the file damaged; this also covers main's option lists). Only the form's printed text counts as
+  a box's label, never an answer written above it. Tests:
+  `core/template-instructions.test.ts`, `scripts/medreport/template-instructions.test.ts` (fixture
+  `fixtures/rtf/repeat-rows-report.rtf`, "Fernhurst Medical Reporting (fictional)"; hostile files timed against the
+  same file in neutral words).
 
 ## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
 
@@ -1649,3 +1695,91 @@ templates themselves are gitignored and never committed).
 - Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
   its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
   per report when another site treated the patient).
+
+## Work and activity status is not a recovery opinion (10/2026, branch `fix/bh-opinion-guard`)
+
+- **Bug (Blue Heart test run, 10Bridge Initial Assessment, F-37 on time off work):** the drafted "…took 3 days off
+  work, then returned to normal duties with breaks from the desk" (note: "Took 3 days off work, then back on normal
+  duties…") was blocked as OPINION_LANGUAGE "(recovery) 'returned to normal'" in every live take. On drafted text
+  that flag cannot be acknowledged, so the physio had to rewrite a faithful answer. Cause: the recovery pattern
+  `(back|returned) to (his|her|their)? normal` matched the first three words of a work status, and that exact
+  phrase is not in the note.
+- **Fix** (`core/validation/opinion-language.ts`, code only – maps already loaded on a clinic need no change):
+  - "Back / returned to (all) (his) normal or pre-injury <work or activity>" ("normal duties", "his normal working
+    hours", "normal daily activities", "normal driving") is its own pattern, "return to normal work or activity". Only
+    a few plain describing words may stand between "normal" and the noun (daily, working, work, gym, training,
+    exercise, sporting, social, leisure, household, "12-hour"); any other word ("returned to normal during work",
+    "normal pain-free activities") keeps the phrase on the recovery pattern.
+  - It passes only when a cited note records the same **return** as a fact: "back on / to / at / in", "returned to",
+    "resumed" or "now on", then a full level (normal, full, usual, regular, all, pre-injury), then the same thing –
+    any word for the job counts (duties, work, role), otherwise the same noun; a specific describing word must be in
+    the note too ("12-hour shifts"). "<doing> normally" counts for that activity only ("driving normally" → "normal
+    driving", never "pre-accident activities").
+  - It still blocks when the note says the opposite or something else: no return verb ("off normal duties", "pain
+    with all activities", "difficulty with normal daily activities", "fit for full duties", "usual training with the
+    team"); a lower level ("light duties"); a hedge, negation, modal or plan in the same sentence, before ("not yet",
+    "nearly", "previously", "pre-injury:", "keen to get back to") or after ("- not yet", "would be premature", "is the
+    goal", "?"); straight after it a date, limit or time span ("from 01/10/2026", "in 2 weeks", "for 2 hours a day",
+    "but avoiding lifting"); or only the note's history fields.
+  - A drafted "has not yet returned to her normal 12-hour shifts" passes when the note records the same negation
+    ("not yet back on 12-hour shifts").
+  - The drafted side must state a return that happened (integration review): only "returned" or "back" can, and not
+    after a modal, an ability word, advice or a plan, so "he can / can't / should be able to return to his normal
+    duties", "I recommend a graded return", "he should be back to normal duties by…" and "he never returned" block
+    whatever the note says; a symptom or body part as the subject ("his knee function returned to normal sporting
+    activities") stays recovery. A note's "working full time with no restrictions" records a return to normal duties
+    (full time alone: normal working hours). The note side also rejects goals ("LTG:", "Objectives:"), an earlier
+    episode ("a similar injury in 2019"), a qualifier after a comma (", but avoiding lifting"), "other than",
+    "unrealistic" and a weekday straight after. Its result is remembered per note, so a long paragraph repeating a
+    phrase stays fast.
+  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match; not after a drafted modal, and only
+    where the note records it as a fact); "worked on balance" / "focused on strengthening and on balance" is exercise
+    when a cited note records balance work ("single-leg balance") and nothing but a list or an exercise word follows
+    ("his progress on balance suggests…" and "worked on the evidence and on balance" stay the standard of proof);
+    "drills caused mild discomfort" reports a note's "drills cause mild discomfort" (the same content word before and
+    after – "which / that / it caused" is causation). "Should / would / could / may be able (fit, ready, back)" is a
+    prediction.
+  - `OpinionPattern.allow(hit, source)` holds these rules; every other pattern, and the exact-quote rule, is
+    unchanged. Recovery wording ("returned to normal", "resolved", "full recovery") still needs the note's own words.
+  - Not covered, as before: "returned to full duties" / "can return to full activities" match no pattern (only
+    "normal" and "pre-injury" do), so the drafting brief (rule 5) and the signer's review are the guard there.
+- **Unchanged on purpose:** OPINION_LANGUAGE on drafted text still cannot be acknowledged (`docs/plan.md` §7, D6:
+  opinions only if a clinician recorded them) – the clinician edits the wording, and edited text can then be
+  acknowledged with a reason (stored on the paragraph, in the activity log, on the approved report). The drafting
+  prompt stays `forms-7`.
+- Tests: `core/validation/validation.test.ts` (the F-37 sentence and note; "symptoms returned to normal during work"
+  citing the same note stays a blocking recovery flag; faithful work, activity, restriction, balance and provocation
+  paraphrases; notes that say the opposite or name another activity; a table of unrecorded opinions that still block;
+  the new flag cannot be acknowledged on drafted text).
+
+## Review: one item per question, "Leave optional boxes blank" (10/2026, Blue Heart test run findings 2 and 3)
+
+On Blue Heart's 10Bridge Initial Assessment Report the drafted review listed 28 checks before approval: most were
+gaps on optional boxes, each also listed as "Missing field (warning)", and the Case Reference card stacked three
+warnings for one box (the gap, "Missing field" and the raw code `<<P_GROUPREF>>`). The approval gate is unchanged
+(`core/validation` `canSign` decides, at `/sign` too); the screen now groups and words it
+(`ui/components/review/box-items.ts`, pure; tests `box-items.test.ts`):
+- **One item per question.** A question's open gaps and the checks its own answer clears ("required and has no
+  answer", "optional and has no answer", a mail-merge field only that question's answer removes – found by answering
+  it in a copy) are ONE item (`BoxIssue`) with one instruction – "Type 10Bridge's reference from their letter",
+  "Choose the answer yourself – the notes do not settle it", "Only you can answer this: write your own opinion",
+  "Check your answer, then click Mark resolved". Every other check stays an item of its own. The Flags tab, its badge,
+  the header and the approve button's tooltip count items (the 10Bridge IA: 20 instead of 28; 0 exactly when canSign
+  allows approval) and list "Required" and "Optional" apart.
+- **"Leave optional boxes blank"** (Flags tab): optional questions that are simply blank – drafted, no answer and no
+  text, nothing on them but open gaps and the "optional and has no answer" warning – are acknowledged in one step with
+  one reason (default "Optional on the form – left blank.", at least 15 characters), each ticked and listed with its
+  gap. `leaveOptionalBoxesBlank` re-runs the validators and re-checks every box, then calls `resolveGap` /
+  `acknowledgeFlag` per gap and warning – the same records, activity entries and signed content as single
+  acknowledgements. Never included: required questions, questions that ask for the clinician's opinion
+  (`clinician_opinion` – clinical decisions stay one by one), a box whose drafted answer was held back (`-fit` /
+  `-choice` gaps) and any box with another check (a mail-merge field, opinion wording, a figure…). Acknowledging an
+  optional blank box's gap on its own also acknowledges its "no answer" warning with the same reason. Such a box shows
+  "Left blank on the form" and no longer counts as needing input.
+- **Clinic-system codes in plain words:** validation messages and the preview's notes name a TM3 code by what the
+  code dictionary says it holds (`practiceCodeInWords`: "your clinic system's placeholder for the referrer's reference
+  for this case"); the flag's evidence (and so its ID) keeps the code. «Name» fields read as before. The words are the
+  staff screens' own (`core/practice-merge-codes.ts` `practiceCodeWords`, branch `fix/bh-merge-code-display`), and a
+  code the dictionary does not know keeps its name in quotes (“P_CONTACT_PREF”). The review screen also shows flag
+  messages, gaps, the question's label and guidance and the "Leave optional boxes blank" list through
+  `humaniseMergeCodes` (integration 25/10/2026).

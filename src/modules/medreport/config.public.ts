@@ -87,6 +87,8 @@ export const NOTICES = {
    * truthfully (fix wave 2) – the Word file is the completed form.
    */
   pdfConversionUnavailable: "A PDF copy of a Word form is not available yet. Download the completed Word form instead.",
+  /** Under the approved banner's Word download, where no PDF copy can be made (no greyed-out PDF button). */
+  wordFormPdfHint: "Need a PDF? Open the completed Word file and save it as a PDF.",
   /** Shown wherever a referrer's form is completed. */
   originalLayout: "Completed in the referrer's own form, in its original layout.",
 } as const;

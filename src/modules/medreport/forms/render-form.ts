@@ -32,7 +32,7 @@ import { addDocxDemoNotice, stampPdfDemoNotice } from "./demo-notice";
 import { fillDocx } from "./docx-fill";
 import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "./file";
 import { mergeTokensInOutput } from "./merge-scan";
-import { listMergeTokens } from "../core/merge-fields";
+import { findMergeTokens, listMergeTokensInWords } from "../core/merge-fields";
 import { fillPdf } from "./pdf-fill";
 
 export type FormOutputFormat = "original" | "pdf";
@@ -75,7 +75,25 @@ function assertKind(form: FormDefinition, file: DecodedFormFile): void {
 }
 
 function mergeFieldsLeft(tokens: string[]): string {
-  return `The completed form still contains ${tokens.length === 1 ? "a mail-merge field" : `${tokens.length} mail-merge fields`} (${listMergeTokens(tokens)}).`;
+  // A clinic-system code in plain words (<<P_GROUPREF>> → "your clinic system's placeholder for the referrer's reference…").
+  return `The completed form still contains ${tokens.length === 1 ? "a mail-merge field" : `${tokens.length} mail-merge fields`} (${listMergeTokensInWords(tokens)}).`;
+}
+
+/**
+ * A DRAFT's merge fields less the ones a sign-off question replaces (the clinician's name, the date of the report):
+ * those are filled from the approval receipt, as the review's checks count them (core/merge-fields.ts
+ * unresolvedMergeFields), so the draft's note does not ask anyone to answer them. The final copy still checks all.
+ */
+function withoutSignoffFields(tokens: string[], form: FormDefinition): string[] {
+  const left = tokens.slice();
+  for (const f of form.fields) {
+    if (f.fillSource.kind !== "signoff" || f.anchor.kind !== "docx" || f.anchor.target !== "replace_placeholder" || f.anchor.writeAfter) continue;
+    for (const token of findMergeTokens(f.anchor.placeholderText ?? "")) {
+      const at = left.indexOf(token);
+      if (at >= 0) left.splice(at, 1);
+    }
+  }
+  return left;
 }
 
 /** A final copy never leaves with a mail-merge field on it (see the file comment). */
@@ -100,7 +118,7 @@ export async function renderFormFile(input: FormRenderInput): Promise<FormRender
   if (form.kind === "docx") {
     const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), notice);
     if (draft) {
-      const left = await mergeTokensInOutput(docx, "docx");
+      const left = withoutSignoffFields(await mergeTokensInOutput(docx, "docx"), form);
       if (left.length > 0) warnings.unshift(`${mergeFieldsLeft(left)} The form cannot be approved until each is answered or replaced.`);
     } else await assertNoMergeFields(docx, "docx");
     if (input.format === "original") return { bytes: docx, contentType: CONTENT_TYPES.docx, extension: "docx", warnings };

@@ -6,6 +6,7 @@ import { ReportFlagSchema } from "../schemas";
 import type { Report, ReportFlag, ReportTemplate } from "../types";
 import { canAcknowledge, canSign, runValidators, validateReport } from "./index";
 import { findUnsupportedOpinionPhrases } from "./opinion-language";
+import { normaliseForMatch } from "./text";
 import { TEST_FACTS_DATE, para, testBundle, testReport, withSection } from "./test-fixtures";
 
 function run(report: Report, template: ReportTemplate): ReportFlag[] {
@@ -227,6 +228,263 @@ test("opinion: phrase finder covers causation, probability, prognosis, timeframe
   assert.deepEqual(found("He was diagnosed with a disc injury."), ["diagnosis"]);
   assert.deepEqual(found("symptoms 12 months post-accident"), ["timeframe"]);
   assert.deepEqual(found("He has improved."), []);
+});
+
+/* Work and activity status is not a recovery opinion (Blue Heart trial, 10/2026) --------------------- */
+
+/** The Blue Heart test run's 10Bridge F-37 (time off work): the drafted answer and the note it cites. */
+const F37_NOTE = "Took 3 days off work, then back on normal duties with breaks from the desk.";
+const F37_DRAFT = "Mr Ellery told me on 15/07/2026 that he took 3 days off work, then returned to normal duties with breaks from the desk.";
+
+/** A drafted paragraph citing the F-37 note (N-003), and the report it is in. */
+function f37Report(text: string): { report: Report; p: ReturnType<typeof para> } {
+  const bundle = testBundle();
+  bundle.notes.push({
+    id: "N-003",
+    date: "2026-07-15",
+    type: "initial_assessment",
+    author: { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior Physiotherapist, MCSP" },
+    subjective: F37_NOTE,
+    objective: "",
+    assessment: "",
+    plan: "",
+  });
+  const p = para(text, ["N-003"], { basis: "patient_reported" });
+  return { report: withSection(testReport(SOL, bundle), "progress_current_status", [p]), p };
+}
+
+/** Labels of the opinion phrases in `draft` that a note with `note` as its Subjective does not support. */
+function opinionLabels(draft: string, note: string): string[] {
+  return findUnsupportedOpinionPhrases(draft, normaliseForMatch(`Subjective: ${note}`)).map((m) => m.label);
+}
+
+test("opinion: the F-37 work status passes – \"returned to normal duties\" from a note's \"back on normal duties\"", () => {
+  const { report, p } = f37Report(F37_DRAFT);
+  assert.deepEqual(run(report, SOL).filter((f) => f.paragraphId === p.id), []);
+  assert.deepEqual(findUnsupportedOpinionPhrases(F37_DRAFT, normaliseForMatch(F37_NOTE)), []);
+});
+
+test("opinion: symptoms back to normal \"during work\" stay a recovery opinion, even citing the F-37 note", () => {
+  const { report, p } = f37Report("Mr Ellery told me on 15/07/2026 that his symptoms returned to normal during work.");
+  const [flag, ...rest] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
+  assert.equal(rest.length, 0);
+  assert.equal(flag.severity, "blocking");
+  assert.equal(flag.evidence, "returned to normal");
+  assert.match(flag.message, /\(recovery\)/);
+  assert.equal(canAcknowledge(flag, report), false);
+  // Only a few plain describing words may stand between "normal" and the activity; any other word keeps it recovery.
+  const cases: Array<[draft: string, note: string]> = [
+    ["His neck was back to normal during duties.", F37_NOTE],
+    ["His neck returned to normal while driving.", "Driving normally; the nervousness has settled."],
+    ["Her back returned to normal when working shifts.", "Back on full shifts."],
+    ["He has returned to normal pain-free activities.", "Back on normal activities with some pain."],
+    ["He returned to his normal unrestricted duties.", "Back on normal duties, restrictions on lifting."],
+  ];
+  for (const [draft, note] of cases) assert.deepEqual(opinionLabels(draft, note), ["recovery"], draft);
+});
+
+test("opinion: faithful work and activity paraphrases pass when the cited note records the same thing", () => {
+  const cases: Array<[draft: string, note: string]> = [
+    ["He went back to his normal duties after 3 days.", "Back on full duties after 3 days off."],
+    ["He has returned to his normal working hours.", "No pain, back on full hours."],
+    ["She returned to her usual gym routine.", "Back at the gym."],
+    ["He has returned to normal training.", "Back to full training with the team, no pain."],
+    ["He has returned to normal driving.", "Driving normally; the nervousness has settled."],
+    ["He returned to normal work.", "Back on normal duties."],
+    ["He has returned to his normal role.", "Back in his normal role."],
+    ["He has returned to normal duties.", "Returned to work on full duties on 10/08/2026."],
+    ["She has returned to her normal 12-hour shifts.", "Back on full 12-hour shifts."],
+    ["He returned to his normal hobbies.", "Back to all his usual hobbies."],
+    ["He has returned to all his normal activities.", "Back to all normal activities."],
+    ["He returned to his normal duties in the warehouse.", "Back on full duties in the warehouse."],
+    // A drafted status that has not happened, recorded the same way (Gemma Whitlock's review of 13/10/2026).
+    ["She has not yet returned to her normal 12-hour shifts.", "Working 8-hour shifts with full moving and handling using equipment; not yet back on 12-hour shifts."],
+    ["He was back at work after 3 days.", "Took 3 days off work."],
+    ["She resumed full duties on 13/10/2026.", "Back on full duties."],
+    ["She returned to work on light duties on 28/09/2026.", "Phased return to work: 4-hour shifts."],
+    ["He was back to the gym for lower body work only.", "Back at the gym for lower body work only."],
+    ["At discharge he was working full time without restrictions.", "Working full time with no restrictions."],
+    ["He returned to football and the gym without restrictions.", "Back to football and the gym with no restrictions."],
+    ["Sessions focused on strengthening and on balance, with step-ups.", "Step-ups, split squats and single-leg balance."],
+    ["Treatment progressed to split squats, with work on balance.", "Progressed: split squats and single-leg balance."],
+    ["Side-stepping and cutting drills caused mild discomfort on the inner side of the knee.", "Side-stepping and cutting drills cause mild discomfort on the inner side of the knee."],
+  ];
+  for (const [draft, note] of cases) assert.deepEqual(opinionLabels(draft, note), [], draft);
+});
+
+test("opinion: a note that says the opposite, or names another activity, does not support a full return", () => {
+  const cases: Array<[draft: string, note: string]> = [
+    ["He can return to normal activities.", "Pain with all activities."],
+    ["He has returned to his normal sports.", "Has stopped all sports since the accident."],
+    ["He has returned to his normal daily activities.", "Difficulty with normal daily activities."],
+    ["He has returned to his normal training.", "Pain on full training."],
+    ["He returned to normal duties.", "Off normal duties since 02/09/2026."],
+    ["He returned to normal duties.", "No full duties until review."],
+    ["He returned to normal duties.", "Normal duties: not yet."],
+    ["He returned to normal duties.", "Back on full duties - not yet."],
+    ["He returned to normal duties.", "Prior to the accident he was on full duties as a scaffolder. Currently off work."],
+    ["He returned to normal duties.", "Previously on full duties; currently off work."],
+    ["He returned to normal duties.", "Fit for full duties from 01/10/2026 (GP fit note)."],
+    ["He returned to normal duties.", "Back on full duties from 01/10/2026."],
+    ["He returned to normal duties.", "Back on full duties in 2 weeks."],
+    ["He returned to normal duties.", "Back on full duties? Unsure."],
+    ["He returned to normal duties.", "Keen to get back to full duties."],
+    ["He returned to normal duties.", "Back to full duties would be premature."],
+    ["He returned to normal duties.", "Back on full duties but avoiding lifting."],
+    // A current level is not a recorded return; the drafted describing word must match the note.
+    ["He has returned to normal training.", "Usual training with the team, no pain."],
+    ["She returned to her normal 12-hour shifts.", "Back on full 8-hour shifts."],
+    // Another activity: "driving normally" records driving only.
+    ["He has returned to his pre-accident activities.", "Pre-accident activities: gym 3 times a week and football. All stopped."],
+    ["He has returned to his pre-accident activities.", "Driving normally. Unable to play football or go to the gym."],
+    ["He has returned to all his normal activities.", "Driving normally."],
+    // A drafted "has not returned" needs the note's own negation; a modal ("can't") is a fitness opinion.
+    ["She has not yet returned to her normal shifts.", "Back on full shifts."],
+    ["He can't return to normal duties.", "Not yet back on normal duties."],
+  ];
+  for (const [draft, note] of cases) {
+    assert.deepEqual(opinionLabels(draft, note), ["return to normal work or activity"], `${draft} | ${note}`);
+  }
+});
+
+test("opinion: unrecorded opinions and unsupported full returns still block", () => {
+  const cases: Array<[draft: string, note: string, label: string]> = [
+    // A full return the note gives at a lower level, negated, hedged, planned or only as history.
+    ["He returned to normal duties.", "Back on light duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Not yet back on normal duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Nearly back on normal duties.", "return to normal work or activity"],
+    ["She returned to normal duties.", "In my opinion she should be able to return to full duties within 4 weeks.", "return to normal work or activity"],
+    ["She returned to normal duties.", "Request 3 further sessions to complete the graded return to full duties.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Goal: normal duties by week 6.", "return to normal work or activity"],
+    ["He returned to normal duties.", "Neck pain since the accident. Social history: Works full time on normal duties.", "return to normal work or activity"],
+    ["He returned to normal activities.", "Back on normal duties.", "return to normal work or activity"],
+    ["He has returned to his pre-accident activities.", "Pain 2/10.", "return to normal work or activity"],
+    // Recovery, prognosis, causation, fitness and the standard of proof.
+    ["His symptoms returned to normal.", "Neurological screen normal. Back on normal duties.", "recovery"],
+    ["He has fully recovered.", "Back on normal duties.", "recovery"],
+    ["He will make a full recovery.", "Pain 2/10.", "recovery"],
+    ["The symptoms are expected to resolve.", "Pain 2/10.", "prediction"],
+    ["The symptoms were caused by the accident.", "Turning his head causes pain.", "causation"],
+    ["The accident caused pain.", "Turning his head causes pain.", "causation"],
+    ["The findings are consistent with the index event.", "Pain 2/10.", "causation"],
+    ["He is fit for work.", "Back on normal duties.", "fitness for work"],
+    ["He has no further restrictions.", "Working with no restrictions.", "fitness for work"],
+    ["He is working without restrictions.", "Restrictions on lifting for 4 weeks.", "fitness for work"],
+    ["On balance, I consider the symptoms to be genuine.", "Worked on strength.", "balance of probabilities"],
+    ["He worked hard and on balance he is fit to play.", "Pain 2/10.", "balance of probabilities"],
+    // "Focused on … and on balance" is exercise only when the note records balance work.
+    ["Having focused on the records and on balance, the symptoms are genuine.", "Pain 2/10.", "balance of probabilities"],
+    ["His progress on balance suggests the account is reliable.", "Pain 2/10.", "balance of probabilities"],
+  ];
+  for (const [draft, note, label] of cases) {
+    const labels = opinionLabels(draft, note);
+    assert.ok(labels.includes(label), `${draft} → ${JSON.stringify(labels)}`);
+  }
+});
+
+test("opinion: a drafted return the F-37 note does not record – a modal, advice or a contradiction – still blocks", () => {
+  // Integration review (10/2026): the note recording the return supports only a drafted return that happened.
+  const drafts = [
+    "He can return to normal duties.",
+    "He can't return to normal duties.",
+    "He cannot return to his normal duties.",
+    "He is able to return to his normal duties.",
+    "He is unable to return to his normal duties.",
+    "He should return to normal duties.",
+    "He should be able to return to his normal duties.",
+    "He would be able to return to his normal duties in 2 weeks.",
+    "He could return to normal duties.",
+    "He may return to normal duties.",
+    "He is ready to return to normal duties.",
+    "None – he can go back to his normal duties.",
+    "I recommend a graded return to normal duties over 4 weeks.",
+    "I would advise a return to his normal duties.",
+    "He has been advised to return to normal duties.",
+    "He should be back to normal duties by the end of the month.",
+    "Once his pain settles he can return to normal duties.",
+    "There is no reason he cannot return to normal duties.",
+    "He did not return to normal duties.",
+    "He never returned to normal duties.",
+    "He was unable to return to normal duties after the accident.",
+  ];
+  for (const draft of drafts) assert.notDeepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  // Through the validators, as /sign runs them: a fitness view on F-37's note cannot be approved as drafted.
+  const { report, p } = f37Report("None. He can return to his normal duties.");
+  const [flag] = of(run(report, SOL), "OPINION_LANGUAGE", p.id);
+  assert.equal(flag.severity, "blocking");
+  assert.equal(canAcknowledge(flag, report), false);
+  // Elsewhere: fitness and prognosis on other activities, and a prognosis after a recorded "not yet".
+  const others: Array<[draft: string, note: string]> = [
+    ["He can return to normal driving.", "Driving normally; the nervousness has settled."],
+    ["He should be able to return to normal training.", "Back to full training with the team, no pain."],
+    ["She has not yet returned to her normal 12-hour shifts, but should be able to shortly.", "Working 8-hour shifts; not yet back on 12-hour shifts."],
+    ["He can return to work without restrictions.", "Not yet able to work with no restrictions."],
+    // A symptom or body part as the subject is recovery, whatever word follows.
+    ["His neck is back to normal work-wise.", F37_NOTE],
+    ["His symptoms have returned to normal activity levels.", "Back to normal activity."],
+    ["His knee function returned to normal sporting activities.", "Back to full sporting activities."],
+  ];
+  for (const [draft, note] of others) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  // A drafted return that happened still passes.
+  for (const draft of [
+    "He returned to normal duties after 3 days off work.",
+    "He has returned to normal duties.",
+    "He went back to his normal duties.",
+    "He is back to his normal duties.",
+    "He had returned to normal duties by 15/07/2026.",
+    "He was back to normal duties.",
+    "Yes – he returned to his normal duties after 3 days.",
+  ]) {
+    assert.deepEqual(opinionLabels(draft, F37_NOTE), [], draft);
+  }
+});
+
+test("opinion: causation, the standard of proof and recorded returns – the review's remaining cases", () => {
+  const BALANCE_NOTE = "Progressed: step-ups, split squats and single-leg balance.";
+  const block: Array<[draft: string, note: string]> = [
+    // "Which / that / it caused" is causation, however the note's "which causes pain" goes on.
+    ["Ms Whitlock was injured lifting at work, which caused pain in her lower back.", "Lifting boxes at work, which causes pain in her lower back."],
+    ["The collision, which caused pain in his neck, was on 04/07/2026.", "Turning, which causes pain in his neck."],
+    ["He was hit from behind and that caused neck pain.", "Looking over his shoulder and that causes neck pain."],
+    ["The accident and it caused headaches.", "Reading and it causes headaches."],
+    // "On balance" as the standard of proof, even when the note records balance work.
+    ["Having worked on the evidence and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["Having focused on the records and on balance, the symptoms are genuine.", BALANCE_NOTE],
+    ["His progress on balance suggests the account is reliable.", BALANCE_NOTE],
+    // Notes that give a goal, an earlier episode, a qualifier after a comma or an exception.
+    ["He returned to normal duties.", "LTG: back on full duties."],
+    ["He returned to normal duties.", "Objectives: back on full duties."],
+    ["He returned to normal duties.", "Had a similar injury in 2019 and was back on full duties after 4 weeks. Currently off work."],
+    ["He returned to normal duties.", "Back on full duties, but avoiding lifting."],
+    ["He returned to normal duties.", "Back on full duties, except lifting."],
+    ["He has returned to all his normal activities.", "Back to all activities other than running."],
+    ["He returned to normal duties.", "Back on full duties is unrealistic at present."],
+    ["He returned to normal duties.", "Back on full duties Monday."],
+  ];
+  for (const [draft, note] of block) assert.notDeepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+  const pass: Array<[draft: string, note: string]> = [
+    ["Sessions focused on strengthening and on balance, with step-ups.", BALANCE_NOTE],
+    ["Treatment progressed to split squats, with work on balance.", BALANCE_NOTE],
+    ["He worked on balance and strength.", BALANCE_NOTE],
+    ["Side-stepping and cutting drills caused mild discomfort on the inner side of the knee.", "Side-stepping and cutting drills cause mild discomfort on the inner side of the knee."],
+    // Jordan Ellery's discharge note (welcome pack): "Working full time with no restrictions".
+    ["Yes – he has returned to his normal duties and is working full time with no restrictions.", "Working full time with no restrictions."],
+    ["He has now returned to his normal working hours.", "Working full time with no restrictions."],
+  ];
+  for (const [draft, note] of pass) assert.deepEqual(opinionLabels(draft, note), [], `${draft} | ${note}`);
+});
+
+test("opinion: an unsupported full return blocks drafted text with no acknowledgement; edited text needs a reason", () => {
+  const ai = para("He returned to normal duties.", ["N-002"]);
+  const report = withSection(testReport(EMP), "functional_status", [ai]);
+  const [flag] = of(run(report, EMP), "OPINION_LANGUAGE", ai.id);
+  assert.equal(flag.evidence, "returned to normal duties"); // N-002 records "amended duties"
+  assert.equal(flag.severity, "blocking");
+  assert.equal(canAcknowledge(flag, report), false);
+  const edited = withSection(report, "functional_status", [{ ...ai, origin: "edited" }]);
+  const [own] = of(run(edited, EMP), "OPINION_LANGUAGE", ai.id);
+  assert.equal(canAcknowledge(own, edited), true);
+  assert.equal(own.acknowledged, undefined);
 });
 
 /* ------------------------------------------------------------------------------------------------

@@ -358,6 +358,11 @@ test("the final render refuses a completed Word file with a merge field left; a 
 
   const fixed = await mapOf(bytes, FIXED);
   const report = reportFor(fixed);
+  // Integration 25/10/2026: a field a sign-off question replaces («Therapist») is filled on approval, as the checks
+  // count it – the draft's note does not list it, while the draft itself still prints it.
+  const fixedDraft = await renderFormFile({ form: fixed, file, answers: buildFormAnswers(report, fixed), draft: true, format: "original" });
+  assert.ok((await mergeTokensInOutput(fixedDraft.bytes, "docx")).includes("«Therapist»"), "blank on the draft until approval");
+  assert.deepEqual(fixedDraft.warnings.filter((w) => /mail-merge/.test(w)), []);
   const final = await renderFormFile({ form: fixed, file, answers: buildFormAnswers(report, fixed, { receipt: { signer: SARAH, signedAt: AT } }), draft: false, format: "original" });
   assert.deepEqual(await mergeTokensInOutput(final.bytes, "docx"), []);
   const cells = Object.fromEntries(buildDocxOutline(final.bytes).blocks.map((b) => [b.id, b.text]));

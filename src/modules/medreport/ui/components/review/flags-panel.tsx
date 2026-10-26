@@ -1,25 +1,30 @@
 "use client";
 
 /**
- * Flags & gaps tab: what blocks approval (open gaps, blocking checks), warnings, and what has already
- * been resolved or acknowledged – each with a jump to its question.
+ * Flags & gaps tab: what blocks approval – one item per question (box-items.ts), required and optional questions
+ * apart – the "Leave optional boxes blank" action, warnings, and what has already been resolved or acknowledged –
+ * each with a jump to its question.
  *
  * Owner: studio-b agent.
  */
 import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { todayIso } from "../../../core/dates";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { EpisodeBundle, Gap, Report, ReportFlag } from "../../../core/types";
 import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
-import { FlagItem, GapItem } from "./issues";
-import { canRecordConsent, gapResolutionOptions, isOpenBlocking } from "./review-model";
+import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
+import { BoxIssue, FlagItem, GapItem } from "./issues";
+import { MIN_GAP_REASON, canRecordConsent, gapResolutionOptions } from "./review-model";
 import type { ReviewAction } from "./use-review-state";
 
 export function FlagsPanel({
   report,
   bundle,
-  blockingCount,
+  items,
+  blankCandidates,
+  onLeaveBlank,
   readOnly,
   validating,
   actor,
@@ -37,7 +42,11 @@ export function FlagsPanel({
   consentRecorder?: boolean;
   report: Report;
   bundle: EpisodeBundle;
-  blockingCount: number;
+  /** What blocks approval, one item per question (box-items.ts reviewItems). */
+  items: ReviewItems;
+  /** Optional questions "Leave optional boxes blank" may acknowledge (box-items.ts optionalBlankCandidates). */
+  blankCandidates: BlankCandidate[];
+  onLeaveBlank(keys: string[], reason: string): void;
   readOnly: boolean;
   validating: boolean;
   actor: string;
@@ -49,9 +58,9 @@ export function FlagsPanel({
 }) {
   const gaps = report.gaps;
   const flags = report.flags.filter((f) => f.code !== "OPEN_GAP");
-  const openGaps = gaps.filter((g) => !g.resolution);
-  const blocking = flags.filter((f) => isOpenBlocking(f, gaps));
-  const warnings = flags.filter((f) => f.severity === "warning" && !f.acknowledged);
+  const blockingCount = items.count;
+  // A check shown inside a question's item is not listed again.
+  const warnings = flags.filter((f) => f.severity === "warning" && !f.acknowledged && !items.coveredIds.has(f.id));
   const doneGaps = gaps.filter((g) => g.resolution);
   const doneFlags = flags.filter((f) => f.acknowledged);
   const jumpProps = (key: string | undefined) =>
@@ -83,6 +92,20 @@ export function FlagsPanel({
       {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
     </div>
   );
+  const boxItem = (box: BoxItem) => (
+    <BoxIssue
+      key={`box-${box.key}`}
+      box={box}
+      bundle={bundle}
+      readOnly={readOnly}
+      resolutionFor={(g) => gapResolutionOptions(report, g, actor)}
+      onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
+      onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
+      onOpenSource={onOpenSource}
+      {...jumpProps(box.key)}
+    />
+  );
+  const item = (it: ReviewItem) => (it.type === "box" ? boxItem(it.box) : flagItem(it.flag));
 
   return (
     <div className="space-y-4">
@@ -105,17 +128,34 @@ export function FlagsPanel({
             : blockingCount > 0
               ? `${blockingCount} item${blockingCount === 1 ? "" : "s"} must be resolved before approval`
               : "Nothing blocks approval"}
+          {!readOnly && blockingCount > 0 && (
+            <span className="block text-xs font-normal">
+              {items.required.length} required · {items.optional.length} on optional questions
+            </span>
+          )}
         </span>
         {validating && <span className="text-xs font-normal opacity-80">Checking…</span>}
       </div>
 
-      {(openGaps.length > 0 || blocking.length > 0) && (
-        <section aria-labelledby="flags-blocking" className="space-y-2">
-          <h3 id="flags-blocking" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Blocks approval ({openGaps.length + blocking.length})
+      {!readOnly && blankCandidates.length > 0 && (
+        <LeaveBlankPanel candidates={blankCandidates} disabled={validating} questionLabel={questionLabel} onConfirm={onLeaveBlank} />
+      )}
+
+      {!readOnly && items.required.length > 0 && (
+        <section aria-labelledby="flags-required" className="space-y-2">
+          <h3 id="flags-required" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Required – blocks approval ({items.required.length})
           </h3>
-          {openGaps.map(gapItem)}
-          {blocking.map(flagItem)}
+          {items.required.map(item)}
+        </section>
+      )}
+
+      {!readOnly && items.optional.length > 0 && (
+        <section aria-labelledby="flags-optional" className="space-y-2">
+          <h3 id="flags-optional" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Optional – answer or leave blank ({items.optional.length})
+          </h3>
+          {items.optional.map(item)}
         </section>
       )}
 
@@ -128,7 +168,7 @@ export function FlagsPanel({
         </section>
       )}
 
-      {openGaps.length === 0 && blocking.length === 0 && warnings.length === 0 && (
+      {blockingCount === 0 && warnings.length === 0 && (
         <p className="rounded-lg bg-slate-50 px-3 py-3 text-[13px] text-slate-600">
           No open gaps or checks. Every answer still needs your review against its sources before approval.
         </p>
@@ -153,6 +193,106 @@ export function FlagsPanel({
         answer against its source.
       </p>
     </div>
+  );
+}
+
+/**
+ * "Leave optional boxes blank" (fix 10/2026): the optional questions that are simply blank, each ticked, and one reason;
+ * every gap and warning on them is acknowledged with it, one by one, as a single acknowledgement is (box-items.ts).
+ */
+function LeaveBlankPanel({
+  candidates,
+  disabled,
+  questionLabel,
+  onConfirm,
+}: {
+  candidates: BlankCandidate[];
+  disabled: boolean;
+  questionLabel(key: string): string;
+  onConfirm(keys: string[], reason: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Questions the person unticked (new candidates start ticked).
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  const [reason, setReason] = useState(LEAVE_BLANK_REASON);
+  const chosen = candidates.filter((c) => !excluded.has(c.key));
+  const valid = reason.trim().length >= MIN_GAP_REASON && chosen.length > 0;
+  const n = candidates.length;
+  const toggle = (key: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700" data-testid="leave-blank">
+        <p className="min-w-0 flex-1 basis-56">
+          <span className="font-medium text-slate-900">
+            {n} optional box{n === 1 ? " has" : "es have"} no answer.
+          </span>{" "}
+          You can leave {n === 1 ? "it" : "them"} blank on the form in one step, with one reason.
+        </p>
+        <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => setOpen(true)}>
+          Leave optional boxes blank…
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="space-y-2.5 rounded-xl border border-slate-300 bg-white px-3 py-3 text-[13px] text-slate-800"
+      data-testid="leave-blank"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!valid || disabled) return;
+        onConfirm(
+          chosen.map((c) => c.key),
+          reason.trim(),
+        );
+        setOpen(false);
+      }}
+    >
+      <fieldset className="space-y-1.5">
+        <legend className="mb-1 font-medium text-slate-900">Leave these optional boxes blank</legend>
+        {candidates.map((c) => (
+          <label key={c.key} className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 hover:bg-slate-50">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#0D9488]" checked={!excluded.has(c.key)} onChange={() => toggle(c.key)} />
+            <span className="min-w-0">
+              <span className="font-mono text-[11px] text-slate-500">{c.key.startsWith("F-") ? c.key : ""}</span> {humaniseMergeCodes(questionLabel(c.key) || c.label)}
+              {c.gaps[0] && <span className="block text-xs text-slate-500">{c.gaps[0].issue}</span>}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <div>
+        <label htmlFor="leave-blank-reason" className="block text-xs font-medium text-slate-700">
+          Reason – kept in the audit trail for each box
+        </label>
+        <textarea
+          id="leave-blank-reason"
+          rows={2}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="mt-1 block w-full resize-y rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[13px] text-slate-900 focus:border-[#0D9488] focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+        />
+        {reason.trim().length < MIN_GAP_REASON && <p className="mt-1 text-[11px] text-slate-500">At least {MIN_GAP_REASON} characters.</p>}
+      </div>
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        Each box is recorded as acknowledged, with this reason, in the activity log. Never included: required questions, questions that need your
+        clinical opinion, and boxes with another check to sort out.
+      </p>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" className="h-8" disabled={!valid || disabled}>
+          Leave {chosen.length} box{chosen.length === 1 ? "" : "es"} blank
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -40,7 +40,7 @@ async function openUpload(page, file) {
 async function answerBlockers(app) {
   for (let round = 0; round < 5; round++) {
     const flags = await F.flagsText(app);
-    const keys = Array.from(new Set((flags.match(/(?:Missing field|Placeholder|Merge field|Mail-merge field)[^|]*\| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
+    const keys = Array.from(new Set((flags.match(/(?:Missing field|Placeholder|Merge field|Mail-merge field|Required – no answer yet|Required – needs your opinion|Optional, but must be filled in)[^|]*\| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
     if (keys.length === 0) return;
     for (const k of keys) await F.addOwn(app, k, `Entered by staff for ${k} (fictional)`);
   }

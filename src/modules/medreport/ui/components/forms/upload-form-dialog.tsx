@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, CircleDashed, FileSearch, ListChecks, TriangleAlert } from "lucide-react";
 import { MAX_FORM_FILE_BYTES, MAX_RTF_FILE_BYTES } from "../../../config.public";
 import { FORM_KIND_LABELS, REFERRER_TYPE_LABELS } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, ReferrerType } from "../../../core/types";
 import {
@@ -323,9 +324,10 @@ function AnalysedPanel({ result }: { result: AnalyseResult }) {
   const lowFields = form.fields.filter((f) => f.confidence !== "high");
   const low = lowFields.length;
   // The questions counted as "to check" are listed with the layout notes, so the count has its items.
+  // Clinic-system merge codes are shown in plain words (core/practice-merge-codes.ts).
   const checks = [
-    ...(low ? [`${low === 1 ? "Question" : "Questions"} to check in the mapping review: ${lowFields.map((f) => `“${f.label.trim().replace(/[.:;]$/, "")}”`).join(", ")}`] : []),
-    ...distinctNotes([...o.warnings, ...form.analysis.warnings]),
+    ...(low ? [`${low === 1 ? "Question" : "Questions"} to check in the mapping review: ${lowFields.map((f) => `“${humaniseMergeCodes(f.label.trim().replace(/[.:;]$/, ""))}”`).join(", ")}`] : []),
+    ...distinctNotes([...o.warnings, ...form.analysis.warnings]).map((n) => humaniseMergeCodes(n)),
   ];
   const facts = [
     FORM_KIND_LABELS[o.kind],

@@ -29,6 +29,7 @@ import {
   writeInOwnVoice,
 } from "./review-model";
 import { setRowsAnswer } from "./table-answer-model";
+import { acknowledgeGapLeavingBlank, leaveOptionalBoxesBlank } from "./box-items";
 
 export type ReviewAction =
   | { type: "replace"; report: Report }
@@ -42,6 +43,8 @@ export type ReviewAction =
   | { type: "resolveGap"; gapId: string; kind: "resolved" | "acknowledged"; text: string; actor: string }
   | { type: "reopenGap"; gapId: string; actor: string }
   | { type: "acknowledgeFlag"; flagId: string; reason: string; actor: string }
+  /** "Leave optional boxes blank": one acknowledgement per gap and warning, re-checked against the form (box-items.ts). */
+  | { type: "leaveOptionalBlank"; keys: string[]; reason: string; actor: string; template: ReportTemplate; form: FormDefinition | null }
   | { type: "recordConsent"; givenOn: string; actor: string }
   | { type: "setFlags"; flags: ReportFlag[] }
   | { type: "applyDraft"; result: DraftResultLike }
@@ -90,11 +93,16 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
     case "setRows":
       return setRowsAnswer(report, action.key, action.rows, action.actor);
     case "resolveGap":
-      return resolveGap(report, action.gapId, action.kind, action.text, action.actor);
+      // An optional box's gap acknowledged = left blank: its "no answer" warning is acknowledged with it.
+      return action.kind === "acknowledged"
+        ? acknowledgeGapLeavingBlank(report, action.gapId, action.text, action.actor)
+        : resolveGap(report, action.gapId, action.kind, action.text, action.actor);
     case "reopenGap":
       return reopenGap(report, action.gapId, action.actor);
     case "acknowledgeFlag":
       return acknowledgeFlag(report, action.flagId, action.reason, action.actor);
+    case "leaveOptionalBlank":
+      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, reason: action.reason, actor: action.actor });
     case "recordConsent":
       return recordConsent(report, action.givenOn, action.actor);
     case "setFlags":

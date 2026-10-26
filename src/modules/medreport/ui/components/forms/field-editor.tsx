@@ -14,6 +14,7 @@ import {
   REGISTRATION_PATH_LABELS,
   SIGNOFF_PART_LABELS,
 } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import {
   AnswerTypeSchema,
   ComputedFactFormatSchema,
@@ -117,7 +118,8 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
           <FieldLabel htmlFor={`${id}-guidance`} hint="(what the referrer wants – also the brief for drafting)">
             Guidance
           </FieldLabel>
-          <Textarea id={`${id}-guidance`} rows={2} value={field.guidance} onChange={(e) => set("guidance", e.target.value)} />
+          {/* Clinic-system codes in plain words: guidance is free text, so an edit keeps the words (core/practice-merge-codes.ts). */}
+          <Textarea id={`${id}-guidance`} rows={2} value={humaniseMergeCodes(field.guidance)} onChange={(e) => set("guidance", e.target.value)} />
         </div>
       </div>
 
@@ -331,7 +333,7 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
           Remove question
         </Button>
       </div>
-      {field.note ? <p className="text-xs text-slate-500">Note: {field.note}</p> : null}
+      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
     </fieldset>
   );
 }

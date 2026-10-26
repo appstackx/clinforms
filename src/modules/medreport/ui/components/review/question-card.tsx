@@ -3,7 +3,8 @@
 /**
  * One question of the referrer's form (or one section of a built-in report) in the review centre
  * column: the label as printed, the referrer's guidance, an answer editor for its type, where each part
- * of the answer came from (origin pills and citation chips) and the checks and gaps on it.
+ * of the answer came from (origin pills and citation chips) and the checks and gaps on it – its open gaps and the
+ * checks its own answer clears as one item (BoxIssue, fix 10/2026).
  *
  * Owner: studio-b agent.
  */
@@ -11,6 +12,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { answerKindFor, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
@@ -20,7 +22,8 @@ import { Button, cn } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
 import { WORDING } from "../../wording";
 import { useFillSourceLabels } from "../shared/ui-bits";
-import { FlagItem, GapItem } from "./issues";
+import type { BoxItem } from "./box-items";
+import { BoxIssue, FlagItem, GapItem } from "./issues";
 import { TableAnswer } from "./table-answer";
 import { rowsOf } from "./table-answer-model";
 import {
@@ -43,9 +46,14 @@ export interface QuestionCardProps {
   /** Flags on this question (section-level and paragraph-level). */
   flags: ReportFlag[];
   gaps: Gap[];
+  /** What blocks approval on this question as one item (box-items.ts), when anything does. */
+  box?: BoxItem;
+  /** Checks shown inside a question's item (this one's or another's): not listed again. */
+  hiddenFlagIds?: ReadonlySet<string>;
   bundle: EpisodeBundle;
   connectorId: ConnectorId;
   referrerName: string | null;
+  /** The report is approved: read-only from now on, and its drafted paragraphs and answers are no longer called drafts. */
   readOnly: boolean;
   /** The clinician changed the structured answer (activity "answer_set"). */
   answerEdited: boolean;
@@ -158,7 +166,10 @@ function ParagraphEditor({
         />
       )}
       <div className="flex flex-wrap items-center gap-1.5">
-        <OriginPill origin={paragraph.origin} label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId)} />
+        <OriginPill
+          origin={paragraph.origin}
+          label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
+        />
         {paragraph.basis && paragraph.origin !== "from_records" && (
           <span className="text-[11px] text-slate-500">{PARAGRAPH_BASIS_LABELS[paragraph.basis]}</span>
         )}
@@ -389,8 +400,14 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
   // its "required and empty" check is listed in the Flags tab rather than repeated here.
   const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section);
-  const sectionFlags = flags.filter((f) => !f.paragraphId && !(showsNeedsClinician && f.code === "MISSING_PLACEHOLDER" && f.evidence === "empty section"));
-  const paragraphFlags = (pid: string) => flags.filter((f) => f.paragraphId === pid);
+  const box = props.box;
+  const hidden = props.hiddenFlagIds;
+  const sectionFlags = flags.filter(
+    (f) => !f.paragraphId && !hidden?.has(f.id) && !(showsNeedsClinician && f.code === "MISSING_PLACEHOLDER" && f.evidence === "empty section"),
+  );
+  const paragraphFlags = (pid: string) => flags.filter((f) => f.paragraphId === pid && !hidden?.has(f.id));
+  // Open gaps in the question's item are shown there; resolved ones (and any other) as before.
+  const otherGaps = box ? gaps.filter((g) => !box.gaps.includes(g)) : gaps;
 
   const fillSourceText = staffEntered
     ? "Typed in by staff – not from the clinic record (see the Activity tab)"
@@ -418,6 +435,8 @@ function QuestionCardImpl(props: QuestionCardProps) {
   const referrerGap = gaps.find((g) => g.id.endsWith("-referrer") && !g.resolution) ?? null;
   const referrerField =
     field?.fillSource.kind === "registration" && showsReferrerReferenceNotice(field.fillSource.path, props.referrerName ?? null, bundle);
+  // The card already says to enter the referrer's own reference.
+  const referrerNotice = Boolean(isRecords && !answered && !readOnly && (referrerGap || referrerField));
 
   const startClinicianText = (text: string) => {
     if (!section) return;
@@ -505,7 +524,8 @@ function QuestionCardImpl(props: QuestionCardProps) {
         {SIGNOFF_PART_LABELS[part]} – completed from the approval receipt when a clinician approves the form. Blank on the draft.
       </p>
     );
-  } else if (section.status === "pending" && !answered) {
+  } else if (section.status === "pending" && !answered && !readOnly) {
+    // (Once approved, a question never drafted reads "Left blank on the form." below, not "Not drafted yet.")
     body = (
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
         {props.drafting ? (
@@ -578,7 +598,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
             )}
             {proposedBy && (
               <div className="flex items-center gap-1.5">
-                {proposedBy === "ai" && <Pill className="border-sky-200 bg-sky-50 text-sky-800">Answer proposed from the notes – check it</Pill>}
+                {proposedBy === "ai" && (
+                  <Pill className="border-sky-200 bg-sky-50 text-sky-800">{readOnly ? WORDING.origin.answerDraftedApproved : WORDING.origin.answerDrafted}</Pill>
+                )}
                 {proposedBy === "edited" && <Pill className="border-violet-200 bg-violet-50 text-violet-800">Answer changed by the clinician</Pill>}
                 {proposedBy === "clinician" && <Pill className="border-indigo-200 bg-indigo-50 text-indigo-800">Clinician</Pill>}
               </div>
@@ -603,7 +625,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
     body = (
       <div className="space-y-3">
         {isOpinion && !answered && !readOnly && <NeedsClinician gaps={gaps} />}
-        {isRecords && !answered && !readOnly && (referrerGap || referrerField) ? (
+        {referrerNotice ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
               {props.referralValue
@@ -670,9 +692,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
         <div className="min-w-0 flex-1 basis-60">
           {q.context && <p className="text-xs text-slate-500">Part of: {q.context}</p>}
           <h3 id={headingId} tabIndex={-1} className="text-[15px] font-semibold leading-snug text-slate-900 focus:outline-none">
-            {q.label}
+            {humaniseMergeCodes(q.label)}
           </h3>
-          {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{q.guidance}</p>}
+          {q.guidance && <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{humaniseMergeCodes(q.guidance)}</p>}
         </div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
           {props.onCopy && <CopyAnswerButton label={q.label} enabled={Boolean(props.copyable)} onCopy={() => props.onCopy?.(q.key)} />}
@@ -705,9 +727,24 @@ function QuestionCardImpl(props: QuestionCardProps) {
           </Button>
         </div>
       )}
-      {(sectionFlags.length > 0 || gaps.length > 0) && (
+      {(box || sectionFlags.length > 0 || otherGaps.length > 0) && (
         <div className="mt-3 space-y-2">
-          {gaps.map((g) => (
+          {box && (
+            <BoxIssue
+              box={box}
+              compact
+              hideInstruction={referrerNotice || showsNeedsClinician}
+              hideGapIssue={referrerNotice}
+              hideQuestion={showsNeedsClinician}
+              bundle={bundle}
+              readOnly={readOnly}
+              resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor })}
+              onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
+              onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
+              onOpenSource={onOpenSource}
+            />
+          )}
+          {otherGaps.map((g) => (
             <GapItem
               key={g.id}
               gap={g}

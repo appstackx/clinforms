@@ -11,6 +11,7 @@ import { inOwnClinicalWording, isOwnVoiceCandidate } from "../../../core/voice";
 import { formatUkDate, formatUkDayMonth, nowIso } from "../../../core/dates";
 import { answerKindFor, answerToText, isSectionAnswered, parseFormAnswerValue } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
+import { NOTICES } from "../../../config.public";
 import { WORDING } from "../../wording";
 import type {
   ActivityEntry,
@@ -154,7 +155,8 @@ export type QuestionStatus =
   | "blocked"
   | "pending"
   | "signoff"
-  | "blank";
+  | "blank"
+  | "left_blank";
 
 export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short: string; dot: string; text: string }> = {
   records: { label: "Filled from records", short: "From records", dot: "bg-teal-600", text: "text-teal-800" },
@@ -166,10 +168,11 @@ export const QUESTION_STATUS_META: Record<QuestionStatus, { label: string; short
   pending: { label: "Not drafted yet", short: "Not drafted", dot: "border-2 border-slate-400 bg-white", text: "text-slate-600" },
   signoff: { label: "Filled on approval", short: "On approval", dot: "bg-slate-400", text: "text-slate-600" },
   blank: { label: "Left blank on the form", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-500" },
+  left_blank: { label: "Left blank on approval", short: "Left blank", dot: "border border-dashed border-slate-400 bg-white", text: "text-slate-600" },
 };
 
 /** Legend order. */
-export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "needs_input", "confirm", "blocked", "pending"];
+export const QUESTION_STATUS_ORDER: QuestionStatus[] = ["records", "drafted", "clinician", "left_blank", "needs_input", "confirm", "blocked", "pending"];
 
 /** Same rule as core/validation canSign: a blocking flag that still blocks approval. */
 export function isOpenBlocking(flag: ReportFlag, gaps: readonly Gap[]): boolean {
@@ -194,8 +197,10 @@ export function groupBySection<T extends { sectionKey?: string }>(items: readonl
 
 /**
  * - pending: not drafted yet;
- * - signoff / blank: filled on approval / left for the referrer;
+ * - signoff / blank: filled on approval / left for the referrer – or an optional box a person chose to leave blank
+ *   (its gap or its "no answer" warning acknowledged, nothing open on it: fix 10/2026);
  * - needs_input: no answer yet (an opinion nobody recorded, a value the record lacks);
+ * - left_blank: the report was approved without an answer here, so nothing is waiting for anyone;
  * - confirm: a person has answered it and only its gap is still open (one click: "Mark resolved");
  * - blocked: answered, but a blocking check or an open gap remains;
  * - records / drafted / clinician: answered and clear, by where the answer came from.
@@ -206,13 +211,16 @@ export function questionStatus(
   gaps: readonly Gap[],
   /** A person (not the drafting step) answered it (answeredByPerson). */
   byPerson = false,
+  /** The report is approved (read-only). */
+  approved = false,
 ): QuestionStatus {
   const section = q.section;
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
-  if (section.status === "pending" && !isSectionAnswered(section)) return "pending";
   const answered = isSectionAnswered(section);
-  if (!answered) return "needs_input";
+  if (!answered && approved) return "left_blank";
+  if (section.status === "pending" && !answered) return "pending";
+  if (!answered) return q.field?.required === false && leftBlankOnPurpose(section.key, flags, gaps) ? "blank" : "needs_input";
   const blockingFlags = flags.filter((f) => f.sectionKey === section.key && isOpenBlocking(f, gaps));
   const openGap = gaps.some((g) => g.sectionKey === section.key && !g.resolution);
   // Answered by a person and only the gap itself is open: not a failed check, just confirm it.
@@ -224,13 +232,20 @@ export function questionStatus(
   return "clinician";
 }
 
+/** Nothing open on the box, and a person acknowledged its gap or its "optional and has no answer" warning. */
+function leftBlankOnPurpose(key: string, flags: readonly ReportFlag[], gaps: readonly Gap[]): boolean {
+  const own = gaps.filter((g) => g.sectionKey === key);
+  if (own.some((g) => !g.resolution) || flags.some((f) => f.sectionKey === key && isOpenBlocking(f, gaps))) return false;
+  return own.some((g) => g.resolution?.kind === "acknowledged") || flags.some((f) => f.sectionKey === key && f.evidence === "optional field blank" && Boolean(f.acknowledged));
+}
+
 export interface StatusCounts {
   total: number;
   counts: Record<QuestionStatus, number>;
 }
 
 export function countStatuses(statuses: readonly QuestionStatus[]): StatusCounts {
-  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0 } as Record<QuestionStatus, number>;
+  const counts = { records: 0, drafted: 0, clinician: 0, needs_input: 0, confirm: 0, blocked: 0, pending: 0, signoff: 0, blank: 0, left_blank: 0 } as Record<QuestionStatus, number>;
   statuses.forEach((s) => (counts[s] += 1));
   return { total: statuses.length, counts };
 }
@@ -299,18 +314,33 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
  * Labels: origins and citations
  * ----------------------------------------------------------------------------------------------*/
 
-/** Origin pill text. From-records answers name the clinic system they came from. */
-export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId): string {
+/**
+ * Origin pill text. From-records answers name the clinic system they came from. Once the report is approved
+ * (`approved`), a drafted paragraph says where it came from rather than "Draft" (test run 24/10/2026, finding 6).
+ */
+export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, approved = false): string {
   switch (origin) {
     case "from_records":
       return connectorId === "file-import" ? "From clinic records" : "From TM3 records";
     case "ai":
-      return WORDING.origin.drafted;
+      return approved ? WORDING.origin.draftedApproved : WORDING.origin.drafted;
     case "edited":
       return "Edited";
     case "clinician":
       return "Clinician";
   }
+}
+
+/**
+ * Why an approved Word form offers no PDF copy here – the approved banner then shows its Word download alone, with
+ * this line – or null when it does. The PDF copy needs this deployment's converter (/health `pdfFromWord`); until that
+ * is known to be there, no PDF button, so there is never a greyed-out or failing one (test run 24/10/2026). `failed`:
+ * the message of a PDF copy that could not be made after all.
+ */
+export function wordFormPdfNote(input: { formKind: FormDefinition["kind"] | undefined; pdfFromWord: boolean | undefined; failed: string | null }): string | null {
+  if (input.formKind !== "docx") return null;
+  if (input.failed !== null) return input.failed;
+  return input.pdfFromWord === true ? null : NOTICES.wordFormPdfHint;
 }
 
 export const ORIGIN_PILL_CLASSES: Record<ParagraphOrigin, string> = {

@@ -7,6 +7,7 @@ import {
   describeAnchor,
   describeBlock,
   fillSourceOfKind,
+  firstQuestionToCheck,
   formatOptionFields,
   newField,
   nextFieldId,
@@ -87,4 +88,22 @@ test("fillable-PDF answer spaces of several fields: descriptions, editing and pi
   assert.equal(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 6", fieldType: "text" }), chars);
   assert.equal(anchorFromPick(yesNo, { kind: "pdf_field", fieldName: "Check Box6", fieldType: "checkbox" }), yesNo);
   assert.deepEqual(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" }), { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" });
+});
+
+test("the mapping review opens on the question that most needs a decision: “Needs review” first, then “Check”", () => {
+  const q = (id: string, confidence: FormField["confidence"]) => ({ id, confidence });
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "low"), q("F-04", "low")]), "F-03");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "medium")]), "F-02", "the first to check, in the form's order");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "high")]), "F-01", "nothing to check: the first question");
+  assert.equal(firstQuestionToCheck([]), null);
+});
+
+test("places that are clinic-system merge codes are described in plain words; the location by hand keeps the code", () => {
+  const at = (placeholderText: string, extra: Partial<Extract<FormField["anchor"], { kind: "docx" }>> = {}): FormField["anchor"] => ({ kind: "docx", target: "replace_placeholder", blockId: "p4", placeholderText, ...extra });
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_FIRSTNAM>>"), label: "Patient's first name" }), "In place of the merge code for the patient's first name");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>"), label: "Address" }), "In place of the merge codes for the patient's address and postcode");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_CONTACT_PREF>>"), label: "Merge code <<P_CONTACT_PREF>>" }), "In place of the merge code “P_CONTACT_PREF”");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_DOB>>", { writeAfter: true }), label: "Date of birth" }), "After the printed merge code for the patient's date of birth");
+  assert.equal(plainAnchorDescription({ anchor: at("____"), label: "Name" }), "On the blank line for “Name”", "unchanged for ordinary blanks");
+  assert.equal(describeAnchor(at("<<P_FIRSTNAM>>")), "Replaces “<<P_FIRSTNAM>>” – Paragraph 5", "the code as printed, under “Edit the location by hand”");
 });

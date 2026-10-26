@@ -22,6 +22,13 @@ import "server-only";
  *   Typed tick boxes ("[ ]", "[x]") are tick boxes for checkbox_glyph: "[ ]" → "[x]", and "[x]" → "[ ]".
  *   replace_placeholder with clearPlaceholder (10/2026): an unanswered question's printed text is removed (DRAFT too).
  *
+ * Template instructions (10/2026, core/template-instructions.ts): once every answer is written, the form author's notes
+ * for whoever completes the form ("Delete unused cells", "Delete as necessary", "(Please delete other choices)") are
+ * left off – with a line or row they emptied and, for "Delete unused cells", the repeat rows the report left as
+ * printed – and a note says so. A note beside a list of options only once an answer has chosen from that list. Never
+ * inside an answer; a form without such notes is written exactly as before, and so is one printing more than
+ * MAX_INSTRUCTIONS_PER_FORM (hostile sizes).
+ *
  * Answers come from core/forms.ts buildFormAnswers(report, form, {receipt}). Anchors are resolved on the
  * ORIGINAL document before anything changes, so every block ID means what the outline said. Text is
  * written through the DOM (XML-escaped) with invalid XML characters removed.
@@ -30,11 +37,20 @@ import "server-only";
  * bookmarked paragraph that the outline skips), sign-off fields blank (the caller passes no receipt).
  * reviewMarkers: answers highlighted and tagged "[F-07]"; unanswered questions get a grey marker.
  * FINAL: no banner, no markers. Never removes or reorders the referrer's own content (only the blank /
- * dotted answer lines an answer has used are replaced).
+ * dotted answer lines an answer has used are replaced, and the template instructions above).
  *
  * Owner: forms-engine agent. Signature final.
  */
-import { isAnswerableField, isUnknownAnswer, matchOption, namedOptions, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import { docxAnchorBlockIds, isAnswerableField, isUnknownAnswer, matchOption, namedOptions, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import { hasMergeToken } from "../core/merge-fields";
+import {
+  MAX_INSTRUCTIONS_PER_FORM,
+  findTemplateInstructions,
+  instructionColour,
+  instructionsLeftOffNote,
+  mayHoldInstruction,
+  type TemplateInstruction,
+} from "../core/template-instructions";
 import type { FormDefinition, FormField } from "../core/types";
 import {
   CHECKED_GLYPH,
@@ -59,6 +75,7 @@ import {
   isW,
   loadDocxDom,
   paragraphSegments,
+  paragraphText,
   saveDocxDom,
   segmentsText,
   setWAttr,
@@ -71,6 +88,7 @@ import {
   type DocxDom,
   type GlyphSlot,
   type XmlElement,
+  type XmlNode,
 } from "./docx-dom";
 import type { FillOptions } from "./types";
 
@@ -142,6 +160,8 @@ interface Ctx {
   glyphEdits: Map<XmlElement, Array<{ offset: number; length: number; text: string }>>;
   /** Paragraphs a "delete as necessary" answer removed printed text from (10/2026 verify). */
   deletedParas: Set<XmlElement>;
+  /** "Delete as necessary" questions whose list an answer settled – the chosen options kept, the others removed (25/10). */
+  chosenLists: Set<FormField>;
 }
 
 function where(field: FormField): string {
@@ -171,6 +191,13 @@ function toParagraphs(text: string): string[][] {
  * ----------------------------------------------------------------------------------------------*/
 
 type RunKind = "answer" | "marker" | "unanswered";
+
+/**
+ * Runs this fill wrote (answers, marks, kept options, markers), so the template-instruction pass never reads an answer
+ * as the form's own text (10/2026). A written run split in two stays marked in both parts.
+ */
+const WRITTEN = new WeakSet<XmlElement>();
+const isWritten = (run: XmlElement | null): boolean => !!run && WRITTEN.has(run);
 
 /** Typography only (font, size, language) – used when copying from a label or question run. */
 function typographyOf(rPr: XmlElement | null, keep: string[] = ["rFonts", "sz", "szCs", "lang"]): XmlElement | null {
@@ -219,6 +246,7 @@ function withoutPlaceholderStyle(rPr: XmlElement | null): XmlElement | null {
 function makeRun(ctx: Ctx, lines: string[], rPr: XmlElement | null, kind: RunKind): XmlElement {
   const { dom } = ctx;
   const run = wEl(dom, "r");
+  WRITTEN.add(run);
   const props = rPr ? cloneEl(rPr) : wEl(dom, "rPr");
   if (kind === "marker" || kind === "unanswered") {
     setProp(props, wEl(dom, "color", { val: kind === "marker" ? "6B7280" : "9CA3AF" }), RPR_ORDER);
@@ -365,6 +393,7 @@ function normaliseRuns(p: XmlElement): void {
     const rPr = firstW(run, "rPr");
     for (const child of content.slice(1).reverse()) {
       const clone = run.ownerDocument!.createElementNS(run.namespaceURI, run.nodeName) as XmlElement;
+      if (isWritten(run)) WRITTEN.add(clone);
       if (rPr) clone.appendChild(cloneEl(rPr));
       clone.appendChild(child);
       insertAfter(clone, run);
@@ -383,6 +412,7 @@ function splitRunBefore(run: XmlElement, t: XmlElement, offset: number): void {
   const text = t.textContent ?? "";
   if (offset <= 0 || offset >= text.length) return;
   const before = cloneEl(run);
+  if (isWritten(run)) WRITTEN.add(before);
   const bt = firstW(before, "t");
   if (bt) setText(bt, text.slice(0, offset));
   run.parentNode?.insertBefore(before, run);
@@ -394,6 +424,7 @@ function splitRunAfter(run: XmlElement, t: XmlElement, offset: number): void {
   const text = t.textContent ?? "";
   if (offset <= 0 || offset >= text.length) return;
   const after = cloneEl(run);
+  if (isWritten(run)) WRITTEN.add(after);
   const at = firstW(after, "t");
   if (at) setText(at, text.slice(offset));
   insertAfter(after, run);
@@ -1068,11 +1099,30 @@ function findWord(text: string, needle: string, from = 0): number {
   return -1;
 }
 
+const BLOCKS = ["p", "tbl", "sdt", "sectPr"];
+
+/** The nearest block (paragraph, table, control or section end) before / after `el` among its siblings. */
+function siblingBlock(el: XmlElement, dir: "previousSibling" | "nextSibling"): XmlElement | null {
+  for (let n = el[dir]; n; n = n[dir]) if (isElement(n) && BLOCKS.some((b) => isW(n, b))) return n;
+  return null;
+}
+
+/**
+ * A line just after a table that a table, or the end of its cell or of the body, follows: without it Word joins the
+ * two tables, or finds a cell (or the document) ending in a table and may call the file damaged (review 25/10/2026).
+ */
+function keepsTableApart(p: XmlElement): boolean {
+  if (!isW(siblingBlock(p, "previousSibling"), "tbl")) return false;
+  const next = siblingBlock(p, "nextSibling");
+  return !next || isW(next, "tbl") || isW(next, "sectPr");
+}
+
 function removeIfBlank(p: XmlElement): void {
   if (segmentsText(paragraphSegments(p)).trim() !== "") return;
   const cell = ancestorW(p, "tc");
   if (cell && wChildren(cell, "p").length <= 1) return; // a cell keeps its last paragraph
   if (firstW(firstW(p, "pPr"), "sectPr")) return;
+  if (keepsTableApart(p)) return;
   remove(p);
 }
 
@@ -1095,14 +1145,17 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     const target = occ[Math.min(k, occ.length - 1)];
     // A single printed item ("delete any that do not apply"): kept when ticked, removed when not.
     if (chosen && options.length === 1) {
+      let settled = true;
       if (chosen.size === 0 && !replaceRange(target.p, target.index, target.index + target.length, () => [])) {
         ctx.warn(`${where(field)}: “${list}” could not be removed.`);
+        settled = false;
       }
       if (chosen.size === 0) {
         ctx.deletedParas.add(target.p);
         removeIfBlank(target.p);
       }
       else addSkip(ctx, ref.el, list);
+      if (settled) ctx.chosenLists.add(field);
       return;
     }
     if (chosen === null || chosen.size !== 1) {
@@ -1117,7 +1170,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
     ctx.deletedParas.add(target.p);
     if (!replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => [makeRun(ctx, [kept], styleRPr, "answer")])) {
       ctx.warn(`${where(field)}: the options “${list}” could not be changed, so every option was left as printed.`);
-    }
+    } else ctx.chosenLists.add(field);
     return;
   }
   // One option per line (or a single printed item kept when ticked).
@@ -1161,13 +1214,18 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean): void {
   const drop = located.filter((l) => !chosen.has(l.option));
   const byParagraph = new Map<XmlElement, typeof drop>();
   for (const l of drop) byParagraph.set(l.p, [...(byParagraph.get(l.p) ?? []), l]);
+  let settled = true;
   byParagraph.forEach((items, para) => {
     for (const l of items.sort((a, b) => b.index - a.index)) {
       ctx.deletedParas.add(para);
-      if (!replaceRange(para, l.index, l.index + l.length, () => [])) ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
+      if (!replaceRange(para, l.index, l.index + l.length, () => [])) {
+        ctx.warn(`${where(field)}: “${l.option}” could not be removed.`);
+        settled = false;
+      }
     }
   });
   byParagraph.forEach((_, para) => removeIfBlank(para));
+  if (settled) ctx.chosenLists.add(field);
 }
 
 /** Every table row around `el` whose height is exact is set to "at least" that height, so an answer never clips. */
@@ -1176,6 +1234,299 @@ function growExactRows(ctx: Ctx, el: XmlElement): void {
     const height = firstW(firstW(tr, "trPr"), "trHeight");
     if (height && wAttr(height, "hRule") === "exact") setWAttr(ctx.dom, height, "hRule", "atLeast");
   }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Template instructions (10/2026): the form author's notes for whoever completes the form are left off
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A run's own text colour ("ff0000"); "" for the default (none, automatic or black). */
+function runColour(run: XmlElement | null): string {
+  return instructionColour(wAttr(firstW(firstW(run, "rPr"), "color"), "val"));
+}
+
+/** The form's own printed text in a paragraph: what this fill wrote is left out (an answer is never a box's label). */
+function printedText(p: XmlElement): string {
+  return paragraphSegments(p)
+    .filter((seg) => !isWritten(seg.run))
+    .map((seg) => seg.text)
+    .join("");
+}
+
+/** A paragraph of a table cell with a line of printed text above it in the cell (the box's own label; 10 lines up at most). */
+function belowLabelInCell(p: XmlElement): boolean {
+  if (!isW(p.parentNode, "tc")) return false;
+  let lines = 0;
+  for (let n = p.previousSibling; n && lines < 10; n = n.previousSibling) {
+    if (!isW(n, "p")) continue;
+    if (printedText(n).trim()) return true;
+    lines += 1;
+  }
+  return false;
+}
+
+/**
+ * The form's own instructions in a paragraph (core/template-instructions.ts) – never one touching a written run. A line
+ * of more than MAX_SIBLINGS_TO_LEAVE_OFF runs or text pieces is left as printed: leaving text off splits and removes
+ * them one by one, and xmldom re-indexes the line each time (hostile sizes, integration review 25/10/2026).
+ */
+function instructionsIn(p: XmlElement): TemplateInstruction[] {
+  if (!mayHoldInstruction(p.textContent ?? "")) return [];
+  if (descendantsW(p, "r").length > MAX_SIBLINGS_TO_LEAVE_OFF || descendantsW(p, "t").length > MAX_SIBLINGS_TO_LEAVE_OFF) return [];
+  let text = "";
+  const colours: Array<{ at: number; colour: string }> = [];
+  const written: Array<[number, number]> = [];
+  let colourOf: XmlElement | null | undefined;
+  let colour = "";
+  for (const seg of paragraphSegments(p)) {
+    if (seg.kind === "text" && seg.text) {
+      // Once per run, not per text piece: finding a run's properties walks its children.
+      if (seg.run !== colourOf) {
+        colourOf = seg.run;
+        colour = runColour(seg.run);
+      }
+      if (colours[colours.length - 1]?.colour !== colour) colours.push({ at: text.length, colour });
+    }
+    if (isWritten(seg.run)) written.push([text.length, text.length + seg.text.length]);
+    text += seg.kind === "tab" ? "\t" : seg.text;
+  }
+  // Both lists are in text order and do not overlap: one pointer walks the written ranges.
+  let w = 0;
+  return findTemplateInstructions({ text, colours, belowLabelInCell: belowLabelInCell(p) }).filter((f) => {
+    while (w < written.length && written[w][1] <= f.start) w += 1;
+    return !(w < written.length && written[w][0] < f.end);
+  });
+}
+
+/** A paragraph's text without the form's instructions. */
+function textWithoutInstructions(p: XmlElement): string {
+  let text = paragraphText(p);
+  for (const f of instructionsIn(p).reverse()) text = text.slice(0, f.start) + text.slice(f.end);
+  return text.trim();
+}
+
+const NOT_PLAIN_IN_ROW = ["tbl", "sdt", "fldChar", "drawing", "pict", "object", "txbxContent"];
+
+/**
+ * A plain table row's printed text cell by cell, instructions left out (null: merged cells, controls, fields, or a
+ * mail-merge code – a row still printing «Name» / <<DATE>> is never "unused", so the final check still sees it).
+ */
+function rowText(tr: XmlElement): { key: string; blank: boolean } | null {
+  const cells = wChildren(tr, "tc");
+  if (cells.length === 0 || wChildren(tr, "sdt").length > 0 || wChildren(tr, "customXml").length > 0) return null;
+  const parts: string[] = [];
+  let blank = true;
+  for (const tc of cells) {
+    const tcPr = firstW(tc, "tcPr");
+    if (firstW(tcPr, "vMerge") || NOT_PLAIN_IN_ROW.some((name) => descendantsW(tc, name).length > 0)) return null;
+    const text = wChildren(tc, "p").map(textWithoutInstructions).filter(Boolean).join("\n");
+    if (hasMergeToken(text)) return null;
+    if (text) blank = false;
+    parts.push(`${wAttr(firstW(tcPr, "gridSpan"), "val") ?? "1"}:${text}`);
+  }
+  const trPr = firstW(tr, "trPr");
+  return { key: JSON.stringify([wAttr(firstW(trPr, "gridBefore"), "val"), wAttr(firstW(trPr, "gridAfter"), "val"), parts]), blank };
+}
+
+function previousRow(tr: XmlElement): XmlElement | null {
+  for (let n = tr.previousSibling; n; n = n.previousSibling) if (isElement(n)) return isW(n, "tr") ? n : null;
+  return null;
+}
+
+/** The row's table has another row (a table never loses its last one). */
+function hasOtherRow(tr: XmlElement): boolean {
+  for (let n = tr.previousSibling; n; n = n.previousSibling) if (isW(n, "tr")) return true;
+  for (let n = tr.nextSibling; n; n = n.nextSibling) if (isW(n, "tr")) return true;
+  return false;
+}
+
+const hasWritten = (el: XmlElement): boolean => descendantsW(el, "r").some(isWritten);
+
+/** Real forms leave off a few dozen rows; past this many the rest stay as printed (each removal walks the table). */
+const MAX_ROWS_LEFT_OFF = 500;
+
+/**
+ * Leaving a line or row off makes xmldom re-index every child of its parent, so it is only done where the parent holds
+ * at most this many (a real form's body, table or cell holds well under a hundred – Blue Heart's 55 at most). Elsewhere
+ * an emptied line stays, empty, and the rows stay as printed: bounded work on hostile files (security review 25/10/2026).
+ */
+const MAX_SIBLINGS_TO_LEAVE_OFF = 2_000;
+const fewSiblings = (el: XmlElement): boolean => (el.parentNode?.childNodes.length ?? Infinity) <= MAX_SIBLINGS_TO_LEAVE_OFF;
+
+interface UnusedRowsPlan {
+  /** The row that prints "Delete unused cells". */
+  row: XmlElement;
+  /** The repeat rows it refers to (itself too when it is the last of them), each with its printed text. */
+  rows: Array<{ tr: XmlElement; key: string }>;
+  /** The instruction has a row of its own (nothing else printed in it). */
+  ownRow: boolean;
+}
+
+/**
+ * The repeat rows a "Delete unused cells/rows/lines" in `p` refers to: those directly above its row – at least two
+ * plain rows printing the same text (the row itself counts when it prints the same once the instruction is left out).
+ * An instruction sharing its row with other text is only removed as text. `claimed`: rows already in a plan – a later
+ * instruction's look upwards stops there, so each row is read once.
+ */
+function planUnusedRows(p: XmlElement, claimed: Set<XmlElement>): UnusedRowsPlan | null {
+  const row = ancestorW(p, "tr");
+  if (!row || claimed.has(row) || !fewSiblings(row)) return null;
+  claimed.add(row);
+  const own = rowText(row);
+  if (!own) return null;
+  const above = previousRow(row);
+  const like = above && !claimed.has(above) ? rowText(above) : null;
+  const rows: UnusedRowsPlan["rows"] = [];
+  if (like) for (let tr = above; tr && !claimed.has(tr) && rowText(tr)?.key === like.key; tr = previousRow(tr)) rows.push({ tr, key: like.key });
+  rows.reverse(); // top to bottom
+  const member = own.key === like?.key;
+  if (member) rows.push({ tr: row, key: own.key });
+  else if (!own.blank) return null;
+  for (const { tr } of rows) claimed.add(tr);
+  return { row, rows: rows.length >= 2 ? rows : [], ownRow: !member };
+}
+
+/** Where each "delete as necessary" list is printed (25/10): every element holding a line of it, up to the body. */
+type ListsByElement = Map<XmlElement, Set<FormField>>;
+
+function listsByElement(ctx: Ctx, jobs: Job[]): ListsByElement {
+  const out: ListsByElement = new Map();
+  for (const { field } of jobs) {
+    if (field.anchor.kind !== "docx" || field.anchor.target !== "delete_options") continue;
+    for (const id of docxAnchorBlockIds(field.anchor)) {
+      for (let n: XmlNode | null = ctx.index.byId.get(id)?.el ?? null; isElement(n) && n !== ctx.dom.body; n = n.parentNode) {
+        const here = out.get(n) ?? new Set<FormField>();
+        if (here.has(field)) break; // so are the elements above it
+        here.add(field);
+        out.set(n, here);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The lists a note beside options ("Delete as necessary") in `p` refers to, on the untouched document: those printed
+ * in its own line, else in its cell, else in its row, else in the blocks right after its row (outside a table: after
+ * its line) while they print lists – blank ones skipped, 10 at most. Empty when none is printed next to it.
+ */
+function listsNextTo(p: XmlElement, lists: ListsByElement): Set<FormField> {
+  const cell = ancestorW(p, "tc");
+  const row = cell ? ancestorW(cell, "tr") : null;
+  for (const scope of [p, cell, row]) {
+    const here = scope ? lists.get(scope) : undefined;
+    if (here?.size) return here;
+  }
+  const out = new Set<FormField>();
+  let blank = 0;
+  for (let n = (row ?? p).nextSibling; n; n = n.nextSibling) {
+    if (!isW(n, "p") && !isW(n, "tbl") && !isW(n, "tr") && !isW(n, "sdt")) continue; // bookmarks and the like
+    const here = lists.get(n);
+    if (here?.size) here.forEach((f) => out.add(f));
+    else if (out.size > 0 || (n.textContent ?? "").trim() || ++blank > 10) break;
+  }
+  return out;
+}
+
+interface InstructionPlan {
+  rows: UnusedRowsPlan[];
+  /** Each line printing a note beside options (kind "delete") → the lists next to it (listsNextTo). */
+  lists: Map<XmlElement, Set<FormField>>;
+}
+
+/**
+ * Read on the untouched document: the repeat rows each "Delete unused cells" refers to, and the lists next to each
+ * note beside options. null when the form prints more than MAX_INSTRUCTIONS_PER_FORM: not a template's notes, so it is
+ * left as printed (and the work stays bounded: security review 25/10/2026).
+ */
+function planInstructions(dom: DocxDom, lists: ListsByElement): InstructionPlan | null {
+  const plan: InstructionPlan = { rows: [], lists: new Map() };
+  const claimed = new Set<XmlElement>();
+  let count = 0;
+  for (const p of descendantsW(dom.body, "p")) {
+    const here = instructionsIn(p);
+    if (here.length === 0) continue;
+    count += here.length;
+    if (count > MAX_INSTRUCTIONS_PER_FORM) return null;
+    if (here.some((f) => f.kind === "delete")) plan.lists.set(p, listsNextTo(p, lists));
+    const rows = here.some((f) => f.kind === "delete_unused") ? planUnusedRows(p, claimed) : null;
+    if (rows) plan.rows.push(rows);
+  }
+  return plan;
+}
+
+/** An answer chose from every list next to a note beside options (and at least one is printed there). */
+function chosenFromAll(ctx: Ctx, lists: Set<FormField> | undefined): boolean {
+  return !!lists && lists.size > 0 && Array.from(lists).every((f) => ctx.chosenLists.has(f));
+}
+
+/**
+ * Table rows an answered question writes in or ticks (25/10): never "unused", even when the answer left the row's
+ * text as printed (a box answered "No" stays unticked).
+ */
+function answeredRows(ctx: Ctx, form: FormDefinition, answers: FormFillAnswers): Set<XmlElement> {
+  const out = new Set<XmlElement>();
+  for (const field of form.fields) {
+    if (field.anchor.kind !== "docx" || !isAnswerableField(field) || !answerText(field, answers[field.id] ?? {})) continue;
+    for (const id of docxAnchorBlockIds(field.anchor)) {
+      const el = ctx.index.byId.get(id)?.el;
+      for (let tr = !el ? null : isW(el, "tr") ? el : ancestorW(el, "tr"); tr && !out.has(tr); tr = ancestorW(tr, "tr")) out.add(tr);
+    }
+  }
+  return out;
+}
+
+/**
+ * After every answer is written: each instruction leaves the line (with its brackets), a line it emptied goes (a cell
+ * keeps its last line), and for "Delete unused cells" its own row goes, and so do the repeat rows the report left as
+ * printed – the first stays when none was used. A note beside options stays until an answer has chosen from every list
+ * next to it, so a list nobody chose from never reads as chosen. One note lists what was left off. A form without any
+ * is unchanged; one printing more than MAX_INSTRUCTIONS_PER_FORM is left as printed (read before anything changes).
+ */
+function leaveOffInstructions(ctx: Ctx, plan: InstructionPlan | null, answered: Set<XmlElement>): void {
+  if (!plan) return;
+  const lines: Array<{ p: XmlElement; off: TemplateInstruction[] }> = [];
+  let count = 0;
+  for (const p of descendantsW(ctx.dom.body, "p")) {
+    const here = instructionsIn(p);
+    if (here.length === 0) continue;
+    count += here.length;
+    if (count > MAX_INSTRUCTIONS_PER_FORM) return;
+    const off = here.filter((f) => f.kind !== "delete" || chosenFromAll(ctx, plan.lists.get(p)));
+    if (off.length > 0) lines.push({ p, off });
+  }
+  const found: TemplateInstruction[] = [];
+  const clearedRows = new Set<XmlElement>();
+  for (const { p, off } of lines) {
+    // From the end of the line, so the earlier offsets still hold.
+    const removed: TemplateInstruction[] = [];
+    for (const f of off.slice().reverse()) if (replaceRange(p, f.start, f.end, () => [])) removed.unshift(f);
+    if (removed.length === 0) continue;
+    found.push(...removed);
+    const row = ancestorW(p, "tr");
+    if (row) clearedRows.add(row);
+    const parent = p.parentNode;
+    if ((parent === ctx.dom.body || isW(parent, "tc")) && fewSiblings(p)) removeIfBlank(p);
+  }
+  if (found.length === 0) return;
+  const unusedRow = (tr: XmlElement) => !answered.has(tr) && !hasWritten(tr);
+  let rowsLeftOff = 0;
+  let removedRows = 0;
+  for (const repeat of plan.rows) {
+    if (!clearedRows.has(repeat.row) || removedRows >= MAX_ROWS_LEFT_OFF) continue;
+    const unused = repeat.rows.filter(({ tr, key }) => unusedRow(tr) && rowText(tr)?.key === key);
+    if (unused.length === repeat.rows.length) unused.shift(); // none was used: the table keeps one empty row
+    for (const { tr } of unused.slice(0, MAX_ROWS_LEFT_OFF - removedRows)) {
+      remove(tr);
+      rowsLeftOff += 1;
+      removedRows += 1;
+    }
+    if (repeat.ownRow && repeat.row.parentNode && unusedRow(repeat.row) && rowText(repeat.row)?.blank && hasOtherRow(repeat.row) && removedRows < MAX_ROWS_LEFT_OFF) {
+      remove(repeat.row);
+      removedRows += 1;
+    }
+  }
+  ctx.warn(instructionsLeftOffNote(found, rowsLeftOff));
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1233,9 +1584,11 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     usedLegacy: new Set(),
     glyphEdits: new Map(),
     deletedParas: new Set(),
+    chosenLists: new Set(),
   };
 
-  // 1. Resolve every anchor on the untouched document.
+  // 1. Resolve every anchor on the untouched document – and (10/2026) the form author's instructions: the repeat rows a
+  //    "Delete unused cells" refers to, and the lists next to a "Delete as necessary".
   const jobs: Job[] = [];
   const glyphJobs: { field: FormField; answer: FormFillAnswer; targets: GlyphTarget[] }[] = [];
   const markJobs: { field: FormField; answer: FormFillAnswer; targets: MarkTarget[] }[] = [];
@@ -1262,6 +1615,8 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     }
     jobs.push({ field, answer, ref });
   }
+  const instructions = planInstructions(dom, listsByElement(ctx, jobs));
+  const answered = instructions?.rows.length ? answeredRows(ctx, form, answers) : new Set<XmlElement>();
 
   // 2. Tick boxes first: they only swap characters, so nothing else moves. Then the marked cells (each in its own cell).
   for (const g of glyphJobs) fillCheckboxes(ctx, g.field, g.answer, g.targets);
@@ -1326,6 +1681,9 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     // Word; once something is written there it becomes "at least" that height – the same look for a one-line answer.
     if (!skip) growExactRows(ctx, job.ref.el);
   }
+
+  // 4. The form author's instructions for whoever completes it are left off (10/2026, core/template-instructions.ts).
+  leaveOffInstructions(ctx, instructions, answered);
 
   if (opts.draft) insertDraftBanner(ctx);
   return saveDocxDom(dom);
