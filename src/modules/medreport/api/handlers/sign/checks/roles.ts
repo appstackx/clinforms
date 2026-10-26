@@ -11,7 +11,7 @@ import "server-only";
  */
 import { actorInDemoClinic, memberSigner, type Actor } from "../../../../auth/actor";
 import { isDemoHcpc } from "../../../../core/demo-clinic";
-import type { Clinician } from "../../../../core/types";
+import type { Clinician, ReportApprover } from "../../../../core/types";
 import { WORDING } from "../../../../core/wording";
 import type { MedreportDeps } from "../../../deps";
 import type { SignCheck, SignerCheckContext } from "./context";
@@ -60,8 +60,31 @@ export async function demoNumberCheck(input: { deps: MedreportDeps; actor: Actor
   return { demoClinic, response: null };
 }
 
+/** The signer is this approver: the same member account, or the same registration number (the signing identity). */
+function signerIsApprover(ctx: Pick<SignerCheckContext, "actor" | "signer">, approver: ReportApprover): boolean {
+  if (ctx.actor.userId && approver.memberId === ctx.actor.userId) return true;
+  return normaliseHcpc(approver.hcpc) === normaliseHcpc(ctx.signer.hcpc);
+}
+
 /**
- * W0.6 stub for WC (plan WC design 1): /sign requires signer = the report's approver (Report.approver), or a takeover
- * ("Take over as approver", audited and hashed) – else 409 APPROVER_MISMATCH. Refuses nothing until WC fills it in.
+ * WC design 1: a clinic's approval is the report's approving clinician's (Report.approver, hashed, chosen when the
+ * report was created). Another member who may sign takes over first – "Take over as approver" on the review screen,
+ * audited and hashed (Report.approverTakeovers; the report's approver is then them) – else 409 APPROVER_MISMATCH.
+ * The receipt repeats the last takeover (SignReceipt.approverTakeover, MAC-covered). A report with no approver (an
+ * earlier build's) and the public demo (one fictional user) are as before.
  */
-export const approverCheck: SignCheck<SignerCheckContext> = () => null;
+export const approverCheck: SignCheck<SignerCheckContext> = (ctx) => {
+  const approver = ctx.report.approver;
+  if (!approver || ctx.actor.via === "demo") return null;
+  if (!signerIsApprover(ctx, approver)) {
+    logEvent("sign_refused_not_approver", { report: ctx.report.id });
+    return problem(409, "Take over as approver first", {
+      code: "APPROVER_MISMATCH",
+      detail: `${approver.name} is this report's approving clinician. To approve it yourself, choose “Take over as approver” on the review screen first – their decisions on it then need yours.`,
+    });
+  }
+  const takeovers = ctx.report.approverTakeovers ?? [];
+  const last = takeovers[takeovers.length - 1];
+  if (last && last.to.memberId === approver.memberId && normaliseHcpc(last.to.hcpc) === normaliseHcpc(approver.hcpc)) ctx.receiptAdditions.approverTakeover = last;
+  return null;
+};
