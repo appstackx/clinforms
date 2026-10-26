@@ -24,6 +24,8 @@
  *   "Name X instead" is offered once (the review's own fix, not again by the engine); a repeat removal may take a
  *   colleague's unattributed repeated sentence with it; WB's "Accept as my note's words" is offered to the approver
  *   alone (offeredActions), applied through WC's reducer (stamped, audited) and clears the opinion flag.
+ * - WE's printedLeads through WD's drafting checks: a printed lead only the confirmed map records is read – the
+ *   repeated verb is flagged and the one-click takes it out.
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -349,5 +351,25 @@ describe("the review shows the one-click offers on their flags (one-click-offers
     const { b, report } = await caseOf({ box: "progress_current_status", paragraph: { text: "Lumbar movement was full and pain-free.", cites: ["N-002"] } });
     const flag = report.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE")!;
     assert.match(html(report, flag, "sarah", b.template, b.form), /Name Tom Ellis|Tom Ellis/);
+  });
+});
+
+describe("WE's printedLeads through WD's drafting checks and one-click fix", () => {
+  it("a lead only the map records (analysis.printedLeads) is read: the repeated verb is flagged and the one-click takes it out", async () => {
+    const b = await buildCase(CaseInputSchema.parse({ report: "form:cf-discharge", box: "F-32", paragraph: { text: "Getting back to light duties at work.", cites: ["N-002"] } }) as CaseInput, {});
+    const field = b.form!.fields.find((f) => f.id === "F-32")!;
+    assert.equal(/get back to/i.test(field.guidance ?? ""), false, "the guidance quotes no lead: only the map's printedLeads gives it");
+    const run = (form: typeof b.form) => {
+      const res = validateReport(b.report, b.template, { form, voice: { owner: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } });
+      const report = { ...b.report, flags: res.flags };
+      return { flags: res.flags.filter((f) => f.sectionKey === "F-32" && f.evidence === "printed lead"), fixes: offeredFixes(report, { actor: actorOf("sarah"), template: b.template, form }).filter((p) => p.generator === "printed-lead") };
+    };
+    assert.deepEqual(run(b.form).flags, [], "no lead known: nothing to flag");
+    const mapped = { ...b.form!, analysis: { ...b.form!.analysis, printedLeads: { "F-32": "To get back to" } } };
+    const withLead = run(mapped);
+    assert.equal(withLead.flags.length, 1, "the map's lead is read (WE → WD)");
+    assert.equal(withLead.fixes.length, 1, "and the one-click is offered");
+    assert.match(withLead.fixes[0].label, /To get back to/);
+    assert.equal(withLead.fixes[0].after.trim(), "light duties at work.", "it reads on from the printed words");
   });
 });
