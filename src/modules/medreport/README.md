@@ -1959,3 +1959,34 @@ keys were dropped, so fingerprints, receipt MACs and map attestations no longer 
   Any `CHANGED` or `ERROR` stops the deploy: those receipts would no longer issue a FINAL copy. `UNBOUND` (a receipt
   from before the release), `MAP_CHANGED` (the clinic's map is no longer the approved one) and `NO_FILE` are listed,
   not blocking. Storing the issued bytes (so a later engine never matters) is phase 2.
+
+## Blue Heart release integration (bh2-rc1, release/bh-trial-2)
+
+The seven workstreams (WA1 issue state, WA2 forms engine, WB opinion and attribution, WC review roles and provenance,
+WD drafting and text edits, WE data and maps, WF copy) merged in that order. Release notes, Khuram's decisions, the
+release rule, the deploy runbook and rollback: **`docs/bh2-release.md`**. What the integration itself settled (each
+pinned in `scripts/medreport/bh2-integration.test.ts`, one `describe` per seam):
+
+- **One-click corrections on screen** – `ui/components/review/one-click-offers.tsx`: `reviewOneClicks` works out, once
+  per report change, the engine's text fixes (`fixes.ts offeredFixes`, WD's own and WB's generators, each planned
+  against the engine's rules) and WB's actions that are not text fixes (`fixes.ts offeredActions`: "Accept as my note's
+  words (“…”)" through WC's reducer `acceptNoteWords`, "Remove the note link" through the reducer action
+  `removeNoteLink`); the checks panel shows them on each flag (`FlagItem.extra`). The corpus harness reads both lists.
+  A generator gets the form map (`FixInput.form`); "Name X instead" is the review's own fix, never offered twice.
+- **Who wrote it:** WB's `authorshipOf(p, report, section)` reads a paragraph in a box the approver adopted
+  (`adoptionCurrent`, no drafted residue) as the approver's; on a report with no approver chosen a member who is not
+  staff writes their own words (WC's `actsAsApprover`), staff text is checked.
+- **Who may acknowledge:** WC's `ackPolicyOf` keeps the voice check's first-person licence (ii) on drafted text for
+  the approver, and locates a voice flag's first-person words (not its evidence, which names the colleague) against
+  drafted residue.
+- **Issue state everywhere:** WC's decisions record WA1's `controllerSnapshotOf` (a text controller's text); gap
+  settling reads only frozen conditions on a release report; `parseFormAnswerValue` reads an uncertain or two-way
+  choice answer as blank, with the forms engine's vocabulary (`core/forms/answers.ts choiceTextNotKnown`,
+  `isTwoWayAnswer`).
+- **Figures:** a drafted number no cited source holds blocks (DoC I4); a person's own number warns.
+- **Audit:** a FINAL copy refused because the issued content changed is `report.issue_refused` (never "Final document
+  produced").
+- **Release checklist** adds the guide-terms check on the welcome pack (`scripts/medreport/guide-terms-check.mjs
+  --pack`) and the shim test on a throwaway `origin/main` worktree (`docs/bh2-release.md` §3). WF changed the summary PDF's
+  wording; as for any change to what is issued, `admin:check-issued` runs before a deploy whenever approved trial
+  reports exist (WA1's release rule above).
