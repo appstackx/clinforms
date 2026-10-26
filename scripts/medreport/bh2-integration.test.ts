@@ -12,6 +12,8 @@
  * - WC's store through WA1's /sign: a staff member's store write that gives a clinician's box a condition ruling it
  *   out is refused by the store (403); a copy stored past the store anyway is still refused at /sign (409), because
  *   /sign reads the attested map's own conditions.
+ * - WC's decisions through WA1's issue state: a person's "applies anyway" / "not applicable" about a box read from a
+ *   TEXT controller records that text (WA1's controllerSnapshotOf), so the decision stands until the text changes.
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -24,6 +26,9 @@ import { bindHandler } from "../../src/modules/medreport/api/http";
 import type { MedreportDeps } from "../../src/modules/medreport/api/deps";
 import { createSessionToken } from "../../src/modules/medreport/auth/session-token";
 import { parseFormAnswerValue } from "../../src/modules/medreport/core/forms";
+import { compileConditions, type ConditionField } from "../../src/modules/medreport/core/conditions";
+import { dispositionIsStale } from "../../src/modules/medreport/core/issue-state";
+import { setDisposition } from "../../src/modules/medreport/ui/components/review/reducer";
 import type { Report, ReportFlag } from "../../src/modules/medreport/core/types";
 import { canAcknowledge, validateReport } from "../../src/modules/medreport/core/validation";
 import { CaseInputSchema, type CaseInput } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
@@ -165,5 +170,32 @@ describe("WC's store through WA1's /sign", () => {
     const signed = await postSign(h, { report: forged, template: b.template, form: b.form, signer: "sarah", mode: "tenant", fileBytes: b.fileBytes });
     assert.equal(signed.status, 409, JSON.stringify(signed.body).slice(0, 300));
     assert.equal(signed.receipt, null);
+  });
+});
+
+describe("WC's decisions through WA1's issue state", () => {
+  it("a decision about a box read from a text controller records the text, and stands until it changes", () => {
+    const fields: ConditionField[] = [
+      { id: "F-27", label: "Daily tasks – task still limited", answerType: "short_text" },
+      { id: "F-28", label: "Daily tasks – how limited", answerType: "single_choice", options: ["Limited", "Cannot do"], guidance: "Only when a task is still limited" },
+    ];
+    const conds = compileConditions(fields);
+    assert.ok(conds.get("F-28"), "F-28 reads F-27");
+    const sections = (text: string) =>
+      fields.map((f) => ({
+        key: f.id,
+        title: f.label,
+        kind: "ai_narrative",
+        status: "drafted",
+        paragraphs: f.id === "F-27" && text ? [{ id: "p1", text, sourceIds: [], origin: "ai" }] : [],
+        ...(conds.get(f.id) ? { condition: conds.get(f.id) } : {}),
+      })) as unknown as Report["sections"];
+    const report = { id: "rpt_int", reportModel: 2, approver: { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" }, sections: sections("Gardening"), gaps: [], flags: [], activity: [], updatedAt: "2026-10-26T10:00:00.000Z" } as unknown as Report;
+    const decided = setDisposition(report, "F-28", "applies_anyway", actorOf("sarah"), { reason: "Still limited at work." });
+    const d = decided.sections.find((s) => s.key === "F-28")?.disposition;
+    assert.ok(d, "recorded");
+    assert.deepEqual(d!.controllerSnapshot, [{ sectionKey: "F-27", answer: { kind: "text", value: "Gardening" } }]);
+    assert.equal(dispositionIsStale(d!, decided.sections), false, "stands as made");
+    assert.equal(dispositionIsStale(d!, sections("Gardening and DIY")), true, "cancelled when the text changes");
   });
 });

@@ -29,6 +29,7 @@ import {
   VOIDED_ADOPTION_SHA,
   type BoxContext,
 } from "../../../core/provenance";
+import { controllerSnapshotOf, isReleaseModel } from "../../../core/issue-state";
 import { appendActivity } from "../../../core/report-factory";
 import { splitSentences } from "../../../core/text/sentences";
 import type { Actor, Paragraph, PhraseAcceptance, Report, ReportFlag, ReportSection, SectionDisposition, SectionDispositionKind, SignReceipt } from "../../../core/types";
@@ -487,10 +488,10 @@ export function setDisposition(report: Report, key: string, kind: SectionDisposi
   }
   if (section.disposition?.kind === kind) return report;
   const reason = opts.reason?.trim();
-  const controllers = (section.condition?.controllers ?? []).map((ck) => {
-    const c = sectionOf(report, ck);
-    return { sectionKey: ck, ...(c?.answer ? { answer: c.answer } : {}) };
-  });
+  // bh2-rc1 (WA1 x WC): the controlling answers as WA1's issue state reads them (core/issue-state.ts
+  // controllerSnapshotOf) – a text box's text included – so a decision about a box read from a text controller (Dell's
+  // "task still limited" rows) is not taken as changed the moment it is made.
+  const controllers = controllerSnapshotOf(report.sections, key, { release: isReleaseModel(report) });
   const disposition: SectionDisposition = { kind, by: actor, at, ...(reason ? { reason } : {}), ...(controllers.length ? { controllerSnapshot: controllers } : {}) };
   const words = kind === "not_applicable" ? "does not apply" : kind === "applies_anyway" ? "applies although the answer before it rules it out" : "is left blank on purpose";
   const gaps =
