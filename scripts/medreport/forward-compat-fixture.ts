@@ -11,8 +11,13 @@
  * Report.reportModel; disposition.controllerSnapshot is a list of {sectionKey, answer?}; a fix is {kind, by, at, edits?};
  * Report.approver and the takeover's from/to are {memberId, name, hcpc}; gap resolutions carry `by`; the attended
  * sessions list is fillSource.sessions {fromSession, of?} (no `part`). Keys the release has not defined yet
- * (sections[].condition, markedNotApplicable, originalSourceIds, flags[].ackPolicy, activity[].reportId,
- * fields[].lintAccepted, the "approver" origin, two flag codes) stay as the plan names them: both lines keep them on read.
+ * (sections[].markedNotApplicable, paragraphs[].originalSourceIds, the "approver" origin) stay as the plan names them:
+ * both lines keep them on read.
+ *
+ * bh2-base2 (W0 follow-up): the release now defines the rest, and the builders write its shapes – sections[].condition
+ * (a frozen condition {controllers, wants?, match?, unresolved?, text?, parser?}), sections[].tombstones, flags[].ackPolicy,
+ * activity[].reportId, Report.approverTakeovers, the receipt's signerConfirmations, fields[].lintAccepted
+ * {rule, reason, at, by?}, analysis.guidanceVersion, and the flag codes NOT_APPLICABLE_ANSWERED and APPROVER_DECISION.
  */
 import { createHmac } from "node:crypto";
 import { z } from "zod";
@@ -28,6 +33,8 @@ const sha = (c: string) => c.repeat(64);
 /** W0.3 Actor {memberId, name, role, canSign, hcpc?} – stamped as `by` on people's decisions. */
 export const APPROVER = { memberId: "mem_sarah", name: "Sarah Reid", role: "clinician" as const, canSign: true, hcpc: "PH-DEMO-01" };
 export const STAFF = { memberId: "mem_pat", name: "Pat Morgan", role: "staff" as const, canSign: false };
+/** The approver before a takeover (Report.approverTakeovers / SignReceipt.approverTakeover `from`). */
+const TOM_APPROVER = { memberId: "mem_tom", name: "Tom Ellis", hcpc: "PH-DEMO-02" };
 
 /** Dotted paths ([] = every array item) of every key the release adds. */
 export const RELEASE_KEYS = {
@@ -39,6 +46,7 @@ export const RELEASE_KEYS = {
     "sections[].adoptedBy",
     "sections[].answerBy",
     "sections[].condition",
+    "sections[].tombstones",
     "sections[].markedNotApplicable",
     "sections[].paragraphs[].by",
     "sections[].paragraphs[].ownWords",
@@ -53,11 +61,13 @@ export const RELEASE_KEYS = {
     "flags[].acknowledged.by",
     "flags[].ackPolicy",
     "activity[].reportId",
+    "approverTakeovers",
   ],
-  receipt: ["issuedContentSha256", "acknowledgementsSha256", "approverTakeover"],
+  receipt: ["issuedContentSha256", "acknowledgementsSha256", "approverTakeover", "signerConfirmations"],
   form: [
     "analysis.convertedWith",
     "analysis.printedLeads",
+    "analysis.guidanceVersion",
     "file.sourceSha256",
     "fields[].fillSource.sessions",
     "fields[].lintAccepted",
@@ -79,6 +89,9 @@ export const RELEASE_MEMBERS = {
     "staff_entry",
     "meta_held_back",
   ],
+  /** New keys, so production keeps whatever they hold; listed so the fixture holds every member the release writes. */
+  ackPolicies: ["never", "approver", "member"],
+  signerConfirmationKinds: ["assessed_patient", "treated_patient", "own_registration_number"],
 } as const;
 
 type Loose = Record<string, unknown>;
@@ -92,7 +105,7 @@ type Loose = Record<string, unknown>;
 export function releaseForm(base: FormDefinition): FormDefinition {
   const form = structuredClone(base) as FormDefinition & Loose;
   Object.assign(form.file, { sourceSha256: sha("b") });
-  Object.assign(form.analysis, { convertedWith: "rtf-converter-3", printedLeads: { [form.fields[1].id]: "Date of birth:" } });
+  Object.assign(form.analysis, { convertedWith: "rtf-converter-3", printedLeads: { [form.fields[1].id]: "Date of birth:" }, guidanceVersion: 2 });
   const paths: Array<Loose> = [
     { path: "episode.firstSeenTime" },
     { path: "episode.attendedDate", part: { index: 14, of: 30 } },
@@ -117,7 +130,11 @@ export function releaseForm(base: FormDefinition): FormDefinition {
  */
 export function releaseReport(base: Report, mapSha256: string): Report {
   const report = structuredClone(base) as Report & Loose;
-  Object.assign(report, { approver: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc }, reportModel: 2 });
+  Object.assign(report, {
+    approver: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc },
+    reportModel: 2,
+    approverTakeovers: [{ from: TOM_APPROVER, to: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc }, at: RELEASE_AT }],
+  });
   if (report.form) report.form.mapSha256 = mapSha256;
   const answered = report.sections.filter((s) => s.paragraphs.length > 0);
   if (answered.length < 2) throw new Error("releaseReport: needs two answered boxes");
@@ -127,7 +144,8 @@ export function releaseReport(base: Report, mapSha256: string): Report {
     accepted: [{ check: "OPINION_LANGUAGE", phrase: "good recovery", sentenceSha: sha("c"), noteId: "N-001", by: APPROVER, at: RELEASE_AT, reason: "My own recorded opinion." }],
     adoptedBy: { by: APPROVER, at: RELEASE_AT, contentSha: sha("d") },
     answerBy: APPROVER,
-    condition: "Only if the claimant is still in treatment.",
+    condition: { controllers: [second.key], wants: "yes", text: "Only if the claimant is still in treatment.", parser: "conditions-2", readFrom: "label" },
+    tombstones: [{ paragraphId: `${first.key}-deleted-1`, text: "A drafted line someone deleted.", sourceIds: ["N-001"], by: STAFF, at: RELEASE_AT }],
     markedNotApplicable: { by: STAFF.name, at: RELEASE_AT },
   });
   Object.assign(second, { answerBy: STAFF });
@@ -160,7 +178,7 @@ export function releaseReport(base: Report, mapSha256: string): Report {
       severity: i === 0 ? ("blocking" as const) : ("warning" as const),
       sectionKey: first.key,
       message: `Release check ${code}.`,
-      ackPolicy: i === 0 ? "approver" : "member",
+      ackPolicy: RELEASE_MEMBERS.ackPolicies[(i + 1) % RELEASE_MEMBERS.ackPolicies.length],
       acknowledged: { reason: "Checked by the approver.", at: RELEASE_AT, by: APPROVER },
     })),
   ];
@@ -196,7 +214,12 @@ export async function releaseReceipt(report: Report, input: ReceiptInput): Promi
     ...unsigned,
     issuedContentSha256: sha("e"),
     acknowledgementsSha256: sha("f"),
-    approverTakeover: { from: { memberId: "mem_tom", name: "Tom Ellis", hcpc: "PH-DEMO-02" }, to: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc }, at: RELEASE_AT },
+    approverTakeover: { from: TOM_APPROVER, to: { memberId: APPROVER.memberId, name: APPROVER.name, hcpc: APPROVER.hcpc }, at: RELEASE_AT },
+    signerConfirmations: RELEASE_MEMBERS.signerConfirmationKinds.map((kind) => ({
+      kind,
+      fieldId: "F-01",
+      ...(kind === "own_registration_number" ? { value: APPROVER.hcpc } : {}),
+    })),
   };
   return { ...signed, mac: createHmac("sha256", signingKey("receipt")).update(canonicalize(signed), "utf8").digest("base64url") } as unknown as SignReceipt;
 }

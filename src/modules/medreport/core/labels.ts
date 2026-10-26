@@ -219,6 +219,9 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   OPEN_GAP: "Open gap",
   DATA_CHECK: "Data check",
   DRAFT_FIT: "Check where it goes on the form",
+  // bh2 W0 follow-up (bh2-base2): raised by WA1 and WC once they land.
+  NOT_APPLICABLE_ANSWERED: "Answer in a question that does not apply",
+  APPROVER_DECISION: "Needs the approving clinician's decision",
 };
 
 export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {

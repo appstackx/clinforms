@@ -111,6 +111,18 @@ export const ReportFlagCodeSchema = z.enum([
   "DATA_CHECK",
   /** Additive (fix round 1): a warning – drafted wording that does not fit its place on the form (validation/draft-fit.ts). */
   "DRAFT_FIT",
+  /**
+   * Additive (bh2 W0 follow-up – raised by WA1 design 5): a box that is not asked (its condition rules it out) holds an
+   * answer. Blocking and never acknowledged: remove the answer, or the approver says it applies anyway (applies_anyway).
+   * (Flag codes are an open enum for the rollback shim – core/stored-schemas.ts FORWARD_OPEN_ENUMS – so production
+   * reads a report that carries one.)
+   */
+  "NOT_APPLICABLE_ANSWERED",
+  /**
+   * Additive (bh2 W0 follow-up – raised by WC design 5): staff, or a clinician who is not the approver, entered something
+   * in a clinician box – a proposal the approving physio must adopt. Blocking and never acknowledged.
+   */
+  "APPROVER_DECISION",
 ]);
 export const DataCheckCodeSchema = z.enum([
   "NO_PRE_INCIDENT_HISTORY",
@@ -168,6 +180,33 @@ export const GapKindSchema = z.enum([
   "staff_entry",
   /** Drafted wording held back because it talks about the drafting itself (WD rule 3). */
   "meta_held_back",
+]);
+
+/* bh2 W0 follow-up (bh2-base2): the remaining shared definitions the workstream designs need ------
+ * Same rules as the W0.3 block above: additive, optional, no writers yet; production (e132057 + the rollback shim) keeps
+ * every one of them whole on reading, because each is a NEW key (core/stored-schemas.ts). No member is added to an enum,
+ * literal or fill/anchor kind production keeps closed (scripts/medreport/fixtures/forward-compat/closed-vocabulary-e132057.json).
+ */
+
+/**
+ * Who may acknowledge a flag with a reason (ReportFlag.ackPolicy, set by the validator that raises it – W0.6 design
+ * "Flags get ackPolicy"; the same values as core/fix-types.ts AckPolicy):
+ * - never: fix the text or the record;
+ * - approver: only the report's approving clinician (WC enforces it in canAcknowledge(flag, report, actor));
+ * - member: anyone working on the report (today's rule for every flag that may be acknowledged).
+ */
+export const AckPolicySchema = z.enum(["never", "approver", "member"]);
+/**
+ * What the approver confirmed at approval (SignReceipt.signerConfirmations – WB design 13, the safe defaults until the
+ * referrer answers): approval is blocked until the approver confirms, audited and MAC-covered.
+ */
+export const SignerConfirmationKindSchema = z.enum([
+  /** "I assessed this patient": a sign-off field filled from the approver is labelled assessor, and they wrote none of the assessment notes. */
+  "assessed_patient",
+  /** "I treated this patient": a sign-off field filled from the approver is labelled treating physiotherapist, and they wrote none of the treatment notes. */
+  "treated_patient",
+  /** "This number is mine": an HCPC or CSP number the form prints that is not filled from the approver's profile. */
+  "own_registration_number",
 ]);
 
 /* Referrer forms (Revision 2) ----------------------------------------------------------------- */
@@ -763,6 +802,51 @@ export const SectionAdoptionSchema = z.object({
   contentSha: Sha256HexSchema,
 });
 
+/** Most controlling questions one condition names (a lettered list of earlier questions, or a run of them). */
+export const MAX_CONDITION_CONTROLLERS = 26;
+
+/**
+ * Additive (bh2 W0 follow-up – written by WA1 design 3): a box's condition, parsed ONCE when the report is created and
+ * frozen here (ReportSection.condition, hashed, kept through drafting as in B2-4). The issue state (WA1) reads it
+ * instead of parsing the printed words again, so a later parser change never changes what an existing report issues.
+ * Meant never to change after creation: WC's store (design 2) is to refuse a change to it, as to any frozen content.
+ *
+ * - controllers: the question(s) it depends on (section keys, in form order); empty when it is unresolved;
+ * - wants: what the controlling answer must be for the box to apply – "yes", "no", "other" (core/conditions.ts
+ *   conditionWanted) or a printed option of a choice question; "Only if … not …" wants "no" (R-safety-9);
+ * - match: how several controllers combine – "any" (one of a run of earlier questions, or of a lettered list) or "all";
+ *   absent with one controller;
+ * - unresolved: the parser could not tell what it depends on – the box is APPLICABLE: drafted and fully checked,
+ *   never guessed (WA1 design 3);
+ * - text: the printed words it was read from (the question, or its guidance), for the review and the activity log;
+ * - parser: the version of the parser that read it.
+ * Loose on purpose: any further key WA1's parser records is kept – and hashed – as written, so the parser can say more
+ * without a schema change. Its members stay outside every enum production keeps closed.
+ */
+export const FrozenConditionSchema = z.looseObject({
+  controllers: z.array(SectionKeySchema).max(MAX_CONDITION_CONTROLLERS),
+  wants: z.string().min(1).max(200).optional(),
+  match: z.enum(["any", "all"]).optional(),
+  unresolved: z.boolean().optional(),
+  text: z.string().max(500).optional(),
+  parser: z.string().min(1).max(40).optional(),
+});
+
+/**
+ * Additive (bh2 W0 follow-up – written by WC design 6): a drafted paragraph a person deleted (ReportSection.tombstones,
+ * hashed, never printed). The drafted-residue check reads it like the box's live drafted text: a sentence with 0.8 or
+ * more token overlap with any drafted sentence of the box keeps drafted-text strictness – so cut and paste back, delete
+ * and add, a one-word or a punctuation change stay drafted text. `text` is the drafted text as first produced (the
+ * paragraph's originalText, else its text when it was deleted); `by` and `at` say who deleted it, and when.
+ */
+export const DraftTombstoneSchema = z.object({
+  paragraphId: z.string().min(1),
+  text: z.string(),
+  sourceIds: z.array(z.string()),
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+});
+
 export const ReportSectionSchema = z.object({
   key: SectionKeySchema,
   title: z.string(),
@@ -787,6 +871,10 @@ export const ReportSectionSchema = z.object({
   adoptedBy: SectionAdoptionSchema.optional(),
   /** Additive (bh2, plan W0.3): who set the structured answer (server-stamped – WC; labels come from it). */
   answerBy: ActorSchema.optional(),
+  /** Additive (bh2 W0 follow-up): this box's condition, frozen when the report was created (WA1; absent: an ordinary box). */
+  condition: FrozenConditionSchema.optional(),
+  /** Additive (bh2 W0 follow-up): drafted paragraphs deleted from this box, oldest first – for the drafted-residue check (WC). */
+  tombstones: z.array(DraftTombstoneSchema).max(500).optional(),
 });
 
 export const GapResolutionSchema = z.object({
@@ -852,6 +940,13 @@ export const ReportFlagSchema = z.object({
   /** The offending text or figure, e.g. "full recovery" or "March 2027". */
   evidence: z.string().optional(),
   acknowledged: FlagAcknowledgementSchema.optional(),
+  /**
+   * Additive (bh2 W0 follow-up): who may acknowledge it (AckPolicySchema), set by the validator that raises it (WB, WA1,
+   * WC); absent: today's rule (core/validation/acknowledge.ts ackPolicyOf). A stored value is never trusted on its own:
+   * runValidators recomputes every flag, and an acknowledgement is carried over only where the fresh flag allows it.
+   * Outside the fingerprint, as every flag is.
+   */
+  ackPolicy: AckPolicySchema.optional(),
 });
 
 export const TokenUsageSchema = z.object({
@@ -883,6 +978,12 @@ export const ActivityEntrySchema = z.object({
   actor: z.string(),
   action: z.string(),
   detail: z.string(),
+  /**
+   * Additive (bh2 W0 follow-up – written by WC design 8): the other report this entry is about. On version 1's
+   * "superseded" entry: the approved version 2 that supersedes it, so the server appends that entry once however often
+   * version 2 loads. Outside the fingerprint, as all activity is.
+   */
+  reportId: z.string().min(1).max(128).optional(),
 });
 
 /**
@@ -894,6 +995,20 @@ export const ApproverTakeoverSchema = z.object({
   to: ReportApproverSchema,
   at: IsoDateTimeSchema,
 });
+
+/**
+ * Additive (bh2 W0 follow-up – checked by WB design 13 at /sign): one confirmation the approver gave when approving
+ * (SignReceipt.signerConfirmations, MAC-covered; the /sign audit row records it too). `fieldId`: the form field it is
+ * about; `value`: for own_registration_number, the number exactly as it will be printed.
+ */
+export const SignerConfirmationSchema = z.object({
+  kind: SignerConfirmationKindSchema,
+  fieldId: FormFieldIdSchema.optional(),
+  value: z.string().min(1).max(40).optional(),
+});
+
+/** Most sign-time confirmations one approval carries (one per sign-off or registration field, at most). */
+export const MAX_SIGNER_CONFIRMATIONS = 100;
 
 /** Server-HMAC'd sign-off receipt. `mac` covers every other field (canonical JSON). */
 export const SignReceiptSchema = z.object({
@@ -933,6 +1048,11 @@ export const SignReceiptSchema = z.object({
   acknowledgementsSha256: Sha256HexSchema.optional(),
   /** Additive (bh2, plan W0.3 – WC): the signer took over from the report's approver. */
   approverTakeover: ApproverTakeoverSchema.optional(),
+  /**
+   * Additive (bh2 W0 follow-up – WB design 13): what the approver confirmed at approval ("I assessed this patient",
+   * "This number is mine"), checked by /sign before the receipt is minted.
+   */
+  signerConfirmations: z.array(SignerConfirmationSchema).max(MAX_SIGNER_CONFIRMATIONS).optional(),
   /** base64url HMAC-SHA256 with MEDREPORT_SIGNING_SECRET. */
   mac: z.string().min(1),
 });
@@ -993,6 +1113,13 @@ export const ReportSchema = z.object({
    * file the clinic downloads, and "model" is a technology word there (core/case-export.ts, neutral-wording.test.ts).
    */
   reportModel: z.number().int().min(1).optional(),
+  /**
+   * Additive (bh2 W0 follow-up – written by WC design 1): every "Take over as approver" on this report, oldest first
+   * (hashed and in the activity log): `from` the approver before, `to` the member who took over – Report.approver is
+   * then `to`. A takeover voids the previous approver's acceptances, adoptions and acknowledgements (WC); the receipt of
+   * an approval after one repeats the last (SignReceipt.approverTakeover).
+   */
+  approverTakeovers: z.array(ApproverTakeoverSchema).max(50).optional(),
 });
 
 /** Report.reportModel of the reports this release creates (bh2, plan W0.3). */
@@ -1270,6 +1397,23 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("appointments_table"), columns: z.record(z.string(), AppointmentColumnSchema) }),
 ]);
 
+/**
+ * Additive (bh2 W0 follow-up – written by WE design 2): a map-lint finding accepted for one field, with the reason
+ * (FormField.lintAccepted; inside `fields`, so inside the map hash). `rule` is the lint rule ("L1" … "L12",
+ * core/form-map-lint.ts); `by` the clinic member who accepted it (L5 at /forms/confirm or a store PUT to confirmed: a
+ * clinician member, audited) – absent when ClinForms accepted it while loading the clinic's forms (load-forms; its
+ * audit row names the platform).
+ */
+export const LintAcceptanceSchema = z.object({
+  rule: z.string().regex(/^L\d{1,2}$/, "Lint rules look like L5"),
+  reason: z.string().min(1).max(500),
+  at: IsoDateTimeSchema,
+  by: ActorSchema.optional(),
+});
+
+/** FormAnalysis.guidanceVersion of the maps this release writes (bh2 W0 follow-up – WE design 4). */
+export const GUIDANCE_VERSION = 2;
+
 /** One question / answer space on the referrer's form. */
 export const FormFieldSchema = z.object({
   /** "F-01", "F-02"… in document order. Also the section key of the report section that answers it. */
@@ -1294,6 +1438,8 @@ export const FormFieldSchema = z.object({
    * clinic is proposed as leave_blank, and never takes the clinician's sign-off (checkFormDefinition).
    */
   completedBy: PartySchema.optional(),
+  /** Additive (bh2 W0 follow-up): lint findings accepted for this field, each with its reason (WE; see LintAcceptanceSchema). */
+  lintAccepted: z.array(LintAcceptanceSchema).max(40).optional(),
 });
 
 /**
@@ -1336,6 +1482,14 @@ export const FormAnalysisSchema = z.object({
    * so the map hash (formMapSha256) does not change.
    */
   printedLeads: z.record(FormFieldIdSchema, z.string().min(1)).optional(),
+  /**
+   * Additive (bh2 W0 follow-up – written by WE, read by WE design 4): the generation of this map's guidance and notes.
+   * GUIDANCE_VERSION (2): written in this release's wording (WE design 3's clinic-details and staff-entry source wording,
+   * the left-blank guidance), so the runtime rewrite for earlier maps (currentGuidance) is not applied –
+   * the stored text is used as it is. Absent: an earlier map, and the rewrite applies as before. Kept here, outside
+   * `fields`, like convertedWith.
+   */
+  guidanceVersion: z.number().int().min(1).optional(),
 });
 
 /** A referrer's form, analysed into a form map. Saved per referrer form and reused for every patient. */

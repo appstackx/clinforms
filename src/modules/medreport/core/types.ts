@@ -89,6 +89,13 @@ export type OwnWords = z.infer<typeof S.OwnWordsSchema>;
 export type TextEdit = z.infer<typeof S.TextEditSchema>;
 export type AppliedFix = z.infer<typeof S.AppliedFixSchema>;
 export type GapKind = z.infer<typeof S.GapKindSchema>;
+/* bh2 W0 follow-up (bh2-base2, additive) */
+export type AckPolicy = z.infer<typeof S.AckPolicySchema>;
+export type FrozenCondition = z.infer<typeof S.FrozenConditionSchema>;
+export type DraftTombstone = z.infer<typeof S.DraftTombstoneSchema>;
+export type SignerConfirmationKind = z.infer<typeof S.SignerConfirmationKindSchema>;
+export type SignerConfirmation = z.infer<typeof S.SignerConfirmationSchema>;
+export type LintAcceptance = z.infer<typeof S.LintAcceptanceSchema>;
 
 export type LaunchClaims = z.infer<typeof S.LaunchClaimsSchema>;
 export type SessionClaims = z.infer<typeof S.SessionClaimsSchema>;

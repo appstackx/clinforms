@@ -32,6 +32,9 @@ const CODE_ORDER: Record<ReportFlagCode, number> = {
   OPEN_GAP: 8,
   DATA_CHECK: 9,
   DRAFT_FIT: 10,
+  // bh2 W0 follow-up (bh2-base2): after the existing codes, so no existing order changes.
+  NOT_APPLICABLE_ANSWERED: 11,
+  APPROVER_DECISION: 12,
 };
 
 /* ------------------------------------------------------------------------------------------------

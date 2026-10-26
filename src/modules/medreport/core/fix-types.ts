@@ -11,16 +11,17 @@
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
 import type { Actor } from "./actor";
-import type { Paragraph, Report, ReportFlag, ReportSection } from "./types";
+import type { AckPolicy, Paragraph, Report, ReportFlag, ReportSection } from "./types";
 
 /**
  * Who may acknowledge a flag with a reason: "never" (fix the text or the record), "approver" (only the report's
  * approving clinician, WC), "member" (anyone working on the report – today's rule for every acknowledgeable flag).
+ * Stored on the flag since bh2-base2 (core/schemas.ts AckPolicySchema, ReportFlag.ackPolicy).
  */
-export type AckPolicy = "never" | "approver" | "member";
+export type { AckPolicy };
 
-/** A flag together with the policy that applies to it (core/validation/acknowledge.ts ackPolicyOf). */
-export type FlagWithAckPolicy = ReportFlag & { ackPolicy?: AckPolicy };
+/** A flag together with the policy that applies to it (core/validation/acknowledge.ts ackPolicyOf) – ReportFlag itself since bh2-base2. */
+export type FlagWithAckPolicy = ReportFlag;
 
 /** A span of a paragraph's text: [start, end) in UTF-16 code units, as String.prototype.slice takes them. */
 export interface TextSpan {

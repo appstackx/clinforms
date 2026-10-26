@@ -327,7 +327,8 @@ test("writes stay strict: the store and /sign refuse members this build does not
   assert.equal(created.status, 201, created.text());
   const stored = (await (await f(`/api/reports/v1/store/reports/${known.id}`)).json()).report as Record<string, unknown>;
   assert.equal("approver" in stored, reportKnows("approver"));
-  assert.equal(stored.sections && (stored.sections as Array<Record<string, unknown>>).some((s) => "condition" in s), false, "a key neither line knows");
+  // (bh2-base2: the release defines sections[].condition itself – markedNotApplicable is a key neither line knows.)
+  assert.equal(stored.sections && (stored.sections as Array<Record<string, unknown>>).some((s) => "markedNotApplicable" in s), false, "a key neither line knows");
   assert.deepEqual(stored, ReportSchema.parse(known));
 
   // /sign: the report is strict (refused with a release member); the form map is read as stored.
@@ -469,6 +470,11 @@ test("guard: every key and member the release writes (RELEASE_KEYS / RELEASE_MEM
   for (const p of RELEASE_MEMBERS.registrationPaths) assert.ok(paths.has(p), p);
   const gapKinds = new Set(report.gaps.map((g) => (g as Record<string, unknown>).kind));
   for (const k of RELEASE_MEMBERS.gapKinds) assert.ok(gapKinds.has(k), k);
+  // bh2-base2: the members of the release's new keys (who may acknowledge a flag; what the approver confirmed at /sign).
+  const policies = new Set(report.flags.map((fl) => (fl as Record<string, unknown>).ackPolicy));
+  for (const a of RELEASE_MEMBERS.ackPolicies) assert.ok(policies.has(a), a);
+  const confirmations = valuesAt(records.receipt[1], "signerConfirmations").flatMap((list) => (list as Array<Record<string, unknown>>).map((c) => c.kind));
+  for (const k of RELEASE_MEMBERS.signerConfirmationKinds) assert.ok(confirmations.includes(k), k);
   // The release's attendance lines: up to 30.
   assert.ok(form.fields.some((fl) => fl.fillSource.kind === "registration" && fl.fillSource.part?.of === 30));
 });
@@ -638,7 +644,8 @@ test("the Studio approves the report as /sign signs it: keys a later release wro
   assert.equal(committed.length, 1);
   const approved = committed[0];
   assert.equal("approver" in approved, reportKnows("approver"), "the kept approval is the signed shape");
-  assert.equal(approved.sections.some((s) => "condition" in s), false, "a key neither line knows is not kept");
+  // (bh2-base2: the release defines sections[].condition itself – markedNotApplicable is a key neither line knows.)
+  assert.equal(approved.sections.some((s) => "markedNotApplicable" in s), false, "a key neither line knows is not kept");
   assert.equal(approved.status, "signed");
   assert.equal(await reportFingerprint(approved), approved.receipt!.contentSha256, "the kept copy is exactly what the receipt covers");
 });
