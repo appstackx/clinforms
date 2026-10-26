@@ -31,6 +31,54 @@ export function isUnknownAnswer(text: string, options?: readonly string[]): bool
   return /\b(?:not (?:recorded|known|documented|stated|specified|assessed|available|applicable|noted|reported|provided|given|clear|determined|tested|measured)|unknown|nothing (?:documented|recorded|noted|known)|no (?:record|records|information|data|details|documentation|opinion|entry)\b|(?:unable|not able) to (?:say|comment|determine|confirm|answer)|cannot (?:say|comment|confirm|be (?:determined|confirmed|answered))|can't (?:say|comment|confirm)|insufficient (?:information|evidence)|unclear|not in the (?:record|records|notes))/.test(t);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Not known, uncertain or two-way (WA2, check2-WA2 N-3; shared with forms/choice-marks.ts since bh2-rc1)
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * "No" followed by words that say the information is missing (Q-1, review 26/10): "No idea", "No info", "No mention in
+ * the notes", "No answer recorded", "No recollection", "No response from the patient". A narrow class of words for
+ * knowing or recording – a clinical negative ("No pain", "No restrictions", "No evidence of instability") stays a No.
+ */
+const NO_BUT_NOT_KNOWN = /^no\s+(?:idea|info|information|mention(?:ed)?|answers?|recollection|memory|knowledge|notes?|record(?:s|ed)?|documentation|data|details|comments?|reply|entry|response\s+(?:from|given|received|recorded|yet))\b/i;
+
+/**
+ * Harden 26/10 (check2-WA2 N-3): "No response" on its own (a response to treatment is a finding: "No response to
+ * treatment" stays a No); "No clear answer / response / information / record …"; "No evidence in the notes / records /
+ * file" (where a clinical negative says "No evidence of instability").
+ */
+const NO_BUT_NOT_KNOWN_2 = /^no\s+(?:(?:response|reply|answer)(?:\s*$|\s*[.,;:!()–—-])|clear\s+(?:answers?|responses?|repl(?:y|ies)|information|record(?:s|ed)?|documentation|history)\b|(?:clear\s+)?(?:evidence|indication|mention)\s+(?:in|from|within|on)\s+(?:the\s+)?(?:notes?|records?|documentation|file|referral)\b)/i;
+
+/**
+ * Words that make an answer uncertain (check2-WA2 N-3): "No – patient unsure", "Yes, not sure", "No (not asked)",
+ * "Yes – possibly", "Yes?", "Yes, I think so", "No – to be checked", "No – TBC", "No, not that she recalls". A closed
+ * class of words for not knowing; "Unable to perform" (a printed option) is not one, nor is a source ("reportedly").
+ * Not applied when a printed option itself holds one (a form that prints "Unsure" reads it as that option).
+ */
+const HEDGED = /\?|\b(?:unsure|not\s+sure|uncertain|not\s+certain|unclear|not\s+clear|not\s+known|unknown|not\s+asked|unconfirmed|not\s+confirmed|possibly|perhaps|maybe|probably|doubtful|tb[cd]|quer(?:y|ied)|think\s+so|(?:don|doesn|didn)['’]?t\s+know|(?:do|does|did)\s+not\s+know|(?:can['’]?t|cannot|could\s+not|couldn['’]?t|unable\s+to)\s+(?:say|recall|remember|confirm|be\s+sure)|to\s+be\s+(?:checked|confirmed|clarified|determined)|not\s+that\s+(?:i|she|he|they|we)\s+(?:know|knows|recall|recalls|remember|remembers))\b/i;
+
+/** A yes and a no together, nothing after them ("Yes and no", "Yes or no", "Yes/No", "No / yes") – a two-way answer. */
+const TWO_WAY = /^(yes|no)\b[\s\u00A0,;:\/&+–—-]*(?:(?:and|or)\b[\s\u00A0]*)?(yes|no)\b(?![\s\u00A0]*[A-Za-z0-9])/i;
+
+/** A yes and a no named together as the answer (TWO_WAY, the two words different). */
+export function isTwoWayAnswer(text: string): boolean {
+  const m = TWO_WAY.exec(text.trim());
+  return !!m && m[1].toLowerCase() !== m[2].toLowerCase();
+}
+
+/**
+ * The answer says the information is not known (isUnknownAnswer, "No" + a word for missing knowledge, or – harden
+ * 26/10 – words that make it uncertain). A printed option, as written, never is. Moved here from forms/choice-marks.ts
+ * (WA2) at bh2-rc1: parseFormAnswerValue reads it too.
+ */
+export function choiceTextNotKnown(text: string, options: readonly string[]): boolean {
+  if (isUnknownAnswer(text, options)) return true;
+  const t = text.trim().replace(/\s+/g, " ");
+  if (options.some((o) => o.trim().replace(/\s+/g, " ").toLowerCase() === t.toLowerCase())) return false;
+  if (NO_BUT_NOT_KNOWN.test(t) || NO_BUT_NOT_KNOWN_2.test(t)) return true;
+  return HEDGED.test(t) && !options.some((o) => HEDGED.test(o));
+}
+
 /**
  * The printed option an answer refers to, or null. Case-insensitive:
  * 1. exact match;
@@ -213,6 +261,9 @@ export function parseFormAnswerValue(field: Pick<FormField, "answerType" | "opti
   if (kind === "text" || !text) return { kind, value: null };
   // "Not recorded", "Unknown", "N/A"… stay blank (a gap asks the clinician) – never a definite answer.
   if (isUnknownAnswer(text, field.options)) return { kind, value: null };
+  // bh2-rc1 (WA2 x WA1): an uncertain or two-way answer to a choice – "No – patient unsure", "Yes?", "No response",
+  // "Yes and no" – is not a choice either: blank with a gap, as the forms engine refuses to tick it (choice-marks.ts).
+  if ((kind === "yes_no" || kind === "checkbox" || kind === "choice") && (choiceTextNotKnown(text, field.options ?? []) || (isTwoWayAnswer(text) && !(field.options ?? []).some((o) => o.trim().toLowerCase() === text.toLowerCase())))) return { kind, value: null };
   switch (kind) {
     case "yes_no":
     case "checkbox": {

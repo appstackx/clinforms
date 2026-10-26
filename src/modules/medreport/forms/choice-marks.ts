@@ -32,7 +32,7 @@
  * Pure – no server-only code: core/validation imports it, and core runs in the browser.
  * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
  */
-import { isUnknownAnswer, matchOption, namedOptions, yesNoOption } from "../core/forms";
+import { choiceTextNotKnown, isTwoWayAnswer, matchOption, namedOptions, yesNoOption } from "../core/forms";
 import type { FormAnswer, FormField } from "../core/types";
 
 /** What an answer chooses among a choice field's printed options. */
@@ -81,48 +81,14 @@ export function printedOptions(field: Pick<FormField, "anchor" | "options">): st
 const YES_TEXT = /^(?:yes|true|ticked|checked)\b/i;
 const NO_TEXT = /^(?:no|false)\b/i;
 
-/**
- * "No" followed by words that say the information is missing (Q-1, review 26/10): "No idea", "No info", "No mention in
- * the notes", "No answer recorded", "No recollection", "No response from the patient". A narrow class of words for
- * knowing or recording – a clinical negative ("No pain", "No restrictions", "No evidence of instability") stays a No.
+/*
+ * The words that make a choice answer not known, uncertain or two-way (NO_BUT_NOT_KNOWN, NO_BUT_NOT_KNOWN_2, HEDGED,
+ * TWO_WAY – check2-WA2 N-3) live in core/forms/answers.ts since bh2-rc1, so the review, drafting's parse
+ * (parseFormAnswerValue) and this fill read an answer the same way (integration: "No – patient unsure" was parsed as a
+ * definite No before it reached the fill).
  */
-const NO_BUT_NOT_KNOWN = /^no\s+(?:idea|info|information|mention(?:ed)?|answers?|recollection|memory|knowledge|notes?|record(?:s|ed)?|documentation|data|details|comments?|reply|entry|response\s+(?:from|given|received|recorded|yet))\b/i;
-
-/**
- * Harden 26/10 (check2-WA2 N-3): "No response" on its own (a response to treatment is a finding: "No response to
- * treatment" stays a No); "No clear answer / response / information / record …"; "No evidence in the notes / records /
- * file" (where a clinical negative says "No evidence of instability").
- */
-const NO_BUT_NOT_KNOWN_2 = /^no\s+(?:(?:response|reply|answer)(?:\s*$|\s*[.,;:!()–—-])|clear\s+(?:answers?|responses?|repl(?:y|ies)|information|record(?:s|ed)?|documentation|history)\b|(?:clear\s+)?(?:evidence|indication|mention)\s+(?:in|from|within|on)\s+(?:the\s+)?(?:notes?|records?|documentation|file|referral)\b)/i;
-
-/**
- * Words that make an answer uncertain (check2-WA2 N-3): "No – patient unsure", "Yes, not sure", "No (not asked)",
- * "Yes – possibly", "Yes?", "Yes, I think so", "No – to be checked", "No – TBC", "No, not that she recalls". A closed
- * class of words for not knowing; "Unable to perform" (a printed option) is not one, nor is a source ("reportedly").
- * Not applied when a printed option itself holds one (a form that prints "Unsure" reads it as that option).
- */
-const HEDGED = /\?|\b(?:unsure|not\s+sure|uncertain|not\s+certain|unclear|not\s+clear|not\s+known|unknown|not\s+asked|unconfirmed|not\s+confirmed|possibly|perhaps|maybe|probably|doubtful|tb[cd]|quer(?:y|ied)|think\s+so|(?:don|doesn|didn)['’]?t\s+know|(?:do|does|did)\s+not\s+know|(?:can['’]?t|cannot|could\s+not|couldn['’]?t|unable\s+to)\s+(?:say|recall|remember|confirm|be\s+sure)|to\s+be\s+(?:checked|confirmed|clarified|determined)|not\s+that\s+(?:i|she|he|they|we)\s+(?:know|knows|recall|recalls|remember|remembers))\b/i;
-
-/** A yes and a no together, nothing after them ("Yes and no", "Yes or no", "Yes/No", "No / yes") – a two-way answer. */
-const TWO_WAY = /^(yes|no)\b[\s\u00A0,;:\/&+–—-]*(?:(?:and|or)\b[\s\u00A0]*)?(yes|no)\b(?![\s\u00A0]*[A-Za-z0-9])/i;
-
-/** A yes and a no named together as the answer (TWO_WAY, the two words different). */
-function twoWay(text: string): boolean {
-  const m = TWO_WAY.exec(text.trim());
-  return !!m && m[1].toLowerCase() !== m[2].toLowerCase();
-}
-
-/**
- * The answer says the information is not known (core/forms isUnknownAnswer, "No" + a word for missing knowledge, or –
- * harden 26/10 – words that make it uncertain). A printed option, as written, never is.
- */
-function saysNotKnown(text: string, options: readonly string[]): boolean {
-  if (isUnknownAnswer(text, options)) return true;
-  const t = text.trim().replace(/\s+/g, " ");
-  if (options.some((o) => o.trim().replace(/\s+/g, " ").toLowerCase() === t.toLowerCase())) return false;
-  if (NO_BUT_NOT_KNOWN.test(t) || NO_BUT_NOT_KNOWN_2.test(t)) return true;
-  return HEDGED.test(t) && !options.some((o) => HEDGED.test(o));
-}
+const saysNotKnown = choiceTextNotKnown;
+const twoWay = isTwoWayAnswer;
 
 /** Two or more printed options named in one answer to a single choice (not a yes beside a no: "Yes – no restrictions"). */
 function namesSeveral(options: readonly string[], text: string): boolean {
