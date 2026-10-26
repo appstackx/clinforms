@@ -122,6 +122,11 @@ async function call(
   body: unknown,
   headers: Record<string, string> = { cookie: "member=a" },
 ): Promise<Response> {
+  // bh2 WA1 (design 6): a clinic approves only the revision it holds – store the report first, as the Studio does.
+  const signing = (body as { report?: Report } | null)?.report;
+  if (path === "/sign" && deps.tenantStore && signing && !headers.authorization && !(await deps.tenantStore.getReport(signing.tenantId, signing.id))) {
+    await deps.tenantStore.createReport(signing.tenantId, { id: signing.id, status: signing.status, templateId: signing.templateId, formId: signing.form?.formId ?? null, payload: signing });
+  }
   const req = new Request(`http://localhost/api/reports/v1${path}`, {
     method: "POST",
     headers: { "content-type": CONTENT_TYPES.json, origin: "http://localhost", ...headers },

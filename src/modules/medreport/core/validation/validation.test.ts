@@ -643,6 +643,8 @@ test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back
   assert.equal(conditionOf(sections, "F-33")?.because, "“ANY FURTHER TREATMENT RECOMMENDED?” is “No”");
   const base = testReport(SOL);
   const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  // bh2 WA1 (design 8): sections without a frozen condition are read at run time only on a report from before the release.
+  delete (report as { reportModel?: number }).reportModel;
   const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
   const flags = run(report, template);
   assert.equal(flags.filter((f) => f.sectionKey === "F-28" || f.sectionKey === "F-33").length, 0, "no “required, no answer” and no checks on the drafted text");
@@ -671,6 +673,8 @@ test("safety amendment (R-safety-8): a mail-merge code owned by a question that 
   const form = { fields, analysis: { mode: "rules", promptVersion: "x", at: "2026-10-25T09:00:00.000Z", warnings: [], mergeFields } } as never;
   const base = testReport(SOL);
   const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
+  // bh2 WA1 (design 8): sections without a frozen condition are read at run time only on a report from before the release.
+  delete (report as { reportModel?: number }).reportModel;
   const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
   const result = validateReport(report, template, { form });
   const code = result.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === "F-33");

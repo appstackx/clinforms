@@ -29,7 +29,7 @@ import { prefillSigners, prefillSignersText } from "../../../core/parties";
 import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
-import { notApplicableBecause } from "../../../core/issue-state";
+import { notApplicableReasons } from "../../../core/issue-state";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useDemoClinic, useHostHooks, useStudioMode } from "../../host-hooks";
@@ -299,6 +299,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     return map;
   }, [questions, flagsBySection, report, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
+  // bh2 WA1: why each box that is not asked is not asked – worked out once per report, not once per card.
+  const notAskedBecause = useMemo(() => notApplicableReasons(report, form), [report, form]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
@@ -666,6 +668,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         <ApprovedBanner
           ref={approvedRef}
           report={report}
+          form={form}
           isWordForm={report.form?.kind === "docx"}
           isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat" || questionSet}
           questionSet={questionSet}
@@ -735,7 +738,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   canAcknowledge={canAck}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
-                  notApplicableBecause={notApplicableBecause(report, form, q.key)}
+                  notApplicableBecause={notAskedBecause.get(q.key) ?? null}
                   onDraft={
                     draftingUnavailable
                       ? undefined
