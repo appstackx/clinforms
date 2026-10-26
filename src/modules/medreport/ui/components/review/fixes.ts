@@ -8,8 +8,19 @@
  */
 import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
 import { appendActivity } from "../../../core/report-factory";
+import type { Actor } from "../../../core/actor";
+import type { FixProposal } from "../../../core/fix-types";
 import type { Report, ReportFlag, ReportSection } from "../../../core/types";
 import { editParagraph, removeParagraph } from "./reducer";
+
+/**
+ * bh2 W0 follow-up (seam "apply-fix", bh2-base2): apply a one-click fix the engine offered (core/fix-types.ts
+ * FixProposal). The review reducer's `applyFix {proposal}` action (use-review-state.ts, WC's file; the safety corpus
+ * dispatches it too) calls this, so what applying means is WD's alone: the paragraph's text becomes `after` only while
+ * it still reads `before`, the fix is recorded in Paragraph.fixes {kind, by, at, edits} and the paragraph keeps origin
+ * "ai", so the drafted-text checks keep running (WD design 6). Stub: the report unchanged – nothing offers a FixProposal yet.
+ */
+export const applyFixProposal: (report: Report, proposal: FixProposal, actor: Actor, now?: Date) => Report = (report) => report;
 
 /* ------------------------------------------------------------------------------------------------
  * The signer's own voice, leftover "not recorded" sentences

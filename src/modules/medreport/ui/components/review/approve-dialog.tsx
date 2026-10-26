@@ -15,7 +15,7 @@ import { Loader2, PenLine, ShieldCheck } from "lucide-react";
 import { signoffValuesFromReceipt } from "../../../core/forms";
 import { SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
-import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
+import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate, SignerConfirmation } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, cn } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
@@ -26,6 +26,12 @@ export interface ApproveInput {
   typedSignature: string;
   statementAccepted: boolean;
   attestations: string[];
+  /**
+   * bh2 W0 follow-up (WB design 13): the confirmations the approver ticks here ("I assessed this patient", "This number is
+   * mine"). use-review-actions.ts sends ApproveInput to /sign as it is (SignRequest.confirmations), so this dialog –
+   * WB's since bh2-base2 – is the only file that adds them.
+   */
+  confirmations?: SignerConfirmation[];
 }
 
 export type ApproveResult = { ok: true } | { ok: false; title: string; detail?: string; issues?: string[]; blocking?: ReportFlag[] };

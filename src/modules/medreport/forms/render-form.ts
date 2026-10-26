@@ -25,6 +25,7 @@ import { HttpError } from "../api/http";
 import { NOTICES } from "../config.public";
 import { answerableFields, formTemplateId, type FormFillAnswers } from "../core/forms";
 import { prefillSigners } from "../core/parties";
+import type { FillOutcome } from "../core/issue-types";
 import type { FormDefinition, Report } from "../core/types";
 import { buildFileBaseName } from "../docgen/view-model";
 import { docxToPdf } from "./convert";
@@ -61,6 +62,11 @@ export interface FormRenderOutput {
   warnings: string[];
   /** Problems that make the written form wrong (PDF fill's onError). A final copy is refused with any. */
   errors?: string[];
+  /**
+   * bh2 W0 follow-up (seam "fill-outcomes", bh2-base2): what the fill did at each field (core/issue-types.ts FillOutcome) –
+   * filled in by WA2's engine (design 1), read by WA1's /sign dry run (design 6). Absent until then: no outcome known.
+   */
+  outcomes?: FillOutcome[];
 }
 
 /** 422 when the file type does not match the form map's kind (cannot happen when the SHA-256 matched). */

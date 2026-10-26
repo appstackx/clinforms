@@ -9,7 +9,7 @@ import "server-only";
  * Owner: WA1 (issue state and receipt) – docs/bh2-ownership.json.
  */
 import type { Actor } from "../../../auth/actor";
-import { createReceipt } from "../../../auth/sign-receipt";
+import { createReceipt, type ReceiptAdditions } from "../../../auth/sign-receipt";
 import type { Clinician, Report, ReportTemplate, SignReceipt } from "../../../core/types";
 
 export function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"]> {
@@ -32,9 +32,17 @@ export function approvedVia(actor: Actor): NonNullable<SignReceipt["approvedVia"
 
 /**
  * The receipt for an approval that passed every check. `formMapSha256`: the form map's attested hash
- * (resolve-template.ts checkAttestedForm – the map as read, or as this build knows it; rollback shim).
+ * (resolve-template.ts checkAttestedForm – the map as read, or as this build knows it; rollback shim). `additions`: what
+ * the pipeline's checks added (checks/context.ts SignerCheckContext.receiptAdditions – bh2 W0 follow-up).
  */
-export async function mintReceipt(input: { report: Report; signer: Clinician; template: ReportTemplate; formMapSha256?: string; actor: Actor }): Promise<SignReceipt> {
+export async function mintReceipt(input: {
+  report: Report;
+  signer: Clinician;
+  template: ReportTemplate;
+  formMapSha256?: string;
+  actor: Actor;
+  additions?: ReceiptAdditions;
+}): Promise<SignReceipt> {
   const { report, signer, template, actor } = input;
   return createReceipt({
     report,
@@ -43,5 +51,6 @@ export async function mintReceipt(input: { report: Report; signer: Clinician; te
     attestations: [...template.attestations],
     ...(input.formMapSha256 ? { formMapSha256: input.formMapSha256 } : {}),
     approvedVia: approvedVia(actor),
+    ...(input.additions ? { additions: input.additions } : {}),
   });
 }

@@ -27,6 +27,18 @@ describe("bh2 ownership map", () => {
     assert.deepEqual(checkMap(map, files), []);
   });
 
+  it("bh2-base2: every seam is resolved, and each seam file's owner is the one `paths` gives it (one owner per file)", () => {
+    const seams = (map as { seams?: Array<{ id: string; status: string; owners?: Record<string, string> }> }).seams ?? [];
+    assert.ok(seams.length >= 9, "the 9 seams of the W0.4 split, and the follow-up's");
+    for (const seam of seams) {
+      assert.match(seam.status, /^resolved/, seam.id);
+      for (const [file, owner] of Object.entries(seam.owners ?? {})) {
+        assert.ok(files.includes(file), `${seam.id}: ${file} exists`);
+        assert.equal(ownerOf(map, file) ?? "integrator", owner, `${seam.id}: ${file}`);
+      }
+    }
+  });
+
   it("maps the split files to the plan's owners", () => {
     const expect: Array<[string, string]> = [
       [`${M}/ui/components/review/status.ts`, "WA1"],
@@ -136,10 +148,13 @@ describe("bh2 ownership guard", () => {
   });
 
   it("an integrator grant lets one workstream touch one path on one branch", () => {
-    const granted = { ...map, grants: [{ path: `${M}/auth/sign-receipt.ts`, workstream: "WA1", branch: "ws/bh2-issue", reason: "receipt MAC fields (seam receipt-mac)" }] };
-    assert.equal(classifyChange(granted, "WA1", change(`${M}/auth/sign-receipt.ts`), { branch: "ws/bh2-issue" }).allowed, true);
-    assert.equal(classifyChange(granted, "WA1", change(`${M}/auth/sign-receipt.ts`), { branch: "ws/bh2-fix1-wa1" }).allowed, false);
-    assert.equal(classifyChange(map, "WA1", change(`${M}/auth/sign-receipt.ts`)).allowed, false, "not granted in the committed map");
+    // bh2-base2: the seams' files were assigned in `paths` (auth/sign-receipt.ts is WA1's now); the example is a path
+    // still left to the integrator.
+    const granted = { ...map, grants: [{ path: `${M}/core/validation/citations.ts`, workstream: "WB", branch: "ws/bh2-opinion", reason: "checks on every origin (WB design 4)" }] };
+    assert.equal(classifyChange(granted, "WB", change(`${M}/core/validation/citations.ts`), { branch: "ws/bh2-opinion" }).allowed, true);
+    assert.equal(classifyChange(granted, "WB", change(`${M}/core/validation/citations.ts`), { branch: "ws/bh2-fix1-wb" }).allowed, false);
+    assert.equal(classifyChange(map, "WB", change(`${M}/core/validation/citations.ts`)).allowed, false, "not granted in the committed map");
+    assert.equal(classifyChange(map, "WA1", change(`${M}/auth/sign-receipt.ts`)).allowed, true, "seam receipt-mac: WA1's since bh2-base2");
   });
 
   it("W0 and the integrator are exempt", () => {

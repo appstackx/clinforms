@@ -21,8 +21,9 @@
 import { answerKindFor, isBlankByDesign, isSectionAnswered, leftBlankEffect, recordSourceOf } from "../../../core/forms";
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
-import type { FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
+import type { Actor, FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { canSign, validateReport } from "../../../core/validation";
+import { mayLeaveBlankInBulk } from "./gaps";
 import { MIN_GAP_REASON, acknowledgeFlag, answeredByPerson, resolveGap } from "./review-model";
 
 /** The validators' evidence for "required and has no answer" / "optional and has no answer" (validation/placeholders.ts). */
@@ -64,6 +65,11 @@ export interface ReviewItems {
 export interface BoxContext {
   template: Pick<ReportTemplate, "sections"> | null;
   form: Pick<FormDefinition, "analysis" | "fields"> | null;
+  /**
+   * bh2 W0 follow-up (seam "bulk-leave-blank"): who is acting, for "Leave optional boxes blank" – a box is offered and
+   * acknowledged only where gaps.ts mayLeaveBlankInBulk allows it (WC's rule). Absent: nobody named.
+   */
+  actor?: Actor | null;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -299,6 +305,7 @@ function blankCandidatesOf(report: Report, ctx: BoxContext, opinion: boolean): B
   for (const section of report.sections) {
     if (!section.fieldId || section.kind === "declaration" || section.status === "pending") continue;
     if ((section.kind === "clinician_opinion") !== opinion) continue;
+    if (!mayLeaveBlankInBulk(report, section, ctx.actor ?? null)) continue;
     const field = fields.get(section.key);
     if (isRequired(section, ctx) || field?.required !== false) continue;
     if (answeredByRules(section, field) || section.paragraphs.some((p) => p.text.trim() !== "")) continue;
@@ -366,6 +373,8 @@ export function leaveOptionalBoxesBlank(
     opinionKeys?: readonly string[];
     reason: string;
     actor: string;
+    /** bh2 W0 follow-up (seam "bulk-leave-blank"): the acting member, for WC's rule (gaps.ts mayLeaveBlankInBulk). */
+    by?: Actor | null;
     now?: Date;
   },
 ): Report {
@@ -375,7 +384,7 @@ export function leaveOptionalBoxesBlank(
   const fresh: Report = { ...report, flags };
   const chosen = new Set(input.keys);
   const opinionChosen = new Set(input.opinionKeys ?? []);
-  const ctx = { template: input.template, form: input.form };
+  const ctx: BoxContext = { template: input.template, form: input.form, actor: input.by ?? null };
   const candidates = [
     ...optionalBlankCandidates(fresh, ctx).filter((c) => chosen.has(c.key)),
     ...optionalOpinionBlankCandidates(fresh, ctx).filter((c) => opinionChosen.has(c.key)),

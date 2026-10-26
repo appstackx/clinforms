@@ -58,8 +58,10 @@ describe("W0.6 plumbing", () => {
 
   it("the /sign stub checks refuse nothing", async () => {
     const report = voiceReport(sarah);
-    const ctx = { req: new Request("http://localhost/api/reports/v1/sign"), deps: {} as SignCheckContext["deps"], actor: {} as SignCheckContext["actor"], report, signer: sarah, template: SOL, form: null, started: Date.now() };
+    const ctx = { req: new Request("http://localhost/api/reports/v1/sign"), deps: {} as SignCheckContext["deps"], actor: {} as SignCheckContext["actor"], report, signer: sarah, template: SOL, form: null, started: Date.now(), receiptAdditions: {} };
     for (const check of [approverCheck, staleReportCheck, signerConfirmationsCheck, issuedDocumentCheck]) assert.equal(await check(ctx), null);
+    // bh2-base2: the stubs add nothing to the receipt either (checks/context.ts receiptAdditions).
+    assert.deepEqual(ctx.receiptAdditions, {});
   });
 
   it("validateReport takes an explicit voice owner; without one the owner is the report's author, as before", () => {

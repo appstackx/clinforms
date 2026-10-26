@@ -238,6 +238,8 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
         prefer: "auto" as const,
         ...(form && { form }),
         ...(form && report.author ? { author: report.author } : {}),
+        // bh2 W0 follow-up (WD design 2): the approving physio is the drafting voice owner – read by /drafts once WD lands.
+        ...(form && report.approver ? { approver: report.approver } : {}),
       };
       let res;
       let demoRetried = false;

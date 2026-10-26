@@ -8,6 +8,8 @@
  * readable name made from its code (activityLabel), so new actions never break the page.
  */
 import { WORDING } from "../modules/medreport/core/wording";
+// bh2 W0 follow-up (seam "activity-labels"): the release's report audit actions are WF's (activity-copy-release.ts).
+import { RELEASE_REPORT_AUDIT_ACTIONS, RELEASE_REPORT_AUDIT_LABELS, describeReleaseReportAuditDetail } from "./activity-copy-release";
 
 export interface ActivityGroup {
   label: string;
@@ -75,6 +77,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "report.export",
       "report.delete",
       "launch.issue",
+      ...RELEASE_REPORT_AUDIT_ACTIONS,
     ],
   },
 ];
@@ -151,6 +154,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.owner_reset_link": "Owner password reset link created",
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
+  ...RELEASE_REPORT_AUDIT_LABELS,
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -341,7 +345,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "platform.usage_export":
       return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
-      return null;
+      return describeReleaseReportAuditDetail(action, detail);
   }
 }
 

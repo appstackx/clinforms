@@ -8,10 +8,15 @@ import "server-only";
  *   SignCheckContext     once the template or form map is resolved and the approval is complete
  *                        (issue.ts staleReportCheck before the validators; voice.ts signerConfirmationsCheck and
  *                        issue.ts issuedDocumentCheck after them – WB, WA1)
+ *   receiptAdditions     (bh2 W0 follow-up, seam "receipt-mac") what a check adds to the receipt: each check sets only its
+ *                        own keys – WC's approverCheck the takeover, WB's signerConfirmationsCheck the confirmations,
+ *                        WA1's issuedDocumentCheck the issued-document and acknowledgement hashes – and sign/index.ts hands
+ *                        the same object to mintReceipt, so no check needs another's file or auth/sign-receipt.ts.
  *
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
 import type { Actor } from "../../../../auth/actor";
+import type { ReceiptAdditions } from "../../../../auth/sign-receipt";
 import type { Clinician, FormDefinition, Report, ReportTemplate } from "../../../../core/types";
 import type { MedreportDeps } from "../../../deps";
 
@@ -25,6 +30,8 @@ export interface SignerCheckContext {
   report: Report;
   /** Who signs: the member themselves, or the demo's fictional signer (roles.ts resolveSigner). */
   signer: Clinician;
+  /** What the checks add to the receipt (one object for the whole pipeline; empty unless a check sets a key). */
+  receiptAdditions: ReceiptAdditions;
 }
 
 export interface SignCheckContext extends SignerCheckContext {

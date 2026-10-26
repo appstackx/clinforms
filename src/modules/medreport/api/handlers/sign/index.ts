@@ -105,7 +105,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const who = resolveSigner(actor, parsed.data.signer);
   if (!who.ok) return who.response;
   const { signer } = who;
-  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer };
+  // bh2 W0 follow-up: one object for what the checks add to the receipt (checks/context.ts receiptAdditions).
+  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer, receiptAdditions: {} };
   const notApprover = await runChecks(SIGNER_CHECKS, signerCtx);
   if (notApprover) return notApprover;
 
@@ -146,7 +147,7 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
   if (demoRefusal) return demoRefusal;
 
-  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor });
+  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor, additions: signerCtx.receiptAdditions });
   const body: SignResponse = { receipt, flags: result.flags };
   logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
   const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;

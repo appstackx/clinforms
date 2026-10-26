@@ -100,7 +100,10 @@ export function useReviewActions(opts: {
         // the clinic system opened it for), else a demo-tenant session.
         const { connectorId, patientId, episodeId } = fresh.episodeRef;
         const sessionToken = await sessionTokenFor({ tenantId: fresh.tenantId, connectorId, patientId, episodeId });
-        const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}) }, { sessionToken });
+        // bh2 W0 follow-up (WA1 design 6): the public demo sends the referrer's original file with the approval, for /sign's
+        // dry-run FINAL fill (a clinic's Studio fills the file it stores). /sign reads it once WA1 lands; ignored until then.
+        const demoFile = form && form.kind !== "questions" && hooks.mode !== "tenant" && file.status === "ready" ? { fileBase64: file.base64 } : {};
+        const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}), ...demoFile }, { sessionToken });
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
@@ -130,7 +133,7 @@ export function useReviewActions(opts: {
         return { ok: false, title: "The approval could not be completed", detail: "Check your connection and try again." };
       }
     },
-    [validateNow, form, isForm, commit, toast, hooks],
+    [validateNow, form, file, isForm, commit, toast, hooks],
   );
 
   /* Render -------------------------------------------------------------------------------------- */
@@ -330,6 +333,8 @@ export function useReviewActions(opts: {
               prefer,
               ...(form ? { form } : {}),
               ...(form && current.author ? { author: current.author } : {}),
+              // bh2 W0 follow-up (WD design 2): the approving physio is the drafting voice owner – read by /drafts once WD lands.
+              ...(form && current.approver ? { approver: current.approver } : {}),
             });
             dispatch({ type: "applyDraft", result: res });
           } catch (err) {

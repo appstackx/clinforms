@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
 import { SYSTEM_ACTOR_NAME, isStaffActor, type Actor } from "../../../core/actor";
+import type { FixProposal } from "../../../core/fix-types";
 import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
@@ -33,6 +34,7 @@ import {
   supersedeAcknowledgedGaps,
   writeInOwnVoice,
 } from "./review-model";
+import { applyFixProposal } from "./fixes";
 import { setRowsAnswer } from "./table-answer-model";
 import { acknowledgeGapLeavingBlank, leaveOptionalBoxesBlank } from "./box-items";
 
@@ -62,6 +64,8 @@ export type PersonReviewAction = (
   /** Change a value from the clinic's details for this report only (fix round 1, B0-4). */
   | { type: "overrideRecord"; key: string }
   | { type: "removeAbsence"; key: string }
+  /** bh2 W0 follow-up (seam "apply-fix"): a one-click fix the engine offered (WD: fixes.ts applyFixProposal). */
+  | { type: "applyFix"; proposal: FixProposal }
 ) & { actor: Actor };
 
 /**
@@ -111,6 +115,8 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       return overrideRecordValue(report, action.key, action.actor.name);
     case "removeAbsence":
       return removeAbsenceSentences(report, action.key, action.actor.name);
+    case "applyFix":
+      return applyFixProposal(report, action.proposal, action.actor);
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":

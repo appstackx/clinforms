@@ -9,7 +9,7 @@ import { conditionOf } from "../../../core/conditions";
 import { nowIso } from "../../../core/dates";
 import { isSectionAnswered } from "../../../core/forms";
 import { appendActivity } from "../../../core/report-factory";
-import type { Gap, Report } from "../../../core/types";
+import type { Actor, Gap, Report, ReportSection } from "../../../core/types";
 import { answeredByPerson } from "./provenance";
 
 /* ------------------------------------------------------------------------------------------------
@@ -18,6 +18,14 @@ import { answeredByPerson } from "./provenance";
 
 /** Minimum length of a typed resolution or reason (something a reader of the audit trail can use). */
 export const MIN_GAP_REASON = 15;
+
+/**
+ * bh2 W0 follow-up (seam "bulk-leave-blank", bh2-base2): may `actor` leave `section` blank through "Leave optional boxes
+ * blank"? box-items.ts (WA1's file) asks it for every box it offers and every box it acknowledges, so WC's rule – leaving
+ * opinion boxes blank in bulk is the approver's, staff never settle a clinician box (WC design 4) – lives here only.
+ * `actor` null: the caller names nobody. Stub: whoever may use the action today may – WC fills it in.
+ */
+export const mayLeaveBlankInBulk: (report: Pick<Report, "sections" | "approver">, section: ReportSection, actor: Actor | null) => boolean = () => true;
 
 export interface GapResolutionOptions {
   /** "Resolve" is offered (otherwise only "Acknowledge with a reason"). */

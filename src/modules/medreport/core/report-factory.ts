@@ -7,6 +7,7 @@
  * Baseline implementation by the foundation.
  */
 import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { RELEASE_ACTIVITY_ACTIONS } from "./activity-actions";
 import { bundleClinic } from "./clinic";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
@@ -27,6 +28,7 @@ import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withhe
 import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
 import { REPORT_MODEL } from "./schemas";
+import { sessionDatesByCode } from "./session-dates";
 import { WORDING } from "./wording";
 import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, type RecordSource } from "./labels";
 import type {
@@ -73,6 +75,8 @@ export const KNOWN_ACTIVITY_ACTIONS = [
   "superseded",
   // Another form for the same patient, from an earlier report's checked notes (25/10/2026, core/reuse.ts)
   "notes_reused",
+  // The release's review decisions, one-click fixes and held-back text (bh2-base2: named once in core/activity-actions.ts).
+  ...RELEASE_ACTIVITY_ACTIONS,
 ] as const;
 export type KnownActivityAction = (typeof KNOWN_ACTIVITY_ACTIONS)[number];
 
@@ -361,6 +365,14 @@ export function createFormReport(input: CreateFormReportInput): Report {
     if (src.kind === "signoff") {
       // Filled from the server-signed receipt on approval; blank on a DRAFT.
       sections.push({ ...base, status: "complete", paragraphs: [] });
+      continue;
+    }
+
+    // bh2 W0 follow-up (seam "session-dates-call-site"): session dates the record holds are filled by code, never
+    // drafted – core/session-dates.ts (WE; B2-19, maps without explicit episode.attended* fields). The stub answers nothing.
+    const byCode = sessionDatesByCode({ field, form, bundle, computedFacts: input.computedFacts });
+    if (byCode) {
+      sections.push({ ...base, kind: "from_records", status: "complete", paragraphs: [recordParagraph(field.id, 0, byCode.text, byCode.sourceIds)], ...(byCode.answer && { answer: byCode.answer }) });
       continue;
     }
 

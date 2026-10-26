@@ -31,6 +31,7 @@ import { checkFormDefinition } from "../../core/forms";
 import { withQuestionSetFile } from "../../core/question-set";
 import { FormsConfirmRequestSchema, type FormsConfirmResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
+import { formRequestCapIssues } from "../../forms/request-caps";
 
 export const handleFormsConfirm: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps, { roles: CONFIRM_ROLES, action: "confirm form mappings" });
@@ -38,6 +39,10 @@ export const handleFormsConfirm: MedreportHandler = async (req, _ctx, deps) => {
   if (!parsed.ok) return parsed.response;
   const form = await withQuestionSetFile(parsed.data.form);
   assertActorTenant(actor, form.tenantId, "form");
+  // bh2 W0 follow-up (seam "form-request-caps"): WA2's size caps for a map in a request (forms/request-caps.ts; a stub
+  // that finds nothing until WA2 fills it in).
+  const capIssues = formRequestCapIssues(form);
+  if (capIssues.length > 0) return problem(422, "This form is too complex to fill", { code: "FORM_TOO_COMPLEX", detail: capIssues[0].message, issues: capIssues });
   const problems = checkFormDefinition(form);
   if (problems.length > 0) {
     return problem(422, "The mapping is not ready to confirm", {
