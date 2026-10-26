@@ -1,5 +1,7 @@
 # K2 clinic system – handover
 
+> **Update 26/10/2026 ~17:05 GMT:** M0 is DONE. The uncommitted work in every `clinforms-wt/cs-*` worktree was committed as-is ("WIP: save uncommitted K2 sprint work for handover", unreviewed) and all seven `feat/cs-*` branches plus `feat/clinic-system` are pushed to origin. Heads: cs-billing e0185da, cs-comms 4aa66a4, cs-diary 60c347c, cs-integration b7fd14d, cs-portal 23a9f0c, cs-records 0eeded6, cs-reporting dbb7bb0. Start from M1. Treat the WIP commits as drafts to review, not finished work.
+
 **Internal.** Mon 26 Oct 2026. For the Claude Code account that picks K2 up cold. Read this, then
 [`contract.md`](contract.md) (binding build rules), then [`requirements.md`](requirements.md) (what to build, with
 status per requirement). Khuram decides everything; you propose, he approves anything big before you build it.
