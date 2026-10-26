@@ -205,7 +205,8 @@ describe("corpus self-test: coverage and fixtures", () => {
   it("every required finding is pinned by a case's source (or listed as not pinnable with a reason)", () => {
     const req = JSON.parse(read("required-sources.json")) as { reviewFindings: string[]; triageHighMedium: string[]; newFindings: string[]; notPinnable: Record<string, string> };
     const ids = new Set<string>();
-    const TOKEN = /(R-(?:safety|security|regression)-\d+|B\d-\d+|N-ATTR-\d+|C-ATTR-\d+|C-REV-\d+|C-FILL-\d+|C-\d+|NEW-\d+|N-\d+|Q-\d+|D-\d+|E\d+|F\d+)/g;
+    // A whole id only: "plan WD-4" does not pin D-4, nor "B1-16" pin B1-1.
+    const TOKEN = /(?:^|[^A-Za-z0-9])(R-(?:safety|security|regression)-\d+|B\d-\d+|N-ATTR-\d+|C-ATTR-\d+|C-REV-\d+|C-FILL-\d+|C-\d+|NEW-\d+|N-\d+|Q-\d+|D-\d+|E\d+|F\d+)(?![0-9])/g;
     for (const c of parseCorpusFiles(files).cases) for (const s of c.case.source) for (const m of Array.from(s.matchAll(TOKEN))) ids.add(m[1]);
     const missing = [...req.reviewFindings, ...req.triageHighMedium, ...req.newFindings].filter((id) => !ids.has(id) && !req.notPinnable[id]);
     assert.deepEqual(missing, []);

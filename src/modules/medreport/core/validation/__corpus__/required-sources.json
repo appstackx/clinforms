@@ -141,6 +141,8 @@
   "B1-17": "Mapping-page panel wording (field-editor.tsx): WE's UI tests.",
   "B0-29": "Mapping-page wording and order: WE's UI tests.",
   "B1-16": "The field editor saving the rewritten guidance (field-editor.tsx, UI): WE's field-editor test.",
-  "B0-15": "Needs Dell (D-16 safe defaults): pinned by WE's map data checks once Dell answers."
+  "B0-15": "Needs Dell (D-16 safe defaults): pinned by WE's map data checks once Dell answers.",
+  "D-4": "Admin tooling, not a validator behaviour: admin:load-forms had no replace path for stored maps and files (feat/bh-forms-replace adds it, with its own tests); WF's data edits depend on it.",
+  "D-8": "A data edit on a referrer's stored map (paired with B1-16: the rewritten field guidance), gitignored third-party data: WF's map data checks and WE's field-editor test pin it."
  }
 }

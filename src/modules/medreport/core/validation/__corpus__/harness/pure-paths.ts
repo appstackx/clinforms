@@ -176,9 +176,12 @@ async function timedHostileFill(spec: Loose): Promise<{ ms: number; refusal: str
 }
 
 /**
- * A hostile size holds when the fill finishes within `maxMs` or is refused (422). On a loaded machine an over-budget
- * time is re-checked against the same file at a tenth of the size: work that grows no faster than about linearly
- * (ratio ≤ 25 for 10× the input) still holds – the gate is on the algorithm, not on how busy the machine is.
+ * A hostile size holds when the fill finishes within `maxMs` or is refused (422). On a loaded machine (the whole
+ * test:medreport suite runs in parallel) an over-budget time is re-checked: the same file and one at a tenth of the
+ * size are sampled again, interleaved (small, big, small) so both see the same load, and the fastest run of each is
+ * compared. Work that grows no faster than about linearly (ratio ≤ 25 for 10× the input; quadratic is ×100) still
+ * holds – the gate is on the algorithm, not on how busy the machine is. A single small sample taken after the big
+ * one is not enough: on 26/10 one landed on an idle moment and gave ×31 for linear work.
  */
 async function runHostile(c: RunCase): Promise<PathOutcome> {
   const spec = (c.input.fill?.hostile ?? {}) as Loose;
@@ -186,11 +189,19 @@ async function runHostile(c: RunCase): Promise<PathOutcome> {
   const big = await timedHostileFill(spec);
   if (big.refusal) return { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` };
   if (big.ms <= maxMs) return { path: "fill", ok: true, detail: `filled in ${big.ms} ms (budget ${maxMs} ms)` };
-  const small = await timedHostileFill({ ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)) });
-  const ratio = big.ms / Math.max(1, small.ms);
+  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)) };
+  const small1 = await timedHostileFill(smallSpec);
+  const big2 = await timedHostileFill(spec);
+  if (big2.refusal) return { path: "fill", ok: true, detail: `refused (${big2.refusal}) after ${big2.ms} ms` };
+  const small2 = await timedHostileFill(smallSpec);
+  const bigMs = Math.min(big.ms, big2.ms);
+  const smallMs = Math.min(small1.ms, small2.ms);
+  if (bigMs <= maxMs) return { path: "fill", ok: true, detail: `filled in ${bigMs} ms on a re-run (budget ${maxMs} ms; first run ${big.ms} ms on a busy machine)` };
+  const ratio = bigMs / Math.max(1, smallMs);
+  const runs = `big ${big.ms}/${big2.ms} ms, a tenth ${small1.ms}/${small2.ms} ms`;
   return ratio <= 25
-    ? { path: "fill", ok: true, detail: `took ${big.ms} ms (over ${maxMs} ms on a busy machine) but grows linearly: ${small.ms} ms at a tenth of the size (×${ratio.toFixed(1)})` }
-    : { path: "fill", ok: false, detail: `took ${big.ms} ms (budget ${maxMs} ms) and grows ×${ratio.toFixed(1)} for 10× the input (${small.ms} ms at a tenth)` };
+    ? { path: "fill", ok: true, detail: `over ${maxMs} ms on a busy machine but grows linearly: ×${ratio.toFixed(1)} for 10× the input (${runs})` }
+    : { path: "fill", ok: false, detail: `over the ${maxMs} ms budget and grows ×${ratio.toFixed(1)} for 10× the input (${runs})` };
 }
 
 async function runFill(c: RunCase): Promise<PathOutcome> {
