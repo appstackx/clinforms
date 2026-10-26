@@ -35,7 +35,11 @@ const STOP = new Set(
     "not no never n't nil none neither any some all each every both either " +
     "recorded record records noted note notes documented wrote written stated reported reports said says told describes described describing " +
     "opinion opinions view views clinical professional physiotherapist physiotherapists senior mcsp hcpc patient claimant client employee " +
-    "mr mrs ms miss mx dr there here if whether because although though however appointment appointments visit visits occasion consultation part same effect regard respect terms order addition form including include includes"
+    "mr mrs ms miss mx dr there here if whether because although though however appointment appointments visit visits occasion consultation part same effect regard respect terms order addition form including include includes " +
+    // harden-WB (check2-WB N1, N2): light verbs, reporting verbs and the answer particle carry no claim of their own –
+    // "He made good progress" says what the note's "Good progress." says, "an explanation of the expected recovery" what
+    // its "Explained … the expected recovery" says, and "Yes – resolved" answers the box's question.
+    "made make makes making show shows showed shown showing included explain explains explained explaining explanation explanations yes"
   ).split(/\s+/),
 );
 
@@ -62,15 +66,33 @@ export const HEDGE_WORDS = [
   "potentially",
   "?",
 ] as const;
-const HEDGE_RE = /\b(?:unlikely|likely|doubtful|unclear|uncertain|unknown|possible|possibly|probable|probably|perhaps|maybe|query|queried|questionable|suspected|suspect|potential|potentially)\b|\?|\bnot yet\b|\bat this stage\b|\btoo early\b|\bif\b|\bwhether\b/g;
+// "As if" / "as though" describe a sensation ("the knee feels as if it will give way"), not a condition (harden-WB).
+const HEDGE_RE = /\b(?:unlikely|likely|doubtful|unclear|uncertain|unknown|possible|possibly|probable|probably|perhaps|maybe|query|queried|questionable|suspected|suspect|potential|potentially)\b|\?|\bnot yet\b|\bat this stage\b|\btoo early\b|(?<!\bas )\bif\b|\bwhether\b/g;
 const NEGATION_RE = /\b(?:not|no|never|neither|nor|nil|without|cannot|unable)\b|n't\b/;
 /** A goal, aim, plan or target frame – an outcome planned or hoped for, not recorded as having happened. */
 const GOAL_RE = /\b(?:goals?|aims?|aiming|aimed|targets?|objectives?|stg|ltg|short[- ]term goals?|long[- ]term goals?|hopes?|hoping|hoped|plans?|planned|planning|intends?|intended|expectations?|recommend\w*|advis\w*|advice)\b/;
+
+/**
+ * Irregular past forms, read as the verb (harden-WB, check2-WB N2: "his neck felt nearly back to normal" says what the
+ * note's "Neck feels nearly back to normal." says). "Left" is not here: it is a side.
+ */
+const IRREGULAR: Readonly<Record<string, string>> = {
+  felt: "feel", kept: "keep", slept: "sleep", went: "go", gone: "go", got: "get", gotten: "get", gave: "give", given: "give",
+  took: "take", taken: "take", saw: "see", seen: "see", began: "begin", begun: "begin", came: "come", ran: "run", drove: "drive",
+  driven: "drive", rode: "ride", ridden: "ride", fell: "fall", fallen: "fall", broke: "break", broken: "break", woke: "wake",
+  woken: "wake", swam: "swim", swum: "swim", spoke: "speak", spoken: "speak", brought: "bring", thought: "think", caught: "catch",
+  bought: "buy", held: "hold", lost: "lose", sat: "sit", stood: "stand", wore: "wear", worn: "wear", knew: "know", known: "know",
+  grew: "grow", grown: "grow", threw: "throw", thrown: "throw", chose: "choose", chosen: "choose", became: "become", meant: "mean",
+  met: "meet", paid: "pay", sent: "send", spent: "spend", built: "build", struck: "strike", stuck: "stick", swung: "swing",
+  taught: "teach", understood: "understand", ate: "eat", eaten: "eat", drank: "drink", flew: "fly", flown: "fly", forgot: "forget",
+  forgotten: "forget", hid: "hide", hidden: "hide", shook: "shake", shaken: "shake", bled: "bleed", bent: "bend", dealt: "deal",
+};
 
 /** A light stem: "returning" / "returned" → "return", "duties" → "duty", "settled" → "settl", "recovery" stays. */
 export function stem(word: string): string {
   let w = word.replace(/['’]s$/, "");
   if (/^\d/.test(w)) return w;
+  w = IRREGULAR[w] ?? w;
   for (const suf of ["ingly", "edly", "ings", "ing", "ies", "ied", "ed", "es", "s", "ly"]) {
     if (w.length - suf.length >= 3 && w.endsWith(suf)) {
       w = w.slice(0, -suf.length) + (suf === "ies" || suf === "ied" ? "y" : "");
@@ -81,9 +103,12 @@ export function stem(word: string): string {
   return w;
 }
 
-/** Two stems are the same word: equal, or one is a prefix of the other and the shorter has at least 4 letters. */
+/**
+ * Two stems are the same word: equal, the same but for a final "e" (harden-WB: "knees" → "kne" is "knee", "gives" →
+ * "giv" is "give", "wakes" → "wak" is "wake"), or one is a prefix of the other and the shorter has at least 4 letters.
+ */
 export function stemsMatch(a: string, b: string): boolean {
-  if (a === b) return true;
+  if (a === b || `${a}e` === b || `${b}e` === a) return true;
   const [s, l] = a.length <= b.length ? [a, b] : [b, a];
   return s.length >= 4 && !/^\d/.test(s) && l.startsWith(s);
 }
@@ -253,7 +278,7 @@ const FRAMES: ReadonlyArray<readonly [string, string]> = [
   ["discuss", "discuss(?:ed|es|ing|ion)?"],
   ["consider", "consider(?:s|ed|ing|ation)?"],
   ["await", "await(?:s|ed|ing)?|pending|waiting for"],
-  ["if", "if"],
+  ["if", "(?<!as )if"],
   ["unless", "unless"],
   ["until", "until|till"],
   ["provided", "provided(?: that)?|providing"],
@@ -279,26 +304,117 @@ const FRAMES: ReadonlyArray<readonly [string, string]> = [
   ["year", "(?:19|20)\\d\\d"],
 ];
 const FRAME_RES: ReadonlyArray<readonly [string, RegExp]> = FRAMES.map(([k, w]) => [k, new RegExp(`(?<![a-z0-9'/-])(?:${w})(?![a-z0-9'-])`, "g")]);
-/** "when" and "after" frame a condition only in a clause with no past tense ("Return to full duties when pain allows"). */
+/**
+ * "when" and "after" (D8, harden-WB – check2-WB N1):
+ * - in a note they frame a condition only in a conjunct not told in the past ("Fully recovered after 6 sessions" and "Pain
+ *   started when he lifted the box" are narrative; a participle straight after the word is the condition's own – "Return
+ *   to full duties when settled"), and "after" a count of the treatment given, in a conjunct that predicts nothing, is
+ *   narrative too ("Good progress after 5 sessions"; "Fit for full duties after 2 sessions" is still a condition);
+ * - the condition is one of an outcome to come when its clause has a modal, a return, fitness, a discharge or review, a
+ *   start, an expectation or a plan ("Return to full duties when pain allows") – key "when!" / "after!" – else one of a
+ *   finding ("Pain worse after lifting", "Normal function when healed") – key "when" / "after";
+ * - a draft keeps a finding's condition when it has the word at all ("his pain was worse after lifting"), and an
+ *   outcome's only in a conjunct not told in the past – an attribution verb is not the claim's tense: "Tom Ellis
+ *   recorded that she would return to full duties when pain allows" keeps it, "she returned to full duties when pain
+ *   allowed" does not.
+ */
 const TIME_FRAMES = new Set(["when", "after"]);
-const PAST_TENSE = /\b(?:was|were|had|did)\b|\b(?!(?:expect|anticipat|predict|forecast|plann|advis|recommend|hop|requir|need|indicat|propos|suggest|intend|schedul|book|arrang|agre)ed\b)[a-z]{3,}ed\b/;
+/** Irregular pasts a narrative uses (the -ed rule below finds the regular ones). */
+const IRREGULAR_PAST = "felt|began|went|came|fell|gave|took|saw|got|ran|drove|rode|broke|woke|swam|spoke|brought|thought|caught|bought|held|lost|sat|stood|wore|knew|grew|threw|chose|became|meant|met|paid|sent|spent|built|struck|stuck|swung|taught|ate|drank|flew|forgot|hid|shook|bled|bent|dealt|told|said|kept|slept|found|made|hurt";
+/** Participles that name a kind of duty or programme ("amended duties", "graded return"), not a past event. */
+const PAST_TENSE = new RegExp(
+  `\\b(?:was|were|had|did|${IRREGULAR_PAST})\\b|\\b(?!(?:expect|anticipat|predict|forecast|plann|advis|recommend|hop|requir|need|indicat|propos|suggest|intend|schedul|book|arrang|agre|amend|modifi|adjust|restrict|reduc|phas|grad|limit|supervis|tailor|assist|prescrib|target|focus|load)ed\\b)[a-z]{3,}ed\\b`,
+);
+const OUTCOME_TO_COME =
+  /\b(?:will|would|shall|should|can|could|may|might|must|ought|return\w*|rtw|resum\w*|back (?:to|on|at|in)|fit|unfit|able|unable|ready|discharg\w*|review\w*|progress(?:es|ed|ing)? (?:to|onto)|increas\w*|start\w*|begin\w*|commenc\w*|restart\w*|expect\w*|anticipat\w*|plan\w*|aim\w*|goals?|target\w*)\b/;
+const AFTER_COUNT = /^after (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (?:(?:treatment|physiotherapy|physio|supervised) )?(?:sessions?|treatments?|appointments?|visits?)\b/;
+/** Attribution verbs say when it was recorded, not the claim's tense. */
+const ATTRIBUTION_PAST = /\b(?:recorded|noted|documented|wrote|written|stated|reported|described|explained|observed|found|assessed|examined|advised|recommended|confirmed|said|told)\b/g;
+/** A participle straight after the time word is the condition's own ("when settled", "after healed"). */
+const OWN_PARTICIPLE = /\b(when|whenever|after)\s+[a-z]{3,}ed\b/g;
+const SEGMENT_EDGE = /[,;:]\s|\s(?:and|or|but|with|while|whereas)\s/g;
+/** How far either side of a frame word its clause is read (bounded work on hostile text). */
+const TIME_CONTEXT = 1500;
+/** At most this many "when" / "after" words are read in one text; past that a note's is a frame and a draft keeps none (fail closed). */
+const MAX_TIME_WORDS = 32;
 
-/** The frame keys of normalised text (dates "dd/mm/yyyy" are not years). */
-export function framesIn(norm: string): string[] {
+/**
+ * The conjunct segment of `s` around `at` (between the nearest segment edges) and its clause (between ; and sentence
+ * ends); `cut` when the clause runs past TIME_CONTEXT either side (the caller then fails closed).
+ */
+function aroundAt(s: string, at: number): { segment: string; clause: string; cut: boolean } {
+  let ca = at;
+  while (ca > 0 && at - ca < TIME_CONTEXT && !/[;.!?]/.test(s.charAt(ca - 1))) ca -= 1;
+  let cb = at;
+  while (cb < s.length && cb - at < TIME_CONTEXT && !/[;.!?]/.test(s.charAt(cb))) cb += 1;
+  const cut = (ca > 0 && !/[;.!?]/.test(s.charAt(ca - 1))) || (cb < s.length && !/[;.!?]/.test(s.charAt(cb)));
+  const clause = s.slice(ca, cb);
+  let sa = 0;
+  let sb = clause.length;
+  const rel = at - ca;
+  for (const m of Array.from(clause.matchAll(SEGMENT_EDGE))) {
+    const i = m.index ?? 0;
+    if (i + m[0].length <= rel) sa = i + m[0].length;
+    else if (i >= rel) {
+      sb = i;
+      break;
+    }
+  }
+  return { segment: clause.slice(sa, sb), clause, cut };
+}
+
+/**
+ * The time keys a text has for one of "when" / "after" (see TIME_FRAMES): for a note, "key!" (an outcome's condition)
+ * or "key" (a finding's), or none; for a draft, the ones it keeps – "key" when it has the word, and "key!" too when the
+ * word is in a conjunct not told in the past.
+ */
+function timeKeys(s: string, key: string, re: RegExp, side: "note" | "draft"): string[] {
+  const g = new RegExp(re.source, "g");
+  const out = new Set<string>();
+  let n = 0;
+  for (let m = g.exec(s); m !== null; m = g.exec(s)) {
+    if (++n > MAX_TIME_WORDS) return side === "note" ? [`${key}!`] : Array.from(out);
+    const at = m.index;
+    const { segment, clause, cut } = aroundAt(s, at);
+    if (side === "draft") {
+      out.add(key);
+      if (!cut && !PAST_TENSE.test(segment.replace(ATTRIBUTION_PAST, " ").replace(OWN_PARTICIPLE, "$1 _"))) out.add(`${key}!`);
+      continue;
+    }
+    if (cut) return [`${key}!`];
+    if (PAST_TENSE.test(segment.replace(OWN_PARTICIPLE, "$1 _"))) continue;
+    // A count of the treatment given, in a conjunct that predicts nothing ("Good progress after 5 sessions"); "Fit for full
+    // duties after 2 sessions" is still a condition.
+    if (m[0] === "after" && AFTER_COUNT.test(s.slice(at, at + 80)) && !OUTCOME_TO_COME.test(segment)) continue;
+    out.add(OUTCOME_TO_COME.test(clause) ? `${key}!` : key);
+  }
+  // A note: the stricter reading wins (an outcome's condition needs the word in a conjunct not told in the past).
+  if (side === "note" && out.has(`${key}!`)) return [`${key}!`];
+  return Array.from(out);
+}
+
+/**
+ * The frame keys of normalised text (dates "dd/mm/yyyy" are not years): a note's (`side` "note", what frames it) or a
+ * draft's (`side` "draft", what it keeps).
+ */
+export function framesIn(norm: string, side: "note" | "draft" = "note"): string[] {
   const s = norm.replace(DATE, " ");
   const out: string[] = [];
   for (const [key, re] of FRAME_RES) {
+    if (TIME_FRAMES.has(key)) {
+      out.push(...timeKeys(s, key, re, side));
+      continue;
+    }
     re.lastIndex = 0;
     if (re.test(s)) out.push(key);
   }
-  if (PAST_TENSE.test(s)) return out.filter((k) => !TIME_FRAMES.has(k));
   return out;
 }
 
 /** The frames of `noteScope` that `draft` does not keep (both normalised). */
 export function droppedFrames(noteScope: string, draft: string): string[] {
-  const kept = new Set(framesIn(draft));
-  return framesIn(noteScope).filter((k) => !kept.has(k));
+  const kept = new Set(framesIn(draft, "draft"));
+  return framesIn(noteScope, "note").filter((k) => !kept.has(k));
 }
 
 /** A segment that governs its clause from the side: a condition or a report lead ("assuming no setbacks", "according to his GP"). */
@@ -318,6 +434,9 @@ function isModifier(text: string): boolean {
   return rest.replace(/\s+/g, " ").trim() !== text.replace(/\s+/g, " ").trim() && contentStems(rest).length === 0;
 }
 
+/** How far either side of a span frameScope reads its clause (a statement never runs further without a ; or a full stop). */
+export const FRAME_CONTEXT = 1500;
+
 /**
  * The part of a note sentence that says [start, end), and so whose stance and frames are its own: the clause's conjunct
  * segments the span touches, the segments of the clause that govern it from the side (a lead condition or report –
@@ -325,12 +444,15 @@ function isModifier(text: string): boolean {
  * ("Solicitor asks for an opinion: …") – with `exclude` (a quotation's own words) left out. Another conjunct with its own
  * content ("…, no neurological signs") is not part of it.
  */
-export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: number, end: number, exclude?: { start: number; end: number }): string {
+export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: number, end: number, exclude?: { start: number; end: number }, side: "note" | "draft" = "note"): string {
   const norm = s.norm;
+  // The clause is read at most FRAME_CONTEXT characters either side of the span (check2-WB N4: bounded work per call).
   let a = start;
-  while (a > 0 && !/[;:.!?]/.test(norm.charAt(a - 1))) a -= 1;
+  while (a > 0 && start - a < FRAME_CONTEXT && !/[;:.!?]/.test(norm.charAt(a - 1))) a -= 1;
   let b = end;
-  while (b < norm.length && !/[;.!?]/.test(norm.charAt(b))) b += 1;
+  while (b < norm.length && b - end < FRAME_CONTEXT && !/[;.!?]/.test(norm.charAt(b))) b += 1;
+  // A note clause longer than that is never one plain statement: its stance is unknown ("?"), so nothing anchors to it.
+  const cut = (a > 0 && !/[;:.!?]/.test(norm.charAt(a - 1))) || (b < norm.length && !/[;.!?]/.test(norm.charAt(b)));
   const clause = norm.slice(a, b);
   const parts: string[] = [];
   for (const g of segmentsOf(clause)) {
@@ -341,9 +463,11 @@ export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: numbe
     else if (ge <= start && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
     else if (gs >= end && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
   }
-  if (s.label && a > 0 && norm.slice(0, a).replace(/[\s:]+$/, "").endsWith(s.label)) parts.push(s.label);
+  if (s.label && a > 0 && norm.slice(Math.max(0, a - s.label.length - 8), a).replace(/[\s:]+$/, "").endsWith(s.label)) parts.push(s.label);
+  if (cut && side === "note") parts.push("?");
   return parts.join(" ; ");
 }
+
 
 /* ------------------------------------------------------------------------------------------------
  * Segment stems (bounded work on hostile text – check-WB M6)
@@ -354,18 +478,43 @@ export const MAX_WINDOW_SEGMENTS = 12;
 /** A drafted claim with more conjunct segments than this is not anchored segment by segment (it blocks in an opinion place). */
 export const MAX_CLAIM_SEGMENTS = 40;
 
-const segmentCache = new Map<string, { segs: Segment[]; stems: string[][] }>();
+type SegmentStems = { segs: Segment[]; stems: string[][] };
 
-/** A normalised text's segments and each one's content stems (remembered for the last few hundred texts). */
-export function segmentStems(norm: string, ignore?: IgnoreNames): { segs: Segment[]; stems: string[][] } {
-  const key = `${(ignore?.people ?? []).join("|")}\u0000${norm}`;
+/**
+ * Remembered segments (check2-WB m3). A note sentence's live on the sentence itself (a WeakMap: they go with the note);
+ * other texts – drafted claims – in a small map that never holds a long text, so a large imported note or a hostile
+ * paste is not kept in server memory across requests, and the key is never a copy of a long text.
+ */
+const sentenceSegments = new WeakMap<object, Map<string, SegmentStems>>();
+const segmentCache = new Map<string, SegmentStems>();
+const SEGMENT_CACHE_ENTRIES = 512;
+const SEGMENT_CACHE_TEXT = 4096;
+
+/** A normalised text's segments and each one's content stems (`owner`: the note sentence it is the text of). */
+export function segmentStems(norm: string, ignore?: IgnoreNames, owner?: object): SegmentStems {
+  const who = (ignore?.people ?? []).join("|");
+  if (owner) {
+    let byIgnore = sentenceSegments.get(owner);
+    if (!byIgnore) sentenceSegments.set(owner, (byIgnore = new Map()));
+    const hit = byIgnore.get(who);
+    if (hit) return hit;
+    const out = computeSegmentStems(norm, ignore);
+    byIgnore.set(who, out);
+    return out;
+  }
+  if (norm.length > SEGMENT_CACHE_TEXT) return computeSegmentStems(norm, ignore);
+  const key = `${who}\u0000${norm}`;
   const hit = segmentCache.get(key);
   if (hit) return hit;
-  const segs = segmentsOf(norm);
-  const out = { segs, stems: segs.map((g) => contentStems(g.text, ignore)) };
-  if (segmentCache.size >= 512) segmentCache.clear();
+  const out = computeSegmentStems(norm, ignore);
+  if (segmentCache.size >= SEGMENT_CACHE_ENTRIES) segmentCache.clear();
   segmentCache.set(key, out);
   return out;
+}
+
+function computeSegmentStems(norm: string, ignore?: IgnoreNames): SegmentStems {
+  const segs = segmentsOf(norm);
+  return { segs, stems: segs.map((g) => contentStems(g.text, ignore)) };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -595,8 +744,9 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
   }
   // The note as the subject: "The same note contained …", "That note recorded that …" – a frame, not a claim.
   rest = rest.replace(new RegExp(`^(?:the|that|this|his|her|their) (?:same )?(?:[a-z-]+ )?(?:note|notes|record|assessment)(?: of ${UK_DATE_N})? (?:also )?(?:contained|recorded|included|gave|stated|said|noted)(?: that)?,? `), "");
-  // A lead date or occasion: "On 06/05/2026", "At the review on 06/05/2026,", "At discharge,", "At that appointment".
-  rest = rest.replace(new RegExp(`^(?:on ${UK_DATE_N}|at (?:the |my |his |her |their |this |that )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on ${UK_DATE_N})?),? `), "");
+  // A lead date or occasion: "On 06/05/2026", "At the review on 06/05/2026,", "At discharge,", "At that appointment",
+  // "By the review on 19/08/2026" (harden-WB: the occasion is when, not what – "review" is not a claim word).
+  rest = rest.replace(new RegExp(`^(?:on ${UK_DATE_N}|(?:at|by) (?:the |my |his |her |their |this |that )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on ${UK_DATE_N})?),? `), "");
   // "<Name>'s assessment (01/09/2026): …" / "My assessment: …".
   let m = new RegExp(`^(${NAMES}|my)['’]?s? (?:clinical |professional |initial |discharge )?(?:assessment|opinion|view|impression|diagnosis|findings?|examination|note|expectation)(?: \\(${UK_DATE_N}\\))?: `).exec(rest);
   if (m) {

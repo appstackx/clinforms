@@ -109,6 +109,11 @@ function attributed(s: DraftSentence, name: string, compact: boolean, people: re
   }
   const lead = /^(On \d{2}\/\d{2}\/\d{4},?\s+|At (?:the |his |her |their )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|discharge)(?: on \d{2}\/\d{2}\/\d{4})?,?\s+)/.exec(text);
   const body = lead ? text.slice(lead[0].length) : text;
+  // "She recorded a plan …": a record or clinical act no patient does – the pronoun is the colleague, so name them in its
+  // place, never "Priya Shah recorded that she recorded …" (harden-WB). Any other verb ("she described", "he found") may
+  // be the patient's, so the sentence keeps its own subject after "<Name> recorded that".
+  const pronoun = /^(?:He|She|They)(?=\s+(?:also\s+|then\s+|later\s+|again\s+)?(?:recorded|documented|assessed|examined|measured|discharged|reviewed)\b)/.exec(body);
+  if (pronoun) return `${lead ? lead[0] : ""}${name}${body.slice(pronoun[0].length)}`;
   return `${lead ? lead[0] : ""}${name} recorded that ${lowerFirst(body, people)}`;
 }
 

@@ -37,8 +37,11 @@ export function namesClinician(text: string, name: string): boolean {
   return surname.length > 1 && new RegExp(`\\b(?:Dr|Mr|Mrs|Ms|Miss|Mx)\\.? ${escapeRegExp(surname)}\\b`).test(text);
 }
 
-/** "He recorded …" / "She also noted …": a clinician's act whose subject is the clinician the last sentence named. */
-const PRONOUN_ACT = /^(?:(?:he|she|they)\s+(?:also\s+|then\s+|later\s+|again\s+)?(?:recorded|noted|documented|found|assessed|examined|measured|observed|advised|discharged|treated|reviewed|explained|reassured|referred|wrote|described|planned|progressed|taught|issued)|(?:his|her|their)\s+(?:[a-z-]+\s+){0,2}(?:assessment|findings?|opinion|impression|examination|plan|advice|diagnosis|view|recommendations?)|(?:the same|that|this|his|her|their)\s+(?:[a-z-]+\s+)?(?:note|notes|record|assessment))\b/i;
+/**
+ * "He recorded …" / "She also noted …": a clinician's act whose subject is the clinician the last sentence named – after a
+ * lead date or occasion too ("On 20/10/2026 she recorded a plan …", harden-WB).
+ */
+const PRONOUN_ACT = /^(?:(?:on \d{1,2}\/\d{1,2}\/\d{2,4}|(?:at|by) (?:the |that |this |his |her |their )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on \d{1,2}\/\d{1,2}\/\d{2,4})?),?\s+)?(?:(?:he|she|they)\s+(?:also\s+|then\s+|later\s+|again\s+)?(?:recorded|noted|documented|found|assessed|examined|measured|observed|advised|discharged|treated|reviewed|explained|reassured|referred|wrote|described|planned|progressed|taught|issued)|(?:his|her|their)\s+(?:[a-z-]+\s+){0,2}(?:assessment|findings?|opinion|impression|examination|plan|advice|diagnosis|view|recommendations?)|(?:the same|that|this|his|her|their)\s+(?:[a-z-]+\s+)?(?:note|notes|record|assessment))\b/i;
 
 /** The opinion box test (design 3): a clinician_opinion box, an opinion-labelled box, or a paragraph whose basis is a recorded opinion. */
 export function isOpinionPlace(section: Pick<ReportSection, "kind" | "title" | "key">, p: Pick<Paragraph, "basis">, label = ""): boolean {

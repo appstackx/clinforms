@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { SOLICITOR_RTA_TEMPLATE } from "../../templates/registry";
 import { requiredConfirmations, signVoiceOwner } from "../../api/handlers/sign/checks/voice";
 import type { Clinician, FormDefinition, Note, Paragraph, Report } from "../types";
-import { anchorClaim, findAnchor, quotedVerbatim } from "./attribution-anchor";
-import { namedActs, wrongClinician } from "./attribution-clinician-named";
+import { anchorClaim, findAnchor, phraseForms, quotedVerbatim } from "./attribution-anchor";
+import { firstPersonDatedActs, namedActs, wrongClinician } from "./attribution-clinician-named";
 import { acceptNoteWords, attributionActions, noteWordsOffers, offeredFixes } from "./attribution-fixes";
 import { negativeFindings, negativeRecorded } from "./attribution-negatives";
 import { defaultVoiceOwner } from "./attribution-owner";
@@ -21,6 +21,7 @@ import { authorshipOf, rawOpinionHits, sentenceSha } from "./opinion-language";
 import { validateReport } from "./index";
 import { para, testBundle, testReport, withSection } from "./test-fixtures";
 import { normaliseForMatch } from "./text";
+import { droppedFrames, segmentStems, stem, stemsMatch } from "./attribution-text";
 import { voiceIssue } from "./voice";
 import { nameInsteadClinician, rewriteInFirstPerson } from "../voice";
 
@@ -489,4 +490,150 @@ test("hostile sizes (M6): an opinion box of thousands of comma segments and a no
   const t0 = Date.now();
   subjectFlags(r.report, r.pid);
   assert.ok(Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * harden-WB (check2-WB, 26/10/2026): faithful text from the sample notes and recorded drafts anchors; the dates a clause
+ * reports are not the record's date; bounded work on hostile notes
+ * ----------------------------------------------------------------------------------------------*/
+
+test("faithful drafts anchor (N1, N2): light verbs, tense, a count of sessions, plan instructions, reported advice, 'as if'", () => {
+  const rows: Array<[name: string, text: string, notes: Record<string, Partial<Note>>, opts?: Parameters<typeof drafted>[2]]> = [
+    ["made good progress", "He made good progress with the home exercises.", { "N-001": { assessment: "Good progress with the home exercises." } }],
+    ["making steady progress, a lead date", "By 01/04/2026 he was making steady progress.", { "N-001": { assessment: "Steady progress." } }],
+    ["a lead occasion is not content", "By the review on 18/03/2026 he had made good progress.", { "N-001": { assessment: "Good progress." } }],
+    ["a count of sessions beside a past clause (D8)", "On 06/05/2026 Tom Ellis recorded good progress after 4 sessions and that the back pain was easing.", { "N-002": { assessment: "Good progress after 4 sessions: the back pain is easing." } }],
+    ["had settled / has settled", "By then his sleep had settled.", { "N-001": { subjective: "Sleep has settled." } }],
+    ["felt / feels", "He said his neck felt almost back to normal.", { "N-001": { subjective: "Neck feels almost back to normal." } }],
+    ["would / will, 'as if'", "He said it felt as if the knee would give way on stairs.", { "N-001": { subjective: "Knee feels as if it will give way on stairs." } }],
+    ["'a feeling that' over 'feels as if'", "He described a feeling that the knee might give way on stairs.", { "N-001": { subjective: "Knee feels as if it might give way on stairs." } }],
+    ["should over a plan line", "On 18/03/2026 Sarah Reid recorded a plan that he should avoid heavy lifting.", { "N-001": { plan: "Avoid heavy lifting." } }],
+    ["a plan to continue", "On 06/05/2026 Tom Ellis recorded a plan to continue the home exercises daily.", { "N-002": { plan: "Continue the home exercises daily." } }],
+    ["would, reported as the plan", "On 18/03/2026 Sarah Reid recorded in the plan that sessions would be fortnightly.", { "N-001": { plan: "Fortnightly sessions." } }],
+    ["an outcome in the plan field, reported as explained", "Tom Ellis recorded in the plan that he explained that the outlook is good.", { "N-002": { plan: "Explained that the outlook is good." } }],
+    ["a request to complete a graded return", "Tom Ellis requested 2 further sessions from the employer to complete the graded return to his usual role.", { "N-002": { plan: "Request 2 further sessions from the employer to complete the graded return to his usual role." } }],
+    ["advice reported in an opinion box", "On 18/03/2026 Sarah Reid recorded in the plan that ice was advised for the swelling.", { "N-001": { plan: "Ice for the swelling." } }, { box: "prognosis", basis: "clinician_opinion_recorded" }],
+    ["Yes – resolved", "Yes – resolved", { "N-001": { assessment: "Neck pain resolved." } }],
+    ["a direction is not permanence", "He turned sharply to the left with his foot planted.", { "N-001": { subjective: "Turned sharply to the left with foot planted." } }, { box: "incident_history", basis: "patient_reported" }],
+  ];
+  for (const [name, text, notes, opts] of rows) {
+    const r = drafted(text, notes, opts);
+    assert.deepEqual(subjectFlags(r.report, r.pid).map((f) => f.evidence), [], name);
+  }
+});
+
+test("what still blocks beside the N1/N2 readings: conditions, frames, a stronger modal, a plan line read only with a plan modal", () => {
+  const rows: Array<[name: string, text: string, notes: Record<string, Partial<Note>>, opts?: Parameters<typeof drafted>[2]]> = [
+    ["hoped-for progress", "He made good progress.", { "N-001": { assessment: "Hoping for good progress." } }],
+    ["progress expected after more sessions", "Tom Ellis recorded good progress after 4 sessions.", { "N-002": { assessment: "Good progress expected after 4 more sessions." } }],
+    ["a count that conditions a fitness", "He is fit for normal duties.", { "N-001": { assessment: "Fit for normal duties after 2 sessions." } }],
+    ["a future condition told as past", "He was fit for normal duties after 2 more sessions.", { "N-001": { assessment: "Fit for normal duties after 2 more sessions." } }],
+    ["a condition told as past", "He returned to full duties when his pain allowed.", { "N-001": { assessment: "Return to full duties when pain allows." } }],
+    ["has not settled", "By then his sleep had settled.", { "N-001": { subjective: "Sleep has not settled." } }],
+    ["will over would", "He will recover with rest.", { "N-001": { assessment: "Would recover with rest." } }],
+    ["someone else's feeling", "His neck was almost back to normal.", { "N-001": { subjective: "Wife feels his neck is almost back to normal." } }],
+    ["a real condition beside 'as if'", "He described a feeling that the knee might give way on stairs.", { "N-001": { subjective: "Knee feels as if it might give way on stairs if he rushes." } }],
+    ["should over a conditional plan", "He should return to full duties.", { "N-001": { plan: "Return to full duties when pain allows." } }],
+    ["should over a finding", "He should avoid lifting.", { "N-001": { subjective: "Avoids lifting at home." } }],
+    ["will, not reported as the plan", "He will avoid heavy lifting.", { "N-001": { plan: "Avoid heavy lifting." } }],
+    ["must is stronger than the plan", "He must avoid heavy lifting.", { "N-001": { plan: "Avoid heavy lifting." } }],
+    ["can is not a plan", "He can return to full duties.", { "N-001": { plan: "Return to full duties." } }],
+    ["a goal is not a plan instruction", "He needs to return to full duties.", { "N-001": { plan: "Goal: return to full duties." } }],
+    ["the patient's wish", "He should have 3 more sessions.", { "N-001": { plan: "Pt would like 3 more sessions." } }],
+    ["a third party's request", "He should have 3 more sessions.", { "N-001": { plan: "Solicitor requests 3 more sessions." } }],
+    ["a negated plan modal", "He should not return to work.", { "N-001": { plan: "Return to work." } }],
+    ["drafted as having happened, plan-framed", "Sarah Reid recorded in the plan that he returned to full duties.", { "N-001": { plan: "Return to full duties within 2 weeks." } }],
+    ["an explained outlook with a condition", "Tom Ellis recorded in the plan that the outlook is good.", { "N-002": { plan: "Explained the outlook is good if he keeps active." } }],
+    ["advice over a discussion", "Surgery was recommended.", { "N-001": { plan: "Discuss surgery with GP." } }, { box: "prognosis", basis: "clinician_opinion_recorded" }],
+    ["advice over a finding", "Rest was advised.", { "N-001": { subjective: "Rest helps." } }, { box: "prognosis", basis: "clinician_opinion_recorded" }],
+    ["'left with' over 'to the left with'", "He was left with a pull in the knee.", { "N-001": { subjective: "Turned sharply to the left with foot planted; felt a pull in the knee." } }],
+    ["Yes – resolved over not resolved", "Yes – resolved", { "N-001": { assessment: "Neck pain not resolved." } }],
+  ];
+  for (const [name, text, notes, opts] of rows) {
+    const r = drafted(text, notes, opts);
+    assert.ok(subjectFlags(r.report, r.pid).length > 0, name);
+  }
+});
+
+test("text helpers (harden-WB): tense forms of a phrase, irregular verbs, plurals, time frames per conjunct", () => {
+  assert.deepEqual(phraseForms("had settled"), ["had settled", "has settled", "have settled", "settled"]);
+  assert.deepEqual(phraseForms("would give"), ["would give", "will give"]);
+  assert.deepEqual(phraseForms("should avoid"), ["should avoid"]);
+  assert.equal(stem("felt"), stem("feels"));
+  assert.ok(stemsMatch(stem("knees"), stem("knee")));
+  assert.ok(stemsMatch(stem("gives"), stem("give")));
+  assert.ok(stemsMatch(stem("wakes"), stem("waking")));
+  assert.ok(stemsMatch(stem("gave"), stem("gives")));
+  assert.ok(!stemsMatch(stem("left"), stem("leave")), "a side is not leave");
+  // "when" / "after": a condition only about an outcome to come, never a count of the sessions given or a symptom's behaviour.
+  const dropped = (n: string, d: string) => droppedFrames(normaliseForMatch(n), normaliseForMatch(d));
+  // An outcome's condition ("when!"): kept only in a conjunct not told in the past; an attribution verb is not the claim's tense.
+  assert.deepEqual(dropped("Return to full duties when pain allows.", "he will return to full duties"), ["when!"]);
+  assert.deepEqual(dropped("Return to full duties when pain allows.", "tom ellis recorded that she would return to full duties when pain allows"), []);
+  assert.deepEqual(dropped("Return to full duties when pain allows.", "she returned to full duties when pain allowed"), ["when!"]);
+  assert.deepEqual(dropped("Return to full duties when settled.", "she will return to full duties"), ["when!"], "a participle after the word is the condition's own");
+  assert.deepEqual(dropped("Fit for full duties after 2 sessions.", "he is fit for full duties"), ["after!"]);
+  // A count of the treatment given is narrative; a past conjunct is narrative.
+  assert.deepEqual(dropped("Good progress after 5 sessions: the pain is easing.", "good progress and the pain was easing"), []);
+  assert.deepEqual(dropped("Fully recovered after 6 sessions.", "he fully recovered"), []);
+  // A finding's condition ("after"): kept whenever the draft has the word, in any tense.
+  assert.deepEqual(dropped("Pain worse after lifting.", "his pain was worse after lifting"), []);
+  assert.deepEqual(dropped("Pain worse after lifting.", "his pain was worse"), ["after"]);
+  assert.deepEqual(dropped("Normal function when healed.", "he has normal function"), ["when"]);
+  // Notes are not cached by a copy of their text; a long drafted text is not kept at all.
+  const long = Array.from({ length: 2000 }, (_, i) => `w${i}`).join(", ");
+  assert.notEqual(segmentStems(long), segmentStems(long), "a long text is not remembered");
+  assert.equal(segmentStems("a short claim, kept"), segmentStems("a short claim, kept"));
+});
+
+test("dates (N3): a date in what a clinician recorded is not the record's date; a date that leads or follows the act is", () => {
+  const people = ["Sarah Reid", "Tom Ellis", "Priya Shah"];
+  const tom = note({ id: "N-002", date: "2026-05-06", subjective: "Back on amended duties since 20/04/2026." }, TOM);
+  const sarah = note({ id: "N-001", date: "2026-03-18", subjective: "Lifting injury at work on 12/03/2026." }, SARAH);
+  const act = (t: string, name: string) => namedActs(t, people).find((a) => a.name === name) as ReturnType<typeof namedActs>[number];
+  assert.equal(wrongClinician(act("Tom Ellis recorded that he had been back on amended duties since 20/04/2026.", "Tom Ellis"), [tom]), null, "the note gives the date");
+  assert.equal(wrongClinician(act("Sarah Reid recorded that the lifting injury happened at work on 12/03/2026.", "Sarah Reid"), [sarah]), null, "the incident's date in her own note");
+  assert.equal(act("Tom Ellis's assessment was mechanical back pain following an incident at work on 12/03/2026.", "Tom Ellis").dateRole, "content");
+  for (const t of ["On 20/04/2026 Tom Ellis recorded amended duties.", "Tom Ellis recorded on 20/04/2026 that he was on amended duties.", "Tom Ellis's note of 20/04/2026 recorded amended duties.", "Amended duties (Tom Ellis, 20/04/2026).", "At the review on 20/04/2026, Tom Ellis recorded amended duties.", "There were no red flags and on 20/04/2026 Tom Ellis recorded amended duties."]) {
+    const a = act(t, "Tom Ellis");
+    assert.equal(a.dateRole, "record", t);
+    assert.match(wrongClinician(a, [tom]) ?? "", /dates Tom Ellis's record to 20\/04\/2026/, t);
+  }
+  const elsewhere = act("Tom Ellis recorded mobilisations on 18/03/2026.", "Tom Ellis");
+  assert.match(wrongClinician(elsewhere, [tom, sarah]) ?? "", /gives 18\/03\/2026 in what Tom Ellis recorded/, "a date neither of his notes gives");
+  assert.deepEqual(firstPersonDatedActs("On 12/03/2026 I recorded that the injury happened at work.").map((a) => a.date), ["2026-03-12"]);
+  assert.deepEqual(firstPersonDatedActs("I recorded that the injury happened at work on 12/03/2026."), [], "a date in what is reported");
+  const own = drafted("On 12/03/2026 I recorded that the lifting injury happened at work.", { "N-001": { subjective: "Lifting injury at work on 12/03/2026." } });
+  assert.match(subjectFlags(own.report, own.pid).map((f) => f.message).join(" "), /dates your record to 12\/03\/2026/);
+});
+
+test("hostile sizes (N4, m3): many quotations over a long note sentence that repeats them, and thousands of time words, stay bounded", () => {
+  const sentence = `not ${Array.from({ length: 4000 }, () => "pain").join(" ")}.`;
+  const r = drafted(`Tom Ellis recorded ${Array.from({ length: 40 }, () => "“pain pain pain”").join(" and ")}.`, { "N-002": { subjective: sentence } });
+  let t0 = Date.now();
+  subjectFlags(r.report, r.pid);
+  assert.ok(Date.now() - t0 < 10_000, `40 quotations over a 20 KB sentence: ${Date.now() - t0} ms (64 s before)`);
+  assert.equal(quotedVerbatim("pain pain pain", [note({ subjective: sentence }, TOM)], "Tom Ellis"), null, "every place drops the 'not': never verbatim");
+  const box = drafted("Tom Ellis recorded on 06/05/2026: “pain pain pain”.", { "N-002": { subjective: sentence } }, { box: "prognosis", basis: "clinician_opinion_recorded" });
+  t0 = Date.now();
+  assert.ok(subjectFlags(box.report, box.pid).length > 0);
+  assert.ok(Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
+  const after = drafted("He is fit for full duties.", { "N-001": { assessment: `Fit for full duties ${Array.from({ length: 20000 }, () => "after").join(" ")} rest.` } });
+  t0 = Date.now();
+  assert.ok(subjectFlags(after.report, after.pid).length > 0, "a condition past the bound fails closed");
+  assert.ok(Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
+});
+
+test("a pronoun act after a lead date continues the named colleague; 'Name X' puts the name in the pronoun's place (harden-WB)", () => {
+  const n2 = { plan: "Continue the home exercises daily.", objective: "Lumbar AROM full and pain-free." };
+  const ok = drafted("On 06/05/2026 Tom Ellis recorded that lumbar AROM was full and pain-free. On 06/05/2026 he recorded a plan to continue the home exercises daily.", { "N-002": n2 });
+  assert.deepEqual(subjectFlags(ok.report, ok.pid).map((f) => f.evidence), [], "the second sentence's 'he' is Tom Ellis");
+  const lone = drafted("He recorded that, in his opinion, he is fit for a phased return to normal duties over 2 weeks.", { "N-002": testBundle().notes[1] });
+  const own = { ...lone.report, author: SARAH };
+  const validated = { ...own, flags: validateReport(own, SOL).flags };
+  assert.ok(validated.flags.some((f) => f.paragraphId === lone.pid && /^unattributed Tom Ellis/.test(f.evidence ?? "")), "no one named before: unattributed");
+  const prefix = offeredFixes(validated, { actor: SARAH_ACTOR, template: SOL }).find((f) => f.kind === "attribution-prefix");
+  assert.ok(prefix, "the approver is offered 'Name Tom Ellis'");
+  const text = prefix.apply(validated).sections.flatMap((s) => s.paragraphs).find((p) => p.id === lone.pid)?.text ?? "";
+  assert.equal(text, "Tom Ellis recorded that, in his opinion, he is fit for a phased return to normal duties over 2 weeks.");
 });

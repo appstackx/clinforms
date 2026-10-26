@@ -36,6 +36,14 @@
  *     "appropriate", "a candidate for", "he'll …", "in a fortnight".
  *   - Approver acceptances clear only a narrated work-status return the accepted note records (minor 1); an origin
  *     this build does not know is checked (minor 2).
+ * - harden-WB (check2-WB, 26/10/2026): faithful drafts of the sample notes and of the recorded drafts anchor again –
+ *   light verbs ("made good progress") and the answer particle ("Yes – resolved") carry no claim, another tense of the
+ *   auxiliary or an irregular past is the same words ("had settled" / "has settled", "felt" / "feels", "would give way" /
+ *   "will give way"), "when" / "after" condition only an outcome to come (D8 is per conjunct, a count of sessions is
+ *   narrative), a plan modal or reported advice reads the note's plan instruction ("should avoid twisting" over "Avoid
+ *   twisting …", planWordsOf), an outcome in the plan field anchors where the draft reports it as the plan, request,
+ *   explanation or advice, "left with" is not a direction ("to the left with his foot planted"), and the note's words
+ *   must be the same opinion phrase as the draft's (attribution-anchor.ts samePhraseAt).
  * - A verbatim quotation of a cited note by the clinician the sentence names is never checked inside its quotes – and
  *   is verbatim only when it is the note's whole statement (attribution-anchor.ts quotedVerbatim: a quotation that
  *   leaves out a "not", a hedge, a "?", a goal label, a weaker modal or a condition is checked like any other words).
@@ -52,7 +60,7 @@
  * Owner: WB (opinion guard and attribution) – docs/bh2-ownership.json.
  */
 import type { Note, Paragraph, Report, ReportFlag, ReportSection } from "../types";
-import { findAnchor, quotedVerbatim, type NoteAnchor } from "./attribution-anchor";
+import { findAnchor, planFramed, quotedVerbatim, type NoteAnchor } from "./attribution-anchor";
 import { unsupportedNegatives } from "./attribution-negatives";
 import { clinicianNames, draftSentences, droppedFrames, holderAt, quoteOutside, sameName, sha256HexSync, type DraftSentence, type Holder } from "./attribution-text";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
@@ -475,7 +483,7 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "permanence", kind: "outcome", re: /\bindefinite(?:ly)?\b/g },
   { label: "permanence", kind: "outcome", re: /\bchronic\b/g },
   { label: "permanence", kind: "outcome", re: /\birreversible\b|\b(?:be |been )?reversed\b|\breversible\b/g },
-  { label: "permanence", kind: "outcome", re: /\ba lasting\b|\blasting (?:weakness|damage|effects?|impairment|disability|problems?|symptoms?|restrictions?|limitations?|pain|stiffness)\b|\bfor (?:the rest of (?:his|her|their) )?life\b|\bhere to stay\b|\bleft with\b|\bforever\b/g },
+  { label: "permanence", kind: "outcome", re: /\ba lasting\b|\blasting (?:weakness|damage|effects?|impairment|disability|problems?|symptoms?|restrictions?|limitations?|pain|stiffness)\b|\bfor (?:the rest of (?:his|her|their) )?life\b|\bhere to stay\b|(?<!\b(?:to|on|onto|towards?|the|his|her|their|its|turn(?:s|ed|ing)?|lean(?:s|ed|ing)?|look(?:s|ed|ing)?|rotat(?:e|es|ed|ing|ion)|step(?:s|ped|ping)?|pivot(?:s|ed|ing)?) )\bleft with\b|\bforever\b/g },
   { label: "permanence", kind: "outcome", re: /\bnever (?:fully |completely )?(?:recover|regain|return|resolve|heal|settle|go away|get better|be the same)\w*/g },
   { label: "permanence", kind: "outcome", re: /\bfor good\b|\b(?:not|never) (?:going|likely|expected) to (?:go away|disappear|resolve|clear|settle|improve)\b|\bwon't (?:go away|disappear|resolve|clear|settle|improve)\b|\bnot (?:go away|disappear|resolve|clear up)\b/g },
 
@@ -742,11 +750,22 @@ export function judgeParagraphOpinions(input: {
           }
         }
         if (!anchor && raw.pattern.anchorToo) {
-          anchor = findAnchor({ phrase: raw.phrase, sentence: clauseOf(s, raw), notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) } });
+          anchor = findAnchor({ phrase: raw.phrase, sentence: clauseOf(s, raw), notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) }, context: s.norm.slice(0, raw.start), pattern: raw.pattern.re });
         }
       } else {
         const clause = clauseOf(s, raw);
-        anchor = findAnchor({ phrase: raw.phrase, sentence: clause, notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) } });
+        const context = s.norm.slice(0, raw.start);
+        anchor = findAnchor({
+          phrase: raw.phrase,
+          sentence: clause,
+          notes: holderNotes.map((c) => c.note),
+          holder: hName ?? null,
+          kind: raw.pattern.kind ?? "opinion",
+          ignore: { people: people.map((x) => x.toLowerCase()) },
+          context,
+          planWords: planWordsOf(raw, planFramed(normaliseForMatch(clause), context)),
+          pattern: raw.pattern.re,
+        });
       }
       const accepted = !anchor && acceptedByApprover(section, report, raw, s.text, notes, cited);
       hits.push({ ...raw, anchor, accepted, holder: hName });
@@ -754,6 +773,28 @@ export function judgeParagraphOpinions(input: {
     out.push({ sentence: s, hits });
   }
   return out;
+}
+
+/** Modals that state a plan, need or instruction – what a note's plan line says without one ("Avoid twisting …"). */
+const PLAN_MODAL = /^(?:should|ought to|needs? to|has to|have to|plans? to|(?:is|are) planning to|aims? to|(?:is|are) aiming to|intends? to)\b/;
+/** Modals that report a plan only where the draft says it is one ("recorded in the plan that sessions would be weekly"). */
+const PLAN_MODAL_FRAMED = /^(?:will|would|shall)\b/;
+/** Advice words a note's plan line states as the instruction itself ("advising ice and compression" – "Ice and compression …"). */
+const ADVICE_WORDS = /^(?:(?:is|are|be|being|been) (?:strongly )?(?:advised|recommended)|recommend(?:s|ing)|advis(?:es|ing))$/;
+
+/**
+ * The words of a modal or advice hit that only say it is a plan, need or advice (check2-WB N2), for findAnchor's plan
+ * reading: "should", "needs to", "plans to" …; "will" / "would" / "shall" only when the draft reports a plan, request,
+ * explanation or advice (`framed`); an advice verb. Never "can", "may", "might", "could" or "must" (ability, possibility
+ * and a stronger "must" are not a plan instruction), nor a negated modal.
+ */
+function planWordsOf(raw: RawHit, framed: boolean): string | undefined {
+  if (raw.label === "need, plan or prediction") {
+    const m = PLAN_MODAL.exec(raw.phrase) ?? (framed ? PLAN_MODAL_FRAMED.exec(raw.phrase) : null);
+    return m ? m[0] : undefined;
+  }
+  if (raw.label === "advice" && ADVICE_WORDS.test(raw.phrase)) return raw.phrase;
+  return undefined;
 }
 
 /** The note sentence an allow matched in, as best known (the sentence holding the phrase's last word), else the note's first. */
