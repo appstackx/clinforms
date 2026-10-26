@@ -278,7 +278,7 @@ describe("WB's fix generators through WD's engine", () => {
     assert.ok(compact.fixes.some((f) => f.generator === "attribution-prefix"), "the short suffix is");
   });
 
-  it("\"Remove the comment\" takes out a sentence about the notes (not a clinical negative) and keeps the answer", async () => {
+  it("\"Remove the comment\" takes out a sentence that comments on a note – never a clinical negative – and keeps the answer", async () => {
     const { fixes } = await offers({ box: "progress_current_status", paragraph: { text: "Sitting tolerance was 20 minutes on 18/03/2026. No frequency was recorded in that note.", cites: ["N-001"] } });
     const remove = fixes.find((f) => f.generator === "remove-commentary");
     assert.ok(remove, JSON.stringify(fixes.map((f) => f.generator)));
