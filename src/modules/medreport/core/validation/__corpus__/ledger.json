@@ -1,0 +1,202 @@
+{
+ "_about": "Every allow hook, exemption, pre-strip, threshold, acknowledgement rule and one-click generator of the validators, the review, assembly and the fill. Each needs at least minBlock must-block cases tagged hook:<id> (expect BLOCK, NOT_OFFERED or REFUSED_*) and a test seam (core/validation/registry.ts HOOK_IDS + withHookDisabled) whose disabling turns at least one tagged PASS case red. Hooks marked 'removed' must never come back; their cases guard that. Add a hook here in the same commit that adds it to the product.",
+ "minBlock": 5,
+ "hooks": [
+  {
+   "id": "notes-absence-strip",
+   "kind": "prestrip",
+   "where": "core/validation/opinion-language.ts (removed: NOTES_ABSENCE_SENTENCE, 4c8843e)",
+   "owner": "WB",
+   "note": "A 'No … was recorded' sentence stripped before the opinion check. Must never come back (R-safety-1)."
+  },
+  {
+   "id": "narrated-return",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts (removed: PAST_NARRATIVE_BEFORE / NARRATED_BACK_BEFORE, 4c8843e)",
+   "owner": "WB",
+   "note": "A narrated 'before returning / going back' accepted unless a deny-list word appears (R-safety-4)."
+  },
+  {
+   "id": "statusRecorded",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts statusRecorded",
+   "owner": "WB",
+   "note": "'Back to normal work/activity' accepted when a cited note records the return (fa14c72 tables, F1)."
+  },
+  {
+   "id": "quoted-in-source",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts (indexOf acceptance; WB replaces it with findAnchor)",
+   "owner": "WB",
+   "note": "An opinion phrase accepted when it appears in a cited note (N-ATTR-2: no goal, hedge, negation, modality or polarity check today)."
+  },
+  {
+   "id": "sameRestrictionWording",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts sameRestrictionWording",
+   "owner": "WB",
+   "note": "'No restrictions' accepted when the note uses the same restriction wording."
+  },
+  {
+   "id": "sameCausalWording",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts sameCausalWording",
+   "owner": "WB",
+   "note": "Causation wording accepted when the note uses the same causal wording."
+  },
+  {
+   "id": "exerciseOnBalance",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts exerciseOnBalance",
+   "owner": "WB",
+   "note": "'On balance' accepted when it is about balance exercises."
+  },
+  {
+   "id": "noteGivesOpinion",
+   "kind": "allow",
+   "where": "core/validation/opinion-language.ts (B2-1 'in X's opinion' / 'expect … to ease' acceptance)",
+   "owner": "WB",
+   "note": "An attributed opinion accepted when a cited note holds an opinion – must be a note THAT clinician wrote."
+  },
+  {
+   "id": "first-person-licence",
+   "kind": "allow",
+   "where": "core/validation/voice.ts / core/voice.ts otherCliniciansInFirstPerson (licence (i): own notes; WB adds licence (ii), the possessive)",
+   "owner": "WB",
+   "note": "First person allowed only when every cited note is the voice owner's; a possessive that matches the owner named in a cited note may be acknowledged by the approver."
+  },
+  {
+   "id": "approver-acceptance",
+   "kind": "ack",
+   "where": "core/validation (WB) + review (WC): 'Accept as the note's words'",
+   "owner": "WB",
+   "note": "Khuram 26/10: the approver may accept with one click a drafted return-to-work / work-status line that their own note records. Nothing else."
+  },
+  {
+   "id": "edited-ack",
+   "kind": "ack",
+   "where": "core/validation/index.ts canAcknowledge (OPINION_LANGUAGE / OTHER_CLINICIAN_VOICE on edited text)",
+   "owner": "WC",
+   "note": "Edited text: the approver – and only the approver – may acknowledge (ackPolicy approver)."
+  },
+  {
+   "id": "clinician-origin-skip",
+   "kind": "exemption",
+   "where": "core/validation/opinion-language.ts + validation/voice.ts (origin 'clinician' is not checked)",
+   "owner": "WC",
+   "note": "Text counted as the clinician's own words skips the opinion and voice checks; only approver-stamped text may (C-ATTR-4, C-ATTR-5, R-safety-3)."
+  },
+  {
+   "id": "draft-residue",
+   "kind": "threshold",
+   "where": "ui/components/review (WC: 0.8 token overlap with any drafted sentence keeps drafted-text strictness; c1f774a's 30% rule is gone)",
+   "owner": "WC",
+   "note": "A drafted sentence kept, cut and pasted back, or changed by a word or a mark stays drafted text."
+  },
+  {
+   "id": "staff-answer-settles",
+   "kind": "exemption",
+   "where": "ui/components/review/review-model.ts settleGapsByAnswer (stop-gap c; WC replaces it with the approver rule)",
+   "owner": "WC",
+   "note": "A person's answer settles the box's gaps – never a clinician box's when the person is not the approver (NEW-1)."
+  },
+  {
+   "id": "not-applicable-drop",
+   "kind": "exemption",
+   "where": "core/validation/index.ts runValidators (a not-applicable box's flags are dropped; WA1 drives it from the issue state)",
+   "owner": "WA1",
+   "note": "Only a box that issues nothing drops its content checks; MISSING_PLACEHOLDER stays while a merge code would stay on the issued document (R-safety-2, R-safety-8)."
+  },
+  {
+   "id": "condition-parser",
+   "kind": "exemption",
+   "where": "core/conditions.ts conditionWanted / conditionOf (WA1 freezes conditions at creation)",
+   "owner": "WA1",
+   "note": "A box ruled out by its condition prints nothing and drops its checks – the parser must read 'Only if … not …', lettered and 'either of the above' conditions right; unresolved means applicable."
+  },
+  {
+   "id": "name-instead",
+   "kind": "one-click",
+   "where": "ui/components/review/review-model.ts nameClinicianFix / core/voice.ts nameClinicianInstead",
+   "owner": "WB",
+   "note": "'Name X instead' – only when every cited note is X's and no own-opinion wording is present; never moves the approver's opinion onto someone else."
+  },
+  {
+   "id": "use-my-name",
+   "kind": "one-click",
+   "where": "(removed: 'Use my name', 4c8843e)",
+   "owner": "WB",
+   "note": "Must never be offered on a clinical act (R-safety-5)."
+  },
+  {
+   "id": "tick-suggested",
+   "kind": "one-click",
+   "where": "ai/assemble.ts held-back choice suggestedAnswer + issues.tsx 'Tick “…”'",
+   "owner": "WD",
+   "note": "A one-click tick: never on a clinician_opinion or physio_choice box (C-2), never from an unrelated duration (R-safety-7), never on a grade scale, never for staff."
+  },
+  {
+   "id": "remove-absence",
+   "kind": "one-click",
+   "where": "ui/components/review/review-model.ts removeAbsenceSentences ('Remove it')",
+   "owner": "WB",
+   "note": "Removes 'not recorded' wording the answer now covers – never a clinical negative finding (R-regression-5)."
+  },
+  {
+   "id": "own-voice",
+   "kind": "one-click",
+   "where": "core/voice.ts rewriteInFirstPerson ('Write in my own voice')",
+   "owner": "WB",
+   "note": "Only the owner's own name becomes 'I'; never a GP's or colleague's act (C-1); never on a colleague's note."
+  },
+  {
+   "id": "repeat-removal",
+   "kind": "one-click",
+   "where": "core/validation/draft-fit.ts repeats + review fixes (WD: whole sentences only, figures kept)",
+   "owner": "WD",
+   "note": "Removing a repeated sentence never splits a number or abbreviation, never orphans 'He recorded', never removes initial/current findings (B3-2, R-regression-3, R-regression-4, B3-5)."
+  },
+  {
+   "id": "value-only",
+   "kind": "one-click",
+   "where": "ai/assemble.ts compact-cell value extraction (WD: hidden when the paragraph cites another clinician's note)",
+   "owner": "WD",
+   "note": "A compact answer never strips 'assessed by <colleague>' (C-REV-1)."
+  },
+  {
+   "id": "plain-wording",
+   "kind": "prestrip",
+   "where": "core/voice.ts plainClinicalWording at assembly (WD stops running it automatically)",
+   "owner": "WD",
+   "note": "'On … I recorded that X' never becomes a bare 'X' that hides who recorded it (B3-4)."
+  },
+  {
+   "id": "meta-wording",
+   "kind": "prestrip",
+   "where": "ai/assemble.ts META_WORDING (WD narrows it and holds back instead of dropping)",
+   "owner": "WD",
+   "note": "Drafting meta-wording holds back the sentence; never drops a paragraph or invents a 'No clinician recorded an opinion' gap (R-regression-1)."
+  },
+  {
+   "id": "scope-strip",
+   "kind": "prestrip",
+   "where": "core/scope.ts removeSentencesWithTerms (WD: the shared tokenizer, notes policy)",
+   "owner": "WD",
+   "note": "Scope minimisation never cuts a figure ('PSFS 6.5' never becomes 'PSFS 6') (N-1)."
+  },
+  {
+   "id": "leave-blank-bulk",
+   "kind": "exemption",
+   "where": "ui/components/review/box-items.ts leaveOptionalBoxesBlank",
+   "owner": "WC",
+   "note": "'Leave optional boxes blank' – optional boxes only (B2-26), never a clinician box for staff, never a box whose merge code would stay printed."
+  },
+  {
+   "id": "fill-leave-blank",
+   "kind": "exemption",
+   "where": "forms/docx-fill.ts leftBlank handling (WA2: fill outcomes, strict FINAL)",
+   "owner": "WA2",
+   "note": "A box left blank on a FINAL copy prints nothing: no pre-printed mark, tick, option list, default, frame or merge code."
+  }
+ ]
+}

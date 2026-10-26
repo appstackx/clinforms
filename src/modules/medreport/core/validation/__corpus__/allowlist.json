@@ -1,0 +1,4 @@
+{
+  "_about": "Differential gate (scripts/medreport/corpus-diff.ts): inputs that BLOCK on the production validators (e132057) but not on the candidate. Each entry needs Khuram's approval recorded: approvedBy \"Khuram\", approvedOn (YYYY-MM-DD), decision, why. Only the integrator edits this file; corpus-guard.mjs refuses an entry without an approval.",
+  "entries": {}
+}
