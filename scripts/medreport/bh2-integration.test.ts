@@ -41,6 +41,9 @@ import { dispositionIsStale } from "../../src/modules/medreport/core/issue-state
 import { setDisposition } from "../../src/modules/medreport/ui/components/review/reducer";
 import { offeredActions, offeredFixes, nameClinicianFix } from "../../src/modules/medreport/ui/components/review/fixes";
 import { reviewReducer } from "../../src/modules/medreport/ui/components/review/use-review-state";
+import { OneClickOffers, offersForFlag, reviewOneClicks } from "../../src/modules/medreport/ui/components/review/one-click-offers";
+import React, { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { settleConditionalGaps } from "../../src/modules/medreport/ui/components/review/gaps";
 import type { Report, ReportFlag } from "../../src/modules/medreport/core/types";
 import { canAcknowledge, validateReport } from "../../src/modules/medreport/core/validation";
@@ -53,6 +56,8 @@ import { CANDIDATE_ENGINE } from "../../src/modules/medreport/core/validation/__
 import { resolveChoice } from "../../src/modules/medreport/forms/choice-marks";
 
 process.env.MEDREPORT_AI_MODE = "demo";
+// The review's components are compiled with the classic JSX runtime here (as the other component tests do).
+(globalThis as unknown as { React: typeof React }).React = React;
 
 async function built(input: Record<string, unknown>): Promise<Built> {
   return buildCase(CaseInputSchema.parse({ ...input, signMode: "demo" }) as CaseInput, { signMode: "demo" });
@@ -315,5 +320,34 @@ describe("WB's fix generators through WD's engine", () => {
     const again = validateReport(viaReducer, b.template, { form: b.form, voice: { owner: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } });
     assert.deepEqual(again.blocking.filter((f) => f.sectionKey === accept!.key && f.code === "OPINION_LANGUAGE"), []);
     assert.deepEqual(reviewReducer(report, { type: "acceptNoteWords", key: accept!.key, paragraphId: accept!.paragraphId, phrase: accept!.noteWords!.phrase, sentence: accept!.noteWords!.sentence, noteId: accept!.noteWords!.noteId, actor: actorOf("pat") }).sections, report.sections, "staff: refused");
+  });
+});
+
+describe("the review shows the one-click offers on their flags (one-click-offers.tsx)", () => {
+  const caseOf = async (input: Record<string, unknown>) => {
+    const b = await buildCase(CaseInputSchema.parse(input) as CaseInput, {});
+    const res = validateReport(b.report, b.template, { form: b.form, voice: { owner: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } });
+    return { b, report: { ...b.report, flags: res.flags } as Report };
+  };
+  const html = (report: Report, flag: ReportFlag, who: "sarah" | "pat", template: Parameters<typeof reviewOneClicks>[1]["template"], form: Parameters<typeof reviewOneClicks>[1]["form"]) =>
+    renderToStaticMarkup(createElement(OneClickOffers, { report, flag, actor: actorOf(who), dispatch: () => undefined, offers: reviewOneClicks(report, { actor: actorOf(who), template, form }), template: template ?? undefined, form }));
+
+  it("the approver sees \"Accept as my note's words\" with the note's words on the opinion flag; staff see nothing", async () => {
+    const { b, report } = await caseOf({
+      notes: [{ id: "N-001", author: "sarah", date: "2026-03-18", type: "initial_assessment", subjective: "Took 3 days off work after the lifting incident, then back on normal duties with breaks from lifting." }],
+      box: "incident_history",
+      paragraph: { text: "After the lifting incident he had 3 days off work before returning to normal duties.", cites: ["N-001"], basis: "patient_reported" },
+    });
+    const flag = report.flags.find((f) => f.code === "OPINION_LANGUAGE")!;
+    assert.ok(flag);
+    assert.equal(offersForFlag(reviewOneClicks(report, { actor: actorOf("sarah"), template: b.template, form: b.form }), flag).actions.length, 1);
+    assert.match(html(report, flag, "sarah", b.template, b.form), /Accept as my note&#x27;s words \(“Took 3 days off work/);
+    assert.equal(html(report, flag, "pat", b.template, b.form), "");
+  });
+
+  it("the engine's text fix is offered on its flag with a preview first (\"Tom Ellis recorded that …\")", async () => {
+    const { b, report } = await caseOf({ box: "progress_current_status", paragraph: { text: "Lumbar movement was full and pain-free.", cites: ["N-002"] } });
+    const flag = report.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE")!;
+    assert.match(html(report, flag, "sarah", b.template, b.form), /Name Tom Ellis|Tom Ellis/);
   });
 });

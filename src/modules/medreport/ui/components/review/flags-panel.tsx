@@ -15,12 +15,13 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { todayIso } from "../../../core/dates";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { actsAsApprover } from "../../../core/provenance";
-import type { EpisodeBundle, Gap, Report, ReportFlag } from "../../../core/types";
+import type { EpisodeBundle, FormDefinition, Gap, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { acknowledgeRefusal } from "../../../core/validation";
 import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
+import { OneClickOffers, type ReviewOneClicks } from "./one-click-offers";
 import { MIN_GAP_REASON, approverOnlyLine, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
 import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
@@ -41,7 +42,14 @@ export function FlagsPanel({
   canAcknowledge,
   questionLabel,
   consentRecorder = true,
+  oneClicks,
+  template,
+  form,
 }: {
+  /** bh2-rc1: the one-click corrections the review offers on this report (one-click-offers.tsx reviewOneClicks). */
+  oneClicks?: ReviewOneClicks;
+  template?: ReportTemplate;
+  form?: FormDefinition | null;
   /**
    * Fix wave 3: whether the person on this screen may record the patient's consent for a report built from uploaded
    * notes (a clinic's member who may approve; anyone in the public demo).
@@ -110,6 +118,9 @@ export function FlagsPanel({
           {...(f.code === "APPROVER_DECISION" && approver && f.sectionKey ? { onAdopt: () => dispatch({ type: "adopt", key: f.sectionKey ?? "", actor }) } : {})}
           {...jumpProps(f.sectionKey)}
           {...(named && { fix: { label: `Name ${named.name} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+          {...(oneClicks && !readOnly
+            ? { extra: <OneClickOffers report={report} flag={f} actor={actor} dispatch={dispatch} offers={oneClicks} template={template} form={form ?? null} readOnly={readOnly} skipGenerators={named ? ["name-instead"] : []} /> }
+            : {})}
         />
         {consentFlag(f) ? <RecordConsent onRecord={(givenOn) => dispatch({ type: "recordConsent", givenOn, actor })} /> : null}
       </div>

@@ -13,7 +13,7 @@
  *
  * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw, UserRoundCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
 import { DATA_CHECK_LABELS, flagCodeLabel, flagEvidenceShown } from "../../../core/labels";
@@ -112,6 +112,7 @@ export function FlagItem({
   fix,
   onAdopt,
   onlyWho,
+  extra,
 }: {
   flag: ReportFlag;
   canAck: boolean;
@@ -126,6 +127,8 @@ export function FlagItem({
   onAdopt?: () => void;
   /** WC design 4: who may clear this, when the person here may not ("Only Sarah Reid, the approving clinician, can …"). */
   onlyWho?: string | null;
+  /** bh2-rc1: the one-click corrections offered on this flag (one-click-offers.tsx), shown while it is open. */
+  extra?: ReactNode;
 }) {
   const [acking, setAcking] = useState(false);
   const acked = Boolean(flag.acknowledged);
@@ -206,6 +209,7 @@ export function FlagItem({
             </div>
           )
         )}
+        {!acked && !readOnly && !acking && extra}
       </div>
     </div>
   );

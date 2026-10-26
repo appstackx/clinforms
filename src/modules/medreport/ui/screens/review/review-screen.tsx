@@ -65,6 +65,7 @@ import { ActivityPanel } from "../../components/review/activity-panel";
 import { ApproveDialog } from "../../components/review/approve-dialog";
 import { CopyAnswersPanel, useAnswersCopy } from "../../components/review/copy-answers";
 import { FlagsPanel } from "../../components/review/flags-panel";
+import { NO_ONE_CLICKS, reviewOneClicks } from "../../components/review/one-click-offers";
 import { PreviewPanel, type FormFileState } from "../../components/review/preview-panel";
 import { QuestionCard } from "../../components/review/question-card";
 import { SourcesPanel } from "../../components/review/sources-panel";
@@ -318,6 +319,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     [report, template, form, signed, actor],
   );
   const blankSummary = useMemo(() => emptyOptionalSummary(report, { template, form }, blankCandidates), [report, template, form, blankCandidates]);
+  // bh2-rc1 (plan WI): the one-click corrections on the report's flags – the engine's text fixes and WB's actions – once
+  // per report change (one-click-offers.tsx).
+  const oneClicks = useMemo(() => (signed ? NO_ONE_CLICKS : reviewOneClicks(report, { actor, template, form })), [report, actor, template, form, signed]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
@@ -568,6 +572,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         </TabsContent>
         <TabsContent value="flags" className="mt-0">
           <FlagsPanel
+            oneClicks={oneClicks}
+            template={template ?? undefined}
+            form={form}
             report={report}
             bundle={bundle}
             items={items}
