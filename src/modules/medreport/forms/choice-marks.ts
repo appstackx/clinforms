@@ -102,10 +102,21 @@ function namesSeveral(options: readonly string[], text: string): boolean {
   return !(matched.length === 2 && yes && no && matched.includes(yes) && matched.includes(no));
 }
 
+/**
+ * Bounded work (review 26/10): a choice answer longer than this, or a list of more printed options, is none of them –
+ * reading it against every option would cost options × characters (no real form comes near: Blue Heart's longest list
+ * prints 11 options).
+ */
+export const MAX_CHOICE_TEXT = 1_000;
+export const MAX_CHOICE_OPTIONS = 200;
+
 /** What `answer` chooses among `options` (the anchor's printed options, in the anchor's order). Pure. */
 export function resolveChoice(field: ChoiceField, answer: ChoiceAnswer, options: readonly string[]): ChoiceResolution {
   const value = answer.value;
   const text = (answer.text ?? "").trim();
+  if (text.length > MAX_CHOICE_TEXT || (typeof value === "string" && value.length > MAX_CHOICE_TEXT) || options.length > MAX_CHOICE_OPTIONS) {
+    return { kind: "unmatched", text: (text || String(value ?? "")).slice(0, 80) };
+  }
   if (isTextGrid(field, answer)) {
     if (!text) return { kind: "none_given" };
     if (saysNotKnown(text, options)) return { kind: "unknown", text };

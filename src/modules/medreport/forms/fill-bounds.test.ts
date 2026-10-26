@@ -224,4 +224,9 @@ test("copies, insertions and removals are counted: run properties of thousands o
     const res = timed(bytes, fields, "hostile.docx", answers);
     assert.ok(within(res, neutral(bytes)), `${label}: ${res.ms} ms (${res.refused ?? "filled"})`);
   }
+  // Answers of 60,000 lines each: the lines an answer makes are counted too – refused, not written.
+  const cells = docx(`<w:tbl>${Array.from({ length: 20 }, (_, i) => `<w:tr><w:tc>${p(r(`Q${i}`))}</w:tc><w:tc>${p("")}</w:tc></w:tr>`).join("")}</w:tbl>`);
+  const tall = Array.from({ length: 20 }, (_, i) => field(`F-${i + 1}`, { kind: "docx", target: "table_cell", blockId: `t0.r${i}.c1` }));
+  const lines = Array.from({ length: 60_000 }, () => "a").join("\n");
+  assert.equal(timed(cells, tall, "hostile.docx", Object.fromEntries(tall.map((f) => [f.id, { text: lines }]))).refused, "FORM_TOO_COMPLEX");
 });

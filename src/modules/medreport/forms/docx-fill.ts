@@ -233,7 +233,7 @@ export const FILL_LEAVE_BLANK_HOOK = defineHook("fill-leave-blank");
  * - each change counts the children its parent re-indexes (xmldom re-indexes a parent's children on every removal and
  *   every insertion before a sibling – a run split, a line or row left off, an answer line added).
  * Blue Heart's 17 forms hold at most 613 blocks (paragraphs and table cells), 20 paragraphs in a cell and 13 runs in a
- * line; filling one takes at most about 31,000 steps, long answers included – 1.5% of the budget (DocxFillReport.work).
+ * line; filling one takes at most about 34,000 steps, long answers included – 1.7% of the budget (DocxFillReport.work).
  * At the budget a fill has done well under 2 s of work on the hostile shapes of the review. Past any bound the form is
  * refused 422 FORM_TOO_COMPLEX before or while it is filled:
  * - MAX_FILL_BLOCKS blocks in the body (the passes over the whole body – the template instructions – stay linear up to
@@ -677,6 +677,8 @@ function withoutPlaceholderStyle(ctx: Ctx, rPr: XmlElement | null): XmlElement |
 
 function makeRun(ctx: Ctx, lines: string[], rPr: XmlElement | null, kind: RunKind): XmlElement {
   const { dom } = ctx;
+  // Counted: an answer of many lines makes many nodes (bounded work – an answer is never larger than its request).
+  step(ctx, 1 + 2 * lines.length + Math.floor(lines.reduce((n, l) => n + l.length, 0) / TEXT_PER_STEP));
   const run = wEl(dom, "r");
   WRITTEN.add(run);
   if (kind === "answer") ctx.current?.runs.push(run);

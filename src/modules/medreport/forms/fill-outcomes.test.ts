@@ -27,7 +27,7 @@ import type { FormAnchor, FormAnswer, FormDefinition, FormField } from "../core/
 import { withHookDisabled } from "../core/validation/registry";
 import { buildDocxOutline } from "./docx-outline";
 import { FILL_LEAVE_BLANK_HOOK, fillDocxReport, leadBefore, openerLead, repeatedLead } from "./docx-fill";
-import { choiceAnswerMatches, resolveChoice } from "./choice-marks";
+import { MAX_CHOICE_OPTIONS, MAX_CHOICE_TEXT, choiceAnswerMatches, resolveChoice } from "./choice-marks";
 import { DOCX_MIME, sha256Hex } from "./file";
 import { FillRefusedError, fillOutcomesHeader, renderFormFile } from "./render-form";
 import { MAX_FIELDS_PER_BLOCK, MAX_REQUEST_FIELDS, formRequestCapIssues } from "./request-caps";
@@ -484,6 +484,9 @@ test("ADV-2: an answer naming several options of a single choice is none of them
   assert.deepEqual(resolveChoice(yn, { text: "Yes – no restrictions" }, ["Yes", "No"]), { kind: "chosen", options: ["Yes"] });
   // A "tick all that apply" row still takes several.
   assert.deepEqual(resolveChoice(F.grid, { text: "Neck and back" }, ["Neck", "Back", "Knee"]), { kind: "chosen", options: ["Neck", "Back"] });
+  // Bounded work: an answer too long to be a choice, or a list longer than any form prints, is none of them.
+  assert.equal(resolveChoice(F.list, { text: `Exercise ${"x".repeat(MAX_CHOICE_TEXT)}` }, options).kind, "unmatched");
+  assert.equal(resolveChoice(F.list, { text: "Exercise" }, Array.from({ length: MAX_CHOICE_OPTIONS + 1 }, (_, i) => (i ? `Option ${i}` : "Exercise"))).kind, "unmatched");
 });
 
 test("ADV-7b: a chosen column's mark cleared later by another answer mapped onto the same cell is fatal", () => {
