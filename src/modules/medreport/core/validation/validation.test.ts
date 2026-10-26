@@ -86,7 +86,7 @@ test("citations: a dropped-ID flag from drafting is carried over while the parag
  * Figures
  * ----------------------------------------------------------------------------------------------*/
 
-test("figures: dates and numbers must be in the cited sources; dates block, numbers warn", () => {
+test("figures: dates and numbers must be in the cited sources; dates block, numbers block in drafted text and warn in a person's", () => {
   const good = para(
     "On 18/03/2026 Sarah Reid recorded central low back pain of 7/10 at worst, a sitting tolerance of twenty minutes and an SLR of 70°; a review was planned in about six to seven weeks.",
     ["N-001"],
@@ -102,10 +102,14 @@ test("figures: dates and numbers must be in the cited sources; dates block, numb
 
   assert.deepEqual(fig(good.id), [], JSON.stringify(fig(good.id)));
   assert.deepEqual(fig(wrongDate.id).map((f) => [f.evidence, f.severity]), [["19/03/2026", "blocking"]]);
-  assert.deepEqual(fig(wrongNumber.id).map((f) => [f.evidence, f.severity]), [["8", "warning"]]);
+  // bh2-rc1 (DoC I4, ISSUE-na-figure-01): a drafted number no cited source holds blocks; a person's own number warns.
+  assert.deepEqual(fig(wrongNumber.id).map((f) => [f.evidence, f.severity]), [["8", "blocking"]]);
   assert.deepEqual(fig(wrongPeriod.id).map((f) => [f.evidence, f.severity]), [["8 weeks", "blocking"]]);
   assert.deepEqual(fig(future.id).map((f) => f.severity), ["blocking"]);
-  assert.deepEqual(fig(wrongLevel.id).map((f) => [f.evidence, f.severity]), [["L3/4", "warning"]]); // L4 is recorded, L3 is not
+  assert.deepEqual(fig(wrongLevel.id).map((f) => [f.evidence, f.severity]), [["L3/4", "blocking"]]); // L4 is recorded, L3 is not
+  const typed = { ...wrongNumber, id: "fig-person-1", origin: "edited" as const, originalText: "Pain was 7/10 at worst." };
+  const byPerson = run(withSection(testReport(SOL), "examination_findings", [typed]), SOL);
+  assert.deepEqual(of(byPerson, "FIGURE_NOT_IN_SOURCE", typed.id).map((f) => [f.evidence, f.severity]), [["8", "warning"]]);
 });
 
 test("figures: a computed fact supports its own figures but not a recalculation", () => {
