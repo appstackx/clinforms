@@ -32,14 +32,18 @@ describe("safety corpus: differential gate against production", () => {
     const pending = (JSON.parse(fs.readFileSync(path.join(ROOT, "src/modules/medreport/core/validation/__corpus__/pending.json"), "utf8")) as { cases: Record<string, unknown> }).cases ?? {};
     const report = await runDiff({ base: BASE, ...(process.env.CORPUS_DIFF_REPLAY ? { replay: process.env.CORPUS_DIFF_REPLAY } : {}) });
     const unexpected = report.regressions.filter((r) => !pending[`DIFF:${r.id}`]).map((r) => `${r.id}: ${r.detail}`);
-    const stale = Object.keys(pending)
-      .filter((k) => k.startsWith("DIFF:"))
-      .filter((k) => !report.regressions.some((r) => `DIFF:${r.id}` === k));
+    // bh2-base2: an allowlisted regression (Khuram's approval) may stay pending until its owner's merge – reported apart.
+    const allowlisted = new Set(report.rows.filter((r) => r.allowlisted).map((r) => `DIFF:${r.id}`));
+    const diffPending = Object.keys(pending).filter((k) => k.startsWith("DIFF:"));
+    const stillPending = diffPending.filter((k) => allowlisted.has(k));
+    const stale = diffPending.filter((k) => !allowlisted.has(k)).filter((k) => !report.regressions.some((r) => `DIFF:${r.id}` === k));
     console.log(
-      `differential against ${report.base}: ${report.inputs} inputs, ${report.rows.filter((r) => r.production).length} block on production, ${report.regressions.length} regression(s) (${unexpected.length} not pending), ${report.stricter} stricter here`,
+      `differential against ${report.base}: ${report.inputs} inputs, ${report.rows.filter((r) => r.production).length} block on production, ${report.regressions.length} regression(s) (${unexpected.length} not pending), ${allowlisted.size} allowlisted, ${report.stricter} stricter here`,
     );
+    if (stillPending.length) console.log(`allowlisted and still pending (their owners land them; the integrator removes them at that merge): ${stillPending.join(", ")}`);
     if (stale.length) console.log(`stale DIFF pending (now block again – the integrator removes them): ${stale.join(", ")}`);
     assert.deepEqual(unexpected, []);
-    if (process.env.CORPUS_STRICT_PENDING === "1") assert.deepEqual(stale, []);
+    // Release (empty pending.json): neither stale nor allowlisted-but-pending entries may remain.
+    if (process.env.CORPUS_STRICT_PENDING === "1") assert.deepEqual([...stale, ...stillPending], []);
   });
 });

@@ -1,4 +1,21 @@
 {
   "_about": "Differential gate (scripts/medreport/corpus-diff.ts): inputs that BLOCK on the production validators (e132057) but not on the candidate. Each entry needs Khuram's approval recorded: approvedBy \"Khuram\", approvedOn (YYYY-MM-DD), decision, why. Only the integrator edits this file; corpus-guard.mjs refuses an entry without an approval.",
-  "entries": {}
+  "entries": {
+    "ISSUE-na-noprint-01": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "decision": "Allowed (Khuram's decisions of 26/10/2026, allowlist entry DIFF:ISSUE-na-noprint-01): a box its condition rules out, which prints nothing on the issued form, is not checked – the content is never issued.",
+      "why": "Production (e132057) still checks a box that its condition rules out; the release drops that box's checks only when the box issues nothing (WA1 design 5: content checks are dropped only when the box's issue state is not 'answer'). The case itself pins that nothing of the box prints (fill: notContains). With applies_anyway every check runs again (ISSUE-na-opinion-02 is its negative twin).",
+      "owner": "WA1",
+      "pending": "DIFF:ISSUE-na-noprint-01 stays in pending.json (owner WA1) until WA1's issue state lands and holds the case; the integrator removes it at that merge."
+    },
+    "OPN-ok-f1": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "decision": "Allowed (Khuram's decisions of 26/10/2026, allowlist entry DIFF:OPN-ok-f1): the faithful narrated return the approver's own note records (F1) is approvable – the intended F1 fix.",
+      "why": "Production (e132057) blocks 'took 3 days off work, then returned to normal duties' although the approver's own note records exactly that; the F1 fix (fa14c72's statusRecorded tables, kept by WB design 1) lets it pass. Its anti-deny-list mutations and OPN-twin-f1 (a need inserted into the same return) must still block.",
+      "owner": "WB",
+      "pending": "DIFF:OPN-ok-f1 stays in pending.json (owner WB) until WB's opinion guard lands and holds the case; the integrator removes it at that merge."
+    }
+  }
 }

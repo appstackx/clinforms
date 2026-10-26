@@ -41,6 +41,8 @@ src/modules/medreport/
                           (registration values), answer-shape.ts, fields.ts (shared leaf) – owners in docs/bh2-ownership.json
     actor.ts issue-types.ts fix-types.ts   bh2 shared types (W0.6): Actor, BoxState / IssueState, AckPolicy / FixProposal
     text/sentences.ts     bh2 shared sentence tokenizer (W0.5): splitSentences(text, "prose" | "notes"), safe-edit checks
+    activity-actions.ts   bh2 report activity codes the release adds (W0 follow-up, bh2-base2; labelled in activity-panel.tsx)
+    session-dates.ts      session dates filled by code (WE; createFormReport already calls it – a stub until WE fills it in)
     form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
     form-tables.ts        table answers ("rows"): the appointments table filled by code, row helpers (pure)
     question-set.ts       portal question sets (FormKind "questions"): parse pasted questions, classify, placeholder file
@@ -97,6 +99,8 @@ src/modules/medreport/
     pdf-acro-fill.ts      AcroForm answers: ticks per widget, radio labels, option fields, character limits, inherited /DA
     pdf-table.ts pdf-overlay-marks.ts   tables of fields / flat tables; X marks in flat tick boxes, date slots
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
+    choice-marks.ts       choiceAnswerMatches(field, answer) – does an answer select a printed option (WA2; pure, WA1's
+                          choice validator reads it; bh2-base2 seam)
     demo-notice.ts        demonstration footer (FormDefinition.demoNotice) on every page: PDF bottom margin, Word footer
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)
     convert.ts            docxToPdf(buf) via LibreOffice where installed (hardened, max 2 at a time), else null
@@ -111,7 +115,7 @@ src/modules/medreport/
                           store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
                           (components/review/review-model.ts re-exports the bh2 split: status, labels, reducer,
-                          provenance, gaps, fixes)
+                          provenance, gaps, fixes; review-header.tsx re-exports approved-banner.tsx – bh2-base2)
                           store/* (browser backend, server cache + write queue + transport)
                           routes.ts (useStudioPaths: every Studio link from HostHooks.basePath), studio-copy.ts (tenant-only
                           production copy), studio-events.ts (non-identifying analytics properties for HostHooks.track)
