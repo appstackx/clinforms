@@ -229,8 +229,8 @@ test("safety amendment (C-2): a held-back choice is offered as one click only on
   assert.equal(opinion.sections[0].answer?.value, null);
   assert.ok(choiceGap(opinion), "still held back for a person to decide");
   assert.equal(choiceGap(opinion)?.suggestedAnswer, undefined);
-  // The physiotherapist's choice on each report (staff.entry, "chosen by the physiotherapist"): no one-click answer either.
-  const physio = run(withF03({ fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report." }));
+  // The physiotherapist's choice (staff.entry with a clinician choice in its guidance): no one-click answer either.
+  const physio = run(withF03({ fillSource: { kind: "registration", path: "staff.entry" }, guidance: "To be chosen by the clinician." }));
   assert.equal(physio.sections[0].answer?.value, null);
   assert.ok(choiceGap(physio), "held back for the physiotherapist");
   assert.equal(choiceGap(physio)?.suggestedAnswer, undefined, "no one-click answer on the physiotherapist's choice");

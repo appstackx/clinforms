@@ -559,7 +559,7 @@ describe("safety amendment (NEW-1 stop-gap): staff answering never settles a cli
   it("the physiotherapist's choice on each report (“-physio” gap) is a clinician gap", async () => {
     const { isClinicianGap } = await import("./review-model");
     const base = testForm();
-    const choice = field("F-13", { label: "Is the patient fit for work?", answerType: "single_choice", options: ["Fit", "Not fit"], fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report." });
+    const choice = field("F-13", { label: "Duties status – fit or not fit", answerType: "single_choice", options: ["Fit", "Not fit"], fillSource: { kind: "registration", path: "staff.entry" }, guidance: "To be chosen by the clinician." });
     const form: FormDefinition = { ...base, fields: [...base.fields, choice] };
     const bundle = testBundle();
     const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), now: new Date(AT), id: "rpt_physio_choice" });
@@ -570,7 +570,7 @@ describe("safety amendment (NEW-1 stop-gap): staff answering never settles a cli
     assert.equal(byStaff.gaps.find((g) => g.id === physio!.id)?.resolution, undefined);
     const byClinician = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: ACTOR });
     assert.equal(byClinician.gaps.find((g) => g.id === physio!.id)?.resolution?.kind, "resolved");
-    // An ordinary staff entry (no "chosen by the physiotherapist") is not a clinician gap.
+    // An ordinary staff entry (no clinician choice in its guidance) is not a clinician gap.
     assert.equal(isClinicianGap(report, { id: "gap-F-08-staff", sectionKey: "F-08" }), false);
   });
 });
