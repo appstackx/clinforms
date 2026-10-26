@@ -21,7 +21,13 @@ import "server-only";
  *
  * Async because pdf-lib's load/save are async.
  *
- * Owner: forms-engine agent. Signature final.
+ * bh2 WA2 (plan WA2 design 1): fillPdfReport also returns one FillOutcome per answerable field – written; as printed
+ * (nothing to write, or an answer that matches none of the form's boxes or options); not found (no such field, page or
+ * box) – read from the problems met while that field was filled. A decided answer not found or not matched is fatal (a
+ * FINAL copy is refused, forms/render-form.ts). A box left blank is reported as printed: clearing a PDF's printed
+ * defaults is phase 2 (Blue Heart's forms are Word or RTF).
+ *
+ * Owner: WA2 (forms engine) – docs/bh2-ownership.json. fillPdf's signature is unchanged.
  */
 import {
   PDFCheckBox,
@@ -42,6 +48,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { isAnswerableField, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import type { FillOutcome, FillOutcomeKind } from "../core/issue-types";
 import type { FormDefinition, FormField, PdfCharFieldsAnchor, PdfFieldAnchor, PdfOptionField } from "../core/types";
 import {
   answerIsoDate,
@@ -811,7 +818,37 @@ export function trimPrintMarks(doc: PDFDocument): void {
   }
 }
 
+/**
+ * What a problem met while a field was filled says about its outcome (the messages this engine and its table and tick
+ * helpers write for a field): null when the answer was still written.
+ */
+export function pdfProblemOutcome(message: string): { outcome: FillOutcomeKind; problem: string } | null {
+  if (/does not exist in this PDF|has no field called|cannot be written into a PDF|is not a field that can be filled|is not a (?:tick|text) box|has no “[^”]*” box/.test(message)) {
+    return { outcome: "not_found", problem: "its place is not on this PDF form" };
+  }
+  if (/does not match any of the (?:form's|printed) (?:tick boxes|options)|is not one of the list's options|is not one, so they were left blank/.test(message)) {
+    return { outcome: "as_printed", problem: "the answer matches none of the form's boxes or options" };
+  }
+  return null;
+}
+
+/** The completed PDF and what the fill did at each answerable field (form order). */
+export interface PdfFillReport {
+  bytes: Uint8Array;
+  outcomes: FillOutcome[];
+}
+
 export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: PdfFillOptions): Promise<Uint8Array> {
+  return (await fillPdfReport(buf, form, answers, opts)).bytes;
+}
+
+export async function fillPdfReport(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: PdfFillOptions): Promise<PdfFillReport> {
+  // The problems met per field while it is filled (plan WA2 design 1).
+  let current: FormField | null = null;
+  const problems = new Map<FormField, string[]>();
+  const note = (m: string) => {
+    if (current) problems.set(current, [...(problems.get(current) ?? []), m]);
+  };
   const doc = await loadPdfDocument(buf);
   trimPrintMarks(doc);
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -824,7 +861,10 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     bold,
     encode: makeEncoder(font),
     opts,
-    warn: (m) => opts.onWarning?.(m),
+    warn: (m) => {
+      note(m);
+      opts.onWarning?.(m);
+    },
     error: (m) => (opts.onError ? opts.onError(m) : opts.onWarning?.(m)),
     continuations: [],
   };
@@ -836,6 +876,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
   let printedText: TableFillDeps["printedText"];
   for (const field of form.fields) {
     if (!isAnswerableField(field)) continue;
+    current = field;
     const answer = answers[field.id] ?? {};
     const anchor = field.anchor;
     if (anchor.kind === "pdf_field") fillField(ctx, field, answer, anchor);
@@ -862,6 +903,7 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     } else ctx.warn(`${where(field)}: this question has a Word position, so it cannot be written into a PDF.`);
   }
 
+  current = null;
   if (ctx.continuations.length > 0) addContinuationSheet(ctx);
   sameRowFontSizes(ctx);
   if (pdfForm.getFields().length > 0) {
@@ -875,6 +917,15 @@ export async function fillPdf(buf: Uint8Array, form: FormDefinition, answers: Fo
     }
   }
   if (opts.draft) drawDraftMarks(ctx, await printedFooterText(buf, doc));
+  const outcomes: FillOutcome[] = form.fields.filter(isAnswerableField).map((field) => {
+    const answer = answers[field.id] ?? {};
+    const has = answerText(answer) !== "" || Boolean(answer.rows?.length) || typeof answer.value === "boolean";
+    const intended = field.fillSource.kind === "signoff" ? "signoff" : has ? "answer" : "blank";
+    const miss = (problems.get(field) ?? []).map(pdfProblemOutcome).find((x) => x !== null) ?? null;
+    if (!has) return { fieldId: field.id, intended, outcome: "as_printed", fatal: false };
+    if (miss) return { fieldId: field.id, intended, outcome: miss.outcome, fatal: true, note: miss.problem };
+    return { fieldId: field.id, intended, outcome: "written", fatal: false };
+  });
   // A classic cross-reference table (no object streams) opens in the widest range of PDF readers.
-  return doc.save({ useObjectStreams: false });
+  return { bytes: await doc.save({ useObjectStreams: false }), outcomes };
 }

@@ -39,11 +39,38 @@ import "server-only";
  * FINAL: no banner, no markers. Never removes or reorders the referrer's own content (only the blank /
  * dotted answer lines an answer has used are replaced, and the template instructions above).
  *
- * Owner: forms-engine agent. Signature final.
+ * bh2 WA2 (the fill reports what it did, plan WA2 designs 1, 2, 4–6): fillDocxReport returns one FillOutcome per field
+ * (core/issue-types.ts) – what the box was meant to issue (an answer, a sign-off value, a blank or not-applicable box),
+ * what the fill did at its anchor (written, cleared, removed, as printed, not found, collision), and anything left there
+ * that reads as an answer (residue: a pre-printed mark or tick, an option list, a printed default, a merge code, the
+ * printed words of a blank sentence opener, repeated printed words). Residue is checked in the DOM before it is saved, on
+ * the elements resolved before anything changed – never by block ID, because rows and lines are removed. A FINAL copy
+ * with a fatal outcome is refused (forms/render-form.ts, 422); a DRAFT reports it. Fatal: not found, collision, an
+ * answer or sign-off value that was not written, residue on a decided box. Informational (`note`): the template
+ * instructions left off, a "tick all that apply" text answer that names no printed column (nothing is marked).
+ * - Choice anchors end explicit: the chosen options marked, ticked or kept, every other one cleared. An answer the
+ *   engine cannot read as printed options (forms/choice-marks.ts resolveChoice: "Not recorded", an option not printed)
+ *   leaves them as printed – never a guess – and is fatal.
+ * - A box left blank prints nothing that reads as an answer (ledger hook "fill-leave-blank"): pre-printed marks and
+ *   ticks cleared, an option list removed, a printed default removed, a content control or Word form field emptied, and
+ *   (Khuram, 26/10) an optional sentence opener ("To return to …") loses its printed lead words and dots. A merge code
+ *   is cleared only where the box is not applicable or the record has nothing for it – in a box left blank it stays, so
+ *   the copy is refused (the validators block approval before that).
+ * - Bounded work (R-security-2/3): at most MAX_FILL_BLOCKS blocks and MAX_FILL_STEPS steps of searching (else 422
+ *   FORM_TOO_COMPLEX); the typography an answer takes is resolved once per cell and row, lazily, only on forms converted
+ *   from RTF, from at most 64 paragraphs and 16 cells; a line is only left off where its parent holds few siblings.
+ * - normaliseAnswerParagraph on every write path: a paragraph inside a table cell that receives an answer never keeps
+ *   a negative right indent (B0-31, B3-20); on a converted RTF form an answer is never bold, italic or underlined.
+ *
+ * Owner: WA2 (forms engine) – docs/bh2-ownership.json. fillDocx's signature is unchanged.
  */
-import { docxAnchorBlockIds, isAnswerableField, isUnknownAnswer, matchOption, namedOptions, printsDefault, yesNoOption, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
-import { hasMergeToken } from "../core/merge-fields";
+import { HttpError } from "../api/http";
+import { docxAnchorBlockIds, isAnswerableField, printsDefault, type FormFillAnswer, type FormFillAnswers } from "../core/forms";
+import type { BoxState, BoxStateKind, FillOutcome, FillOutcomeKind } from "../core/issue-types";
+import { findMergeTokens, hasMergeToken, listMergeTokensInWords } from "../core/merge-fields";
 import { isConvertedFromRtf } from "../core/rtf/notes";
+import { defineHook, hookEnabled } from "../core/validation/hooks";
+import { resolveChoice, type ChoiceResolution } from "./choice-marks";
 import {
   MAX_INSTRUCTIONS_PER_FORM,
   findTemplateInstructions,
@@ -145,14 +172,107 @@ function remove(node: XmlElement): void {
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Fill context
+ * Fill context, outcomes and the step budget
  * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Ledger hook (core/validation/__corpus__/ledger.json "fill-leave-blank", exemption): a box left blank on a FINAL copy
+ * prints nothing – no pre-printed mark, tick, option list, default, frame or merge code. Disabled only inside the
+ * corpus seam (core/validation/hooks.ts withHookDisabled); the residue checks still run then, so the copy is refused.
+ */
+export const FILL_LEAVE_BLANK_HOOK = defineHook("fill-leave-blank");
+
+/**
+ * Bounded work (R-security-2/3, plan WA2 design 4). Blue Heart's 17 forms hold at most 613 blocks (paragraphs and table
+ * cells) and at most 20 paragraphs in a cell, and a fill of one reads at most a few thousand paragraphs for its
+ * questions (fillStepsUsed). Past any bound the form is refused 422 FORM_TOO_COMPLEX before or while it is filled:
+ * - MAX_FILL_BLOCKS blocks in the body (the passes over the whole body – the template instructions – stay linear up to
+ *   the 200,000-line files of the security review, scripts/medreport/template-instructions.test.ts);
+ * - MAX_BLOCK_PARAGRAPHS paragraphs in a cell that a question fills, ticks or clears (each such question reads all of it);
+ * - MAX_FILL_STEPS paragraphs read for the questions in all (a placeholder looked for, a tick box or option line found).
+ */
+export const MAX_FILL_BLOCKS = 300_000;
+export const MAX_BLOCK_PARAGRAPHS = 2_000;
+export const MAX_FILL_STEPS = 250_000;
+/** Typography sources: at most this many paragraphs of a cell, and cells of a row, are read (plan WA2 design 4). */
+const MAX_SOURCE_PARAGRAPHS = 64;
+const MAX_SOURCE_CELLS = 16;
+
+/** Options of a Word fill (FillOptions plus the issue state, when the caller has it). */
+export interface DocxFillOptions extends FillOptions {
+  /**
+   * What each box issues (WA1's issueState, core/issue-types.ts), when the caller has it: a not-applicable box prints
+   * nothing whatever the answers hold, and its merge code is cleared. Without it the answers say it (core/forms
+   * FormFillAnswer: text / rows = an answer, leftBlank, blank = the record has nothing for it).
+   */
+  states?: Readonly<Record<string, BoxState | undefined>>;
+}
+
+/** What one field was meant to issue and what the fill did there. */
+interface Track {
+  field: FormField;
+  intended: BoxStateKind;
+  /** Why the box is blank / not applicable (BoxState reason), for the merge-code and opener rules. */
+  reason: string | null;
+  /** The box's issued content is settled: an answer, a sign-off value, or a blank box on a FINAL copy. */
+  decided: boolean;
+  outcome: FillOutcomeKind;
+  /** Why the outcome is wrong (plain words), when it is. */
+  problem: string | null;
+  residue: string[];
+  notes: string[];
+  /** An answer that was not written but is informational only (a text "tick all that apply" naming no column). */
+  noteOnly: boolean;
+  /** Runs this fill wrote for the field (answers, marks, kept options). */
+  runs: XmlElement[];
+  /** Residue checks on the elements resolved before anything changed, run once the whole form is filled. */
+  checks: Array<() => string[]>;
+}
+
+const OUTCOME_RANK: Record<FillOutcomeKind, number> = { as_printed: 0, cleared: 1, removed: 2, written: 3, not_found: 4, collision: 5 };
+
+function setOutcome(t: Track | null | undefined, kind: FillOutcomeKind, problem?: string): void {
+  if (!t) return;
+  if (OUTCOME_RANK[kind] >= OUTCOME_RANK[t.outcome]) t.outcome = kind;
+  if (problem && !t.problem) t.problem = problem;
+}
+
+function tooComplex(detail: string): HttpError {
+  return new HttpError(422, "This form is too complex to fill", { code: "FORM_TOO_COMPLEX", detail: `${detail} Use the referrer's form as it was published, or ask for a simpler copy.` });
+}
+
+/** Count work against the step budget; 422 FORM_TOO_COMPLEX past it. */
+function step(ctx: Ctx, n = 1): void {
+  ctx.steps += n;
+  lastSteps = ctx.steps;
+  if (ctx.steps > MAX_FILL_STEPS) throw tooComplex("Filling this form takes more work than any real form needs.");
+}
+
+/** The steps the last fill used (for the bounded-work tests and the local check of real forms). */
+let lastSteps = 0;
+export function fillStepsUsed(): number {
+  return lastSteps;
+}
 
 interface Ctx {
   dom: DocxDom;
   index: BlockIndex;
-  opts: FillOptions;
+  form: FormDefinition;
+  opts: DocxFillOptions;
   warn(message: string): void;
+  /** The outcome of each answerable field. */
+  tracks: Map<FormField, Track>;
+  /** The field being written (runs made now are its runs). */
+  current: Track | null;
+  /** Places an answer was written: the field that took each (two answers in one place collide). */
+  claims: Map<string, Track>;
+  /** Ids of the elements claims are keyed on. */
+  claimIds: WeakMap<XmlElement, number>;
+  nextClaimId: number;
+  /** Work done so far (step budget). */
+  steps: number;
+  /** Typography sources, resolved once per paragraph, cell and row (RTF forms only). */
+  sources: { firstRun: WeakMap<XmlElement, XmlElement | null>; row: WeakMap<XmlElement, XmlElement[]>; spaces: WeakMap<XmlElement, XmlElement[]> };
   /** Placeholder occurrences left in place by unanswered fields, per block element + placeholder text. */
   skipped: Map<XmlElement, Map<string, number>>;
   usedControls: Set<XmlElement>;
@@ -172,6 +292,63 @@ interface Ctx {
 
 function where(field: FormField): string {
   return `${field.id} (“${field.label}”)`;
+}
+
+function trackOf(ctx: Ctx, field: FormField): Track | null {
+  return ctx.tracks.get(field) ?? null;
+}
+
+/** A stable id per element, for claim keys. */
+function elementId(ctx: Ctx, el: XmlElement): number {
+  let id = ctx.claimIds.get(el);
+  if (id === undefined) {
+    ctx.nextClaimId += 1;
+    id = ctx.nextClaimId;
+    ctx.claimIds.set(el, id);
+  }
+  return id;
+}
+
+/**
+ * Claim a place for a field's answer (an answer cell, a paragraph to write after, a tick box, a marked cell, an
+ * occurrence of a placeholder or list). A second decided field claiming the same place collides with the first: both
+ * are fatal – two answers mapped to one place are never issued.
+ */
+function claim(ctx: Ctx, field: FormField, el: XmlElement, what: string): boolean {
+  const t = trackOf(ctx, field);
+  if (!t || !t.decided) return true;
+  const key = `${elementId(ctx, el)}|${what}`;
+  const other = ctx.claims.get(key);
+  if (other && other !== t) {
+    const problem = (f: FormField) => `it is mapped to the same place on the form as ${f.id} (“${f.label}”), so one answer would cover the other`;
+    setOutcome(t, "collision", problem(other.field));
+    setOutcome(other, "collision", problem(field));
+    return false;
+  }
+  ctx.claims.set(key, t);
+  return true;
+}
+
+/** The element is still part of the document body (not removed with a row or line). */
+function isAttached(ctx: Ctx, el: XmlElement): boolean {
+  for (let n: XmlNode | null = el; n; n = n.parentNode) if (n === ctx.dom.body) return true;
+  return false;
+}
+
+/**
+ * Every paragraph that receives an answer (plan WA2 design 5, all write paths): inside a table cell it never keeps a
+ * negative right indent (RTF templates carry "\ri-330", which runs long answers over the cell's border – B0-31, B3-20),
+ * and on a form converted from RTF the answer runs carry no bold, italic or underline (a label's emphasis – B0-13).
+ */
+function normaliseAnswerParagraph(ctx: Ctx, p: XmlElement | null, runs: readonly XmlElement[] = []): void {
+  if (!p) return;
+  clampRightIndentInCell(ctx, firstW(p, "pPr"), p);
+  if (!ctx.rtf) return;
+  for (const run of runs) {
+    const rPr = firstW(run, "rPr");
+    if (!rPr) continue;
+    for (const child of childElements(rPr)) if (["b", "bCs", "i", "iCs", "u"].includes(child.localName ?? "")) rPr.removeChild(child);
+  }
 }
 
 /** The answer as text, or "" when unanswered. */
@@ -205,6 +382,16 @@ type RunKind = "answer" | "marker" | "unanswered";
 const WRITTEN = new WeakSet<XmlElement>();
 const isWritten = (run: XmlElement | null): boolean => !!run && WRITTEN.has(run);
 
+/** Written runs that print the form's own option again (a "delete as necessary" answer's kept option). */
+const KEPT_PRINT = new WeakSet<XmlElement>();
+const isKeptPrint = (run: XmlElement | null): boolean => !!run && KEPT_PRINT.has(run);
+
+/** A run split in two keeps what it was in both parts (written by this fill, a kept option). */
+function copyWrittenMarks(from: XmlElement, to: XmlElement): void {
+  if (WRITTEN.has(from)) WRITTEN.add(to);
+  if (KEPT_PRINT.has(from)) KEPT_PRINT.add(to);
+}
+
 /** Typography only (font, size, language) – used when copying from a label or question run. */
 function typographyOf(rPr: XmlElement | null, keep: string[] = ["rFonts", "sz", "szCs", "lang"]): XmlElement | null {
   if (!rPr) return null;
@@ -235,13 +422,16 @@ function labelOnlyColour(color: XmlElement): boolean {
  * the form keeps for instructions (red) or grey labels is never taken, and the answer is never bold, italic or underlined
  * (a label's emphasis). Any other form is written exactly as before.
  */
-function completeTypography(ctx: Ctx, base: XmlElement | null, sources: ReadonlyArray<XmlElement | null>): XmlElement | null {
+function completeTypography(ctx: Ctx, base: XmlElement | null, sources: () => ReadonlyArray<XmlElement | null>): XmlElement | null {
   if (!ctx.rtf) return base;
   // An RTF template's empty answer line carries the bold or underline of the label above it in its paragraph mark.
   let out = withoutEmphasis(base);
+  // Bounded and lazy (R-security-3): the sources are only looked up for a property the answer still lacks.
+  let list: ReadonlyArray<XmlElement | null> | null = null;
   for (const key of ANSWER_TYPOGRAPHY) {
     if (out && firstW(out, key)) continue;
-    for (const src of sources) {
+    list ??= sources();
+    for (const src of list) {
       const el = firstW(src, key);
       if (!el || (key === "color" && labelOnlyColour(el))) continue;
       out ??= wEl(ctx.dom, "rPr");
@@ -252,17 +442,31 @@ function completeTypography(ctx: Ctx, base: XmlElement | null, sources: Readonly
   return out;
 }
 
-/** Run properties of the whitespace-only runs in `paras` (an RTF template's typed spaces carry its answer style). */
-function spaceRunRPrs(paras: XmlElement[]): XmlElement[] {
+/**
+ * Run properties of the whitespace-only runs in `paras` (an RTF template's typed spaces carry its answer style): the
+ * first MAX_SOURCE_PARAGRAPHS paragraphs, resolved once per cell (`key`) – the form's own runs, never an answer's.
+ */
+function spaceRunRPrs(ctx: Ctx, paras: XmlElement[], key: XmlElement | null): XmlElement[] {
+  const cached = key ? ctx.sources.spaces.get(key) : undefined;
+  if (cached) return cached;
+  if (key) sourceReads += 1;
   const out: XmlElement[] = [];
-  for (const p of paras) {
-    for (const run of descendantsW(p, "r")) {
+  for (const p of paras.slice(0, MAX_SOURCE_PARAGRAPHS)) {
+    for (const run of wRuns(p)) {
+      if (isWritten(run)) continue;
       const text = descendantsW(run, "t").map((t) => t.textContent ?? "").join("");
       const rPr = firstW(run, "rPr");
       if (rPr && text !== "" && text.trim() === "") out.push(rPr);
     }
   }
+  if (key) ctx.sources.spaces.set(key, out);
   return out;
+}
+
+/** The runs of a paragraph (also inside hyperlinks, smart tags and run-level controls), at most 2,000. */
+function wRuns(p: XmlElement): XmlElement[] {
+  const runs = descendantsW(p, "r");
+  return runs.length > MAX_SIBLINGS_TO_LEAVE_OFF ? runs.slice(0, MAX_SIBLINGS_TO_LEAVE_OFF) : runs;
 }
 
 /** Bold, italic and underline dropped (an answer written after a bold label is not bold). */
@@ -284,12 +488,32 @@ function markRPr(p: XmlElement | null): XmlElement | null {
   return childElements(out).length ? out : null;
 }
 
-/** First run with visible text in a paragraph or cell. */
-function firstTextRun(container: XmlElement): XmlElement | null {
-  for (const t of descendantsW(container, "t")) {
-    if ((t.textContent ?? "").trim()) return ancestorW(t, "r");
-  }
-  return null;
+/**
+ * First run with visible text in a paragraph or cell, in document order – within its first MAX_SOURCE_PARAGRAPHS
+ * paragraphs (bounded: a cell of 200,000 empty lines is never walked whole, R-security-3). `printedOnly`: the form's own
+ * runs, never one this fill wrote.
+ */
+function firstTextRun(container: XmlElement, printedOnly = false): XmlElement | null {
+  let seen = 0;
+  const visit = (el: XmlElement): XmlElement | null => {
+    if (el.localName === "p" && el.namespaceURI === W_NS_URI) {
+      seen += 1;
+      for (const run of wRuns(el)) {
+        if (printedOnly && isWritten(run)) continue;
+        if (wChildren(run, "t").some((t) => (t.textContent ?? "").trim())) return run;
+        // Text inside a text box or drawing in this run.
+        for (const t of descendantsW(run, "t")) if ((t.textContent ?? "").trim()) return ancestorW(t, "r") ?? run;
+      }
+      return null;
+    }
+    for (let n = el.firstChild; n && seen < MAX_SOURCE_PARAGRAPHS; n = n.nextSibling) {
+      if (!isElement(n)) continue;
+      const hit = visit(n);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return visit(container);
 }
 
 /** Remove placeholder styling (content-control placeholder style, its grey colour and field shading). */
@@ -311,6 +535,7 @@ function makeRun(ctx: Ctx, lines: string[], rPr: XmlElement | null, kind: RunKin
   const { dom } = ctx;
   const run = wEl(dom, "r");
   WRITTEN.add(run);
+  if (kind === "answer") ctx.current?.runs.push(run);
   const props = rPr ? cloneEl(rPr) : wEl(dom, "rPr");
   if (kind === "marker" || kind === "unanswered") {
     setProp(props, wEl(dom, "color", { val: kind === "marker" ? "6B7280" : "9CA3AF" }), RPR_ORDER);
@@ -437,8 +662,9 @@ function writeIntoSpace(
       else if (container) container.appendChild(target);
       else return;
     }
-    clampRightIndentInCell(ctx, firstW(target, "pPr"), target);
-    for (const run of answerRuns(ctx, field, lines, rPr, kind, i === paras.length - 1)) target.appendChild(run);
+    const runs = answerRuns(ctx, field, lines, rPr, kind, i === paras.length - 1);
+    for (const run of runs) target.appendChild(run);
+    normaliseAnswerParagraph(ctx, target, kind === "answer" ? runs : []);
     if (i < paras.length - 1) ensureSpaceAfter(ctx, target, 100);
     last = target;
   });
@@ -472,7 +698,7 @@ function normaliseRuns(p: XmlElement): void {
     const rPr = firstW(run, "rPr");
     for (const child of content.slice(1).reverse()) {
       const clone = run.ownerDocument!.createElementNS(run.namespaceURI, run.nodeName) as XmlElement;
-      if (isWritten(run)) WRITTEN.add(clone);
+      copyWrittenMarks(run, clone);
       if (rPr) clone.appendChild(cloneEl(rPr));
       clone.appendChild(child);
       insertAfter(clone, run);
@@ -491,7 +717,7 @@ function splitRunBefore(run: XmlElement, t: XmlElement, offset: number): void {
   const text = t.textContent ?? "";
   if (offset <= 0 || offset >= text.length) return;
   const before = cloneEl(run);
-  if (isWritten(run)) WRITTEN.add(before);
+  copyWrittenMarks(run, before);
   const bt = firstW(before, "t");
   if (bt) setText(bt, text.slice(0, offset));
   run.parentNode?.insertBefore(before, run);
@@ -503,7 +729,7 @@ function splitRunAfter(run: XmlElement, t: XmlElement, offset: number): void {
   const text = t.textContent ?? "";
   if (offset <= 0 || offset >= text.length) return;
   const after = cloneEl(run);
-  if (isWritten(run)) WRITTEN.add(after);
+  copyWrittenMarks(run, after);
   const at = firstW(after, "t");
   if (at) setText(at, text.slice(offset));
   insertAfter(after, run);
@@ -640,28 +866,54 @@ function fillTableCell(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
       space = followingSpace(ref.el);
     }
   }
-  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? labelCellRPr(ref) ?? typographyOf(firstW(firstTextRun(ref.el), "rPr")), [
-    ...spaceRunRPrs(ref.kind === "cell" ? ref.paragraphs : [ref.el, ...space]),
+  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? labelCellRPr(ref) ?? typographyOf(firstW(firstTextRun(ref.el), "rPr")), () => [
+    ...spaceRunRPrs(ctx, ref.kind === "cell" ? ref.paragraphs : [ref.el, ...space], ref.kind === "cell" ? ref.el : null),
     labelCellRunRPr(ref),
-    firstW(firstTextRun(ref.el), "rPr"),
+    firstW(firstTextRun(ref.el, true), "rPr"),
     markRPr(after),
   ]);
   const pPr = space.length ? null : answerPPr(ctx, after);
   const written = writeIntoSpace(ctx, field, paras, space, after, container, pPr, rPr, kind);
   if (!written) ctx.warn(`${where(field)}: the answer box could not be written.`);
+  if (kind === "answer") setOutcome(trackOf(ctx, field), written ? "written" : "not_found", written ? undefined : "its answer box could not be written");
 }
 
 /**
  * Fix round 2 (B1-8): run properties of the text around a paragraph inside a table cell – the cell's label first, then
  * the other cells of its row – for the colour an uncoloured instruction paragraph does not give ("Please give clinical
  * details in this box" under JJ Physio's navy "Clinical Impression:"). Empty outside a table.
+ * bh2 WA2 (R-security-3): resolved once per row (the form's own runs, the first MAX_SOURCE_CELLS cells) and once per
+ * cell's own first run.
  */
-function cellContextRPrs(p: XmlElement): XmlElement[] {
+function cellContextRPrs(ctx: Ctx, p: XmlElement): XmlElement[] {
   const tc = ancestorW(p, "tc");
   if (!tc) return [];
   const tr = ancestorW(tc, "tr");
-  const cells = tr ? childElements(tr).filter((c) => isW(c, "tc")) : [tc];
-  return [tc, ...cells.filter((c) => c !== tc)].map((c) => firstW(firstTextRun(c), "rPr")).filter((r): r is XmlElement => r !== null);
+  const own = cellFirstRPr(ctx, tc);
+  if (!tr) return own ? [own] : [];
+  let row = ctx.sources.row.get(tr);
+  if (!row) {
+    const cells: XmlElement[] = [];
+    for (let n = tr.firstChild; n && cells.length < MAX_SOURCE_CELLS; n = n.nextSibling) if (isW(n, "tc")) cells.push(n);
+    row = cells;
+    ctx.sources.row.set(tr, row);
+  }
+  return [own, ...row.filter((c) => c !== tc).map((c) => cellFirstRPr(ctx, c))].filter((r): r is XmlElement => r !== null);
+}
+
+/** How many times typography sources were read from the document (cells and answer space) – for the bounded-work tests. */
+let sourceReads = 0;
+export function typographySourceReads(): number {
+  return sourceReads;
+}
+
+/** The first printed run's properties in a cell, resolved once per cell. */
+function cellFirstRPr(ctx: Ctx, tc: XmlElement): XmlElement | null {
+  if (ctx.sources.firstRun.has(tc)) return ctx.sources.firstRun.get(tc) ?? null;
+  sourceReads += 1;
+  const rPr = firstW(firstTextRun(tc, true), "rPr");
+  ctx.sources.firstRun.set(tc, rPr);
+  return rPr;
 }
 
 function fillAfterParagraph(ctx: Ctx, job: Job, text: string, kind: RunKind): void {
@@ -674,14 +926,15 @@ function fillAfterParagraph(ctx: Ctx, job: Job, text: string, kind: RunKind): vo
   const space = followingSpace(p);
   // The answer space's own formatting first; otherwise only the question's font family (not its size:
   // questions are often headings or small grey instructions).
-  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? typographyOf(firstW(firstTextRun(space[0] ?? p), "rPr"), space[0] ? undefined : ["rFonts"]), [
-    ...spaceRunRPrs([p, ...space]),
+  const rPr = completeTypography(ctx, markRPr(space[0] ?? null) ?? typographyOf(firstW(firstTextRun(space[0] ?? p), "rPr"), space[0] ? undefined : ["rFonts"]), () => [
+    ...spaceRunRPrs(ctx, [p, ...space], null),
     markRPr(p),
-    firstW(firstTextRun(p), "rPr"),
-    ...cellContextRPrs(p),
+    firstW(firstTextRun(p, true), "rPr"),
+    ...cellContextRPrs(ctx, p),
   ]);
   const written = writeIntoSpace(ctx, field, toParagraphs(text), space, p, null, answerPPr(ctx, p), rPr, kind);
   if (!written) ctx.warn(`${where(field)}: the answer could not be added after the question.`);
+  if (kind === "answer") setOutcome(trackOf(ctx, field), written ? "written" : "not_found", written ? undefined : "the answer could not be added after its question");
 }
 
 interface Occurrence {
@@ -694,18 +947,35 @@ interface Occurrence {
 /** Maximal runs of fill characters ("____", "......", ". . . .", "……") in a text. */
 const FILL_RUN_RE = /[_.…](?:[_.…]|[ \u00A0](?=[_.…]))*/g;
 
+/** A blank made of fill characters ("____", "……"), not a printed default or a code. */
+const isFillNeedle = (needle: string): boolean => /^[_.…\s\u00A0]+$/.test(needle);
+
+/** Masks what this fill wrote, character for character, so offsets stay those of the visible text. */
+const MASK = "\u0001";
+
 /**
- * Occurrences of `needle` in the block's paragraphs, in order. For a blank made of fill characters the
- * whole blank is the occurrence, and blanks of exactly the needle's length are preferred (so "____" of
- * 16 never lands inside a longer blank of 36 left empty by an unanswered question).
+ * A paragraph's visible text with every answer this fill wrote masked (MASK per character): offsets are the visible
+ * text's, and a search for a placeholder never lands inside an answer (an answer holding "…" never takes the next
+ * question's "…"). A printed option a "delete as necessary" answer kept is the form's own text and stays readable.
  */
-function occurrences(paras: XmlElement[], needle: string): Occurrence[] {
+function maskedText(p: XmlElement): string {
+  return paragraphSegments(p)
+    .map((s) => (isWritten(s.run) && !isKeptPrint(s.run) ? MASK.repeat(s.text.length) : s.text))
+    .join("");
+}
+
+/**
+ * Occurrences of `needle` in the block's paragraphs, in order – in the form's own text, never inside an answer. For a
+ * blank made of fill characters the whole blank is the occurrence, and blanks of exactly the needle's length are
+ * preferred (so "____" of 16 never lands inside a longer blank of 36 left empty by an unanswered question).
+ */
+function occurrences(ctx: Ctx, paras: XmlElement[], needle: string): Occurrence[] {
   if (!needle) return [];
-  const fillNeedle = /^[_.…\s\u00A0]+$/.test(needle);
-  if (!fillNeedle) {
+  step(ctx, paras.length);
+  if (!isFillNeedle(needle)) {
     const out: Occurrence[] = [];
     for (const p of paras) {
-      const text = segmentsText(paragraphSegments(p));
+      const text = maskedText(p);
       let from = 0;
       for (let i = text.indexOf(needle, from); i >= 0; i = text.indexOf(needle, from)) {
         out.push({ p, index: i, length: needle.length, text: needle });
@@ -717,7 +987,7 @@ function occurrences(paras: XmlElement[], needle: string): Occurrence[] {
   const want = needle.trim();
   const runs: (Occurrence & { exact: boolean })[] = [];
   for (const p of paras) {
-    const text = segmentsText(paragraphSegments(p));
+    const text = maskedText(p);
     for (const m of Array.from(text.matchAll(FILL_RUN_RE))) {
       const run = m[0];
       if (!run.includes(want) && !(want.length >= run.length && want.includes(run) && run.length >= 4)) continue;
@@ -740,27 +1010,43 @@ function addSkip(ctx: Ctx, block: XmlElement, needle: string): void {
 
 function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: boolean): void {
   const { field, ref } = job;
+  const t = kind === "answer" ? trackOf(ctx, field) : null;
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   const paras = blockParagraphs(ref);
   let needle = anchor?.placeholderText ?? "";
-  let occ = needle ? occurrences(paras, needle) : [];
+  let occ = needle ? occurrences(ctx, paras, needle) : [];
   // 10/2026 verify: the blank was printed inside an option a "delete as necessary" answer removed (a "Max lift … kg"
   // restriction deleted, its "…" answered): the answer belongs to the deleted option, so it is not printed anywhere else.
   if (occ.length === 0 && paras.some((p) => ctx.deletedParas.has(p))) {
     if (!skip) ctx.warn(`${where(field)}: “${needle}” was deleted with the printed option it belongs to, so this answer is not printed.`);
+    if (t) {
+      setOutcome(t, "removed");
+      t.noteOnly = true;
+      t.notes.push(`deleted with the printed option it belongs to (${anchor?.placeholderText ?? ""}), so this answer is not printed`);
+    }
     return;
   }
   if (occ.length === 0) {
     // The exact text is not there: fall back to the block's detected blanks.
-    const detected = paras.flatMap((p) => findPlaceholders(segmentsText(paragraphSegments(p))).map((m) => ({ p, ...m })));
+    const detected = paras.flatMap((p) => findPlaceholders(maskedText(p)).map((m) => ({ p, ...m })));
     if (detected.length > 0) {
       if (!skip) ctx.warn(`${where(field)}: the placeholder “${needle || "(none given)"}” was not found exactly; the first blank in that place was used.`);
+      t?.notes.push("its printed placeholder was not found exactly, so the first blank in that place was used");
       needle = "\u0000detected";
       occ = detected.map((d) => ({ p: d.p, index: d.index, length: d.text.length, text: d.text }));
     } else {
       if (skip) return;
+      // Its blank was taken by another answer mapped to the same placeholder in that place: two answers, one place.
+      const taker = ctx.claims.get(`${elementId(ctx, ref.el)}|ph|${anchor?.placeholderText ?? ""}`);
+      if (t && taker && taker !== t) {
+        const problem = (f: FormField) => `it is mapped to the same place on the form as ${f.id} (“${f.label}”), so one answer would cover the other`;
+        setOutcome(t, "collision", problem(taker.field));
+        setOutcome(taker, "collision", problem(field));
+      }
       ctx.warn(`${where(field)}: no placeholder was found; the answer was added after the question instead.`);
+      // A guess at the place: shown on a draft, never issued (not found is fatal on a FINAL copy).
       fillAfterParagraph(ctx, { ...job, ref: { kind: "paragraph", id: ref.id, el: paras[paras.length - 1], inSdt: false } }, text, kind);
+      setOutcome(t, "not_found", `its printed placeholder (${anchor?.placeholderText || "none given"}) is not in that place on the form`);
       return;
     }
   }
@@ -770,9 +1056,12 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     return;
   }
   const target = occ[Math.min(k, occ.length - 1)];
-  if (k >= occ.length) ctx.warn(`${where(field)}: more answers than blanks of “${anchor?.placeholderText ?? ""}” in that place; the last blank was used.`);
+  if (k >= occ.length) {
+    ctx.warn(`${where(field)}: more answers than blanks of “${anchor?.placeholderText ?? ""}” in that place; the last blank was used.`);
+    setOutcome(t, "collision", `more answers are mapped to “${anchor?.placeholderText ?? ""}” in that place than it prints`);
+  }
   const p = target.p;
-  const fullText = segmentsText(paragraphSegments(p));
+  const fullText = maskedText(p);
   const paraList = toParagraphs(text);
   // A bare "Answer:" label, or (10/2026) a printed label the map says to write after: the answer goes after it.
   const label = isBareLabel(target.text) || Boolean(anchor?.writeAfter);
@@ -781,6 +1070,7 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
   const atLineEnd = afterText.trim() === "";
   const inline = atLineEnd ? paraList[0] : [paraList.map((l) => l.join(" ")).join(" ")];
   const rest = atLineEnd ? paraList.slice(1) : [];
+  let written: XmlElement[] = [];
 
   const ok = replaceRange(
     p,
@@ -790,50 +1080,163 @@ function fillPlaceholder(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
       // Written after a printed label (writeAfter, or a bare "Answer:" on a converted RTF form): not in the label's bold.
       const afterLabel = Boolean(anchor?.writeAfter) || (label && ctx.rtf);
       const plain = withoutPlaceholderStyle(styleRPr);
-      const rPr = afterLabel ? completeTypography(ctx, withoutEmphasis(plain), [plain]) : plain;
+      const rPr = afterLabel ? completeTypography(ctx, withoutEmphasis(plain), () => [plain]) : plain;
       const lines = inline.slice();
       const needsSpace = label || (before !== "" && !/[\s(]/.test(before));
       if (needsSpace) lines[0] = ` ${lines[0]}`;
       if (!atLineEnd && /^[A-Za-z0-9]/.test(afterText)) lines[lines.length - 1] = `${lines[lines.length - 1]} `;
-      return answerRuns(ctx, field, lines, rPr, kind, rest.length === 0);
+      written = answerRuns(ctx, field, lines, rPr, kind, rest.length === 0);
+      return written;
     },
   );
   if (!ok) {
     ctx.warn(`${where(field)}: the placeholder could not be replaced; the answer was added after it.`);
     fillAfterParagraph(ctx, { ...job, ref: { kind: "paragraph", id: ref.id, el: p, inSdt: false } }, text, kind);
+    setOutcome(t, "not_found", "its printed placeholder could not be replaced");
     return;
+  }
+  // Plan WA2 design 5 (B3-20): the line written in place is normalised like every other answer paragraph.
+  normaliseAnswerParagraph(ctx, p, kind === "answer" ? written : []);
+  if (t) {
+    setOutcome(t, "written");
+    // The placeholder this answer took (the last taker is the one a later answer would collide with); after a label,
+    // the label itself is the place.
+    if (label) claim(ctx, field, p, `label|${target.index}`);
+    else ctx.claims.set(`${elementId(ctx, ref.el)}|ph|${anchor?.placeholderText ?? ""}`, t);
+    // A printed sentence the answer completes ("To return to …"): the answer must not repeat its printed words.
+    if (!label) {
+      const head = fullText.slice(0, target.index).replace(/[\s\u00A0]+$/, "").toLowerCase();
+      const known = ctx.form.analysis?.printedLeads?.[field.id]?.trim();
+      const lead = known && head.endsWith(known.toLowerCase()) ? known : openerLead(leadBefore(fullText, target.index));
+      const repeated = repeatedLead(lead, inline[0] ?? "");
+      if (repeated) t.residue.push(`the printed words “${repeated}” are repeated by the answer`);
+    }
   }
   // An "Answer: ____" line: dotted continuation lines below are answer space for the rest of the answer.
   if (atLineEnd) {
     const space = followingSpace(p).filter((x, i, all) => all.slice(0, i + 1).every(isFillLine));
     const rPr = withoutPlaceholderStyle(firstW(firstTextRun(p), "rPr"));
     // Every paragraph of a long answer in the same typography as its first (fix round 1, B0-13: its colour too).
-    if (rest.length > 0 || space.length > 0) writeIntoSpace(ctx, field, rest, space, p, null, answerPPr(ctx, p), completeTypography(ctx, typographyOf(rPr), [rPr]), kind);
+    if (rest.length > 0 || space.length > 0) writeIntoSpace(ctx, field, rest, space, p, null, answerPPr(ctx, p), completeTypography(ctx, typographyOf(rPr), () => [rPr]), kind);
   }
 }
 
 /**
- * Removes the field's exact placeholder from its block (the occurrence a filled answer would have taken), for an
- * answer the record leaves empty on purpose. Nothing happens when the exact text is not there.
+ * The printed words of a line just before a blank at `index` – the sentence opener the answer completes ("To return
+ * to" in "Expected outcome – To return to …") – or "" when the blank follows a label (":"), a number, the start of the
+ * line or another answer. At most 60 characters; it starts after the line's start, a tab, a sentence's end, a dash
+ * between words, another blank or an answer.
  */
-function clearPlaceholder(ctx: Ctx, job: Job): void {
+export function leadBefore(text: string, index: number): string {
+  const head = text.slice(0, index);
+  let start = 0;
+  const boundaries = [/\n/g, /[.!?;:](?=[\s\u00A0])/g, /[\s\u00A0][–—-][\s\u00A0]/g, /[_.…]{2,}/g, new RegExp(`${MASK}+`, "g")];
+  for (const re of boundaries) for (const m of Array.from(head.matchAll(re))) start = Math.max(start, (m.index ?? 0) + m[0].length);
+  const lead = head.slice(start).replace(/^[\s\u00A0]+/, "").replace(/[\s\u00A0]+$/, "");
+  if (!lead || lead.length > 60 || !/[A-Za-z\u00C0-\u024F]$/.test(lead)) return "";
+  return lead;
+}
+
+/**
+ * Words that leave a printed sentence open – the answer must complete it: prepositions, verbs that take a complement,
+ * determiners and conjunctions. A printed line ending in one of them before its blank is a sentence opener ("To return
+ * to …", "He has been off work since …"); a line ending in a noun is a label ("Name of physiotherapist ……", "Date ……"),
+ * which a blank box leaves as printed. A closed class of English grammar words, not a list of form phrases.
+ */
+const OPEN_ENDINGS = new Set(
+  (
+    "to in at on by for of from with within without since until till after before about into onto over under than as " +
+    "is are was were be been being has have had will would can could should shall may might must do does did " +
+    "a an the his her their its our your my this that these those and or but"
+  ).split(" "),
+);
+
+/** The lead when it leaves its sentence open (OPEN_ENDINGS), else "". */
+export function openerLead(lead: string): string {
+  const last = /([A-Za-z\u00C0-\u024F']+)$/.exec(lead)?.[1]?.toLowerCase() ?? "";
+  return last && OPEN_ENDINGS.has(last) ? lead : "";
+}
+
+/** The answer's first words that repeat the end of the printed lead ("To return to" + "return to work"), or "". */
+export function repeatedLead(lead: string, answer: string): string {
+  const words = (s: string) => s.toLowerCase().split(/[^A-Za-z0-9\u00C0-\u024F']+/).filter(Boolean);
+  const l = words(lead);
+  const a = words(answer);
+  if (l.length === 0 || a.length === 0) return "";
+  for (let n = Math.min(l.length, a.length); n >= 1; n--) {
+    if (n < 2 && l.length > 1) break; // one shared word ("in" + "in 6 weeks") is not counted unless the lead is that word
+    if (l.slice(l.length - n).every((w, i) => w === a[i])) return l.slice(l.length - n).join(" ");
+  }
+  return "";
+}
+
+/**
+ * Removes the field's exact placeholder from its block (the occurrence a filled answer would have taken), for an
+ * answer the record leaves empty on purpose, a box left blank that prints a default, or one that does not apply.
+ * Nothing happens when the exact text is not there. True when it was removed.
+ */
+function clearPlaceholder(ctx: Ctx, job: Job): boolean {
   const { field, ref } = job;
   const needle = field.anchor.kind === "docx" ? (field.anchor.placeholderText ?? "") : "";
-  if (!needle) return;
-  const occ = occurrences(blockParagraphs(ref), needle);
+  if (!needle) return false;
+  const occ = occurrences(ctx, blockParagraphs(ref), needle);
   if (occ.length === 0) {
     ctx.warn(`${where(field)}: the placeholder “${needle}” was not found, so nothing was removed.`);
-    return;
+    return false;
   }
   const k = skipKey(ctx, ref.el, needle);
   const target = occ[Math.min(k, occ.length - 1)];
   if (!replaceRange(target.p, target.index, target.index + target.length, () => [])) {
     ctx.warn(`${where(field)}: the placeholder “${needle}” could not be removed.`);
-    return;
+    return false;
   }
   // Fix round 1 (B0-32): a line left empty (an address line the record does not have) goes too – a cell keeps its last
   // line, and a line that keeps two tables apart stays (removeIfBlank).
   removeIfBlank(target.p);
+  return true;
+}
+
+/**
+ * Khuram, 26/10 (B3-19, plan WA2 design 6): a sentence opener left blank – a blank at the end of a printed sentence the
+ * answer would complete ("To return to …") – loses its printed lead words and its dots, so the issued form never prints
+ * a sentence with nothing in it. The lead is the map's printedLeads entry when the line ends with it, else leadBefore().
+ * Only a blank with nothing but punctuation after it on its line: a frame with printed words after the blank ("…/10
+ * at rest") stays as printed. True when the opener was removed.
+ */
+function dropBlankOpener(ctx: Ctx, job: Job, drop = true): boolean {
+  const { field, ref } = job;
+  const anchor = field.anchor.kind === "docx" ? field.anchor : null;
+  const needle = anchor?.placeholderText ?? "";
+  if (!anchor || anchor.writeAfter || !needle || !isFillNeedle(needle)) return false;
+  const occ = occurrences(ctx, blockParagraphs(ref), needle);
+  if (occ.length === 0) return false;
+  const target = occ[Math.min(skipKey(ctx, ref.el, needle), occ.length - 1)];
+  const text = maskedText(target.p);
+  const end = target.index + target.length;
+  const lineAfter = text.slice(end).split("\n")[0];
+  if (!/^[\s\u00A0.,;:!?]*$/.test(lineAfter)) return false;
+  const head = text.slice(0, target.index).replace(/[\s\u00A0]+$/, "");
+  const known = ctx.form.analysis?.printedLeads?.[field.id]?.trim();
+  const lead = known && head.toLowerCase().endsWith(known.toLowerCase()) ? known : openerLead(leadBefore(text, target.index));
+  if (!lead) return false;
+  const p = target.p;
+  // Checked once the whole form is filled, whether or not it was dropped (the leave-blank hook): no opener left.
+  trackOf(ctx, field)?.checks.push(() => {
+    if (!isAttached(ctx, p)) return [];
+    const now = maskedText(p);
+    const at = now.toLowerCase().indexOf(lead.toLowerCase());
+    return at >= 0 && /^[\s\u00A0]*[_.…]/.test(now.slice(at + lead.length)) ? [`the printed words “${lead} …” are still on the form`] : [];
+  });
+  if (!drop) return false;
+  let from = head.length - lead.length;
+  // The separator before it goes too ("Expected outcome – To return to …" → "Expected outcome").
+  const sep = /[\s\u00A0]*(?:[–—-][\s\u00A0]*)?$/.exec(text.slice(0, from));
+  if (sep && sep.index > 0 && /[–—-]/.test(sep[0])) from = sep.index;
+  else while (from > 0 && /[\s\u00A0]/.test(text[from - 1])) from -= 1;
+  const tail = /^[ \t\u00A0.,;:!?]*/.exec(lineAfter)?.[0].length ?? 0;
+  if (!replaceRange(p, from, end + tail, () => [])) return false;
+  removeIfBlank(p);
+  return true;
 }
 
 /** Content controls of a block: inside its paragraphs/cell, or the block-level control around it. */
@@ -848,12 +1251,12 @@ function isCheckboxControl(sdt: XmlElement): boolean {
   return !!pr && childElements(pr).some((c) => c.localName === "checkbox" && c.namespaceURI === W14_NS);
 }
 
-function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: boolean, isoDate: string | null): void {
-  const { field, ref } = job;
+/** The content control a field writes into: the one whose tag or alias is its placeholder, else the first free one. */
+function pickControl(ctx: Ctx, field: FormField, ref: BlockRef): XmlElement | undefined {
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   const candidates = controlsOf(ref).filter((s) => !isCheckboxControl(s));
-  let sdt: XmlElement | undefined;
   const want = anchor?.placeholderText?.trim().toLowerCase();
+  let sdt: XmlElement | undefined;
   if (want) {
     sdt = candidates.find((s) => {
       const pr = firstW(s, "sdtPr");
@@ -862,11 +1265,18 @@ function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, ski
       return !ctx.usedControls.has(s) && (tag === want || alias === want);
     });
   }
-  sdt ??= candidates.find((s) => !ctx.usedControls.has(s));
+  return sdt ?? candidates.find((s) => !ctx.usedControls.has(s));
+}
+
+function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: boolean, isoDate: string | null): void {
+  const { field, ref } = job;
+  const t = kind === "answer" ? trackOf(ctx, field) : null;
+  const sdt = pickControl(ctx, field, ref);
   if (!sdt) {
     if (skip) return;
     ctx.warn(`${where(field)}: no free content control was found there; the answer was written into the box instead.`);
     fillTableCell(ctx, job, text, kind);
+    setOutcome(t, "not_found", "no free content control is in that place on the form");
     return;
   }
   ctx.usedControls.add(sdt);
@@ -875,6 +1285,7 @@ function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, ski
   const content = firstW(sdt, "sdtContent");
   if (!content) {
     ctx.warn(`${where(field)}: the content control is empty and could not be filled.`);
+    setOutcome(t, "not_found", "its content control has no content to fill");
     return;
   }
   const plc = firstW(pr, "showingPlcHdr");
@@ -886,7 +1297,8 @@ function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, ski
   const paras = toParagraphs(text);
   const blockParas = wChildren(content, "p");
   if (blockParas.length > 0) {
-    writeIntoSpace(ctx, field, paras, [blockParas[0]], null, content, null, rPr, kind);
+    if (writeIntoSpace(ctx, field, paras, [blockParas[0]], null, content, null, rPr, kind)) setOutcome(t, "written");
+    else setOutcome(t, "not_found", "its content control could not be written");
     return;
   }
   for (const child of childElements(content)) content.removeChild(child);
@@ -895,31 +1307,54 @@ function fillContentControl(ctx: Ctx, job: Job, text: string, kind: RunKind, ski
     if (i > 0) lines.push("");
     lines.push(...p);
   });
-  for (const run of answerRuns(ctx, field, lines, rPr, kind, true)) content.appendChild(run);
+  const runs = answerRuns(ctx, field, lines, rPr, kind, true);
+  for (const run of runs) content.appendChild(run);
+  normaliseAnswerParagraph(ctx, ancestorW(content, "p"), kind === "answer" ? runs : []);
+  setOutcome(t, "written");
+}
+
+/**
+ * A box left blank on a content control (plan WA2 design 2): whatever it shows – the "Click or tap here to enter text."
+ * prompt or a value the template already holds – is emptied, and it no longer shows its prompt. Returns what happened.
+ */
+function clearContentControl(ctx: Ctx, job: Job, clear: boolean): FillOutcomeKind {
+  const { field, ref } = job;
+  const sdt = pickControl(ctx, field, ref);
+  if (!sdt) return "not_found";
+  ctx.usedControls.add(sdt);
+  const content = firstW(sdt, "sdtContent");
+  if (!content) return "as_printed";
+  trackOf(ctx, field)?.checks.push(() => (isAttached(ctx, content) && (content.textContent ?? "").trim() ? ["the content control still shows printed text"] : []));
+  if (!clear) return "as_printed";
+  const pr = firstW(sdt, "sdtPr");
+  const showing = firstW(pr, "showingPlcHdr");
+  const had = (content.textContent ?? "").trim() !== "" || Boolean(showing);
+  if (showing && pr) pr.removeChild(showing);
+  const paras = wChildren(content, "p");
+  if (paras.length > 0) {
+    // A block control keeps its first line, empty (a cell or the body never loses its paragraph).
+    clearParagraph(paras[0]);
+    for (const extra of paras.slice(1)) remove(extra);
+  } else for (const child of childElements(content)) if (!isW(child, "rPr")) content.removeChild(child);
+  return had ? "cleared" : "as_printed";
 }
 
 function legacyFields(ref: BlockRef, type: "textInput" | "checkBox"): XmlElement[] {
   return descendantsW(ref.el, "fldChar").filter((f) => wAttr(f, "fldCharType") === "begin" && !!firstW(firstW(f, "ffData"), type));
 }
 
-function fillLegacyField(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: boolean): void {
-  const { field, ref } = job;
+/** The Word form field (FORMTEXT) a field writes into, its result runs and its end. */
+function legacyPlace(ctx: Ctx, field: FormField, ref: BlockRef): { begin: XmlElement; beginRun: XmlElement; sepRun: XmlElement | null; endRun: XmlElement | null; result: XmlElement[] } | null {
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   const begins = legacyFields(ref, "textInput");
   const want = anchor?.placeholderText?.trim();
   let begin = want ? begins.find((b) => !ctx.usedLegacy.has(b) && wAttr(firstW(firstW(b, "ffData"), "name"), "val") === want) : undefined;
   begin ??= begins.find((b) => !ctx.usedLegacy.has(b));
-  if (!begin) {
-    if (skip) return;
-    ctx.warn(`${where(field)}: no free Word form field was found there; the answer was written into the box instead.`);
-    fillTableCell(ctx, job, text, kind);
-    return;
-  }
+  if (!begin) return null;
   ctx.usedLegacy.add(begin);
-  if (skip) return;
   const beginRun = ancestorW(begin, "r");
   const p = ancestorW(begin, "p");
-  if (!beginRun || !p) return;
+  if (!beginRun || !p) return { begin, beginRun: beginRun ?? begin, sepRun: null, endRun: null, result: [] };
   const runs = descendantsW(p, "r");
   let depth = 0;
   let sepRun: XmlElement | null = null;
@@ -948,8 +1383,26 @@ function fillLegacyField(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     }
     if (sepRun && depth === 1 && !fc) result.push(run);
   }
+  return { begin, beginRun, sepRun, endRun, result };
+}
+
+function fillLegacyField(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: boolean): void {
+  const { field } = job;
+  const t = kind === "answer" ? trackOf(ctx, field) : null;
+  const place = legacyPlace(ctx, field, job.ref);
+  if (!place) {
+    if (skip) return;
+    ctx.warn(`${where(field)}: no free Word form field was found there; the answer was written into the box instead.`);
+    fillTableCell(ctx, job, text, kind);
+    setOutcome(t, "not_found", "no free Word form field is in that place on the form");
+    return;
+  }
+  if (skip) return;
+  const { beginRun, result, endRun } = place;
+  let sepRun = place.sepRun;
   if (!endRun) {
     ctx.warn(`${where(field)}: the Word form field is incomplete and could not be filled.`);
+    setOutcome(t, "not_found", "its Word form field is incomplete");
     return;
   }
   const rPr = firstW(result[0] ?? sepRun ?? beginRun, "rPr");
@@ -966,6 +1419,28 @@ function fillLegacyField(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
     insertAfter(run, at);
     at = run;
   }
+  normaliseAnswerParagraph(ctx, ancestorW(endRun, "p"), kind === "answer" ? newRuns : []);
+  setOutcome(t, "written");
+}
+
+/** A box left blank on a Word form field (FORMTEXT): its printed result (a default value, the blank spaces) is emptied. */
+function clearLegacyField(ctx: Ctx, job: Job, clear: boolean): FillOutcomeKind {
+  const place = legacyPlace(ctx, job.field, job.ref);
+  if (!place) return "not_found";
+  if (!place.endRun) return "as_printed";
+  const endRun = place.endRun;
+  const sepRun = place.sepRun;
+  const blankText = (t: string) => t.replace(/[\s\u2002\u00A0]/g, "") === "";
+  trackOf(ctx, job.field)?.checks.push(() => {
+    if (!isAttached(ctx, endRun) || !sepRun) return [];
+    let text = "";
+    for (let n = sepRun.nextSibling; n && n !== endRun; n = n.nextSibling) text += n.textContent ?? "";
+    return blankText(text) ? [] : ["the Word form field still prints a value"];
+  });
+  if (!clear) return "as_printed";
+  const had = place.result.some((r) => !blankText(r.textContent ?? ""));
+  for (const run of place.result) remove(run);
+  return had ? "cleared" : "as_printed";
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -975,40 +1450,44 @@ function fillLegacyField(ctx: Ctx, job: Job, text: string, kind: RunKind, skip: 
 interface GlyphTarget {
   option: string;
   slot: GlyphSlot | null;
+  /** The paragraphs of the option's block, and the box's index there (to re-read it once everything is written). */
+  paras: XmlElement[];
+  glyphIndex: number;
 }
 
 function resolveGlyphs(ctx: Ctx, field: FormField): GlyphTarget[] {
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   return (anchor?.optionGlyphs ?? []).map((g) => {
     const ref = ctx.index.byId.get(g.blockId);
-    if (!ref) return { option: g.option, slot: null };
-    const slots = blockParagraphs(ref).flatMap((p) => glyphSlots(paragraphSegments(p)));
-    return { option: g.option, slot: slots[g.glyphIndex] ?? null };
+    if (!ref) return { option: g.option, slot: null, paras: [], glyphIndex: g.glyphIndex };
+    const paras = blockParagraphs(ref);
+    if (paras.length > MAX_BLOCK_PARAGRAPHS) throw tooComplex(`A table cell of this Word file holds ${paras.length.toLocaleString("en-GB")} lines; a cell that is filled here holds at most ${MAX_BLOCK_PARAGRAPHS.toLocaleString("en-GB")}.`);
+    step(ctx, paras.length);
+    const slots = paras.flatMap((p) => glyphSlots(paragraphSegments(p)));
+    return { option: g.option, slot: slots[g.glyphIndex] ?? null, paras, glyphIndex: g.glyphIndex };
   });
 }
 
-/** Which options to tick for an answer (null = unanswered: leave the boxes as they are). */
-function chosenOptions(field: FormField, answer: FormFillAnswer, options: string[]): Set<string> | null {
-  const value = answer.value;
-  const text = (answer.text ?? "").trim();
-  // "Yes…" / "No…", or a printed "Y" / "N" pair (10/2026).
-  const yes = yesNoOption(options, true) ?? undefined;
-  const no = yesNoOption(options, false) ?? undefined;
-  if (typeof value === "boolean") {
-    if (options.length === 1) return new Set(value ? options : []);
-    const pick = value ? yes : no;
-    return pick ? new Set([pick]) : new Set();
+/** A tick box's state now (re-read in its own paragraphs; null when it is no longer there). */
+function glyphCheckedNow(target: GlyphTarget): boolean | null {
+  // The form's own boxes only: an answer written into the same line is never read as one.
+  const slots = target.paras.flatMap((p) => glyphSlots(paragraphSegments(p).filter((seg) => !isWritten(seg.run) || isKeptPrint(seg.run))));
+  const slot = slots[target.glyphIndex];
+  return slot ? slot.checked : null;
+}
+
+/**
+ * What an answer chooses among a choice field's printed options (forms/choice-marks.ts resolveChoice – the same reading
+ * the validators check approval with), recorded on the field's outcome when it chooses nothing it can mark: an answer
+ * that says it is not known, or names no printed option, is fatal on a decided box and leaves the options as printed.
+ */
+function choiceFor(ctx: Ctx, field: FormField, answer: FormFillAnswer, options: string[]): ChoiceResolution {
+  const r = resolveChoice(field, answer, options);
+  if (r.kind === "unknown" || r.kind === "unmatched") {
+    const t = trackOf(ctx, field);
+    if (t && t.intended === "answer") setOutcome(t, "as_printed", r.kind === "unknown" ? `the answer “${r.text}” says it is not known, so no printed option can be marked` : `the answer “${r.text}” is none of the printed options`);
   }
-  const raw = typeof value === "string" && value.trim() ? value : text;
-  if (!raw) return null;
-  // "Not recorded", "Unknown"… : leave every box as it is (never a definite "No").
-  if (isUnknownAnswer(raw, options)) return null;
-  if (field.answerType === "yes_no" || field.answerType === "checkbox") {
-    if (/^(yes|true|ticked|checked)\b/i.test(raw)) return new Set(options.length === 1 ? options : yes ? [yes] : []);
-    if (/^(no|false)\b/i.test(raw)) return new Set(no ? [no] : []);
-  }
-  const match = matchOption(options, raw);
-  return match ? new Set([match]) : new Set();
+  return r;
 }
 
 function setGlyph(ctx: Ctx, slot: GlyphSlot, checked: boolean): void {
@@ -1064,27 +1543,52 @@ function flushGlyphEdits(ctx: Ctx): void {
 }
 
 function fillCheckboxes(ctx: Ctx, field: FormField, answer: FormFillAnswer, targets: GlyphTarget[]): void {
+  const t = trackOf(ctx, field);
   if (targets.length === 0) {
     ctx.warn(`${where(field)}: no tick boxes are linked to this question.`);
+    setOutcome(t, "not_found", "no tick boxes are linked to it on the form");
     return;
   }
+  for (const target of targets) if (!target.slot) setOutcome(t, "not_found", `the tick box for “${target.option}” is not on the form`);
   if (answer.leftBlank) {
     // Fix round 1 (B0-2): left blank – a box printed ticked is cleared; unticked boxes stay exactly as printed.
-    for (const target of targets) if (target.slot?.checked) setGlyph(ctx, target.slot, false);
+    if (hookEnabled(FILL_LEAVE_BLANK_HOOK)) {
+      for (const target of targets) {
+        if (target.slot?.checked) {
+          setGlyph(ctx, target.slot, false);
+          setOutcome(t, "cleared");
+        }
+      }
+    }
+    t?.checks.push(() => targets.filter((g) => glyphCheckedNow(g) === true).map((g) => `“${g.option}” is ticked on the form`));
     return;
   }
-  const chosen = chosenOptions(field, answer, targets.map((t) => t.option));
-  if (chosen === null) return;
-  if (chosen.size === 0 && (answer.text || answer.value !== undefined)) {
-    ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any tick box, so none was ticked.`);
+  const choice = choiceFor(ctx, field, answer, targets.map((g) => g.option));
+  if (choice.kind !== "chosen") {
+    if (choice.kind === "unmatched") ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any tick box, so none was ticked.`);
+    // Unanswered, unknown or unmatched: every box stays as printed – never a guess (fatal on a decided box, above).
+    return;
   }
+  const chosen = new Set(choice.options);
   for (const target of targets) {
     if (!target.slot) {
       ctx.warn(`${where(field)}: the tick box for “${target.option}” was not found.`);
       continue;
     }
+    if (chosen.has(target.option)) claim(ctx, field, target.slot.segment.el, `glyph@${target.slot.offset}`);
     setGlyph(ctx, target.slot, chosen.has(target.option));
   }
+  setOutcome(t, "written");
+  // Explicit on the issued form: the chosen boxes ticked, every other one clear.
+  t?.checks.push(() =>
+    targets.flatMap((g) => {
+      const now = glyphCheckedNow(g);
+      if (now === null) return [];
+      if (now && !chosen.has(g.option)) return [`“${g.option}” is ticked on the form`];
+      if (!now && chosen.has(g.option)) return [`the chosen “${g.option}” is not ticked`];
+      return [];
+    }),
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1123,11 +1627,11 @@ function markRun(ctx: Ctx, mark: string, rPr: XmlElement | null): XmlElement {
   return run;
 }
 
-function writeMark(ctx: Ctx, ref: BlockRef, mark: string, field: FormField): void {
+function writeMark(ctx: Ctx, ref: BlockRef, mark: string, field: FormField): boolean {
   const paras = markParagraphs(ref);
   if (paras.length === 0) {
     ctx.warn(`${where(field)}: the cell to mark has no line to write in.`);
-    return;
+    return false;
   }
   const texts = paras.map((p) => segmentsText(paragraphSegments(p)));
   const markOnly = texts.findIndex((t) => MARK_ONLY_RE.test(t));
@@ -1136,73 +1640,99 @@ function writeMark(ctx: Ctx, ref: BlockRef, mark: string, field: FormField): voi
     // A mark is printed there already (a default): written again in the form's own place.
     const p = paras[markOnly];
     const at = texts[markOnly].search(/\S/);
-    replaceRange(p, at, at + 1, (styleRPr) => [markRun(ctx, mark, styleRPr ?? rPr)]);
-    return;
+    const ok = replaceRange(p, at, at + 1, (styleRPr) => [markRun(ctx, mark, styleRPr ?? rPr)]);
+    clampRightIndentInCell(ctx, firstW(p, "pPr"), p);
+    return ok;
   }
   if (paras.every(isAnswerSpaceParagraph)) {
     const p = paras[0];
     clearParagraph(p);
     p.appendChild(markRun(ctx, mark, rPr));
-    return;
+    clampRightIndentInCell(ctx, firstW(p, "pPr"), p);
+    return true;
   }
   // The cell prints the option itself ("70%", "Yes"): the mark goes after it.
   let last = paras.length - 1;
   while (last > 0 && texts[last].trim() === "") last -= 1;
   const p = paras[last];
   const end = texts[last].replace(/[\s\u00A0]+$/, "").length;
-  replaceRange(p, end, end, (styleRPr) => [makeRun(ctx, [" "], styleRPr ?? rPr, "answer"), markRun(ctx, mark, styleRPr ?? rPr)]);
+  const ok = replaceRange(p, end, end, (styleRPr) => [makeRun(ctx, [" "], styleRPr ?? rPr, "answer"), markRun(ctx, mark, styleRPr ?? rPr)]);
+  clampRightIndentInCell(ctx, firstW(p, "pPr"), p);
+  return ok;
 }
 
-/** A cell that holds only a mark is cleared (never a mark left in the wrong column). */
-function clearMark(ref: BlockRef): void {
+/** A cell that holds only a mark ("x", "✓", "☒"…), as printed now. */
+function holdsOnlyMark(ref: BlockRef): boolean {
+  const texts = markParagraphs(ref).map((p) => segmentsText(paragraphSegments(p)));
+  const markOnly = texts.findIndex((t) => MARK_ONLY_RE.test(t));
+  return markOnly >= 0 && texts.every((t, i) => i === markOnly || t.trim() === "");
+}
+
+/** A cell that holds only a mark is cleared (never a mark left in the wrong column). True when one was cleared. */
+function clearMark(ref: BlockRef): boolean {
   const paras = markParagraphs(ref);
   const texts = paras.map((p) => segmentsText(paragraphSegments(p)));
   const markOnly = texts.findIndex((t) => MARK_ONLY_RE.test(t));
-  if (markOnly < 0 || !texts.every((t, i) => i === markOnly || t.trim() === "")) return;
+  if (markOnly < 0 || !texts.every((t, i) => i === markOnly || t.trim() === "")) return false;
   const at = texts[markOnly].search(/\S/);
-  replaceRange(paras[markOnly], at, at + 1, () => []);
+  return replaceRange(paras[markOnly], at, at + 1, () => []);
 }
 
 function fillMarkCells(ctx: Ctx, field: FormField, answer: FormFillAnswer, targets: MarkTarget[]): void {
+  const t = trackOf(ctx, field);
   if (targets.length === 0) {
     ctx.warn(`${where(field)}: no cells to mark are linked to this question.`);
+    setOutcome(t, "not_found", "no cells to mark are linked to it on the form");
     return;
   }
-  const options = targets.map((t) => t.option);
+  for (const target of targets) if (!target.ref) setOutcome(t, "not_found", `the cell for “${target.option}” is not on the form`);
+  const options = targets.map((g) => g.option);
+  // Explicit on the issued form: a mark only in the chosen columns (re-read once everything is written).
+  const markedWrongly = (chosen: ReadonlySet<string>) => () =>
+    targets.flatMap((g) => (g.ref && isAttached(ctx, g.ref.el) && !chosen.has(g.option) && holdsOnlyMark(g.ref) ? [`a mark is printed in “${g.option}”`] : []));
   if (answer.leftBlank) {
     // Fix round 1 (B0-2): left blank – a mark printed as a default ("x") is cleared, never left as an answer.
-    for (const target of targets) if (target.ref) clearMark(target.ref);
+    if (hookEnabled(FILL_LEAVE_BLANK_HOOK)) for (const target of targets) if (target.ref && clearMark(target.ref)) setOutcome(t, "cleared");
+    t?.checks.push(markedWrongly(new Set()));
     return;
   }
-  let chosen: Set<string> | null;
-  if (field.answerType === "short_text" || field.answerType === "long_text") {
-    // "Tick all that apply": a text answer names the options to mark ("Neck, Back"). Anything else in it marks nothing.
-    const raw = (answer.text ?? "").trim();
-    if (!raw) return;
-    const named = namedOptions(options, raw);
-    if (named.unmatched) {
-      ctx.warn(`${where(field)}: “${named.unmatched}” is not one of the printed columns, so no cell was marked.`);
-      return;
+  const choice = choiceFor(ctx, field, answer, options);
+  if (choice.kind === "none_given") return;
+  if (choice.kind === "unmatched" && (field.answerType === "short_text" || field.answerType === "long_text")) {
+    // "Tick all that apply" read as text naming something not printed: nothing is marked – the printed default marks
+    // too (explicit, never left to read as the answer). Informational: the validators ask for the printed options.
+    ctx.warn(`${where(field)}: “${choice.text}” is not one of the printed columns, so no cell was marked.`);
+    for (const target of targets) if (target.ref && clearMark(target.ref)) setOutcome(t, "cleared");
+    if (t) {
+      t.noteOnly = true;
+      t.problem = null;
+      t.notes.push(`“${choice.text}” is not one of the printed columns, so no cell was marked`);
     }
-    chosen = new Set(named.matched);
-  } else {
-    chosen = chosenOptions(field, answer, options);
+    t?.checks.push(markedWrongly(new Set()));
+    return;
   }
-  if (chosen === null) return;
-  const unticked = options.length === 1 && (answer.value === false || /^(?:no|false)\b/i.test((answer.text ?? "").trim()));
-  if (chosen.size === 0 && !unticked && field.answerType !== "short_text" && field.answerType !== "long_text" && (answer.text || answer.value !== undefined)) {
-    ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any column, so no cell was marked.`);
+  if (choice.kind !== "chosen") {
+    // Unknown or unmatched: every cell stays as printed – never a guess (fatal on a decided box, choiceFor).
+    if (choice.kind === "unmatched") ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any column, so no cell was marked.`);
+    return;
   }
+  const chosen = new Set(choice.options);
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   const mark = cleanXmlText(anchor?.mark ?? "X").trim() || "X"; // no control characters (security fix 24/10/2026)
+  let ok = true;
   for (const target of targets) {
     if (!target.ref) {
       ctx.warn(`${where(field)}: the cell for “${target.option}” was not found.`);
       continue;
     }
-    if (chosen.has(target.option)) writeMark(ctx, target.ref, mark, field);
-    else clearMark(target.ref);
+    if (chosen.has(target.option)) {
+      claim(ctx, field, target.ref.el, "mark");
+      if (!writeMark(ctx, target.ref, mark, field)) ok = false;
+    } else clearMark(target.ref);
   }
+  if (ok) setOutcome(t, "written");
+  else setOutcome(t, "not_found", "a chosen cell could not be marked");
+  t?.checks.push(markedWrongly(chosen));
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1242,6 +1772,9 @@ function keepsTableApart(p: XmlElement): boolean {
 }
 
 function removeIfBlank(p: XmlElement): void {
+  // Bounded work (plan WA2 design 4): leaving a line off makes xmldom re-index its parent's children, so only where the
+  // parent holds few (fewSiblings) – elsewhere the emptied line stays, empty.
+  if (!fewSiblings(p)) return;
   if (segmentsText(paragraphSegments(p)).trim() !== "") return;
   if (descendantsW(p, "drawing").length > 0 || descendantsW(p, "pict").length > 0) return; // a picture (a logo) stays
   const cell = ancestorW(p, "tc");
@@ -1251,9 +1784,20 @@ function removeIfBlank(p: XmlElement): void {
   remove(p);
 }
 
+/** Occurrences of `needle` in the form's own text of `paras` (answers masked). */
+function printedCount(paras: readonly XmlElement[], needle: string): number {
+  let n = 0;
+  for (const p of paras) {
+    const text = maskedText(p);
+    for (let i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length)) n += 1;
+  }
+  return n;
+}
+
 /** `removeAll` (fix round 1, B0-2): the question was left blank – every printed option is removed, none kept. */
 function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = false): void {
   const { field, ref, answer } = job;
+  const t = unanswered ? null : trackOf(ctx, field);
   const anchor = field.anchor.kind === "docx" ? field.anchor : null;
   if (!anchor) return;
   const lines = anchor.placeholderText ? [] : (anchor.optionTexts ?? []);
@@ -1261,32 +1805,47 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = 
   const list = anchor.placeholderText ?? "";
   const paras = blockParagraphs(ref);
   if (list) {
-    const occ = occurrences(paras, list);
+    const occ = occurrences(ctx, paras, list);
     const k = skipKey(ctx, ref.el, list);
     if (occ.length === 0) {
       if (!unanswered) ctx.warn(`${where(field)}: the options “${list}” were not found, so nothing was deleted.`);
+      setOutcome(t, "not_found", `its printed options (${list}) are not in that place on the form`);
       return;
     }
-    const chosen = removeAll ? new Set<string>() : unanswered ? null : chosenOptions(field, answer, options);
+    const before = printedCount(paras, list);
+    // Explicit on the issued form: the printed list is gone (removed, or replaced by the kept option) – checked once the
+    // whole form is filled.
+    const listGone = () => t?.checks.push(() => (paras.some((p) => isAttached(ctx, p)) && printedCount(paras, list) >= before ? [`the printed options “${list}” are still on the form`] : []));
+    const choice: ChoiceResolution | null = removeAll ? { kind: "chosen", options: [] } : unanswered ? null : choiceFor(ctx, field, answer, options);
+    const chosen = choice?.kind === "chosen" ? new Set(choice.options) : null;
     const target = occ[Math.min(k, occ.length - 1)];
+    if (t && t.decided) claim(ctx, field, target.p, `list|${list}|${Math.min(k, occ.length - 1)}`);
     // A single printed item ("delete any that do not apply"): kept when ticked, removed when not – and the whole list
     // when the question is left blank.
     if (chosen && (options.length === 1 || removeAll)) {
       let settled = true;
       if (chosen.size === 0 && !replaceRange(target.p, target.index, target.index + target.length, () => [])) {
         ctx.warn(`${where(field)}: “${list}” could not be removed.`);
+        setOutcome(t, "as_printed", `“${list}” could not be removed`);
         settled = false;
       }
       if (chosen.size === 0) {
         ctx.deletedParas.add(target.p);
         removeIfBlank(target.p);
+        if (settled) setOutcome(t, removeAll ? "cleared" : "written");
+        listGone();
+      } else {
+        // The single item is kept as printed: that is the answer.
+        addSkip(ctx, ref.el, list);
+        setOutcome(t, "written");
       }
-      else addSkip(ctx, ref.el, list);
       if (settled) ctx.chosenLists.add(field);
       return;
     }
     if (chosen === null || chosen.size !== 1) {
-      if (chosen && chosen.size === 0) ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” is not one of “${list}”, so every option was left as printed.`);
+      if ((chosen && chosen.size === 0) || choice?.kind === "unmatched") ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” is not one of “${list}”, so every option was left as printed.`);
+      if (chosen && chosen.size > 1) setOutcome(t, "as_printed", `the answer chooses more than one of “${list}”`);
+      if (t?.decided && choice?.kind !== "none_given") listGone();
       addSkip(ctx, ref.el, list);
       return;
     }
@@ -1295,31 +1854,51 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = 
     const at = findWord(printed, keep);
     const kept = cleanXmlText(at >= 0 ? printed.slice(at, at + keep.trim().length) : keep); // no control characters (24/10)
     ctx.deletedParas.add(target.p);
-    if (!replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => [makeRun(ctx, [kept], styleRPr, "answer")])) {
+    if (
+      !replaceRange(target.p, target.index, target.index + target.length, (styleRPr) => {
+        const run = makeRun(ctx, [kept], styleRPr, "answer");
+        KEPT_PRINT.add(run);
+        return [run];
+      })
+    ) {
       ctx.warn(`${where(field)}: the options “${list}” could not be changed, so every option was left as printed.`);
-    } else ctx.chosenLists.add(field);
+      setOutcome(t, "as_printed", `the options “${list}” could not be changed`);
+    } else {
+      ctx.chosenLists.add(field);
+      setOutcome(t, "written");
+    }
+    listGone();
     return;
   }
   // One option per line (or a single printed item kept when ticked).
-  const chosen = removeAll ? new Set<string>() : unanswered ? null : chosenOptions(field, answer, options);
-  if (chosen === null) return;
-  if (chosen.size === 0 && options.length > 1 && !removeAll) {
+  const choice: ChoiceResolution | null = removeAll ? { kind: "chosen", options: [] } : unanswered ? null : choiceFor(ctx, field, answer, options);
+  if (choice === null || choice.kind === "none_given") return;
+  if (choice.kind !== "chosen") {
     ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any printed option, so every option was left as printed.`);
     return;
   }
+  const chosen = new Set(choice.options);
+  if (chosen.size === 0 && options.length > 1 && !removeAll) {
+    ctx.warn(`${where(field)}: the answer “${answer.text ?? String(answer.value)}” does not match any printed option, so every option was left as printed.`);
+    setOutcome(t, "as_printed", "none of the printed options matches the answer");
+    return;
+  }
   // Locate every option on the untouched lines first, then remove the others from the end backwards.
-  const located: Array<{ option: string; p: XmlElement; index: number; length: number }> = [];
+  const located: Array<{ option: string; p: XmlElement; index: number; length: number; text: string }> = [];
   // Positions already taken, per paragraph (security fix 24/10/2026: a Set, not a scan of `located` per option).
   const taken = new Map<XmlElement, Set<number>>();
   for (const o of lines) {
     const block = ctx.index.byId.get(o.blockId);
     if (!block) {
       ctx.warn(`${where(field)}: the line for “${o.option}” was not found, so every option was left as printed.`);
+      setOutcome(t, "not_found", `the line for “${o.option}” is not on the form`);
       return;
     }
     let hit: { p: XmlElement; index: number } | null = null;
-    for (const p of blockParagraphs(block)) {
-      const text = segmentsText(paragraphSegments(p));
+    const blockParas = blockParagraphs(block);
+    step(ctx, blockParas.length);
+    for (const p of blockParas) {
+      const text = maskedText(p);
       const i = text.indexOf(o.text);
       if (i >= 0 && !taken.get(p)?.has(i)) {
         hit = { p, index: i };
@@ -1328,9 +1907,10 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = 
     }
     if (!hit) {
       ctx.warn(`${where(field)}: “${o.text}” was not found, so every option was left as printed.`);
+      setOutcome(t, "not_found", `the printed option “${o.text}” is not in its place on the form`);
       return;
     }
-    located.push({ option: o.option, p: hit.p, index: hit.index, length: o.text.length });
+    located.push({ option: o.option, p: hit.p, index: hit.index, length: o.text.length, text: o.text });
     const set = taken.get(hit.p) ?? new Set<number>();
     set.add(hit.index);
     taken.set(hit.p, set);
@@ -1339,6 +1919,7 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = 
   // 24/10/2026: one sort over all paragraphs with "0 when the paragraphs differ" is not a consistent comparator, and
   // options interleaved over two paragraphs could delete the wrong characters).
   const drop = located.filter((l) => !chosen.has(l.option));
+  const printedBefore = new Map(drop.map((l) => [l, printedCount([l.p], l.text)] as const));
   const byParagraph = new Map<XmlElement, typeof drop>();
   for (const l of drop) byParagraph.set(l.p, [...(byParagraph.get(l.p) ?? []), l]);
   let settled = true;
@@ -1353,6 +1934,12 @@ function fillDeleteOptions(ctx: Ctx, job: Job, unanswered: boolean, removeAll = 
   });
   byParagraph.forEach((_, para) => removeIfBlank(para));
   if (settled) ctx.chosenLists.add(field);
+  if (t) {
+    if (settled) setOutcome(t, removeAll ? "cleared" : "written");
+    else setOutcome(t, "as_printed", "a printed option that was not chosen could not be removed");
+    // Explicit on the issued form: every option not chosen is gone (its line removed, or its text).
+    t.checks.push(() => drop.filter((l) => isAttached(ctx, l.p) && printedCount([l.p], l.text) >= (printedBefore.get(l) ?? 1)).map((l) => `the printed option “${l.option}” is still on the form`));
+  }
 }
 
 /** Every table row around `el` whose height is exact is set to "at least" that height, so an answer never clips. */
@@ -1566,11 +2153,11 @@ interface InstructionPlan {
  * note beside options. null when the form prints more than MAX_INSTRUCTIONS_PER_FORM: not a template's notes, so it is
  * left as printed (and the work stays bounded: security review 25/10/2026).
  */
-function planInstructions(dom: DocxDom, lists: ListsByElement): InstructionPlan | null {
+function planInstructions(ctx: Ctx, lists: ListsByElement): InstructionPlan | null {
   const plan: InstructionPlan = { rows: [], lists: new Map() };
   const claimed = new Set<XmlElement>();
   let count = 0;
-  for (const p of descendantsW(dom.body, "p")) {
+  for (const p of descendantsW(ctx.dom.body, "p")) {
     const here = instructionsIn(p);
     if (here.length === 0) continue;
     count += here.length;
@@ -1698,14 +2285,142 @@ function insertDraftBanner(ctx: Ctx): void {
  * Entry point
  * ----------------------------------------------------------------------------------------------*/
 
-export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: FillOptions): Buffer {
+/** A not-applicable reason (BoxState not_applicable): the box is not asked, so a merge code there is cleared. */
+const NOT_APPLICABLE_REASONS = new Set(["condition", "session_not_attended", "person"]);
+
+/** What a field is meant to issue – WA1's state when the caller has it, else what its answer says – and the answer to fill. */
+function intentOf(field: FormField, given: FormFillAnswer, opts: DocxFillOptions): Pick<Track, "intended" | "reason" | "decided"> & { answer: FormFillAnswer } {
+  const s = opts.states?.[field.id];
+  const has = answerText(field, given) !== "";
+  if (s) {
+    switch (s.kind) {
+      case "answer":
+        return { intended: "answer", reason: null, decided: true, answer: given };
+      case "signoff":
+        return { intended: "signoff", reason: null, decided: has, answer: given };
+      case "not_applicable":
+        return { intended: "not_applicable", reason: s.reason, decided: true, answer: { leftBlank: true } };
+      case "blank":
+        if (s.reason === "record_empty") return { intended: "blank", reason: s.reason, decided: true, answer: { text: "", blank: true } };
+        if (s.reason === "no_answer" && opts.draft) return { intended: "blank", reason: s.reason, decided: false, answer: {} };
+        return { intended: "blank", reason: s.reason, decided: true, answer: { leftBlank: true } };
+      default:
+        return { intended: s.kind, reason: null, decided: false, answer: {} };
+    }
+  }
+  if (field.fillSource.kind === "signoff") return { intended: "signoff", reason: null, decided: has, answer: given };
+  if (has) return { intended: "answer", reason: null, decided: true, answer: given };
+  if (given.blank) return { intended: "blank", reason: "record_empty", decided: true, answer: given };
+  if (given.leftBlank) return { intended: "blank", reason: "left_blank", decided: true, answer: given };
+  // No answer and no decision (core/forms buildFormAnswers: {} – a draft, or an older caller): left as printed.
+  return { intended: "blank", reason: "no_answer", decided: false, answer: given };
+}
+
+/** A merge code a field's placeholder prints, still in the form's own text of its block. */
+function mergeCodesLeft(ctx: Ctx, job: Job): string[] {
+  const needle = job.field.anchor.kind === "docx" ? (job.field.anchor.placeholderText ?? "") : "";
+  const tokens = findMergeTokens(needle);
+  if (tokens.length === 0) return [];
+  const paras = blockParagraphs(job.ref).filter((p) => isAttached(ctx, p));
+  return tokens.filter((tok) => printedCount(paras, tok) > 0);
+}
+
+/**
+ * A box decided blank (left blank, approved without an answer, not applicable): it prints nothing that reads as an
+ * answer (ledger hook "fill-leave-blank"). Blank lines and empty cells stay as printed.
+ */
+function fillBlankBox(ctx: Ctx, job: Job, t: Track): void {
+  const anchor = job.field.anchor.kind === "docx" ? job.field.anchor : null;
+  if (!anchor) return;
+  const enabled = hookEnabled(FILL_LEAVE_BLANK_HOOK);
+  const needle = anchor.placeholderText ?? "";
+  switch (anchor.target) {
+    case "delete_options":
+      if (enabled) fillDeleteOptions(ctx, job, false, true);
+      else t.checks.push(() => (needle && printedCount(blockParagraphs(job.ref).filter((p) => isAttached(ctx, p)), needle) > 0 ? [`the printed options “${needle}” are still on the form`] : []));
+      return;
+    case "replace_placeholder": {
+      if (anchor.writeAfter || !needle) return;
+      if (hasMergeToken(needle)) {
+        // A merge code is cleared only where the box is not asked; in a box left blank it stays – the copy is refused.
+        if (enabled && t.intended === "not_applicable" && NOT_APPLICABLE_REASONS.has(t.reason ?? "") && clearPlaceholder(ctx, job)) setOutcome(t, "cleared");
+        t.checks.push(() => mergeCodesLeft(ctx, job).map((tok) => `${listMergeTokensInWords([tok])} is still on the form (a mail-merge field)`));
+        return;
+      }
+      if (printsDefault(needle) || anchor.clearPlaceholder) {
+        // A printed default ("30 minutes") or text that must never go out is removed.
+        const paras = blockParagraphs(job.ref);
+        const before = printedCount(paras, needle);
+        if (enabled && clearPlaceholder(ctx, job)) setOutcome(t, "cleared");
+        if (printsDefault(needle)) t.checks.push(() => (paras.some((p) => isAttached(ctx, p)) && printedCount(paras.filter((p) => isAttached(ctx, p)), needle) >= before ? [`the printed default “${needle}” is still on the form`] : []));
+        return;
+      }
+      // Khuram, 26/10 (B3-19): a sentence opener left blank loses its printed lead and dots.
+      if (dropBlankOpener(ctx, job, enabled)) setOutcome(t, "removed");
+      return;
+    }
+    case "content_control": {
+      const kind = clearContentControl(ctx, job, enabled);
+      if (kind === "not_found") setOutcome(t, "not_found", "no free content control is in that place on the form");
+      else setOutcome(t, kind);
+      return;
+    }
+    case "legacy_form_field": {
+      const kind = clearLegacyField(ctx, job, enabled);
+      if (kind === "not_found") setOutcome(t, "not_found", "no free Word form field is in that place on the form");
+      else setOutcome(t, kind);
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+/** The outcome reported for a field: fatal per plan WA2 design 1 (see the file comment). */
+function toOutcome(t: Track): FillOutcome {
+  const unwritten = (t.intended === "answer" || t.intended === "signoff") && t.outcome !== "written" && !t.noteOnly;
+  const fatal = t.decided && (t.outcome === "not_found" || t.outcome === "collision" || t.residue.length > 0 || unwritten);
+  const problem = t.problem ?? (unwritten ? "the answer was not written on the form" : null);
+  const note = fatal && problem ? problem : t.notes.join("; ") || (problem ?? "");
+  return {
+    fieldId: t.field.id,
+    intended: t.intended,
+    outcome: t.outcome,
+    ...(t.residue.length > 0 && { residue: Array.from(new Set(t.residue)) }),
+    fatal,
+    ...(note && { note }),
+  };
+}
+
+/** The completed Word file and what the fill did at each answerable field (form order). */
+export interface DocxFillReport {
+  bytes: Buffer;
+  outcomes: FillOutcome[];
+}
+
+export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: DocxFillOptions): Buffer {
+  return fillDocxReport(buf, form, answers, opts).bytes;
+}
+
+export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: FormFillAnswers, opts: DocxFillOptions): DocxFillReport {
   const dom = loadDocxDom(buf);
   const index = indexBlocks(dom);
+  // Bounded work (plan WA2 design 4): a body of more blocks than any real form is refused before anything is filled.
+  if (index.blocks.length > MAX_FILL_BLOCKS) throw tooComplex(`This Word file has ${index.blocks.length.toLocaleString("en-GB")} paragraphs and table cells; forms that can be filled here have at most ${MAX_FILL_BLOCKS.toLocaleString("en-GB")}.`);
+  lastSteps = 0;
   const ctx: Ctx = {
     dom,
     index,
+    form,
     opts,
     warn: (m) => opts.onWarning?.(m),
+    tracks: new Map(),
+    current: null,
+    claims: new Map(),
+    claimIds: new WeakMap(),
+    nextClaimId: 0,
+    steps: 0,
+    sources: { firstRun: new WeakMap(), row: new WeakMap(), spaces: new WeakMap() },
     skipped: new Map(),
     usedControls: new Set(),
     usedLegacy: new Set(),
@@ -1720,14 +2435,20 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
   const jobs: Job[] = [];
   const glyphJobs: { field: FormField; answer: FormFillAnswer; targets: GlyphTarget[] }[] = [];
   const markJobs: { field: FormField; answer: FormFillAnswer; targets: MarkTarget[] }[] = [];
+  const effective: FormFillAnswers = {};
   for (const field of form.fields) {
     if (!isAnswerableField(field)) continue;
+    const intent = intentOf(field, answers[field.id] ?? {}, opts);
+    const t: Track = { field, intended: intent.intended, reason: intent.reason, decided: intent.decided, outcome: "as_printed", problem: null, residue: [], notes: [], noteOnly: false, runs: [], checks: [] };
+    ctx.tracks.set(field, t);
+    const answer = intent.answer;
+    effective[field.id] = answer;
     const anchor = field.anchor;
     if (anchor.kind !== "docx") {
       ctx.warn(`${where(field)}: this question has a PDF position, so it cannot be written into a Word form.`);
+      setOutcome(t, "not_found", "it has a place on a PDF form, not on this Word form");
       continue;
     }
-    const answer = answers[field.id] ?? {};
     if (anchor.target === "checkbox_glyph") {
       glyphJobs.push({ field, answer, targets: resolveGlyphs(ctx, field) });
       continue;
@@ -1739,17 +2460,31 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     const ref = index.byId.get(anchor.blockId);
     if (!ref) {
       ctx.warn(`${where(field)}: its place on the form (${anchor.blockId}) was not found, so it was left blank. Check the form mapping.`);
+      setOutcome(t, "not_found", `its place on the form (${anchor.blockId}) is not in this file`);
       continue;
     }
     jobs.push({ field, answer, ref });
   }
-  const instructions = planInstructions(dom, listsByElement(ctx, jobs));
-  const answered = instructions?.rows.length ? answeredRows(ctx, form, answers) : new Set<XmlElement>();
+  // Bounded work: every question reads its own cell, so a cell of more lines than any real form is refused.
+  const cells = [...jobs.map((j) => j.ref), ...markJobs.flatMap((m) => m.targets.map((x) => x.ref))];
+  for (const ref of cells) {
+    if (ref?.kind === "cell" && ref.paragraphs.length > MAX_BLOCK_PARAGRAPHS) {
+      throw tooComplex(`A table cell of this Word file holds ${ref.paragraphs.length.toLocaleString("en-GB")} lines; a cell that is filled here holds at most ${MAX_BLOCK_PARAGRAPHS.toLocaleString("en-GB")}.`);
+    }
+  }
+  const instructions = planInstructions(ctx, listsByElement(ctx, jobs));
+  const answered = instructions?.rows.length ? answeredRows(ctx, form, effective) : new Set<XmlElement>();
 
   // 2. Tick boxes first: they only swap characters, so nothing else moves. Then the marked cells (each in its own cell).
-  for (const g of glyphJobs) fillCheckboxes(ctx, g.field, g.answer, g.targets);
+  for (const g of glyphJobs) {
+    ctx.current = trackOf(ctx, g.field);
+    fillCheckboxes(ctx, g.field, g.answer, g.targets);
+  }
   flushGlyphEdits(ctx);
-  for (const m of markJobs) fillMarkCells(ctx, m.field, m.answer, m.targets);
+  for (const m of markJobs) {
+    ctx.current = trackOf(ctx, m.field);
+    fillMarkCells(ctx, m.field, m.answer, m.targets);
+  }
 
   // 3. Text answers, in form order – "delete as necessary" lists first (10/2026 verify), so a blank printed inside a
   //    deleted option is known to be gone, and one inside a kept option is filled whatever the questions' order.
@@ -1757,9 +2492,12 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
   for (const job of [...jobs.filter(isDelete), ...jobs.filter((j) => !isDelete(j))]) {
     const { field } = job;
     const anchor = field.anchor.kind === "docx" ? field.anchor : null;
+    const t = trackOf(ctx, field)!;
+    ctx.current = t;
     if (!anchor) continue;
     if (!job.ref.el.parentNode) {
       ctx.warn(`${where(field)}: its place on the form was used by another answer, so it was left blank.`);
+      setOutcome(t, "collision", "its place on the form was taken by another answer");
       continue;
     }
     const text = answerText(field, job.answer);
@@ -1767,15 +2505,14 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     // placeholder (a clinic system's merge code) is removed, never left or marked.
     const blank = text === "" && job.answer.blank === true;
     if (blank) {
-      if (anchor.target === "replace_placeholder" && !anchor.writeAfter) clearPlaceholder(ctx, job);
+      if (anchor.target === "replace_placeholder" && !anchor.writeAfter && clearPlaceholder(ctx, job)) setOutcome(t, "cleared");
+      t.checks.push(() => mergeCodesLeft(ctx, job).map((tok) => `${listMergeTokensInWords([tok])} is still on the form (a mail-merge field)`));
       continue;
     }
-    // Fix round 1 (B0-2): a question a person left blank (or an approved report left without an answer) prints nothing
-    // that reads as an answer: a "delete as necessary" list is removed, a printed default value ("30 minutes") too.
-    // Blank lines and empty cells stay as printed, with no review marker (it is decided).
+    // Fix round 1 (B0-2): a question a person left blank (or an approved report left without an answer, or one that
+    // does not apply) prints nothing that reads as an answer – fillBlankBox.
     if (text === "" && job.answer.leftBlank) {
-      if (anchor.target === "delete_options") fillDeleteOptions(ctx, job, false, true);
-      else if (anchor.target === "replace_placeholder" && !anchor.writeAfter && printsDefault(anchor.placeholderText)) clearPlaceholder(ctx, job);
+      fillBlankBox(ctx, job, t);
       continue;
     }
     const unanswered = text === "";
@@ -1793,6 +2530,10 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     if (anchor.target === "delete_options") {
       fillDeleteOptions(ctx, job, unanswered);
       continue;
+    }
+    if (kind === "answer" && (anchor.target === "table_cell" || anchor.target === "after_paragraph")) {
+      // Two answers mapped to one answer cell, or written after the same printed line, collide.
+      claim(ctx, field, job.ref.el, anchor.target === "after_paragraph" && job.ref.kind === "paragraph" ? "after" : "cell");
     }
     switch (anchor.target) {
       case "table_cell":
@@ -1817,10 +2558,23 @@ export function fillDocx(buf: Uint8Array, form: FormDefinition, answers: FormFil
     // Word; once something is written there it becomes "at least" that height – the same look for a one-line answer.
     if (!skip) growExactRows(ctx, job.ref.el);
   }
+  ctx.current = null;
 
   // 4. The form author's instructions for whoever completes it are left off (10/2026, core/template-instructions.ts).
   leaveOffInstructions(ctx, instructions, answered);
 
+  // 5. What the fill did (plan WA2 design 1), on the elements resolved before anything changed: an answer that is no
+  //    longer on the form, and residue on a decided box.
+  for (const t of Array.from(ctx.tracks.values())) {
+    if (!t.decided) continue;
+    if ((t.intended === "answer" || t.intended === "signoff") && t.outcome === "written" && t.runs.length > 0 && !t.runs.some((r: XmlElement) => isAttached(ctx, r))) {
+      t.outcome = "collision";
+      t.problem = "another answer, or a line or row left off, took its place on the form";
+    }
+    for (const check of t.checks) t.residue.push(...check());
+  }
+  const outcomes = form.fields.filter(isAnswerableField).map((f) => toOutcome(ctx.tracks.get(f)!));
+
   if (opts.draft) insertDraftBanner(ctx);
-  return saveDocxDom(dom);
+  return { bytes: saveDocxDom(dom), outcomes };
 }

@@ -18,7 +18,12 @@ import "server-only";
  * clinic's (403 TENANT_MISMATCH). A demo clinic's preview (ClinicProfile.demoClinic, read on the server)
  * carries the demonstration notice on every page (core/demo-clinic.ts demoOutputNotice).
  *
- * Owner: forms-engine agent.
+ * bh2 WA2: the map in the request is size-capped first (forms/request-caps.ts – 422 FORM_TOO_COMPLEX; the fill's own
+ * step budget refuses a file too complex to fill the same way), and the response carries what the fill did at each
+ * field (HEADERS.fillOutcomes, render-form.ts fillOutcomesHeader – the review card's "On the form" line; a draft is never
+ * refused for a fatal outcome, it reports it).
+ *
+ * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
  */
 import { actorInDemoClinic, assertActorTenant, requireActor } from "../../auth/actor";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
@@ -29,7 +34,8 @@ import { isQuestionSet } from "../../core/question-set";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
-import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
+import { fillOutcomesHeader, fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
+import { formRequestCapIssues } from "../../forms/request-caps";
 import { CONTENT_TYPES, FormFillPreviewRequestSchema, HEADERS } from "../contract";
 import { fileResponse, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
@@ -50,6 +56,9 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
   }
   const resolved = resolveTemplate({ templateId: report.templateId, form, reportForm: report.form, path: "report.templateId" });
   if (!resolved.ok) return resolved.response;
+  // Bounded work (plan WA2 design 4): a map in the request larger than any real form is refused before it is filled.
+  const capIssues = formRequestCapIssues(form);
+  if (capIssues.length > 0) return problem(422, "This form is too complex to fill", { code: "FORM_TOO_COMPLEX", detail: capIssues[0].message, issues: capIssues });
 
   const started = Date.now();
   // Demo clinics (read on the server): the preview carries the demonstration notice too.
@@ -73,7 +82,8 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
   if (reviewMarkers) answers = withSourceMarkers(answers, report, form);
   const out = await renderFormFile({ form, file, answers, draft: true, reviewMarkers, format: "original", ...(notice ? { demoNotice: notice } : {}) });
 
-  logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
+  const fatal = (out.outcomes ?? []).filter((o) => o.fatal).length;
+  logEvent("form_fill_preview", { form: form.id, kind: form.kind, bytes: out.bytes.byteLength, warnings: out.warnings.length, fatal, ms: Date.now() - started });
   return fileResponse(out.bytes, {
     contentType: out.contentType,
     fileName: `${formFileBaseName(report, form, { signed: false, dateIso: todayIso(), preview: true })}.${out.extension}`,
@@ -82,6 +92,7 @@ export const handleFormsFillPreview: MedreportHandler = async (req, _ctx, deps) 
       [HEADERS.renderKind]: "draft",
       [HEADERS.formKind]: form.kind,
       ...fillWarningsHeader(out.warnings),
+      ...fillOutcomesHeader(out.outcomes),
     },
   });
 };
