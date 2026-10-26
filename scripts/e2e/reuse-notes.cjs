@@ -32,7 +32,8 @@ const { chromium } = require("playwright");
 
 const REPO = process.env.REPO || path.resolve(__dirname, "../..");
 const PORT = Number(process.env.PORT || 3271);
-if (PORT < 3270 || PORT > 3279) throw new Error("ports 3270–3279 only");
+// bh2-rc1: also 3300–3399, the range the Blue Heart release's integration runs keep to (other sessions use 3270–3279).
+if (!((PORT >= 3270 && PORT <= 3279) || (PORT >= 3300 && PORT <= 3399))) throw new Error("ports 3270–3279 or 3300–3399 only");
 const BASE = `http://localhost:${PORT}`;
 const OUT = process.env.E2E_OUT || path.join(REPO, ".e2e-out", "reuse-notes");
 const NOTES =
