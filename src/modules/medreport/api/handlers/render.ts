@@ -34,6 +34,15 @@ import "server-only";
  * the demo clinic notice), and the final document's audit row says demoClinic. Real clinics and the public demo are
  * unchanged. File names follow the usual rules.
  *
+ * bh2 WA1 design 7 (R-security-1, E5): a receipt that binds what was issued (SignReceipt.issuedContentSha256 /
+ * acknowledgementsSha256, minted by /sign's dry run) makes a FINAL copy only when both still hold: the acknowledgements
+ * the validators carry over now are the ones the approval relied on, and the Word document filled now (the issue
+ * state's answers, the receipt's signer and time) hashes to the one checked at approval. Otherwise 409
+ * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's. A receipt
+ * from before the release (without those keys) renders exactly as before.
+ * Release rule (README): no forms-engine change is deployed while approved trial reports exist without first running
+ * scripts/admin/check-issued.ts (decrypt, re-render, compare).
+ *
  * Owner: forms-engine agent.
  */
 import { AUDIT_ACTIONS, actorInDemoClinic, assertActorTenant, auditActor, macPrefix, requireActor, type Actor } from "../../auth/actor";
@@ -57,6 +66,7 @@ import type { MedreportDeps } from "../deps";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
 import { formFileForRequest } from "./store-form-file";
+import { acknowledgementsSha256, bindsIssuedDocument, issuedContentSha256, issuedDocument } from "./sign/receipt";
 
 interface FinalDecision {
   final: boolean;
@@ -64,6 +74,8 @@ interface FinalDecision {
   refusal: Response | null;
   /** When final: the content hash the verified receipt records (what was approved). */
   contentSha256?: string;
+  /** bh2 WA1: the receipt-bound acknowledgements changed (the refusal is ISSUED_COPY_CHANGED, always sent and audited). */
+  issuedChanged?: "acknowledgements";
 }
 
 async function decideFinal(
@@ -127,7 +139,33 @@ async function decideFinal(
       refusal: problem(422, "A review copy is never final", { code: "VALIDATION_FAILED", issues: [{ path: "reviewCopy", message: "Leave reviewCopy off for the final copy." }] }),
     };
   }
+  // bh2 WA1 design 7: the acknowledgements carried over now must be the ones the approval relied on (receipt-bound).
+  if (receipt.acknowledgementsSha256 && acknowledgementsSha256(validation.flags, report.gaps ?? []) !== receipt.acknowledgementsSha256) {
+    return { final: false, refusal: issuedCopyChanged("acknowledgements"), issuedChanged: "acknowledgements" };
+  }
   return { final: true, refusal: null, contentSha256: verified.contentSha256 };
+}
+
+/** 409 ISSUED_COPY_CHANGED: what would be issued now is not what was approved (bh2 WA1 design 7). */
+function issuedCopyChanged(what: "acknowledgements" | "document"): Response {
+  return problem(409, "The completed form differs from the one approved", {
+    code: "ISSUED_COPY_CHANGED",
+    detail:
+      what === "acknowledgements"
+        ? "The checks acknowledged on this report are not the ones it was approved with, so a final copy cannot be issued. Reload the approved report, or create an amended version and approve it again."
+        : "Filling the form now would not give the document that was approved, so a final copy cannot be issued. Ask ClinForms support to check this approval; create an amended version to issue it again.",
+  });
+}
+
+/** A refused final copy goes into the clinic's audit trail too (ids only). */
+async function auditIssuedChanged(deps: MedreportDeps, actor: Actor, report: Report, receipt: SignReceipt | undefined, what: "acknowledgements" | "document"): Promise<void> {
+  logEvent("render_refused_issued_changed", { report: report.id, what });
+  await auditActor(deps, actor, {
+    action: AUDIT_ACTIONS.renderFinal,
+    targetType: "report",
+    targetId: report.id,
+    detail: { refused: "ISSUED_COPY_CHANGED", what, receiptMac: macPrefix(receipt?.mac) },
+  });
 }
 
 function decodeTemplateDocx(base64: string): Uint8Array | Response {
@@ -236,6 +274,10 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     receipt || parsed.data.requireFinal
       ? await decideFinal(report, receipt, validation, { reviewCopy, form: formDef, templateDocx: Boolean(templateDocxBase64), tenantId: actor.tenantId })
       : { final: false, refusal: null };
+  if ("issuedChanged" in decision && decision.issuedChanged) {
+    await auditIssuedChanged(deps, actor, report, receipt, decision.issuedChanged);
+    return decision.refusal as Response;
+  }
   if (parsed.data.requireFinal && !decision.final && decision.refusal) return decision.refusal;
   const final = decision.final;
   // A demo clinic's outputs all carry the demonstration notice (undefined everywhere else; read on the server).
@@ -305,18 +347,31 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     const expectedSha256 = report.form?.fileSha256 ?? formDef.file.sha256;
     const file = await formFileForRequest(deps, { fileBase64, sha256: expectedSha256, tenantId: actor.via === "demo" ? null : actor.tenantId });
     assertFormFileMatches(file, expectedSha256);
+    // bh2 WA1 design 7: a receipt that binds the issued document – fill it again exactly as /sign's dry run did (the
+    // issue state's answers, the receipt's signer and time, no clinic notice) and compare before anything is issued.
+    let issued: Awaited<ReturnType<typeof issuedDocument>> | null = null;
+    if (final && receipt?.issuedContentSha256 && bindsIssuedDocument(formDef)) {
+      issued = await issuedDocument({ report, form: formDef, file, approval: receipt });
+      if (issuedContentSha256(issued.bytes) !== receipt.issuedContentSha256) {
+        await auditIssuedChanged(deps, actor, report, receipt, "document");
+        return issuedCopyChanged("document");
+      }
+    }
     let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
     if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
-    const out = await renderFormFile({
-      form: formDef,
-      file,
-      answers,
-      draft: !final,
-      reviewMarkers: reviewCopy,
-      format: format === "pdf" ? "pdf" : "original",
-      continuationLabel: continuationLabelFor(report),
-      ...(notice ? { demoNotice: notice } : {}),
-    });
+    const out =
+      issued && format !== "pdf" && !notice
+        ? issued
+        : await renderFormFile({
+            form: formDef,
+            file,
+            answers,
+            draft: !final,
+            reviewMarkers: reviewCopy,
+            format: format === "pdf" ? "pdf" : "original",
+            continuationLabel: continuationLabelFor(report),
+            ...(notice ? { demoNotice: notice } : {}),
+          });
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
     if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose, demoClinic);

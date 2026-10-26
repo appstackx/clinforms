@@ -42,6 +42,10 @@ import "server-only";
  * report of the same patient, episode and form (the server's fingerprint of this report, api/usage.ts usageEpisodeFp);
  * any other "amends" counts as a new report. The public demo never counts.
  *
+ * bh2 WA1 (design 6): in a clinic's Studio the body must be the stored revision (409 STALE_REPORT); a dry-run FINAL fill
+ * with the receipt's signer and time must succeed (409 ISSUE_REFUSED with the boxes concerned); the receipt binds the
+ * issued document's content hash and the acknowledgements the approval relied on (checks/issue.ts, sign/receipt.ts).
+ *
  * W0.4 module split (bh2): the checks live in sign/checks/ (roles.ts – who signs and the demo number, owner WC;
  * voice.ts – the signer's own voice, WB; issue.ts – the validators, WA1) and the receipt in sign/receipt.ts (WA1);
  * this file runs them in the order above. W0.6 adds the pipeline's stub checks (SIGNER_CHECKS, BEFORE_VALIDATION,
@@ -63,13 +67,14 @@ import { signerConfirmationsCheck, voiceRefusal } from "./checks/voice";
 import { mintReceipt } from "./receipt";
 
 /**
- * W0.6 pipeline: the checks the workstreams fill in, in the order they run (each a stub that refuses nothing today).
- * Once the signer is known: is the signer the report's approver (WC). Before the validators: is the body the stored
- * revision (WA1). After them: the signer's confirmations (WB), then what would be issued (WA1).
+ * W0.6 pipeline: the checks the workstreams fill in, in the order they run. Once the signer is known: is the signer the
+ * report's approver (WC). Before the validators: is the body the stored revision (WA1 – checks/issue.ts). After them:
+ * the signer's confirmations (WB), then what would be issued – the dry-run FINAL fill with the receipt's own signer and
+ * time (WA1, checks/issue.ts issuedDocumentCheck, run last below with the approval time and the validators' result).
  */
 const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
 const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
-const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck, issuedDocumentCheck];
+const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck];
 
 async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {
   for (const check of checks) {
@@ -141,13 +146,18 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (stale) return stale;
   const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started });
   if (blocked) return blocked;
-  const notIssuable = await runChecks(AFTER_VALIDATION, ctx);
+  const unconfirmed = await runChecks(AFTER_VALIDATION, ctx);
+  if (unconfirmed) return unconfirmed;
+  // bh2 WA1 design 6: the approval time is minted once – the dry-run FINAL fill writes it into the sign-off boxes and the
+  // receipt carries it, so the issued document is exactly the one checked here.
+  const signedAt = new Date();
+  const notIssuable = await issuedDocumentCheck(ctx, { signedAt, validation: result, ...(parsed.data.fileBase64 ? { fileBase64: parsed.data.fileBase64 } : {}) });
   if (notIssuable) return notIssuable;
 
   const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
   if (demoRefusal) return demoRefusal;
 
-  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor, additions: signerCtx.receiptAdditions });
+  const receipt = await mintReceipt({ report, signer, template, formMapSha256: attestedMapSha256, actor, additions: signerCtx.receiptAdditions, now: signedAt });
   const body: SignResponse = { receipt, flags: result.flags };
   logEvent("sign", { template: template.id, report: report.id, flags: result.flags.length, form: Boolean(resolved.form), via: actor.via, demoClinic, ms: Date.now() - started });
   const demoNumber = demoClinic ? normaliseDemoHcpc(signer.hcpc) : null;
