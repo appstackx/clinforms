@@ -221,3 +221,26 @@ describe("harden-WC (check2-WC): what the map says a box is, and answers nobody 
     assert.equal(pendingProposal({ ...report, gaps: [settledBySarah] }, bare), null);
   });
 });
+
+describe("harden-WC: causation, work capacity and the clinician's own findings in other words make a clinician box", () => {
+  it("reads them on the label; plain record and treatment questions stay as they are", () => {
+    for (const label of [
+      "Is he still off work as a result of the injury?",
+      "Is the pain due to the collision?",
+      "Is she unable to fulfil her normal duties?",
+      "Is he able to perform his own duties at work?",
+      "Capable of full duties",
+      "Diagnosis",
+      "Clinical impression",
+      "WAD grade",
+      "Grade on the Quebec scale",
+      "Were the treatment goals met?",
+    ]) {
+      assert.equal(OPINION_BOX_WORDING.test(label), true, label);
+      assert.equal(isClinicianBox({ gaps: [] }, { key: "Q", kind: "ai_narrative", title: label }), true, label);
+    }
+    for (const label of ["Has the patient gone back to work?", "Main treatment given", "Number of sessions attended", "Pain now (0-10)", "Treatment goals – activities to get back to", "Date of the accident"]) {
+      assert.equal(OPINION_BOX_WORDING.test(label), false, label);
+    }
+  });
+});

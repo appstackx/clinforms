@@ -162,9 +162,12 @@ export function enteredByName(by: Pick<Actor, "name" | "role"> | null | undefine
  * Printed wording that asks for the clinician's opinion or decision (prognosis, causation, fitness for work,
  * restrictions, recovery, permanence, further treatment, recommendations). Shown on the label or guidance of a box,
  * it makes the box a clinician box whatever its fill source says.
+ * harden-WC: causation and fitness for work in other words ("… as a result of the accident", "able to fulfil all
+ * duties"), and the clinician's own findings – a diagnosis, the clinical impression, a whiplash grade, whether the
+ * treatment goals were met – which referrer forms often map as drafted questions ("when in doubt it is a clinician box").
  */
 export const OPINION_BOX_WORDING =
-  /\b(?:prognos\w*|opinion|causation|caused by|attributable to|(?:un)?fit (?:for|to) (?:work|return|drive|driving|duties|normal|full|light|lighter|amended|modified)|fitness (?:for|to) (?:work|return|drive)|return(?:ing)? to (?:work|normal|full|pre-injury|usual)\b|restrictions?\b|recommend\w*|permanen\w*|expected (?:recovery|date|time|duration|return|outcome)|recovery (?:time|period)|maximum (?:medical )?improvement|further (?:treatment|sessions|physiotherapy) (?:advised|recommended|required|needed|necessary)|likely (?:outcome|recovery|duration))/i;
+  /\b(?:prognos\w*|opinion|causation|caused by|attributable to|(?:un)?fit (?:for|to) (?:work|return|drive|driving|duties|normal|full|light|lighter|amended|modified)|fitness (?:for|to) (?:work|return|drive)|return(?:ing)? to (?:work|normal|full|pre-injury|usual)\b|restrictions?\b|recommend\w*|permanen\w*|expected (?:recovery|date|time|duration|return|outcome)|recovery (?:time|period)|maximum (?:medical )?improvement|further (?:treatment|sessions|physiotherapy) (?:advised|recommended|required|needed|necessary)|likely (?:outcome|recovery|duration)|(?:as a (?:direct )?result of|due to|resulting from|arising from|because of) (?:the|this|his|her|their|an?) (?:accident|injury|incident|collision|index event)|(?:un)?able to (?:fulfil|fulfill|carry out|perform|undertake|resume|manage)\b[\w\s,'’-]{0,30}?\b(?:duties|work|job|role)\b|capable of (?:work|working|duties|full duties)|diagnos\w*|clinical impression|WAD grade|quebec (?:classification|scoring|scale|grade)|goals?\b[\w\s,'’-]{0,60}?\b(?:achieved|met|reached)\b)/i;
 
 /** Gap kinds that only a clinician answers (core/schemas.ts GapKindSchema). */
 const OPINION_GAP_KINDS: ReadonlySet<string> = new Set(["no_opinion_recorded", "opinion_not_fitting_options", "band"]);
