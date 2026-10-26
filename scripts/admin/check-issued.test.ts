@@ -56,5 +56,15 @@ describe("check-issued: approved reports issued again and compared with their re
     assert.equal(byId.rpt_draft, undefined);
     // Ids and outcomes only – nothing of the report's content.
     assert.equal(JSON.stringify(rows).includes("physiotherapy"), false);
+
+    // The clinic's map edited after approval: /render refuses that map for this receipt, so there is nothing to compare
+    // (check-WA1 minor 7) – MAP_CHANGED, never a false CHANGED.
+    const stored = await h.store.getForm(CORPUS_TENANT, form.id);
+    const edited = { ...form, fields: form.fields.map((f, i) => (i === 0 ? { ...f, label: `${f.label} (edited)` } : f)) };
+    assert.equal((await h.store.updateForm(CORPUS_TENANT, { id: form.id, status: "confirmed", title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: null, payload: edited }, stored?.rev ?? 1)).ok, true);
+    const after = Object.fromEntries((await checkIssuedReports(h.store, CORPUS_TENANT)).map((r) => [r.reportId, r]));
+    assert.equal(after[b.report.id]?.outcome, "MAP_CHANGED");
+    assert.equal(after.rpt_doc_changed?.outcome, "MAP_CHANGED");
+    assert.equal(after.rpt_legacy?.outcome, "UNBOUND");
   });
 });

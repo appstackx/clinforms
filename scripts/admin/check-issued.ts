@@ -6,6 +6,8 @@
  *   OK         the document and the acknowledgements still hash to what the receipt records
  *   CHANGED    a FINAL copy would now be refused (409 ISSUED_COPY_CHANGED) – do not deploy; investigate first
  *   UNBOUND    a receipt from before the release (no issued-document hash): it renders on the earlier path
+ *   MAP_CHANGED  the clinic's stored form map is not the one approved (receipt.formMapSha256): /render refuses that map
+ *              for this receipt anyway, so there is nothing to compare – the approved map is no longer in the store
  *   NO_FILE    the referrer's file is not in the clinic's store (nothing to compare)
  *   ERROR      the report could not be checked (the error's name only)
  * READ-ONLY: nothing is written, nothing is decrypted to disk. Prints report ids, form ids and outcomes only – never
@@ -23,11 +25,12 @@ import { StoredFormDefinitionSchema, StoredReportSchema } from "../../src/module
 import type { FormDefinition, Report } from "../../src/modules/medreport/core/types";
 import { validateReport } from "../../src/modules/medreport/core/validation";
 import { acknowledgementsSha256, bindsIssuedDocument, issuedContentSha256, issuedDocument } from "../../src/modules/medreport/api/handlers/sign/receipt";
+import { formMapMatches } from "../../src/modules/medreport/auth/attestations";
 import type { TenantStore } from "../../src/modules/medreport/api/store-port";
 import { decodeFormFile } from "../../src/modules/medreport/forms/file";
 import { applyTarget, parseArgs, resolveTarget, runCli, str } from "./cli";
 
-export type CheckIssuedOutcome = "OK" | "CHANGED" | "UNBOUND" | "NO_FILE" | "ERROR";
+export type CheckIssuedOutcome = "OK" | "CHANGED" | "UNBOUND" | "MAP_CHANGED" | "NO_FILE" | "ERROR";
 
 export interface CheckIssuedRow {
   reportId: string;
@@ -48,6 +51,8 @@ export async function checkIssuedReport(store: TenantStore, tenantId: string, re
     const parsed = stored ? StoredFormDefinitionSchema.safeParse(stored.payload) : null;
     if (!parsed?.success) return { ...row, outcome: "ERROR", detail: "form map not readable" };
     form = parsed.data;
+    // Only the map that was approved is ever issued with this receipt (/render FINAL checks the same hash).
+    if (receipt.formMapSha256 && !formMapMatches(form, receipt.formMapSha256)) return { ...row, outcome: "MAP_CHANGED" };
   }
   const template = form ? formToTemplate(form) : null;
   const changed: string[] = [];
@@ -103,7 +108,10 @@ if (process.argv[1] && /check-issued\.ts$/.test(process.argv[1])) {
     }
     for (const r of rows) console.log([r.outcome.padEnd(8), r.reportId.padEnd(36), (r.formId ?? "-").padEnd(36), r.detail ?? ""].join("  ").trimEnd());
     const bad = rows.filter((r) => r.outcome === "CHANGED" || r.outcome === "ERROR");
-    console.log(`\n${rows.length} approved report(s): ${rows.filter((r) => r.outcome === "OK").length} OK, ${bad.length} CHANGED or ERROR.`);
+    const count = (o: CheckIssuedOutcome) => rows.filter((r) => r.outcome === o).length;
+    console.log(
+      `\n${rows.length} approved report(s): ${count("OK")} OK, ${bad.length} CHANGED or ERROR, ${count("UNBOUND")} UNBOUND, ${count("MAP_CHANGED")} MAP_CHANGED, ${count("NO_FILE")} NO_FILE.`,
+    );
     if (bad.length > 0) process.exitCode = 1;
   });
 }

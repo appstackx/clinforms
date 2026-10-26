@@ -4,19 +4,26 @@ import "server-only";
  * POST /sign – what would be issued (bh2 WA1 design 6), in the order sign/index.ts runs them:
  *
  * 1. staleReportCheck (before the validators): in a clinic's Studio the approval is of exactly the copy the clinic
- *    holds. The stored revision is loaded by id; when the hashed content of the request body differs from it (an
- *    edit not saved yet, or a newer revision someone else saved) the approval is refused – 409 STALE_REPORT. A report
- *    the clinic does not hold yet has nothing to be stale against. The public demo stores nothing on the server.
+ *    holds. The stored revision is loaded by id; the approval is refused – 409 STALE_REPORT – when the clinic holds no
+ *    revision of the report (a body the store never saw skips the store's own checks: its server stamps, the refusal
+ *    of a forged decision), when its store cannot be read (any error), or when the hashed content of the request body
+ *    differs from the stored revision (an edit not saved yet, or a newer revision someone else saved). Skipped only
+ *    where the deployment has no clinic store at all: none configured, or no data keys to open it (a local or test
+ *    server – production always has both). The public demo stores nothing on the server.
  * 2. validationCheck: the validators re-run on the report (core/validation validateReport, with the form map – the
  *    issue state decides which boxes issue nothing); 409 SIGNOFF_BLOCKED (problem.flags) if blocking items remain.
- * 3. issuedDocumentCheck (after them): a dry-run FINAL fill of the referrer's own file – the clinic's stored copy, or in
- *    the public demo the request's fileBase64 – with the issue state's answers and the exact signer and time the
- *    receipt will carry. Any refusal of the forms engine (a merge code left on it, an answer that does not fit) or a
- *    fatal fill outcome (forms engine, WA2) refuses the approval with the boxes concerned – 409 ISSUE_REFUSED – so an
- *    approval is never followed by a FINAL copy that cannot be issued (AC-ISSUE-5). The receipt then binds the
- *    document's content hash and the hash of the acknowledgements the approval relied on (sign/receipt.ts).
- *    When no file is at hand (a clinic's stored copy is missing and none was sent), there is no dry run: the receipt
- *    binds the acknowledgements only, and /render FINAL still refuses a document with a merge code left on it.
+ * 3. issuedDocumentCheck (after them): a dry-run FINAL fill of the referrer's own file with the issue state's answers
+ *    and the exact signer and time the receipt will carry. Any refusal of the forms engine (a merge code left on it, an
+ *    answer that does not fit) or a fatal fill outcome (forms engine, WA2) refuses the approval with the boxes
+ *    concerned – 409 ISSUE_REFUSED – so an approval is never followed by a FINAL copy that cannot be issued
+ *    (AC-ISSUE-5). The receipt then binds the document's content hash and the hash of the acknowledgements the approval
+ *    relied on (sign/receipt.ts). Which file: in a clinic's Studio the clinic's stored copy (else the request's
+ *    fileBase64, checked against the map's SHA-256 like any copy); a store that cannot be read, or no copy at all,
+ *    refuses the approval (409 ISSUE_REFUSED). In the public demo the request MUST carry fileBase64 for a Word or PDF
+ *    form (422 VALIDATION_FAILED otherwise; the demo Studio always sends it). Either way one of the bundled fictional
+ *    forms (forms/samples) is completed with the server's own copy of exactly that file when no other is at hand. Only a
+ *    deployment with no clinic store (as above) may approve a tenant's form with no file at hand – the receipt then
+ *    binds the acknowledgements only.
  *
  * Split out of api/handlers/sign.ts by W0.4 (bh2 module split). Owner: WA1 (issue state and receipt) – docs/bh2-ownership.json.
  */
@@ -25,10 +32,11 @@ import { StoredReportSchema } from "../../../../core/stored-schemas";
 import { ReportSchema } from "../../../../core/schemas";
 import { validateReport, type ValidateReportResult } from "../../../../core/validation";
 import type { FormDefinition, Report, ReportTemplate } from "../../../../core/types";
-import { assertFormFileMatches, type DecodedFormFile } from "../../../../forms/file";
+import { assertFormFileMatches, decodeFormFile, type DecodedFormFile } from "../../../../forms/file";
+import { SAMPLE_FORM_FILES, type SampleFormFileId } from "../../../../forms/samples/generated/manifest";
+import { getSampleForm } from "../../../../forms/samples/registry";
 import type { ProblemIssue } from "../../../contract";
 import { HttpError, logEvent, problem } from "../../../http";
-import { formFileForRequest } from "../../store-form-file";
 import { acknowledgementsSha256, bindsIssuedDocument, issuedContentSha256, issuedDocument } from "../receipt";
 import type { SignCheckContext } from "./context";
 
@@ -65,8 +73,22 @@ async function fingerprints(report: unknown): Promise<string[]> {
 }
 
 /**
- * Tenant mode: refuse (409 STALE_REPORT) an approval whose body's hashed content differs from the stored revision of
- * the report – the clinic approves what it holds, never an unsaved or overtaken copy.
+ * The clinic store cannot be used on this deployment at all: it has no data keys (src/server/crypto/envelope.ts
+ * DataCryptoError "BAD_KEYRING" – a local or test server; production always has them). Matched by name, as the module
+ * does not import the server's code. Any other error is a store that failed to answer.
+ */
+function storeNotConfigured(err: unknown): boolean {
+  return err instanceof Error && err.name === "DataCryptoError" && (err as { code?: unknown }).code === "BAD_KEYRING";
+}
+
+/** The approvals (pipeline contexts) on a deployment whose clinic store cannot be used (staleReportCheck found it). */
+const withoutStore = new WeakSet<SignCheckContext>();
+
+const errorName = (err: unknown) => (err instanceof Error ? err.name : typeof err);
+
+/**
+ * Tenant mode: refuse (409 STALE_REPORT) an approval of anything but the clinic's stored revision – a report it does not
+ * hold, a store that cannot be read, or a body whose hashed content differs from the stored revision.
  */
 export const staleReportCheck = async (ctx: SignCheckContext): Promise<Response | null> => {
   const { actor, deps, report } = ctx;
@@ -75,12 +97,25 @@ export const staleReportCheck = async (ctx: SignCheckContext): Promise<Response 
   try {
     stored = await deps.tenantStore.getReport(actor.tenantId, report.id);
   } catch (err) {
-    // The clinic's store cannot be read here at all (a deployment without its data keys): nothing can be held in it,
-    // so there is no stored revision to be stale against – and the approved report cannot be stored either.
-    logEvent("sign_stale_check_unavailable", { report: report.id, error: err instanceof Error ? err.name : typeof err });
-    return null;
+    if (storeNotConfigured(err)) {
+      // No clinic store on this deployment (no data keys): nothing is held in it, and nothing approved here can be stored.
+      withoutStore.add(ctx);
+      logEvent("sign_store_not_configured", { report: report.id });
+      return null;
+    }
+    logEvent("sign_stale_check_failed", { report: report.id, error: errorName(err) });
+    return problem(409, "This report could not be checked against the clinic's copy", {
+      code: "STALE_REPORT",
+      detail: "Reload the report and approve it again.",
+    });
   }
-  if (!stored) return null;
+  if (!stored) {
+    logEvent("sign_refused_not_stored", { report: report.id });
+    return problem(409, "This report is not saved in the clinic's Studio", {
+      code: "STALE_REPORT",
+      detail: "Only the clinic's saved copy of a report can be approved. Reload the report, check it, and approve it again.",
+    });
+  }
   const parsed = StoredReportSchema.safeParse(stored.payload);
   if (!parsed.success) {
     logEvent("sign_stale_unreadable", { report: report.id });
@@ -98,19 +133,62 @@ export const staleReportCheck = async (ctx: SignCheckContext): Promise<Response 
   });
 };
 
-/** The referrer's file for the dry run: the clinic's stored copy, else the request's; null when neither is at hand. */
-async function fileForDryRun(ctx: SignCheckContext, form: FormDefinition, fileBase64: string | undefined): Promise<DecodedFormFile | null> {
+/** Why the dry run has no file: a refusal to send back (the approval cannot be checked), or "no_store" (no clinic store). */
+type NoFile = { refusal: Response } | "no_store";
+
+/**
+ * The referrer's file for the dry run (see the file comment): the clinic's stored copy, else the request's; in the
+ * public demo the request's, which it must send. Returns the file, a refusal, or "no_store" on a deployment without a
+ * clinic store when no copy was sent.
+ */
+async function fileForDryRun(ctx: SignCheckContext, form: FormDefinition, fileBase64: string | undefined): Promise<DecodedFormFile | NoFile> {
   const expected = ctx.report.form?.fileSha256 ?? form.file.sha256;
-  let file: DecodedFormFile;
-  try {
-    file = await formFileForRequest(ctx.deps, { fileBase64, sha256: expected, tenantId: ctx.actor.via === "demo" ? null : ctx.actor.tenantId });
-  } catch (err) {
-    // No file at hand: no dry run (see the file comment). A file sent that cannot be read refuses the approval.
-    if (err instanceof HttpError && err.status === 422 && !fileBase64) return null;
-    throw err;
+  const { actor, deps } = ctx;
+  let file: DecodedFormFile | null = null;
+  if (actor.via !== "demo" && deps.tenantStore && !withoutStore.has(ctx) && /^[0-9a-f]{64}$/.test(expected)) {
+    try {
+      const held = await deps.tenantStore.getFile(actor.tenantId, expected);
+      // Same checks as an uploaded file (type from the bytes, size and decompression limits).
+      if (held) file = decodeFormFile(Buffer.from(held.bytes).toString("base64"));
+    } catch (err) {
+      if (!storeNotConfigured(err)) {
+        logEvent("sign_form_file_unreadable", { report: ctx.report.id, form: form.id, error: errorName(err) });
+        return { refusal: cannotCheck("The clinic's copy of the referrer's form could not be read, so the completed form could not be checked.", "Reload the report and approve it again.") };
+      }
+      withoutStore.add(ctx);
+    }
+  }
+  if (!file && fileBase64) file = decodeFormFile(fileBase64, { convertRtf: true });
+  // One of the bundled fictional forms (forms/samples): the server's own copy of exactly that file.
+  if (!file) file = await bundledFormFile(expected);
+  if (!file) {
+    if (actor.via === "demo") {
+      return {
+        refusal: problem(422, "The referrer's form file is missing", {
+          code: "VALIDATION_FAILED",
+          issues: [{ path: "fileBase64", message: "Send the referrer's original form file (from the forms library) as fileBase64 with the approval." }],
+        }),
+      };
+    }
+    if (!deps.tenantStore || withoutStore.has(ctx)) return "no_store";
+    logEvent("sign_form_file_missing", { report: ctx.report.id, form: form.id });
+    return { refusal: cannotCheck("The clinic does not hold the referrer's form file, so the completed form could not be checked.", "Add the form again in the forms library, then approve again.") };
   }
   assertFormFileMatches(file, expected);
   return file;
+}
+
+/** The bundled fictional form (GET /forms/samples) whose file has this SHA-256, decoded and checked, or null. */
+async function bundledFormFile(sha256: string): Promise<DecodedFormFile | null> {
+  const id = (Object.keys(SAMPLE_FORM_FILES) as SampleFormFileId[]).find((k) => SAMPLE_FORM_FILES[k].sha256 === sha256);
+  const sample = id ? getSampleForm(id) : undefined;
+  if (!sample) return null;
+  return decodeFormFile(Buffer.from(await sample.loadFile()).toString("base64"));
+}
+
+/** 409 ISSUE_REFUSED when the completed form cannot even be checked: nothing was approved. */
+function cannotCheck(why: string, next: string): Response {
+  return problem(409, "The completed form could not be issued as approved", { code: "ISSUE_REFUSED", detail: `${why} Nothing was approved. ${next}` });
 }
 
 /** What the issued-document check needs besides the pipeline's context. */
@@ -139,10 +217,11 @@ export async function issuedDocumentCheck(ctx: SignCheckContext, input?: IssueCh
   let refusal: { detail: string; issues: ProblemIssue[] } | null = null;
   try {
     const file = await fileForDryRun(ctx, form, input.fileBase64);
-    if (!file) {
+    if (file === "no_store") {
       logEvent("sign_no_dry_run", { report: report.id, form: form.id });
       return null;
     }
+    if ("refusal" in file) return file.refusal;
     const out = await issuedDocument({ report, form, file, approval });
     const fatal = (out.outcomes ?? []).filter((o) => o.fatal);
     if (fatal.length > 0) {
