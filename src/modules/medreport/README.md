@@ -1669,7 +1669,18 @@ keys were dropped, so fingerprints, receipt MACs and map attestations no longer 
   `registrationPathLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap for staff). The
   validators recompute flags with this build's codes only.
 - **Nothing that verified before changes:** `verifyReceipt` checks the MAC and the content hash as stored and, failing
-  that, as this build knows the records (exactly the pre-shim check).
+  that, as this build knows the records (exactly the pre-shim check). The form map's hash works the same way
+  (`auth/attestations.ts` `formMapMatches`: `verifyFormConfirmation`, the `report.form.mapSha256` check in
+  `api/resolve-template.ts`), so an API client's copy of a map with a key of its own in a field is accepted as before;
+  `/sign` records the map's **attested** hash in the receipt and a FINAL compares the receipt with it – the value e132057
+  recorded for every map it accepted.
+- **Values no ClinForms build writes** (JSON `1e400` → Infinity, nesting deep enough to exhaust the stack) can only sit
+  under a key this build does not know – the read schemas keep them, `canonicalize()` throws on them. Every hash or
+  MAC over a record as read is computed inside a try (`sign-receipt.ts` `macMatches` / `readReportFingerprint`,
+  `attestations.ts` `formMapMatches`): no match as read, then the check as this build knows the record – never a 500.
+- **`x-medreport-content-sha256`:** on a FINAL, the hash the verified receipt records (also when it verified over the
+  report as this build knows it); on a draft, the report's fingerprint as read (else as known; 422 for a report e132057
+  refused outright and that holds such a value).
 - Tests: `scripts/medreport/schema-forward-compat.test.ts` with the fixture `forward-compat-fixture.ts`
   (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
   `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new

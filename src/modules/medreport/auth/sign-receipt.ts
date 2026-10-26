@@ -57,11 +57,43 @@ export async function createReceipt(input: CreateReceiptInput): Promise<SignRece
   return { ...unsigned, mac: computeMac(unsigned, input.secret ?? signingKey("receipt")) };
 }
 
+/*
+ * canonicalize() throws on a value no ClinForms build writes – a non-finite number (JSON's 1e400) or nesting deep enough
+ * to exhaust the stack. The read schemas (core/stored-schemas.ts) keep such a value under a key this build does not know;
+ * the strict schemas left it out. So a record that holds one does not match as read and is checked as this build knows
+ * it, as before the shim: never an exception (a 500) instead of an answer.
+ */
+
 function macMatches(receipt: SignReceipt, secret: string): boolean {
   const { mac, ...unsigned } = receipt;
-  const expected = Buffer.from(computeMac(unsigned, secret), "utf8");
+  let computed: string;
+  try {
+    computed = computeMac(unsigned, secret);
+  } catch {
+    return false;
+  }
+  const expected = Buffer.from(computed, "utf8");
   const given = Buffer.from(mac, "utf8");
   return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+async function fingerprintOrNull(report: Report): Promise<string | null> {
+  try {
+    return await reportFingerprint(report);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The report's fingerprint as read (core/stored-schemas.ts), else as this build knows it (core/schemas.ts – how it was
+ * computed before the shim); null when neither can be computed (only for a report e132057 refused outright).
+ */
+export async function readReportFingerprint(report: Report): Promise<string | null> {
+  const asRead = await fingerprintOrNull(report);
+  if (asRead !== null) return asRead;
+  const known = ReportSchema.safeParse(report);
+  return known.success ? fingerprintOrNull(known.data) : null;
 }
 
 /** The receipt whose MAC verifies: as stored, else as this build knows it (before the shim); null when neither does. */
@@ -101,9 +133,9 @@ export async function verifyReceipt(
   if (!signed) return { ok: false, reason: "BAD_MAC" };
   if (signed.reportId !== report.id) return { ok: false, reason: "REPORT_MISMATCH" };
   if (signed.tenantId !== report.tenantId) return { ok: false, reason: "TENANT_MISMATCH" };
-  if ((await reportFingerprint(report)) === signed.contentSha256) return { ok: true, contentSha256: signed.contentSha256 };
+  if ((await fingerprintOrNull(report)) === signed.contentSha256) return { ok: true, contentSha256: signed.contentSha256 };
   // As before the shim: the report as this build knows it (keys it does not know left out).
   const known = ReportSchema.safeParse(report);
-  if (known.success && (await reportFingerprint(known.data)) === signed.contentSha256) return { ok: true, contentSha256: signed.contentSha256 };
+  if (known.success && (await fingerprintOrNull(known.data)) === signed.contentSha256) return { ok: true, contentSha256: signed.contentSha256 };
   return { ok: false, reason: "HASH_MISMATCH" };
 }

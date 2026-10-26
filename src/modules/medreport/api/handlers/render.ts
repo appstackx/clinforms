@@ -2,7 +2,7 @@ import "server-only";
 
 /**
  * POST /api/reports/v1/render
- * Query ?format=docx|pdf, body RenderRequest → file. FINAL only with a verified receipt (mac + recomputed hash) and no blocking flags; otherwise DRAFT (or 409 when requireFinal). Sets x-medreport-render and x-medreport-content-sha256.
+ * Query ?format=docx|pdf, body RenderRequest → file. FINAL only with a verified receipt (mac + recomputed hash) and no blocking flags; otherwise DRAFT (or 409 when requireFinal). Sets x-medreport-render and x-medreport-content-sha256 (FINAL: the verified receipt's contentSha256; draft: the report's fingerprint as read, else as this build knows it – rollback shim, auth/sign-receipt.ts readReportFingerprint).
  *
  * Form reports (report.form set): body also carries `form` and `fileBase64`; ?format=original|pdf (docx = original for a Word form).
  * In a clinic's own Studio the clinic's stored copy of the file (by tenant and SHA-256) is preferred and
@@ -37,12 +37,11 @@ import "server-only";
  * Owner: forms-engine agent.
  */
 import { AUDIT_ACTIONS, actorInDemoClinic, assertActorTenant, auditActor, macPrefix, requireActor, type Actor } from "../../auth/actor";
-import { createFileToken, formConfirmationProblem, formMapSha256, sha256HexOf, verifyFormConfirmation } from "../../auth/attestations";
-import { verifyReceipt } from "../../auth/sign-receipt";
+import { createFileToken, formConfirmationProblem, sha256HexOf, verifyFormConfirmation } from "../../auth/attestations";
+import { readReportFingerprint, verifyReceipt } from "../../auth/sign-receipt";
 import { MAX_TEMPLATE_DOCX_BYTES } from "../../config.public";
 import { todayIso } from "../../core/dates";
 import { demoOutputNotice, isDemoHcpc } from "../../core/demo-clinic";
-import { reportFingerprint } from "../../core/fingerprint";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
 import { validateReport, type ValidateReportResult } from "../../core/validation";
@@ -63,6 +62,8 @@ interface FinalDecision {
   final: boolean;
   /** Why a requested final copy cannot be made (null when final, or when no final was asked for). */
   refusal: Response | null;
+  /** When final: the content hash the verified receipt records (what was approved). */
+  contentSha256?: string;
 }
 
 async function decideFinal(
@@ -99,8 +100,9 @@ async function decideFinal(
         refusal: problem(409, "The form mapping has not been confirmed", { code: "FORM_NOT_CONFIRMED", detail: formConfirmationProblem(check.reason) }),
       };
     }
-    // The FINAL layout must be the map the clinician approved: the receipt carries its hash.
-    if (receipt.formMapSha256 !== formMapSha256(opts.form)) {
+    // The FINAL layout must be the map the clinician approved: the receipt carries its hash – the attested hash of this
+    // map, just verified (as read, else as this build knows it: auth/attestations.ts formMapMatches).
+    if (receipt.formMapSha256 !== check.mapSha256) {
       return {
         final: false,
         refusal: problem(409, "The form mapping differs from the one approved", {
@@ -125,7 +127,7 @@ async function decideFinal(
       refusal: problem(422, "A review copy is never final", { code: "VALIDATION_FAILED", issues: [{ path: "reviewCopy", message: "Leave reviewCopy off for the final copy." }] }),
     };
   }
-  return { final: true, refusal: null };
+  return { final: true, refusal: null, contentSha256: verified.contentSha256 };
 }
 
 function decodeTemplateDocx(base64: string): Uint8Array | Response {
@@ -242,7 +244,17 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const madeUpApproval = actor.via !== "demo" && final && isDemoHcpc(receipt?.signer.hcpc);
   const demoClinic = (await actorInDemoClinic(deps, actor)) || madeUpApproval;
   const notice = demoClinic ? demoOutputNotice(formDef, true) : undefined;
-  const contentSha256 = await reportFingerprint(report);
+  // FINAL: the hash the verified receipt records – also when it verified over the report as this build knows it (keys
+  // it does not know left out, as before the rollback shim). Draft: the report's fingerprint as read, else as known.
+  const contentSha256 = final && decision.contentSha256 ? decision.contentSha256 : await readReportFingerprint(report);
+  if (contentSha256 === null) {
+    // Only a report e132057 refused outright: a value no ClinForms build writes under a key this build does not know
+    // (core/stored-schemas.ts), in a report that also holds a member this build does not know.
+    return problem(422, "The report could not be read", {
+      code: "VALIDATION_FAILED",
+      issues: [{ path: "report", message: "The report holds a value that cannot be read (a number out of range, or nesting too deep)." }],
+    });
+  }
   const baseHeaders: Record<string, string> = {
     [HEADERS.renderKind]: final ? "final" : "draft",
     [HEADERS.contentSha256]: contentSha256,

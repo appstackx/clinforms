@@ -7,33 +7,48 @@
  * receipt's MAC and the map's attestation verify as issued, and a FINAL renders exactly as it does without them.
  * Writes stay strict. Records this build writes read exactly as before.
  *
- * The schema guard (last three tests) fails when the shim stops keeping a key or member the release writes
+ * Every read path is exercised on its own (each request body and copy that carries a stored record), and what e132057
+ * accepted keeps working: an API client's copy with keys of its own, and values no ClinForms build writes (JSON 1e400,
+ * nesting deep enough to exhaust the stack) under a key this build does not know – checked as e132057 checked them,
+ * never a 500.
+ *
+ * The schema guard (the three "guard:" tests) fails when the shim stops keeping a key or member the release writes
  * (forward-compat-fixture.ts RELEASE_KEYS / RELEASE_MEMBERS), when any stored object stops keeping unknown keys, and
  * when a change adds a member to an enum, literal or fill/anchor kind that production keeps closed
  * (fixtures/forward-compat/closed-vocabulary-e132057.json) – production could not read such a record.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import PizZip from "pizzip";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { z } from "zod";
 
 process.env.MEDREPORT_AI_MODE = "demo";
 
+import { route } from "../../src/app/api/_medreport-glue";
+import { handleAiPayloadPreview } from "../../src/modules/medreport/api/handlers/ai-payload-preview";
+import { handleDocuments } from "../../src/modules/medreport/api/handlers/documents";
+import { handleDrafts } from "../../src/modules/medreport/api/handlers/drafts";
+import { handleFormsFillPreview } from "../../src/modules/medreport/api/handlers/forms-fill-preview";
 import { handleRender } from "../../src/modules/medreport/api/handlers/render";
 import { handleSign } from "../../src/modules/medreport/api/handlers/sign";
+import { handleValidate } from "../../src/modules/medreport/api/handlers/validate";
 import { bindHandler, type MedreportHandler } from "../../src/modules/medreport/api/http";
 import type { MedreportDeps } from "../../src/modules/medreport/api/deps";
-import { StoreReportResponseSchema } from "../../src/modules/medreport/api/store-contract";
+import { StoreConflictSchema, StoreReportResponseSchema } from "../../src/modules/medreport/api/store-contract";
 import { createMemoryTenantStore } from "../../src/modules/medreport/api/store-memory";
-import { formMapSha256, verifyFormConfirmation, withAttestedConfirmation } from "../../src/modules/medreport/auth/attestations";
-import { createReceipt, verifyReceipt, verifyReceiptMac } from "../../src/modules/medreport/auth/sign-receipt";
+import { formMapMatches, formMapSha256, verifyFormConfirmation, withAttestedConfirmation } from "../../src/modules/medreport/auth/attestations";
+import { createSessionToken } from "../../src/modules/medreport/auth/session-token";
+import { createReceipt, readReportFingerprint, verifyReceipt, verifyReceiptMac } from "../../src/modules/medreport/auth/sign-receipt";
 import { signingKey } from "../../src/modules/medreport/config.server";
 import { listRecordedFormAnalyses } from "../../src/modules/medreport/ai/recorded-forms";
 import { computeFacts } from "../../src/modules/medreport/core/computed-facts";
 import { canonicalize, reportFingerprint } from "../../src/modules/medreport/core/fingerprint";
-import { FORM_ATTESTATIONS, formToTemplate, resolveRegistrationValue } from "../../src/modules/medreport/core/forms";
+import { FORM_ATTESTATIONS, formTemplateId, formToTemplate, resolveRegistrationValue } from "../../src/modules/medreport/core/forms";
 import { FLAG_CODE_LABELS, UNKNOWN_MEMBER_LABELS, flagCodeLabel, isKnownRegistrationPath, registrationPathLabel } from "../../src/modules/medreport/core/labels";
 import { createFormReport, createReport } from "../../src/modules/medreport/core/report-factory";
 import { FormDefinitionSchema, InstructingPartySchema, ReportSchema, SignReceiptSchema } from "../../src/modules/medreport/core/schemas";
@@ -51,6 +66,7 @@ import { NORTHFIELD_FORM } from "../../src/modules/medreport/forms/samples/maps/
 import { getSampleForm } from "../../src/modules/medreport/forms/samples/registry";
 import { SOLICITOR_TEMPLATE_ID, getTemplate } from "../../src/modules/medreport/templates/registry";
 import { originLabel } from "../../src/modules/medreport/ui/components/review/review-model";
+import { useReviewActions, type ReviewActions } from "../../src/modules/medreport/ui/components/review/use-review-actions";
 import { createServerApi } from "../../src/modules/medreport/ui/store/server-api";
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
@@ -91,12 +107,38 @@ async function harrowFileBase64(): Promise<string> {
   return Buffer.from(await getSampleForm(HARROW_PIKE_RAW.sampleId ?? "")!.loadFile()).toString("base64");
 }
 
+/** A public-demo call. A string `body` is sent as it is (JSON text JSON.stringify cannot write). */
 async function postDemo(handler: MedreportHandler, url: string, body: unknown): Promise<Response> {
   const headers = { "content-type": "application/json", authorization: `Bearer ${demoSessionToken()}` };
   return bindHandler(handler, () => ({}) as MedreportDeps)(
-    new Request(`http://localhost/api/reports/v1${url}`, { method: "POST", headers, body: JSON.stringify(body) }),
+    new Request(`http://localhost/api/reports/v1${url}`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) }),
     { params: {} },
   );
+}
+
+/** postDemo with the app's own dependencies (connectors, drafting); the simulated clinic system is called in-process. */
+async function postGlue(handler: MedreportHandler, url: string, body: unknown, params: Record<string, string> = {}): Promise<Response> {
+  const headers = { "content-type": "application/json", authorization: `Bearer ${demoSessionToken()}` };
+  return route(handler)(
+    new Request(`http://127.0.0.1:9/api/reports/v1${url}`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) }),
+    { params },
+  );
+}
+
+/** The write-back body for a FINAL /render response: its exact bytes, the approval's receipt and the server's file token. */
+function writeBack(report: Report, receipt: SignReceipt, final: { bytes: Uint8Array; headers: Headers }) {
+  const mimeType = (final.headers.get("content-type") ?? "").split(";")[0].trim();
+  return {
+    patientId: report.episodeRef.patientId,
+    episodeId: report.episodeRef.episodeId,
+    title: "Harrow & Pike form – Megan Hart",
+    fileName: `Hart_M_Harrow-Pike_SIGNED.${mimeType === "application/pdf" ? "pdf" : "docx"}`,
+    mimeType,
+    contentBase64: Buffer.from(final.bytes).toString("base64"),
+    sha256: createHash("sha256").update(final.bytes).digest("hex"),
+    signReceipt: receipt,
+    fileToken: final.headers.get("x-medreport-file-token"),
+  };
 }
 
 function clinicStore() {
@@ -116,6 +158,32 @@ const formRow = (form: FormDefinition) => ({
   sampleId: form.sampleId ?? null,
   payload: form,
 });
+
+/**
+ * A response read once, whole: its bytes, and its text or JSON for messages and assertions. Never Response.clone() for
+ * a message: a clone read early, with the original read after a long render, can lose the original's body to a garbage
+ * collection in between ("Body is unusable").
+ */
+async function bodyOf(res: Response) {
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const text = () => Buffer.from(bytes).toString("utf8").slice(0, 2000);
+  return { status: res.status, headers: res.headers, bytes, text, json: () => JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown };
+}
+
+/**
+ * A Word file's parts (name → exact bytes). Two renders of the same content are identical part for part; their ZIP
+ * containers differ only in the entry timestamps (a re-written part is stamped with the render time, to the 2 seconds
+ * the ZIP format records), so raw container bytes differ when two renders straddle such a tick.
+ */
+function wordParts(bytes: Uint8Array): Record<string, string> {
+  assert.equal(Buffer.from(bytes.subarray(0, 4)).toString("latin1"), "PK\x03\x04", "a Word file");
+  const zip = new PizZip(bytes);
+  return Object.fromEntries(
+    Object.keys(zip.files)
+      .sort()
+      .map((name) => [name, zip.files[name].asBinary()]),
+  );
+}
 
 const macOf = (receipt: Omit<SignReceipt, "mac">) => createHmac("sha256", signingKey("receipt")).update(canonicalize(receipt), "utf8").digest("base64url");
 
@@ -151,7 +219,7 @@ test("the stored read schemas keep every key and member the release writes: fing
   assert.notEqual(macOf(strictReceipt), mac);
 });
 
-test("clinic Studio after a rollback: the store serves the release's report and map whole, the Studio reads them whole, and FINAL is byte-identical", async () => {
+test("clinic Studio after a rollback: the store serves the release's report and map whole, the Studio reads them whole, and FINAL is identical", async () => {
   const { store, f } = clinicStore();
   const { base, release } = await approvedPair(CLINIC);
   // As the release stored them.
@@ -159,9 +227,9 @@ test("clinic Studio after a rollback: the store serves the release's report and 
   assert.equal((await store.createReport(CLINIC, reportRow(release.report))).ok, true);
 
   // R-regression-9 scenario: GET /store/reports/{id} was 500 "The stored report could not be read".
-  const raw = await f(`/api/reports/v1/store/reports/${release.report.id}`);
-  assert.equal(raw.status, 200, await raw.clone().text());
-  assert.deepEqual(StoreReportResponseSchema.parse(await raw.json()).report, release.report);
+  const raw = await bodyOf(await f(`/api/reports/v1/store/reports/${release.report.id}`));
+  assert.equal(raw.status, 200, raw.text());
+  assert.deepEqual(StoreReportResponseSchema.parse(raw.json()).report, release.report);
   const api = createServerApi(f);
   const read = await api.getReport(release.report.id);
   const readForm = await api.getForm(release.form.id);
@@ -177,15 +245,16 @@ test("clinic Studio after a rollback: the store serves the release's report and 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ report: r, receipt: r.receipt, form, fileBase64, requireFinal: true }),
     });
-  const final = await render(read.report, readForm.form);
-  assert.equal(final.status, 200, await final.clone().text());
+  const final = await bodyOf(await render(read.report, readForm.form));
+  assert.equal(final.status, 200, final.text());
   assert.equal(final.headers.get("x-medreport-render"), "final");
   assert.equal(final.headers.get("x-medreport-content-sha256"), release.report.receipt!.contentSha256);
 
   // The release's keys change nothing this build prints: the same report without them, approved by this build.
-  const baseFinal = await render(base.report, base.form);
-  assert.equal(baseFinal.headers.get("x-medreport-render"), "final", await baseFinal.clone().text());
-  assert.deepEqual(new Uint8Array(await final.arrayBuffer()), new Uint8Array(await baseFinal.arrayBuffer()), "FINAL documents are byte-identical");
+  const baseFinal = await bodyOf(await render(base.report, base.form));
+  assert.equal(baseFinal.headers.get("x-medreport-render"), "final", baseFinal.text());
+  assert.equal(final.headers.get("content-type"), baseFinal.headers.get("content-type"));
+  assert.deepEqual(wordParts(final.bytes), wordParts(baseFinal.bytes), "FINAL documents are identical, part for part, byte for byte");
 });
 
 test("public demo after a rollback: this browser's stored release report and map are listed and read whole", async () => {
@@ -233,8 +302,8 @@ test("writes stay strict: the store and /sign refuse members this build does not
   const known = structuredClone(draft);
   for (const s of known.sections) for (const p of s.paragraphs) p.origin = "clinician";
   known.flags = [];
-  const created = await put(`/api/reports/v1/store/reports/${known.id}`, { report: known });
-  assert.equal(created.status, 201, await created.clone().text());
+  const created = await bodyOf(await put(`/api/reports/v1/store/reports/${known.id}`, { report: known }));
+  assert.equal(created.status, 201, created.text());
   const stored = (await (await f(`/api/reports/v1/store/reports/${known.id}`)).json()).report as Record<string, unknown>;
   assert.equal("approver" in stored, false);
   assert.deepEqual(stored, ReportSchema.parse(known));
@@ -249,11 +318,11 @@ test("writes stay strict: the store and /sign refuse members this build does not
   assert.equal(problem.code, "VALIDATION_FAILED");
   assert.ok(problem.issues.length > 0 && problem.issues.every((i) => i.path.startsWith("report.")), JSON.stringify(problem.issues));
   const knownDemo = { ...known, tenantId: "demo" };
-  const ok = await postDemo(handleSign, "/sign", body(knownDemo));
-  assert.equal(ok.status, 200, await ok.clone().text());
-  const { receipt } = (await ok.json()) as { receipt: SignReceipt };
+  const ok = await bodyOf(await postDemo(handleSign, "/sign", body(knownDemo)));
+  assert.equal(ok.status, 200, ok.text());
+  const { receipt } = ok.json() as { receipt: SignReceipt };
   assert.equal(receipt.contentSha256, await reportFingerprint(ReportSchema.parse(knownDemo)), "signed as this build knows the report");
-  assert.equal(receipt.formMapSha256, formMapSha256(demoForm), "over the map as stored");
+  assert.equal(receipt.formMapSha256, formMapSha256(demoForm), "over the map as stored (its attested hash)");
 });
 
 test("records this build writes read exactly as before, and whatever verified before still verifies", async () => {
@@ -408,4 +477,266 @@ test("guard: production keeps these enums, literals and kinds closed – adding 
     }
   }
   assert.deepEqual(unreadable, [], "production (e132057 + the shim) cannot read these members");
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Every read path, one by one: each request body and copy that carries a stored record
+ * ----------------------------------------------------------------------------------------------*/
+
+test("read paths: the store's 409 copy, /validate, /forms/fill-preview, the write-back receipt, /drafts and /ai/payload-preview take what the release stored", async () => {
+  // 409 REV_CONFLICT: the stored copy the Studio reloads is the release's, whole (also through StoreConflictSchema).
+  const { store, f } = clinicStore();
+  const clinic = await approvedPair(CLINIC);
+  assert.equal((await store.createReport(CLINIC, reportRow(clinic.release.report))).ok, true);
+  assert.equal((await store.createForm(CLINIC, formRow(clinic.release.form))).ok, true);
+  const put = async (url: string, body: unknown) =>
+    bodyOf(await f(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+  const ownDraft: Report = { ...clinic.base.report, status: "draft" };
+  delete ownDraft.receipt;
+  const reportConflict = await put(`/api/reports/v1/store/reports/${clinic.release.report.id}`, { report: ownDraft });
+  assert.equal(reportConflict.status, 409, reportConflict.text());
+  assert.deepEqual(StoreConflictSchema.parse(reportConflict.json()).current?.report, clinic.release.report, "the report's 409 copy keeps every key and member");
+  const formConflict = await put(`/api/reports/v1/store/forms/${clinic.release.form.id}`, { form: clinic.base.form });
+  assert.equal(formConflict.status, 409, formConflict.text());
+  assert.deepEqual(StoreConflictSchema.parse(formConflict.json()).current?.form, clinic.release.form, "the map's 409 copy keeps every key and member");
+
+  const { release } = await approvedPair("demo");
+  const draft: Report = { ...release.report, status: "draft" };
+  delete draft.receipt;
+  const fileBase64 = await harrowFileBase64();
+
+  const validated = await bodyOf(await postDemo(handleValidate, "/validate", { report: release.report, form: release.form }));
+  assert.equal(validated.status, 200, validated.text());
+  assert.equal((validated.json() as { canSign: boolean }).canSign, true);
+
+  const preview = await bodyOf(await postDemo(handleFormsFillPreview, "/forms/fill-preview", { report: draft, form: release.form, fileBase64, mode: "draft" }));
+  assert.equal(preview.status, 200, preview.text());
+  assert.equal(preview.headers.get("x-medreport-render"), "draft");
+
+  // The write-back: the release's receipt (MAC over its own keys) files the FINAL the server issued for it.
+  const final = await bodyOf(
+    await postDemo(handleRender, "/render?format=original", { report: release.report, receipt: release.report.receipt, form: release.form, fileBase64, requireFinal: true }),
+  );
+  assert.equal(final.headers.get("x-medreport-render"), "final", final.text());
+  const filed = await bodyOf(await postGlue(handleDocuments, "/connectors/tm3-sim/documents", writeBack(release.report, release.report.receipt!, final), { id: "tm3-sim" }));
+  assert.equal(filed.status, 201, filed.text());
+
+  // The release's map behind drafting and the payload preview: its attestation verifies, so neither refuses it.
+  const bundle = getDemoBundle("megan-hart");
+  const drafting = { templateId: formTemplateId(release.form.id), bundle, instructingParty: InstructingPartySchema.parse(bundle.referral), form: release.form };
+  const draftable = release.form.fields.find((fl) => fl.fillSource.kind === "notes_narrative");
+  assert.ok(draftable);
+  const drafted = await bodyOf(await postGlue(handleDrafts, "/drafts", { ...drafting, sectionKeys: [draftable.id], prefer: "demo" }));
+  assert.equal(drafted.status, 200, drafted.text());
+  const payload = await bodyOf(await postGlue(handleAiPayloadPreview, "/ai/payload-preview", drafting));
+  assert.equal(payload.status, 200, payload.text());
+});
+
+test("whatever verified before still verifies: a receipt this build issued, with keys an API client added, passes on its known keys", async () => {
+  const { base } = await approvedPair("demo");
+  const receipt = base.report.receipt!;
+  const widened = { ...structuredClone(receipt), partnerRef: "PX-12", signer: { ...receipt.signer, partnerSignerId: "s-9" } } as SignReceipt;
+  // e132057 left these keys out before checking the MAC: as read the MAC cannot match, the pre-shim check does.
+  assert.equal(verifyReceiptMac(widened), true);
+  assert.equal(verifyReceiptMac(widened, { tenantId: "demo" }), true);
+  assert.deepEqual(await verifyReceipt(widened, base.report), { ok: true, contentSha256: receipt.contentSha256 });
+  // Never a forgery: a changed known key fails either way.
+  assert.equal(verifyReceiptMac({ ...widened, signedAt: "2026-10-29T11:00:00.000Z" }), false);
+  assert.deepEqual(await verifyReceipt({ ...widened, signer: { ...widened.signer, name: "Someone Else" } }, base.report), { ok: false, reason: "BAD_MAC" });
+});
+
+test("the Studio approves the report as /sign signs it: keys a later release wrote into the draft are neither sent nor kept", async () => {
+  const { release } = await approvedPair("demo");
+  const draft = structuredClone({ ...release.report, status: "draft" as const }) as Report;
+  delete draft.receipt;
+  for (const s of draft.sections) for (const p of s.paragraphs) p.origin = "clinician";
+  draft.flags = [];
+  assert.ok("approver" in draft, "the draft holds the release's keys");
+
+  const signBodies: Array<{ report: Report }> = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+    if (url.pathname === "/api/reports/v1/sessions/demo") return Response.json({ session: createSessionToken({ tenantId: "demo", kind: "demo" }) }, { status: 201 });
+    if (url.pathname === "/api/reports/v1/sign") {
+      signBodies.push(JSON.parse(String(init?.body)) as { report: Report });
+      const request = new Request(url.href, { method: "POST", headers: init?.headers, body: init?.body });
+      return bindHandler(handleSign, () => ({}) as MedreportDeps)(request, { params: {} });
+    }
+    throw new Error(`unexpected request ${url.pathname}`);
+  }) as typeof fetch;
+  const committed: Report[] = [];
+  try {
+    let actions: ReviewActions | null = null;
+    const Probe = () => {
+      actions = useReviewActions({
+        report: draft,
+        form: release.form,
+        template: formToTemplate(release.form),
+        file: { status: "none" },
+        actor: SARAH.name,
+        hooks: {},
+        dispatch: () => undefined,
+        commit: (next) => {
+          committed.push(next);
+          return true;
+        },
+        validateNow: () => draft,
+        toast: () => undefined,
+      });
+      return null;
+    };
+    renderToStaticMarkup(createElement(Probe));
+    assert.ok(actions);
+    const result = await (actions as ReviewActions).approve({ signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS] });
+    assert.deepEqual(result, { ok: true });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(signBodies.length, 1);
+  assert.deepEqual(signBodies[0].report, ReportSchema.parse(draft), "sent as this build knows it");
+  assert.equal(committed.length, 1);
+  const approved = committed[0];
+  assert.equal("approver" in approved, false, "the kept approval is the signed shape");
+  assert.equal(approved.status, "signed");
+  assert.equal(await reportFingerprint(approved), approved.receipt!.contentSha256, "the kept copy is exactly what the receipt covers");
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * What e132057 accepted keeps working: an API client's map with a key of its own, a FINAL's content hash
+ * ----------------------------------------------------------------------------------------------*/
+
+test("an API client's map with a key of its own in a field: /validate, /sign, the FINAL and the fill preview behave as on e132057", async () => {
+  const form = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: "demo" }, "Practice manager", "2026-10-01T09:00:00.000Z");
+  const report: Report = { ...completedSampleReport("megan-hart", form, { id: "rpt_partner_map" }), tenantId: "demo" };
+  const annotated = structuredClone(form);
+  (annotated.fields[0] as Record<string, unknown> & FormDefinition["fields"][number]).partnerNote = "kept by an API client";
+  // As read the map hashes differently; as this build knows it (the key left out, as e132057 hashed it) it is the
+  // attested map.
+  const attested = form.confirmed!.mapSha256!;
+  assert.notEqual(formMapSha256(annotated), attested);
+  assert.equal(formMapMatches(annotated, attested), true);
+  assert.deepEqual(verifyFormConfirmation(annotated), { ok: true, mapSha256: attested });
+  const changed = structuredClone(annotated);
+  changed.fields[0].label = `${changed.fields[0].label} (changed)`;
+  assert.equal(formMapMatches(changed, attested), false, "a change to a key this build knows is still caught");
+  assert.equal(verifyFormConfirmation(changed).ok, false);
+
+  const validated = await bodyOf(await postDemo(handleValidate, "/validate", { report, form: annotated }));
+  assert.equal(validated.status, 200, validated.text());
+  const signed = await bodyOf(
+    await postDemo(handleSign, "/sign", { report, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form: annotated }),
+  );
+  assert.equal(signed.status, 200, signed.text());
+  const { receipt } = signed.json() as { receipt: SignReceipt };
+  assert.equal(receipt.formMapSha256, attested, "the receipt records the attested map, as e132057 did");
+
+  const fileBase64 = await harrowFileBase64();
+  for (const [label, map] of [["annotated", annotated], ["clean", form]] as const) {
+    const final = await bodyOf(
+      await postDemo(handleRender, "/render?format=original", { report: { ...report, status: "signed", receipt }, receipt, form: map, fileBase64, requireFinal: true }),
+    );
+    assert.equal(final.status, 200, `${label}: ${final.text()}`);
+    assert.equal(final.headers.get("x-medreport-render"), "final", label);
+  }
+  const preview = await bodyOf(await postDemo(handleFormsFillPreview, "/forms/fill-preview", { report, form: annotated, fileBase64, mode: "draft" }));
+  assert.equal(preview.status, 200, preview.text());
+});
+
+test("a FINAL's x-medreport-content-sha256 is the receipt's hash, also when the receipt verified as this build knows the report", async () => {
+  const form = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: "demo" }, "Practice manager", "2026-10-01T09:00:00.000Z");
+  const plain: Report = { ...completedSampleReport("megan-hart", form, { id: "rpt_wide_party" }), tenantId: "demo" };
+  // A partner-style instructing party carrying a referral's extra details (as rtf-forms / question-set-api send it).
+  const wide = { ...plain, instructingParty: { ...plain.instructingParty, referralDate: "2026-03-10", reason: "Neck pain after a collision." } } as Report;
+  const receipt = await createReceipt({
+    report: ReportSchema.parse(wide),
+    signer: SARAH,
+    statementAccepted: true,
+    attestations: [...FORM_ATTESTATIONS],
+    formMapSha256: formMapSha256(form),
+    now: SIGNED_AT,
+  });
+  assert.notEqual(await reportFingerprint(wide), receipt.contentSha256, "the receipt covers the report as this build knows it");
+  const fileBase64 = await harrowFileBase64();
+  const final = await bodyOf(await postDemo(handleRender, "/render?format=original", { report: { ...wide, status: "signed", receipt }, receipt, form, fileBase64, requireFinal: true }));
+  assert.equal(final.headers.get("x-medreport-render"), "final", final.text());
+  assert.equal(final.headers.get("x-medreport-content-sha256"), receipt.contentSha256);
+  // A draft's header is the report's fingerprint as read.
+  const draft = await bodyOf(await postDemo(handleRender, "/render?format=original", { report: wide, form, fileBase64 }));
+  assert.equal(draft.headers.get("x-medreport-render"), "draft", draft.text());
+  assert.equal(draft.headers.get("x-medreport-content-sha256"), await reportFingerprint(wide));
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Values no ClinForms build writes, under a key this build does not know
+ * ----------------------------------------------------------------------------------------------*/
+
+/** JSON text with `"<key>":<value>` inserted right after the first `marker` (ending in "{"): values JSON.stringify cannot write. */
+function withRaw(json: string, marker: string, key: string, value: string): string {
+  const at = json.indexOf(marker);
+  assert.ok(at >= 0, marker);
+  const end = at + marker.length;
+  return `${json.slice(0, end)}"${key}":${value},${json.slice(end)}`;
+}
+
+test("a value canonicalize cannot write (JSON 1e400, nesting deep enough to exhaust the stack) under a key this build does not know: checked as e132057 checked it, never a 500", async () => {
+  const { base } = await approvedPair("demo");
+  const receipt = base.report.receipt!;
+  const draftReport: Report = { ...base.report, status: "draft" };
+  delete draftReport.receipt;
+  const fileBase64 = await harrowFileBase64();
+  const bundle = getDemoBundle("megan-hart");
+  const draftable = base.form.fields.find((fl) => fl.fillSource.kind === "notes_narrative")!.id;
+  const DEEP = "[".repeat(200_000) + "]".repeat(200_000);
+  for (const [label, value] of [["1e400", "1e400"], ["deep", DEEP]] as const) {
+    // The verify functions answer: as read the MAC / hash cannot be computed; as this build knows the record, it verifies.
+    const oddReceipt = StoredSignReceiptSchema.parse(JSON.parse(withRaw(JSON.stringify(receipt), "{", "zzz", value)));
+    const oddReport = StoredReportSchema.parse(JSON.parse(withRaw(JSON.stringify(base.report), "{", "zzz", value)));
+    const oddForm = StoredFormDefinitionSchema.parse(JSON.parse(withRaw(JSON.stringify(base.form), '"fields":[{', "zzz", value)));
+    assert.equal(verifyReceiptMac(oddReceipt), true, label);
+    assert.deepEqual(await verifyReceipt(oddReceipt, oddReport), { ok: true, contentSha256: receipt.contentSha256 }, label);
+    assert.equal(await readReportFingerprint(oddReport), receipt.contentSha256, label);
+    assert.deepEqual(verifyFormConfirmation(oddForm), { ok: true, mapSha256: base.form.confirmed!.mapSha256 }, label);
+
+    // Over HTTP: what e132057 answered (it left the key out), never 500.
+    const draft = await bodyOf(await postDemo(handleRender, "/render?format=original", withRaw(JSON.stringify({ report: draftReport, form: base.form, fileBase64 }), '{"report":{', "zzz", value)));
+    assert.equal(draft.status, 200, `${label}: ${draft.text()}`);
+    assert.equal(draft.headers.get("x-medreport-content-sha256"), receipt.contentSha256, label);
+    const finalBody = JSON.stringify({ receipt, report: base.report, form: base.form, fileBase64, requireFinal: true });
+    const final = await bodyOf(await postDemo(handleRender, "/render?format=original", withRaw(finalBody, '{"receipt":{', "zzz", value)));
+    assert.equal(final.headers.get("x-medreport-render"), "final", `${label}: ${final.text()}`);
+    assert.equal(final.headers.get("x-medreport-content-sha256"), receipt.contentSha256, label);
+    const validated = await bodyOf(await postDemo(handleValidate, "/validate", withRaw(JSON.stringify({ report: draftReport, form: base.form }), '"fields":[{', "zzz", value)));
+    assert.equal(validated.status, 200, `${label}: ${validated.text()}`);
+    const signedText = withRaw(
+      JSON.stringify({ form: base.form, report: draftReport, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS] }),
+      '"fields":[{',
+      "zzz",
+      value,
+    );
+    const signed = await bodyOf(await postDemo(handleSign, "/sign", signedText));
+    assert.equal(signed.status, 200, `${label}: ${signed.text()}`);
+    assert.equal((signed.json() as { receipt: SignReceipt }).receipt.formMapSha256, base.form.confirmed!.mapSha256, label);
+    const filedText = withRaw(JSON.stringify(writeBack(base.report, receipt, final)), '"signReceipt":{', "zzz", value);
+    const filed = await bodyOf(await postGlue(handleDocuments, "/connectors/tm3-sim/documents", filedText, { id: "tm3-sim" }));
+    assert.equal(filed.status, 201, `${label}: ${filed.text()}`);
+    const previewText = withRaw(JSON.stringify({ form: base.form, report: draftReport, fileBase64, mode: "draft" }), '"fields":[{', "zzz", value);
+    const preview = await bodyOf(await postDemo(handleFormsFillPreview, "/forms/fill-preview", withRaw(previewText, '"report":{', "zzz", value)));
+    assert.equal(preview.status, 200, `${label}: ${preview.text()}`);
+    const drafting = { form: base.form, templateId: formTemplateId(base.form.id), bundle, instructingParty: InstructingPartySchema.parse(bundle.referral) };
+    const drafted = await bodyOf(await postGlue(handleDrafts, "/drafts", withRaw(JSON.stringify({ ...drafting, sectionKeys: [draftable], prefer: "demo" }), '"fields":[{', "zzz", value)));
+    assert.equal(drafted.status, 200, `${label}: ${drafted.text()}`);
+    const payload = await bodyOf(await postGlue(handleAiPayloadPreview, "/ai/payload-preview", withRaw(JSON.stringify(drafting), '"fields":[{', "zzz", value)));
+    assert.equal(payload.status, 200, `${label}: ${payload.text()}`);
+  }
+
+  // A report e132057 refused outright (a member it does not know) that also holds such a value: refused, never 500.
+  const { release } = await approvedPair("demo");
+  const releaseDraft: Report = { ...release.report, status: "draft" };
+  delete releaseDraft.receipt;
+  const refused = await bodyOf(
+    await postDemo(handleRender, "/render?format=original", withRaw(JSON.stringify({ report: releaseDraft, form: release.form, fileBase64 }), '{"report":{', "zzz", "1e400")),
+  );
+  assert.equal(refused.status, 422, refused.text());
+  assert.equal((refused.json() as { code: string }).code, "VALIDATION_FAILED");
 });
