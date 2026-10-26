@@ -16,6 +16,9 @@
  *   TEXT controller records that text (WA1's controllerSnapshotOf), so the decision stands until the text changes.
  *   And the review settles a box's open question as "not applicable" only by the report's own frozen conditions (a
  *   release report never by the earlier run-time reading of the printed words).
+ * - WC's review stamps through WB's authorship: on a report with no approver chosen (a report from before the
+ *   release) a member who is not staff acts as the approver (WC's actsAsApprover), so their own typed words are theirs
+ *   as on production; staff text is checked; with an approver chosen, only the approver's own words are theirs.
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -219,5 +222,22 @@ describe("WC's gap settling through WA1's frozen conditions", () => {
 
   it("a report from before the release reads the printed words, as it did", () => {
     assert.ok(settleConditionalGaps(reportOf(false), "Sarah Reid").gaps[0].resolution?.notApplicable);
+  });
+});
+
+describe("WC's review stamps through WB's authorship", () => {
+  const opinionFlags = (r: Report, key: string) => r.flags.filter((f) => f.sectionKey === key && f.code === "OPINION_LANGUAGE");
+  const typed = async (approver: boolean, by: "sarah" | "pat" | "tom") => {
+    const b = await buildCase(CaseInputSchema.parse({ report: "form:cf-discharge", box: "F-10", boxes: { "F-10": [] }, actor: by, ...(approver ? {} : { approver: null }) }) as CaseInput, {});
+    const res = await runSteps(b, [{ do: "add", by, box: "F-10", text: "In my opinion he will recover fully within 6 weeks." }] as never, CANDIDATE_ENGINE);
+    return opinionFlags(res.report, "F-10");
+  };
+  it("no approver chosen: a clinician's own typed opinion is theirs (as on production); staff's is checked", async () => {
+    assert.deepEqual(await typed(false, "sarah"), []);
+    assert.ok((await typed(false, "pat")).length > 0, "staff text");
+  });
+  it("an approver chosen: only the approver's own typed words are theirs", async () => {
+    assert.deepEqual(await typed(true, "sarah"), []);
+    assert.ok((await typed(true, "tom")).length > 0, "a colleague who is not the approver");
   });
 });

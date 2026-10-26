@@ -883,7 +883,9 @@ function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: s
     case "clinician": {
       const by = p.by;
       if (by && report.approver && by.memberId !== report.approver.memberId) return "person";
-      if (by && !report.approver) return "person";
+      // bh2-rc1 (WB x WC): no approver chosen (a report from before the release): as WC's actsAsApprover, a member who
+      // is not staff acts as the approver – their own new words are written "clinician" by the review.
+      if (by && !report.approver) return (by as { role?: string }).role && (by as { role?: string }).role !== "staff" ? "approver" : "person";
       return "approver";
     }
     default:
