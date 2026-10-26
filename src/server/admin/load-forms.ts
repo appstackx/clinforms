@@ -31,8 +31,15 @@
  *  - is not linked to a referrer in the clinic's settings.
  * Else the file is refused with the reason and nothing is changed. A form of the same file name for ANOTHER referrer
  * is refused too (never a second form per template); a form that already has exactly this file and this map is
- * skipped (a re-run changes nothing). Audited: "form.replace" per form (ids and counts), "clinic.forms_replaced" once.
- * Only the clinic's forms library is touched – never the clinic, its members, invitations, trial or plan.
+ * skipped (a re-run changes nothing), and so is a file without a map whose form was made from one (a layout reading
+ * never replaces a map). One file per template: a second file in the folder with the same bytes or the same name
+ * (case and Unicode form aside), or matching a form an earlier file already matched, is refused – in the preview
+ * exactly as with --confirm. The run is refused as a whole when a form in the library cannot be read (the data
+ * keys of this database): its template could not be recognised. The batch re-checks every rule (replaceForms), so
+ * a form the clinic – or a second run at the same time – changed, used or removed meanwhile is refused, never
+ * duplicated. Audited in that same batch: "form.replace" per form (ids and counts) and "file.upload" for a new
+ * file; "clinic.forms_replaced" once per run. Only the clinic's forms library is touched – never the clinic, its
+ * members, invitations, trial or plan.
  *
  * The clinic must exist and be open. Nothing is sent to any service; no patient data is involved (templates only).
  */
@@ -51,10 +58,10 @@ import { decodeFormFile, type DecodedFormFile } from "../../modules/medreport/fo
 import { findFormMergeFields } from "../../modules/medreport/forms/merge-scan";
 import { PLATFORM_USER_ID } from "../auth/create-auth";
 import type { Database } from "../db/schema";
-import { appendAudit, listAuditAbout } from "../repos/audit";
+import { appendAudit, listAuditAbout, type AuditEntryInput } from "../repos/audit";
 import { RepoInputError, type RepoContext } from "../repos/context";
-import { deleteFormFile, putFormFile } from "../repos/form-files";
-import { createForm, getForm, listFormMeta, replaceForms, type FormMeta } from "../repos/forms";
+import { deleteFormFileIfUnused, putFormFile } from "../repos/form-files";
+import { MAX_REPLACED_FORMS, createForm, getForm, listFormMeta, replaceForms, type FormMeta } from "../repos/forms";
 import { countReportsUsingForm } from "../repos/reports";
 import { getTenantSettings } from "../repos/tenant-settings";
 
@@ -216,14 +223,16 @@ function countSources(form: FormDefinition): { fromRecords: number; forStaff: nu
   return { fromRecords, forStaff };
 }
 
-/** A form in the clinic's library, its map decrypted (null when it cannot be read: such a form is never replaced). */
+/** A form in the clinic's library with its map decrypted. */
 interface LibraryForm {
   meta: FormMeta;
-  form: FormDefinition | null;
+  form: FormDefinition;
 }
 
-async function readLibrary(ctx: RepoContext, tenantId: string): Promise<LibraryForm[]> {
-  const out: LibraryForm[] = [];
+/** The clinic's forms with their maps; the ids of any whose map cannot be read (decrypted and parsed). */
+async function readLibrary(ctx: RepoContext, tenantId: string): Promise<{ forms: LibraryForm[]; unreadable: string[] }> {
+  const forms: LibraryForm[] = [];
+  const unreadable: string[] = [];
   for (const meta of await listFormMeta(ctx, tenantId)) {
     let form: FormDefinition | null = null;
     try {
@@ -232,13 +241,15 @@ async function readLibrary(ctx: RepoContext, tenantId: string): Promise<LibraryF
     } catch {
       form = null;
     }
-    out.push({ meta, form });
+    if (form) forms.push({ meta, form });
+    else unreadable.push(meta.id);
   }
-  return out;
+  return { forms, unreadable };
 }
 
 /** File names: the same apart from case and Unicode form (macOS keeps names decomposed; its disks ignore case). */
-const sameFileName = (a: string, b: string) => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
+const fileNameKey = (name: string) => name.normalize("NFC").toLowerCase();
+const sameFileName = (a: string, b: string) => fileNameKey(a) === fileNameKey(b);
 /** Referrer names: the same apart from case, Unicode form and spacing. */
 const sameReferrer = (a: string, b: string) => {
   const norm = (t: string) => t.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
@@ -279,36 +290,66 @@ function mapContent(form: FormDefinition): string {
 
 const CONFIRM_ACTIONS = new Set(["form.confirm", "form.store_confirmed"]);
 
-/** Why this form must be kept as it is (never replaced), or null when it may be replaced. */
-async function keepReason(ctx: RepoContext, tenantId: string, entry: LibraryForm, linked: ReadonlySet<string>): Promise<string | null> {
+/** What the replace rule found for one form of the library. */
+type TargetCheck =
+  | { keep: string }
+  | {
+      keep: null;
+      /** Every "form.create"/"form.replace" that made it says it was made by the layout reading (no map). */
+      madeByReading: boolean;
+      /** The audit rows targeting or naming it (the batch replaces it only while there are exactly these). */
+      trailIds: string[];
+    };
+
+/** Why this form must be kept as it is (never replaced) – or what replacing it has to know. */
+async function checkTarget(ctx: RepoContext, tenantId: string, entry: LibraryForm, linksText: string): Promise<TargetCheck> {
   const id = entry.meta.id;
   const kept = "it is kept as it is";
-  if (!entry.form) return `The form ${id} in the library could not be read: ${kept}.`;
+  const keep = (reason: string): TargetCheck => ({ keep: `The form ${id} in the library ${reason}: ${kept}.` });
   if (entry.meta.status !== "proposed" || entry.form.status !== "proposed" || entry.form.confirmed) {
-    return `The form ${id} in the library has been confirmed by the clinic: ${kept} (any change is made in the Studio).`;
+    return { keep: `The form ${id} in the library has been confirmed by the clinic: ${kept} (any change is made in the Studio).` };
   }
-  if (entry.meta.rev !== 1) return `The form ${id} in the library was changed in the clinic's Studio after it was loaded (revision ${entry.meta.rev}): ${kept}.`;
+  if (entry.meta.rev !== 1) return keep(`was changed in the clinic's Studio after it was loaded (revision ${entry.meta.rev})`);
   const reports = await countReportsUsingForm(ctx, tenantId, id);
-  if (reports > 0) return `The form ${id} in the library is used by ${reports} ${reports === 1 ? "report" : "reports"} (draft or approved): ${kept}.`;
+  if (reports > 0) return keep(`is used by ${reports} ${reports === 1 ? "report" : "reports"} (draft or approved)`);
   const trail = await listAuditAbout(ctx, tenantId, id, { limit: 200 });
+  // Another run replaced it after this run read the library (two runs at the same time): say so, not "changed".
+  const replacedBy = trail.find((e) => e.action === "form.replace" && e.targetId !== id && Array.isArray(e.detail?.replaces) && e.detail.replaces.includes(id));
+  if (replacedBy) {
+    return { keep: `The form ${id} in the library was replaced meanwhile by ${replacedBy.targetId} (another run): nothing is done for this file. Run the preview again.` };
+  }
   const own = trail.filter(
     (e) => e.targetId === id && (e.action === "form.create" || e.action === "form.replace") && e.userId === PLATFORM_USER_ID && e.detail?.via === "onboarding",
   );
-  if (own.length === 0) return `The form ${id} in the library was added in the clinic's Studio, not loaded by ClinForms: ${kept}.`;
+  if (own.length === 0) return keep("was added in the clinic's Studio, not loaded by ClinForms");
   const other = trail.filter((e) => !own.includes(e));
-  if (other.some((e) => CONFIRM_ACTIONS.has(e.action))) return `The form ${id} in the library was confirmed once (activity log): ${kept}.`;
-  if (other.some((e) => e.action.startsWith("report."))) return `The form ${id} in the library has been used for a report (activity log): ${kept}.`;
-  if (other.length > 0) return `The form ${id} in the library was changed in the clinic's Studio after it was loaded (activity log): ${kept}.`;
-  if (linked.has(id)) return `The form ${id} in the library is linked to a referrer in the clinic's settings: ${kept}.`;
-  return null;
+  if (other.some((e) => CONFIRM_ACTIONS.has(e.action))) return keep("was confirmed once (activity log)");
+  if (other.some((e) => e.action.startsWith("report."))) return keep("has been used for a report (activity log)");
+  if (other.length > 0) return keep("was changed in the clinic's Studio after it was loaded (activity log)");
+  // The same test as the batch's (the stored links' JSON names the id; ASCII case aside, as SQLite's LIKE).
+  if (linksText.includes(JSON.stringify(id).toLowerCase())) return keep("is linked to a referrer in the clinic's settings");
+  return { keep: null, madeByReading: own.every((e) => e.detail?.mapFrom === "reading"), trailIds: trail.map((e) => e.id) };
 }
 
-type ReplacePlan = { action: "load" } | { action: "replace"; targets: LibraryForm[] } | { action: "skip" | "refuse"; reason: string };
+type ReplacePlan =
+  | { action: "load" }
+  | { action: "replace"; targets: LibraryForm[]; auditRowsAbout: number }
+  | { action: "skip"; reason: string; targets: LibraryForm[] }
+  | { action: "refuse"; reason: string };
 
 /** replaceProposed: the clinic's forms for the same template as this file (and its new map), and what to do. */
-async function planReplace(ctx: RepoContext, tenantId: string, library: LibraryForm[], linked: ReadonlySet<string>, name: string, form: FormDefinition): Promise<ReplacePlan> {
-  const sameName = (e: LibraryForm) => e.form !== null && sameFileName(e.form.file.fileName, name);
-  const targets = library.filter((e) => e.meta.fileSha256 === form.file.sha256 || (sameName(e) && sameReferrer(e.form?.referrer.name ?? "", form.referrer.name)));
+async function planReplace(
+  ctx: RepoContext,
+  tenantId: string,
+  library: LibraryForm[],
+  linksText: string,
+  claimed: ReadonlyMap<string, string>,
+  name: string,
+  form: FormDefinition,
+  mapFrom: "json" | "reading",
+): Promise<ReplacePlan> {
+  const sameName = (e: LibraryForm) => sameFileName(e.form.file.fileName, name);
+  const targets = library.filter((e) => e.meta.fileSha256 === form.file.sha256 || (sameName(e) && sameReferrer(e.form.referrer.name, form.referrer.name)));
   const otherReferrer = library.find((e) => !targets.includes(e) && sameName(e));
   if (otherReferrer) {
     return {
@@ -317,15 +358,34 @@ async function planReplace(ctx: RepoContext, tenantId: string, library: LibraryF
     };
   }
   if (targets.length === 0) return { action: "load" };
-  if (targets.length > 20) return { action: "refuse", reason: `${targets.length} forms in the library match this file: nothing is replaced.` };
+  const taken = targets.find((t) => claimed.has(t.meta.id));
+  if (taken) {
+    return {
+      action: "refuse",
+      reason: `The form ${taken.meta.id} in the library is already matched by ${claimed.get(taken.meta.id)} in this folder: one file per template, nothing is done for this file.`,
+    };
+  }
+  if (targets.length > MAX_REPLACED_FORMS) return { action: "refuse", reason: `${targets.length} forms in the library match this file (at most ${MAX_REPLACED_FORMS} are replaced at once): nothing is replaced.` };
+  const trail = new Set<string>();
+  let madeByReading = true;
   for (const target of targets) {
-    const why = await keepReason(ctx, tenantId, target, linked);
-    if (why) return { action: "refuse", reason: why };
+    const check = await checkTarget(ctx, tenantId, target, linksText);
+    if (check.keep !== null) return { action: "refuse", reason: check.keep };
+    madeByReading &&= check.madeByReading;
+    for (const id of check.trailIds) trail.add(id);
   }
-  if (targets.length === 1 && targets[0].form && mapContent(targets[0].form) === mapContent(form)) {
-    return { action: "skip", reason: `The form ${targets[0].meta.id} in the library already has this file and this map.` };
+  // Review fix (10/2026): a layout reading (--read-missing, no map for this file) never replaces a map made by hand.
+  if (mapFrom === "reading" && !madeByReading) {
+    return {
+      action: "skip",
+      targets,
+      reason: `No map for this file in the maps file: the form ${targets.map((t) => t.meta.id).join(", ")} in the library was made from a map, which a layout reading never replaces (add this file's map to the maps file).`,
+    };
   }
-  return { action: "replace", targets };
+  if (targets.length === 1 && mapContent(targets[0].form) === mapContent(form)) {
+    return { action: "skip", targets, reason: `The form ${targets[0].meta.id} in the library already has this file and this map.` };
+  }
+  return { action: "replace", targets, auditRowsAbout: trail.size };
 }
 
 export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): Promise<LoadFormsResult> {
@@ -337,10 +397,21 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
   const at = now.toISOString();
   const replace = input.replaceProposed === true;
   const existing = new Set((await listFormMeta(ctx, tenantId)).map((m) => m.fileSha256));
-  // replaceProposed: the library with its maps, and the forms the clinic's referrer links point at.
-  const library = replace ? await readLibrary(ctx, tenantId) : [];
-  const links = replace ? ((await getTenantSettings<Record<string, unknown>>(ctx, tenantId))?.referrerLinks ?? {}) : {};
-  const linked = new Set(Object.values(links && typeof links === "object" ? links : {}).filter((v): v is string => typeof v === "string"));
+  // replaceProposed: the library with its maps (as it was when the run started, in the preview and with --confirm
+  // alike), and the clinic's referrer links as stored (lower case: the batch's LIKE ignores ASCII case on SQLite).
+  const { forms: library, unreadable } = replace ? await readLibrary(ctx, tenantId) : { forms: [], unreadable: [] };
+  if (unreadable.length) {
+    // Review fix (10/2026): an unreadable form could be this file's template – matched neither by name nor referrer, it
+    // would get a second form next to it. Nothing is done until every form can be read.
+    throw new RepoInputError(
+      `${unreadable.length} ${unreadable.length === 1 ? "form" : "forms"} in the clinic's library cannot be read with this database's data keys (${unreadable.slice(0, 5).join(", ")}${unreadable.length > 5 ? ", …" : ""}): replace mode reads every form to find each template's form. Check the data keys for this database (CLINFORMS_DATA_KEYS); nothing was changed.`,
+    );
+  }
+  const linksText = replace ? JSON.stringify((await getTenantSettings(ctx, tenantId))?.referrerLinks ?? {}).toLowerCase() : "";
+  /** One file per template (replace mode): the first file of each SHA-256 and of each name, and the forms already matched. */
+  const seenSha = new Map<string, string>();
+  const seenName = new Map<string, string>();
+  const claimed = new Map<string, string>();
   const names = fs.readdirSync(dir).filter((n) => !n.startsWith(".")).sort();
   const results: LoadFormsFileResult[] = [];
   const unknownMaps = Object.keys(input.maps).filter((k) => !names.includes(k));
@@ -386,6 +457,21 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     if (!replace && existing.has(file.sha256)) {
       results.push({ ...base, status: "skipped", reason: "This exact file is already in the clinic's forms library." });
       continue;
+    }
+    if (replace) {
+      // Review fix (10/2026): two files for one template would replace each other's form (and the preview could not
+      // show it). The first one in name order counts; the preview and --confirm agree.
+      const twin = seenSha.get(file.sha256) ?? seenName.get(fileNameKey(name));
+      if (!seenSha.has(file.sha256)) seenSha.set(file.sha256, name);
+      if (!seenName.has(fileNameKey(name))) seenName.set(fileNameKey(name), name);
+      if (twin) {
+        results.push({
+          ...base,
+          status: "refused",
+          reason: `${twin} in this folder has ${seenSha.get(file.sha256) === twin ? "the same bytes" : "the same name (case and accents aside)"}: one file per template, nothing is done for this file.`,
+        });
+        continue;
+      }
     }
 
     // The proposed map.
@@ -469,7 +555,9 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       ...counts,
       mergeFields: mergeFields.length,
     };
-    const plan: ReplacePlan = replace ? await planReplace(ctx, tenantId, library, linked, name, form) : { action: "load" };
+    const mapFrom = mapped ? "json" : "reading";
+    const plan: ReplacePlan = replace ? await planReplace(ctx, tenantId, library, linksText, claimed, name, form, mapFrom) : { action: "load" };
+    if (plan.action === "replace" || plan.action === "skip") for (const t of plan.targets) claimed.set(t.meta.id, name);
     if (plan.action === "skip" || plan.action === "refuse") {
       results.push({ ...ready, status: plan.action === "skip" ? "skipped" : "refused", reason: plan.reason });
       continue;
@@ -481,6 +569,13 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     }
 
     const stored = await putFormFile(ctx, tenantId, { bytes: file.bytes, fileName: storedFormFileName(file.mimeType), mimeType: file.mimeType, expectedSha256: file.sha256 });
+    const uploaded: AuditEntryInput = {
+      userId: PLATFORM_USER_ID,
+      action: "file.upload",
+      targetType: "form_file",
+      targetId: file.sha256,
+      detail: { via: "onboarding", sizeBytes: stored.sizeBytes, chunks: stored.chunkCount, mime: file.mimeType },
+    };
     const row = {
       id: form.id,
       fileSha256: file.sha256,
@@ -491,58 +586,54 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       sampleId: null,
       payload: form,
     };
-    let filesDeleted = 0;
-    if (plan.action === "replace") {
-      const swapped = await replaceForms(ctx, tenantId, {
-        replace: plan.targets.map((t) => ({ id: t.meta.id, rev: t.meta.rev, status: t.meta.status })),
-        form: row,
-        dropUnusedFiles: plan.targets.map((t) => t.meta.fileSha256),
-      });
+    if (plan.action === "replace" && replaces) {
+      // A file written just for this form goes again when the form is not stored (unless a form uses it meanwhile).
+      const dropNewFile = async () => {
+        if (stored.written) await deleteFormFileIfUnused(ctx, tenantId, file.sha256);
+      };
+      let swapped: Awaited<ReturnType<typeof replaceForms>>;
+      try {
+        swapped = await replaceForms(ctx, tenantId, {
+          replace: plan.targets.map((t) => ({ id: t.meta.id, rev: t.meta.rev, status: t.meta.status })),
+          auditRowsAbout: plan.auditRowsAbout,
+          form: row,
+          dropUnusedFiles: plan.targets.map((t) => t.meta.fileSha256),
+          // In the same batch: the rows exist exactly when the forms were replaced.
+          audit: [
+            ...(stored.written ? [uploaded] : []),
+            {
+              userId: PLATFORM_USER_ID,
+              action: "form.replace",
+              targetType: "form",
+              targetId: form.id,
+              detail: { via: "onboarding", status: "proposed", replaces, fields: form.fields.length, kind: form.kind, mapFrom },
+            },
+          ],
+        });
+      } catch (err) {
+        await dropNewFile().catch(() => undefined);
+        throw err;
+      }
       if (!swapped.ok) {
-        // Changed by the clinic while this ran: nothing was replaced. A file stored just now for it goes again.
-        if (stored.written && !(await listFormMeta(ctx, tenantId)).some((m) => m.fileSha256 === file.sha256)) await deleteFormFile(ctx, tenantId, file.sha256);
+        // The clinic (or another run) changed, used or removed one of the forms after the preview: nothing was replaced.
+        await dropNewFile();
         results.push({ ...ready, status: "refused", replaces, reason: "The clinic's form changed while it was being replaced: nothing was replaced. Run the preview again." });
         continue;
       }
-      filesDeleted = swapped.filesDeleted;
-      for (const t of plan.targets) library.splice(library.indexOf(t), 1);
-    } else {
-      const saved = await createForm(ctx, tenantId, row);
-      if (!saved.ok) throw new Error(`The map for ${name} could not be stored (${saved.reason}).`);
-    }
-    existing.add(file.sha256);
-    if (replace) {
-      library.push({
-        meta: { tenantId, id: form.id, rev: 1, fileSha256: file.sha256, status: "proposed", title: row.title, referrer: row.referrer, kind: form.kind, sampleId: null, createdAt: at, updatedAt: at },
-        form,
-      });
-    }
-    if (stored.written) {
-      await appendAudit(ctx, tenantId, {
-        userId: PLATFORM_USER_ID,
-        action: "file.upload",
-        targetType: "form_file",
-        targetId: file.sha256,
-        detail: { via: "onboarding", sizeBytes: stored.sizeBytes, chunks: stored.chunkCount, mime: file.mimeType },
-      });
-    }
-    if (replaces) {
-      await appendAudit(ctx, tenantId, {
-        userId: PLATFORM_USER_ID,
-        action: "form.replace",
-        targetType: "form",
-        targetId: form.id,
-        detail: { via: "onboarding", status: "proposed", replaces, fields: form.fields.length, kind: form.kind, mapFrom: mapped ? "json" : "reading", filesDeleted },
-      });
+      existing.add(file.sha256);
       results.push({ ...ready, status: "replaced", replaces, formId: form.id });
       continue;
     }
+    const saved = await createForm(ctx, tenantId, row);
+    if (!saved.ok) throw new Error(`The map for ${name} could not be stored (${saved.reason}).`);
+    existing.add(file.sha256);
+    if (stored.written) await appendAudit(ctx, tenantId, uploaded);
     await appendAudit(ctx, tenantId, {
       userId: PLATFORM_USER_ID,
       action: "form.create",
       targetType: "form",
       targetId: form.id,
-      detail: { via: "onboarding", status: "proposed", fields: form.fields.length, kind: form.kind, mapFrom: mapped ? "json" : "reading" },
+      detail: { via: "onboarding", status: "proposed", fields: form.fields.length, kind: form.kind, mapFrom },
     });
     results.push({ ...ready, status: "loaded", formId: form.id });
   }

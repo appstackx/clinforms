@@ -10,7 +10,7 @@ import { loadFormsArgs, statusLabel } from "../../../scripts/admin/load-forms";
 import { createPgliteTestDb, createSqliteTestDb } from "../db/testing/databases";
 import { defineLoadFormsSuite } from "./testing/load-forms-suite";
 
-defineLoadFormsSuite("node:sqlite", async () => createSqliteTestDb());
+defineLoadFormsSuite("node:sqlite", async () => createSqliteTestDb()); // with its raw handle: the hook cases run here too
 defineLoadFormsSuite("PGlite (Postgres)", async () => createPgliteTestDb());
 
 describe("admin:load-forms arguments", () => {

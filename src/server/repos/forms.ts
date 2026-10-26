@@ -1,9 +1,10 @@
 /**
  * `forms` – referrer form maps (FormDefinition JSON, encrypted), per tenant, with optimistic concurrency:
  * every update names the revision it was based on; a stale one gets {reason: "conflict", currentRev}.
- * replaceForms (10/2026, admin:load-forms --replace-proposed): old maps out, one new map in, in one atomic batch.
+ * replaceForms (10/2026, admin:load-forms --replace-proposed): old maps out, one new map in, in one atomic batch that
+ * re-checks every reason to keep an old map.
  */
-import type { Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 import { runBatch, type BatchQuery } from "../db/batch";
 import { isUniqueViolation } from "../db/errors";
 import type { FormsTable } from "../db/schema";
@@ -18,6 +19,7 @@ import {
   toInt,
   type RepoContext,
 } from "./context";
+import { auditInsertWhenExists, jsonTextNamesId, type AuditEntry, type AuditEntryInput } from "./audit";
 import { MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ROWS, type SaveResult } from "./versioned";
 
 const TABLE = "forms";
@@ -220,36 +222,55 @@ export async function listFormMeta(ctx: RepoContext, tenantId: string): Promise<
 /** How a report names the form it completes: template_id "form:<formId>" (core/forms.ts formTemplateId). */
 const FORM_TEMPLATE_PREFIX = "form:";
 
+/**
+ * At most this many forms are replaced by one new form. The guarded insert of replaceForms binds 17 + 8n parameters
+ * (97 at 10), and D1 – and the data gateway (workers/data-gateway/src/validate.ts LIMITS.maxParams) – take at most
+ * 100 per statement.
+ */
+export const MAX_REPLACED_FORMS = 10;
+
 export interface ReplaceFormsInput<P = unknown> {
   /** The forms to remove: each only while it still has exactly this revision and status. */
   replace: { id: string; rev: number; status: string }[];
-  /** The new form (created at revision 1, under its own new id). */
+  /**
+   * How many audit rows targeted or named any of these forms when the replace was planned (the union of
+   * repos/audit.ts listAuditAbout for each id): the replace goes ahead only while that is still the number.
+   */
+  auditRowsAbout: number;
+  /** The new form (created at revision 1, under its own new id). Its file must already be stored. */
   form: FormInput<P>;
   /** Stored files (SHA-256) to delete with their chunks – each only once no form of the clinic refers to it. */
   dropUnusedFiles?: string[];
+  /** Audit rows written in the same batch – only when the forms really were replaced. */
+  audit?: AuditEntryInput[];
 }
 
 export type ReplaceFormsResult =
-  | { ok: true; rev: 1; updatedAt: string; removed: number; filesDeleted: number }
+  | { ok: true; rev: 1; updatedAt: string; removed: number; filesDeleted: number; audit: AuditEntry[] }
   | { ok: false; reason: "changed" };
 
 /**
  * Replaces forms of the tenant by ONE new form, in one atomic batch (runBatch: one D1 batch, a transaction on
  * Postgres and SQLite; no reads between the statements, so every condition is in the SQL):
- * 1. the old forms are deleted – all of them, and only if every one still has its expected revision and status
- *    and no report of the tenant uses any of them (reports.form_id, or template_id "form:<id>");
- * 2. the new form is inserted;
- * 3. if an old form is still there (step 1 changed nothing), the new form is deleted again;
- * 4. each file in dropUnusedFiles (its chunks, then its record) is deleted when no form of the tenant refers to it.
- * So either the old forms are gone and the new one is stored, or the tenant's forms are exactly as before
- * ({ok: false, reason: "changed"}). Files that are still referred to are never touched. (Old forms deleted
- * meanwhile by someone else leave nothing to replace: the new form is stored, `removed` says how many went.)
+ * 1. the new form is inserted (INSERT … SELECT … WHERE) only while EVERY old form still has its expected revision and
+ *    status, no report of the tenant uses one (reports.form_id, or template_id "form:<id>"), the tenant's referrer
+ *    links name none, the audit trail about them still holds exactly `auditRowsAbout` rows (nothing confirmed, used
+ *    or changed since the plan), and the new form's file is stored;
+ * 2. the old forms are deleted – only when the new form is there, and each only at its expected revision and status;
+ * 3. the new form is deleted again if an old form is still there or the audit trail about them grew (cannot happen
+ *    when the batch runs as one serial transaction – D1, SQLite; a safety net for a concurrent Postgres transaction);
+ * 4. the `audit` rows are inserted when the new form is there;
+ * 5. each file in dropUnusedFiles (its chunks, then its record) is deleted when the new form is there and no form of
+ *    the tenant refers to the file.
+ * So either the old forms are gone, the new one is stored and audited, or nothing at all changed ({ok: false,
+ * reason: "changed"} – e.g. a concurrent run replaced the forms first, or the clinic deleted, confirmed or used one
+ * meanwhile). Files that are still referred to are never touched.
  */
 export async function replaceForms<P>(ctx: RepoContext, tenantId: string, input: ReplaceFormsInput<P>): Promise<ReplaceFormsResult> {
   assertTenantId(tenantId);
   const fields = validate(input.form);
-  if (!Array.isArray(input.replace) || input.replace.length === 0 || input.replace.length > 20) {
-    throw new RepoInputError("Name between 1 and 20 forms to replace.");
+  if (!Array.isArray(input.replace) || input.replace.length === 0 || input.replace.length > MAX_REPLACED_FORMS) {
+    throw new RepoInputError(`Name between 1 and ${MAX_REPLACED_FORMS} forms to replace.`);
   }
   const old = input.replace.map((o) => {
     if (!Number.isInteger(o.rev) || o.rev < 1) throw new RepoInputError("The revision of a form to replace must be a positive integer.");
@@ -258,61 +279,111 @@ export async function replaceForms<P>(ctx: RepoContext, tenantId: string, input:
   const oldIds = Array.from(new Set(old.map((o) => o.id)));
   if (oldIds.length !== old.length) throw new RepoInputError("A form to replace is named twice.");
   if (oldIds.includes(fields.id)) throw new RepoInputError("The new form needs an id of its own.");
+  if (!Number.isInteger(input.auditRowsAbout) || input.auditRowsAbout < 0) throw new RepoInputError("auditRowsAbout must be a whole number.");
   const files = Array.from(new Set((input.dropUnusedFiles ?? []).map((sha) => assertSha256(sha)))).filter((sha) => sha !== fields.file_sha256);
   const at = nowIso(ctx);
+  // Whole numbers checked above go in as literals (sql.lit) to keep the guarded insert inside D1's 100 parameters.
+  const expectedAudit = sql.lit(input.auditRowsAbout);
+  const auditAbout = () =>
+    ctx.db
+      .selectFrom("audit_log as a")
+      .select((c) => c.fn.countAll<number>().as("n"))
+      .where("a.tenant_id", "=", tenantId)
+      .where((w) => w.or([w("a.target_id", "in", oldIds), ...oldIds.map((id) => jsonTextNamesId("a.detail_json", id))]));
+  const newFormStored = () => ctx.db.selectFrom("forms as nf").select("nf.id").where("nf.tenant_id", "=", tenantId).where("nf.id", "=", fields.id);
   const unreferenced = (table: "form_files" | "form_file_chunks", sha: string) =>
     ctx.db
       .deleteFrom(table)
       .where("tenant_id", "=", tenantId)
       .where("sha256", "=", sha)
-      .where((eb) => eb.not(eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.file_sha256", "=", sha))));
+      .where((eb) => eb.not(eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.file_sha256", "=", sha))))
+      .where((eb) => eb.exists(newFormStored()));
+
+  const insertNew = ctx.db
+    .insertInto("forms")
+    .columns(["tenant_id", "id", "rev", "file_sha256", "status", "title", "referrer", "kind", "sample_id", "payload_enc", "created_at", "updated_at"])
+    .expression(
+      ctx.db
+        .selectNoFrom((eb) => [
+          eb.val(tenantId).as("tenant_id"),
+          eb.val(fields.id).as("id"),
+          sql.lit(1).as("rev"),
+          eb.val(fields.file_sha256).as("file_sha256"),
+          eb.val(fields.status).as("status"),
+          eb.val(fields.title).as("title"),
+          eb.val(fields.referrer).as("referrer"),
+          eb.val(fields.kind).as("kind"),
+          eb.val(fields.sample_id).as("sample_id"),
+          eb.val(encryptPayload(ctx, tenantId, fields.id, input.form.payload)).as("payload_enc"),
+          eb.val(at).as("created_at"),
+          eb.val(at).as("updated_at"),
+        ])
+        .where((eb) =>
+          eb.and([
+            eb(
+              ctx.db
+                .selectFrom("forms as f")
+                .select((c) => c.fn.countAll<number>().as("n"))
+                .where("f.tenant_id", "=", tenantId)
+                .where((w) => w.or(old.map((o) => w.and([w("f.id", "=", o.id), w("f.rev", "=", o.rev), w("f.status", "=", o.status)])))),
+              "=",
+              sql.lit(old.length),
+            ),
+            eb.not(
+              eb.exists(
+                ctx.db
+                  .selectFrom("reports as r")
+                  .select("r.id")
+                  .where("r.tenant_id", "=", tenantId)
+                  .where((w) => w.or([w("r.form_id", "in", oldIds), w("r.template_id", "in", oldIds.map((id) => `${FORM_TEMPLATE_PREFIX}${id}`))])),
+              ),
+            ),
+            eb.not(
+              eb.exists(
+                ctx.db
+                  .selectFrom("tenant_settings as s")
+                  .select("s.tenant_id")
+                  .where("s.tenant_id", "=", tenantId)
+                  .where((w) => w.or(oldIds.map((id) => jsonTextNamesId("s.referrer_links_json", id)))),
+              ),
+            ),
+            eb(auditAbout(), "=", expectedAudit),
+            eb.exists(ctx.db.selectFrom("form_files as ff").select("ff.sha256").where("ff.tenant_id", "=", tenantId).where("ff.sha256", "=", fields.file_sha256)),
+          ]),
+        ),
+    );
+  const deleteOld = ctx.db
+    .deleteFrom("forms")
+    .where("tenant_id", "=", tenantId)
+    .where((w) => w.or(old.map((o) => w.and([w("id", "=", o.id), w("rev", "=", o.rev), w("status", "=", o.status)]))))
+    .where((w) => w.exists(newFormStored()));
+  const undoIfIncomplete = ctx.db
+    .deleteFrom("forms")
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", fields.id)
+    .where((w) =>
+      w.or([
+        w.exists(ctx.db.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.id", "in", oldIds)),
+        w(auditAbout(), "<>", expectedAudit),
+      ]),
+    );
+  const audit = (input.audit ?? []).map((entry) => auditInsertWhenExists(ctx, tenantId, entry, newFormStored()));
   const queries: BatchQuery[] = [
-    ctx.db
-      .deleteFrom("forms")
-      .where("tenant_id", "=", tenantId)
-      .where("id", "in", oldIds)
-      .where((eb) =>
-        eb(
-          eb
-            .selectFrom("forms as f")
-            .select((c) => c.fn.countAll<number>().as("n"))
-            .where("f.tenant_id", "=", tenantId)
-            .where((w) => w.or(old.map((o) => w.and([w("f.id", "=", o.id), w("f.rev", "=", o.rev), w("f.status", "=", o.status)])))),
-          "=",
-          old.length,
-        ),
-      )
-      .where((eb) =>
-        eb.not(
-          eb.exists(
-            eb
-              .selectFrom("reports")
-              .select("reports.id")
-              .where("reports.tenant_id", "=", tenantId)
-              .where((w) => w.or([w("reports.form_id", "in", oldIds), w("reports.template_id", "in", oldIds.map((id) => `${FORM_TEMPLATE_PREFIX}${id}`))])),
-          ),
-        ),
-      ),
-    ctx.db.insertInto("forms").values({
-      tenant_id: tenantId,
-      ...fields,
-      rev: 1,
-      payload_enc: encryptPayload(ctx, tenantId, fields.id, input.form.payload),
-      created_at: at,
-      updated_at: at,
-    }),
-    ctx.db
-      .deleteFrom("forms")
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", fields.id)
-      .where((eb) => eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.id", "in", oldIds))),
+    insertNew,
+    deleteOld,
+    undoIfIncomplete,
+    ...audit.map((a) => a.query),
     ...files.flatMap((sha) => [unreferenced("form_file_chunks", sha), unreferenced("form_files", sha)]),
   ];
   const results = await runBatch(ctx.db, queries);
-  if (Number(results[2]?.numAffectedRows ?? 0) > 0) return { ok: false, reason: "changed" };
+  const affected = (i: number) => Number(results[i]?.numAffectedRows ?? 0);
+  if (affected(0) === 0 || affected(2) > 0) return { ok: false, reason: "changed" };
+  // Step 1 saw every old form at its revision and status, and step 2 ran in the same serial batch: all of them went.
+  if (affected(1) !== old.length) throw new Error(`replaceForms: ${affected(1)} of ${old.length} forms were removed – the batch did not run as one transaction.`);
+  const fileBase = 3 + audit.length;
   let filesDeleted = 0;
-  for (let i = 0; i < files.length; i++) filesDeleted += Number(results[4 + i * 2]?.numAffectedRows ?? 0) > 0 ? 1 : 0;
-  return { ok: true, rev: 1, updatedAt: at, removed: Number(results[0]?.numAffectedRows ?? 0), filesDeleted };
+  for (let i = 0; i < files.length; i++) filesDeleted += affected(fileBase + i * 2 + 1) > 0 ? 1 : 0;
+  return { ok: true, rev: 1, updatedAt: at, removed: old.length, filesDeleted, audit: audit.map((a) => a.entry) };
 }
 
 export async function deleteForm(ctx: RepoContext, tenantId: string, id: string): Promise<boolean> {

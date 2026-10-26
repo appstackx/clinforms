@@ -14,13 +14,14 @@ import { getSampleForm } from "../../../modules/medreport/forms/samples/registry
 import { HARROW_PIKE_FORM } from "../../../modules/medreport/forms/samples/maps/harrow-pike";
 import type { FormDefinition } from "../../../modules/medreport/core/types";
 import { PLATFORM_USER_ID } from "../../auth/create-auth";
+import type { SqliteDatabaseLike } from "../../db/dialects/sqlite-local";
 import type { Database } from "../../db/schema";
 import { testCipher } from "../../db/testing/databases";
-import { appendAudit, listAudit } from "../../repos/audit";
+import { appendAudit, listAudit, listAuditAbout } from "../../repos/audit";
 import type { RepoContext } from "../../repos/context";
 import { RepoInputError } from "../../repos/context";
-import { getFormFile, listFormFiles } from "../../repos/form-files";
-import { createForm, getForm, listFormMeta, listForms, replaceForms, updateForm } from "../../repos/forms";
+import { getFormFile, listFormFiles, putFormFile } from "../../repos/form-files";
+import { MAX_REPLACED_FORMS, createForm, deleteForm, getForm, listFormMeta, listForms, replaceForms, updateForm } from "../../repos/forms";
 import { createReport } from "../../repos/reports";
 import { putTenantSettings } from "../../repos/tenant-settings";
 import { loadClinicForms, parseMapsJson } from "../load-forms";
@@ -28,6 +29,11 @@ import { loadClinicForms, parseMapsJson } from "../load-forms";
 export interface LoadFormsSuiteDb {
   db: Kysely<Database>;
   close: () => Promise<void>;
+  /**
+   * The SQLite database underneath, when there is one in this process (node:sqlite, the D1 stand-in): the hook cases
+   * use it to change the clinic's data between a replace's plan and its batch, as the Studio or a second run would.
+   */
+  sqlite?: SqliteDatabaseLike;
 }
 
 const CLINIC = "load-forms-test";
@@ -355,9 +361,8 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
         assert.ok(added.every((e) => e.userId === PLATFORM_USER_ID));
         const replacedRows = added.filter((e) => e.action === "form.replace");
         assert.deepEqual(replacedRows.map((e) => e.targetId).sort(), [a.id, harrow.id].sort());
-        assert.deepEqual(replacedRows.find((e) => e.targetId === a.id)?.detail?.replaces, [oldA.id]);
-        assert.equal(replacedRows.find((e) => e.targetId === a.id)?.detail?.filesDeleted, 1);
-        assert.equal(replacedRows.find((e) => e.targetId === harrow.id)?.detail?.filesDeleted, 0);
+        assert.deepEqual(replacedRows.find((e) => e.targetId === a.id)?.detail, { via: "onboarding", status: "proposed", replaces: [oldA.id], fields: a.form.fields.length, kind: a.form.kind, mapFrom: "reading" });
+        assert.deepEqual(replacedRows.find((e) => e.targetId === harrow.id)?.detail?.mapFrom, "json");
         const run1 = added.filter((e) => e.action === "clinic.forms_replaced");
         assert.equal(run1.length, 1);
         assert.deepEqual(run1[0]?.detail, { replaced: 2, forms: 0, refused: 8, skipped: 0 });
@@ -382,13 +387,34 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
         assert.equal((await listAudit(ctx, RCLINIC, { limit: 500 })).length, audit, "no audit rows");
       });
 
+      it("review fix: a reading (--read-missing, no map in the maps file) never replaces a form made from a map", async () => {
+        const state = await snapshot(RCLINIC);
+        const audit = (await listAudit(ctx, RCLINIC, { limit: 500 })).length;
+        for (const confirm of [false, true]) {
+          const r = await run(RCLINIC, v2(), {}, { confirm });
+          const harrow = r.files.find((f) => f.file === "Harrow Pike.docx");
+          assert.equal(harrow?.status, "skipped", JSON.stringify(harrow));
+          assert.equal(harrow?.mapFrom, "reading");
+          assert.match(harrow?.reason ?? "", /^No map for this file in the maps file: the form frm_\S+ in the library was made from a map, which a layout reading never replaces/);
+          // Forms made by the reading are still compared with a new reading: unchanged, so skipped.
+          assert.match(r.files.find((f) => f.file === "A.rtf")?.reason ?? "", /already has this file and this map/);
+        }
+        assert.deepEqual(await snapshot(RCLINIC), state);
+        assert.equal((await listAudit(ctx, RCLINIC, { limit: 500 })).length, audit);
+      });
+
+      /** The audit rows targeting or naming any of these ids (what replaceForms' auditRowsAbout counts). */
+      const auditAbout = async (tenantId: string, ids: string[]) => new Set((await Promise.all(ids.map((id) => listAuditAbout(ctx, tenantId, id, { limit: 500 })))).flat().map((e) => e.id)).size;
+      const formRow = (id: string, form: FormDefinition, sha = form.file.sha256) => ({ id, fileSha256: sha, status: "proposed", title: form.title, referrer: form.referrer.name, kind: form.kind, payload: { ...form, id } });
+
       it("replaceForms is all or nothing: a form changed or used meanwhile leaves the library exactly as it was", async () => {
         const a = await one(RCLINIC, "A.rtf");
         const c = await one(RCLINIC, "C.rtf");
         const state = await snapshot(RCLINIC);
-        const row = (id: string, form: FormDefinition) => ({ id, fileSha256: form.file.sha256, status: "proposed", title: form.title, referrer: form.referrer.name, kind: form.kind, payload: { ...form, id } });
+        const audit = (await listAudit(ctx, RCLINIC, { limit: 500 })).length;
+        const rows = await auditAbout(RCLINIC, [a.id]);
         // A stale revision (the clinic saved it meanwhile).
-        const stale = await replaceForms(ctx, RCLINIC, { replace: [{ id: a.id, rev: 2, status: "proposed" }], form: row("frm_race_1", a.form), dropUnusedFiles: [a.sha] });
+        const stale = await replaceForms(ctx, RCLINIC, { replace: [{ id: a.id, rev: 2, status: "proposed" }], auditRowsAbout: rows, form: formRow("frm_race_1", a.form), dropUnusedFiles: [a.sha] });
         assert.deepEqual(stale, { ok: false, reason: "changed" });
         // A report started on one of two forms: neither goes.
         const used = await replaceForms(ctx, RCLINIC, {
@@ -396,20 +422,345 @@ export function defineLoadFormsSuite(label: string, factory: () => Promise<LoadF
             { id: a.id, rev: 1, status: "proposed" },
             { id: c.id, rev: 1, status: "proposed" },
           ],
-          form: row("frm_race_2", a.form),
+          auditRowsAbout: await auditAbout(RCLINIC, [a.id, c.id]),
+          form: formRow("frm_race_2", a.form),
           dropUnusedFiles: [a.sha, c.sha],
         });
         assert.deepEqual(used, { ok: false, reason: "changed" });
         assert.deepEqual(await snapshot(RCLINIC), state, "nothing changed, no stray form or file");
-        await assert.rejects(replaceForms(ctx, RCLINIC, { replace: [], form: row("frm_race_3", a.form) }), RepoInputError);
-        await assert.rejects(replaceForms(ctx, RCLINIC, { replace: [{ id: a.id, rev: 1, status: "proposed" }], form: row(a.id, a.form) }), RepoInputError);
-        // Another clinic's id is never reached: the same ids under ROTHER do not exist there.
-        const elsewhere = await replaceForms(ctx, ROTHER, { replace: [{ id: a.id, rev: 1, status: "proposed" }], form: row("frm_race_4", a.form), dropUnusedFiles: [a.sha] });
-        assert.equal(elsewhere.ok, true);
-        assert.equal(elsewhere.ok && elsewhere.removed, 0, "nothing of RCLINIC removed");
+        assert.equal((await listAudit(ctx, RCLINIC, { limit: 500 })).length, audit, "no audit row");
+        await assert.rejects(replaceForms(ctx, RCLINIC, { replace: [], auditRowsAbout: 0, form: formRow("frm_race_3", a.form) }), RepoInputError);
+        await assert.rejects(replaceForms(ctx, RCLINIC, { replace: [{ id: a.id, rev: 1, status: "proposed" }], auditRowsAbout: rows, form: formRow(a.id, a.form) }), RepoInputError);
+        await assert.rejects(replaceForms(ctx, RCLINIC, { replace: [{ id: a.id, rev: 1, status: "proposed" }], auditRowsAbout: -1, form: formRow("frm_race_3", a.form) }), RepoInputError);
+        // Review fix: forms that are not there (another clinic's id, or removed meanwhile) are never "replaced" – the
+        // new form is not stored either.
+        const elsewhere = await replaceForms(ctx, ROTHER, { replace: [{ id: a.id, rev: 1, status: "proposed" }], auditRowsAbout: 0, form: formRow("frm_race_4", a.form), dropUnusedFiles: [a.sha] });
+        assert.deepEqual(elsewhere, { ok: false, reason: "changed" });
         assert.deepEqual(await snapshot(RCLINIC), state);
-        assert.ok(await getForm(ctx, ROTHER, "frm_race_4"));
-        assert.equal((await listFormMeta(ctx, ROTHER)).length, beforeOther.forms.length + 1);
+        assert.deepEqual(await snapshot(ROTHER), beforeOther, "nothing stored in the other clinic");
+      });
+
+      describe("review fixes (10/2026): every rule re-checked in the batch, one file per template, concurrent runs", () => {
+        let n = 0;
+        /** A new fictional clinic of its own. */
+        const clinic = async () => {
+          const slug = `load-forms-fix-${++n}`;
+          await t.db.insertInto("organization").values({ id: `org-${slug}`, name: `${slug} (fictional)`, slug, logo: null, createdAt: at, metadata: null }).execute();
+          return slug;
+        };
+        /** A folder of its own with these files (contents: a variant tag, or the bytes themselves). */
+        const folder = (files: Record<string, string | Buffer>) => {
+          const d = fs.mkdtempSync(path.join(root, "f-"));
+          for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(d, name), typeof content === "string" ? variant(content) : content);
+          return d;
+        };
+        const load = async (tenantId: string, d: string) => {
+          const r = await loadClinicForms(ctx, { tenantId, dir: d, maps: {}, readMissing: true, defaultReferrer: X, confirm: true });
+          assert.ok(r.files.every((f) => f.status === "loaded"), JSON.stringify(r.files.map((f) => [f.file, f.status, f.reason])));
+          return r;
+        };
+        const replaceRun = (tenantId: string, d: string, confirm: boolean, c: RepoContext = ctx) =>
+          loadClinicForms(c, { tenantId, dir: d, maps: {}, readMissing: true, defaultReferrer: X, replaceProposed: true, confirm });
+        const statuses = (r: Awaited<ReturnType<typeof replaceRun>>) => Object.fromEntries(r.files.map((f) => [f.file, f.status]));
+        const reasonOf = (r: Awaited<ReturnType<typeof replaceRun>>, file: string) => r.files.find((f) => f.file === file)?.reason ?? "";
+        /** Stored files no form refers to (expected: none). */
+        const orphans = async (tenantId: string) => {
+          const used = new Set((await listFormMeta(ctx, tenantId)).map((m) => m.fileSha256));
+          return (await listFormFiles(ctx, tenantId)).filter((f) => !used.has(f.sha256)).length;
+        };
+        const auditCount = async (tenantId: string, action?: string) => (await listAudit(ctx, tenantId, { limit: 500 })).filter((e) => !action || e.action === action).length;
+
+        it("R-safety-1: two runs at the same time – one replaces, the other changes nothing (never two forms, never a false audit row)", async () => {
+          for (const [first, second] of [
+            ["T v2", "T v2"], // the same folder twice (two terminals)
+            ["T v2", "T v3"], // two conversions at once (two workstreams)
+          ]) {
+            const slug = await clinic();
+            await load(slug, folder({ "T.rtf": "T v1" }));
+            const [d1, d2] = [folder({ "T.rtf": first }), folder({ "T.rtf": second })];
+            const [r1, r2] = await Promise.all([replaceRun(slug, d1, true), replaceRun(slug, d2, true)]);
+            const all = [r1.files[0], r2.files[0]];
+            assert.ok(all.every((f) => ["replaced", "refused", "skipped"].includes(f.status)), JSON.stringify(all));
+            const replacedCount = all.filter((f) => f.status === "replaced").length;
+            assert.ok(replacedCount >= 1, JSON.stringify(all));
+            for (const f of all) if (f.status === "refused") assert.match(f.reason ?? "", /changed while it was being replaced|was replaced meanwhile by frm_\S+ \(another run\)/);
+            const forms = await listForms<FormDefinition>(ctx, slug);
+            assert.equal(forms.length, 1, `one form for the template: ${JSON.stringify(all)}`);
+            assert.equal(await auditCount(slug, "form.replace"), replacedCount, "a form.replace row per real replace only");
+            assert.equal(await orphans(slug), 0, "no stored file without a form");
+            assert.ok(await getFormFile(ctx, slug, forms[0].fileSha256), "the form's file is stored and decrypts");
+            // The run whose form is in the library now: its folder is a SKIP on the next preview.
+            const winner = all.find((f) => f.formId === forms[0].id);
+            assert.ok(winner, "the remaining form is the one a run reported as replaced");
+            const again = await replaceRun(slug, winner === r1.files[0] ? d1 : d2, false);
+            assert.equal(again.files[0]?.status, "skipped", JSON.stringify(again.files[0]));
+          }
+        });
+
+        it("R-correctness-1/-9: one file per template – same bytes, same name, or a form an earlier file matched – the same in the preview and with --confirm; a LOAD with replaces", async () => {
+          const slug = await clinic();
+          await load(slug, folder({ "A.rtf": "A v1", "M.rtf": "M v1" }));
+          const before = await byName(slug);
+          // B.rtf: A's new bytes again. Z.rtf: A's OLD bytes (matches the form A.rtf replaces). New.rtf: a new template.
+          const d = folder({ "A.rtf": "A v2", "B.rtf": "A v2", "Z.rtf": "A v1", "New.rtf": "New v1" });
+          const expected = { "A.rtf": "replace", "B.rtf": "refused", "Z.rtf": "refused", "New.rtf": "ready" };
+          const preview = await replaceRun(slug, d, false);
+          assert.deepEqual(statuses(preview), expected);
+          assert.match(reasonOf(preview, "B.rtf"), /^A\.rtf in this folder has the same bytes: one file per template/);
+          assert.match(reasonOf(preview, "Z.rtf"), new RegExp(`^The form ${before.get("A.rtf")?.[0]?.id} in the library is already matched by A\\.rtf in this folder`));
+          const confirm = await replaceRun(slug, d, true);
+          assert.deepEqual(statuses(confirm), { ...expected, "A.rtf": "replaced", "New.rtf": "loaded" }, "the preview showed exactly this");
+          const after = await byName(slug);
+          assert.deepEqual(Array.from(after.keys()).sort(), ["A.rtf", "M.rtf", "New.rtf"]);
+          for (const list of Array.from(after.values())) assert.equal(list.length, 1);
+          assert.equal(after.get("M.rtf")?.[0]?.id, before.get("M.rtf")?.[0]?.id, "the other template untouched");
+          const rows = (await listAudit(ctx, slug, { limit: 500 })).filter((e) => e.action === "clinic.forms_replaced");
+          assert.deepEqual(rows[0]?.detail, { replaced: 1, forms: 1, refused: 2, skipped: 0 });
+          assert.equal(await auditCount(slug, "form.create"), 3, "two from the first load, one LOADED now");
+          assert.equal(await orphans(slug), 0);
+          // Two names that differ only in case (a case-sensitive disk only; macOS keeps one of them).
+          const d2 = folder({ "q.rtf": "Q v1", "Q.rtf": "Q v2" });
+          if (fs.readdirSync(d2).length === 2) {
+            const r = await replaceRun(slug, d2, false);
+            assert.match(reasonOf(r, "q.rtf"), /^Q\.rtf in this folder has the same name \(case and accents aside\)/);
+          }
+        });
+
+        it("R-correctness-9: names match apart from case and Unicode form; a renamed file matches by its bytes; new name and new bytes = a new template; same bytes for another referrer is the same template", async () => {
+          const slug = await clinic();
+          const nfd = "Cafe\u0301 IA.rtf";
+          await load(slug, folder({ [nfd]: "Cafe v1", "R1.rtf": "R1 v1", "R2.rtf": "R2 v1" }));
+          const own = fs.mkdtempSync(path.join(root, "y-"));
+          fs.writeFileSync(path.join(own, "S.rtf"), variant("S v1"));
+          assert.equal((await loadClinicForms(ctx, { tenantId: slug, dir: own, maps: {}, readMissing: true, defaultReferrer: Y, confirm: true })).files[0]?.status, "loaded");
+          const ids = new Map(Array.from((await byName(slug)).entries()).map(([k, v]) => [k.normalize("NFC"), v[0].id] as const));
+          const d = folder({ "CAFÉ ia.rtf": "Cafe v2", "R1 renamed.rtf": "R1 v1", "R2 renamed.rtf": "R2 v2", "S for X.rtf": "S v1" });
+          for (const confirm of [false, true]) {
+            const r = await replaceRun(slug, d, confirm);
+            const st = (f: string) => r.files.find((x) => x.file === f);
+            assert.equal(st("CAFÉ ia.rtf")?.status, confirm ? "replaced" : "replace", JSON.stringify(st("CAFÉ ia.rtf")));
+            assert.deepEqual(st("CAFÉ ia.rtf")?.replaces, [ids.get("Café IA.rtf")]);
+            assert.deepEqual(st("R1 renamed.rtf")?.replaces, [ids.get("R1.rtf")], "same bytes, new name: the same template");
+            assert.equal(st("R2 renamed.rtf")?.status, confirm ? "loaded" : "ready", "new name and new bytes: a new template");
+            assert.deepEqual(st("S for X.rtf")?.replaces, [ids.get("S.rtf")], "same bytes for another referrer: the same template");
+          }
+          const after = await byName(slug);
+          assert.equal(after.get("S for X.rtf")?.[0]?.form.referrer.name, X.name, "the map's referrer is the new one");
+          assert.ok(!after.has("R1.rtf") && after.has("R2.rtf") && after.has("R2 renamed.rtf"));
+        });
+
+        it("R-correctness-9: a form.store_confirmed row alone, or a report naming the form only by template_id, keeps the form", async () => {
+          const slug = await clinic();
+          await load(slug, folder({ "P.rtf": "P v1", "Q.rtf": "Q v1" }));
+          const forms = await byName(slug);
+          const p = forms.get("P.rtf")?.[0];
+          const q = forms.get("Q.rtf")?.[0];
+          assert.ok(p && q);
+          await appendAudit(ctx, slug, { userId: "user-fictional", action: "form.store_confirmed", targetType: "form", targetId: p.id, detail: { rev: 1, status: "proposed" } });
+          assert.ok((await createReport(ctx, slug, { id: "rpt_template_only", status: "draft", templateId: `form:${q.id}`, payload: { fictional: true } })).ok);
+          const state = await snapshot(slug);
+          const r = await replaceRun(slug, folder({ "P.rtf": "P v2", "Q.rtf": "Q v2" }), true);
+          assert.deepEqual(statuses(r), { "P.rtf": "refused", "Q.rtf": "refused" });
+          assert.match(reasonOf(r, "P.rtf"), /was confirmed once \(activity log\)/);
+          assert.match(reasonOf(r, "Q.rtf"), /is used by 1 report \(draft or approved\)/);
+          assert.deepEqual(await snapshot(slug), state);
+        });
+
+        it("R-safety-2: a form the run cannot read (another data key) refuses the whole run before anything is done", async () => {
+          const slug = await clinic();
+          await load(slug, folder({ "U.rtf": "U v1" }));
+          const state = await snapshot(slug);
+          const audit = await auditCount(slug);
+          const otherKeys: RepoContext = { ...ctx, cipher: testCipher() };
+          for (const confirm of [false, true]) {
+            await assert.rejects(replaceRun(slug, folder({ "U.rtf": "U v2" }), confirm, otherKeys), (err: unknown) => {
+              assert.ok(err instanceof RepoInputError);
+              assert.match(err.message, /^1 form in the clinic's library cannot be read with this database's data keys \(frm_\S+\): .*nothing was changed\.$/);
+              return true;
+            });
+          }
+          assert.deepEqual(await snapshot(slug), state);
+          assert.equal(await auditCount(slug), audit);
+        });
+
+        it(`R-safety-5/R-correctness-5: replaceForms takes up to ${MAX_REPLACED_FORMS} forms in one batch (inside D1's 100 parameters); more are refused before anything is stored`, async () => {
+          const slug = await clinic();
+          await load(slug, folder({ "Cap.rtf": "Cap v1" }));
+          const base = (await one(slug, "Cap.rtf")).form;
+          const ids: string[] = [];
+          for (let i = 0; i < MAX_REPLACED_FORMS; i++) {
+            const id = `frm_cap_${i}`;
+            assert.ok((await createForm(ctx, slug, formRow(id, { ...base, id }, base.file.sha256))).ok);
+            ids.push(id);
+          }
+          // The loader refuses a file matching more than the cap (here: the loaded form and the ten copies) – no file stored.
+          const files = (await listFormFiles(ctx, slug)).length;
+          const r = await replaceRun(slug, folder({ "Cap.rtf": "Cap v2" }), true);
+          assert.equal(r.files[0]?.status, "refused");
+          assert.match(r.files[0]?.reason ?? "", new RegExp(`^${MAX_REPLACED_FORMS + 1} forms in the library match this file \\(at most ${MAX_REPLACED_FORMS}`));
+          assert.equal((await listFormFiles(ctx, slug)).length, files, "nothing stored");
+          await assert.rejects(
+            replaceForms(ctx, slug, { replace: [...ids, "frm_cap_x"].map((id) => ({ id, rev: 1, status: "proposed" })), auditRowsAbout: 0, form: formRow("frm_cap_new", base) }),
+            RepoInputError,
+          );
+          // Exactly the cap, in one batch – on D1 too.
+          const swapped = await replaceForms(ctx, slug, {
+            replace: ids.map((id) => ({ id, rev: 1, status: "proposed" })),
+            auditRowsAbout: await auditAbout(slug, ids),
+            form: formRow("frm_cap_new", base),
+            dropUnusedFiles: [base.file.sha256],
+            audit: [{ userId: PLATFORM_USER_ID, action: "form.replace", targetType: "form", targetId: "frm_cap_new", detail: { via: "onboarding", replaces: ids } }],
+          });
+          assert.equal(swapped.ok, true, JSON.stringify(swapped));
+          assert.equal(swapped.ok && swapped.removed, MAX_REPLACED_FORMS);
+          assert.equal(swapped.ok && swapped.filesDeleted, 0, "the loaded form still uses the file");
+          assert.deepEqual((await listFormMeta(ctx, slug)).map((m) => m.id).sort(), [(await byName(slug)).get("Cap.rtf")?.find((f) => !f.id.startsWith("frm_cap"))?.id, "frm_cap_new"].sort());
+          assert.equal((await listAudit(ctx, slug, { limit: 500 })).filter((e) => e.targetId === "frm_cap_new").length, 1, "its audit row, in the same batch");
+        });
+
+        it("R-safety-1/R-correctness-7: replaceForms re-checks in the batch – a report by template_id, a referrer link, a new audit row, the new file gone, the old form gone", async () => {
+          const slug = await clinic();
+          await load(slug, folder({ "G.rtf": "G v1" }));
+          const g = await one(slug, "G.rtf");
+          const file = await putFormFile(ctx, slug, { bytes: Buffer.from("fictional replacement file"), fileName: "form.docx", mimeType: "application/octet-stream" });
+          const attempt = async (formId: string, sha = file.sha256, rows?: number) =>
+            replaceForms(ctx, slug, {
+              replace: [{ id: g.id, rev: 1, status: "proposed" }],
+              auditRowsAbout: rows ?? (await auditAbout(slug, [g.id])),
+              form: formRow(formId, g.form, sha),
+              dropUnusedFiles: [g.sha],
+              audit: [{ userId: PLATFORM_USER_ID, action: "form.replace", targetType: "form", targetId: formId, detail: { via: "onboarding", replaces: [g.id] } }],
+            });
+          const state = await snapshot(slug);
+          const audit = await auditCount(slug);
+          const unchanged = async (why: string) => {
+            assert.deepEqual(await snapshot(slug), state, why);
+            assert.equal(await auditCount(slug), audit, `${why}: no audit row`);
+          };
+          assert.deepEqual(await attempt("frm_guard_1", "a".repeat(64)), { ok: false, reason: "changed" }, "the new form's file is not stored");
+          await unchanged("file");
+          const rows = await auditAbout(slug, [g.id]);
+          assert.deepEqual(await attempt("frm_guard_2", file.sha256, rows + 1), { ok: false, reason: "changed" }, "the audit trail is not what the plan saw");
+          await unchanged("audit");
+          await putTenantSettings(ctx, slug, { "larkfield-fictional": g.id });
+          assert.deepEqual(await attempt("frm_guard_3"), { ok: false, reason: "changed" }, "linked to a referrer");
+          await putTenantSettings(ctx, slug, {});
+          const settled = await snapshot(slug);
+          assert.deepEqual(settled, state);
+          assert.ok((await createReport(ctx, slug, { id: "rpt_guard", status: "draft", templateId: `form:${g.id}`, payload: { fictional: true } })).ok);
+          assert.deepEqual(await attempt("frm_guard_4"), { ok: false, reason: "changed" }, "a report names it by template_id only");
+          assert.deepEqual(await snapshot(slug), state);
+          // Now the clinic removes the form (and its report): nothing to replace, so nothing is stored either.
+          assert.ok(await deleteForm(ctx, slug, g.id));
+          const gone = await snapshot(slug);
+          const auditGone = await auditCount(slug);
+          assert.deepEqual(await attempt("frm_guard_5"), { ok: false, reason: "changed" });
+          assert.deepEqual(await snapshot(slug), gone);
+          assert.equal(await auditCount(slug), auditGone);
+        });
+
+        it("hook case: another run replaced the form after this run read the library – REFUSED as replaced meanwhile, nothing done", async (tc) => {
+          const raw = t.sqlite;
+          if (!raw) {
+            tc.skip("needs the SQLite database underneath (node:sqlite, D1 stand-in)");
+            return;
+          }
+          const slug = await clinic();
+          await load(slug, folder({ "K.rtf": "K v1" }));
+          const k = await one(slug, "K.rtf");
+          let armed = true;
+          // The library is read (and decrypted) first; the other run's batch lands before this run plans the file.
+          const cipher = new Proxy(ctx.cipher, {
+            get(target, prop) {
+              const value = Reflect.get(target, prop, target) as unknown;
+              if (prop !== "decryptString" || typeof value !== "function") return typeof value === "function" ? value.bind(target) : value;
+              return (enc: unknown, aad: { table?: string; rowId?: string }) => {
+                const out = (value as (e: unknown, a: unknown) => unknown).call(target, enc, aad);
+                if (armed && aad?.table === "forms" && aad.rowId === k.id) {
+                  armed = false;
+                  raw.prepare("DELETE FROM forms WHERE tenant_id = ? AND id = ?").run(slug, k.id);
+                  raw
+                    .prepare("INSERT INTO audit_log (id, tenant_id, user_id, session_id, action, target_type, target_id, detail_json, at) VALUES ('01HOOKAUDITFICTIONAL00002', ?, ?, NULL, 'form.replace', 'form', 'frm_other_run', ?, ?)")
+                    .run(slug, PLATFORM_USER_ID, JSON.stringify({ via: "onboarding", replaces: [k.id] }), at);
+                }
+                return out;
+              };
+            },
+          });
+          const files = (await listFormFiles(ctx, slug)).map((f) => f.sha256);
+          const r = await replaceRun(slug, folder({ "K.rtf": "K v2" }), true, { ...ctx, cipher });
+          assert.equal(armed, false, "the hook ran");
+          assert.equal(r.files[0]?.status, "refused", JSON.stringify(r.files[0]));
+          assert.equal(r.files[0]?.reason, `The form ${k.id} in the library was replaced meanwhile by frm_other_run (another run): nothing is done for this file. Run the preview again.`);
+          assert.deepEqual(await listFormMeta(ctx, slug), [], "nothing stored");
+          assert.deepEqual((await listFormFiles(ctx, slug)).map((f) => f.sha256), files, "no file written");
+        });
+
+        it("hook cases: the clinic changes the form between the plan and the batch – REFUSED, the new file removed again, nothing audited", async (tc) => {
+          const raw = t.sqlite;
+          if (!raw) {
+            tc.skip("needs the SQLite database underneath (node:sqlite, D1 stand-in)");
+            return;
+          }
+          const run = (sql: string, ...params: (string | number | null)[]) => raw.prepare(sql).run(...params);
+          const cases: [string, (slug: string, id: string) => void][] = [
+            ["saved in the Studio (revision 2)", (slug, id) => run("UPDATE forms SET rev = rev + 1 WHERE tenant_id = ? AND id = ?", slug, id)],
+            ["removed in the Studio", (slug, id) => run("DELETE FROM forms WHERE tenant_id = ? AND id = ?", slug, id)],
+            ["a report started on it (template_id only)", (slug, id) => run("INSERT INTO reports (tenant_id, id, rev, status, form_id, template_id, payload_enc, created_at, updated_at) VALUES (?, 'rpt_hook', 1, 'draft', NULL, ?, 'x', ?, ?)", slug, `form:${id}`, at, at)],
+            ["linked to a referrer", (slug, id) => run("INSERT INTO tenant_settings (tenant_id, referrer_links_json, updated_at) VALUES (?, ?, ?)", slug, JSON.stringify({ "larkfield-fictional": id }), at)],
+            [
+              "approved with it (activity log only)",
+              (slug, id) =>
+                run("INSERT INTO audit_log (id, tenant_id, user_id, session_id, action, target_type, target_id, detail_json, at) VALUES ('01HOOKAUDITFICTIONAL00000', ?, 'user-fictional', NULL, 'report.sign', 'report', 'rpt_gone', ?, ?)", slug, JSON.stringify({ formId: id }), at),
+            ],
+            [
+              "replaced by another run first",
+              (slug, id) => {
+                run("DELETE FROM forms WHERE tenant_id = ? AND id = ?", slug, id);
+                run("INSERT INTO audit_log (id, tenant_id, user_id, session_id, action, target_type, target_id, detail_json, at) VALUES ('01HOOKAUDITFICTIONAL00001', ?, ?, NULL, 'form.replace', 'form', 'frm_other_run', ?, ?)", slug, PLATFORM_USER_ID, JSON.stringify({ via: "onboarding", replaces: [id] }), at);
+              },
+            ],
+            [
+              "the new file removed meanwhile",
+              (slug) => {
+                for (const table of ["form_file_chunks", "form_files"]) run(`DELETE FROM ${table} WHERE tenant_id = ? AND sha256 NOT IN (SELECT file_sha256 FROM forms WHERE tenant_id = ?)`, slug, slug);
+              },
+            ],
+          ];
+          for (const [label, change] of cases) {
+            const slug = await clinic();
+            await load(slug, folder({ "H.rtf": "H v1" }));
+            const h = await one(slug, "H.rtf");
+            let armed = true;
+            // ctx.cipher.encrypt for a forms row runs in replaceForms after the plan and the file upload, before the batch.
+            const cipher = new Proxy(ctx.cipher, {
+              get(target, prop) {
+                const value = Reflect.get(target, prop, target) as unknown;
+                if (prop !== "encrypt" || typeof value !== "function") return typeof value === "function" ? value.bind(target) : value;
+                return (plain: unknown, aad: { table?: string }) => {
+                  if (armed && aad?.table === "forms") {
+                    armed = false;
+                    change(slug, h.id);
+                  }
+                  return (value as (p: unknown, a: unknown) => unknown).call(target, plain, aad);
+                };
+              },
+            });
+            const formsAfterChange = async () => (await listFormMeta(ctx, slug)).map((m) => `${m.id}@${m.rev}`).sort();
+            const auditBefore = new Set((await listAudit(ctx, slug, { limit: 500 })).map((e) => e.id));
+            const r = await replaceRun(slug, folder({ "H.rtf": "H v2" }), true, { ...ctx, cipher });
+            assert.equal(armed, false, `${label}: the hook ran`);
+            assert.equal(r.files[0]?.status, "refused", `${label}: ${JSON.stringify(r.files[0])}`);
+            assert.match(r.files[0]?.reason ?? "", /changed while it was being replaced: nothing was replaced/, label);
+            assert.deepEqual(r.files[0]?.replaces, [h.id]);
+            const left = await formsAfterChange();
+            assert.ok(left.length <= 1 && left.every((x) => x.startsWith(`${h.id}@`)), `${label}: no new form (${left.join(", ")})`);
+            const shas = (await listFormFiles(ctx, slug)).map((f) => f.sha256);
+            assert.ok(!shas.some((sha) => sha !== h.sha), `${label}: the new file is not left behind`);
+            const added = (await listAudit(ctx, slug, { limit: 500 })).filter((e) => !auditBefore.has(e.id));
+            assert.ok(added.every((e) => e.userId !== PLATFORM_USER_ID || e.targetId === "frm_other_run"), `${label}: nothing audited by the run (${added.map((e) => e.action).join(", ")})`);
+          }
+        });
       });
     });
   });

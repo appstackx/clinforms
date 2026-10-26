@@ -10,8 +10,10 @@
  *
  * --replace-proposed (10/2026): per file REPLACE (the clinic's form for this template is still a proposal, unchanged
  * since ClinForms loaded it and never used by a report – it is replaced by a fresh proposal from this file and map),
- * LOAD (no form for this template yet), SKIP (already this file and this map) or REFUSED (with the reason – e.g. the
- * form was confirmed or used: it is kept untouched). Rules: src/server/admin/load-forms.ts.
+ * LOAD (no form for this template yet), SKIP (already this file and this map; or no map for a form made from one) or
+ * REFUSED (with the reason – e.g. the form was confirmed or used, a second file for the same template, or the form
+ * changed while it was being replaced: it is kept untouched). Two runs at the same time never duplicate a form.
+ * Rules: src/server/admin/load-forms.ts.
  *
  * --maps: JSON – {"<file name>": {title, referrer: {name, type}, fields: [FormField…], file?: {sha256}}, …}, the same
  * under "maps", or a list of maps each naming file.fileName. A map is checked against its file (SHA-256 when given,

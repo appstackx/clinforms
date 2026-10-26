@@ -102,6 +102,7 @@ defineLoadFormsSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stan
   });
   return {
     db,
+    sqlite: d1.sqlite, // the stand-in's own database: the hook cases change it between a plan and its batch
     close: async () => {
       await db.destroy();
       d1.close();
