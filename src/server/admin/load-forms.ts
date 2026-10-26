@@ -18,6 +18,22 @@
  *    map created as a new proposal; a file whose exact bytes are already in the clinic's library is skipped. Audited:
  *    "file.upload" and "form.create" per form, "clinic.forms_loaded" once, all by ClinForms (PLATFORM_USER_ID).
  *
+ * `replaceProposed` (10/2026: corrected maps and conversions for forms loaded earlier) – per file, the clinic's forms
+ * for the SAME template: the same stored bytes, or the same original file name (case and Unicode form aside) for the
+ * same referrer. None → loaded as above. Otherwise they are replaced – the new file stored, the new map created as a
+ * fresh proposal, the old forms deleted and their files with them once no other form uses them, in one atomic batch
+ * (repos/forms.ts replaceForms) – only when EVERY one of them:
+ *  - is still a proposal (never confirmed: status, payload and activity log) and unchanged since it was loaded
+ *    (revision 1, no Studio activity on it);
+ *  - was loaded by ClinForms (its "form.create"/"form.replace" by PLATFORM_USER_ID via onboarding);
+ *  - has never been used by a report: no stored report (draft or approved) completes it, and no activity row names it
+ *    (an approval, drafting call or final document names its form – those rows outlive a deleted report);
+ *  - is not linked to a referrer in the clinic's settings.
+ * Else the file is refused with the reason and nothing is changed. A form of the same file name for ANOTHER referrer
+ * is refused too (never a second form per template); a form that already has exactly this file and this map is
+ * skipped (a re-run changes nothing). Audited: "form.replace" per form (ids and counts), "clinic.forms_replaced" once.
+ * Only the clinic's forms library is touched – never the clinic, its members, invitations, trial or plan.
+ *
  * The clinic must exist and be open. Nothing is sent to any service; no patient data is involved (templates only).
  */
 import fs from "node:fs";
@@ -35,10 +51,12 @@ import { decodeFormFile, type DecodedFormFile } from "../../modules/medreport/fo
 import { findFormMergeFields } from "../../modules/medreport/forms/merge-scan";
 import { PLATFORM_USER_ID } from "../auth/create-auth";
 import type { Database } from "../db/schema";
-import { appendAudit } from "../repos/audit";
+import { appendAudit, listAuditAbout } from "../repos/audit";
 import { RepoInputError, type RepoContext } from "../repos/context";
-import { putFormFile } from "../repos/form-files";
-import { createForm, listFormMeta } from "../repos/forms";
+import { deleteFormFile, putFormFile } from "../repos/form-files";
+import { createForm, getForm, listFormMeta, replaceForms, type FormMeta } from "../repos/forms";
+import { countReportsUsingForm } from "../repos/reports";
+import { getTenantSettings } from "../repos/tenant-settings";
 
 /** One map in the maps JSON: the fields that matter (anything else – id, status, confirmation – is ignored). */
 export interface ProposedMapInput {
@@ -62,6 +80,8 @@ export interface LoadFormsInput {
   readMissing?: boolean;
   /** Store (else preview only). */
   confirm?: boolean;
+  /** Replace the clinic's unconfirmed, unused forms of the same templates (see the header) instead of skipping them. */
+  replaceProposed?: boolean;
   /** Referrer for maps made by the reading (default: "To be confirmed", other). */
   defaultReferrer?: ReferrerInfo;
   now?: Date;
@@ -69,8 +89,11 @@ export interface LoadFormsInput {
 
 export interface LoadFormsFileResult {
   file: string;
-  status: "ready" | "loaded" | "skipped" | "refused";
+  /** "replace" (preview) / "replaced": only with replaceProposed. */
+  status: "ready" | "loaded" | "replace" | "replaced" | "skipped" | "refused";
   reason?: string;
+  /** replace / replaced: the ids of the forms it replaces. */
+  replaces?: string[];
   mapFrom?: "json" | "reading";
   convertedFromRtf?: boolean;
   rtfBytes?: number;
@@ -87,6 +110,7 @@ export interface LoadFormsFileResult {
 export interface LoadFormsResult {
   tenantId: string;
   dryRun: boolean;
+  replaceProposed: boolean;
   files: LoadFormsFileResult[];
 }
 
@@ -192,6 +216,118 @@ function countSources(form: FormDefinition): { fromRecords: number; forStaff: nu
   return { fromRecords, forStaff };
 }
 
+/** A form in the clinic's library, its map decrypted (null when it cannot be read: such a form is never replaced). */
+interface LibraryForm {
+  meta: FormMeta;
+  form: FormDefinition | null;
+}
+
+async function readLibrary(ctx: RepoContext, tenantId: string): Promise<LibraryForm[]> {
+  const out: LibraryForm[] = [];
+  for (const meta of await listFormMeta(ctx, tenantId)) {
+    let form: FormDefinition | null = null;
+    try {
+      const record = await getForm<FormDefinition>(ctx, tenantId, meta.id);
+      form = record?.payload && typeof record.payload === "object" && record.payload.file && record.payload.referrer ? record.payload : null;
+    } catch {
+      form = null;
+    }
+    out.push({ meta, form });
+  }
+  return out;
+}
+
+/** File names: the same apart from case and Unicode form (macOS keeps names decomposed; its disks ignore case). */
+const sameFileName = (a: string, b: string) => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
+/** Referrer names: the same apart from case, Unicode form and spacing. */
+const sameReferrer = (a: string, b: string) => {
+  const norm = (t: string) => t.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(a) === norm(b);
+};
+
+/** JSON with sorted keys (and no undefined values): two maps compare equal whatever order their keys were built in. */
+function stableJson(value: unknown): string {
+  const norm = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(norm)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v as Record<string, unknown>)
+              .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+              .sort()
+              .map((k) => [k, norm((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return JSON.stringify(norm(value));
+}
+
+/** What a re-run would change: the file, the map and its notes (not ids, timestamps or the analysis time). */
+function mapContent(form: FormDefinition): string {
+  return stableJson({
+    title: form.title,
+    versionLabel: form.versionLabel,
+    referrer: form.referrer,
+    kind: form.kind,
+    file: form.file,
+    fields: form.fields,
+    mode: form.analysis.mode,
+    promptVersion: form.analysis.promptVersion,
+    warnings: form.analysis.warnings,
+    mergeFields: form.analysis.mergeFields ?? [],
+  });
+}
+
+const CONFIRM_ACTIONS = new Set(["form.confirm", "form.store_confirmed"]);
+
+/** Why this form must be kept as it is (never replaced), or null when it may be replaced. */
+async function keepReason(ctx: RepoContext, tenantId: string, entry: LibraryForm, linked: ReadonlySet<string>): Promise<string | null> {
+  const id = entry.meta.id;
+  const kept = "it is kept as it is";
+  if (!entry.form) return `The form ${id} in the library could not be read: ${kept}.`;
+  if (entry.meta.status !== "proposed" || entry.form.status !== "proposed" || entry.form.confirmed) {
+    return `The form ${id} in the library has been confirmed by the clinic: ${kept} (any change is made in the Studio).`;
+  }
+  if (entry.meta.rev !== 1) return `The form ${id} in the library was changed in the clinic's Studio after it was loaded (revision ${entry.meta.rev}): ${kept}.`;
+  const reports = await countReportsUsingForm(ctx, tenantId, id);
+  if (reports > 0) return `The form ${id} in the library is used by ${reports} ${reports === 1 ? "report" : "reports"} (draft or approved): ${kept}.`;
+  const trail = await listAuditAbout(ctx, tenantId, id, { limit: 200 });
+  const own = trail.filter(
+    (e) => e.targetId === id && (e.action === "form.create" || e.action === "form.replace") && e.userId === PLATFORM_USER_ID && e.detail?.via === "onboarding",
+  );
+  if (own.length === 0) return `The form ${id} in the library was added in the clinic's Studio, not loaded by ClinForms: ${kept}.`;
+  const other = trail.filter((e) => !own.includes(e));
+  if (other.some((e) => CONFIRM_ACTIONS.has(e.action))) return `The form ${id} in the library was confirmed once (activity log): ${kept}.`;
+  if (other.some((e) => e.action.startsWith("report."))) return `The form ${id} in the library has been used for a report (activity log): ${kept}.`;
+  if (other.length > 0) return `The form ${id} in the library was changed in the clinic's Studio after it was loaded (activity log): ${kept}.`;
+  if (linked.has(id)) return `The form ${id} in the library is linked to a referrer in the clinic's settings: ${kept}.`;
+  return null;
+}
+
+type ReplacePlan = { action: "load" } | { action: "replace"; targets: LibraryForm[] } | { action: "skip" | "refuse"; reason: string };
+
+/** replaceProposed: the clinic's forms for the same template as this file (and its new map), and what to do. */
+async function planReplace(ctx: RepoContext, tenantId: string, library: LibraryForm[], linked: ReadonlySet<string>, name: string, form: FormDefinition): Promise<ReplacePlan> {
+  const sameName = (e: LibraryForm) => e.form !== null && sameFileName(e.form.file.fileName, name);
+  const targets = library.filter((e) => e.meta.fileSha256 === form.file.sha256 || (sameName(e) && sameReferrer(e.form?.referrer.name ?? "", form.referrer.name)));
+  const otherReferrer = library.find((e) => !targets.includes(e) && sameName(e));
+  if (otherReferrer) {
+    return {
+      action: "refuse",
+      reason: `The library holds ${otherReferrer.meta.id}, loaded from a file of this name for another referrer: nothing is replaced (rename the file, or remove that form in the Studio first).`,
+    };
+  }
+  if (targets.length === 0) return { action: "load" };
+  if (targets.length > 20) return { action: "refuse", reason: `${targets.length} forms in the library match this file: nothing is replaced.` };
+  for (const target of targets) {
+    const why = await keepReason(ctx, tenantId, target, linked);
+    if (why) return { action: "refuse", reason: why };
+  }
+  if (targets.length === 1 && targets[0].form && mapContent(targets[0].form) === mapContent(form)) {
+    return { action: "skip", reason: `The form ${targets[0].meta.id} in the library already has this file and this map.` };
+  }
+  return { action: "replace", targets };
+}
+
 export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): Promise<LoadFormsResult> {
   const tenantId = String(input.tenantId ?? "").trim();
   await requireOpenClinic(ctx.db, tenantId);
@@ -199,7 +335,12 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new RepoInputError(`No folder at ${dir}.`);
   const now = input.now ?? new Date();
   const at = now.toISOString();
+  const replace = input.replaceProposed === true;
   const existing = new Set((await listFormMeta(ctx, tenantId)).map((m) => m.fileSha256));
+  // replaceProposed: the library with its maps, and the forms the clinic's referrer links point at.
+  const library = replace ? await readLibrary(ctx, tenantId) : [];
+  const links = replace ? ((await getTenantSettings<Record<string, unknown>>(ctx, tenantId))?.referrerLinks ?? {}) : {};
+  const linked = new Set(Object.values(links && typeof links === "object" ? links : {}).filter((v): v is string => typeof v === "string"));
   const names = fs.readdirSync(dir).filter((n) => !n.startsWith(".")).sort();
   const results: LoadFormsFileResult[] = [];
   const unknownMaps = Object.keys(input.maps).filter((k) => !names.includes(k));
@@ -242,7 +383,7 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       sizeBytes: file.sizeBytes,
       ...(file.convertedFrom ? { convertedFromRtf: true, rtfBytes: file.convertedFrom.sizeBytes } : {}),
     };
-    if (existing.has(file.sha256)) {
+    if (!replace && existing.has(file.sha256)) {
       results.push({ ...base, status: "skipped", reason: "This exact file is already in the clinic's forms library." });
       continue;
     }
@@ -328,13 +469,19 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       ...counts,
       mergeFields: mergeFields.length,
     };
+    const plan: ReplacePlan = replace ? await planReplace(ctx, tenantId, library, linked, name, form) : { action: "load" };
+    if (plan.action === "skip" || plan.action === "refuse") {
+      results.push({ ...ready, status: plan.action === "skip" ? "skipped" : "refused", reason: plan.reason });
+      continue;
+    }
+    const replaces = plan.action === "replace" ? plan.targets.map((t) => t.meta.id) : undefined;
     if (!input.confirm) {
-      results.push(ready);
+      results.push(replaces ? { ...ready, status: "replace", replaces } : ready);
       continue;
     }
 
     const stored = await putFormFile(ctx, tenantId, { bytes: file.bytes, fileName: storedFormFileName(file.mimeType), mimeType: file.mimeType, expectedSha256: file.sha256 });
-    const saved = await createForm(ctx, tenantId, {
+    const row = {
       id: form.id,
       fileSha256: file.sha256,
       status: "proposed",
@@ -343,9 +490,33 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       kind: form.kind,
       sampleId: null,
       payload: form,
-    });
-    if (!saved.ok) throw new Error(`The map for ${name} could not be stored (${saved.reason}).`);
+    };
+    let filesDeleted = 0;
+    if (plan.action === "replace") {
+      const swapped = await replaceForms(ctx, tenantId, {
+        replace: plan.targets.map((t) => ({ id: t.meta.id, rev: t.meta.rev, status: t.meta.status })),
+        form: row,
+        dropUnusedFiles: plan.targets.map((t) => t.meta.fileSha256),
+      });
+      if (!swapped.ok) {
+        // Changed by the clinic while this ran: nothing was replaced. A file stored just now for it goes again.
+        if (stored.written && !(await listFormMeta(ctx, tenantId)).some((m) => m.fileSha256 === file.sha256)) await deleteFormFile(ctx, tenantId, file.sha256);
+        results.push({ ...ready, status: "refused", replaces, reason: "The clinic's form changed while it was being replaced: nothing was replaced. Run the preview again." });
+        continue;
+      }
+      filesDeleted = swapped.filesDeleted;
+      for (const t of plan.targets) library.splice(library.indexOf(t), 1);
+    } else {
+      const saved = await createForm(ctx, tenantId, row);
+      if (!saved.ok) throw new Error(`The map for ${name} could not be stored (${saved.reason}).`);
+    }
     existing.add(file.sha256);
+    if (replace) {
+      library.push({
+        meta: { tenantId, id: form.id, rev: 1, fileSha256: file.sha256, status: "proposed", title: row.title, referrer: row.referrer, kind: form.kind, sampleId: null, createdAt: at, updatedAt: at },
+        form,
+      });
+    }
     if (stored.written) {
       await appendAudit(ctx, tenantId, {
         userId: PLATFORM_USER_ID,
@@ -354,6 +525,17 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
         targetId: file.sha256,
         detail: { via: "onboarding", sizeBytes: stored.sizeBytes, chunks: stored.chunkCount, mime: file.mimeType },
       });
+    }
+    if (replaces) {
+      await appendAudit(ctx, tenantId, {
+        userId: PLATFORM_USER_ID,
+        action: "form.replace",
+        targetType: "form",
+        targetId: form.id,
+        detail: { via: "onboarding", status: "proposed", replaces, fields: form.fields.length, kind: form.kind, mapFrom: mapped ? "json" : "reading", filesDeleted },
+      });
+      results.push({ ...ready, status: "replaced", replaces, formId: form.id });
+      continue;
     }
     await appendAudit(ctx, tenantId, {
       userId: PLATFORM_USER_ID,
@@ -366,7 +548,23 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
   }
 
   const loaded = results.filter((r) => r.status === "loaded");
-  if (input.confirm && loaded.length > 0) {
+  const replacedCount = results.filter((r) => r.status === "replaced").length;
+  if (input.confirm && replace) {
+    if (loaded.length + replacedCount > 0) {
+      await appendAudit(ctx, tenantId, {
+        userId: PLATFORM_USER_ID,
+        action: "clinic.forms_replaced",
+        targetType: "clinic",
+        targetId: tenantId,
+        detail: {
+          replaced: replacedCount,
+          forms: loaded.length,
+          refused: results.filter((r) => r.status === "refused").length,
+          skipped: results.filter((r) => r.status === "skipped").length,
+        },
+      });
+    }
+  } else if (input.confirm && loaded.length > 0) {
     await appendAudit(ctx, tenantId, {
       userId: PLATFORM_USER_ID,
       action: "clinic.forms_loaded",
@@ -375,5 +573,5 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       detail: { forms: loaded.length, refused: results.filter((r) => r.status === "refused").length, skipped: results.filter((r) => r.status === "skipped").length },
     });
   }
-  return { tenantId, dryRun: !input.confirm, files: results };
+  return { tenantId, dryRun: !input.confirm, replaceProposed: replace, files: results };
 }

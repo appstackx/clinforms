@@ -288,6 +288,17 @@ npm run admin:load-forms -- … --confirm --yes                                 
   Heart set is in the gitignored `demo-assets/blue-heart-templates/`).
 - Logic and tests: `src/server/admin/load-forms.ts`, `src/server/admin/testing/load-forms-suite.ts` (node:sqlite, PGlite,
   D1 stand-in and real local D1). **Not run against preview or production yet.**
+- **Corrected maps or conversions for forms loaded earlier (10/2026): `--replace-proposed`** (preview first, then
+  `--confirm --yes` on production). Per file it prints **REPLACE** (the clinic's form for this template – same stored
+  bytes, or the same original file name for the same referrer – is replaced by a fresh proposal from this file and
+  map), **LOAD** (no form for it yet), **SKIP** (already exactly this file and map: a re-run changes nothing) or
+  **REFUSED** with the reason. A form is only ever replaced while it is still a proposal ClinForms loaded and nobody
+  has touched: never confirmed (status, payload or activity log), revision 1 with no Studio activity, no stored report
+  (draft or approved) and no activity row naming it (approvals, drafting and final documents name their form and
+  outlive a deleted report), not linked to a referrer. A form of the same file name for another referrer is refused
+  (never two forms per template). Old forms out, new form in, in one atomic batch (`replaceForms`); the old file goes
+  when no form uses it any more. Audited `form.replace` (ids and counts) and one `clinic.forms_replaced`. Touches the
+  forms library only – never the clinic, members, invitations, trial or plan.
 
 ### List clinics
 `npm run admin:list-clinics -- --env production`

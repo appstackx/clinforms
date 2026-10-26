@@ -2,6 +2,7 @@
  * `audit_log` – append-only (the database refuses UPDATE and DELETE). Insert and list only.
  * Never put patient data in an audit row: ids, actions and counts only.
  */
+import { sql } from "kysely";
 import {
   RepoInputError,
   assertTenantId,
@@ -88,6 +89,39 @@ export interface ListAuditOptions {
   excludeActions?: readonly string[];
   /** Only entries written by this user. */
   userId?: string;
+}
+
+/**
+ * (10/2026, admin:load-forms --replace-proposed) Everything the tenant's audit trail records about one id: the
+ * entries targeting it and the entries whose detail names it (e.g. a report's approval, drafting or final document
+ * names its form as detail.formId – rows that outlive the report itself). Oldest first, at most `limit` (default
+ * 100, at most 500). The id is matched as a whole JSON string ("<id>"), never as a part of another id.
+ */
+export async function listAuditAbout(ctx: DbContext, tenantId: string, id: string, options: { limit?: number } = {}): Promise<AuditEntry[]> {
+  assertTenantId(tenantId);
+  if (typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$/.test(id)) throw new RepoInputError("Audit target id is not a valid id.");
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 100)), 500);
+  // LIKE wildcards in the id (an id may hold "_") are escaped; ESCAPE is spelled out (SQLite has no default).
+  const pattern = `%${JSON.stringify(id).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await ctx.db
+    .selectFrom("audit_log")
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where((eb) => eb.or([eb("target_id", "=", id), sql<boolean>`${sql.ref("detail_json")} like ${pattern} escape '\\'`]))
+    .orderBy("id", "asc")
+    .limit(limit)
+    .execute();
+  return rows.map((row) => ({
+    id: row.id,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    sessionId: row.session_id,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    detail: parseJson<Record<string, unknown>>(row.detail_json),
+    at: row.at,
+  }));
 }
 
 /** The tenant's audit trail, newest first (ids are ULIDs: time-ordered). */

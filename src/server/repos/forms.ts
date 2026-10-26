@@ -1,8 +1,10 @@
 /**
  * `forms` – referrer form maps (FormDefinition JSON, encrypted), per tenant, with optimistic concurrency:
  * every update names the revision it was based on; a stale one gets {reason: "conflict", currentRev}.
+ * replaceForms (10/2026, admin:load-forms --replace-proposed): old maps out, one new map in, in one atomic batch.
  */
 import type { Selectable } from "kysely";
+import { runBatch, type BatchQuery } from "../db/batch";
 import { isUniqueViolation } from "../db/errors";
 import type { FormsTable } from "../db/schema";
 import {
@@ -213,6 +215,104 @@ export async function listFormMeta(ctx: RepoContext, tenantId: string): Promise<
     .orderBy("id")
     .execute();
   return rows.map(toMeta);
+}
+
+/** How a report names the form it completes: template_id "form:<formId>" (core/forms.ts formTemplateId). */
+const FORM_TEMPLATE_PREFIX = "form:";
+
+export interface ReplaceFormsInput<P = unknown> {
+  /** The forms to remove: each only while it still has exactly this revision and status. */
+  replace: { id: string; rev: number; status: string }[];
+  /** The new form (created at revision 1, under its own new id). */
+  form: FormInput<P>;
+  /** Stored files (SHA-256) to delete with their chunks – each only once no form of the clinic refers to it. */
+  dropUnusedFiles?: string[];
+}
+
+export type ReplaceFormsResult =
+  | { ok: true; rev: 1; updatedAt: string; removed: number; filesDeleted: number }
+  | { ok: false; reason: "changed" };
+
+/**
+ * Replaces forms of the tenant by ONE new form, in one atomic batch (runBatch: one D1 batch, a transaction on
+ * Postgres and SQLite; no reads between the statements, so every condition is in the SQL):
+ * 1. the old forms are deleted – all of them, and only if every one still has its expected revision and status
+ *    and no report of the tenant uses any of them (reports.form_id, or template_id "form:<id>");
+ * 2. the new form is inserted;
+ * 3. if an old form is still there (step 1 changed nothing), the new form is deleted again;
+ * 4. each file in dropUnusedFiles (its chunks, then its record) is deleted when no form of the tenant refers to it.
+ * So either the old forms are gone and the new one is stored, or the tenant's forms are exactly as before
+ * ({ok: false, reason: "changed"}). Files that are still referred to are never touched. (Old forms deleted
+ * meanwhile by someone else leave nothing to replace: the new form is stored, `removed` says how many went.)
+ */
+export async function replaceForms<P>(ctx: RepoContext, tenantId: string, input: ReplaceFormsInput<P>): Promise<ReplaceFormsResult> {
+  assertTenantId(tenantId);
+  const fields = validate(input.form);
+  if (!Array.isArray(input.replace) || input.replace.length === 0 || input.replace.length > 20) {
+    throw new RepoInputError("Name between 1 and 20 forms to replace.");
+  }
+  const old = input.replace.map((o) => {
+    if (!Number.isInteger(o.rev) || o.rev < 1) throw new RepoInputError("The revision of a form to replace must be a positive integer.");
+    return { id: assertId(o.id, "Form id"), rev: o.rev, status: assertText(o.status, "Form status", 32) };
+  });
+  const oldIds = Array.from(new Set(old.map((o) => o.id)));
+  if (oldIds.length !== old.length) throw new RepoInputError("A form to replace is named twice.");
+  if (oldIds.includes(fields.id)) throw new RepoInputError("The new form needs an id of its own.");
+  const files = Array.from(new Set((input.dropUnusedFiles ?? []).map((sha) => assertSha256(sha)))).filter((sha) => sha !== fields.file_sha256);
+  const at = nowIso(ctx);
+  const unreferenced = (table: "form_files" | "form_file_chunks", sha: string) =>
+    ctx.db
+      .deleteFrom(table)
+      .where("tenant_id", "=", tenantId)
+      .where("sha256", "=", sha)
+      .where((eb) => eb.not(eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.file_sha256", "=", sha))));
+  const queries: BatchQuery[] = [
+    ctx.db
+      .deleteFrom("forms")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "in", oldIds)
+      .where((eb) =>
+        eb(
+          eb
+            .selectFrom("forms as f")
+            .select((c) => c.fn.countAll<number>().as("n"))
+            .where("f.tenant_id", "=", tenantId)
+            .where((w) => w.or(old.map((o) => w.and([w("f.id", "=", o.id), w("f.rev", "=", o.rev), w("f.status", "=", o.status)])))),
+          "=",
+          old.length,
+        ),
+      )
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("reports")
+              .select("reports.id")
+              .where("reports.tenant_id", "=", tenantId)
+              .where((w) => w.or([w("reports.form_id", "in", oldIds), w("reports.template_id", "in", oldIds.map((id) => `${FORM_TEMPLATE_PREFIX}${id}`))])),
+          ),
+        ),
+      ),
+    ctx.db.insertInto("forms").values({
+      tenant_id: tenantId,
+      ...fields,
+      rev: 1,
+      payload_enc: encryptPayload(ctx, tenantId, fields.id, input.form.payload),
+      created_at: at,
+      updated_at: at,
+    }),
+    ctx.db
+      .deleteFrom("forms")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", fields.id)
+      .where((eb) => eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.id", "in", oldIds))),
+    ...files.flatMap((sha) => [unreferenced("form_file_chunks", sha), unreferenced("form_files", sha)]),
+  ];
+  const results = await runBatch(ctx.db, queries);
+  if (Number(results[2]?.numAffectedRows ?? 0) > 0) return { ok: false, reason: "changed" };
+  let filesDeleted = 0;
+  for (let i = 0; i < files.length; i++) filesDeleted += Number(results[4 + i * 2]?.numAffectedRows ?? 0) > 0 ? 1 : 0;
+  return { ok: true, rev: 1, updatedAt: at, removed: Number(results[0]?.numAffectedRows ?? 0), filesDeleted };
 }
 
 export async function deleteForm(ctx: RepoContext, tenantId: string, id: string): Promise<boolean> {
