@@ -21,7 +21,9 @@
  *
  * bh2-rc1 (integration of the workstreams): WA1's frozen condition also holds wantsNot (a printed option; the box
  * applies when another is chosen) and filled (the row's text box names something), and a disposition's
- * controllerSnapshot records a text controller's text as {kind: "text", value} (an existing FormAnswer kind).
+ * controllerSnapshot records a text controller's text as {kind: "text", value} (an existing FormAnswer kind). Every
+ * one-click fix kind the release records (Paragraph.fixes[].kind, RELEASE_MEMBERS.fixKinds) and every report activity
+ * code it writes (RELEASE_MEMBERS.activityActions, core/activity-actions.ts) are in the builders.
  */
 import { createHmac } from "node:crypto";
 import { z } from "zod";
@@ -97,6 +99,10 @@ export const RELEASE_MEMBERS = {
   ],
   /** New keys, so production keeps whatever they hold; listed so the fixture holds every member the release writes. */
   ackPolicies: ["never", "approver", "member"],
+  /** bh2-rc1: Paragraph.fixes[].kind – the one-click fixes applied (a new key; free strings ≤ 64). WB's generators. */
+  fixKinds: ["attribution", "attribution-prefix", "use-note-words", "name-instead", "remove-commentary"],
+  /** bh2-rc1: ActivityEntry.action – an open string on both lines; the release's review and fixes write these codes. */
+  activityActions: ["adopted", "disposition_set", "disposition_cleared", "approver_taken_over", "note_words_accepted", "own_words", "fix_applied", "held_back"],
   signerConfirmationKinds: ["assessed_patient", "treated_patient", "own_registration_number"],
 } as const;
 
@@ -158,7 +164,7 @@ export function releaseReport(base: Report, mapSha256: string): Report {
   first.paragraphs[0] = Object.assign(first.paragraphs[0], {
     origin: "staff",
     by: STAFF,
-    fixes: [{ kind: "attribution", by: APPROVER, at: RELEASE_AT, edits: [{ start: 0, end: 0, text: "Sarah Reid recorded that " }] }],
+    fixes: RELEASE_MEMBERS.fixKinds.map((kind) => ({ kind, by: APPROVER, at: RELEASE_AT, edits: [{ start: 0, end: 0, text: "Sarah Reid recorded that " }] })),
     originalSourceIds: ["N-001"],
   });
   second.paragraphs[0] = Object.assign(second.paragraphs[0], { origin: "approver", by: APPROVER, ownWords: { by: APPROVER, at: RELEASE_AT } });
@@ -189,7 +195,8 @@ export function releaseReport(base: Report, mapSha256: string): Report {
     })),
   ];
   const entry: Loose = { at: RELEASE_AT, actor: APPROVER.name, action: "disposition_set", detail: "F-01: applies anyway.", reportId: "rpt_previous_version" };
-  report.activity = [...report.activity, entry as Report["activity"][number]];
+  const actions = RELEASE_MEMBERS.activityActions.map((action) => ({ at: RELEASE_AT, actor: APPROVER.name, action, detail: `${first.key}: ${action}.` }));
+  report.activity = [...report.activity, entry as Report["activity"][number], ...(actions as Report["activity"])];
   return report;
 }
 

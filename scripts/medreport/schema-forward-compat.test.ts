@@ -475,6 +475,11 @@ test("guard: every key and member the release writes (RELEASE_KEYS / RELEASE_MEM
   for (const a of RELEASE_MEMBERS.ackPolicies) assert.ok(policies.has(a), a);
   const confirmations = valuesAt(records.receipt[1], "signerConfirmations").flatMap((list) => (list as Array<Record<string, unknown>>).map((c) => c.kind));
   for (const k of RELEASE_MEMBERS.signerConfirmationKinds) assert.ok(confirmations.includes(k), k);
+  // bh2-rc1: the one-click fix kinds (Paragraph.fixes – a new key) and the report activity codes (an open string).
+  const fixKinds = new Set(valuesAt(report, "sections[].paragraphs[].fixes[].kind"));
+  for (const k of RELEASE_MEMBERS.fixKinds) assert.ok(fixKinds.has(k), k);
+  const actions = new Set(report.activity.map((a) => a.action as string));
+  for (const a of RELEASE_MEMBERS.activityActions) assert.ok(actions.has(a), a);
   // The release's attendance lines: up to 30.
   assert.ok(form.fields.some((fl) => fl.fillSource.kind === "registration" && fl.fillSource.part?.of === 30));
 });
