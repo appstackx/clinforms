@@ -263,11 +263,17 @@ function blockTextOf(parsed: Awaited<ReturnType<typeof parseFormFile>>): ((id: s
 export function printedLeadsOf(fields: readonly FormField[], blockText: ((id: string) => string | null) | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!blockText) return out;
+  // Two blanks in one block (“To return to … in … sessions”): each question's lead is read before its own blank, in
+  // the order the questions fill them (as the fill does).
+  const seen = new Map<string, number>();
   for (const f of fields) {
     if (f.anchor.kind !== "docx" || f.anchor.target !== "replace_placeholder" || f.anchor.writeAfter || !f.anchor.placeholderText) continue;
     if (!BLANK_PLACEHOLDER.test(f.anchor.placeholderText)) continue;
+    const key = `${f.anchor.blockId}\u0000${f.anchor.placeholderText}`;
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
     const text = blockText(f.anchor.blockId);
-    const lead = text ? printedLeadIn(text, f.anchor.placeholderText) : null;
+    const lead = text ? printedLeadIn(text, f.anchor.placeholderText, occurrence) : null;
     if (lead) out[f.id] = lead.slice(0, 200);
   }
   return out;

@@ -204,7 +204,8 @@ function optionNamingProblem(field: Pick<FormField, "options" | "guidance" | "an
 /** The kinds of clinical judgement a question can ask for (plan WE design 2; form-analysis.ts's clinician_opinion rule). */
 export const JUDGEMENT_KINDS: ReadonlyArray<{ kind: string; pattern: RegExp }> = [
   { kind: "fitness for work", pattern: /\b(?:un)?fit(?:ness)?\b|\b(?:able|unable|capable|incapable)\s+(?:of|to)\s+(?:do(?:ing)?|work(?:ing)?|return(?:ing)?|carry(?:ing)? out|perform(?:ing)?|fulfil(?:l?ing)?|undertak(?:e|ing)|resum(?:e|ing)|continu(?:e|ing))\b|\bcan\s+(?:the\s+(?:patient|claimant|client|employee)|he|she|they|you)\s+(?:do|return|work|perform|carry out|resume|manage)\b/i },
-  { kind: "restrictions", pattern: /\brestrict(?:ion|ions|ed)?\b|\b(?:modified|adjusted|amended|light|lighter|alternative|reduced|phased)\s+(?:duties|hours|work|return)\b|\bwork(?:place)?\s+adjustments?\b/i },
+  // A restriction of movement or range is an examination finding, not a restriction on what the patient may do.
+  { kind: "restrictions", pattern: /\brestrict(?:ion|ions|ed)?\b(?!\s+(?:to|of|in|on)\s+(?:the\s+)?(?:movement|motion|range|rom)\b|\s+(?:range|movement|motion|rom)\b)|\b(?:modified|adjusted|amended|light|lighter|alternative|reduced|phased)\s+(?:duties|hours|work|return)\b|\bwork(?:place)?\s+adjustments?\b/i },
   { kind: "causation", pattern: /\bcaus(?:e|ed|es|ation|al|ally)\b|\bdue to\b|\bbecause of\b|\b(?:related|attributable|attributed|linked|secondary|consequent)\s+to\b|\bas a (?:direct )?(?:result|consequence) of\b|\b(?:work|accident|injury|incident)[- ](?:related|aggravated|induced|caused)\b|\baggravat(?:ed|ion|ing)\b|\bbrought on\b|\bconsistent with the (?:mechanism|accident|incident|injury)\b/i },
   { kind: "prognosis", pattern: /\bprognos(?:is|es|tic)\b|\boutlook\b|\b(?:expected|anticipated|estimated|predicted|likely)\s+(?:recovery|return|date|time|duration|outcome|resolution|timescale|improvement|length)\b/i },
   { kind: "recovery", pattern: /\brecover(?:y|ed|ing|s)?\b|\bgetting better\b|\b(?:has|have)\s+(?:the\s+\w+\s+)?resolved\b|\bfull return\b|\bpre-?(?:injury|accident) (?:level|status|state|function)\b|\bback to normal\b/i },
@@ -321,13 +322,16 @@ const SHORT_BLANK = /^\s*(?:…|\.{2,3}|…\.|\.…)\s*$/;
  * lead the answer completes (analysis.printedLeads, read by the drafting checks). Null: no words before it, or the
  * placeholder is not printed there. At most the last 80 characters of the clause it sits in.
  */
-export function printedLeadIn(blockText: string, placeholder: string): string | null {
+export function printedLeadIn(blockText: string, placeholder: string, occurrence = 0): string | null {
   const text = blockText.replace(/\s+/g, " ");
-  const at = text.indexOf(placeholder.replace(/\s+/g, " "));
+  const needle = placeholder.replace(/\s+/g, " ");
+  let at = text.indexOf(needle);
+  for (let k = 0; k < occurrence && at >= 0; k++) at = text.indexOf(needle, at + needle.length);
   if (at < 0) return null;
   const before = text.slice(0, at);
-  // The clause the blank completes: after the last sentence end, label colon or tab-like gap.
-  const clause = before.split(/(?:[.!?]\s|:\s|\s{2,}|[|•])/).pop() ?? "";
+  // The clause the blank completes: after the last sentence end, label colon, tab-like gap, an earlier blank, or a
+  // comma before a capital ("Yes, Physiotherapy, To return to …").
+  const clause = before.split(/(?:[.!?]\s|:\s|\s{2,}|[|•]|…|\.{2,}|_{2,}|,\s+(?=[A-Z]))/).pop() ?? "";
   const lead = clause.replace(/^[\s\-–—,;]+/, "").trimEnd().slice(-80).trim();
   return /[A-Za-z]/.test(lead) ? lead : null;
 }

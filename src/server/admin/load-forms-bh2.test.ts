@@ -166,6 +166,9 @@ export function defineLoadFormsBh2Suite(label: string, factory: () => Promise<Lo
       const text: Record<string, string> = { p0: "Goal: To return to … within six weeks", p1: "Name: ..........", p2: "…", p3: "Pain at rest. Usually … at night" };
       const leads = printedLeadsOf([field("F-01", "…"), field("F-02", "..........", "p1"), field("F-03", "…", "p2"), field("F-04", "…", "p3"), field("F-05", "Name", "p1")], (id) => text[id] ?? null);
       assert.deepEqual(leads, { "F-01": "To return to", "F-04": "Usually" });
+      // Two blanks in one block: each question's lead is read before its own blank; a clause after a comma and a capital.
+      const two = printedLeadsOf([field("F-01", "…", "p9"), field("F-02", "…", "p9")], () => "Yes, Treatment, To return to … within six weeks in … sessions or less");
+      assert.deepEqual(two, { "F-01": "To return to", "F-02": "within six weeks in" });
     });
 
     it("the source pin: a map pinned to the file as supplied loads after a new conversion; a pin to an earlier conversion is refused (unless restoring)", async () => {

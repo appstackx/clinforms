@@ -75,6 +75,9 @@ const SESSION_LIST = new RegExp(
  */
 export function sessionQuestionOf(field: Pick<FormField, "label" | "answerType"> & Partial<Pick<FormField, "guidance">>, extra = ""): SessionQuestion | null {
   const label = field.label.replace(/\s+/g, " ").trim();
+  // A record value is a date, a time or a list of dates – never a yes/no, a tick or a choice ("was a session given on
+  // this date?").
+  if (!(field.answerType === "date" || field.answerType === "short_text" || field.answerType === "long_text")) return null;
   if (DURATION.test(label)) return null;
   const afterAssessment = AFTER_ASSESSMENT.test(`${field.guidance ?? ""} ${extra}`);
   const isTime = /\btimes?\b/i.test(label) && !/\bdates?\b/i.test(label);

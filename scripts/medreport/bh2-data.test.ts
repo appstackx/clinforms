@@ -190,6 +190,8 @@ describe("session dates: the classifier, and the fill by code for maps that do n
     assert.equal(q("Session length", "short_text"), null, "a duration is not a record value");
     assert.equal(q("Lumbar flexion – at first assessment", "short_text"), null);
     assert.equal(q("Expected date of a full return"), null);
+    assert.equal(q("Was a session given on the date of the first assessment?", "yes_no"), null, "a yes/no is never a record value");
+    assert.equal(q("Session 2 – date", "checkbox"), null);
   });
 
   const discharge = (fields: FormField[]) => ({ ...map(fields), title: "Discharge Report (fictional)" });

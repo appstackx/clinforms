@@ -13,11 +13,13 @@
  *     "dropWarnings": true,          // remove the map's own notes (load-forms adds its one "prepared" line)
  *     "pin": "source",               // pin the map to the template file as supplied (file.sourceSha256; needs --templates)
  *     "fields": {"F-12": {"set": {"guidance": "…", "note": null, …}, "replace": [{"key": "guidance", "find": "…", "with": "…"}]}},
- *     "sessions": [{"ids": ["F-17", …], "path": "episode.attendedDate", "of": 14, "offset": 1}]
+ *     "sessions": [{"ids": ["F-17", …], "path": "episode.attendedDate", "of": 14, "offset": 1}],
+ *     "add": [{"after": "F-11", "field": {…a whole question with a new id…}}]
  *   }
  * - `set` merges keys into the field (null removes a key); `replace` changes text that must be in the key exactly once;
  * - `sessions` maps numbered session questions to a record path, the index taken from the number in each question's
  *   printed label (+ offset) – never from the field's position (CLM and Physio-Link list them in table reading order);
+ * - `add` puts a new question after an existing one (its id must be new; it is listed in form order, not by id);
  * - every edited field must parse (core/schemas.ts FormFieldSchema); an unknown file or field id, a find that does
  *   not match once, or a session question without a number in its label stops the run with nothing written.
  * With --templates (the folder of the clinic's template files, searched by file name in its sub-folders) each map is
@@ -58,6 +60,7 @@ export interface TemplateEdits {
   pin?: "source";
   fields?: Record<string, FieldEdit>;
   sessions?: SessionEdit[];
+  add?: Array<{ after?: string; field: Json }>;
 }
 
 export interface EditList {
@@ -126,6 +129,16 @@ export function applyTemplateEdits(map: MapsFile[string], edits: TemplateEdits, 
       }
       sessions += 1;
     }
+  }
+  for (const a of edits.add ?? []) {
+    const id = String(a.field.id ?? "");
+    if (!id || byId.has(id)) throw new CliError(`${where}: an added question needs a new id (${id || "none"}).`);
+    const at = a.after ? fields.findIndex((f) => f.id === a.after) : fields.length - 1;
+    if (a.after && at < 0) throw new CliError(`${where}: no field ${a.after} to add ${id} after.`);
+    const copy = JSON.parse(JSON.stringify(a.field)) as Json;
+    fields.splice(at + 1, 0, copy);
+    byId.set(id, copy);
+    changed[id] = ["added"];
   }
   for (const f of fields) {
     const parsed = FormFieldSchema.safeParse(f);

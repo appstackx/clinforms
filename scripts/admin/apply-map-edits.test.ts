@@ -74,6 +74,15 @@ describe("apply-map-edits", () => {
     assert.deepEqual((map.fields[0] as Record<string, unknown>).fillSource, { kind: "registration", path: "episode.attendedDate", part: { index: 8, of: 14 } });
   });
 
+  it("adds a question after an existing one (a new id, listed in form order)", () => {
+    const added = field("F-09", "Treatment received to date (fictional)", { answerType: "long_text", fillSource: { kind: "clinician_opinion" } });
+    const { map, changed } = applyTemplateEdits(maps()["orchard.maps.json"]["Orchard EOTS.rtf"], { add: [{ after: "F-02", field: added }] }, "t");
+    assert.deepEqual(map.fields.map((f) => f.id), ["F-01", "F-02", "F-09", "F-03", "F-04", "F-05"]);
+    assert.deepEqual(changed, { "F-09": ["added"] });
+    assert.throws(() => applyTemplateEdits(maps()["orchard.maps.json"]["Orchard EOTS.rtf"], { add: [{ field: { ...added, id: "F-02" } }] }, "t"), /needs a new id/);
+    assert.throws(() => applyTemplateEdits(maps()["orchard.maps.json"]["Orchard EOTS.rtf"], { add: [{ after: "F-99", field: added }] }, "t"), /no field F-99/);
+  });
+
   it("refuses an unknown file, template or field, a find that is not there exactly once, a label without a number, a bad result", () => {
     const run = (list: Parameters<typeof applyEditList>[1]) => () => applyEditList(maps(), list);
     assert.throws(run({ maps: { "nope.maps.json": {} } }), CliError);
