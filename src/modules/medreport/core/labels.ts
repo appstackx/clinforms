@@ -136,6 +136,7 @@ export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "episode.firstSeenTime": "First attended appointment – time",
   "episode.attendedDate": "An attended appointment (1st, 2nd…) – date",
   "episode.attendedTime": "An attended appointment (1st, 2nd…) – time",
+  "episode.attendedDates": "Attended appointment dates, as a list",
   "report.date": "Date of report",
   "clinician.name": "Treating clinician",
   "clinician.hcpc": "Treating clinician HCPC number",
@@ -196,6 +197,7 @@ export const PARAGRAPH_ORIGIN_LABELS: Record<ParagraphOrigin, string> = {
   edited: "Edited",
   clinician: "Clinician",
   from_records: "From records",
+  staff: "Entered by staff",
 };
 
 export const PARAGRAPH_BASIS_LABELS: Record<ParagraphBasis, string> = {

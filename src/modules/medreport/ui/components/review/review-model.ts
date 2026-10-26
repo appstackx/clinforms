@@ -342,6 +342,9 @@ export function originLabel(origin: ParagraphOrigin, connectorId: ConnectorId, a
       return "Edited";
     case "clinician":
       return "Clinician";
+    // bh2 (plan W0.3): defined for WC, which writes it; WC words the full label ("Entered by <name> (staff) – …").
+    case "staff":
+      return "Entered by staff";
   }
 }
 
@@ -362,6 +365,7 @@ export const ORIGIN_PILL_CLASSES: Record<ParagraphOrigin, string> = {
   ai: "border-sky-200 bg-sky-50 text-sky-800",
   edited: "border-violet-200 bg-violet-50 text-violet-800",
   clinician: "border-indigo-200 bg-indigo-50 text-indigo-800",
+  staff: "border-amber-200 bg-amber-50 text-amber-800",
 };
 
 export type SourceKind = "note" | "fact" | "registration" | "unknown";

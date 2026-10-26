@@ -82,7 +82,11 @@ export const SectionKindSchema = z.enum(["from_records", "ai_narrative", "clinic
 export const RecordsBlockSchema = z.enum(["attendance", "outcomes", "records_reviewed"]);
 /** Bundle fields a template's scope can strip before drafting (see core/scope.ts). */
 export const ScopeFieldSchema = z.enum(["note.pastMedicalHistory", "note.socialHistory"]);
-export const ParagraphOriginSchema = z.enum(["ai", "edited", "clinician", "from_records"]);
+/**
+ * Who wrote a paragraph's text. Additive (bh2, plan W0.3): "staff" – typed by a staff member (it never counts as the
+ * clinician's own words; the approving physio adopts it). Written by WC; until then no writer uses it.
+ */
+export const ParagraphOriginSchema = z.enum(["ai", "edited", "clinician", "from_records", "staff"]);
 export const ParagraphBasisSchema = z.enum([
   "patient_reported",
   "clinician_observed",
@@ -129,6 +133,42 @@ export const SessionKindSchema = z.enum(["launch", "demo"]);
  */
 export const ApprovalKindSchema = z.enum(["launch", "demo", "user"]);
 export const TraceTransportSchema = z.enum(["http", "in-process"]);
+
+/* bh2 schema expansion (release/bh-trial-2, plan W0.3) -------------------------------------------
+ * Every field and enum member below is ADDITIVE and OPTIONAL where it sits: readers ship before writers, so a record
+ * without them parses, hashes (core/fingerprint.ts) and verifies (auth/sign-receipt.ts) exactly as before. The
+ * workstreams that write them are named on each one. scripts/medreport/schema-expansion.test.ts pins the old hashes.
+ */
+
+/** A clinic member's role (the same members as api/deps.ts MemberRole). */
+export const ActorRoleSchema = z.enum(["owner", "admin", "clinician", "staff"]);
+/**
+ * What a person decided about a box (section.disposition, hashed):
+ * - not_applicable: a person says the question does not apply (on a clinician box only the approver may – WC);
+ * - applies_anyway: the approver says it applies although the controlling answer rules it out (every check runs);
+ * - left_blank: left blank on purpose (optional boxes only) – a review-screen aid; FINAL blanks an unanswered box anyway.
+ * Rule outcomes (a condition, a session not attended, an empty record line) are worked out each time, never stored here.
+ */
+export const SectionDispositionKindSchema = z.enum(["not_applicable", "applies_anyway", "left_blank"]);
+/** What kind of gap it is (Gap.kind; the "Needs clinician input" wording comes from it – WC/WD). */
+export const GapKindSchema = z.enum([
+  /** An opinion box whose cited notes record no opinion. */
+  "no_opinion_recorded",
+  /** The recorded opinion does not fit any printed option. */
+  "opinion_not_fitting_options",
+  /** A drafted choice held back (its option's words are not in the cited notes). */
+  "choice_held_back",
+  /** The box depends on another answer that is not known yet. */
+  "condition",
+  /** A printed band (a duration or a scale) only the clinician can choose. */
+  "band",
+  /** A value the record should hold but does not. */
+  "record_value",
+  /** A detail staff enter on each report (registration path "staff.entry"). */
+  "staff_entry",
+  /** Drafted wording held back because it talks about the drafting itself (WD rule 3). */
+  "meta_held_back",
+]);
 
 /* Referrer forms (Revision 2) ----------------------------------------------------------------- */
 
@@ -254,11 +294,24 @@ export const RegistrationPathSchema = z.enum([
   "episode.firstSeenTime",
   "episode.attendedDate",
   "episode.attendedTime",
+  // Additive (bh2, plan W0.3): one list of the attended appointments' dates, from session `sessions.fromSession`
+  // on (2 = the sessions after the first assessment), at most `sessions.of` of them – for a box that lists the treatment dates.
+  // The fill source carries `sessions` (FillSourceSchema). Resolved by WE (record paths); until then nothing is filled.
+  "episode.attendedDates",
 ]);
 /** Registration paths only the clinic-system merge codes use (kept out of the live form analysis's choices). */
 export const MERGE_CODE_ONLY_PATHS = ["clinic.addressLines", "clinic.postcode", "staff.entry"] as const;
 /** Registration paths staff choose in the mapping (fix round 1) – also kept out of the live form analysis's choices. */
-export const MAPPING_ONLY_PATHS = ["episode.firstSeenTime", "episode.attendedDate", "episode.attendedTime"] as const;
+export const MAPPING_ONLY_PATHS = ["episode.firstSeenTime", "episode.attendedDate", "episode.attendedTime", "episode.attendedDates"] as const;
+/**
+ * Registration paths whose `part` names an attended appointment (1 = the first) rather than an address line: their
+ * `part.index` and `part.of` go up to MAX_SESSION_PART (bh2, plan W0.3); every other `part` stays at MAX_ADDRESS_PART.
+ */
+export const SESSION_PART_PATHS = ["episode.attendedDate", "episode.attendedTime"] as const;
+/** Most printed lines of an address (a registration fill source's `part`). */
+export const MAX_ADDRESS_PART = 12;
+/** Most attended appointments a form prints one by one, or lists (bh2, plan W0.3: raised from 12). */
+export const MAX_SESSION_PART = 30;
 /**
  * How a computed fact is written into a form answer (default "summary" = the fact's value).
  * first_score / latest_score: an outcome measure's first or latest recorded score with its date
@@ -307,6 +360,31 @@ export const ClinicianSchema = z.object({
   name: z.string().min(1),
   hcpc: z.string().min(1),
   role: z.string().optional(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): the person behind a decision – stamped by the server as `by` on every changed paragraph,
+ * answer, disposition, acceptance, adoption, own-words record and acknowledgement (WC; demo mode: the one fictional
+ * user, on the client). `memberId` is the clinic member's id (not a secret); `canSign` and `hcpc` as the member's
+ * profile held them at that moment. Helpers that build one live in core/actor.ts (W0.6).
+ */
+export const ActorSchema = z.object({
+  memberId: z.string().min(1),
+  name: z.string().min(1),
+  role: ActorRoleSchema,
+  canSign: z.boolean(),
+  hcpc: z.string().min(1).optional(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): the approving physio of a report (Report.approver, hashed) – a member who may sign and has
+ * an HCPC number, chosen when the report is created (WC picker; set by createFormReport / createReport, W0.6). The
+ * voice owner everywhere (WB). /sign requires signer = approver, or a takeover (SignReceipt.approverTakeover).
+ */
+export const ReportApproverSchema = z.object({
+  memberId: z.string().min(1),
+  name: z.string().min(1),
+  hcpc: z.string().min(1),
 });
 
 /**
@@ -591,6 +669,35 @@ export const ReportFormRefSchema = z.object({
   mapSha256: Sha256HexSchema.optional(),
 });
 
+/**
+ * Additive (bh2, plan W0.3): one replacement in a paragraph's text – the UTF-16 range [start, end) of the text as it
+ * was before the fix, replaced by `text` ("" = removed).
+ */
+export const TextEditSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  text: z.string(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): a one-click fix a person applied to a drafted paragraph (Paragraph.fixes, WD's engine;
+ * the plan-time proposal is W0.6's FixProposal). The paragraph keeps origin "ai", so the drafted-text checks keep
+ * running. `kind` names the generator (e.g. "shorten", "value_only", "note_prefix"); `edits` (when given) replay the
+ * change on the text before it, applied from the last range to the first.
+ */
+export const AppliedFixSchema = z.object({
+  kind: z.string().min(1).max(64),
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+  edits: z.array(TextEditSchema).optional(),
+});
+
+/** Additive (bh2, plan W0.3): the approver's "These are my own words" on a paragraph (approver-only, hashed – WC). */
+export const OwnWordsSchema = z.object({
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+});
+
 export const ParagraphSchema = z.object({
   id: z.string().min(1),
   text: z.string(),
@@ -602,6 +709,58 @@ export const ParagraphSchema = z.object({
   ackReason: z.string().optional(),
   /** Text as first produced by the AI/demo draft, so the UI can revert an edit. */
   originalText: z.string().optional(),
+  /** Additive (bh2, plan W0.3): who last wrote or changed this paragraph (server-stamped – WC). */
+  by: ActorSchema.optional(),
+  /** Additive (bh2, plan W0.3): the approver recorded these as their own words (WC). */
+  ownWords: OwnWordsSchema.optional(),
+  /** Additive (bh2, plan W0.3): the one-click fixes applied to this drafted text, oldest first (WD). */
+  fixes: z.array(AppliedFixSchema).optional(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): a controlling answer as it was when a person decided about a box (disposition
+ * controllerSnapshot): a later change to it cancels applies_anyway and a person's not_applicable (WA1). `answer` absent:
+ * the controlling question had no structured answer then.
+ */
+export const ControllerSnapshotSchema = z.object({
+  sectionKey: SectionKeySchema,
+  answer: FormAnswerSchema.optional(),
+});
+
+/** Additive (bh2, plan W0.3): a person's decision about a box (ReportSection.disposition, hashed – WA1, WC). */
+export const SectionDispositionSchema = z.object({
+  kind: SectionDispositionKindSchema,
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+  reason: z.string().min(1).optional(),
+  /** The controlling answer(s) when it was decided (one per controller; a condition over several questions has several). */
+  controllerSnapshot: z.array(ControllerSnapshotSchema).optional(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): the approver's "Accept as the note's words" for one drafted phrase (ReportSection.accepted,
+ * hashed and audited – WB 5, WC 4). `check` is the check it answers (a ReportFlagCode such as "OPINION_LANGUAGE", or a
+ * check id); `sentenceSha` the SHA-256 of the drafted sentence it was accepted in (a changed sentence is no longer
+ * covered); `noteId` the approver's own note that records it.
+ */
+export const PhraseAcceptanceSchema = z.object({
+  check: z.string().min(1).max(64),
+  phrase: z.string().min(1),
+  sentenceSha: Sha256HexSchema,
+  noteId: NoteIdSchema.optional(),
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+  reason: z.string().min(1).optional(),
+});
+
+/**
+ * Additive (bh2, plan W0.3): the approver adopted what someone else entered in a clinician box (ReportSection.adoptedBy,
+ * audited – WC 5). `contentSha` covers the box's answer and paragraphs; any later change by someone else clears it.
+ */
+export const SectionAdoptionSchema = z.object({
+  by: ActorSchema,
+  at: IsoDateTimeSchema,
+  contentSha: Sha256HexSchema,
 });
 
 export const ReportSectionSchema = z.object({
@@ -620,6 +779,14 @@ export const ReportSectionSchema = z.object({
    * and the form gets nothing there (the clinic system's merge code is removed).
    */
   blankFromRecords: z.boolean().optional(),
+  /** Additive (bh2, plan W0.3): a person's decision about this box – not applicable, applies anyway, left blank (WA1, WC). */
+  disposition: SectionDispositionSchema.optional(),
+  /** Additive (bh2, plan W0.3): drafted phrases the approver accepted as their own note's words (WB, WC). */
+  accepted: z.array(PhraseAcceptanceSchema).optional(),
+  /** Additive (bh2, plan W0.3): the approver adopted what someone else entered in this clinician box (WC). */
+  adoptedBy: SectionAdoptionSchema.optional(),
+  /** Additive (bh2, plan W0.3): who set the structured answer (server-stamped – WC; labels come from it). */
+  answerBy: ActorSchema.optional(),
 });
 
 export const GapResolutionSchema = z.object({
@@ -642,6 +809,11 @@ export const GapResolutionSchema = z.object({
    * reopened by itself if that answer changes.
    */
   notApplicable: z.boolean().optional(),
+  /**
+   * Additive (bh2, W0.3 – not in the plan's list, needed by it): who resolved or acknowledged the gap (server-stamped,
+   * WC: clinician gaps are the approver's to settle); covered by the receipt's acknowledgementsSha256 (WA1).
+   */
+  by: ActorSchema.optional(),
 });
 
 /** Something the record does not say. Every unresolved gap blocks signing (OPEN_GAP). */
@@ -658,11 +830,15 @@ export const GapSchema = z.object({
    * the option as printed, offered to the person as a one-click "Tick “No Impact”" (their decision, audited).
    */
   suggestedAnswer: z.string().optional(),
+  /** Additive (bh2, plan W0.3): what kind of gap it is (WD sets it on every gap; WC words "Needs clinician input" from it). */
+  kind: GapKindSchema.optional(),
 });
 
 export const FlagAcknowledgementSchema = z.object({
   reason: z.string().min(1),
   at: IsoDateTimeSchema,
+  /** Additive (bh2, plan W0.3): who acknowledged it (server-stamped – WC; flag.ackPolicy decides who may – W0.6). */
+  by: ActorSchema.optional(),
 });
 
 export const ReportFlagSchema = z.object({
@@ -709,6 +885,16 @@ export const ActivityEntrySchema = z.object({
   detail: z.string(),
 });
 
+/**
+ * Additive (bh2, plan W0.3): the signer took over as approver from the report's approver ("Take over as approver",
+ * audited and hashed – WC). `to` is the signer.
+ */
+export const ApproverTakeoverSchema = z.object({
+  from: ReportApproverSchema,
+  to: ReportApproverSchema,
+  at: IsoDateTimeSchema,
+});
+
 /** Server-HMAC'd sign-off receipt. `mac` covers every other field (canonical JSON). */
 export const SignReceiptSchema = z.object({
   reportId: z.string().min(1),
@@ -738,6 +924,15 @@ export const SignReceiptSchema = z.object({
       launchSid: z.string().min(1).optional(),
     })
     .optional(),
+  /**
+   * Additive (bh2, plan W0.3 – written by WA1's /sign dry run): SHA-256 over the sorted, uncompressed zip entries of the
+   * FINAL document as issued (docProps timestamps removed). /render FINAL recomputes it (409 ISSUED_COPY_CHANGED).
+   */
+  issuedContentSha256: Sha256HexSchema.optional(),
+  /** Additive (bh2, plan W0.3 – WA1): SHA-256 over the sorted {flagId, code, sectionKey, by, reason} of acknowledged blocking flags and gaps. */
+  acknowledgementsSha256: Sha256HexSchema.optional(),
+  /** Additive (bh2, plan W0.3 – WC): the signer took over from the report's approver. */
+  approverTakeover: ApproverTakeoverSchema.optional(),
   /** base64url HMAC-SHA256 with MEDREPORT_SIGNING_SECRET. */
   mac: z.string().min(1),
 });
@@ -789,7 +984,19 @@ export const ReportSchema = z.object({
       approvedAt: IsoDateTimeSchema,
     })
     .optional(),
+  /** Additive (bh2, plan W0.3): the approving physio, chosen when the report is created (hashed – W0.6 sets it, WC picks). */
+  approver: ReportApproverSchema.optional(),
+  /**
+   * Additive (bh2, plan W0.3 – the plan's "model"): REPORT_MODEL (2) on every report this release creates (W0.6):
+   * people's decisions are stored (disposition, `by`), never inferred. Absent: an earlier build's report – the legacy
+   * inference runs only for those signed before the deploy (WA1). Named reportModel, not "model": a case export is a
+   * file the clinic downloads, and "model" is a technology word there (core/case-export.ts, neutral-wording.test.ts).
+   */
+  reportModel: z.number().int().min(1).optional(),
 });
+
+/** Report.reportModel of the reports this release creates (bh2, plan W0.3). */
+export const REPORT_MODEL = 2;
 
 /* ------------------------------------------------------------------------------------------------
  * Referrer forms (Revision 2): the referrer's OWN report form, analysed once into a form map
@@ -802,6 +1009,12 @@ export const FormFileSchema = z.object({
   /** SHA-256 of the original bytes. A FormDefinition is bound to exactly this file. */
   sha256: Sha256HexSchema,
   sizeBytes: z.number().int().nonnegative(),
+  /**
+   * Additive (bh2, plan W0.3 – written by WE's load-forms): SHA-256 of the file as the clinic supplied it, before any
+   * conversion (an RTF template converted to Word: `sha256` is the converted file's). Not part of the map hash
+   * (auth/attestations.ts formMapSha256 takes `file.sha256` only).
+   */
+  sourceSha256: Sha256HexSchema.optional(),
 });
 
 /**
@@ -1003,18 +1216,40 @@ export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "
  *   maps each table column key to what it holds (S2, additive).
  */
 export const FillSourceSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("registration"),
-    path: RegistrationPathSchema,
-    /**
-     * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
-     * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
-     * last line taking any that are left; a line the record does not have is written as nothing. Only for
-     * "patient.addressLines" and "clinic.addressLines" – and (fix round 1) "episode.attendedDate" / "episode.attendedTime",
-     * where `index` is which attended appointment (1 = the first) and `of` how many the form prints.
-     */
-    part: z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) }).optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("registration"),
+      path: RegistrationPathSchema,
+      /**
+       * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
+       * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
+       * last line taking any that are left; a line the record does not have is written as nothing. Only for
+       * "patient.addressLines" and "clinic.addressLines" – and (fix round 1) "episode.attendedDate" / "episode.attendedTime",
+       * where `index` is which attended appointment (1 = the first) and `of` how many the form prints.
+       * bh2 (plan W0.3): up to MAX_SESSION_PART (30) for the attended-appointment paths (SESSION_PART_PATHS); an address
+       * part stays at most MAX_ADDRESS_PART (12) – checked below.
+       */
+      part: z.object({ index: z.number().int().min(1).max(MAX_SESSION_PART), of: z.number().int().min(1).max(MAX_SESSION_PART) }).optional(),
+      /**
+       * Additive (bh2, plan W0.3): "episode.attendedDates" – the attended appointments listed from session `fromSession`
+       * (1 = the first; 2 = after the first assessment), at most `of` of them (absent: all that follow).
+       */
+      sessions: z
+        .object({ fromSession: z.number().int().min(1).max(MAX_SESSION_PART), of: z.number().int().min(1).max(MAX_SESSION_PART).optional() })
+        .optional(),
+    })
+    .superRefine((source, ctx) => {
+      if (!source.part || (SESSION_PART_PATHS as readonly string[]).includes(source.path)) return;
+      for (const key of ["index", "of"] as const) {
+        if (source.part[key] > MAX_ADDRESS_PART) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["part", key],
+            message: `An address is printed over at most ${MAX_ADDRESS_PART} lines (only attended appointments go up to ${MAX_SESSION_PART}).`,
+          });
+        }
+      }
+    }),
   z.object({ kind: z.literal("computed_fact"), factId: FactIdSchema, format: ComputedFactFormatSchema.optional() }),
   z.object({ kind: z.literal("notes_narrative") }),
   z.object({ kind: z.literal("clinician_opinion") }),
@@ -1079,6 +1314,17 @@ export const FormAnalysisSchema = z.object({
   warnings: z.array(z.string()),
   /** Mail-merge fields in the file (10/2026; absent when there are none – every earlier map). */
   mergeFields: z.array(FormMergeFieldSchema).max(500).optional(),
+  /**
+   * Additive (bh2, plan W0.3): the converter version the file was converted with (core/rtf RTF_CONVERTER_VERSION, e.g.
+   * "rtf-docx-3"; stamped by the converter – WA2 – and by load-forms – WE). Absent: not converted, or an earlier map.
+   */
+  convertedWith: z.string().min(1).optional(),
+  /**
+   * Additive (bh2, plan W0.3): the words printed before each answer space, keyed by field id (a printed sentence opener
+   * the answer completes), computed from the template (WE) and read by the drafting checks (WD). Kept here, outside `fields`,
+   * so the map hash (formMapSha256) does not change.
+   */
+  printedLeads: z.record(FormFieldIdSchema, z.string().min(1)).optional(),
 });
 
 /** A referrer's form, analysed into a form map. Saved per referrer form and reused for every patient. */
