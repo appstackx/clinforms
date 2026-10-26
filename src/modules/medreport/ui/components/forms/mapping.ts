@@ -2,9 +2,15 @@
  * Pure helpers for the mapping editor: plain-English anchor descriptions, new fields, applying a
  * location picked in the preview, and the option lists for the selects.
  *
- * Owner: studio-a agent.
+ * bh2 WE (designs 2 and 4): the mapping page's groups come from the same outline as the review (core/forms/headings.ts
+ * formOutline); the map lint's findings are its hints (mappingLint); L5 also blocks confirming, as on the server.
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
+import { UNTITLED_HEADING, formOutline } from "../../../core/forms/headings";
+import { acceptsJudgement, lintFormMap, type LintIssue } from "../../../core/form-map-lint";
+import { memberActor } from "../../../core/actor";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
 import { findPracticeCodes, humaniseMergeCodes, practiceCode, practiceCodeWords, practiceCodesInWords } from "../../../core/practice-merge-codes";
 import { REGISTRATION_PATH_LABELS } from "../../../core/labels";
@@ -265,7 +271,10 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
  */
 export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource">>>): string | null {
   const staffEntry = (f: (typeof fields)[number]) => f.fillSource?.kind === "registration" && f.fillSource.path === "staff.entry";
-  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.required === false ? 1 : 0, staffEntry(f) ? 1 : 0, f.confidence === "low" ? 0 : 1];
+  // Fix B1-17(c), B2-30: "Needs review" before "Check" first (as the comment above says), then a required question before
+  // an optional one, then a clinical question before a detail staff type in or the sign-off.
+  const minor = (f: (typeof fields)[number]) => staffEntry(f) || f.fillSource?.kind === "signoff";
+  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.confidence === "low" ? 0 : 1, f.required === false ? 1 : 0, minor(f) ? 1 : 0];
   const before = (a: number[], b: number[]) => {
     const i = a.findIndex((v, k) => v !== b[k]);
     return i >= 0 && a[i] < b[i];
@@ -467,4 +476,91 @@ export function withOptionLabel(anchor: Extract<FormAnchor, { kind: "pdf_field" 
  */
 export function mayConfirmForms(member: Pick<StudioMember, "role"> | undefined): boolean {
   return member?.role !== "staff";
+}
+
+
+/* ------------------------------------------------------------------------------------------------
+ * bh2 WE: one outline for both screens, and the map lint as hints
+ * ----------------------------------------------------------------------------------------------*/
+
+/** One group of the mapping page: the review's group (same outline), with the questions of it that are shown. */
+export interface MappingGroup<T> {
+  /** The outline group's index (two groups of the same title stay apart, as on the review). */
+  key: string;
+  /** The form's heading; UNTITLED_HEADING for a run without one; "" when the form prints no headings at all. */
+  title: string;
+  fields: T[];
+}
+
+/**
+ * The mapping page's groups: the questions shown (`visible`, in the page's list order), grouped by the outline the review
+ * uses (core/forms/headings.ts formOutline over the whole map), consecutive questions of one group together.
+ */
+export function mappingGroups<T extends Pick<FormField, "id">>(fields: ReadonlyArray<Pick<FormField, "id" | "section" | "label">>, visible: readonly T[]): MappingGroup<T>[] {
+  const outline = formOutline(fields);
+  const groupOf = new Map<string, number>();
+  outline.forEach((g, gi) => g.entries.forEach((e) => groupOf.set(fields[e.index].id, gi)));
+  const out: MappingGroup<T>[] = [];
+  for (const f of visible) {
+    const gi = groupOf.get(f.id) ?? -1;
+    const key = String(gi);
+    const last = out[out.length - 1];
+    if (last && last.key === key) last.fields.push(f);
+    else out.push({ key, title: gi >= 0 ? outline[gi].title : UNTITLED_HEADING, fields: [f] });
+  }
+  return out;
+}
+
+/** The lint rules shown on the mapping page: the clinic can act on these (L9 and L11 are ClinForms' own loading checks). */
+const PAGE_RULES = new Set<LintIssue["rule"]>(["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L10", "L12"]);
+
+export interface MappingLint {
+  /** Each question's findings (errors and accepted ones). */
+  byField: Map<string, LintIssue[]>;
+  /** The map's own findings (its notes). */
+  mapLevel: LintIssue[];
+  /** What blocks confirming, as /forms/confirm refuses it: L5 not accepted. */
+  blocking: string[];
+  /**
+   * The questions whose clinical judgement the map accepts as worded (L5 accepted): /forms/confirm lets only a
+   * clinician – or a member who may sign – confirm such a map (check-WE minor 9: the page says so before the click).
+   */
+  acceptedJudgements: string[];
+}
+
+/** The map lint as the mapping page shows it (core/form-map-lint.ts). */
+export function mappingLint(form: Pick<FormDefinition, "fields" | "analysis" | "file">): MappingLint {
+  const issues = lintFormMap(form).filter((i) => PAGE_RULES.has(i.rule));
+  const byField = new Map<string, LintIssue[]>();
+  const mapLevel: LintIssue[] = [];
+  for (const i of issues) {
+    if (!i.fieldId) {
+      if (i.severity === "error") mapLevel.push(i);
+      continue;
+    }
+    byField.set(i.fieldId, [...(byField.get(i.fieldId) ?? []), i]);
+  }
+  const blocking = issues.filter((i) => i.rule === "L5" && i.severity === "error").map((i) => `${i.fieldId}: ${i.message}`);
+  const acceptedJudgements = issues.filter((i) => i.rule === "L5" && i.severity === "accepted" && i.fieldId).map((i) => i.fieldId as string);
+  return { byField, mapLevel, blocking, acceptedJudgements };
+}
+
+/**
+ * Whether this member may accept a clinical judgement as the map words it (L5): a clinician – the role, or a member
+ * who may sign with a registration number – the same rule /forms/confirm applies to the Actor it stamps
+ * (core/form-map-lint.ts acceptsJudgement on core/actor.ts memberActor).
+ */
+export function mayAcceptJudgement(member: Pick<StudioMember, "role" | "canSign" | "hcpc"> | undefined): boolean {
+  if (!member) return true; // the public demo acts as a clinician
+  return acceptsJudgement(memberActor({ name: "", role: member.role, canSign: member.canSign, hcpc: member.hcpc }, ""));
+}
+
+/**
+ * What the mapping page lists before confirming when this member may not accept the map's clinical judgements (the
+ * server would refuse the confirmation with 403): who confirms it instead. Null when nothing stands in the way.
+ */
+export function judgementConfirmProblem(lint: Pick<MappingLint, "acceptedJudgements">, mayAccept: boolean): string | null {
+  if (mayAccept || lint.acceptedJudgements.length === 0) return null;
+  const ids = lint.acceptedJudgements;
+  return `This mapping accepts a clinical judgement as worded on ${ids.length === 1 ? "question" : "questions"} ${ids.slice(0, 6).join(", ")}${ids.length > 6 ? ` and ${ids.length - 6} more` : ""}: a clinician (or a member who may sign) confirms it.`;
 }

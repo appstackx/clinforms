@@ -100,6 +100,8 @@ export function resolveRegistrationValue(
   answerType?: AnswerType,
   /** 10/2026: one line of an address printed over several lines (a registration fill source's `part`). */
   part?: AddressPart,
+  /** bh2 (WE design 5): which attended appointments "episode.attendedDates" lists (a registration fill source's `sessions`). */
+  sessions?: SessionRange,
 ): ResolvedFormValue | null {
   const { bundle, instructingParty: party, computedFacts: facts } = ctx;
   const reg = bundle.registration;
@@ -210,10 +212,20 @@ export function resolveRegistrationValue(
     // A detail the record here does not hold: never filled by code – staff enter it (the caller raises the gap).
     case "staff.entry":
       return null;
-    // bh2 (plan W0.3): the list of attended appointment dates (fill source `sessions`) is defined in core/schemas.ts and
-    // resolved by WE's record paths; until then nothing is filled (the caller raises the gap), so nothing is guessed.
-    case "episode.attendedDates":
-      return null;
+    // bh2 (WE design 5): the attended appointments' dates as one list, in date order, from session `fromSession` (1 = the
+    // first; 2 = the sessions after the first assessment), at most `of` of them. None attended at all: not held (the
+    // caller raises the gap). Attended, but none from that session on: written as nothing, like a 7th session of 6.
+    case "episode.attendedDates": {
+      // Without its range (`sessions`) the map does not say which sessions it lists: nothing is guessed (staff enter it).
+      if (!sessions) return null;
+      const from = Math.max(1, Math.floor(sessions.fromSession));
+      const listed = attended.slice(from - 1, sessions.of ? from - 1 + Math.max(1, Math.floor(sessions.of)) : undefined);
+      if (attended.length === 0) return null;
+      const ids = Array.from(new Set(listed.map((a) => a.noteId).filter((id): id is string => Boolean(id))));
+      if (listed.length === 0) return { text: "", value: "", sourceIds: ids.length ? ids : episodeIds(), blank: true };
+      const text = listed.map((a) => formatUkDate(a.date)).join(", ");
+      return { text, value: text, sourceIds: ids.length ? ids : episodeIds() };
+    }
     case "report.date":
       return dateValue(ctx.reportDate.slice(0, 10), []);
     case "clinician.name":
@@ -238,6 +250,14 @@ export function resolveRegistrationValue(
 export interface AddressPart {
   index: number;
   of: number;
+}
+
+/** The attended appointments a list of session dates holds (a registration fill source's `sessions`, bh2 W0.3). */
+export interface SessionRange {
+  /** 1 = from the first attended appointment; 2 = the sessions after the first assessment. */
+  fromSession: number;
+  /** At most this many (absent: every one that follows). */
+  of?: number;
 }
 
 /** The clinic's address lines (postcode last in its settings) split into lines and postcode. */

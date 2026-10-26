@@ -319,7 +319,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
     if (src.kind === "registration" || src.kind === "computed_fact" || src.kind === "fixed") {
       const resolved: ResolvedFormValue | null =
         src.kind === "registration"
-          ? resolveRegistrationValue(src.path, ctx, field.answerType, src.part)
+          ? resolveRegistrationValue(src.path, ctx, field.answerType, src.part, src.sessions)
           : src.kind === "computed_fact"
             ? resolveComputedFactValue(src.factId, src.format, ctx, field.answerType)
             : resolveFixedValue(field, src.value);

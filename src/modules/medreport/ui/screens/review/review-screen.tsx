@@ -801,10 +801,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </div>
           )}
           {groups.map((g) => (
-            <section key={g.id} aria-labelledby={`${g.id}-title`} className="space-y-3">
-              <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {g.title}
-              </h2>
+            <section key={g.id} aria-labelledby={g.title ? `${g.id}-title` : undefined} aria-label={g.title ? undefined : "Questions on the form"} className="space-y-3">
+              {/* bh2 WE design 4: a form that prints no headings is one group with no title (core/forms/headings.ts formOutline). */}
+              {g.title ? (
+                <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {g.title}
+                </h2>
+              ) : null}
               {g.questions.map((q) => (
                 <QuestionCard
                   key={q.key}

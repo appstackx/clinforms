@@ -197,6 +197,13 @@
    "where": "forms/docx-fill.ts leftBlank handling (WA2: fill outcomes, strict FINAL)",
    "owner": "WA2",
    "note": "A box left blank on a FINAL copy prints nothing: no pre-printed mark, tick, option list, default, frame or merge code."
+  },
+  {
+   "id": "lint-accepted",
+   "kind": "exemption",
+   "where": "core/form-map-lint.ts lintFormMap (FormField.lintAccepted; L5 at /forms/confirm and a store PUT to confirmed, server-stamped by a clinician member)",
+   "owner": "WE",
+   "note": "A map-lint finding the field's lintAccepted covers (same rule, same field) is listed as accepted, never as an error. It never covers another rule, another field, or a map-level finding."
   }
  ]
 }

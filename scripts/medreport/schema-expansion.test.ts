@@ -369,7 +369,8 @@ test("readers tolerate the new members: labels, the factory (nothing guessed for
   ReportSchema.parse(viaJson(report));
   const list = report.sections.find((s) => s.key === "F-12");
   assert.ok(list, "the list box is a section");
-  assert.equal(list.paragraphs.length, 0, "nothing written for it");
+  // bh2 WE design 5 (resolved): the attended dates from session 2 on (the fixture's map lists from the 2nd), from the records.
+  assert.deepEqual(list.paragraphs.map((p) => p.text), ["24/08/2026"], "the attended dates from session 2, filled from the records");
 
   const full = ReportSchema.parse(viaJson(fullFormReport()));
   const result = validateReport(full, formToTemplate(form), { form });

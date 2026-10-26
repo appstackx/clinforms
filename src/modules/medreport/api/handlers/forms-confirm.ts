@@ -22,9 +22,23 @@ import "server-only";
  *
  * 401 without a caller; 422 VALIDATION_FAILED listing the map's problems.
  *
- * Owner: forms-engine agent (wave 2 caller rules: API slice).
+ * bh2 WE design 2 (map lint L5, D-6, D-7): a question asking for a clinical judgement (fitness for work, restrictions,
+ * causation, prognosis, recovery, permanence, barriers, psychosocial factors, yellow flags, a declaration) whose answer
+ * would come from staff, a fixed value or a draft from the notes blocks confirming (422 VALIDATION_FAILED, one issue
+ * per question) – unless the map records an acceptance for that question (FormField.lintAccepted, rule L5, with its
+ * reason that is not blank). Only a clinician may confirm a map that carries one (the role clinician, or a member who
+ * may sign – as the stamp records them, core/form-map-lint.ts acceptsJudgement: one rule here, in the store check and on
+ * the mapping page; 403 ROLE_NOT_ALLOWED otherwise). The server stamps EVERY acceptance in the map – of any rule, on any
+ * question – with the confirming person and the time (what the browser sent as `by`/`at` is never kept, check-WE minor
+ * 2), the attestation covers them (they are inside `fields`), each L5 acceptance of a judgement question is written to
+ * the audit trail ("form.lint_accepted"), and the confirmation's own row lists the others (rule@field ids).
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
-import { AUDIT_ACTIONS, CONFIRM_ROLES, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
+import { AUDIT_ACTIONS, CONFIRM_ROLES, assertActorTenant, auditActor, requireActor, type Actor as RequestActor } from "../../auth/actor";
+import { demoActor, memberActor, type Actor } from "../../core/actor";
+import { acceptanceFor, acceptsJudgement, judgementOnNonClinicianSource } from "../../core/form-map-lint";
+import type { FormDefinition, FormField } from "../../core/types";
 import { withAttestedConfirmation } from "../../auth/attestations";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { checkFormDefinition } from "../../core/forms";
@@ -32,6 +46,48 @@ import { withQuestionSetFile } from "../../core/question-set";
 import { FormsConfirmRequestSchema, type FormsConfirmResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { formRequestCapIssues } from "../../forms/request-caps";
+
+/** The person who confirms, as the map records them (core/actor.ts: the stored Actor). */
+export function confirmingActor(actor: Pick<RequestActor, "via" | "role" | "clinician" | "userId">, name: string): Actor {
+  if (actor.via === "demo") return demoActor(name, actor.clinician?.hcpc);
+  return memberActor({ userId: actor.userId, name, role: actor.role, canSign: actor.clinician?.canSign, hcpc: actor.clinician?.hcpc }, name);
+}
+
+
+/**
+ * The map lint's L5 at confirmation: the questions that ask for a clinical judgement but would be answered by staff, a
+ * fixed value or a draft, split into those without an acceptance (they block) and those with one.
+ */
+export function judgementChecks(form: Pick<FormDefinition, "fields">): { open: Array<{ fieldId: string; kind: string }>; accepted: Array<{ fieldId: string; kind: string; reason: string }> } {
+  const open: Array<{ fieldId: string; kind: string }> = [];
+  const accepted: Array<{ fieldId: string; kind: string; reason: string }> = [];
+  for (const f of form.fields) {
+    const j = judgementOnNonClinicianSource(f);
+    if (!j) continue;
+    const acceptance = acceptanceFor(f, "L5");
+    if (acceptance) accepted.push({ fieldId: f.id, kind: j.kind, reason: acceptance.reason.trim() });
+    else open.push({ fieldId: f.id, kind: j.kind });
+  }
+  return { open, accepted };
+}
+
+/**
+ * The map with EVERY acceptance stamped by `by` at `at` – any rule, any question (what the browser sent as `by`/`at` is
+ * not kept: the confirmation is who accepted them); a blank reason accepts nothing and is dropped.
+ */
+export function withStampedAcceptances(form: FormDefinition, by: Actor, at: string): FormDefinition {
+  if (!form.fields.some((f) => f.lintAccepted)) return form;
+  return {
+    ...form,
+    fields: form.fields.map((f) => {
+      if (!f.lintAccepted) return f;
+      const kept = f.lintAccepted.filter((a) => a.reason.trim()).map((a) => ({ rule: a.rule, reason: a.reason.trim().slice(0, 500), at, by }));
+      const next: FormField = { ...f, lintAccepted: kept };
+      if (kept.length === 0) delete next.lintAccepted;
+      return next;
+    }),
+  };
+}
 
 export const handleFormsConfirm: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps, { roles: CONFIRM_ROLES, action: "confirm form mappings" });
@@ -51,17 +107,46 @@ export const handleFormsConfirm: MedreportHandler = async (req, _ctx, deps) => {
       issues: problems.map((message) => ({ path: "form.fields", message })),
     });
   }
+  // bh2 WE design 2: a clinical judgement is the clinician's – or a clinician accepts it, per question.
+  const judgement = judgementChecks(form);
+  if (judgement.open.length > 0) {
+    return problem(422, "A clinical judgement is not left to the clinician", {
+      code: "VALIDATION_FAILED",
+      detail: `${judgement.open[0].fieldId} asks for a clinical judgement (${judgement.open[0].kind}) but would be entered by staff, fixed or drafted from the notes: make it the clinician's own answer, or have a clinician accept it with the reason.`,
+      issues: judgement.open.map((j) => ({ path: `form.fields.${j.fieldId}`, message: `A clinical judgement (${j.kind}) not left to the clinician: make it the clinician's own answer, or accept it with the reason.` })),
+    });
+  }
   // Who confirmed it: a clinic member's own name from the sign-in; the demo keeps the typed name.
   const confirmedBy = (actor.via === "demo" ? parsed.data.confirmedBy : (actor.name ?? actor.clinician?.name ?? parsed.data.confirmedBy)).trim().slice(0, 120);
+  // Whether the caller may accept a judgement is decided on the Actor the server stamps (check-WE minor 3): a member
+  // "who may sign" without a registration number is stamped as one who may not – refused here, not later at the store.
+  const stamp = confirmingActor(actor, confirmedBy);
+  if (judgement.accepted.length > 0 && !acceptsJudgement(stamp)) {
+    return problem(403, "Only a clinician can accept a clinical judgement as it is", {
+      code: "ROLE_NOT_ALLOWED",
+      detail: "This mapping accepts a clinical judgement on a question staff or the notes would answer. A clinician (or a member who may sign) confirms it.",
+    });
+  }
   const at = new Date().toISOString();
-  const confirmed = withAttestedConfirmation({ ...form, updatedAt: at }, confirmedBy, at);
+  const stamped = withStampedAcceptances(form, stamp, at);
+  const judged = new Set(judgement.accepted.map((j) => j.fieldId));
+  const otherAcceptances = stamped.fields.flatMap((f) => (f.lintAccepted ?? []).filter((a) => !(a.rule === "L5" && judged.has(f.id))).map((a) => `${a.rule}@${f.id}`));
+  const confirmed = withAttestedConfirmation({ ...stamped, updatedAt: at }, confirmedBy, at);
   logEvent("form_confirmed", { form: form.id, kind: form.kind, fields: form.fields.length, session: actor.via });
   await auditActor(deps, actor, {
     action: AUDIT_ACTIONS.formConfirm,
     targetType: "form",
     targetId: form.id,
-    detail: { kind: form.kind, fields: form.fields.length, mapSha256: confirmed.confirmed?.mapSha256?.slice(0, 16) ?? null },
+    detail: { kind: form.kind, fields: form.fields.length, mapSha256: confirmed.confirmed?.mapSha256?.slice(0, 16) ?? null, ...(otherAcceptances.length ? { lintAccepted: otherAcceptances.slice(0, 50) } : {}) },
   });
+  for (const j of judgement.accepted) {
+    await auditActor(deps, actor, {
+      action: "form.lint_accepted",
+      targetType: "form",
+      targetId: form.id,
+      detail: { rule: "L5", fieldId: j.fieldId, judgement: j.kind, reason: j.reason.slice(0, 200) },
+    });
+  }
   const body: FormsConfirmResponse = { form: confirmed };
   return json(body);
 };

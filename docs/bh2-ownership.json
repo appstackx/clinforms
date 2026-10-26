@@ -166,9 +166,6 @@
     "src/modules/medreport/core/validation/__corpus__/**",
     "scripts/medreport/corpus-*",
     "src/modules/medreport/ui/components/new/approver-*",
-    "src/modules/medreport/core/form-map-lint.ts",
-    "scripts/admin/apply-map-edits.ts",
-    "scripts/medreport/bh-maps.test.ts",
     "scripts/medreport/guide-terms-check.mjs"
   ],
   "integratorOnly": [

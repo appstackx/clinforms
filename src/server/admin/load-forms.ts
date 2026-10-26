@@ -42,6 +42,28 @@
  * members, invitations, trial or plan.
  *
  * The clinic must exist and be open. Nothing is sent to any service; no patient data is involved (templates only).
+ *
+ * bh2 WE design 1 (D-1 … D-13, B3-9, B0-14):
+ * - every map records where it came from: file.sourceSha256 (the SHA-256 of the file in the folder – an RTF template
+ *   before conversion), analysis.convertedWith (the converter version, for a converted file) and analysis.printedLeads
+ *   (the words printed before each "…" blank, read from the template) – at load and at replace;
+ * - the map lint (core/form-map-lint.ts, L1–L12) runs before anything is written: a map from the maps file with a
+ *   finding is refused, unless the field's lintAccepted names that rule with a reason (recorded in the audit row); a
+ *   layout reading (--read-missing) is a proposal the clinic's staff check, so its findings are listed, never refused;
+ * - a map pins its file by file.sourceSha256 (the file as supplied) or by the current conversion's file.sha256;
+ * - a replace target's revision is what ClinForms' own loads account for (1 per "form.create"/"form.replace" of it):
+ *   any other revision means a save that wrote no audit row, and the form is kept;
+ * - with confirm, the clinic's own rows are read before and after (organization, members, invitations, profile, plan,
+ *   package, usage, member profiles, settings, reports): `invariants` says whether any of them changed (the CLI exits
+ *   non-zero), because the tool never touches them;
+ * - `restore` (the rollback: the same command with the earlier maps, e.g. maps-v1): maps exactly as they were – their
+ *   lint findings are listed, not refused, and a pin to an earlier converter's output is accepted when every anchor
+ *   fits this conversion (the anchors are always checked). Only a map ClinForms loaded or replaced for THIS clinic
+ *   before is restored (check-WE minor 1): its questions' SHA-256 (mapFieldsSha256) must be in the clinic's audit trail
+ *   – "form.create"/"form.replace" record `mapSha256` of the map they store and, for a replace, `replacesMapSha256` of
+ *   the maps they replace; any other map is refused (load it without --restore-maps: the lint then checks it). The
+ *   match covers the questions only, so the map's own notes, title and referrer are still linted: a map-level L1 or
+ *   L12 finding refuses the restore (check2-WE minor 2). Only forms nobody has touched are replaced, as always.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -49,8 +71,11 @@ import type { Kysely } from "kysely";
 import { analyseFormFile, parseFormFile } from "../../modules/medreport/ai/analyse-form";
 import { storedFormFileName } from "../../modules/medreport/api/store-contract";
 import { checkFormDefinition, docxAnchorBlockIds, parseBlockId } from "../../modules/medreport/core/forms";
+import { BLANK_PLACEHOLDER, PREPARED_NOTE, lintErrors, lintFormMap, lintSummary, printedLeadIn, type LintIssue } from "../../modules/medreport/core/form-map-lint";
+import { RTF_CONVERTER_VERSION } from "../../modules/medreport/core/rtf";
+import { createHash } from "node:crypto";
 import { createId } from "../../modules/medreport/core/ids";
-import { FormFieldSchema, ReferrerInfoSchema } from "../../modules/medreport/core/schemas";
+import { FormFieldSchema, GUIDANCE_VERSION, ReferrerInfoSchema } from "../../modules/medreport/core/schemas";
 import type { FormDefinition, FormField, ReferrerInfo } from "../../modules/medreport/core/types";
 import { MAX_RTF_FILE_BYTES } from "../../modules/medreport/config.public";
 import { HttpError } from "../../modules/medreport/api/http";
@@ -58,7 +83,7 @@ import { decodeFormFile, type DecodedFormFile } from "../../modules/medreport/fo
 import { findFormMergeFields } from "../../modules/medreport/forms/merge-scan";
 import { PLATFORM_USER_ID } from "../auth/create-auth";
 import type { Database } from "../db/schema";
-import { appendAudit, listAuditAbout, type AuditEntryInput } from "../repos/audit";
+import { appendAudit, listAudit, listAuditAbout, type AuditEntryInput } from "../repos/audit";
 import { RepoInputError, type RepoContext } from "../repos/context";
 import { deleteFormFileIfUnused, putFormFile } from "../repos/form-files";
 import { MAX_REPLACED_FORMS, createForm, getForm, listFormMeta, replaceForms, type FormMeta } from "../repos/forms";
@@ -71,9 +96,12 @@ export interface ProposedMapInput {
   versionLabel?: string;
   referrer: ReferrerInfo;
   fields: unknown[];
-  file?: { sha256?: string; fileName?: string };
+  /** The pin: the source file's SHA-256 (sourceSha256), or the conversion's (sha256). */
+  file?: { sha256?: string; sourceSha256?: string; fileName?: string };
   /** Notes for staff (shown with the map). */
   warnings?: string[];
+  /** The map's guidance is written in this release's wording (analysis.guidanceVersion; v2 maps say 2). */
+  guidanceVersion?: number;
 }
 
 export type MapsJson = Record<string, ProposedMapInput>;
@@ -91,6 +119,8 @@ export interface LoadFormsInput {
   replaceProposed?: boolean;
   /** Referrer for maps made by the reading (default: "To be confirmed", other). */
   defaultReferrer?: ReferrerInfo;
+  /** Restore maps exactly as they were (the rollback; see the header): lint findings listed, an earlier converter's pin accepted. */
+  restore?: boolean;
   now?: Date;
 }
 
@@ -112,17 +142,21 @@ export interface LoadFormsFileResult {
   forStaff?: number;
   mergeFields?: number;
   formId?: string;
+  /** The map lint's findings: rule@field ids only (never the form's wording). Errors refuse a map from the maps file. */
+  lint?: { errors: string[]; accepted: string[] };
 }
 
 export interface LoadFormsResult {
   tenantId: string;
   dryRun: boolean;
   replaceProposed: boolean;
+  restore?: boolean;
   files: LoadFormsFileResult[];
+  /** With confirm: the clinic's own rows before and after (they never change; `changed` names the tables that did). */
+  invariants?: { ok: boolean; changed: string[] };
 }
 
 const FORM_EXTENSIONS = /\.(rtf|docx|pdf)$/i;
-const PREPARED_NOTE = "Prepared by ClinForms when your account was set up – check each question against your form and confirm the mapping once.";
 
 /** The maps file: {"<file name>": map}, {"maps": {…}} or an array of maps naming their file (file.fileName). */
 export function parseMapsJson(text: string): MapsJson {
@@ -139,14 +173,23 @@ export function parseMapsJson(text: string): MapsJson {
     const referrer = ReferrerInfoSchema.safeParse(v.referrer);
     if (!referrer.success) throw new RepoInputError(`The map for "${name}" needs a referrer {name, type}.`);
     if (!Array.isArray(v.fields)) throw new RepoInputError(`The map for "${name}" needs a list of fields.`);
-    const file = v.file && typeof v.file === "object" ? (v.file as { sha256?: unknown; fileName?: unknown }) : undefined;
+    const file = v.file && typeof v.file === "object" ? (v.file as { sha256?: unknown; sourceSha256?: unknown; fileName?: unknown }) : undefined;
     out[name] = {
       ...(typeof v.title === "string" ? { title: v.title } : {}),
       ...(typeof v.versionLabel === "string" ? { versionLabel: v.versionLabel } : {}),
       referrer: referrer.data,
       fields: v.fields,
-      ...(file ? { file: { ...(typeof file.sha256 === "string" ? { sha256: file.sha256 } : {}), ...(typeof file.fileName === "string" ? { fileName: file.fileName } : {}) } } : {}),
+      ...(file
+        ? {
+            file: {
+              ...(typeof file.sha256 === "string" ? { sha256: file.sha256 } : {}),
+              ...(typeof file.sourceSha256 === "string" ? { sourceSha256: file.sourceSha256 } : {}),
+              ...(typeof file.fileName === "string" ? { fileName: file.fileName } : {}),
+            },
+          }
+        : {}),
       ...(Array.isArray(v.warnings) ? { warnings: v.warnings.filter((w): w is string => typeof w === "string").slice(0, 50) } : {}),
+      ...(typeof v.guidanceVersion === "number" && Number.isInteger(v.guidanceVersion) && v.guidanceVersion >= 1 ? { guidanceVersion: v.guidanceVersion } : {}),
     };
   };
   const container = raw && typeof raw === "object" && !Array.isArray(raw) && "maps" in raw ? (raw as { maps: unknown }).maps : raw;
@@ -171,8 +214,7 @@ async function requireOpenClinic(db: Kysely<Database>, tenantId: string): Promis
 }
 
 /** Every anchor of the map points at a real place in THIS file (Word block + placeholder text, PDF field). */
-async function anchorProblems(file: DecodedFormFile, fields: FormField[]): Promise<string[]> {
-  const parsed = await parseFormFile(file);
+async function anchorProblems(parsed: Awaited<ReturnType<typeof parseFormFile>>, fields: FormField[]): Promise<string[]> {
   const problems: string[] = [];
   if (parsed.kind === "docx") {
     const blocks = new Map(parsed.blocks.map((b) => [b.id, b] as const));
@@ -210,6 +252,66 @@ async function anchorProblems(file: DecodedFormFile, fields: FormField[]): Promi
     }
   }
   return problems;
+}
+
+/** The template's printed text per Word block (the map lint's L8, and the printed leads). Null for a PDF. */
+function blockTextOf(parsed: Awaited<ReturnType<typeof parseFormFile>>): ((id: string) => string | null) | undefined {
+  if (parsed.kind !== "docx") return undefined;
+  const blocks = new Map(parsed.blocks.map((b) => [b.id, b.text] as const));
+  return (id: string) => blocks.get(id) ?? blocks.get(id.replace(/\.p\d+$/, "")) ?? null;
+}
+
+/**
+ * The words printed before each "…" blank the map fills (analysis.printedLeads, WE design 1): read from the template,
+ * keyed by field id, for the drafting checks (an answer never repeats the printed verb – D-11, D-A10).
+ */
+export function printedLeadsOf(fields: readonly FormField[], blockText: ((id: string) => string | null) | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!blockText) return out;
+  // Two blanks in one block (“To return to … in … sessions”): each question's lead is read before its own blank, in
+  // the order the questions fill them (as the fill does).
+  const seen = new Map<string, number>();
+  for (const f of fields) {
+    if (f.anchor.kind !== "docx" || f.anchor.target !== "replace_placeholder" || f.anchor.writeAfter || !f.anchor.placeholderText) continue;
+    if (!BLANK_PLACEHOLDER.test(f.anchor.placeholderText)) continue;
+    const key = `${f.anchor.blockId}\u0000${f.anchor.placeholderText}`;
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+    const text = blockText(f.anchor.blockId);
+    const lead = text ? printedLeadIn(text, f.anchor.placeholderText, occurrence) : null;
+    if (lead) out[f.id] = lead.slice(0, 200);
+  }
+  return out;
+}
+
+/** The clinic's own rows, which the tool never changes (WE design 1: read before and after a confirmed run). */
+const INVARIANT_TABLES = ["organization", "member", "invitation", "clinic_profile", "clinic_plan", "clinic_package", "clinic_usage", "usage_report", "usage_event", "member_profile", "tenant_settings", "reports"] as const;
+
+/** A digest per invariant table of the clinic's rows (sorted, so the order a database returns them in does not matter). */
+export async function clinicFingerprint(db: Kysely<Database>, tenantId: string): Promise<Record<(typeof INVARIANT_TABLES)[number], string>> {
+  const digest = (rows: unknown[]) =>
+    createHash("sha256")
+      .update(JSON.stringify(rows.map((r) => JSON.stringify(r, (_k, v: unknown) => (v instanceof Date ? v.toISOString() : typeof v === "bigint" ? v.toString() : v))).sort()))
+      .digest("hex");
+  const org = await db.selectFrom("organization").selectAll().where("slug", "=", tenantId).execute();
+  const orgIds = org.map((o) => o.id);
+  const byOrg = async (table: "member" | "invitation") => (orgIds.length ? await db.selectFrom(table).selectAll().where("organizationId", "in", orgIds).execute() : []);
+  const byTenant = async (table: "clinic_profile" | "clinic_plan" | "clinic_package" | "clinic_usage" | "usage_report" | "usage_event" | "tenant_settings") =>
+    db.selectFrom(table).selectAll().where("tenant_id", "=", tenantId).execute();
+  return {
+    organization: digest(org),
+    member: digest(await byOrg("member")),
+    invitation: digest(await byOrg("invitation")),
+    clinic_profile: digest(await byTenant("clinic_profile")),
+    clinic_plan: digest(await byTenant("clinic_plan")),
+    clinic_package: digest(await byTenant("clinic_package")),
+    clinic_usage: digest(await byTenant("clinic_usage")),
+    usage_report: digest(await byTenant("usage_report")),
+    usage_event: digest(await byTenant("usage_event")),
+    member_profile: digest(orgIds.length ? await db.selectFrom("member_profile").selectAll().where("organization_id", "in", orgIds).execute() : []),
+    tenant_settings: digest(await byTenant("tenant_settings")),
+    reports: digest(await db.selectFrom("reports").select(["id", "rev", "status", "form_id", "template_id", "created_at", "updated_at"]).where("tenant_id", "=", tenantId).execute()),
+  };
 }
 
 function countSources(form: FormDefinition): { fromRecords: number; forStaff: number } {
@@ -285,7 +387,43 @@ function mapContent(form: FormDefinition): string {
     promptVersion: form.analysis.promptVersion,
     warnings: form.analysis.warnings,
     mergeFields: form.analysis.mergeFields ?? [],
+    convertedWith: form.analysis.convertedWith,
+    printedLeads: form.analysis.printedLeads ?? {},
+    guidanceVersion: form.analysis.guidanceVersion,
   });
+}
+
+/**
+ * The SHA-256 of a map's questions as this release reads them (each through FormFieldSchema, keys sorted) – what a
+ * restore matches against the clinic's audit trail. Null when a question does not parse (such a map is never restored).
+ */
+export function mapFieldsSha256(fields: readonly unknown[]): string | null {
+  const parsed: FormField[] = [];
+  for (const f of fields) {
+    const r = FormFieldSchema.safeParse(f);
+    if (!r.success) return null;
+    parsed.push(r.data);
+  }
+  return createHash("sha256").update(stableJson(parsed)).digest("hex");
+}
+
+/** Every map ClinForms loaded for this clinic or replaced there: the audit trail's mapSha256 and replacesMapSha256. */
+async function loadedMapHashes(ctx: RepoContext, tenantId: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const action of ["form.create", "form.replace"]) {
+    let beforeId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const rows = await listAudit(ctx, tenantId, { action, userId: PLATFORM_USER_ID, limit: 500, ...(beforeId ? { beforeId } : {}) });
+      for (const r of rows) {
+        if (r.detail?.via !== "onboarding") continue;
+        if (typeof r.detail.mapSha256 === "string") out.add(r.detail.mapSha256);
+        if (Array.isArray(r.detail.replacesMapSha256)) for (const h of r.detail.replacesMapSha256) if (typeof h === "string") out.add(h);
+      }
+      if (rows.length < 500) break;
+      beforeId = rows[rows.length - 1].id;
+    }
+  }
+  return out;
 }
 
 const CONFIRM_ACTIONS = new Set(["form.confirm", "form.store_confirmed"]);
@@ -322,6 +460,9 @@ async function checkTarget(ctx: RepoContext, tenantId: string, entry: LibraryFor
     (e) => e.targetId === id && (e.action === "form.create" || e.action === "form.replace") && e.userId === PLATFORM_USER_ID && e.detail?.via === "onboarding",
   );
   if (own.length === 0) return keep("was added in the clinic's Studio, not loaded by ClinForms");
+  // WE design 1: its revision is what ClinForms' own loads account for (one per load of this form id) – any other
+  // revision is a save that wrote no audit row.
+  if (entry.meta.rev !== own.length) return keep(`has revision ${entry.meta.rev}, but ClinForms loaded it ${own.length === 1 ? "once" : `${own.length} times`} (a change without an activity row)`);
   const other = trail.filter((e) => !own.includes(e));
   if (other.some((e) => CONFIRM_ACTIONS.has(e.action))) return keep("was confirmed once (activity log)");
   if (other.some((e) => e.action.startsWith("report."))) return keep("has been used for a report (activity log)");
@@ -396,6 +537,11 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
   const now = input.now ?? new Date();
   const at = now.toISOString();
   const replace = input.replaceProposed === true;
+  const restore = input.restore === true;
+  // check-WE minor 1: a restore brings back only maps ClinForms loaded or replaced for this clinic before.
+  const knownMaps = restore ? await loadedMapHashes(ctx, tenantId) : new Set<string>();
+  // WE design 1: the clinic's own rows, read before a confirmed run and compared after it.
+  const invariantsBefore = input.confirm ? await clinicFingerprint(ctx.db, tenantId) : null;
   const existing = new Set((await listFormMeta(ctx, tenantId)).map((m) => m.fileSha256));
   // replaceProposed: the library with its maps (as it was when the run started, in the preview and with --confirm
   // alike), and the clinic's referrer links as stored (lower case: the batch's LIKE ignores ASCII case on SQLite).
@@ -447,6 +593,8 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       results.push({ file: name, status: "refused", reason: detail });
       continue;
     }
+    // WE design 1: the file as supplied (an RTF template before its conversion) – the pin a later conversion still matches.
+    const sourceSha256 = file.convertedFrom?.sha256 ?? file.sha256;
     const base: LoadFormsFileResult = {
       file: name,
       status: "ready",
@@ -477,8 +625,28 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     // The proposed map.
     let form: FormDefinition;
     const mapped = input.maps[name];
+    if (!mapped && !input.readMissing) {
+      results.push({ ...base, status: "skipped", reason: "No map for this file in the maps file (add one, or use --read-missing)." });
+      continue;
+    }
+    let parsedFile: Awaited<ReturnType<typeof parseFormFile>>;
+    try {
+      parsedFile = await parseFormFile(file);
+    } catch (err) {
+      const detail = err instanceof HttpError ? `${err.message}: ${err.init.detail ?? ""}`.replace(/: $/, "") : err instanceof Error ? err.message : String(err);
+      results.push({ ...base, status: "refused", mapFrom: mapped ? "json" : "reading", reason: detail });
+      continue;
+    }
+    const blockText = blockTextOf(parsedFile);
     if (mapped) {
-      if (mapped.file?.sha256 && mapped.file.sha256 !== file.sha256) {
+      // WE design 1: a map pins its file as supplied (file.sourceSha256) – that pin survives a new converter – or the
+      // current conversion (file.sha256). A pin to an earlier converter's output is refused, except when restoring the
+      // earlier maps (the anchors are checked against this conversion either way).
+      if (mapped.file?.sourceSha256 && mapped.file.sourceSha256 !== sourceSha256) {
+        results.push({ ...base, status: "refused", mapFrom: "json", reason: "The map was made from another file (its source pin does not match this file): make the map again from this file." });
+        continue;
+      }
+      if (!mapped.file?.sourceSha256 && mapped.file?.sha256 && mapped.file.sha256 !== file.sha256 && !restore) {
         results.push({ ...base, status: "refused", mapFrom: "json", reason: "The map was made from another version of this file (or another conversion of it): make the map again from this file." });
         continue;
       }
@@ -489,22 +657,28 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
         if (parsed.success) fields.push(parsed.data);
         else problems.push(`Field ${i + 1}: ${parsed.error.issues[0]?.path.join(".") ?? ""} ${parsed.error.issues[0]?.message ?? "is not valid"}`.trim());
       });
-      const kind = (await parseFormFile(file)).kind;
+      const kind = parsedFile.kind;
       form = {
         id: createId("frm"),
         tenantId,
         referrer: mapped.referrer,
         title: (mapped.title ?? name.replace(FORM_EXTENSIONS, "")).slice(0, 200) || "Referrer form",
         ...(mapped.versionLabel ? { versionLabel: mapped.versionLabel.slice(0, 60) } : {}),
-        file: { fileName: name, mimeType: file.mimeType, sha256: file.sha256, sizeBytes: file.sizeBytes },
+        file: { fileName: name, mimeType: file.mimeType, sha256: file.sha256, sizeBytes: file.sizeBytes, sourceSha256 },
         kind,
         fields,
         status: "proposed",
-        analysis: { mode: "demo_prewritten", promptVersion: "onboarding-1", at, warnings: [PREPARED_NOTE, ...(mapped.warnings ?? [])] },
+        analysis: {
+          mode: "demo_prewritten",
+          promptVersion: "onboarding-1",
+          at,
+          warnings: [PREPARED_NOTE, ...(mapped.warnings ?? [])],
+          ...(mapped.guidanceVersion ? { guidanceVersion: mapped.guidanceVersion } : {}),
+        },
         createdAt: at,
         updatedAt: at,
       };
-      problems.push(...checkFormDefinition(form), ...(problems.length ? [] : await anchorProblems(file, fields)));
+      problems.push(...checkFormDefinition(form), ...(problems.length ? [] : await anchorProblems(parsedFile, fields)));
       if (problems.length) {
         results.push({ ...base, status: "refused", mapFrom: "json", reason: `The map does not fit this file: ${problems.slice(0, 5).join(" ")}${problems.length > 5 ? ` (and ${problems.length - 5} more)` : ""}` });
         continue;
@@ -519,7 +693,12 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
         referrer: input.defaultReferrer,
         now,
       });
-      form = { ...read.form, analysis: { ...read.form.analysis, warnings: [PREPARED_NOTE, ...read.form.analysis.warnings] } };
+      // A reading is written in this release's wording (WE design 3): its guidance is shown as stored.
+      form = {
+        ...read.form,
+        file: { ...read.form.file, sourceSha256 },
+        analysis: { ...read.form.analysis, warnings: [PREPARED_NOTE, ...read.form.analysis.warnings], guidanceVersion: GUIDANCE_VERSION },
+      };
     } else {
       results.push({ ...base, status: "skipped", reason: "No map for this file in the maps file (add one, or use --read-missing)." });
       continue;
@@ -538,13 +717,71 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
     // Every map: the file's mail-merge fields (approval stays blocked while one is left) and the RTF notes.
     const mergeFields = await findFormMergeFields(file);
     const notes = file.convertedFrom?.notes ?? [];
+    // WE design 1: the converter that made this file, and the words printed before each "…" blank (from the template).
+    const printedLeads = printedLeadsOf(form.fields, blockText);
     form = {
       ...form,
       analysis: {
         ...form.analysis,
         warnings: [...notes, ...form.analysis.warnings.filter((w) => !notes.includes(w))],
         ...(mergeFields.length ? { mergeFields } : {}),
+        ...(file.convertedFrom ? { convertedWith: RTF_CONVERTER_VERSION } : {}),
+        ...(Object.keys(printedLeads).length ? { printedLeads } : {}),
       },
+    };
+    // WE design 2: the map lint, before anything is written. A map from the maps file with a finding is refused unless
+    // its question accepts that rule with a reason; a reading's findings are listed (its staff check it); a restore lists them.
+    const lint: LintIssue[] = lintFormMap(form, {
+      convertedFromRtf: Boolean(file.convertedFrom),
+      pin: mapped ? { ...(mapped.file?.sha256 ? { sha256: mapped.file.sha256 } : {}), ...(mapped.file?.sourceSha256 ? { sourceSha256: mapped.file.sourceSha256 } : {}) } : { sourceSha256 },
+      conversionSha256: file.sha256,
+      ...(blockText ? { blockText } : {}),
+    });
+    const lintErr = lintErrors(lint);
+    const lintAccepted = lint.filter((i) => i.severity === "accepted");
+    const lintResult = { errors: lintErr.map((i) => lintSummary([i])), accepted: lintAccepted.map((i) => lintSummary([i])) };
+    const mapSha256 = mapFieldsSha256(form.fields);
+    if (mapped && restore && (!mapSha256 || !knownMaps.has(mapSha256))) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: "json",
+        lint: lintResult,
+        reason: "--restore-maps brings back only a map ClinForms loaded or replaced for this clinic before, and this map is not in the clinic's activity log: load it without --restore-maps, so the map lint checks it.",
+      });
+      continue;
+    }
+    // check2-WE minor 2: a restore matches the questions only (mapFieldsSha256), so what else the maps file brings – the
+    // map's own notes, its title and its referrer – is checked as on any load: a note written for whoever prepared the
+    // map (L1) or a product or technology name (L12) at map level refuses the restore too. (An earlier release's own
+    // "prepared" line, L9, and a missing source pin, L11, are what a restore brings back: listed.)
+    const mapLevelRefused = mapped && restore ? lintErr.filter((i) => !i.fieldId && (i.rule === "L1" || i.rule === "L12")) : [];
+    if (mapLevelRefused.length > 0) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: "json",
+        lint: lintResult,
+        reason: `--restore-maps brings back a map's questions only: the map's own notes, title or referrer do not pass the map lint (${lintSummary(mapLevelRefused)}). Remove that note or name from the maps file and run again.`,
+      });
+      continue;
+    }
+    if (mapped && !restore && lintErr.length > 0) {
+      results.push({
+        ...base,
+        status: "refused",
+        mapFrom: "json",
+        lint: lintResult,
+        reason: `The map does not pass the map lint (${lintSummary(lintErr.slice(0, 12))}${lintErr.length > 12 ? ` and ${lintErr.length - 12} more` : ""}): fix the map, or accept a finding for its question with lintAccepted and the reason.`,
+      });
+      continue;
+    }
+    /** Audit detail (ids and ClinForms' own reasons only): the accepted findings, and a restore. */
+    const auditExtra = {
+      ...(lintAccepted.length ? { lintAccepted: lintAccepted.map((i) => ({ rule: i.rule, fieldId: i.fieldId ?? null, reason: (i.acceptedReason ?? "").slice(0, 200) })) } : {}),
+      ...(restore ? { restore: true } : {}),
+      // check-WE minor 1: what a later restore may bring back (the questions' SHA-256 – ids and digests only).
+      ...(mapSha256 ? { mapSha256 } : {}),
     };
     const counts = countSources(form);
     const ready: LoadFormsFileResult = {
@@ -554,6 +791,7 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       questions: form.fields.length,
       ...counts,
       mergeFields: mergeFields.length,
+      ...(lint.length ? { lint: lintResult } : {}),
     };
     const mapFrom = mapped ? "json" : "reading";
     const plan: ReplacePlan = replace ? await planReplace(ctx, tenantId, library, linksText, claimed, name, form, mapFrom) : { action: "load" };
@@ -606,7 +844,17 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
               action: "form.replace",
               targetType: "form",
               targetId: form.id,
-              detail: { via: "onboarding", status: "proposed", replaces, fields: form.fields.length, kind: form.kind, mapFrom },
+              detail: {
+                via: "onboarding",
+                status: "proposed",
+                replaces,
+                fields: form.fields.length,
+                kind: form.kind,
+                mapFrom,
+                ...auditExtra,
+                // The maps it replaces (the rollback restores them): their questions' SHA-256, as this release reads them.
+                replacesMapSha256: plan.targets.map((t) => mapFieldsSha256(t.form.fields)).filter((h): h is string => typeof h === "string"),
+              },
             },
           ],
         });
@@ -633,7 +881,7 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       action: "form.create",
       targetType: "form",
       targetId: form.id,
-      detail: { via: "onboarding", status: "proposed", fields: form.fields.length, kind: form.kind, mapFrom },
+      detail: { via: "onboarding", status: "proposed", fields: form.fields.length, kind: form.kind, mapFrom, ...auditExtra },
     });
     results.push({ ...ready, status: "loaded", formId: form.id });
   }
@@ -664,5 +912,12 @@ export async function loadClinicForms(ctx: RepoContext, input: LoadFormsInput): 
       detail: { forms: loaded.length, refused: results.filter((r) => r.status === "refused").length, skipped: results.filter((r) => r.status === "skipped").length },
     });
   }
-  return { tenantId, dryRun: !input.confirm, replaceProposed: replace, files: results };
+  // WE design 1: the clinic's own rows are as they were (the tool never writes them).
+  let invariants: LoadFormsResult["invariants"];
+  if (invariantsBefore) {
+    const after = await clinicFingerprint(ctx.db, tenantId);
+    const changed = (Object.keys(invariantsBefore) as Array<keyof typeof after>).filter((k) => invariantsBefore[k] !== after[k]);
+    invariants = { ok: changed.length === 0, changed };
+  }
+  return { tenantId, dryRun: !input.confirm, replaceProposed: replace, ...(restore ? { restore: true } : {}), files: results, ...(invariants ? { invariants } : {}) };
 }

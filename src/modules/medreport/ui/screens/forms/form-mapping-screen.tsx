@@ -10,13 +10,19 @@
  * A clinic's Studio (tenant mode) reports form_confirmed through HostHooks.track (counts and enumerated
  * values only) and prefills "confirmed by" with the signed-in member.
  *
- * Owner: studio-a agent.
+ * bh2 WE (designs 2 and 4): the questions are grouped by the same outline as the review (formOutline); the map lint's
+ * findings show as checks (and L5 blocks confirming, as the server does); guidance shows as stored, and – for a map from
+ * before this release – as it reads on reports now; every note is shown (in tenant mode too).
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
-import { answerableFields, checkFormDefinition, sectionHeadings } from "../../../core/forms";
+import { answerableFields, checkFormDefinition } from "../../../core/forms";
+import { currentGuidance } from "../../../core/forms/guidance";
+import { LINT_RULE_TITLES } from "../../../core/form-map-lint";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
@@ -51,7 +57,19 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, firstQuestionToCheck, listedInOrder, mayConfirmForms, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import {
+  anchorFromPick,
+  firstQuestionToCheck,
+  judgementConfirmProblem,
+  listedInOrder,
+  mappingGroups,
+  mappingLint,
+  mayAcceptJudgement,
+  mayConfirmForms,
+  newField,
+  plainAnchorDescription,
+  sameMapping,
+} from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
@@ -145,12 +163,20 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const dirty = !sameMapping(draft, saved) || draft.status !== saved.status;
   // A clinic's map names its referrer before it is confirmed (fix wave 2: never "completed for every patient
   // Referrer to be confirmed refers").
+  // bh2 WE design 2: the map lint – checks on the page; an unaccepted L5 blocks confirming (as /forms/confirm does).
+  const lint = useMemo(() => mappingLint(draft), [draft]);
+  const mayAccept = mayAcceptJudgement(hooks.member);
+  // check-WE minor 9: a map that accepts a clinical judgement as worded is confirmed by a clinician (or a member who may
+  // sign) – said here, before the click, instead of the server's refusal.
+  const judgementProblem = judgementConfirmProblem(lint, mayAccept);
   const problems = useMemo(
     () => [
       ...checkFormDefinition(draft),
       ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
+      ...lint.blocking,
+      ...(judgementProblem ? [judgementProblem] : []),
     ],
-    [draft, tenant],
+    [draft, tenant, lint, judgementProblem],
   );
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
@@ -239,16 +265,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const visible = listedInOrder(draft.fields).filter((f) =>
     filter === "all" ? true : filter === "check" ? f.confidence !== "high" : f.fillSource.kind === filter,
   );
-  const groups: Array<{ section: string; fields: FormField[] }> = [];
-  // Fix round 1 (B0-21): questions with no section inside a section keep it (core/forms.ts sectionHeadings).
-  const headings = sectionHeadings(draft.fields);
-  const sectionOf = new Map(draft.fields.map((f, i) => [f.id, headings[i] || "Other questions"]));
-  for (const f of visible) {
-    const section = sectionOf.get(f.id) ?? "Other questions";
-    const last = groups[groups.length - 1];
-    if (last && last.section === section) last.fields.push(f);
-    else groups.push({ section, fields: [f] });
-  }
+  // bh2 WE design 4: the same groups as the review (core/forms/headings.ts formOutline), in this page's list order.
+  const groups = mappingGroups(draft.fields, visible);
 
   const a = draft.analysis;
   // A form converted from RTF when it was added: its conversion notes get their own note (not the analysis list).
@@ -362,6 +380,18 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </Notice>
       ) : null}
 
+      {lint.mapLevel.length ? (
+        <Notice tone="warning" title="Checks on this map">
+          <ul className="list-disc space-y-0.5 pl-4">
+            {lint.mapLevel.map((i) => (
+              <li key={`${i.rule}-${i.message}`}>
+                {LINT_RULE_TITLES[i.rule]}: {i.message}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+
       {analysisNotes.length ? (
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
@@ -430,11 +460,14 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           ) : null}
 
           {groups.map((group, gi) => (
-            <section key={`${group.section}-${gi}`} aria-label={group.section} className="space-y-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.section}</h2>
+            <section key={`${group.key}-${gi}`} aria-label={group.title || "Questions on the form"} className="space-y-2">
+              {/* A form that prints no headings: one group, no title (the same on the review). */}
+              {group.title ? <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.title}</h2> : null}
               <ul className="space-y-2">
                 {group.fields.map((field) => {
                   const active = field.id === selected;
+                  const checks = lint.byField.get(field.id) ?? [];
+                  const open = checks.filter((c) => c.severity === "error");
                   return (
                     <li key={field.id} className="space-y-2">
                       <button
@@ -476,6 +509,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                               ) : null}
                             </div>
                             {!active && !questionSet ? <p className="mt-1 truncate text-[11px] text-slate-500">{plainAnchorDescription(field)}</p> : null}
+                            {open.length ? (
+                              <p className="mt-1 text-[11px] font-medium text-amber-800">Check: {Array.from(new Set(open.map((c) => LINT_RULE_TITLES[c.rule]))).join(" · ")}</p>
+                            ) : null}
                           </div>
                         </div>
                       </button>
@@ -485,6 +521,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                             key={field.id}
                             field={field}
                             formKind={draft.kind}
+                            guidanceVersion={draft.analysis.guidanceVersion}
+                            lint={checks}
+                            mayAcceptJudgement={mayAccept}
                             onChange={updateField}
                             onRemove={() => removeField(field.id)}
                             picking={picking}
@@ -494,7 +533,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                             }}
                           />
                         ) : (
-                          <ReadOnlyField field={field} questionSet={questionSet} />
+                          <ReadOnlyField field={field} questionSet={questionSet} guidanceVersion={draft.analysis.guidanceVersion} />
                         )
                       ) : null}
                     </li>
@@ -586,10 +625,11 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
   );
 }
 
-function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
+function ReadOnlyField({ field, questionSet, guidanceVersion }: { field: FormField; questionSet?: boolean; guidanceVersion?: number }) {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(field.guidance)}</p> : null}
+      {/* WE design 4: a map from before this release shows its guidance as it reads now; a v2 map exactly as stored. */}
+      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(currentGuidance(field.guidance, field, { guidanceVersion }))}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
       <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
       {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
