@@ -188,10 +188,17 @@ function rewrittenReport(report: Report, r: StoreRewrite): Report {
 
 async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
   const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" } & StoreRewrite;
-  let report = store.rewrite || store.dropConditions || store.dropReportModel ? rewrittenReport(built.report, store) : built.report;
+  const forged = Boolean(store.rewrite || store.dropConditions || store.dropReportModel);
+  let report = forged ? rewrittenReport(built.report, store) : built.report;
+  let refusedFirst = "";
   if (store.seedAs) {
     const seeded = await putStoredReport(h, report, store.seedAs, null);
-    if (seeded.status !== 201 && seeded.status !== 200) return { path: "sign", ok: false, detail: `could not store the report first (${seeded.status} ${seeded.code ?? ""})` };
+    if (forged && !store.thenBody && seeded.status === 403) {
+      // bh2-rc1 (WA1 x WC): the clinic's store refuses the member's rewritten copy itself (WC: a box's condition, its
+      // question and the report model are pinned to the map). /sign must still refuse that copy should it be stored
+      // past the store's checks: postSign stores it exactly as the case wrote it when the clinic holds no revision.
+      refusedFirst = `the store refused ${person(store.seedAs).name}'s rewritten copy (${seeded.status} ${seeded.code ?? ""}); stored past it, `;
+    } else if (seeded.status !== 201 && seeded.status !== 200) return { path: "sign", ok: false, detail: `could not store the report first (${seeded.status} ${seeded.code ?? ""})` };
     if (store.thenBody === "edited") report = withEditedSubject(built);
     if (store.thenBody === "stale") {
       // Someone saves a newer revision; the approver's tab still sends the old one.
@@ -202,7 +209,7 @@ async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOu
   const res = await postSign(h, { report, template: built.template, form: built.form, signer: built.signer, mode: signMode(c), fileBytes: built.fileBytes });
   const got = `${res.status}${res.code ? ` ${res.code}` : ""}`;
   const flags = ((res.body as { flags?: ReportFlag[] } | null)?.flags ?? []).filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }));
-  const detail = `/sign by ${person(built.signer).name}: ${got}${flags.length ? ` – ${describeFlags(flags)}` : ""}`;
+  const detail = `${refusedFirst}/sign by ${person(built.signer).name}: ${got}${flags.length ? ` – ${describeFlags(flags)}` : ""}`;
   switch (c.expect) {
     case "BLOCK": {
       if (res.status !== 409 && res.status !== 403) return { path: "sign", ok: false, detail };

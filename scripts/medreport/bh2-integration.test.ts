@@ -9,6 +9,9 @@
  *   covering my annual leave", a colleague's note naming the approver) is the approver's to confirm; any other drafted
  *   first person is never acknowledged; a person's own "I recorded …" beside a kept drafted sentence is the approver's
  *   to confirm, a first person inside drafted residue never.
+ * - WC's store through WA1's /sign: a staff member's store write that gives a clinician's box a condition ruling it
+ *   out is refused by the store (403); a copy stored past the store anyway is still refused at /sign (409), because
+ *   /sign reads the attested map's own conditions.
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -26,7 +29,7 @@ import { canAcknowledge, validateReport } from "../../src/modules/medreport/core
 import { CaseInputSchema, type CaseInput } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
 import { buildCase, type Built } from "../../src/modules/medreport/core/validation/__corpus__/harness/build";
 import { actorOf, clinicianOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
-import { bytesToBase64, createHttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
+import { bytesToBase64, createHttpHarness, postSign, putStoredReport } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { runSteps } from "../../src/modules/medreport/core/validation/__corpus__/harness/reducer";
 import { CANDIDATE_ENGINE } from "../../src/modules/medreport/core/validation/__corpus__/harness/engine";
 import { resolveChoice } from "../../src/modules/medreport/forms/choice-marks";
@@ -147,5 +150,20 @@ describe("WC's Adopt through WB's opinion and attribution checks", () => {
     const drafted = { "F-10": [{ text: "He is expected to make a full recovery within 6 weeks.", cites: ["N-001"] }] };
     const res = await run([{ do: "edit", by: "pat", box: "F-10", text: "He is expected to make a full recovery within 6 weeks. Seen by Pat." }, { do: "adopt", by: "sarah", box: "F-10" }], drafted);
     assert.ok(opinionOn(res.report, "F-10").length > 0, res.log.join(" | "));
+  });
+});
+
+describe("WC's store through WA1's /sign", () => {
+  it("a forged condition on a clinician's box: the store refuses it (403); stored past the store, /sign still refuses (409)", async () => {
+    const h = createHttpHarness();
+    const b = await buildCase(CaseInputSchema.parse({ report: "form:cf-discharge", answers: { "F-05": false }, box: "F-10", paragraph: { text: "He will make a full recovery within 6 weeks.", cites: ["N-002"] }, signMode: "tenant" }) as CaseInput, { signMode: "tenant" });
+    const forged: Report = { ...b.report, sections: b.report.sections.map((sec) => (sec.key === "F-10" ? ({ ...sec, condition: { controllers: ["F-05"], wants: "yes", text: "If yes", parser: "wa1-c3" } } as typeof sec) : sec)) };
+    const put = await putStoredReport(h, forged, "pat", null);
+    assert.equal(put.status, 403, JSON.stringify(put.body).slice(0, 300));
+    assert.equal(put.code, "DECISION_NOT_ALLOWED");
+    // postSign stores the body as it is when the clinic holds no revision (as the Studio saves before approving).
+    const signed = await postSign(h, { report: forged, template: b.template, form: b.form, signer: "sarah", mode: "tenant", fileBytes: b.fileBytes });
+    assert.equal(signed.status, 409, JSON.stringify(signed.body).slice(0, 300));
+    assert.equal(signed.receipt, null);
   });
 });
