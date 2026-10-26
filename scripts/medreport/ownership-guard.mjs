@@ -92,6 +92,12 @@ export function ownerOf(map, file) {
 
 const TEST_FILE = /\.test\.(?:ts|tsx|mjs|cjs|js)$/;
 const CORPUS_APPEND_ONLY = ["src/modules/medreport/core/validation/__corpus__/cases/**", "src/modules/medreport/core/validation/__corpus__/fixtures/**"];
+/**
+ * The corpus lock: a workstream that adds a case adds its entry (corpus-lock.mjs --add re-sorts the file, so a line-level
+ * "added lines only" test would refuse an entry that sorts last). corpus-guard.mjs compares every entry with the base and
+ * refuses a changed or removed one – the integrator runs it at every merge (bh2-base integration).
+ */
+const CORPUS_LOCK = "src/modules/medreport/core/validation/__corpus__/safety-corpus.lock.json";
 
 /**
  * One changed path for one workstream → {allowed, reason, owner?}.
@@ -109,6 +115,10 @@ export function classifyChange(map, workstream, change, opts = {}) {
   if ((map.integratorOnly ?? []).includes(file)) return { allowed: false, owner: "integrator", reason: "integrator only" };
   const owner = ownerOf(map, file);
   if (owner === workstream) return { allowed: true, owner, reason: "owned" };
+  if (file === CORPUS_LOCK) {
+    if (change.status === "M") return { allowed: true, owner, reason: "corpus lock: new entries only – corpus-guard.mjs refuses a changed or removed entry at the merge" };
+    return { allowed: false, owner: "integrator", reason: "corpus lock: only new entries (corpus-lock.mjs --add); never removed or replaced" };
+  }
   if (CORPUS_APPEND_ONLY.some((g) => matchesGlob(file, g))) {
     if (change.status === "A" || (change.status === "M" && change.deleted === 0)) return { allowed: true, owner, reason: "corpus: cases and fixtures are append-only" };
     return { allowed: false, owner: "integrator", reason: "corpus: only the integrator changes or removes existing cases and fixtures" };

@@ -111,6 +111,17 @@ describe("bh2 ownership guard", () => {
     assert.equal(classifyChange(map, "WE", change("scripts/medreport/bh-maps.test.ts", "M", 5)).allowed, true, "its own test");
   });
 
+  it("lets a workstream add corpus lock entries (corpus-lock.mjs --add) but never remove or replace the lock; pending.json stays the integrator's", () => {
+    const lock = `${M}/core/validation/__corpus__/safety-corpus.lock.json`;
+    const add = classifyChange(map, "WB", change(lock, "M", 1));
+    assert.equal(add.allowed, true, "a re-sorted lock with a new entry");
+    assert.match(add.reason, /corpus-guard/);
+    assert.equal(classifyChange(map, "WB", change(lock, "D", 500)).allowed, false);
+    assert.equal(classifyChange(map, "WB", change(lock, "R", 0, lock)).allowed, false);
+    assert.equal(classifyChange(map, "WB", change(`${M}/core/validation/__corpus__/pending.json`, "M", 0)).allowed, false);
+    assert.equal(classifyChange(map, "WB", change(`${M}/core/validation/__corpus__/allowlist.json`, "M", 0)).allowed, false);
+  });
+
   it("checks a rename at both ends", () => {
     const r = checkChanges(map, "WD", [change(`${M}/core/validation/draft-fit/fragments.ts`, "R", 0, `${M}/core/validation/draft-fit/commentary.ts`)]);
     assert.deepEqual(r.refused.map((x) => x.path), [`${M}/core/validation/draft-fit/commentary.ts`], "commentary.ts is WB's");

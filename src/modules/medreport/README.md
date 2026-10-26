@@ -36,7 +36,11 @@ src/modules/medreport/
     dates.ts ids.ts labels.ts                 shared helpers (DD/MM/YYYY, N-001, UI labels)
     fingerprint.ts        canonical JSON + SHA-256 (WebCrypto)
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
-    forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
+    forms.ts              referrer forms: formToTemplate, identity, scope, block IDs (pure); re-exports forms/*
+    forms/                bh2 split (W0.4, pure moves): answers.ts, headings.ts, guidance.ts, record-paths.ts
+                          (registration values), answer-shape.ts, fields.ts (shared leaf) – owners in docs/bh2-ownership.json
+    actor.ts issue-types.ts fix-types.ts   bh2 shared types (W0.6): Actor, BoxState / IssueState, AckPolicy / FixProposal
+    text/sentences.ts     bh2 shared sentence tokenizer (W0.5): splitSentences(text, "prose" | "notes"), safe-edit checks
     form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
     form-tables.ts        table answers ("rows"): the appointments table filled by code, row helpers (pure)
     question-set.ts       portal question sets (FormKind "questions"): parse pasted questions, classify, placeholder file
@@ -48,7 +52,10 @@ src/modules/medreport/
                           deterministic), codepages.ts, notes.ts (staff notes, converted-form helpers), sniff.ts, index.ts
     merge-fields.ts       mail-merge fields («Name», <<Name>>, MERGEFIELD): detector + unresolvedMergeFields (10/2026)
     scope.ts              template scope: strip fields before drafting
-    validation/           citations, figures, opinion-language, scope-terms, data-checks, index (canSign)
+    validation/           citations, figures, opinion-language, scope-terms, data-checks; index.ts re-exports run.ts
+                          (runValidators, validateReport, canSign), acknowledge.ts, registry.ts (validators in order, and
+                          the corpus ledger's test seam hooks.ts); draft-fit.ts runs draft-fit/*; __corpus__/ = the bh2
+                          safety corpus (README there)
   connectors/             server-only
     types.ts registry.ts  ClinicSystemConnector, ConnectorContext, TraceEntry, ConnectorError
     tm3-sim/              wire.ts (sim wire schemas), client.ts, mapper.ts, connector.ts
@@ -103,6 +110,8 @@ src/modules/medreport/
   api/                    contract.ts (browser-safe), http.ts, deps.ts, resolve-template.ts, handlers/*.ts (server-only)
                           store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
+                          (components/review/review-model.ts re-exports the bh2 split: status, labels, reducer,
+                          provenance, gaps, fixes)
                           store/* (browser backend, server cache + write queue + transport)
                           routes.ts (useStudioPaths: every Studio link from HostHooks.basePath), studio-copy.ts (tenant-only
                           production copy), studio-events.ts (non-identifying analytics properties for HostHooks.track)
@@ -351,7 +360,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/templates/validate` | actor | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
 | POST | `/drafts` | actor (+ passcode for live in the demo) | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
 | POST | `/validate` | actor | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
-| POST | `/sign` | actor (signer = the member) | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
+| POST | `/sign` | actor (signer = the member) | sign/index.ts (checks in sign/checks/*, receipt in sign/receipt.ts) | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
 | POST | `/render?format=docx\|pdf\|original` | actor | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
 | POST | `/connectors/{id}/documents` | actor | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
 | POST | `/forms/analyse` | actor (+ passcode for live in the demo) | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |

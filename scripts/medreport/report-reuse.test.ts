@@ -45,6 +45,7 @@ import { computeFacts } from "../../src/modules/medreport/core/computed-facts";
 import { formTemplateId, formToTemplate } from "../../src/modules/medreport/core/forms";
 import { KNOWN_ACTIVITY_ACTIONS } from "../../src/modules/medreport/core/report-factory";
 import { CONSENT_RECORDED_ACTION, NOTES_REUSED_ACTION, notesReusedDetail, recordForAnotherForm } from "../../src/modules/medreport/core/reuse";
+import { REPORT_MODEL } from "../../src/modules/medreport/core/schemas";
 import type { EpisodeBundle, FormDefinition, Report } from "../../src/modules/medreport/core/types";
 import { runDataChecks } from "../../src/modules/medreport/core/validation/data-checks";
 import { WORDING } from "../../src/modules/medreport/core/wording";
@@ -438,6 +439,18 @@ describe("the new report (Studio) and the wording", () => {
     // Without reusedFrom nothing changes (a fresh upload).
     const fresh = createTargetReport({ data: { bundle, computedFacts: computeFacts(bundle) }, target: { kind: "form", form: FORM2 }, now: () => now });
     assert.deepEqual(fresh.activity.map((a) => a.action), ["created"]);
+  });
+
+  test("a report from reused notes is made by the same factory as a new one: it carries this release's report model (W0.6, cross-cutting rule reuse-notes)", () => {
+    const source = sourceReport("rpt_reuse_model", { status: "signed" });
+    const { bundle, consentReset } = recordForAnotherForm(source);
+    const data = { bundle, computedFacts: computeFacts(bundle) };
+    const reused = createTargetReport({ data, target: { kind: "form", form: FORM2 }, reusedFrom: { formTitle: FORM.title, status: source.status, consentReset } });
+    const fresh = createTargetReport({ data, target: { kind: "form", form: FORM2 } });
+    assert.equal(reused.reportModel, REPORT_MODEL);
+    assert.equal(fresh.reportModel, REPORT_MODEL);
+    assert.equal(reused.approver, undefined, "no approver until WC's picker passes one – the same as a new report");
+    assert.equal(fresh.approver, undefined);
   });
 
   test("recordForAnotherForm is pure: the earlier report is untouched", () => {
