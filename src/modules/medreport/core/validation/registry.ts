@@ -3,6 +3,9 @@
  * runValidators (run.ts) runs them; each validator file in this folder exports one. W0.6 registers empty stubs for WB's
  * new checks (attribution-*.ts) and adds the explicit voice owner (ValidatorInput.voice; context.ts voiceOwnerOf).
  *
+ * Also the safety corpus ledger's test seam (hooks.ts, re-exported here as the corpus README's contract names it):
+ * HOOK_IDS and withHookDisabled(id, fn) for the runner; defineHook(id) and hookEnabled(id) for each hook's owner.
+ *
  * Pure; browser and server. Split out of core/validation/index.ts by W0.4 (bh2 module split, pure move; index.ts re-exports it).
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
@@ -22,6 +25,8 @@ import { validateScopeTerms } from "./scope-terms";
 import { validateTerms } from "./terms";
 import { validateClinicianVoice } from "./voice";
 import { validateDraftFit } from "./draft-fit";
+
+export { HOOK_IDS, defineHook, hookEnabled, withHookDisabled } from "./hooks";
 
 export interface ValidatorInput {
   report: Report;
