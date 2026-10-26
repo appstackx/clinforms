@@ -7,7 +7,9 @@
  * pass it to setPortalDiary() at start-up (or replace `standaloneDiary` below):
  *   busy      – the diary's appointments and blocked time of these practitioners, each including its buffer;
  *   working   – the practitioners' rota as windows (null = no rota: the online hours alone decide);
- *   onBooked  – write the diary appointment for a new online booking (then setBookingAppointment() links it);
+ *   onBooked  – write the diary appointment for a new online booking and return its id (the booking flow links
+ *               it with setBookingAppointment()), or { clash: true } when the diary refuses the time – the flow
+ *               then cancels the online booking and tells the patient the time has gone;
  *   onCancelled – cancel the linked diary appointment;
  *   patientAppointments – the patient's upcoming diary appointments not booked online (the portal lists them).
  * The database still refuses overlapping ONLINE bookings on its own; the diary must refuse an overlap with them
@@ -33,7 +35,7 @@ export interface PortalDiaryPort {
   readonly mode: "standalone" | "diary";
   busy(ctx: RepoContext, tenantId: string, practitionerIds: string[], fromIso: string, toIso: string): Promise<BusyInterval[]>;
   working(ctx: RepoContext, tenantId: string, practitionerIds: string[], fromIso: string, toIso: string): Promise<WorkingWindow[] | null>;
-  onBooked?(ctx: RepoContext, tenantId: string, booking: OnlineBooking, actor: PmsActor): Promise<void>;
+  onBooked?(ctx: RepoContext, tenantId: string, booking: OnlineBooking, actor: PmsActor): Promise<{ appointmentId: string } | { clash: true }>;
   onCancelled?(ctx: RepoContext, tenantId: string, booking: OnlineBooking, actor: PmsActor): Promise<void>;
   patientAppointments?(ctx: RepoContext, tenantId: string, patientId: string, fromIso: string): Promise<DiaryAppointmentView[]>;
 }

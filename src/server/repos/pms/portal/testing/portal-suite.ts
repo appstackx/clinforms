@@ -46,6 +46,7 @@ import { completeSignIn, readPortalSession, requestSignInLink, signOutPortal } f
 import { applyToRecord, submitForm } from "../../../../pms/portal/intake-service";
 import { hashSecret } from "../../../../pms/portal/tokens";
 import type { PortalMailer } from "../../../../pms/portal/mailer";
+import { setPortalDiary } from "../../../../pms/portal/diary-port";
 import { unscopedStatements, type QueryLog } from "../../testing/guarded-db";
 
 export interface PortalSuiteDb {
@@ -297,6 +298,38 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(await getOnlineBooking(ctx, B, ids.ellieBooking), null, "another clinic cannot read it");
     });
 
+    it("diary connected (port): its busy time and rota narrow the slots; a time the diary refuses is released", async () => {
+      const cat = await bookingCatalogue(ctx, A);
+      const calls: string[] = [];
+      const previous = setPortalDiary({
+        mode: "diary",
+        busy: async (_c, tenant, practitionerIds) => {
+          assert.equal(tenant, A);
+          return practitionerIds.includes(ids.james) ? [{ practitionerId: ids.james, startMs: Date.parse("2026-11-10T09:00:00.000Z"), endMs: Date.parse("2026-11-10T10:00:00.000Z") }] : [];
+        },
+        working: async () => [{ practitionerId: ids.james, startMs: Date.parse("2026-11-10T09:00:00.000Z"), endMs: Date.parse("2026-11-10T11:00:00.000Z") }],
+        onBooked: async (_c, _t, booking) => {
+          calls.push(booking.startsAt);
+          return booking.startsAt === "2026-11-10T10:30:00.000Z" ? { clash: true } : { appointmentId: "appt_01JDIARYFAKE00000000000000" };
+        },
+      });
+      try {
+        const slots = await findSlots(ctx, A, clinicA.settings, cat, { siteId: ids.site, serviceId: ids.fu, practitionerId: ids.james, fromDate: "2026-11-10", days: 1, now: now() });
+        assert.deepEqual(slots.slots.map((x) => x.startsAt.slice(11, 16)), ["10:00", "10:15", "10:30"], "after the diary's 09:00–10:00 and inside its rota (until 11:00)");
+        const person = { firstName: "Diary", lastName: "Port", dateOfBirth: "1960-06-06", email: "diary.port@example.com", phoneMobile: "07700 900208", agree: true };
+        const linked = await bookFromPublicPage(clinicA, { siteId: ids.site, serviceId: ids.fu, practitionerId: ids.james, startsAt: "2026-11-10T10:00:00.000Z", ...person }, deps({ clientIp: "198.51.100.20" }));
+        assert.ok(linked.ok);
+        if (linked.ok) assert.equal((await findBookingByManageToken(ctx, A, hashSecret(tokenOf(linked.manageUrl)), now().toISOString()))?.appointmentId, "appt_01JDIARYFAKE00000000000000");
+        const refused = await bookFromPublicPage(clinicA, { siteId: ids.site, serviceId: ids.fu, practitionerId: ids.james, startsAt: "2026-11-10T10:30:00.000Z", ...person }, deps({ clientIp: "198.51.100.21" }));
+        assert.ok(!refused.ok && refused.slotGone, "the diary said no");
+        const released = (await listOnlineBookings(ctx, A, { status: "any", from: "2026-11-10T10:30:00.000Z", until: "2026-11-10T10:31:00.000Z" }))[0];
+        assert.deepEqual([released?.status, released?.cancelledBy], ["cancelled", "clinic"], "the online booking is released, never left half-made");
+        assert.deepEqual(calls, ["2026-11-10T10:00:00.000Z", "2026-11-10T10:30:00.000Z"]);
+      } finally {
+        setPortalDiary(previous);
+      }
+    });
+
     it("moving and cancelling within the notice period; the manage link and the forms follow the booking", async () => {
       const ellie = (await getOnlineBooking(ctx, A, ids.ellieBooking))!;
       const moved = await rebookByPatient(clinicA, ellie, ellie.rev, { practitionerId: ids.james, startsAt: "2026-11-03T11:00:00.000Z" }, deps());
@@ -473,7 +506,7 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       const running = await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.megan }, STAFF);
       assert.equal(await cancelIntakeResponse(ctx, A, running.response.id, STAFF), true);
       const counts = await countResponsesByTemplate(ctx, A);
-      assert.deepEqual(counts.get(ids.form_consent), { requested: 2, submitted: 2 }, "two other new patients have not answered theirs yet");
+      assert.deepEqual(counts.get(ids.form_consent), { requested: 3, submitted: 2 }, "three other new patients have not answered theirs yet");
       // A ciphertext moved to another copy no longer decrypts (AAD = clinic, table.column, row id).
       const open = await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.ellie }, STAFF);
       await ctx.db.updateTable("pms_intake_responses").set({ answers_enc: raw.answers_enc }).where("tenant_id", "=", A).where("id", "=", open.response.id).execute();

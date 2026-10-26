@@ -24,7 +24,7 @@ import type { OnlineBooking } from "../../../modules/pms/portal/types";
 import type { BatchQuery } from "../../db/batch";
 import type { RepoContext } from "../../repos/context";
 import { createPatient, getPatientSummaries, searchPatients } from "../../repos/pms/patients";
-import { cancelOnlineBooking, createOnlineBooking, getOnlineBooking, rebookOnlineBooking } from "../../repos/pms/portal/bookings";
+import { cancelOnlineBooking, createOnlineBooking, getOnlineBooking, rebookOnlineBooking, setBookingAppointment } from "../../repos/pms/portal/bookings";
 import { formsToSendWithBooking, intakeRequestQueries, moveResponsesQuery } from "../../repos/pms/portal/intake";
 import { portalMessageQueries } from "../../repos/pms/portal/messages";
 import { bookingCatalogue, findSlots } from "./availability";
@@ -54,6 +54,23 @@ export interface FlowDeps {
 }
 
 const GENERIC = "We could not take this booking. Please try again or contact the clinic.";
+
+/**
+ * Writes the diary appointment for a new online booking when the diary is connected (./diary-port.ts) and links
+ * it. If the diary refuses the time, the online booking is cancelled again and the patient is told the time has
+ * gone (false). Stand-alone: nothing to do (true).
+ */
+async function linkToDiary(ctx: RepoContext, tenantId: string, booking: OnlineBooking, actor: PmsActor): Promise<boolean> {
+  const port = portalDiary();
+  if (!port.onBooked) return true;
+  const linked = await port.onBooked(ctx, tenantId, booking, actor);
+  if ("appointmentId" in linked) {
+    await setBookingAppointment(ctx, tenantId, booking.id, linked.appointmentId, actor);
+    return true;
+  }
+  await cancelOnlineBooking(ctx, tenantId, booking.id, booking.rev, { by: "clinic", reason: "other", late: false }, actor);
+  return false;
+}
 const SLOT_GONE = "Sorry – that time has just been taken. Please choose another time.";
 
 export type PublicBookingOutcome =
@@ -160,8 +177,7 @@ export async function bookFromPublicPage(clinic: PublicClinic, raw: Record<strin
     ],
     { via: "patient" },
   );
-  if (!result.ok) return { ok: false, error: SLOT_GONE, slotGone: true };
-  await portalDiary().onBooked?.(ctx, tenantId, result.booking, actor);
+  if (!result.ok || !(await linkToDiary(ctx, tenantId, result.booking, actor))) return { ok: false, error: SLOT_GONE, slotGone: true };
   return {
     ok: true,
     reference: result.booking.reference,
@@ -215,9 +231,8 @@ export async function bookFromPortal(clinic: PublicClinic, patientId: string, se
     ],
     { via: "patient" },
   );
-  if (!result.ok) return { ok: false, error: SLOT_GONE, slotGone: true };
-  await portalDiary().onBooked?.(ctx, tenantId, result.booking, actor);
-  return { ok: true, booking: result.booking };
+  if (!result.ok || !(await linkToDiary(ctx, tenantId, result.booking, actor))) return { ok: false, error: SLOT_GONE, slotGone: true };
+  return { ok: true, booking: (await getOnlineBooking(ctx, tenantId, result.booking.id)) ?? result.booking };
 }
 
 export type ChangeOutcome = { ok: true; booking: OnlineBooking } | { ok: false; error: string; slotGone?: boolean };
@@ -305,8 +320,8 @@ export async function rebookByPatient(
   if (!result.ok) return result.reason === "slot_taken" ? { ok: false, error: SLOT_GONE, slotGone: true } : { ok: false, error: "This booking changed in the meantime. Please reload the page." };
   const old = await getOnlineBooking(ctx, clinic.tenantId, booking.id);
   if (old) await portalDiary().onCancelled?.(ctx, clinic.tenantId, old, actor);
-  await portalDiary().onBooked?.(ctx, clinic.tenantId, result.booking, actor);
-  return { ok: true, booking: result.booking };
+  if (!(await linkToDiary(ctx, clinic.tenantId, result.booking, actor))) return { ok: false, error: `${SLOT_GONE} Your earlier booking was released – please choose a new time or contact the clinic.`, slotGone: true };
+  return { ok: true, booking: (await getOnlineBooking(ctx, clinic.tenantId, result.booking.id)) ?? result.booking };
 }
 
 /** The clinic cancels an online booking (staff). The patient gets a message; a late cancellation is recorded. */
