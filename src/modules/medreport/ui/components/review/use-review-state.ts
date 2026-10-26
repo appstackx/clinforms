@@ -65,14 +65,23 @@ function locked(report: Report): boolean {
   return report.status === "signed";
 }
 
-export function reviewReducer(report: Report, action: ReviewAction): Report {
+/**
+ * Who dispatched an action, added by useReviewState's dispatch (safety amendment, NEW-1 stop-gap): `actorIsStaff` when
+ * the signed-in member of a clinic's Studio is staff. Workstream W0.6 replaces it with a required Actor on every action.
+ */
+export interface ReviewActionContext {
+  actorIsStaff?: boolean;
+}
+
+export function reviewReducer(report: Report, action: ReviewAction & ReviewActionContext): Report {
   let next = applyReviewAction(report, action);
   if (next === report || locked(report)) return next;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
   const actor = "actor" in action && typeof action.actor === "string" ? action.actor : "";
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
   if (key && actor && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
-    next = settleGapsByAnswer(report, next, key, actor);
+    // Safety amendment (NEW-1 stop-gap): never a clinician gap when staff answered.
+    next = settleGapsByAnswer(report, next, key, actor, undefined, { actorIsStaff: action.actorIsStaff === true });
   }
   // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft.
   if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || "System");
@@ -178,9 +187,18 @@ const SAVE_DELAY_MS = 300;
  * @param stored   the latest stored copy (useReport); a newer one replaces the working copy
  * @param template the report's template (null when the form map is missing: validation is skipped)
  * @param form     the referrer's form map of a form report (its mail-merge fields are checked, 10/2026)
+ * @param context  who is acting: `actorIsStaff` for a staff member of a clinic (safety amendment, NEW-1 stop-gap)
  */
-export function useReviewState(initial: Report, stored: Report | null, template: ReportTemplate | null, form: FormDefinition | null = null): ReviewState {
+export function useReviewState(
+  initial: Report,
+  stored: Report | null,
+  template: ReportTemplate | null,
+  form: FormDefinition | null = null,
+  context: ReviewActionContext = {},
+): ReviewState {
   const [report, rawDispatch] = useReducer(reviewReducer, initial);
+  // Safety amendment (NEW-1 stop-gap): every action carries whether the person acting is staff.
+  const actorIsStaff = context.actorIsStaff === true;
   const [validating, setValidating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<string | null>(initial.updatedAt);
@@ -195,10 +213,13 @@ export function useReviewState(initial: Report, stored: Report | null, template:
   // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
   // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.
   const changedByUser = useRef(false);
-  const dispatch = useCallback((action: ReviewAction) => {
-    if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
-    rawDispatch(action);
-  }, []);
+  const dispatch = useCallback(
+    (action: ReviewAction) => {
+      if (action.type !== "setFlags" && action.type !== "replace") changedByUser.current = true;
+      rawDispatch(actorIsStaff ? { ...action, actorIsStaff: true } : action);
+    },
+    [actorIsStaff],
+  );
 
   // A newer copy saved elsewhere (another tab, background drafting) replaces the working copy.
   useEffect(() => {

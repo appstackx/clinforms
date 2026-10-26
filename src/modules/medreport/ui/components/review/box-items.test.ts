@@ -537,6 +537,44 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
   });
 });
 
+describe("safety amendment (NEW-1 stop-gap): staff answering never settles a clinician gap", () => {
+  const STAFF = "Pat Morgan (fictional)";
+  it("staff typing an opinion box leaves its gap open (approval stays blocked); the same answer by the clinician settles it", () => {
+    const { report, form } = drafted();
+    const typedByStaff = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: STAFF, actorIsStaff: true }), form);
+    const gap = typedByStaff.gaps.find((g) => g.sectionKey === "F-10");
+    assert.equal(gap?.resolution, undefined, "the clinician gap stays open");
+    assert.equal(typedByStaff.activity.some((a) => a.action === "gap_resolved" && a.detail.startsWith("F-10:")), false);
+    assert.ok(canSign(typedByStaff.flags, typedByStaff.gaps).blocking.some((f) => f.code === "OPEN_GAP" && f.sectionKey === "F-10"), "approval stays blocked on it");
+    // A tick-box opinion (F-07, clinician_opinion checkbox) ticked by staff: open too.
+    const tickedByStaff = reviewReducer(report, { type: "setAnswer", key: "F-07", value: true, actor: STAFF, actorIsStaff: true });
+    assert.equal(tickedByStaff.gaps.find((g) => g.sectionKey === "F-07")?.resolution, undefined);
+    // Negative twins: the clinician's own answer settles it (fix round 1, B0-8), and staff still settle an ordinary box.
+    const byClinician = reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: ACTOR });
+    assert.equal(byClinician.gaps.find((g) => g.sectionKey === "F-10")?.resolution?.text, "Answered on the form by Sarah Reid.");
+    const staffChoice = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: STAFF, actorIsStaff: true });
+    assert.equal(staffChoice.gaps.find((g) => g.sectionKey === "F-04")?.resolution?.text, `Answered on the form by ${STAFF}.`);
+  });
+
+  it("the physiotherapist's choice on each report (“-physio” gap) is a clinician gap", async () => {
+    const { isClinicianGap } = await import("./review-model");
+    const base = testForm();
+    const choice = field("F-13", { label: "Is the patient fit for work?", answerType: "single_choice", options: ["Fit", "Not fit"], fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report." });
+    const form: FormDefinition = { ...base, fields: [...base.fields, choice] };
+    const bundle = testBundle();
+    const report = createFormReport({ form, bundle, instructingParty: bundle.referral, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }), now: new Date(AT), id: "rpt_physio_choice" });
+    const physio = report.gaps.find((g) => g.sectionKey === "F-13");
+    assert.ok(physio?.id.endsWith("-physio"), "report-factory raises the physiotherapist's-choice gap");
+    assert.equal(isClinicianGap(report, physio!), true);
+    const byStaff = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: STAFF, actorIsStaff: true });
+    assert.equal(byStaff.gaps.find((g) => g.id === physio!.id)?.resolution, undefined);
+    const byClinician = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: ACTOR });
+    assert.equal(byClinician.gaps.find((g) => g.id === physio!.id)?.resolution?.kind, "resolved");
+    // An ordinary staff entry (no "chosen by the physiotherapist") is not a clinician gap.
+    assert.equal(isClinicianGap(report, { id: "gap-F-08-staff", sectionKey: "F-08" }), false);
+  });
+});
+
 describe("fix round 1 (B0-15): appointment times are record values", () => {
   it("the first attended appointment's time, and the Nth attended appointment's date and time; a session the record does not have is left empty", async () => {
     const { resolveRegistrationValue } = await import("../../../core/forms");

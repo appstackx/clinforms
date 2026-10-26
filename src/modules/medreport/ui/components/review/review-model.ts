@@ -717,20 +717,34 @@ export function supersedeAcknowledgedGaps(report: Report, key: string, actor: st
 }
 
 /**
+ * Safety amendment (NEW-1 stop-gap): a gap only a clinician settles – any gap of an opinion box (section kind
+ * "clinician_opinion"), or of the physiotherapist's choice on each report (core/report-factory.ts "-physio" gap).
+ */
+export function isClinicianGap(report: Pick<Report, "sections">, gap: Pick<Gap, "id" | "sectionKey">): boolean {
+  if (gap.id.endsWith("-physio")) return true;
+  return report.sections.find((s) => s.key === gap.sectionKey)?.kind === "clinician_opinion";
+}
+
+/**
  * Fix round 1 (B0-8): a person's answer settles its own box's gaps in the same step. When `key` goes from no answer to
  * a person's answer, each of its open gaps is resolved ("Answered on the form by Sarah Reid.", one activity entry
  * each – exactly what "Mark resolved" records); when that answer is removed again, the gaps resolved that way are
  * reopened. Drafting never resolves a gap this way, and a box that already had an answer keeps its gaps for the
  * person to check (a typo fixed is not the gap answered). canSign() is unchanged.
+ *
+ * Safety amendment (NEW-1 stop-gap, release/bh-trial-2): when the actor is staff (`opts.actorIsStaff`), a clinician gap
+ * (isClinicianGap) is never settled this way – staff typing or ticking an opinion box leaves its gap open for the
+ * clinician to resolve. Workstream WC replaces this with the approver rule.
  */
-export function settleGapsByAnswer(before: Report, after: Report, key: string, actor: string, now?: Date): Report {
+export function settleGapsByAnswer(before: Report, after: Report, key: string, actor: string, now?: Date, opts: { actorIsStaff?: boolean } = {}): Report {
   const was = before.sections.find((s) => s.key === key);
   const is = after.sections.find((s) => s.key === key);
   if (!was || !is || !actor.trim()) return after;
   const answeredBefore = isSectionAnswered(was);
   const answeredNow = isSectionAnswered(is);
   if (!answeredBefore && answeredNow && answeredByPerson(after, key)) {
-    const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution);
+    // Safety amendment (NEW-1 stop-gap): staff answering never settles a clinician gap (isClinicianGap).
+    const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution && !(opts.actorIsStaff && isClinicianGap(after, g)));
     if (open.length === 0) return after;
     const at = nowIso(now);
     let next: Report = after;
