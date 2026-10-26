@@ -9,15 +9,22 @@ import "server-only";
  * Owner: WA1 (issue state and receipt) – docs/bh2-ownership.json.
  */
 import { validateReport, type ValidateReportResult } from "../../../../core/validation";
-import type { FormDefinition, Report, ReportTemplate } from "../../../../core/types";
+import type { Clinician, FormDefinition, Report, ReportTemplate } from "../../../../core/types";
 import { logEvent, problem } from "../../../http";
 import type { SignCheck } from "./context";
 
 /** The validators' result, and the refusal (409 SIGNOFF_BLOCKED) when blocking items remain. */
-export function validationCheck(input: { report: Report; template: ReportTemplate; form: FormDefinition | null; started: number }): { result: ValidateReportResult; response: Response | null } {
+export function validationCheck(input: {
+  report: Report;
+  template: ReportTemplate;
+  form: FormDefinition | null;
+  started: number;
+  /** bh2 (WB design 6; ownership exception – WA1's file): whose "I" the validators read (checks/voice.ts signVoiceOwner). */
+  owner?: Clinician | null;
+}): { result: ValidateReportResult; response: Response | null } {
   const { report, template, started } = input;
   // A form report: the form map too (10/2026 – mail-merge fields left on the form block approval).
-  const result = validateReport(report, template, { form: input.form });
+  const result = validateReport(report, template, { form: input.form, ...(input.owner !== undefined ? { voice: { owner: input.owner } } : {}) });
   if (!result.canSign) {
     logEvent("sign_blocked", { template: template.id, blocking: result.blocking.length, ms: Date.now() - started });
     return {

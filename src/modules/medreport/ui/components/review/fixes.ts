@@ -6,7 +6,8 @@
  * Owner: WD (drafting and text edits; the one-click engine) – docs/bh2-ownership.json. WB's fix generators reach the
  * review through here.
  */
-import { inOwnClinicalWording, isOwnVoiceCandidate, nameClinicianInstead, otherCliniciansInFirstPerson } from "../../../core/voice";
+import { inOwnClinicalWording, isOwnVoiceCandidate, nameInsteadClinician } from "../../../core/voice";
+import { defaultVoiceOwner } from "../../../core/validation/attribution-owner";
 import { appendActivity } from "../../../core/report-factory";
 import type { Actor } from "../../../core/actor";
 import type { FixProposal } from "../../../core/fix-types";
@@ -65,15 +66,25 @@ export function writeInOwnVoice(report: Report, authorName: string, actor: strin
  * with the one other clinician whose note it cites named instead of "I" / "me" / "my" – or null (two clinicians, or
  * wording the rewrite cannot settle: the clinician edits it).
  */
-export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId">): { name: string; text: string } | null {
+export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author" | "approver">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId" | "evidence">): { name: string; text: string } | null {
   if (flag.code !== "OTHER_CLINICIAN_VOICE" || !flag.sectionKey || !flag.paragraphId) return null;
+  // bh2 (WB design 10, ownership exception – WD's file): only on the first-person flag, and only when every cited note
+  // is that one clinician's, the voice owner (the approver) is someone else and no first-person opinion wording is
+  // present (core/voice.ts nameInsteadClinician). The attribution flags (unattributed / names / joint / sessions) have
+  // their own fixes.
+  if (/^(?:unattributed|names|joint|sessions) /.test(flag.evidence ?? "")) return null;
   const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
   if (!p) return null;
-  const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, report.author);
-  if (!others || others.length !== 1) return null;
-  const text = nameClinicianInstead(p.text, others[0]);
-  return text ? { name: others[0], text } : null;
+  return nameInsteadClinician(p, report.bundleSnapshot, defaultVoiceOwner(report));
 }
+
+/**
+ * bh2 bridge (WB, ownership exception – WD's file): WB's one-click fixes (core/validation/attribution-fixes.ts:
+ * attribution prefix, the note's words, commentary removal, note-link removal, "Accept as the note's words") offered to
+ * an actor, each with its own apply – until WD's engine (planFix) offers them from ATTRIBUTION_FIX_GENERATORS. The
+ * corpus harness reads `offeredFixes` here (validation/__corpus__/README.md).
+ */
+export { offeredFixes } from "../../../core/validation/attribution-fixes";
 
 /** Apply nameClinicianFix() to the flagged paragraphs (by flag ID): each becomes "edited" (revertable); one activity entry each. */
 export function nameCliniciansInstead(report: Report, flags: readonly ReportFlag[], actor: string, now?: Date): Report {

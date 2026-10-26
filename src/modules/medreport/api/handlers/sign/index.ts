@@ -59,7 +59,7 @@ import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
 import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
 import { issuedDocumentCheck, staleReportCheck, validationCheck } from "./checks/issue";
 import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
-import { signerConfirmationsCheck, voiceRefusal } from "./checks/voice";
+import { signerConfirmationsCheck, signVoiceOwner, voiceRefusal } from "./checks/voice";
 import { mintReceipt } from "./receipt";
 
 /**
@@ -106,7 +106,8 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (!who.ok) return who.response;
   const { signer } = who;
   // bh2 W0 follow-up: one object for what the checks add to the receipt (checks/context.ts receiptAdditions).
-  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer, receiptAdditions: {} };
+  // bh2 (WB design 13; ownership exception – WA1's file): the approver's sign-time confirmations reach signerConfirmationsCheck.
+  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer, receiptAdditions: {}, ...(parsed.data.confirmations ? { confirmations: parsed.data.confirmations } : {}) };
   const notApprover = await runChecks(SIGNER_CHECKS, signerCtx);
   if (notApprover) return notApprover;
 
@@ -139,7 +140,7 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const ctx: SignCheckContext = { ...signerCtx, template, form: resolved.form, started };
   const stale = await runChecks(BEFORE_VALIDATION, ctx);
   if (stale) return stale;
-  const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started });
+  const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started, owner: signVoiceOwner(report, signer) });
   if (blocked) return blocked;
   const notIssuable = await runChecks(AFTER_VALIDATION, ctx);
   if (notIssuable) return notIssuable;
