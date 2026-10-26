@@ -76,7 +76,7 @@ import { DEMO_CLINIC } from "@/modules/medreport/config.public";
 import { bundleClinic } from "@/modules/medreport/core/clinic";
 import { computeFacts } from "@/modules/medreport/core/computed-facts";
 import { FORM_ATTESTATIONS, formTemplateId, resolveRegistrationValue } from "@/modules/medreport/core/forms";
-import type { EpisodeBundle, FormDefinition, Report, SignReceipt } from "@/modules/medreport/core/types";
+import type { EpisodeBundle, FormDefinition, Report, ReportFlag, SignReceipt } from "@/modules/medreport/core/types";
 import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "@/modules/medreport/forms/samples/maps/harrow-pike";
 import { getSampleForm } from "@/modules/medreport/forms/samples/registry";
 import { loadClinicProfile } from "@/server/auth/medreport-actor";
@@ -681,12 +681,21 @@ describe("clinic members – roles and approval", () => {
       ...report,
       sections: report.sections.map((s) => (s.key === "F-15" ? { ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "edited" as const, originalText: p.text })) } : s)),
     };
-    const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    // bh2 WB design 7 (AC-OPN-3): edited text in the first person over Sarah Reid's note is checked too – the approver
+    // acknowledges it with a reason (their own account), then approves.
+    const editedRefused = await call(handleSign, "/sign", { member: "clin-a", body: signBody(edited, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
+    const editedFlags = ((await problemOf(editedRefused.clone())) as { flags?: ReportFlag[] }).flags ?? [];
+    await expectProblem(editedRefused, 409, "SIGNOFF_BLOCKED");
+    assert.ok(editedFlags.length > 0 && editedFlags.every((f) => f.ackPolicy === "approver"), JSON.stringify(editedFlags));
+    const acknowledged: Report = { ...edited, flags: editedFlags.map((f) => ({ ...f, acknowledged: { reason: "My own account: I saw Ms Hart on 07/07/2026 too.", at: "2026-10-07T10:00:00.000Z" } })) };
+    const ok = await call(handleSign, "/sign", { member: "clin-a", body: signBody(acknowledged, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(ok.status, 200, await ok.clone().text());
     // The author approving their own first-person draft of their own notes is fine (the author is the member).
     const sam = { name: "Sam Ward (fictional)", hcpc: "ZZ0005" };
     const samsNotes = { ...report.bundleSnapshot, notes: report.bundleSnapshot.notes.map((n) => ({ ...n, author: sam })) };
-    const own: Report = { ...report, author: sam, bundleSnapshot: samsNotes };
+    // bh2 WB design 9 (C-ATTR-2): the drafted text names the notes' clinician too, or "Sarah Reid recorded" is a wrong name.
+    const samsText = report.sections.map((s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, text: p.text.split("Sarah Reid").join(sam.name) })) }));
+    const own: Report = { ...report, author: sam, bundleSnapshot: samsNotes, sections: samsText };
     const mine = await call(handleSign, "/sign", { member: "clin-a", body: signBody(own, form, { name: "S. Ward", hcpc: "ZZ0005" }, "Sam Ward (fictional)") });
     assert.equal(mine.status, 200, await mine.clone().text());
     // Fix round 1 (B0-1): the author is the member, but the "I" reports Sarah Reid's note – refused, naming her.
