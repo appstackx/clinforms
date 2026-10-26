@@ -8,7 +8,7 @@
  * Owner: ai agent.
  */
 import { applyScope } from "../scope";
-import type { FlagSeverity, Paragraph, ReportFlag, ReportFlagCode, ReportSection, TemplateSection } from "../types";
+import type { Clinician, FlagSeverity, Paragraph, ReportFlag, ReportFlagCode, ReportSection, TemplateSection } from "../types";
 import type { ValidatorInput } from "./index";
 import { buildSourceTexts } from "./sources";
 import { addShortDatesToIndex, addToFigureIndex, emptyFigureIndex, normaliseForMatch, type FigureIndex } from "./text";
@@ -40,6 +40,14 @@ export interface ValidationContext {
   sourceTexts: Map<string, string>;
   paragraphs: ParagraphRef[];
   cited(paragraph: Paragraph): CitedSources;
+}
+
+/**
+ * The voice owner of a validation run – whose "I" the report speaks in: `input.voice.owner` when the caller names one
+ * (W0.6 plumbing; WB makes it the approver), else the report's author, as before.
+ */
+export function voiceOwnerOf(input: Pick<ValidatorInput, "report" | "voice">): Clinician | null {
+  return input.voice ? input.voice.owner : (input.report.author ?? null);
 }
 
 const cache = new WeakMap<ValidatorInput, ValidationContext>();

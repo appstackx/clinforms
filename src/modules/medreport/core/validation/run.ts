@@ -194,11 +194,16 @@ export interface ValidateReportResult extends CanSignResult {
 export function validateReport(
   report: Report,
   template: ReportTemplate,
-  opts: { computedFacts?: ComputedFact[]; form?: Pick<FormDefinition, "analysis" | "fields"> | null } = {},
+  opts: {
+    computedFacts?: ComputedFact[];
+    form?: Pick<FormDefinition, "analysis" | "fields"> | null;
+    /** W0.6: the voice owner (ValidatorInput.voice; absent = report.author, as before). */
+    voice?: ValidatorInput["voice"];
+  } = {},
 ): ValidateReportResult {
   const bundle = report.bundleSnapshot;
   const computedFacts = opts.computedFacts ?? computeFacts(bundle, { asOf: reportFactsDate(report) });
-  const flags = runValidators({ report, bundle, template, computedFacts, ...(opts.form && { form: opts.form }) });
+  const flags = runValidators({ report, bundle, template, computedFacts, ...(opts.form && { form: opts.form }), ...(opts.voice && { voice: opts.voice }) });
   const result = canSign(flags, report.gaps ?? []);
   return { flags, canSign: result.ok, ok: result.ok, blocking: result.blocking };
 }

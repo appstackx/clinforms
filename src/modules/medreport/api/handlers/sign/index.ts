@@ -44,7 +44,8 @@ import "server-only";
  *
  * W0.4 module split (bh2): the checks live in sign/checks/ (roles.ts – who signs and the demo number, owner WC;
  * voice.ts – the signer's own voice, WB; issue.ts – the validators, WA1) and the receipt in sign/receipt.ts (WA1);
- * this file runs them in the order above. Owners: docs/bh2-ownership.json.
+ * this file runs them in the order above. W0.6 adds the pipeline's stub checks (SIGNER_CHECKS, BEFORE_VALIDATION,
+ * AFTER_VALIDATION below; their context is checks/context.ts). Owners: docs/bh2-ownership.json.
  *
  * Owner: forms-engine agent (formerly docgen; wave 2 caller rules: API slice).
  */
@@ -55,10 +56,28 @@ import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../../c
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../../http";
 import { requireAttestedForm, resolveTemplate } from "../../resolve-template";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
-import { validationCheck } from "./checks/issue";
-import { demoNumberCheck, resolveSigner } from "./checks/roles";
-import { voiceRefusal } from "./checks/voice";
+import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
+import { issuedDocumentCheck, staleReportCheck, validationCheck } from "./checks/issue";
+import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
+import { signerConfirmationsCheck, voiceRefusal } from "./checks/voice";
 import { mintReceipt } from "./receipt";
+
+/**
+ * W0.6 pipeline: the checks the workstreams fill in, in the order they run (each a stub that refuses nothing today).
+ * Once the signer is known: is the signer the report's approver (WC). Before the validators: is the body the stored
+ * revision (WA1). After them: the signer's confirmations (WB), then what would be issued (WA1).
+ */
+const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
+const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
+const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck, issuedDocumentCheck];
+
+async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {
+  for (const check of checks) {
+    const refusal = await check(ctx);
+    if (refusal) return refusal;
+  }
+  return null;
+}
 
 const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -86,6 +105,9 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const who = resolveSigner(actor, parsed.data.signer);
   if (!who.ok) return who.response;
   const { signer } = who;
+  const signerCtx: SignerCheckContext = { req, deps, actor, report, signer };
+  const notApprover = await runChecks(SIGNER_CHECKS, signerCtx);
+  if (notApprover) return notApprover;
 
   const voice = voiceRefusal(actor, report, signer);
   if (voice) return voice;
@@ -109,8 +131,13 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (issues.length > 0) return problem(422, "The approval is incomplete", { code: "VALIDATION_FAILED", issues });
 
   const started = Date.now();
+  const ctx: SignCheckContext = { ...signerCtx, template, form: resolved.form, started };
+  const stale = await runChecks(BEFORE_VALIDATION, ctx);
+  if (stale) return stale;
   const { result, response: blocked } = validationCheck({ report, template, form: resolved.form, started });
   if (blocked) return blocked;
+  const notIssuable = await runChecks(AFTER_VALIDATION, ctx);
+  if (notIssuable) return notIssuable;
 
   const { demoClinic, response: demoRefusal } = await demoNumberCheck({ deps, actor, signer, templateId: template.id, started });
   if (demoRefusal) return demoRefusal;

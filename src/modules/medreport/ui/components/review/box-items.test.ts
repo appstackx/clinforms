@@ -9,6 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { namedActor } from "../../../core/actor";
 import { computeFacts } from "../../../core/computed-facts";
 import { formToTemplate } from "../../../core/forms";
 import { listMergeTokens, listMergeTokensInWords, practiceCodeInWords } from "../../../core/merge-fields";
@@ -24,6 +25,8 @@ import { reviewReducer } from "./use-review-state";
 const AT = "2026-10-06T09:00:00.000Z";
 const NOW = new Date("2026-10-07T10:00:00.000Z");
 const ACTOR = "Sarah Reid";
+/** The same person as a review action's actor (W0.6: every action carries one). */
+const BY = namedActor(ACTOR);
 const REFERRER = "Example Medico-Legal (fictional)";
 
 function field(id: string, spec: Partial<FormField> & Pick<FormField, "label" | "answerType" | "fillSource">): FormField {
@@ -278,30 +281,30 @@ describe("Leave optional boxes blank", () => {
 
   it("acknowledging one optional box's gap also acknowledges its 'no answer' warning – never a required box's check", () => {
     const { report } = drafted();
-    const one = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "acknowledged", text: "No second medication was taken.", actor: ACTOR });
+    const one = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "acknowledged", text: "No second medication was taken.", actor: BY });
     assert.equal(one.flags.find((f) => f.sectionKey === "F-05" && f.evidence === "optional field blank")?.acknowledged?.reason, "No second medication was taken.");
     assert.deepEqual(one.activity.slice(report.activity.length).map((a) => a.action), ["gap_acknowledged", "flag_acknowledged"]);
-    const req = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-04-t-1", kind: "acknowledged", text: "Checked with the patient (fictional).", actor: ACTOR });
+    const req = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-04-t-1", kind: "acknowledged", text: "Checked with the patient (fictional).", actor: BY });
     assert.deepEqual(req.activity.slice(report.activity.length).map((a) => a.action), ["gap_acknowledged"]);
     assert.ok(!req.flags.some((f) => f.sectionKey === "F-04" && f.acknowledged), "a required box's 'no answer' is never acknowledged");
-    const resolved = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "resolved", text: "Confirmed with the patient (fictional).", actor: ACTOR });
+    const resolved = reviewReducer(report, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "resolved", text: "Confirmed with the patient (fictional).", actor: BY });
     assert.ok(!resolved.flags.some((f) => f.acknowledged), "resolving (not acknowledging) leaves the warning as it is");
     // Typed a moment ago (the checks have not re-run yet): the box has an answer, so its stale warning is left alone.
     const typed = addClinicianParagraph(report, "F-05", "Ibuprofen 400 mg (fictional)", NOW).report;
-    const ackTyped = reviewReducer(typed, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "acknowledged", text: "No second medication was taken.", actor: ACTOR });
+    const ackTyped = reviewReducer(typed, { type: "resolveGap", gapId: "gap-F-05-t-1", kind: "acknowledged", text: "No second medication was taken.", actor: BY });
     assert.ok(!ackTyped.flags.some((f) => f.acknowledged));
   });
 
   it("a box answered later supersedes its 'left blank' acknowledgement", () => {
     const { report, form, template } = drafted();
     const left = leaveOptionalBoxesBlank(report, { template, form, keys: ["F-05"], reason: LEAVE_BLANK_REASON, actor: ACTOR, now: NOW });
-    const answered = reviewReducer(left, { type: "addParagraph", key: "F-05", text: "Ibuprofen 400 mg (fictional)", actor: ACTOR });
+    const answered = reviewReducer(left, { type: "addParagraph", key: "F-05", text: "Ibuprofen 400 mg (fictional)", actor: BY });
     assert.equal(answered.gaps.find((g) => g.id === "gap-F-05-t-1")?.resolution?.kind, "resolved");
   });
 
   it("the review screen's action goes through the same re-checked path", () => {
     const { report, form, template } = drafted();
-    const next = reviewReducer(report, { type: "leaveOptionalBlank", keys: ["F-04", "F-05", "F-07"], reason: LEAVE_BLANK_REASON, actor: ACTOR, template, form });
+    const next = reviewReducer(report, { type: "leaveOptionalBlank", keys: ["F-04", "F-05", "F-07"], reason: LEAVE_BLANK_REASON, actor: BY, template, form });
     assert.deepEqual(next.gaps.filter((g) => g.resolution).map((g) => g.sectionKey), ["F-05"]);
     // Then the rest is answered by the clinician and the report can be approved.
     let r = revalidated(next, form);
@@ -425,7 +428,7 @@ describe("fix round 1 (B0-19, B0-4): staff entries, physiotherapists' choices an
     assert.equal(p?.origin, "clinician");
     assert.equal(p?.text, site?.paragraphs[0]?.text, "starts from the setting, ready to change");
     assert.match(changed.activity[changed.activity.length - 1].detail, /^F-13: “Therapist location – site” changed for this report only \(was “.+” from the Clinic details\) – entered by staff\.$/);
-    const typed = reviewReducer(changed, { type: "editParagraph", key: "F-13", paragraphId: p!.id, text: "Blue Heart Clinics – Aylesbury site (fictional)" });
+    const typed = reviewReducer(changed, { type: "editParagraph", key: "F-13", paragraphId: p!.id, text: "Blue Heart Clinics – Aylesbury site (fictional)", actor: BY });
     assert.equal(buildFormAnswers(typed, form)["F-13"].text, "Blue Heart Clinics – Aylesbury site (fictional)");
     assert.equal(overrideRecordValue(typed, "F-13", ACTOR, NOW), typed, "only while it still holds the value filled by code");
   });
@@ -504,7 +507,7 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
     const { report, form, template } = drafted();
     const before = reviewItems(report, { template, form }).count;
     // F-10 Prognosis (required opinion, no answer, one gap): the clinician writes their opinion.
-    const typed = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "In my opinion he will recover fully within 6 weeks.", actor: ACTOR }), form);
+    const typed = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "In my opinion he will recover fully within 6 weeks.", actor: BY }), form);
     const gap = typed.gaps.find((g) => g.sectionKey === "F-10");
     assert.equal(gap?.resolution?.kind, "resolved");
     assert.equal(gap?.resolution?.text, "Answered on the form by Sarah Reid.");
@@ -514,15 +517,15 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
     assert.equal(reviewItems(typed, { template, form }).boxes.get("F-10"), undefined, "no “confirm your answer” item left");
     // The answer removed again: the gap is open again.
     const pid = typed.sections.find((s) => s.key === "F-10")!.paragraphs[0].id;
-    const removed = reviewReducer(typed, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: ACTOR });
+    const removed = reviewReducer(typed, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: BY });
     assert.equal(removed.gaps.find((g) => g.sectionKey === "F-10")?.resolution, undefined);
     // A choice: F-04 (yes/no, no answer, one gap).
-    const chosen = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: ACTOR });
+    const chosen = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: BY });
     assert.equal(chosen.gaps.find((g) => g.sectionKey === "F-04")?.resolution?.text, "Answered on the form by Sarah Reid.");
     // Drafting is not a person: applying a draft never resolves a gap.
     // A box that already had an answer (F-09, drafted) keeps its gaps when the person edits it.
     const withGap: Report = { ...report, gaps: [...report.gaps, { id: "gap-F-09-t-2", sectionKey: "F-09", issue: "Which activity?", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" }] };
-    const edited = reviewReducer(withGap, { type: "editParagraph", key: "F-09", paragraphId: "F-09-p1", text: "He has made good progress.", actor: ACTOR });
+    const edited = reviewReducer(withGap, { type: "editParagraph", key: "F-09", paragraphId: "F-09-p1", text: "He has made good progress.", actor: BY });
     assert.equal(edited.gaps.find((g) => g.id === "gap-F-09-t-2")?.resolution, undefined);
   });
 
@@ -530,7 +533,7 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
     const { report } = drafted();
     const held = { id: "gap-F-11-ab12-choice", sectionKey: "F-11", issue: "The suggested answer “Moderate” is not stated in the cited notes…", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "system" as const, suggestedAnswer: "Moderate" };
     const withHeld: Report = { ...report, gaps: [...report.gaps.filter((g) => g.sectionKey !== "F-11"), held] };
-    const ticked = reviewReducer(withHeld, { type: "setAnswer", key: "F-11", value: held.suggestedAnswer, actor: ACTOR });
+    const ticked = reviewReducer(withHeld, { type: "setAnswer", key: "F-11", value: held.suggestedAnswer, actor: BY });
     assert.deepEqual(ticked.sections.find((s) => s.key === "F-11")?.answer, { kind: "choice", value: "Moderate" });
     assert.equal(ticked.gaps.find((g) => g.id === held.id)?.resolution?.kind, "resolved");
     assert.ok(ticked.activity.some((a) => a.action === "answer_set" && /set to Moderate/.test(a.detail)));
@@ -539,20 +542,21 @@ describe("fix round 1 (B0-8): answering a box settles its own gaps in the same s
 
 describe("safety amendment (NEW-1 stop-gap): staff answering never settles a clinician gap", () => {
   const STAFF = "Pat Morgan (fictional)";
+  const STAFF_BY = namedActor(STAFF, "staff");
   it("staff typing an opinion box leaves its gap open (approval stays blocked); the same answer by the clinician settles it", () => {
     const { report, form } = drafted();
-    const typedByStaff = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: STAFF, actorIsStaff: true }), form);
+    const typedByStaff = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: STAFF_BY }), form);
     const gap = typedByStaff.gaps.find((g) => g.sectionKey === "F-10");
     assert.equal(gap?.resolution, undefined, "the clinician gap stays open");
     assert.equal(typedByStaff.activity.some((a) => a.action === "gap_resolved" && a.detail.startsWith("F-10:")), false);
     assert.ok(canSign(typedByStaff.flags, typedByStaff.gaps).blocking.some((f) => f.code === "OPEN_GAP" && f.sectionKey === "F-10"), "approval stays blocked on it");
     // A tick-box opinion (F-07, clinician_opinion checkbox) ticked by staff: open too.
-    const tickedByStaff = reviewReducer(report, { type: "setAnswer", key: "F-07", value: true, actor: STAFF, actorIsStaff: true });
+    const tickedByStaff = reviewReducer(report, { type: "setAnswer", key: "F-07", value: true, actor: STAFF_BY });
     assert.equal(tickedByStaff.gaps.find((g) => g.sectionKey === "F-07")?.resolution, undefined);
     // Negative twins: the clinician's own answer settles it (fix round 1, B0-8), and staff still settle an ordinary box.
-    const byClinician = reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: ACTOR });
+    const byClinician = reviewReducer(report, { type: "addParagraph", key: "F-10", text: "He will recover fully within 6 weeks.", actor: BY });
     assert.equal(byClinician.gaps.find((g) => g.sectionKey === "F-10")?.resolution?.text, "Answered on the form by Sarah Reid.");
-    const staffChoice = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: STAFF, actorIsStaff: true });
+    const staffChoice = reviewReducer(report, { type: "setAnswer", key: "F-04", value: true, actor: STAFF_BY });
     assert.equal(staffChoice.gaps.find((g) => g.sectionKey === "F-04")?.resolution?.text, `Answered on the form by ${STAFF}.`);
   });
 
@@ -566,9 +570,9 @@ describe("safety amendment (NEW-1 stop-gap): staff answering never settles a cli
     const physio = report.gaps.find((g) => g.sectionKey === "F-13");
     assert.ok(physio?.id.endsWith("-physio"), "report-factory raises the physiotherapist's-choice gap");
     assert.equal(isClinicianGap(report, physio!), true);
-    const byStaff = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: STAFF, actorIsStaff: true });
+    const byStaff = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: STAFF_BY });
     assert.equal(byStaff.gaps.find((g) => g.id === physio!.id)?.resolution, undefined);
-    const byClinician = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: ACTOR });
+    const byClinician = reviewReducer(report, { type: "setAnswer", key: "F-13", value: "Fit", actor: BY });
     assert.equal(byClinician.gaps.find((g) => g.id === physio!.id)?.resolution?.kind, "resolved");
     // An ordinary staff entry (no clinician choice in its guidance) is not a clinician gap.
     assert.equal(isClinicianGap(report, { id: "gap-F-08-staff", sectionKey: "F-08" }), false);
@@ -577,13 +581,14 @@ describe("safety amendment (NEW-1 stop-gap): staff answering never settles a cli
 
 describe("safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked as edited text, never the clinician's own words", () => {
   const STAFF = "Pat Morgan (fictional)";
+  const STAFF_BY = namedActor(STAFF, "staff");
   it("staff text in a drafted or opinion box is origin “edited” and blocks like edited text; the clinician's own paragraph and a staff entry do not", () => {
     const { report, form, template } = drafted();
     const opinion = "He has made a full recovery and is fit for normal duties.";
     const paragraphOf = (r: Report, key: string) => r.sections.find((s) => s.key === key)!.paragraphs.at(-1)!;
     // Staff type an opinion into "Prognosis" (clinician_opinion) and into "Mechanism of injury" (a drafted narrative box).
     for (const key of ["F-10", "F-03"]) {
-      const byStaff = revalidated(reviewReducer(report, { type: "addParagraph", key, text: opinion, actor: STAFF, actorIsStaff: true }), form);
+      const byStaff = revalidated(reviewReducer(report, { type: "addParagraph", key, text: opinion, actor: STAFF_BY }), form);
       const p = paragraphOf(byStaff, key);
       assert.equal(p.origin, "edited", `${key}: staff text is not the clinician's own words`);
       const blocking = canSign(byStaff.flags, byStaff.gaps).blocking.filter((f) => f.paragraphId === p.id);
@@ -591,12 +596,12 @@ describe("safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked 
       assert.ok(byStaff.flags.some((f) => f.paragraphId === p.id && f.code === "OPINION_LANGUAGE"), `${key}: checked for opinion wording`);
     }
     // Negative twins: the same words added by the clinician are their own (fix round 1 behaviour unchanged)…
-    const byClinician = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: opinion, actor: ACTOR }), form);
+    const byClinician = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-10", text: opinion, actor: BY }), form);
     const own = paragraphOf(byClinician, "F-10");
     assert.equal(own.origin, "clinician");
     assert.deepEqual(byClinician.flags.filter((f) => f.paragraphId === own.id && (f.code === "UNCITED_PARAGRAPH" || f.code === "OPINION_LANGUAGE")), []);
     // …and a value staff type into a records box (F-08 Work telephone, a staff entry) stays "Entered by staff".
-    const entry = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-08", text: "01632 960123", actor: STAFF, actorIsStaff: true }), form);
+    const entry = revalidated(reviewReducer(report, { type: "addParagraph", key: "F-08", text: "01632 960123", actor: STAFF_BY }), form);
     const typed = paragraphOf(entry, "F-08");
     assert.equal(typed.origin, "clinician");
     assert.equal(entry.flags.some((f) => f.paragraphId === typed.id && f.code === "UNCITED_PARAGRAPH"), false);

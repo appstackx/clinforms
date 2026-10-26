@@ -15,6 +15,7 @@ import type { Clinician, Report } from "../../../../core/types";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../../core/voice";
 import { WORDING } from "../../../../core/wording";
 import { problem } from "../../../http";
+import type { SignCheck } from "./context";
 
 /** The refusal (409 SIGNER_NOT_AUTHOR) when the signer would approve another clinician's first person, else null. */
 export function voiceRefusal(actor: Actor, report: Report, signer: Clinician): Response | null {
@@ -39,3 +40,11 @@ export function voiceRefusal(actor: Actor, report: Report, signer: Clinician): R
   }
   return null;
 }
+
+/**
+ * W0.6 stub for WB (plan WB design 13, safe defaults until Dell answers): a sign-off field filled from the approver
+ * and labelled assessor or treating physio, when the approver wrote none of the assessment (or treatment) notes, and any
+ * HCPC or CSP field not filled from the approver's profile, block approval until the approver confirms it (audited,
+ * hashed). Refuses nothing until WB fills it in.
+ */
+export const signerConfirmationsCheck: SignCheck = () => null;

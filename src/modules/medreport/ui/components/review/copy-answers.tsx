@@ -22,6 +22,7 @@ import { useDemoClinic } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
 import { WORDING } from "../../wording";
 import type { Toast } from "./review-ui";
+import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
 /* Clipboard ------------------------------------------------------------------------------------- */
@@ -74,7 +75,7 @@ export interface AnswersCopyActions {
 export function useAnswersCopy(opts: {
   report: Report;
   form: FormDefinition | null;
-  actor: string;
+  actor: Actor;
   dispatch(action: ReviewAction): void;
   toast(t: Omit<Toast, "id">): void;
 }): AnswersCopyActions {

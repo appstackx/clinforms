@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import { BANNED_TERM_PATTERNS } from "../core/wording";
+import { namedActor } from "../core/actor";
 import type { EpisodeBundle, FormDefinition, Gap, Report } from "../core/types";
 import { HostHooksProvider, type HostHooks } from "./host-hooks";
 import { StudioShell } from "./components/shared/studio-shell";
@@ -337,7 +338,7 @@ describe("approved reports (test run 24/10/2026)", () => {
       receipt: undefined,
       activeSourceId: null,
       drafting: false,
-      actor: "Alex Morgan",
+      actor: namedActor("Alex Morgan"),
       dispatch: () => {},
       onOpenSource: () => {},
       canAcknowledge: () => false,

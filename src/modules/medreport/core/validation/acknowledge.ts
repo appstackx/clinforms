@@ -5,6 +5,7 @@
  * Pure; browser and server. Split out of core/validation/index.ts by W0.4 (bh2 module split, pure move; index.ts re-exports it).
  * Owner: WC (review roles and provenance) – docs/bh2-ownership.json.
  */
+import type { AckPolicy, FlagWithAckPolicy } from "../fix-types";
 import type { Report, ReportFlag } from "../types";
 
 /* ------------------------------------------------------------------------------------------------
@@ -38,4 +39,14 @@ export function canAcknowledge(flag: ReportFlag, report?: Pick<Report, "sections
     default:
       return false;
   }
+}
+
+/**
+ * W0.6 plumbing: who may acknowledge this flag (core/fix-types.ts AckPolicy) – the flag's own `ackPolicy` once a
+ * validator sets one (WB, WC), else today's rule: "member" where canAcknowledge allows it, "never" where it does not.
+ * Nothing yields "approver" yet; WC's canAcknowledge(flag, report, actor) enforces it.
+ */
+export function ackPolicyOf(flag: FlagWithAckPolicy, report?: Pick<Report, "sections">): AckPolicy {
+  if (flag.ackPolicy) return flag.ackPolicy;
+  return canAcknowledge(flag, report) ? "member" : "never";
 }

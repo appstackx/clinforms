@@ -11,16 +11,19 @@
  * - "later note" (B0-6): on an initial assessment form, a paragraph citing a note dated after that assessment.
  *
  * W0.4 module split (bh2): each check is a part in draft-fit/ – shorten.ts, commentary.ts (owner WB), measure.ts
- * ("later note"), repeats.ts – and compactPlace lives in core/forms/answer-shape.ts (re-exported here). This file runs
- * the parts in the order their flags were always listed: per drafted paragraph shorten, comment, later note; then the
- * repeated rows. Owners: docs/bh2-ownership.json (this file and the parts except commentary.ts: WD).
+ * ("later note"), repeats.ts, and the W0.6 stubs fragments.ts and printed-lead.ts – and compactPlace lives in
+ * core/forms/answer-shape.ts (re-exported here). This file runs the parts in the order their flags were always listed:
+ * per drafted paragraph shorten, comment, later note (then the stubs); then the repeated rows. Owners:
+ * docs/bh2-ownership.json (this file and the parts except commentary.ts: WD).
  *
  * Owner: ai agent.
  */
 import type { Paragraph, ReportFlag, ReportSection } from "../types";
 import { getValidationContext, hasText } from "./context";
 import { commentaryPart } from "./draft-fit/commentary";
+import { fragmentsPart } from "./draft-fit/fragments";
 import { laterNotePart } from "./draft-fit/measure";
+import { printedLeadPart } from "./draft-fit/printed-lead";
 import { repeatsPart } from "./draft-fit/repeats";
 import { shortenPart } from "./draft-fit/shorten";
 import type { ValidatorInput } from "./registry";
@@ -39,8 +42,8 @@ export interface DraftFitPart {
 export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
   const ctx = getValidationContext(input);
   const flags: ReportFlag[] = [];
-  // The order of the parts is the order of their flags.
-  const parts: DraftFitPart[] = [shortenPart(input), commentaryPart(), laterNotePart(input), repeatsPart(input)];
+  // The order of the parts is the order of their flags. fragments and printed-lead are W0.6 stubs (no flags yet, WD).
+  const parts: DraftFitPart[] = [shortenPart(input), commentaryPart(), laterNotePart(input), fragmentsPart(input), printedLeadPart(input), repeatsPart(input)];
 
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (p.origin !== "ai" || !hasText(p)) continue;

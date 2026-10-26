@@ -39,6 +39,7 @@ import {
 } from "./review-model";
 import { CopyAnswerButton } from "./copy-answers";
 import { AutoTextarea, CitationChip, OriginPill, Pill, StatusDot } from "./review-ui";
+import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
 export interface QuestionCardProps {
@@ -73,7 +74,7 @@ export interface QuestionCardProps {
   receipt: SignReceipt | undefined;
   activeSourceId: string | null;
   drafting: boolean;
-  actor: string;
+  actor: Actor;
   dispatch(action: ReviewAction): void;
   onOpenSource(id: string): void;
   canAcknowledge(flag: ReportFlag): boolean;
@@ -119,7 +120,7 @@ function ParagraphEditor({
   activeSourceId: string | null;
   flags: ReportFlag[];
   autoFocus: boolean;
-  actor: string;
+  actor: Actor;
   dispatch(action: ReviewAction): void;
   onOpenSource(id: string): void;
   canAcknowledge(flag: ReportFlag): boolean;
@@ -190,7 +191,7 @@ function ParagraphEditor({
           <button
             type="button"
             onClick={() => {
-              dispatch({ type: "revertParagraph", key: sectionKey, paragraphId: paragraph.id });
+              dispatch({ type: "revertParagraph", key: sectionKey, paragraphId: paragraph.id, actor });
               dispatch({ type: "logEdit", key: sectionKey, actor });
             }}
             className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
@@ -664,7 +665,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 className="h-8 bg-white"
                 onClick={() => {
                   startClinicianText(props.referralValue ?? "");
-                  dispatch({ type: "resolveGap", gapId: referrerGap.id, kind: "resolved", text: `Confirmed by ${actor}: the referrer asked for the referral's own reference.`, actor });
+                  dispatch({ type: "resolveGap", gapId: referrerGap.id, kind: "resolved", text: `Confirmed by ${actor.name}: the referrer asked for the referral's own reference.`, actor });
                 }}
               >
                 Use the referral&apos;s reference “{props.referralValue}”
@@ -678,7 +679,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 className="h-8 bg-white"
                 onClick={() => {
                   startClinicianText(props.referralFallback ?? "");
-                  dispatch({ type: "resolveGap", gapId: referrerGap.id, kind: "resolved", text: `Confirmed by ${actor}: the policy or membership number is the reference asked for.`, actor });
+                  dispatch({ type: "resolveGap", gapId: referrerGap.id, kind: "resolved", text: `Confirmed by ${actor.name}: the policy or membership number is the reference asked for.`, actor });
                 }}
               >
                 Use the policy or membership number “{props.referralFallback}”
@@ -778,7 +779,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               hideQuestion={showsNeedsClinician}
               bundle={bundle}
               readOnly={readOnly}
-              resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor })}
+              resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
               onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
@@ -793,7 +794,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               hideQuestion={showsNeedsClinician}
               bundle={bundle}
               readOnly={readOnly}
-              resolution={resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor })}
+              resolution={resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
               onOpenSource={onOpenSource}

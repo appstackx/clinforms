@@ -15,7 +15,7 @@
  */
 import type { ReportFlag } from "../types";
 import { namesPerson, otherCliniciansInFirstPerson } from "../voice";
-import { getValidationContext, hasText, makeFlag } from "./context";
+import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import type { ValidatorInput } from "./index";
 
 /** "Tom Ellis" / "Tom Ellis and Priya Shah". */
@@ -24,7 +24,8 @@ function names(list: string[]): string {
 }
 
 export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
-  const author = input.report.author;
+  // W0.6: the run's voice owner (context.ts voiceOwnerOf – report.author unless the caller names one).
+  const author = voiceOwnerOf(input);
   if (!author?.name.trim()) return [];
   const ctx = getValidationContext(input);
   const flags: ReportFlag[] = [];

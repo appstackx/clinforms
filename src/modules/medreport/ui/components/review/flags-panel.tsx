@@ -17,6 +17,7 @@ import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
 import { MIN_GAP_REASON, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
+import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
 export function FlagsPanel({
@@ -53,7 +54,7 @@ export function FlagsPanel({
   onLeaveBlank(keys: string[], reason: string, opinionKeys: string[]): void;
   readOnly: boolean;
   validating: boolean;
-  actor: string;
+  actor: Actor;
   dispatch(action: ReviewAction): void;
   onJump(key: string): void;
   onOpenSource(id: string): void;
@@ -76,7 +77,7 @@ export function FlagsPanel({
       gap={g}
       bundle={bundle}
       readOnly={readOnly}
-      resolution={gapResolutionOptions(report, g, actor)}
+      resolution={gapResolutionOptions(report, g, actor.name)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
       onOpenSource={onOpenSource}
@@ -108,7 +109,7 @@ export function FlagsPanel({
       box={box}
       bundle={bundle}
       readOnly={readOnly}
-      resolutionFor={(g) => gapResolutionOptions(report, g, actor)}
+      resolutionFor={(g) => gapResolutionOptions(report, g, actor.name)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
       onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}

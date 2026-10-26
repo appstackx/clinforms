@@ -1,11 +1,15 @@
 /**
  * The validator registry: the input every validator gets, and the validators in the order their flags are listed.
- * runValidators (run.ts) runs them; each validator file in this folder exports one.
+ * runValidators (run.ts) runs them; each validator file in this folder exports one. W0.6 registers empty stubs for WB's
+ * new checks (attribution-*.ts) and adds the explicit voice owner (ValidatorInput.voice; context.ts voiceOwnerOf).
  *
  * Pure; browser and server. Split out of core/validation/index.ts by W0.4 (bh2 module split, pure move; index.ts re-exports it).
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
-import type { ComputedFact, EpisodeBundle, FormDefinition, Report, ReportFlag, ReportTemplate } from "../types";
+import type { Clinician, ComputedFact, EpisodeBundle, FormDefinition, Report, ReportFlag, ReportTemplate } from "../types";
+import { validateClinicianNamed } from "./attribution-clinician-named";
+import { validateColleagueNamed } from "./attribution-colleague-named";
+import { validateOpinionBoxQuotes } from "./attribution-opinion-boxes";
 import { validateCitations } from "./citations";
 import { validateFigures } from "./figures";
 import { validateFormAnswers } from "./form-answers";
@@ -27,6 +31,12 @@ export interface ValidatorInput {
   computedFacts: ComputedFact[];
   /** The referrer's form map of a form report (10/2026: its recorded mail-merge fields are checked). */
   form?: Pick<FormDefinition, "analysis" | "fields">;
+  /**
+   * W0.6 plumbing: whose "I" the report speaks in (the voice owner). Absent: report.author, as before. WB makes it the
+   * report's approver everywhere (review, /validate, /sign, drafting) and the receipt's signer at /render; `owner: null`
+   * then means strict mode (every cited note counts as another clinician's). Read it with context.ts voiceOwnerOf().
+   */
+  voice?: { owner: Clinician | null };
 }
 
 /** A single validator. Each validator file in this folder exports one. */
@@ -41,6 +51,11 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "terms", run: validateTerms },
   { name: "opinion-language", run: validateOpinionLanguage },
   { name: "voice", run: validateClinicianVoice },
+  // W0.6 stubs for WB's new attribution checks (core/validation/attribution-*.ts): registered, so WB fills them in
+  // without touching this list. Today each returns no flags.
+  { name: "attribution-opinion-boxes", run: validateOpinionBoxQuotes },
+  { name: "attribution-colleague-named", run: validateColleagueNamed },
+  { name: "attribution-clinician-named", run: validateClinicianNamed },
   { name: "scope-terms", run: validateScopeTerms },
   { name: "placeholders", run: validatePlaceholders },
   { name: "merge-fields", run: validateMergeFields },

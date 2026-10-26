@@ -14,6 +14,7 @@ import { isDemoHcpc } from "../../../../core/demo-clinic";
 import type { Clinician } from "../../../../core/types";
 import { WORDING } from "../../../../core/wording";
 import type { MedreportDeps } from "../../../deps";
+import type { SignCheck, SignerCheckContext } from "./context";
 import { logEvent, problem } from "../../../http";
 
 const normaliseHcpc = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
@@ -58,3 +59,9 @@ export async function demoNumberCheck(input: { deps: MedreportDeps; actor: Actor
   }
   return { demoClinic, response: null };
 }
+
+/**
+ * W0.6 stub for WC (plan WC design 1): /sign requires signer = the report's approver (Report.approver), or a takeover
+ * ("Take over as approver", audited and hashed) – else 409 APPROVER_MISMATCH. Refuses nothing until WC fills it in.
+ */
+export const approverCheck: SignCheck<SignerCheckContext> = () => null;

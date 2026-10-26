@@ -11,6 +11,7 @@ import "server-only";
 import { validateReport, type ValidateReportResult } from "../../../../core/validation";
 import type { FormDefinition, Report, ReportTemplate } from "../../../../core/types";
 import { logEvent, problem } from "../../../http";
+import type { SignCheck } from "./context";
 
 /** The validators' result, and the refusal (409 SIGNOFF_BLOCKED) when blocking items remain. */
 export function validationCheck(input: { report: Report; template: ReportTemplate; form: FormDefinition | null; started: number }): { result: ValidateReportResult; response: Response | null } {
@@ -30,3 +31,16 @@ export function validationCheck(input: { report: Report; template: ReportTemplat
   }
   return { result, response: null };
 }
+
+/**
+ * W0.6 stub for WA1 (plan WA1 design 6): in a clinic's Studio, load the stored revision by id and rev and refuse with
+ * 409 STALE_REPORT when the hashed content of the request body differs. Refuses nothing until WA1 fills it in.
+ */
+export const staleReportCheck: SignCheck = () => null;
+
+/**
+ * W0.6 stub for WA1 (plan WA1 design 6): compute the issue state, run a dry-run FINAL fill with the receipt's signer
+ * and signedAt on the stored form file, and refuse with per-field items on any fatal fill outcome or remaining merge
+ * code. Refuses nothing until WA1 fills it in (WA2's fill outcomes feed it).
+ */
+export const issuedDocumentCheck: SignCheck = () => null;
