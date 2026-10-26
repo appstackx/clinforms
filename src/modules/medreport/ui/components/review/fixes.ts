@@ -52,9 +52,10 @@ import { checkSafeEdit, figureChanges, figuresOf, removeSentences, sentenceKey, 
 import type { Clinician, EpisodeBundle, FormDefinition, FormField, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
 import { ATTRIBUTION_FIX_GENERATORS } from "../../../core/validation/attribution-fixes";
+import { defaultVoiceOwner } from "../../../core/validation/attribution-owner";
 import { medicinesWithoutDose } from "../../../core/validation/draft-fit/measure";
 import { withoutPrintedVerb } from "../../../core/validation/draft-fit/printed-lead";
-import { REPEAT_REMOVAL_HOOK, duplicateParagraphs, repeatedSentences } from "../../../core/validation/draft-fit/repeats";
+import { REPEAT_REMOVAL_HOOK, duplicateParagraphs, nameWords, removableRepeat, repeatedSentences } from "../../../core/validation/draft-fit/repeats";
 import { VALUE_ONLY_HOOK, citesOnlyOwnersNotes, valueOnlyText, valueOnlyTimePoint } from "../../../core/validation/draft-fit/shorten";
 import { hookEnabled } from "../../../core/validation/hooks";
 import { editParagraph, removeParagraph } from "./reducer";
@@ -93,15 +94,19 @@ export interface FixContext {
   template: ReportTemplate;
 }
 
-/** The approver (or the author) as the voice owner of a report. */
-function voiceOwnerOfReport(report: Pick<Report, "approver" | "author">): Clinician | null {
-  if (report.approver?.name) return { name: report.approver.name, hcpc: report.approver.hcpc };
-  return report.author ?? null;
+/**
+ * The voice owner of a report for the engine: its approver, else nobody (bh2 WD design 2, C-REV-1; harden N5). Never the
+ * report's author – the client defaults that to the clinician who wrote the most notes, so a colleague's finding would
+ * lose its name on that guess ("Use the value only" with no approver chosen is never offered).
+ */
+function voiceOwnerOfReport(report: Pick<Report, "approver">): Clinician | null {
+  if (report.approver?.name?.trim()) return { name: report.approver.name, hcpc: report.approver.hcpc };
+  return null;
 }
 
 function validationOf(report: Report, ctx: FixContext): ReportFlag[] {
   const owner = voiceOwnerOfReport(report);
-  return validateReport(report, ctx.template, { form: ctx.form, ...(report.approver ? { voice: { owner } } : {}) }).blocking;
+  return validateReport(report, ctx.template, { form: ctx.form, ...(owner ? { voice: { owner } } : {}) }).blocking;
 }
 
 function boxText(report: Pick<Report, "sections">, key: string): string {
@@ -169,16 +174,51 @@ const JOB_TITLE = /\b(?:physiotherapists?|physio|clinicians?|therapists?|consult
 const TITLED_NAME = /\b(?:Dr|Prof)\.?\s+[A-Z]/;
 const FIRST_PERSON_RECORD = /\bI (?:recorded|noted|found|assessed|measured|observed|examined|documented|saw|reviewed)\b/;
 const DATE_FIGURE = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/;
+/** A recording verb or "also": the sentence reports what a clinician recorded, at a time the sentence before gave. */
+const RECORDING = /\b(?:also|recorded|noted|found|assessed|measured|observed|examined|documented|reviewed|scored|reported)\b/i;
+/**
+ * A sentence that leans on the one before it (bh2 WD harden N6): it opens by pointing back ("This had improved …",
+ * "These were …", "It settled …"), or it refers to a time the sentence before gave ("At that review …", "on the same
+ * day", "at that appointment") without a date of its own.
+ */
+const POINTS_BACK =
+  /^\s*[("“‘]?\s*(?:This|These|That|Those|It|Such|The same|Again|Then|Afterwards|Subsequently|Later|Thereafter|Since then|By then|Back then|Until then|At the time|At that (?:time|point|stage)|Before (?:this|that)|At this point|Following this|After (?:this|that)|Despite (?:this|that)|However|Nevertheless|In addition|Additionally|Furthermore|Moreover|Also|As a result|Consequently|Therefore|Otherwise|Instead)\b|\b(?:this|these|those|the same)\s+(?:had|has|have|was|were|is|are|did|does|settled|improved|resolved|eased|worsened|persisted|continued|remained)\b/i;
+const REFERS_TO_TIME =
+  /\b(?:(?:at|on|in|during|from|by|after|before|since|following)\s+(?:that|this|the same|the said|the|each)\s+(?:review|appointment|session|visit|assessment|consultation|examination|contact|occasion|note|day|date|time|point|stage)|(?:that|the same)\s+(?:day|date|week|morning|afternoon|evening))\b/i;
 
-/** Whether a sentence says who recorded it or when: a clinician's name or job title, "I recorded …", or a date. */
-function attributes(sentence: string, names: readonly string[]): boolean {
-  if (JOB_TITLE.test(sentence) || TITLED_NAME.test(sentence) || FIRST_PERSON_RECORD.test(sentence)) return true;
-  if (names.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(sentence))) return true;
+/** Whether a sentence names a clinician: by name, as "Dr …" / "Prof …", or as "I recorded …". */
+function namesClinician(sentence: string, names: readonly string[]): boolean {
+  if (TITLED_NAME.test(sentence) || FIRST_PERSON_RECORD.test(sentence)) return true;
+  return names.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(sentence));
+}
+
+/** Whether a sentence holds a date ("06/05/2026", "6 May"). */
+function hasDate(sentence: string): boolean {
   return figuresOf(sentence).some((f) => DATE_FIGURE.test(f)) || /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/.test(sentence);
 }
 
+/**
+ * Whether a removed sentence gave who recorded something or when – a clinician's name or job title, "I recorded …", or
+ * a date – so that the sentence after it may lean on it.
+ */
+function givesAttribution(sentence: string, names: readonly string[]): boolean {
+  return JOB_TITLE.test(sentence) || namesClinician(sentence, names) || hasDate(sentence);
+}
+
+/**
+ * Whether a sentence says who recorded it or when on its own (bh2 WD harden N6): a clinician's name, "Dr …", "I
+ * recorded …", or a date. A bare job title is not enough – "the physiotherapist also recorded …" names nobody in a
+ * record with two physiotherapists.
+ */
+function attributes(sentence: string, names: readonly string[]): boolean {
+  return namesClinician(sentence, names) || hasDate(sentence);
+}
+
 /** Question words that say nothing about what is asked. */
-const QUESTION_STOPWORDS = new Set("a an the and or of to in on at for with by from is are was were be been if yes no please give state describe details detail any other what which when how does do did has have had this that these those there their his her its patient claimant".split(" "));
+const QUESTION_STOPWORDS = new Set(
+  ("a an the and or of to in on at for with by from is are was were be been if yes no please give state describe details detail any other what which when how does do did has have had this that these those there their his her its patient claimant " +
+    "you your we our us client above below either both brief briefly provide note notes list where necessary appropriate relevant additional further comments comment information").split(" "),
+);
 
 /** The words of a question that say what it asks ("If yes, describe the treatment advised" → treatment, advised). */
 function questionWords(question: string): string[] {
@@ -192,17 +232,17 @@ function questionWords(question: string): string[] {
  */
 const QUESTION_TOPICS: ReadonlyArray<{ question: RegExp; sentence: RegExp }> = [
   {
-    question: /\b(?:treat\w*|therap\w*|intervention\w*|management|managed|exercis\w*|rehab\w*|advice|advised|care)\b/i,
+    question: /\b(?:treat\w*|therap\w*|intervention\w*|management|managed|exercis\w*|rehab\w*|advice|advised|care|done|so far|to date|given|provided|carried out|undertaken)\b/i,
     sentence:
-      /\b(?:treat\w*|therap\w*|exercis\w*|programmes?|programs?|HEP|manual|mobilis\w*|mobiliz\w*|manipulat\w*|massage|soft[- ]tissue|acupunct\w*|needl\w*|tap(?:e|ed|ing)|advice|advised|educat\w*|reassur\w*|stretch\w*|strengthen\w*|hydrotherap\w*|ultrasound|TENS|shockwave|injections?|sessions?|prescrib\w*|pilates|gym|tilts?|squats?|bridges?|rehab\w*)\b/i,
+      /\b(?:treat\w*|therap\w*|exercis\w*|programmes?|programs?|HEP|manual|mobilis\w*|mobiliz\w*|manipulat\w*|massage|soft[- ]tissue|acupunct\w*|needl\w*|tap(?:e|ed|ing)|advice|advised|educat\w*|reassur\w*|stretch\w*|strengthen\w*|hydrotherap\w*|ultrasound|TENS|shockwave|injections?|sessions?|prescrib\w*|pilates|gym|tilts?|squats?|bridges?|rehab\w*|taught|shown|instructed|demonstrated|issued|bracing|core|graded|pacing|loading|progressed|mobility|heat|ice|cold|hot|packs?|braces?|splints?|crutch\w*|walking aid|orthotic\w*|insoles?)\b/i,
   },
   {
-    question: /\b(?:examin\w*|findings?|objective|range|movement|flexion|extension|tests?|measure\w*|scores?|outcome)\b/i,
+    question: /\b(?:examin\w*|findings?|find|found|observations?|objective|physical|impression|range|movement|flexion|extension|tests?|measure\w*|scores?|outcome)\b/i,
     sentence:
       /\b(?:range|flexion|extension|rotation|abduction|movement|tender\w*|palpat\w*|strength|power|reflex\w*|tests?|tested|positive|negative|limited|restricted|full|pain-free|ROM|examin\w*|observ\w*|measur\w*|scor\w*|index|oswestry|ODI|NPRS|PSFS|QuickDASH|degrees?|neurolog\w*|sensation)\b/i,
   },
   {
-    question: /\b(?:symptoms?|complaints?|pain|presenting|problems?)\b/i,
+    question: /\b(?:symptoms?|complaints?|pain|presenting|problems?|feel\w*|felt)\b/i,
     sentence: /\b(?:pain\w*|ache\w*|aching|stiff\w*|sore\w*|symptom\w*|numb\w*|tingl\w*|sleep\w*|swell\w*|weak\w*|discomfort|headaches?|spasms?)\b/i,
   },
   {
@@ -225,7 +265,56 @@ const QUESTION_TOPICS: ReadonlyArray<{ question: RegExp; sentence: RegExp }> = [
     question: /\b(?:goals?|aims?|targets?)\b/i,
     sentence: /\b(?:goals?|aim\w*|return\w*|targets?)\b/i,
   },
+  {
+    question: /\b(?:prognos\w*|outlook|expected|expectation\w*|recovery time)\b/i,
+    sentence: /\b(?:prognos\w*|outlook|expect\w*|recover\w*|resolv\w*|settl\w*|improv\w*|full|return\w*|weeks?|months?)\b/i,
+  },
+  {
+    question: /\b(?:adjust\w*|modif\w*|restrict\w*|adaptations?|amended|phased|fitness|fit for)\b/i,
+    sentence: /\b(?:adjust\w*|modif\w*|restrict\w*|avoid\w*|amended|light(?:er)? duties|phased|reduced hours|no (?:heavy )?lifting|fit|duties|hours|shifts?)\b/i,
+  },
+  {
+    question: /\b(?:referr\w*|reason for)\b/i,
+    sentence: /\b(?:referr\w*|injur\w*|pain|accident|incident|assess\w*|treatment|GP|insurer|employer)\b/i,
+  },
+  {
+    question: /\b(?:diagnos\w*|impression|conditions?|injur(?:y|ies)|sustained|clinical details)\b/i,
+    sentence: /\b(?:diagnos\w*|strain\w*|sprain\w*|whiplash|WAD|non-specific|mechanical|tendin\w*|tendon\w*|syndrome|injur\w*|fracture\w*|tear|lesion|pain|ligament\w*|muscul\w*|soft[- ]tissue|consistent with)\b/i,
+  },
+  {
+    question: /\b(?:red flags?)\b/i,
+    sentence: /\b(?:red flags?|saddle|bladder|bowel|cauda|weight loss|fever|night pain|neurolog\w*)\b/i,
+  },
+  {
+    question: /\b(?:pre-existing|previous|past|prior|medical history|PMH|history)\b/i,
+    sentence: /\b(?:previous\w*|past|history|before|prior|pre-existing|episode|years? ago|no other|otherwise well|fit and well|(?:19|20)\d{2})\b/i,
+  },
+  {
+    question: /\b(?:psychosocial|barriers?|obstacles?|yellow flags?|recovery)\b/i,
+    sentence: /\b(?:anx\w*|stress\w*|worr\w*|fear\w*|mood|depress\w*|barriers?|obstacles?|psychosocial|motivat\w*|confiden\w*|sleep\w*|work\w*|childcare|caring)\b/i,
+  },
+  {
+    question: /\b(?:hospital|A&E|admitted|admission|overnight)\b/i,
+    sentence: /\b(?:hospital|A&E|admitted|ambulance|emergency|x-?ray\w*|scan\w*)\b/i,
+  },
+  {
+    question: /\b(?:dates?|appointments?|sessions?|attend\w*|failures? to attend)\b/i,
+    sentence: /\b(?:attended|sessions?|appointments?|did not attend|DNA|cancel\w*|\d{1,2}\/\d{1,2}\/\d{2,4})\b/i,
+  },
+  {
+    question: /\b(?:quality of life|daily|activit\w*|function\w*|hobb\w*|sleep\w*|lifestyle|social)\b/i,
+    sentence: /\b(?:sleep\w*|walk\w*|sit\w*|stand\w*|driv\w*|housework|hobb\w*|sport\w*|football|run\w*|dress\w*|lift\w*|daily|activit\w*|function\w*|gym|garden\w*)\b/i,
+  },
 ];
+
+/**
+ * Whether the engine can tell what a question asks about by one of the topics above ("Mechanism of injury", "Work
+ * status", "Appointment dates"). "Anything else to add" and "Details where it applies" are not: for them
+ * only the question's own words, used by a sentence of the box, tell which sentence answers it.
+ */
+export function questionTopicKnown(question: string): boolean {
+  return QUESTION_TOPICS.some((t) => t.question.test(question));
+}
 
 /**
  * Whether a sentence answers the question: it uses a word of the question (compared on their first five letters:
@@ -307,9 +396,17 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
       let j = i;
       while (j + 1 < spans.length && removed(j + 1)) j++;
       const next = spans[j + 1];
-      const tookAttribution = spans.slice(i, j + 1).some((x) => attributes(x.text, names));
-      if (next && tookAttribution && !attributes(next.text, names)) {
+      const run = spans.slice(i, j + 1);
+      const tookAttribution = run.some((x) => givesAttribution(x.text, names));
+      const tookDate = run.some((x) => hasDate(x.text));
+      if (next && POINTS_BACK.test(next.text)) {
+        problems.push(`“${next.text.slice(0, 30)}…” would point back at a sentence that is no longer there`);
+      } else if (next && REFERS_TO_TIME.test(next.text) && !hasDate(next.text)) {
+        problems.push(`“${next.text.slice(0, 30)}…” would lose the date it refers to`);
+      } else if (next && tookAttribution && !attributes(next.text, names)) {
         problems.push(`“${next.text.slice(0, 30)}…” would lose the clinician or date it relies on`);
+      } else if (next && tookDate && !hasDate(next.text) && RECORDING.test(next.text)) {
+        problems.push(`“${next.text.slice(0, 30)}…” would lose the date it relies on`);
       }
       i = j;
     }
@@ -343,6 +440,11 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
     const removedAnswering = c.removedSpans.some((r) => answering(r.text));
     const stillAnswering = splitSentences(boxText(next, c.sectionKey)).some((x) => answering(x.text));
     if (removedAnswering && !stillAnswering) problems.push("it would remove the only sentence that answers the question");
+    // A question whose topic the engine cannot tell ("Anything else to add", "Details where it applies") and whose
+    // words no sentence of the box uses: any sentence may be its answer, so none is removed (bh2 WD harden N6).
+    else if (!questionTopicKnown(question) && !splitSentences(boxText(report, c.sectionKey)).some((x) => answering(x.text))) {
+      problems.push("it cannot tell which sentence answers the question");
+    }
   }
   // The repeated twin still prints, and says every figure and date the removed sentence says (bh2 WD review M1).
   for (const t of c.twins ?? []) {
@@ -355,6 +457,9 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
     }
     const lost = figureChanges(t.removed, t.text).lost;
     if (lost.length) problems.push(`“${label}” does not say ${lost.join(", ")}`);
+    // The twin says the same finding, and every word of it (bh2 WD harden N1): never "right knee" for "left knee",
+    // "occasional" for "constant", the discharge state for the first assessment's, a finding for its negative.
+    else if (!removableRepeat(t.removed, t.text, nameWords(report.bundleSnapshot))) problems.push(`“${label}” does not say all of “${t.removed.slice(0, 40)}…”`);
   }
   // Re-validation: no blocking flag added, none cleared but the ones the fix answers.
   const after = validationOf({ ...next, flags: [] }, ctx);
@@ -681,11 +786,13 @@ export function writeInOwnVoice(report: Report, authorName: string, actor: strin
  * with the one other clinician whose note it cites named instead of "I" / "me" / "my" – or null (two clinicians, or
  * wording the rewrite cannot settle: the clinician edits it).
  */
-export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId">): { name: string; text: string } | null {
+export function nameClinicianFix(report: Pick<Report, "sections" | "bundleSnapshot" | "author" | "approver">, flag: Pick<ReportFlag, "code" | "sectionKey" | "paragraphId">): { name: string; text: string } | null {
   if (flag.code !== "OTHER_CLINICIAN_VOICE" || !flag.sectionKey || !flag.paragraphId) return null;
   const p = report.sections.find((s) => s.key === flag.sectionKey)?.paragraphs.find((x) => x.id === flag.paragraphId);
   if (!p) return null;
-  const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, report.author);
+  // The voice owner the validators use (WB's seam, attribution-owner.ts – the author today, the approver once WB
+  // lands): the flag and its fix always agree on whose "I" it is (bh2 WD harden N5).
+  const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, defaultVoiceOwner(report));
   if (!others || others.length !== 1) return null;
   const text = nameClinicianInstead(p.text, others[0]);
   return text ? { name: others[0], text } : null;

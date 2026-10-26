@@ -152,10 +152,12 @@ function emptySectionGap(key: string, seed: string, spec: TemplateSection, field
   };
 }
 
-/** A quoted excerpt for gap wording (at most `n` characters). */
-function quoted(text: string, n = 160): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  return `“${t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t}”`;
+/**
+ * Held-back drafted text, quoted in full for gap wording (bh2 WD harden minor 1): text that is not printed is shown
+ * whole where it is held back, never cut short – the tail of a long paragraph is neither printed nor lost.
+ */
+function quoted(text: string): string {
+  return `“${text.replace(/\s+/g, " ").trim()}”`;
 }
 
 /**
@@ -262,7 +264,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
             `retract${paragraphs.length + heldGaps.length + 1}`,
             {
               kind: "meta_held_back",
-              issue: `Drafted text held back – check it: ${meta.retracted.map((t) => quoted(t, 240)).join(" ")} The draft corrected itself here, so none of this is printed: check it against the notes.`,
+              issue: `Drafted text held back – check it: ${meta.retracted.map((t) => quoted(t)).join(" ")} The draft corrected itself here, so none of this is printed: check it against the notes.`,
               suggestedQuestion: `What should “${label}” say? Add what the notes record in your own words, or mark this checked.`,
             },
             retractedFrom,
@@ -332,7 +334,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
         "yesno",
         {
           kind: field.fillSource.kind === "clinician_opinion" ? "no_opinion_recorded" : "record_value",
-          issue: `“${label}” needs a Yes or a No first. Related details are in the notes (${quoted(drafted, 120)}), but no clinician recorded them as such, so nothing has been entered.`,
+          issue: `“${label}” needs a Yes or a No first. Related details are in the notes (${quoted(drafted)}), but no clinician recorded them as such, so nothing has been entered.`,
           suggestedQuestion: `Is “${label}” a Yes or a No? If Yes, write what you found.`,
         },
         paragraphs.flatMap((p) => p.sourceIds),

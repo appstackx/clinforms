@@ -222,7 +222,8 @@ const NOT_TAKING = /\b(?:no|not|never|stopped|declined|without|nil|refused|avoid
  * the word "dose". A frequency alone ("as needed", "PRN", "three times a day") is not a dose – "(dose not stated)" is
  * then still true.
  */
-const DOSE = /\b\d+(?:\.\d+)?\s?(?:mg|g|mcg|µg|micrograms?|milligrams?|ml|mls)\b|\b\d+\/\d+\b|\b(?:one|two|three|four|\d+)\s+(?:tablets?|capsules?|puffs?|doses?)\b|\b(?:dose|doses|dosage)\b/i;
+const DOSE =
+  /\b\d+(?:\.\d+)?\s?(?:mg|g|mcg|µg|micrograms?|milligrams?|ml|mls)\b|\b\d+\/\d+\b|\b(?:one|two|three|four|\d+)\s+(?:tablets?|capsules?|puffs?|doses?)\b|\b(?:dose|doses|dosage)\b|\b\d{2,4}\s*(?:x\s*)?(?:od|bd|bid|tds|tid|qds|qid|nocte|mane|prn|daily|twice|three times|four times|once|a day|per day)\b/i;
 
 /** A medicine the text says is taken, named without a dose in its sentence: its name (lower case) and where it ends. */
 export interface UndosedMention {
@@ -235,7 +236,7 @@ export interface UndosedMention {
 export function medicinesWithoutDose(text: string): UndosedMention[] {
   const out: UndosedMention[] = [];
   for (const s of splitSentences(text)) {
-    if (DOSE.test(s.text)) continue;
+    if (DOSE.test(s.text) || new RegExp(`(?:${MEDICINE.source})\\s*\\(?\\d{2,4}\\b`, "i").test(s.text)) continue;
     const re = new RegExp(MEDICINE.source, "gi");
     let m: RegExpExecArray | null;
     while ((m = re.exec(s.text)) !== null) {
@@ -248,11 +249,31 @@ export function medicinesWithoutDose(text: string): UndosedMention[] {
   return out;
 }
 
-/** Whether the cited text gives a dose for the medicine: any of its sentences that names it (or its brand) holds a dose. */
+/**
+ * Whether the cited text gives a dose for the medicine: a sentence that names it (or its brand) holds a dose, or one of
+ * the two sentences or lines after it does before another medicine is named ("Started on ibuprofen by his GP. 400 mg
+ * three times a day.", "Meds: ibuprofen⏎400 mg tds" – bh2 WD harden N4). A bare strength with how often ("Ibuprofen
+ * 400 tds") or straight after the name ("Ibuprofen 400") is a dose too. In doubt the notes give a dose: the warning
+ * and its "(dose not stated)" fix are for a medicine whose notes say nothing of the dose.
+ */
 export function citedDoseFor(name: string, citedText: string): boolean {
   const names = [name, ...(SAME_MEDICINE[name] ?? [])];
-  const named = new RegExp(`\\b(?:${names.map((n) => n.replace(/-/g, "\\-")).join("|")})\\b`, "i");
-  return splitSentences(citedText, "notes").some((s) => named.test(s.text) && DOSE.test(s.text));
+  const alternatives = names.map((n) => n.replace(/-/g, "\\-")).join("|");
+  const named = new RegExp(`\\b(?:${alternatives})\\b`, "i");
+  // A strength written straight after the name, without a unit ("Ibuprofen 400", "naproxen 500 mg").
+  const strength = new RegExp(`\\b(?:${alternatives})\\s*\\(?\\d{2,4}(?:\\.\\d+)?\\b`, "i");
+  const anyMedicine = new RegExp(MEDICINE.source, "i");
+  const sentences = splitSentences(citedText, "notes");
+  return sentences.some((s, i) => {
+    if (!named.test(s.text)) return false;
+    if (DOSE.test(s.text) || strength.test(s.text)) return true;
+    // The next sentences or lines, up to two, until one names another medicine.
+    for (const next of sentences.slice(i + 1, i + 3)) {
+      if (anyMedicine.test(next.text) && !named.test(next.text)) return false;
+      if (DOSE.test(next.text)) return true;
+    }
+    return false;
+  });
 }
 
 /** The first medicine of the text that is taken, named without a dose, that the cited sources give no dose for either. */

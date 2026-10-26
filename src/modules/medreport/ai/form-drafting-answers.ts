@@ -16,10 +16,12 @@
  *   only: "Sarah Reid recorded “should settle within 4–6 weeks” (16/09/2026), which is within the printed “0-3
  *   months”" (B2-10, B3-10 (c)). The duration is read from the anchored note sentence only – never from the gap, the
  *   option or a drafted paragraph.
- * - any other choice: only when one sentence of a cited note holds the whole option phrase, not negated ("Some
- *   difficulty" is never ticked against "… no difficulty sleeping …", B3-15). Otherwise it is held back; on a box that
- *   is neither an opinion nor the physiotherapist's choice the person may tick it in one click (ledger hook
- *   "tick-suggested").
+ * - any other choice: only when one sentence of a cited note holds the whole option phrase as a fact – not negated,
+ *   not a plan, a wish, a question or an earlier episode ("Some difficulty" is never ticked against "… no difficulty
+ *   sleeping …", B3-15; "Acupuncture" never from the Plan's "Acupuncture at the next appointment."). Otherwise it is
+ *   held back: when the note says otherwise or only plans it, the gap quotes it and offers no one-click (bh2 WD harden
+ *   minor 2); when no note mentions it, on a box that is neither an opinion nor the physiotherapist's choice the
+ *   person may tick it in one click (ledger hook "tick-suggested").
  *
  * Every gap carries Gap.kind (core/schemas.ts GapKindSchema), from which the review words "Needs clinician input".
  *
@@ -47,7 +49,21 @@ export function isClinicianBox(field: Pick<FormField, "fillSource" | "guidance">
 
 const NEGATOR = /\b(?:no|not|never|nil|none|without|denie[sd]|den(?:y|ies)|free of|absence of|ruled out|isn't|wasn't|doesn't|didn't|hasn't|hadn't|aren't|weren't|cannot|can't|unable|declin(?:ed|es|ing)|refus(?:ed|es|ing)|stopp(?:ed|ing)|discontinued|unsuitable|contraindicated|avoid(?:ed|s|ing)?|yet)\b/i;
 /** Words that make a statement a plan, a hope, an advice or a condition rather than a fact. */
-const NOT_ASSERTED = /\b(?:to be|plan(?:s|ned|ning)?|consider(?:s|ed|ing)?|if|unless|hope(?:s|d)?|hoping|aim(?:s|ed|ing)?|goal|would|could|may|might|should|will|shall|going to|intend(?:s|ed)?|expect(?:s|ed)?|recommend(?:s|ed|ation)?|advis(?:e|es|ed)|suggest(?:s|ed)?|propos(?:e|es|ed)|discuss(?:ed|ion)?|offer(?:s|ed)?|referr?(?:al|ed)? for|await(?:s|ed|ing)?|pending|possible|possibly|trial of|next session|in future|later)\b/i;
+const NOT_ASSERTED = /\b(?:to be|plan(?:s|ned|ning)?|consider(?:s|ed|ing)?|if|unless|hope(?:s|d)?|hoping|aim(?:s|ed|ing)?|goal|would|could|may|might|should|will|shall|going to|intend(?:s|ed)?|expect(?:s|ed)?|recommend(?:s|ed|ation)?|advis(?:e|es|ed)|suggest(?:s|ed)?|propos(?:e|es|ed)|discuss(?:ed|ion)?|offer(?:s|ed)?|referr?(?:al|ed)? for|await(?:s|ed|ing)?|pending|possible|possibly|trial of|next session|in future|later|next|keen|eager|wants?|wanted|wish(?:es|ed)?|would like|interested|enquir\w*|asked|ask(?:s|ing)?|quer(?:y|ied|ies)|book(?:ed|ing)?|schedul\w*|arrang(?:e|ed|ing)|request(?:s|ed|ing)?|explained|consent\w*|options?|tb[ca]|to follow|to start|prn|as needed|as required|maybe|perhaps|potential(?:ly)?|likely|unlikely|probabl[ey])\b/i;
+/**
+ * Words that put a statement before this episode (bh2 WD harden N3): "Had manual therapy for neck pain in 2019",
+ * "previous episode", "history of …", "years ago", "before the accident".
+ */
+const BEFORE_EPISODE =
+  /\b(?:previous(?:ly)?(?!\s+(?:session|appointment|visit|review|week|day|note|treatment)s?\b)|prior to (?:the )?(?:accident|injury|incident|this)|in the past|years? ago|last year|history of|h\/o|past episode|episode of|before the (?:accident|injury|incident)|pre-?(?:injury|accident|incident))\b/i;
+/** A note's field line ("Plan: …", "P: …", "PMH: …") and what kind of field it is. */
+const FIELD_LINE = /^\s*(Subjective|Objective|Assessment|Plan|Other|Past medical history|Social history|S|O|A|P|PMH|SH)\s*[:\-–]/i;
+const PLAN_FIELD = /^(?:plan|p)$/i;
+const PAST_FIELD = /^(?:past medical history|pmh)$/i;
+/** A year on its own ("in 2019"), not part of a full date ("18/03/2026"). */
+const BARE_YEAR = /(?<![\d/.-])((?:19|20)\d{2})(?![\d/])/g;
+/** The full dates of a source (dd/mm/yyyy) – a note's own header carries its date. */
+const FULL_DATE = /\b\d{1,2}\/\d{1,2}\/((?:19|20)\d{2})\b/g;
 /** Where one clause of a sentence ends and another begins (a negation in one clause is not about the other). */
 const CLAUSE_BREAK = /;|\s+(?:but|however|whereas|although|though)\b/i;
 
@@ -70,17 +86,31 @@ export function optionWords(option: string): string[] {
     .filter((w) => w && !LINKING.has(w));
 }
 
+/** What a cited source says about an option: it states it, it says otherwise, or it only plans, queries or recalls it. */
+export interface OptionEvidence {
+  kind: "stated" | "negated" | "not_asserted";
+  /** The note sentence, as written. */
+  sentence: string;
+}
+
 /**
  * The sentence of a cited note that states the whole option (B3-15): the words of the option in their order in ONE
  * sentence, with at most two linking words between them – "fit for a phased return" states "Fit with a phased return",
  * "some stiffness … no difficulty" never states "Some difficulty" – and stated as a fact: no negation anywhere in the
  * clause that holds it ("Manual therapy was not used", "Full duties are not yet possible", "Exercise was declined"), and
- * nothing that makes it a plan, a hope or a condition ("Acupuncture to be considered if no progress", "hopes to return
- * to full duties", "would benefit from manual therapy" – bh2 WD review M5). A negation or modal word the option itself
- * holds ("Not fit") is part of the phrase. The clause is the sentence up to a ";", "but", "however", "whereas" or
- * "although". Never a word found somewhere else in the notes. Null when none does.
+ * nothing that makes it a plan, a hope, a wish, a question or a condition ("Acupuncture to be considered if no
+ * progress", "hopes to return to full duties", "would benefit from manual therapy", "Keen to try acupuncture",
+ * "?Acupuncture", "Acupuncture at the next appointment" – bh2 WD review M5, harden N3). A sentence of a note's Plan
+ * field is a plan, whatever its words ("Acupuncture at the next appointment."); a sentence of its past medical history,
+ * or one placed before this episode ("Had manual therapy for neck pain in 2019", "previous episode", "years ago"), is
+ * not this episode's (harden N3). A negation or modal word the option itself holds ("Not fit") is part of the phrase.
+ * The clause is the sentence up to a ";", "but", "however", "whereas" or "although". Never a word found somewhere else
+ * in the notes.
+ *
+ * Returns the stating sentence; else the first sentence that says otherwise (`negated`) or only plans, queries or
+ * recalls it (`not_asserted`) – for the gap's wording; else null.
  */
-export function optionStatedIn(option: string, notes: readonly string[]): string | null {
+export function optionEvidence(option: string, notes: readonly string[]): OptionEvidence | null {
   const words = optionWords(option);
   if (words.length === 0) return null;
   const optionNegated = words.some((w) => NEGATOR.test(w));
@@ -102,28 +132,65 @@ export function optionStatedIn(option: string, notes: readonly string[]): string
     return true;
   };
   const optionText = ` ${normalise(option)} `;
-  /** A clause, without the option's own words, says the option is negated or not a fact. */
-  const doubted = (clause: string): boolean => {
+  const withoutOption = (clause: string): string => {
     let rest = ` ${normalise(clause)} `;
     for (const w of words) rest = rest.replace(new RegExp(` ${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w* `), " ");
-    const negated = NEGATOR.exec(rest);
-    if (negated && !(optionNegated && optionText.includes(` ${negated[0].toLowerCase()} `))) return true;
-    const modal = NOT_ASSERTED.exec(rest);
-    return Boolean(modal && !optionText.includes(` ${modal[0].toLowerCase()} `));
+    return rest;
   };
+  /** A clause, without the option's own words, says the option is negated. */
+  const negated = (clause: string): boolean => {
+    const m = NEGATOR.exec(withoutOption(clause));
+    return Boolean(m && !(optionNegated && optionText.includes(` ${m[0].toLowerCase()} `)));
+  };
+  /** A clause, without the option's own words, says the option is not a fact (a plan, a wish, a question, the past). */
+  const notAsserted = (clause: string): boolean => {
+    if (clause.includes("?")) return true;
+    const m = NOT_ASSERTED.exec(withoutOption(clause));
+    if (m && !optionText.includes(` ${m[0].toLowerCase()} `)) return true;
+    return BEFORE_EPISODE.test(clause);
+  };
+  let fallback: OptionEvidence | null = null;
   for (const text of notes) {
+    // The episode's first year: the earliest full date the source gives (a note's header carries its date).
+    const years = Array.from(text.matchAll(FULL_DATE), (m) => Number(m[1]));
+    const episodeYear = years.length ? Math.min(...years) : null;
+    // The field each line belongs to ("Plan: …" and the lines after it, until the next field).
+    const fieldAt: Array<{ start: number; field: string }> = [];
+    let offset = 0;
+    for (const line of text.split("\n")) {
+      const m = FIELD_LINE.exec(line);
+      if (m) fieldAt.push({ start: offset, field: m[1] });
+      offset += line.length + 1;
+    }
+    const fieldOf = (at: number) => fieldAt.filter((f) => f.start <= at).pop()?.field ?? "";
     for (const s of splitSentences(text, "notes")) {
-      for (const clause of s.text.split(CLAUSE_BREAK)) {
+      const field = fieldOf(s.start);
+      // The sentence without its field's label ("Plan: Manual therapy was not used." → "Manual therapy was not used."):
+      // the label says which field it is in, never what the sentence says.
+      const body = s.text.replace(FIELD_LINE, "").trim();
+      const outOfEpisode = PAST_FIELD.test(field) || Array.from(body.matchAll(BARE_YEAR), (m) => Number(m[1])).some((y) => episodeYear === null || y < episodeYear);
+      for (const clause of body.split(CLAUSE_BREAK)) {
         const tokens = normalise(clause).split(" ");
         for (let i = 0; i < tokens.length; i++) {
           if (!phraseAt(tokens, i)) continue;
-          if (doubted(clause)) continue;
-          return s.text;
+          // A plan's own words first ("to be considered if no progress" is a plan, not a negation), then a negation,
+          // then the field or the time it is in ("Plan: Manual therapy was not used." says otherwise).
+          if (notAsserted(clause)) fallback ??= { kind: "not_asserted", sentence: body };
+          else if (negated(clause)) fallback ??= { kind: "negated", sentence: body };
+          else if (PLAN_FIELD.test(field) || outOfEpisode) fallback ??= { kind: "not_asserted", sentence: body };
+          else return { kind: "stated", sentence: body };
+          break;
         }
       }
     }
   }
-  return null;
+  return fallback;
+}
+
+/** The sentence of a cited note that states the whole option as a fact (optionEvidence), or null. */
+export function optionStatedIn(option: string, notes: readonly string[]): string | null {
+  const e = optionEvidence(option, notes);
+  return e?.kind === "stated" ? e.sentence : null;
 }
 
 /** The option's words no cited source uses at all (for the gap's wording). */
@@ -217,8 +284,26 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
       },
     };
   }
-  const stated = optionStatedIn(value, input.citedTexts);
-  if (stated) return opinion ? opinionHeldBack(input, which) : { enter: true };
+  // An opinion box's answer is the approver's, whatever the notes say: held back with the cited note's own words (C-2;
+  // harden minor 3 – never "not stated … without a negation" when the note states it with a qualifier).
+  if (opinion) return opinionHeldBack(input, which);
+  const evidence = optionEvidence(value, input.citedTexts);
+  if (evidence?.kind === "stated") return { enter: true };
+  if (evidence) {
+    // The note says otherwise, or only plans, queries or recalls it (harden minor 2): said so, and never one click.
+    const cut = (t: string) => (t.length > 200 ? `${t.slice(0, 199).trimEnd()}…` : t);
+    return {
+      enter: false,
+      gap: {
+        kind: "choice_held_back",
+        issue:
+          evidence.kind === "negated"
+            ? `The suggested answer “${value}” has not been ticked: the cited notes say otherwise – “${cut(evidence.sentence)}”.`
+            : `The suggested answer “${value}” has not been ticked: the cited notes give it only as a plan, a question, a wish or from before this episode – “${cut(evidence.sentence)}”.`,
+        suggestedQuestion: `${which} Check the notes and choose it yourself, or leave it blank.`,
+      },
+    };
+  }
   // A held-back choice: offered as one click only on a box a person may tick (C-2), while the hook is enabled.
   const oneClick = !clinician && hookEnabled(TICK_SUGGESTED_HOOK);
   return {

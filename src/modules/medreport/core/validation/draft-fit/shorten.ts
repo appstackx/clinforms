@@ -27,11 +27,12 @@
  * Split out of core/validation/draft-fit.ts by W0.4 (bh2 module split); the triggers and value-only are bh2 WD.
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
+import { formatUkDate } from "../../dates";
 import { compactPlace } from "../../forms/answer-shape";
 import { figuresOf } from "../../text/sentences";
 import type { Clinician, EpisodeBundle, FormField, Paragraph, ReportFlag } from "../../types";
 import { sameClinician } from "../../voice";
-import { makeFlag } from "../context";
+import { makeFlag, voiceOwnerOf } from "../context";
 import type { DraftFitPart } from "../draft-fit";
 import { defineHook } from "../hooks";
 import type { ValidatorInput } from "../registry";
@@ -133,11 +134,55 @@ export function citesOnlyOwnersNotes(p: Pick<Paragraph, "sourceIds">, bundle: Pi
   return notes.length > 0 && notes.length === p.sourceIds.filter((id) => /^N-/.test(id)).length && notes.every((n) => sameClinician(n!.author, owner));
 }
 
+/** Whether "Use the value only" was applied to the paragraph and not undone since. */
+function shortenedByValueOnly(p: Pick<Paragraph, "fixes">): boolean {
+  let n = 0;
+  for (const f of p.fixes ?? []) {
+    if (f.kind === "value-only") n++;
+    else if (f.kind === "undo-value-only") n = Math.max(0, n - 1);
+  }
+  return n > 0;
+}
+
+/**
+ * A value "Use the value only" shortened, whose cited notes are not all the voice owner's (bh2 WD harden N5, C-REV-1):
+ * the fix was right for the approver at the time, but the approver has changed (or none is chosen now), so a
+ * colleague's finding now prints without their name. Blocking until who recorded it is back, or the approver keeps
+ * it with a reason (ackPolicy "approver"). Null when the text names every other clinician whose note it cites.
+ */
+export function valueOnlyAttributionFlag(input: ValidatorInput, p: Paragraph, sectionKey: string): ReportFlag | null {
+  if (!shortenedByValueOnly(p)) return null;
+  // The owner the fix was offered for: the approver (WD design 2) – an explicit voice owner when the caller names one,
+  // never the author on its own (the client's default for it is a guess).
+  const approver = input.report.approver?.name?.trim() ? { name: input.report.approver.name, hcpc: input.report.approver.hcpc } : null;
+  const owner = input.voice ? voiceOwnerOf(input) : approver;
+  if (citesOnlyOwnersNotes(p, input.bundle, owner)) return null;
+  const others = p.sourceIds
+    .map((id) => input.bundle.notes.find((n) => n.id === id))
+    .filter((n): n is NonNullable<typeof n> => n !== undefined && !(owner && sameClinician(n.author, owner)));
+  if (others.length === 0) return null;
+  const unnamed = others.filter((n) => !new RegExp(`\\b${(n.author.name.trim().split(/\s+/).pop() ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(p.text));
+  if (unnamed.length === 0) return null;
+  const whose = Array.from(new Set(unnamed.map((n) => `${n.author.name}'s note of ${formatUkDate(n.date)}`))).join(" and ");
+  const flag = makeFlag({
+    code: "DRAFT_FIT",
+    severity: "blocking",
+    sectionKey,
+    paragraphId: p.id,
+    evidence: "value-only attribution",
+    message: `This value no longer says who recorded it (a one-click fix took that out), but it is from ${whose}, ${owner ? `not ${owner.name}'s own` : "and no approving clinician has been chosen"}: put back who recorded it, or keep it with a reason.`,
+  });
+  flag.ackPolicy = "approver";
+  return flag;
+}
+
 export function shortenPart(input: ValidatorInput): DraftFitPart {
   const fields = new Map((input.form?.fields ?? []).map((f) => [f.id, f]));
   return {
     paragraph(p, section) {
       const flags: ReportFlag[] = [];
+      const lost = valueOnlyAttributionFlag(input, p, section.key);
+      if (lost) flags.push(lost);
       const field = fields.get(section.fieldId ?? section.key);
       const place = section.paragraphs[0] === p ? compactPlace(field) : null;
       const trigger = place && field ? shortenTrigger(p.text, field) : null;

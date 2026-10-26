@@ -92,20 +92,54 @@ const PROMPT_TERMS: readonly RegExp[] = [
   /\bkind\s*[=:]\s*["“]?(?:clinician[- ]opinion|record[- ]narrative|recorded opinion only|narrative from the record)/i,
   /\bThese are [\w -]{0,40}questions\b/i,
   /\b(?:the|this) question kind\b/i,
+  // bh2 WD harden N2: the prompt's basis labels (rule 3) echoed in prose – "(clinician_observed)", "Basis:
+  // patient_reported." – and the tags or kinds written with a space or in square brackets: "(clinician opinion)",
+  // "[record question]", "As this is a record question, …", "This is an opinion question …".
+  /\b(?:patient_reported|clinician_observed|clinician_opinion_recorded)\b/i,
+  /\bbasis\s*[:=]\s*["“]?\s*(?:patient[ _-]reported|clinician[ _-]observed|clinician[ _-]opinion(?:[ _-]recorded)?|record)\b/i,
+  /[([]\s*(?:patient[ -]reported|clinician[ -]observed|clinician[ -]opinion(?:[ -]recorded)?|record[ -]narrative|recorded[ -]opinion(?: only)?|opinion question|record question|narrative question)\s*[)\]]/i,
+  /\b(?:an?|this|the|that)\s+(?:record|opinion|clinician[- ]opinion|record[- ]narrative|recorded[- ]opinion|narrative)\s+questions?\b/i,
+  // Talk about the question itself: "This question asks for the recorded finding, so …".
+  /\b(?:this|the)\s+(?:question|box|field)\s+(?:asks|is asking|wants|requires|needs|calls)\b/i,
 ];
+/**
+ * The words a sentence opens with when it corrects what came before it: "Actually, that was …", "Wait, that is from …",
+ * and (bh2 WD harden N2) "My mistake – …", "Apologies, …", "On closer reading, …", "Re-reading the note, …", "That
+ * should read: …", "To correct the above, …", "To clarify, …", "Edit: …", "I misread …", "That was wrong: …",
+ * "Disregard that …".
+ */
+const CORRECTING_OPENER =
+  "wait|hmm+|actually|sorry|oops|correction|on reflection|on second thoughts?|scratch that|strike that|I mean|my mistake|my error|apologies|I apologi[sz]e|" +
+  "looking again|on (?:a )?second look|on checking(?: again)?|checking again|having (?:double-?)?checked(?: the notes?)?|" +
+  "to clarify(?=\\s*[,:\\u2013\\u2014-])|edit(?=\\s*:)|update(?=\\s*:)|I was wrong|I got (?:that|this) wrong|(?:that|this) (?:was|is) (?:wrong|incorrect|not right)|that's (?:wrong|incorrect)|" +
+  "on (?:a )?closer (?:reading|read|look at the notes?)|on re-?reading(?: the notes?)?|re-?reading(?: the notes?)?|having re-?read(?: the notes?)?|" +
+  "(?:that|this|it) should (?:read|say|have said)|to correct (?:that|this|the above|the previous \\w+)|correcting (?:that|this|the above)|I misread|I stand corrected|" +
+  "disregard (?:that|this|the (?:previous|last|above)\\w*)|ignore (?:that|this|the (?:previous|last|above))";
+/** A sentence that opens by correcting what came before it (see CORRECTING_OPENER). */
+const RETRACTION = new RegExp(
+  `^[([]?\\s*(?:(?:no|oh|ok(?:ay)?|right|well|hmm+)\\s*[,.!:;\\u2013\\u2014-]?\\s*)?(?:${CORRECTING_OPENER})\\b(?:\\s*[,:;.!\\u2013\\u2014-]|\\s+(?:that|this|it|no|not|the|I|he|she|they|there)\\b)`,
+  "i",
+);
 /** Self-corrections: the drafting thinking aloud. */
 const SELF_CORRECTION: readonly RegExp[] = [
   /(?:\.{3}|…)\s*(?:wait|hmm+|actually|no,|sorry|oops|correction|let me)\b/i,
-  /^[([]?\s*(?:(?:no|oh|ok(?:ay)?|right|well|hmm+)\s*[,.!:;\u2013\u2014-]?\s*)?(?:wait|hmm+|actually|sorry|oops|correction|on reflection|on second thoughts?|scratch that|I mean)\b(?:\s*[,:;.!\u2013\u2014-]|\s+(?:that|this|it|no|not|the|I|he|she|they|there)\b)/i,
+  RETRACTION,
   /,\s*(?:actually|sorry|correction|I mean|wait)\s*[,:;\u2013\u2014-]/i,
-  /,\s*or rather\b/i,
+  // bh2 WD harden N2: a correction after a dash, a semicolon or "though" – "… at discharge – actually, that was …",
+  // "…; actually, …", "…, though actually that was …" – and anywhere: "(or rather, …)", "my mistake", "on closer
+  // reading", "that should read".
+  /(?:[;\u2013\u2014]|\s-\s)\s*(?:(?:though|but|no)\s+)?(?:actually|sorry|correction|I mean|wait|my mistake|apologies)\b/i,
+  /,\s*(?:though|but|no)\s+actually\b/i,
+  /\bor rather\b/i,
+  /\b(?:my mistake|my error|I misread|I mis-read|I stand corrected|on closer reading|on re-?reading|re-?reading the notes?|having re-?read|I was wrong|I got (?:that|this) wrong|I (?:have )?double-?checked|looking again|on (?:a )?second look)\b/i,
+  /\b(?:that|this|it) should (?:read|say|have said)\b/i,
   /\blet me (?:check|re-?check|look again|re-?read|count|recount|think|correct)\b/i,
-  /\bscratch that\b/i,
+  /\b(?:scratch|strike) that\b/i,
   /\bI (?:mean|meant),/,
 ];
-/** A sentence that opens by correcting what came before it ("Actually, that was …", "Wait, that is from …"). */
-const RETRACTION =
-  /^[([]?\s*(?:(?:no|oh|ok(?:ay)?|right|well|hmm+)\s*[,.!:;\u2013\u2014-]?\s*)?(?:wait|hmm+|actually|sorry|oops|correction|on reflection|on second thoughts?|scratch that|I mean)\b(?:\s*[,:;.!\u2013\u2014-]|\s+(?:that|this|it|no|not|the|I|he|she|they|there)\b)/i;
+
+/** A sentence that says something about what came before it ("that was …", "this is from …", "it should be …"). */
+const POINTS_BACK_AT_EARLIER = /\b(?:that|this|it|these|those)\s+(?:was|is|were|are|should|belongs?|came|comes|refers?|applies|applied)\b/i;
 
 /** Whether `text` opens by correcting what came before it – in an earlier paragraph too ("Actually, that was …"). */
 export function opensWithRetraction(text: string): boolean {
@@ -121,11 +155,14 @@ function quotedSpans(text: string): Array<[number, number]> {
   return out;
 }
 
-/** The first meta match in `text`: [start, end) of the matched words, or null. A self-correction in quoted speech is not one. */
-export function metaMatch(text: string): { start: number; end: number } | null {
+/**
+ * The first meta match in `text`: [start, end) of the matched words and its kind – the prompt's own `term` (a tag, a
+ * label), or a `correction` (the drafting correcting itself) – or null. A self-correction in quoted speech is not one.
+ */
+export function metaMatch(text: string): { start: number; end: number; kind: "term" | "correction" } | null {
   for (const re of PROMPT_TERMS) {
     const m = re.exec(text);
-    if (m) return { start: m.index, end: m.index + m[0].length };
+    if (m) return { start: m.index, end: m.index + m[0].length, kind: "term" };
   }
   const quotes = quotedSpans(text);
   const quoted = (i: number) => quotes.some(([a, b]) => i > a && i < b);
@@ -133,7 +170,7 @@ export function metaMatch(text: string): { start: number; end: number } | null {
     const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
     let m: RegExpExecArray | null;
     while ((m = g.exec(text)) !== null) {
-      if (!quoted(m.index)) return { start: m.index, end: m.index + m[0].length };
+      if (!quoted(m.index)) return { start: m.index, end: m.index + m[0].length, kind: "correction" };
       if (m[0].length === 0) g.lastIndex++;
     }
   }
@@ -145,12 +182,16 @@ export function hasMetaWording(text: string): boolean {
   return metaMatch(text) !== null || splitSentences(text, "notes").some((p) => metaMatch(p.text) !== null);
 }
 
-/** The bracketed aside "( … )" around [start, end), if the piece has one. */
+/** The bracketed aside "( … )" or "[ … ]" around [start, end), if the piece has one. */
 function bracketAround(piece: string, start: number, end: number): { start: number; end: number } | null {
-  const open = piece.lastIndexOf("(", start);
-  const close = piece.indexOf(")", end);
-  if (open < 0 || close < 0 || piece.slice(open, close).includes(")") || piece.slice(open + 1, start).includes("(")) return null;
-  return { start: open, end: close + 1 };
+  for (const [o, c] of [["(", ")"], ["[", "]"]] as const) {
+    // A match that begins with the bracket itself ("(clinician opinion)") is inside it.
+    const open = piece.lastIndexOf(o, start);
+    const close = piece.indexOf(c, Math.max(end - 1, open + 1));
+    if (open < 0 || close < 0 || close < end - 1 || piece.slice(open, close).includes(c) || piece.slice(open + 1, start).includes(o)) continue;
+    return { start: open, end: close + 1 };
+  }
+  return null;
 }
 
 /** What is left of a piece without [start, end), tidied; null when it is no longer a sentence on its own. */
@@ -168,7 +209,9 @@ function remainder(piece: string, start: number, end: number): string | null {
 function metaPart(piece: string): { kept: string | null; held: string } {
   const m = metaMatch(piece);
   if (!m) return { kept: piece, held: "" };
-  const bracket = bracketAround(piece, m.start, m.end);
+  // Only the prompt's own term goes as an aside on its own. A correction in brackets ("limited (or rather, full and
+  // pain-free) at discharge") corrects the words before it: the whole sentence is held back (bh2 WD harden N2).
+  const bracket = m.kind === "term" ? bracketAround(piece, m.start, m.end) : null;
   if (bracket) {
     const rest = remainder(piece, bracket.start, bracket.end);
     if (rest) return { kept: rest, held: piece.slice(bracket.start, bracket.end) };
@@ -212,8 +255,11 @@ export function holdBackMeta(text: string): MetaHoldBack {
   const held = new Set<number>();
   const retracting = new Set<number>();
   pieces.forEach((p, i) => {
-    if (metaMatch(p.text) === null) return;
-    if (i > 0 && RETRACTION.test(p.text)) {
+    const m = metaMatch(p.text);
+    if (m === null) return;
+    // A retraction: a sentence that opens by correcting what came before, or any self-correction that points back at
+    // it ("I have double-checked and that was the first visit." – bh2 WD harden N2).
+    if (i > 0 && (RETRACTION.test(p.text) || (m.kind === "correction" && POINTS_BACK_AT_EARLIER.test(p.text)))) {
       // A retraction: it and every sentence before it, and the broken run after it.
       for (let j = 0; j <= i; j++) {
         held.add(j);

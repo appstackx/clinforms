@@ -16,6 +16,11 @@
  *   multiset: "PSFS 2.7" is repeated inside "PSFS from 2.7 to 5.3", never by "PSFS 5.3"); when both sentences are
  *   dated, they must share a date (two dated observations of the same finding are two time points). Which of the two
  *   may be removed is the one-click engine's rule: only a sentence whose every figure and date its twin also says;
+ * - the finding (bh2 WD harden N1): two sentences with different negations ("not painful" / "painful"), a contrary
+ *   side, severity, pattern, direction or result word ("left" / "right", "constant" / "occasional", "better" /
+ *   "worse", "full" / "limited") or different time points ("At the first assessment …" / "At discharge … still …")
+ *   report two findings, never a repeat (sameFinding) – and a removal needs exactly the same markers and every content
+ *   word of the removed sentence in its twin (removableRepeat);
  * - never across an initial / current / now / at-discharge pair of questions (R-regression-4, AC-DRF-6) – the two
  *   labels name different time points and otherwise ask the same thing ("Which symptoms were there on the first
  *   visit?" / "Which symptoms are there today?", "Sleep quality on presentation" / "Sleep quality on discharge"); never between
@@ -134,11 +139,166 @@ export function sameFigures(a: string, b: string): boolean {
   return true;
 }
 
+/**
+ * Words that make one finding a different finding though every other word is shared (bh2 WD harden N1), by kind: the
+ * side ("left knee" / "right knee"), a severity, a pattern ("constant" / "occasional"), a direction of change
+ * ("better" / "worse"), a result ("positive" / "negative", "full" / "limited"), a count ("two" / "three"). Two
+ * sentences with contrary ones are never a repeat (sameFinding).
+ */
+const CONTRAST_KINDS: Readonly<Record<string, string>> = Object.fromEntries(
+  (
+    [
+      ["side", "left right bilateral bilaterally unilateral"],
+      ["severity", "mild mildly moderate moderately severe severely slight slightly marked markedly significant significantly minimal minor major extreme"],
+      ["pattern", "constant constantly intermittent intermittently occasional occasionally persistent persistently frequent frequently rare rarely sometimes always episodic regular regularly"],
+      ["direction", "better worse improved improving improvement worsened worsening deteriorated deteriorating unchanged increased increasing decreased decreasing reduced reducing resolved resolving settled settling eased easing aggravated aggravating exacerbated flared"],
+      ["count", "one two three four five six seven eight nine ten eleven twelve once twice thrice half quarter"],
+      ["result", "positive negative normal abnormal full partial partially limited restricted"],
+    ] as const
+  ).flatMap(([kind, list]) => list.split(" ").map((w) => [w, kind] as const)),
+);
+
+/**
+ * Time-point words in a sentence (bh2 WD harden N1): "At the first assessment, lumbar flexion was limited by 50%" and
+ * "At discharge, lumbar flexion was still limited by 50%" report two time points, never a repeat. Each is read as its
+ * time point ("initially" → initial, "discharged" → discharge).
+ */
+const SENTENCE_TIME: Readonly<Record<string, string>> = {
+  first: "first", initial: "initial", initially: "initial", baseline: "initial", outset: "initial", onset: "onset", presentation: "presentation", presenting: "presentation",
+  admission: "admission", referral: "referral", pre: "pre", preinjury: "pre", originally: "original", original: "original", previously: "previous", previous: "previous",
+  earlier: "previous", discharge: "discharge", discharged: "discharge", now: "now", current: "now", currently: "now", today: "now", presently: "now", latest: "latest",
+  final: "final", finally: "final", still: "still", recently: "recent", since: "since", anymore: "anymore", longer: "longer",
+};
+
+/**
+ * Time words that place a sentence loosely ("previous", "since", "recently"): a removal needs them in both sentences,
+ * but the advice does not treat them as a time point of their own.
+ */
+const LOOSE_TIME = new Set(["previous", "original", "recent", "since", "anymore", "longer"]);
+
+/** The contrast words of a sentence by kind, and its time points – its time words and its dates (see above). */
+function markersOf(sentence: string): { contrast: Map<string, Set<string>>; time: Set<string> } {
+  const contrast = new Map<string, Set<string>>();
+  const time = new Set<string>();
+  const add = (kind: string, w: string) => contrast.set(kind, new Set([...Array.from(contrast.get(kind) ?? []), w]));
+  for (const w of alphaWords(sentence)) {
+    const kind = CONTRAST_KINDS[w];
+    if (kind) add(kind, w);
+    const t = SENTENCE_TIME[w];
+    if (t) time.add(t);
+  }
+  // The side written short ("L knee", "R) shoulder", "Lt hip") – never a spinal level ("L4/5", "S1").
+  for (const m of Array.from(sentence.matchAll(/\b(L|R|Lt|Rt|LHS|RHS)\b(?![\d/])/g))) add("side", /^L/.test(m[1]) ? "left" : "right");
+  for (const d of figuresByKind(sentence).dates) time.add(d);
+  return { contrast, time };
+}
+
+const sameSet = (a: ReadonlySet<string> | undefined, b: ReadonlySet<string> | undefined): boolean => {
+  const x = a ?? new Set<string>();
+  const y = b ?? new Set<string>();
+  return x.size === y.size && Array.from(x).every((w) => y.has(w));
+};
+
+/** "pain-free", "symptom free" read as the negatives they are ("no pain", "no symptom"). */
+const withoutFree = (sentence: string): string => sentence.replace(/\b([A-Za-z]+)[- ]free\b/g, "no $1");
+
+/** Words a negation looks past to what it negates ("no longer painful", "not yet able"). */
+const NEGATION_FILLER = new Set(["longer", "yet", "really", "very", "fully", "quite"]);
+/** The negation words, as single tokens. */
+const NEGATION_WORDS = new Set(
+  "no not nil none never nothing neither nor without denies denied deny absent unremarkable unable cannot can't isn't wasn't weren't aren't doesn't didn't don't hasn't haven't hadn't won't couldn't wouldn't shouldn't".split(" "),
+);
+
+/**
+ * What a sentence negates and what it asserts (bh2 WD harden N1). After each negation, the next two content words of
+ * the same clause are negated – "lumbar flexion was not painful" → painful; "no saddle numbness, bladder normal" →
+ * saddle, numbness; "full, pain-free range" → pain. A word is asserted when it also appears outside any negation
+ * ("Numeric Pain Rating Scale … no pain" asserts and negates "pain").
+ */
+function polarityOf(sentence: string, names: ReadonlySet<string>): { negated: Set<string>; asserted: Set<string> } {
+  const negated = new Set<string>();
+  const total = new Map<string, number>();
+  const inNegation = new Map<string, number>();
+  const bump = (m: Map<string, number>, w: string) => m.set(w, (m.get(w) ?? 0) + 1);
+  for (const clause of withoutFree(sentence).split(/[,;:()\u2013\u2014]|\s-\s|\band\b|\bbut\b/i)) {
+    const tokens = clause.toLowerCase().match(/[a-z]+(?:['’][a-z]+)?/g) ?? [];
+    const content = tokens.map((t) => Array.from(contentWords(t, names))[0] ?? null);
+    content.forEach((c) => c && bump(total, c));
+    tokens.forEach((t, i) => {
+      if (!NEGATION_WORDS.has(t.replace("’", "'"))) return;
+      let taken = 0;
+      for (let j = i + 1; j < tokens.length && taken < 2; j++) {
+        if (NEGATION_FILLER.has(tokens[j])) continue;
+        const c = content[j];
+        if (!c) continue;
+        negated.add(c);
+        bump(inNegation, c);
+        taken++;
+      }
+    });
+  }
+  const asserted = new Set<string>();
+  total.forEach((n, w) => {
+    if (n > (inNegation.get(w) ?? 0)) asserted.add(w);
+  });
+  return { negated, asserted };
+}
+
+/** The words a sentence negates (see polarityOf). */
+export function negatedWords(sentence: string, names: ReadonlySet<string> = new Set()): Set<string> {
+  return polarityOf(sentence, names).negated;
+}
+
+/**
+ * Whether one sentence denies what the other asserts (bh2 WD harden N1): a word one only negates that the other only
+ * asserts – "lumbar flexion was not painful" / "lumbar flexion was painful", "no pain at rest" / "pain at rest". A
+ * longer sentence that adds its own negatives ("…, with no restrictions, and no headaches") does not.
+ */
+export function polarityConflict(a: string, b: string, names: ReadonlySet<string> = new Set()): boolean {
+  const x = polarityOf(a, names);
+  const y = polarityOf(b, names);
+  const denies = (p: typeof x, q: typeof x) => Array.from(p.negated).some((w) => !p.asserted.has(w) && q.asserted.has(w) && !q.negated.has(w));
+  return denies(x, y) || denies(y, x);
+}
+
+const subset = (a: ReadonlySet<string>, b: ReadonlySet<string>) => Array.from(a).every((w) => b.has(w));
+
+/**
+ * Whether two sentences report the same finding, their other words aside (bh2 WD harden N1). Always: neither denies
+ * what the other asserts (polarityConflict – "not painful" / "painful" are two findings). Then, for the advisory
+ * warning (`advice`), no contrary marker: where both sentences give a side, a severity, a pattern, a direction, a
+ * result or a count, one's are among the other's ("left" / "right", "constant" / "occasional", "better" / "worse",
+ * "two" / "three" are contrary; "negative" / "normal and negative" are not), and where both give a time point (a time
+ * word or a date), they share one ("At the first assessment …" / "At discharge … still …", "On 18/03/2026 …" / "At
+ * discharge …") – a sentence that gives none is not contrary. For a removal (`removal`, a = the removed sentence, b =
+ * its twin), exactly the same markers and time points, and every negative of the removed sentence in its twin: a
+ * sentence that says "at discharge", "still" or "left" where its twin does not says something its twin does not.
+ */
+export function sameFinding(a: string, b: string, mode: "advice" | "removal" = "advice", names: ReadonlySet<string> = new Set()): boolean {
+  if (polarityConflict(a, b, names)) return false;
+  const x = markersOf(a);
+  const y = markersOf(b);
+  const kinds = new Set([...Array.from(x.contrast.keys()), ...Array.from(y.contrast.keys())]);
+  if (mode === "removal") {
+    if (!subset(negatedWords(a, names), negatedWords(b, names))) return false;
+    return sameSet(x.time, y.time) && Array.from(kinds).every((k) => sameSet(x.contrast.get(k), y.contrast.get(k)));
+  }
+  const tx = Array.from(x.time).filter((t) => !LOOSE_TIME.has(t));
+  const ty = Array.from(y.time).filter((t) => !LOOSE_TIME.has(t));
+  if (tx.length > 0 && ty.length > 0 && !tx.some((t) => ty.includes(t))) return false;
+  return Array.from(kinds).every((k) => {
+    const p = x.contrast.get(k);
+    const q = y.contrast.get(k);
+    return !p || !q || subset(p, q) || subset(q, p);
+  });
+}
+
 /** Whether two sentences say the same thing (see the header). */
 export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>): boolean {
   const [short, long] = alphaWords(a).length <= alphaWords(b).length ? [a, b] : [b, a];
   if (alphaWords(short).length < 5) return false;
   if (!sameFigures(a, b)) return false;
+  if (!sameFinding(a, b, "advice", names)) return false;
   const ws = contentWords(short, names);
   const wl = contentWords(long, names);
   if (ws.size < 3 || wl.size < 3) return false;
@@ -147,6 +307,19 @@ export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>
     if (wl.has(w)) shared++;
   });
   return shared / Math.min(ws.size, wl.size) >= 0.8;
+}
+
+/**
+ * Whether `removed` may be taken out because `twin` (an earlier box's sentence) says it (bh2 WD harden N1): the two
+ * repeat, they give exactly the same negations, sides, severities, patterns, directions, results and time points
+ * (sameFinding "removal"), and every content word of `removed` is in `twin` – a sentence that says one word more
+ * ("occasional", "right", "still", a qualifier the twin does not have) says something the twin does not, and is never
+ * removed. The figures and dates are checked by the one-click engine (the twin must say every one of them).
+ */
+export function removableRepeat(removed: string, twin: string, names: ReadonlySet<string>): boolean {
+  if (!sentencesRepeat(removed, twin, names) || !sameFinding(removed, twin, "removal", names)) return false;
+  const inTwin = contentWords(twin, names);
+  return Array.from(contentWords(removed, names)).every((w) => inTwin.has(w));
 }
 
 const TIME_WORDS =

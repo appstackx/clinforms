@@ -199,8 +199,10 @@ test("a choice is ticked only when the cited notes use the option's words", () =
   assert.equal(s.status, "needs_input");
   assert.equal(res.gaps.length, 1);
   assert.equal(res.gaps[0].raisedBy, "system");
-  // bh2 WD design 4 (B3-15): every word of the option counts, short ones too ("fit", "some").
-  assert.match(res.gaps[0].issue, /“Fit with a phased return” is not stated in the cited notes \(they do not use the words “fit”, “phased”, “return”\)/);
+  // bh2 WD harden minor 3: an opinion box's choice is always held back with the cited note's own words (or that no
+  // sentence of it says the answer) – never "not stated … without a negation" when the note states it with a
+  // qualifier. The option-words wording stays for record boxes (form-drafting-answers.test.ts).
+  assert.match(res.gaps[0].issue, /“Fit with a phased return” to “Is the employee fit for work\?” has not been entered: it is the clinician's opinion, which only the approving clinician gives\. No sentence of the cited note \(Sarah Reid, 18\/03\/2026\) says it in so many words\./);
   assert.match(res.gaps[0].suggestedQuestion, /\(Fit for normal duties \/ Fit with a phased return \/ Not fit\)/);
   assert.deepEqual(res.gaps[0].relatedNoteIds, ["N-001"]);
   // Safety amendment (C-2): F-03 is a clinician_opinion box, so the held-back option is NOT offered as one click
