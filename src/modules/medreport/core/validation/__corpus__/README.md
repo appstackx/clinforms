@@ -78,7 +78,10 @@ Release fix generators are picked up from `offeredFixes(report, {actor, form, te
 `ui/components/review/fixes.ts` (WD, after the W0.4 split). Each item is either `{kind, label, key, apply(report)}` or W0.6's
 `FixProposal` (`core/fix-types.ts`), which the harness applies as the reducer action `applyFix {proposal}` by the acting member
 (kinds the corpus names: `attribution-prefix`, `use-note-words`, `name-instead`,
-`accept-note-words`, `remove-commentary`, `repeat-removal`, `value-only`, `dose-not-stated`). Lint: `core/form-map-lint.ts`
+`accept-note-words`, `remove-commentary`, `repeat-removal`, `value-only`, `dose-not-stated`). Since bh2-rc1 the review's
+one-click actions that are not text fixes come from `offeredActions(report, {actor})` in `ui/components/review/fixes.ts`
+(WB's "Accept as my note's words" through WC's reducer, "Remove the note link"), each `{kind, label, key, apply}`; the
+harness reads both lists. Lint: `core/form-map-lint.ts`
 `lintFormMap(form, opts) → [{rule, fieldId?, severity}]`. Tokenizer: `core/text/sentences.ts` `splitSentences(text, policy)`.
 Issue state: `core/issue-state.ts` `issueState(content, form, approval)`.
 

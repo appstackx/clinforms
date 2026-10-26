@@ -51,14 +51,15 @@ import { recordSourceOf } from "../../../core/forms/record-paths";
 import { checkSafeEdit, figureChanges, figuresOf, removeSentences, sentenceKey, splitSentences, type TextSpan } from "../../../core/text/sentences";
 import type { Clinician, EpisodeBundle, FormDefinition, FormField, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { validateReport } from "../../../core/validation";
-import { ATTRIBUTION_FIX_GENERATORS } from "../../../core/validation/attribution-fixes";
+import { ATTRIBUTION_FIX_GENERATORS, attributionActions, nameInstead, noteWordsOffers } from "../../../core/validation/attribution-fixes";
 import { defaultVoiceOwner } from "../../../core/validation/attribution-owner";
 import { medicinesWithoutDose } from "../../../core/validation/draft-fit/measure";
 import { withoutPrintedVerb } from "../../../core/validation/draft-fit/printed-lead";
 import { REPEAT_REMOVAL_HOOK, duplicateParagraphs, nameWords, removableRepeat, repeatedSentences } from "../../../core/validation/draft-fit/repeats";
 import { VALUE_ONLY_HOOK, citesOnlyOwnersNotes, valueOnlyText, valueOnlyTimePoint } from "../../../core/validation/draft-fit/shorten";
 import { hookEnabled } from "../../../core/validation/hooks";
-import { editParagraph, removeParagraph } from "./reducer";
+import { commentarySentences } from "../../../core/validation/draft-fit/commentary";
+import { acceptNoteWords as acceptNoteWordsInReview, editParagraph, removeParagraph } from "./reducer";
 
 /* ------------------------------------------------------------------------------------------------
  * The one-click engine
@@ -424,9 +425,13 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
       if (extra.length) problems.push(`it would drop words of the answer (“${extra.slice(0, 4).join("”, “")}”)`);
     }
   }
-  // Clinical negatives are never removed.
+  // Clinical negatives are never removed. bh2-rc1 (WB x WD): a sentence about the notes rather than the patient – WB's
+  // commentary ("No frequency was recorded in that note.", "Tom Ellis's note did not record …",
+  // draft-fit/commentary.ts) – is not a clinical negative; WB's "Remove the comment" takes exactly those out.
   const kept = splitSentences(c.after).map((s) => s.text);
+  const commentary = c.generator === "remove-commentary" ? new Set(commentarySentences(c.before).map((x) => x.text.trim())) : new Set<string>();
   for (const s of splitSentences(c.before)) {
+    if (commentary.has(s.text.trim())) continue;
     if (CLINICAL_NEGATIVE.test(s.text) && !kept.some((k) => k.includes(s.text.replace(/[.\s]+$/, "")))) {
       if (c.removedSpans.some((r) => r.text.includes(s.text)) || c.after === "") problems.push(`it would remove a clinical negative (“${s.text.slice(0, 30)}…”)`);
     }
@@ -465,7 +470,10 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
   const after = validationOf({ ...next, flags: [] }, ctx);
   const was = countBy(blockingBefore);
   const now = countBy(after);
-  const answered = countBy(c.answers.filter((f) => f.severity === "blocking"));
+  // bh2-rc1 (WB x WD): a repeat removal whose twin still prints (checked above) may take with it a blocking flag about
+  // its own paragraph – the sentence is gone from this box and still printed, as checked, in the earlier one.
+  const ownGone = c.twins?.length ? blockingBefore.filter((f) => f.paragraphId === c.paragraphId && !after.some((g) => g.code === f.code && g.paragraphId === f.paragraphId && g.evidence === f.evidence)) : [];
+  const answered = countBy([...c.answers, ...ownGone].filter((f) => f.severity === "blocking"));
   now.forEach((n, k) => {
     if (n > (was.get(k) ?? 0)) problems.push(`re-validation adds a blocking ${k.split("|")[0]}`);
   });
@@ -621,14 +629,17 @@ function printedLeadCandidates(report: Report, ctx: FixContext): FixCandidate[] 
 }
 
 /** WB's attribution, quotation and commentary fixes (core/validation/attribution-fixes.ts), as candidates. */
-function attributionCandidates(report: Report, actor: Actor): FixCandidate[] {
+function attributionCandidates(report: Report, actor: Actor, form: FixContext["form"] = null): FixCandidate[] {
   const out: FixCandidate[] = [];
   if (ATTRIBUTION_FIX_GENERATORS.length === 0) return out;
   for (const flag of report.flags.filter((f) => !f.acknowledged && f.paragraphId)) {
     const at = paragraphOf(report, flag.sectionKey, flag.paragraphId);
     if (!at) continue;
     for (const gen of ATTRIBUTION_FIX_GENERATORS) {
-      const p = gen({ report, section: at.section, paragraph: at.paragraph, flag, actor });
+      // bh2-rc1 (WB x WD): "Name X instead" is offered by the review's own nameClinicianFix (FlagItem's fix, reducer
+      // action nameClinicians) – as WB's own list of offers left it out – so it is never offered twice.
+      if (gen === nameInstead) continue;
+      const p = gen({ report, section: at.section, paragraph: at.paragraph, flag, actor, form });
       if (!p || p.sectionKey !== at.section.key || p.paragraphId !== at.paragraph.id || p.before !== at.paragraph.text) continue;
       const removedSpans = p.removedSpans.map((r) => ({ start: r.start, end: r.end, text: p.before.slice(r.start, r.end) }));
       out.push({ generator: p.generator, label: p.label, sectionKey: p.sectionKey, paragraphId: p.paragraphId, before: p.before, after: p.after, removedSpans, answers: [flag], ...(p.ackPolicy ? { ackPolicy: p.ackPolicy } : {}) });
@@ -658,7 +669,7 @@ export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor })
       return section && clinicianBox(section, field) ? { ...c, ackPolicy: "approver" } : c;
     },
   );
-  const candidates = [...own, ...attributionCandidates(report, ctx.actor)].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
+  const candidates = [...own, ...attributionCandidates(report, ctx.actor, ctx.form)].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
   if (candidates.length === 0) return [];
   const blockingBefore = validationOf({ ...report, flags: [] }, ctx);
   const out: FixProposal[] = [];
@@ -670,6 +681,51 @@ export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor })
     if (!proposal) continue;
     seen.add(key);
     out.push(proposal);
+  }
+  return out;
+}
+
+/**
+ * bh2-rc1 (WB x WD x WC): the one-click actions that are not text fixes (a FixProposal is a text before/after) – WB's
+ * "Accept as my note's words" (core/validation/attribution-fixes.ts noteWordsOffers: the approver's own note records the
+ * drafted return or work-status line; ReportSection.accepted) and "Remove the note link" (an approver-edited paragraph
+ * with the approver's own opinion that also cites a colleague's note). Offered to the approver only, each applied the
+ * way the review applies it: the note's words through WC's reducer (ui/components/review/reducer.ts acceptNoteWords –
+ * it stamps who and when, and re-checks the approver and their own note), the link through the reducer action
+ * "removeNoteLink". The review lists them beside the engine's text fixes (one-click-offers.tsx); the safety corpus
+ * reads them here too (__corpus__/harness/fixes.ts).
+ */
+export interface OfferedAction {
+  kind: "accept-note-words" | "remove-note-link";
+  label: string;
+  /** The box and paragraph it is about. */
+  key: string;
+  paragraphId: string;
+  /** "accept-note-words": the phrase, its sentence and the approver's own note (the reducer's acceptNoteWords input). */
+  noteWords?: { phrase: string; sentence: string; noteId: string; noteSentence: string };
+  apply(report: Report): Report;
+}
+
+export function offeredActions(report: Report, ctx: { actor: Actor }): OfferedAction[] {
+  if (report.status === "signed") return [];
+  const out: OfferedAction[] = [];
+  for (const a of attributionActions(report, ctx)) {
+    if (a.kind !== "remove-note-link") continue;
+    const section = report.sections.find((s) => s.key === a.key);
+    const p = section?.paragraphs.find((x) => report.flags.some((f) => f.paragraphId === x.id && f.code === "OTHER_CLINICIAN_VOICE" && !f.acknowledged));
+    if (!p) continue;
+    out.push({ kind: "remove-note-link", label: a.label, key: a.key, paragraphId: p.id, apply: a.apply });
+  }
+  for (const offer of noteWordsOffers(report, ctx.actor)) {
+    const input = { check: "OPINION_LANGUAGE", phrase: offer.phrase, sentence: offer.sentence, noteId: offer.noteId, reason: `The note's words: “${offer.noteSentence}”.` };
+    out.push({
+      kind: "accept-note-words",
+      label: offer.label,
+      key: offer.sectionKey,
+      paragraphId: offer.paragraphId,
+      noteWords: { phrase: offer.phrase, sentence: offer.sentence, noteId: offer.noteId, noteSentence: offer.noteSentence },
+      apply: (r) => acceptNoteWordsInReview(r, offer.sectionKey, offer.paragraphId, ctx.actor, input),
+    });
   }
   return out;
 }

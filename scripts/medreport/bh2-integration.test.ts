@@ -19,6 +19,11 @@
  * - WC's review stamps through WB's authorship: on a report with no approver chosen (a report from before the
  *   release) a member who is not staff acts as the approver (WC's actsAsApprover), so their own typed words are theirs
  *   as on production; staff text is checked; with an approver chosen, only the approver's own words are theirs.
+ * - WB's fix generators through WD's engine: the attribution prefix and "Remove the comment" are offered and keep the
+ *   engine rules (I8); "Use the note's words" is never offered in a compact cell (the generator sees the form map);
+ *   "Name X instead" is offered once (the review's own fix, not again by the engine); a repeat removal may take a
+ *   colleague's unattributed repeated sentence with it; WB's "Accept as my note's words" is offered to the approver
+ *   alone (offeredActions), applied through WC's reducer (stamped, audited) and clears the opinion flag.
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -34,6 +39,8 @@ import { parseFormAnswerValue } from "../../src/modules/medreport/core/forms";
 import { compileConditions, type ConditionField } from "../../src/modules/medreport/core/conditions";
 import { dispositionIsStale } from "../../src/modules/medreport/core/issue-state";
 import { setDisposition } from "../../src/modules/medreport/ui/components/review/reducer";
+import { offeredActions, offeredFixes, nameClinicianFix } from "../../src/modules/medreport/ui/components/review/fixes";
+import { reviewReducer } from "../../src/modules/medreport/ui/components/review/use-review-state";
 import { settleConditionalGaps } from "../../src/modules/medreport/ui/components/review/gaps";
 import type { Report, ReportFlag } from "../../src/modules/medreport/core/types";
 import { canAcknowledge, validateReport } from "../../src/modules/medreport/core/validation";
@@ -239,5 +246,74 @@ describe("WC's review stamps through WB's authorship", () => {
   it("an approver chosen: only the approver's own typed words are theirs", async () => {
     assert.deepEqual(await typed(true, "sarah"), []);
     assert.ok((await typed(true, "tom")).length > 0, "a colleague who is not the approver");
+  });
+});
+
+describe("WB's fix generators through WD's engine", () => {
+  const offers = async (input: Record<string, unknown>, who: "sarah" | "pat" = "sarah") => {
+    const b = await buildCase(CaseInputSchema.parse(input) as CaseInput, {});
+    const owner = b.report.approver ? { name: b.report.approver.name, hcpc: b.report.approver.hcpc } : null;
+    const res = validateReport(b.report, b.template, { form: b.form, ...(owner ? { voice: { owner } } : {}) });
+    const report = { ...b.report, flags: res.flags };
+    return { b, report, fixes: offeredFixes(report, { actor: actorOf(who), template: b.template, form: b.form }), actions: offeredActions(report, { actor: actorOf(who) }) };
+  };
+
+  it("a colleague's unattributed finding: the attribution prefix is offered and, applied, leaves no blocking flag; in a compact cell never the note's words", async () => {
+    const narrative = await offers({ box: "progress_current_status", paragraph: { text: "Lumbar movement was full and pain-free.", cites: ["N-002"] } });
+    const prefix = narrative.fixes.find((f) => f.generator === "attribution-prefix");
+    assert.ok(prefix, JSON.stringify(narrative.fixes.map((f) => f.generator)));
+    assert.match(prefix!.after, /^Tom Ellis recorded/);
+    const applied = reviewReducer(narrative.report, { type: "applyFix", proposal: prefix!, actor: actorOf("sarah") });
+    const again = validateReport(applied, narrative.b.template, { form: narrative.b.form, voice: { owner: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } });
+    assert.deepEqual(again.blocking.filter((f) => f.sectionKey === "progress_current_status" && f.code === "OTHER_CLINICIAN_VOICE"), []);
+    const compact = await offers({ report: "form:cf-discharge", box: "F-14", paragraph: { text: "Full and pain-free.", cites: ["N-002"] } });
+    assert.equal(compact.fixes.some((f) => f.generator === "use-note-words"), false, "never in a compact cell");
+    assert.ok(compact.fixes.some((f) => f.generator === "attribution-prefix"), "the short suffix is");
+  });
+
+  it("\"Remove the comment\" takes out a sentence about the notes (not a clinical negative) and keeps the answer", async () => {
+    const { fixes } = await offers({ box: "progress_current_status", paragraph: { text: "Sitting tolerance was 20 minutes on 18/03/2026. No frequency was recorded in that note.", cites: ["N-001"] } });
+    const remove = fixes.find((f) => f.generator === "remove-commentary");
+    assert.ok(remove, JSON.stringify(fixes.map((f) => f.generator)));
+    assert.equal(remove!.after.trim(), "Sitting tolerance was 20 minutes on 18/03/2026.");
+  });
+
+  it("\"Name X instead\" is offered once – by the review's own fix, not again by the engine", async () => {
+    const { report, fixes } = await offers({ box: "examination_findings", paragraph: { text: "At that appointment I recorded full, pain-free lumbar range of movement.", cites: ["N-002"] } });
+    const flag = report.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+    assert.ok(flag && nameClinicianFix(report, flag), "the review's fix");
+    assert.equal(fixes.some((f) => f.generator === "name-instead"), false, "not twice");
+  });
+
+  it("a repeat removal may take a colleague's unattributed repeated sentence with it (the twin still prints)", async () => {
+    const { fixes } = await offers({
+      boxes: { examination_findings: [{ text: "Mr Testcase described pain across the lower back after lifting a box at work.", cites: ["N-001"] }] },
+      box: "prognosis",
+      paragraph: { text: "Mr Testcase described pain across the lower back after lifting a box at work. Tom Ellis recorded a phased return to normal duties over 2 weeks.", cites: ["N-001", "N-002"] },
+    });
+    const removal = fixes.find((f) => f.generator === "repeat-removal");
+    assert.ok(removal, JSON.stringify(fixes.map((f) => f.generator)));
+    assert.equal(removal!.after.trim(), "Tom Ellis recorded a phased return to normal duties over 2 weeks.");
+  });
+
+  it("\"Accept as my note's words\": offered to the approver alone; applied through WC's reducer it is stamped and clears the opinion flag", async () => {
+    const input = {
+      notes: [{ id: "N-001", author: "sarah", date: "2026-03-18", type: "initial_assessment", subjective: "Took 3 days off work after the lifting incident, then back on normal duties with breaks from lifting." }],
+      box: "incident_history",
+      paragraph: { text: "After the lifting incident he had 3 days off work before returning to normal duties.", cites: ["N-001"], basis: "patient_reported" },
+    };
+    const staff = await offers(input, "pat");
+    assert.deepEqual(staff.actions, [], "never offered to staff");
+    const { b, report, actions } = await offers(input, "sarah");
+    const accept = actions.find((a) => a.kind === "accept-note-words");
+    assert.ok(accept, JSON.stringify(actions));
+    assert.match(accept!.label, /^Accept as my note's words \(“/);
+    const viaReducer = reviewReducer(report, { type: "acceptNoteWords", key: accept!.key, paragraphId: accept!.paragraphId, check: "OPINION_LANGUAGE", phrase: accept!.noteWords!.phrase, sentence: accept!.noteWords!.sentence, noteId: accept!.noteWords!.noteId, actor: actorOf("sarah") });
+    const entry = viaReducer.sections.find((s) => s.key === accept!.key)?.accepted?.[0];
+    assert.equal(entry?.by?.memberId, actorOf("sarah").memberId, "stamped with the approver");
+    assert.ok(viaReducer.activity.some((a) => a.action === "note_words_accepted"));
+    const again = validateReport(viaReducer, b.template, { form: b.form, voice: { owner: { name: "Sarah Reid", hcpc: "PH-DEMO-01" } } });
+    assert.deepEqual(again.blocking.filter((f) => f.sectionKey === accept!.key && f.code === "OPINION_LANGUAGE"), []);
+    assert.deepEqual(reviewReducer(report, { type: "acceptNoteWords", key: accept!.key, paragraphId: accept!.paragraphId, phrase: accept!.noteWords!.phrase, sentence: accept!.noteWords!.sentence, noteId: accept!.noteWords!.noteId, actor: actorOf("pat") }).sections, report.sections, "staff: refused");
   });
 });

@@ -194,10 +194,10 @@ let generatorForm: Pick<FormDefinition, "fields"> | null = null;
 
 /** "<Name> recorded that …" / "… (<Name>)." – see the file header. */
 export const attributionPrefix: FixGenerator = (input) => {
-  const found = trueAttributions(input, generatorForm);
+  const found = trueAttributions(input, input.form ?? generatorForm);
   if (!found) return null;
   const people = clinicianNames(input.report.bundleSnapshot);
-  const compact = Boolean(compactPlace(fieldOf(input.section, generatorForm)));
+  const compact = Boolean(compactPlace(fieldOf(input.section, input.form ?? generatorForm)));
   const after = replaceSentences(input.paragraph.text, found.map((f) => ({ start: f.sentence.start, end: f.sentence.end, text: attributed(f.sentence, f.colleague, compact, people) })));
   if (!figuresKept(input.paragraph.text, after)) return null;
   const names = Array.from(new Set(found.map((f) => f.colleague)));
@@ -206,9 +206,9 @@ export const attributionPrefix: FixGenerator = (input) => {
 
 /** "Use the note's words": a framed quotation of the colleague's note clause – see the file header. */
 export const useNoteWords: FixGenerator = (input) => {
-  const field = fieldOf(input.section, generatorForm);
+  const field = fieldOf(input.section, input.form ?? generatorForm);
   if (compactPlace(field) || (input.section.answer && input.section.answer.kind !== "text")) return null;
-  const found = trueAttributions(input, generatorForm);
+  const found = trueAttributions(input, input.form ?? generatorForm);
   if (!found) return null;
   const people = clinicianNames(input.report.bundleSnapshot);
   const ignore = { people: people.map((x) => x.toLowerCase()) };

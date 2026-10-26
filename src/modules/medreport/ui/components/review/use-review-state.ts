@@ -19,6 +19,7 @@ import type { FixProposal } from "../../../core/fix-types";
 import { actsAsApprover } from "../../../core/provenance";
 import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SectionDispositionKind, SignReceipt } from "../../../core/types";
 import { canAcknowledge, validateReport } from "../../../core/validation";
+import { noteLinkToRemove, removeNoteLink } from "../../../core/validation/attribution-fixes";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
   acceptNoteWords,
@@ -92,6 +93,11 @@ export type PersonReviewAction = (
   | { type: "splitOutResidue"; key: string; paragraphId: string }
   /** WB design 5 / WC design 4: the approver's "Accept as the note's words" (one phrase, their own note). */
   | { type: "acceptNoteWords"; key: string; paragraphId: string | null; check?: string; phrase?: string; sentence?: string; noteId?: string; reason?: string }
+  /**
+   * bh2-rc1 (WB B3-6): the approver's "Remove the note link" – an approver-edited paragraph with their own opinion that
+   * also cites a colleague's note stops citing it (core/validation/attribution-fixes.ts noteLinkToRemove decides which).
+   */
+  | { type: "removeNoteLink"; key: string; paragraphId: string }
   /** WC design 1: "Take over as approver". */
   | { type: "takeOverApprover" }
   /** WC design 4 / WA1: a person's decision about a box – not applicable (on), cleared (off). */
@@ -121,7 +127,7 @@ const NO_PROVENANCE: ReadonlySet<string> = new Set(["activity", "approved", "rec
  * The approver's decisions (WC designs 1, 4–6): each writes its own provenance – who decided, and what the text's
  * origin and author become – so the generic origin and stamp steps do not run after them.
  */
-const DECISIONS: ReadonlySet<string> = new Set(["adopt", "markOwnWords", "splitOutResidue", "acceptNoteWords", "takeOverApprover", "markNotApplicable", "setDisposition"]);
+const DECISIONS: ReadonlySet<string> = new Set(["adopt", "markOwnWords", "splitOutResidue", "acceptNoteWords", "removeNoteLink", "takeOverApprover", "markNotApplicable", "setDisposition"]);
 /** Person actions whose answer settles its own box's gaps (fix round 1, B0-8). */
 const SETTLING: ReadonlySet<string> = new Set(["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"]);
 
@@ -251,6 +257,13 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       if (!action.paragraphId) return report;
       const input = action.phrase && action.sentence ? { check: action.check ?? "OPINION_LANGUAGE", phrase: action.phrase, sentence: action.sentence, noteId: action.noteId, reason: action.reason } : null;
       return acceptNoteWords(report, action.key, action.paragraphId, action.actor, input);
+    }
+    case "removeNoteLink": {
+      const section = report.sections.find((s) => s.key === action.key);
+      const p = section?.paragraphs.find((x) => x.id === action.paragraphId);
+      const flag = report.flags.find((f) => f.paragraphId === action.paragraphId && f.code === "OTHER_CLINICIAN_VOICE" && !f.acknowledged);
+      const ids = section && p ? noteLinkToRemove(report, section, p, flag, action.actor) : null;
+      return ids ? removeNoteLink(report, action.key, action.paragraphId, ids, action.actor) : report;
     }
     case "takeOverApprover":
       return takeOverApprover(report, action.actor);

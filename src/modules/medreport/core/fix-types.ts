@@ -11,7 +11,7 @@
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
 import type { Actor } from "./actor";
-import type { AckPolicy, Paragraph, Report, ReportFlag, ReportSection } from "./types";
+import type { AckPolicy, FormDefinition, Paragraph, Report, ReportFlag, ReportSection } from "./types";
 
 /**
  * Who may acknowledge a flag with a reason: "never" (fix the text or the record), "approver" (only the report's
@@ -54,6 +54,11 @@ export interface FixInput {
   paragraph: Paragraph;
   flag?: ReportFlag;
   actor: Actor;
+  /**
+   * bh2-rc1: the report's form map (form reports), so a generator knows the box's place on the form (a compact cell,
+   * a tick's supporting text) whichever engine calls it – WD's offeredFixes passes it.
+   */
+  form?: Pick<FormDefinition, "fields"> | null;
 }
 
 export type FixGenerator = (input: FixInput) => FixProposal | null;

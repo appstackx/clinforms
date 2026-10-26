@@ -51,6 +51,10 @@ async function releaseFixes(report: Report, ctx: { actor: PersonKey; form: FormD
     if (typeof fn !== "function") continue;
     const proposals = (fn as (r: Report, c: Loose) => unknown)(report, { actor: actorOf(ctx.actor), form: ctx.form, template: ctx.template });
     if (!Array.isArray(proposals)) continue;
+    // bh2-rc1: the review's one-click actions that are not text fixes (fixes.ts offeredActions – WB's "Accept as my
+    // note's words", "Remove the note link"), each {kind, label, key, apply} applied as the review applies it.
+    const actions = typeof mod.offeredActions === "function" ? (mod.offeredActions as (r: Report, c: Loose) => unknown)(report, { actor: actorOf(ctx.actor) }) : [];
+    if (Array.isArray(actions)) proposals.push(...(actions as unknown[]));
     for (const p of proposals as Loose[]) {
       if (typeof p.apply === "function" && typeof p.kind === "string") {
         out.push({ kind: p.kind, label: String(p.label ?? p.kind), box: typeof p.key === "string" ? p.key : null, apply: p.apply as (r: Report) => Report });
