@@ -308,7 +308,7 @@ test("public demo after a rollback: this browser's stored release report and map
  * ----------------------------------------------------------------------------------------------*/
 
 test("writes stay strict: the store and /sign refuse members this build does not know, and keys it does not know are not signed or stored", async () => {
-  const { f } = clinicStore();
+  const { f, store } = clinicStore();
   const { release } = await approvedPair(CLINIC);
   const draft: Report = { ...release.report, status: "draft" };
   delete draft.receipt;
@@ -323,8 +323,13 @@ test("writes stay strict: the store and /sign refuse members this build does not
   const known = structuredClone(draft);
   for (const s of known.sections) for (const p of s.paragraphs) p.origin = "clinician";
   known.flags = [];
-  const created = await bodyOf(await put(`/api/reports/v1/store/reports/${known.id}`, { report: known }));
-  assert.equal(created.status, 201, created.text());
+  // bh2 WC (check-WC problem 3, integrator grant): a create is checked like an update – every decision must be the
+  // signed-in member's – and the release's draft holds several members' decisions, so it is stored as the release
+  // stored it and PUT back unchanged (an update of that revision: what this build stores is what the PUT keeps).
+  const seeded = await store.createReport(CLINIC, reportRow(known));
+  assert.ok(seeded.ok);
+  const created = await bodyOf(await f(`/api/reports/v1/store/reports/${known.id}`, { method: "PUT", headers: { "content-type": "application/json", "if-match": `"${seeded.ok ? seeded.rev : 0}"` }, body: JSON.stringify({ report: known }) }));
+  assert.equal(created.status, 200, created.text());
   const stored = (await (await f(`/api/reports/v1/store/reports/${known.id}`)).json()).report as Record<string, unknown>;
   assert.equal("approver" in stored, reportKnows("approver"));
   // (bh2-base2: the release defines sections[].condition itself – markedNotApplicable is a key neither line knows.)

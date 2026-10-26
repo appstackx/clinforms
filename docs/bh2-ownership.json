@@ -111,6 +111,8 @@
     "src/modules/medreport/ui/screens/new/new-report-screen.tsx": "WC",
     "src/modules/medreport/ui/components/new/approver-*": "WC",
     "src/modules/medreport/ui/components/review/table-answer-model.ts": "WC",
+    "src/modules/medreport/core/provenance.ts": "WC",
+    "src/modules/medreport/core/validation/approver-decision.ts": "WC",
 
     "src/modules/medreport/ai/assemble.ts": "WD",
     "src/modules/medreport/ai/form-prompts.ts": "WD",

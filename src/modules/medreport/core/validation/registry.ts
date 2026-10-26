@@ -10,6 +10,7 @@
  * Owner: W0 (shared; changes through the integrator) – docs/bh2-ownership.json.
  */
 import type { Clinician, ComputedFact, EpisodeBundle, FormDefinition, Report, ReportFlag, ReportTemplate } from "../types";
+import { validateApproverDecisions } from "./approver-decision";
 import { validateClinicianNamed } from "./attribution-clinician-named";
 import { validateColleagueNamed } from "./attribution-colleague-named";
 import { validateOpinionBoxQuotes } from "./attribution-opinion-boxes";
@@ -61,6 +62,8 @@ export const VALIDATORS: ReadonlyArray<{ name: string; run: Validator }> = [
   { name: "attribution-opinion-boxes", run: validateOpinionBoxQuotes },
   { name: "attribution-colleague-named", run: validateColleagueNamed },
   { name: "attribution-clinician-named", run: validateClinicianNamed },
+  // bh2 WC design 5: what someone other than the approver entered in a clinician box waits for the approver's adoption.
+  { name: "approver-decision", run: validateApproverDecisions },
   { name: "scope-terms", run: validateScopeTerms },
   { name: "placeholders", run: validatePlaceholders },
   { name: "merge-fields", run: validateMergeFields },

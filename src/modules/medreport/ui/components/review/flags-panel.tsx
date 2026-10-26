@@ -5,18 +5,23 @@
  * apart – the "Leave optional boxes blank" action, warnings, and what has already been resolved or acknowledged –
  * each with a jump to its question.
  *
- * Owner: studio-b agent.
+ * bh2 WC design 4: only what the acting person may do is offered – a clinician gap, an approver-only acknowledgement,
+ * "Name … instead" and a proposal's "Adopt" are the approving clinician's; the others read who decides.
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { todayIso } from "../../../core/dates";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
+import { actsAsApprover } from "../../../core/provenance";
 import type { EpisodeBundle, Gap, Report, ReportFlag } from "../../../core/types";
+import { acknowledgeRefusal } from "../../../core/validation";
 import { Button, Input } from "../../primitives";
 import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
-import { MIN_GAP_REASON, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
+import { MIN_GAP_REASON, approverOnlyLine, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
 import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
@@ -63,6 +68,12 @@ export function FlagsPanel({
 }) {
   const gaps = report.gaps;
   const flags = report.flags.filter((f) => f.code !== "OPEN_GAP");
+  // WC design 4: the approving clinician's decisions are offered to them alone.
+  const approver = actsAsApprover(actor, report);
+  const onlyWho = (f: ReportFlag): string | null => {
+    if (f.code === "APPROVER_DECISION") return approver ? null : approverOnlyLine(report, "adopt it");
+    return acknowledgeRefusal(f, report, actor) === "approver" ? approverOnlyLine(report, "acknowledge this") : null;
+  };
   const blockingCount = items.count;
   // A check shown inside a question's item is not listed again.
   const warnings = flags.filter((f) => f.severity === "warning" && !f.acknowledged && !items.coveredIds.has(f.id));
@@ -77,7 +88,7 @@ export function FlagsPanel({
       gap={g}
       bundle={bundle}
       readOnly={readOnly}
-      resolution={gapResolutionOptions(report, g, actor.name)}
+      resolution={gapResolutionOptions(report, g, actor)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
       onOpenSource={onOpenSource}
@@ -86,7 +97,8 @@ export function FlagsPanel({
   );
   const consentFlag = (f: ReportFlag) => f.code === "DATA_CHECK" && f.evidence === "CONSENT_NOT_RECORDED" && !readOnly && consentRecorder && canRecordConsent(report);
   const flagItem = (f: ReportFlag) => {
-    const named = nameClinicianFix(report, f);
+    // An attribution fix is the approver's (WC design 4).
+    const named = approver ? nameClinicianFix(report, f) : null;
     return (
       <div key={f.id} className="space-y-1.5">
         <FlagItem
@@ -94,6 +106,8 @@ export function FlagsPanel({
           readOnly={readOnly}
           canAck={canAcknowledge(f)}
           onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
+          onlyWho={onlyWho(f)}
+          {...(f.code === "APPROVER_DECISION" && approver && f.sectionKey ? { onAdopt: () => dispatch({ type: "adopt", key: f.sectionKey ?? "", actor }) } : {})}
           {...jumpProps(f.sectionKey)}
           {...(named && { fix: { label: `Name ${named.name} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
         />
@@ -102,14 +116,14 @@ export function FlagsPanel({
     );
   };
   // Every "I" / "my" answer that reports one other clinician's note, named in one step (fix round 1, B0-1).
-  const voiceFixes = readOnly ? [] : report.flags.filter((f) => !f.acknowledged && nameClinicianFix(report, f));
+  const voiceFixes = readOnly || !approver ? [] : report.flags.filter((f) => !f.acknowledged && nameClinicianFix(report, f));
   const boxItem = (box: BoxItem) => (
     <BoxIssue
       key={`box-${box.key}`}
       box={box}
       bundle={bundle}
       readOnly={readOnly}
-      resolutionFor={(g) => gapResolutionOptions(report, g, actor.name)}
+      resolutionFor={(g) => gapResolutionOptions(report, g, actor)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
       onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
@@ -334,7 +348,7 @@ export function leaveBlankSummaryText(n: number, summary?: { total: number; opin
   const other = total - n;
   const box = (k: number) => `${k} optional box${k === 1 ? "" : "es"}`;
   if (opinion === 0 && other === 0) return `${box(n)} ${n === 1 ? "has" : "have"} no answer. You can leave ${n === 1 ? "it" : "them"} blank on the form in one step, with one reason.`;
-  // bh2 WA1 (B0-28): never "0 can be left blank" – only the parts that have boxes are said.
+  // bh2 WA1 (B0-28) and B3-23: never "0 can be left blank in one step" – only the parts that have boxes are said.
   const parts = inStep > 0 ? [`${inStep} can be left blank in one step, with one reason`] : [];
   if (opinion) parts.push(`${opinion} ${opinion === 1 ? "asks" : "ask"} for your opinion – tick ${opinion === 1 ? "it" : "them"} in the list only if you decide to leave ${opinion === 1 ? "it" : "them"} blank`);
   if (other) parts.push(`the other ${other} ${other === 1 ? "needs" : "need"} a decision first`);

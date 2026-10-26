@@ -44,6 +44,8 @@ import { DataStep, importedSummary } from "../../components/new/data-step";
 import { DraftProgress } from "../../components/new/draft-progress";
 import { FormStep, type TargetChoice } from "../../components/new/form-step";
 import { generateReport, instructingPartyOf, type DraftGroupProgress, type GenerateTarget } from "../../components/new/generate";
+import { ApproverPicker, approverOf, approverOptions, defaultApproverId, demoApprover } from "../../components/new/approver-picker";
+import { primaryTreatingClinician } from "../../../core/forms";
 import { notesReportKind, rememberFormForReferrer } from "../../components/new/referrer-match";
 import { SourceStep, type SourceResult } from "../../components/new/source-step";
 
@@ -123,6 +125,9 @@ export function NewReportScreen({
   const [choice, setChoice] = useState<TargetChoice>(null);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
   const [gen, setGen] = useState<GenerationState>({ running: false, groups: [] });
+  // bh2 WC design 1: the approving clinician, chosen when the report is created (a clinic's Studio).
+  const approverChoices = useMemo(() => (tenant ? approverOptions(hooks.clinic, hooks.member) : []), [tenant, hooks.clinic, hooks.member]);
+  const [approverId, setApproverId] = useState<string | null>(() => defaultApproverId(approverChoices, hooks.member));
   const abortRef = useRef<AbortController | null>(null);
   const launchStarted = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -211,7 +216,10 @@ export function NewReportScreen({
   const notesKind = useMemo(() => (data ? notesReportKind(data.bundle) : null), [data]);
   const chosenForm: FormDefinition | undefined = choice?.kind === "form" ? forms.find((f) => f.id === choice.formId) : undefined;
   const chosenTemplate = choice?.kind === "template" ? templates.find((t) => t.id === choice.templateId) : undefined;
-  const canGenerate = Boolean(data && (chosenForm?.status === "confirmed" || chosenTemplate));
+  const chosenApprover = approverChoices.find((o) => o.memberId === approverId) ?? null;
+  // A clinic's report has its approving clinician from the start; the public demo's one fictional user approves.
+  const approver = tenant ? (chosenApprover ? approverOf(chosenApprover) : null) : data ? demoApprover(clinician ?? primaryTreatingClinician(data.bundle)) : null;
+  const canGenerate = Boolean(data && (chosenForm?.status === "confirmed" || chosenTemplate) && (!tenant || approver));
 
   const generate = async () => {
     if (!data || !party) return;
@@ -235,6 +243,8 @@ export function NewReportScreen({
         ...(tenant && !clinician ? { author: tenantAuthor(hooks.member) } : {}),
         // Another form for the same patient: the new report (a new id, never an amendment) says where its notes came from.
         ...(reused ? { reusedFrom: reused } : {}),
+        // WC design 1: Report.approver, through the same factory for a new report and a reused one.
+        ...(approver ? { approver } : {}),
         livePossible: livePossible(),
         confirmLive,
         concurrency: 3,
@@ -417,6 +427,7 @@ export function NewReportScreen({
               kind={notesKind}
               completedFormId={reused?.formId ?? null}
             />
+            {tenant ? <ApproverPicker options={approverChoices} value={approverId} onChange={setApproverId} memberIsStaff={hooks.member?.role === "staff"} /> : null}
             <NavBar
               back={{ label: "Back", onClick: () => setStep(2) }}
               next={{
@@ -426,11 +437,13 @@ export function NewReportScreen({
                 icon: FileCheck2,
               }}
               hint={
-                chosenForm
-                  ? `${data.bundle.registration.fullName} · ${chosenForm.title} (${chosenForm.referrer.name})`
-                  : chosenTemplate
-                    ? `${data.bundle.registration.fullName} · built-in ${chosenTemplate.name}`
-                    : "Choose a form to continue"
+                tenant && !approver && (chosenForm || chosenTemplate)
+                  ? "Choose the approving clinician to continue"
+                  : chosenForm
+                    ? `${data.bundle.registration.fullName} · ${chosenForm.title} (${chosenForm.referrer.name})`
+                    : chosenTemplate
+                      ? `${data.bundle.registration.fullName} · built-in ${chosenTemplate.name}`
+                      : "Choose a form to continue"
               }
             />
           </>

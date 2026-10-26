@@ -6,20 +6,33 @@
  * flags are persisted on the report), debounced saving to this browser, and pick-up of newer copies
  * saved elsewhere (another tab, or drafting that finishes after navigation).
  *
- * Owner: studio-b agent.
+ * bh2 WC: every person action carries who did it (ReviewAction.actor); after it, the reducer gives the person's text
+ * its origin, stamps who decided (`by`), undoes a decision this person may not take and keeps the approver's adoption
+ * in step with the box (reducer.ts withPersonOrigins / stampDecisions / enforceDecisionRoles / maintainAdoptions).
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
-import { SYSTEM_ACTOR_NAME, isStaffActor, type Actor } from "../../../core/actor";
+import { SYSTEM_ACTOR_NAME, type Actor } from "../../../core/actor";
 import type { FixProposal } from "../../../core/fix-types";
-import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
-import { validateReport } from "../../../core/validation";
+import { actsAsApprover } from "../../../core/provenance";
+import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SectionDispositionKind, SignReceipt } from "../../../core/types";
+import { canAcknowledge, validateReport } from "../../../core/validation";
 import { flushStore, getStoreMode, getStoreSyncState, saveReport, saveReportDurable } from "../../store";
 import {
+  acceptNoteWords,
   acknowledgeFlag,
   addClinicianParagraph,
+  adoptBox,
+  confirmByApprover,
   editParagraph,
+  enforceDecisionRoles,
+  isClinicianGap,
+  keepApproverEntries,
+  maintainAdoptions,
   markApproved,
+  markOwnWords,
   nameCliniciansInstead,
   overrideRecordValue,
   recordConsent,
@@ -28,10 +41,15 @@ import {
   reopenGap,
   resolveGap,
   revertParagraph,
+  setDisposition,
   setStructuredAnswer,
   settleConditionalGaps,
   settleGapsByAnswer,
+  splitOutResidue,
+  stampDecisions,
   supersedeAcknowledgedGaps,
+  takeOverApprover,
+  withPersonOrigins,
   writeInOwnVoice,
 } from "./review-model";
 import { applyFixProposal } from "./fixes";
@@ -66,6 +84,19 @@ export type PersonReviewAction = (
   | { type: "removeAbsence"; key: string }
   /** bh2 W0 follow-up (seam "apply-fix"): a one-click fix the engine offered (WD: fixes.ts applyFixProposal). */
   | { type: "applyFix"; proposal: FixProposal }
+  /** WC design 5: the approver adopts what someone else entered in a clinician box (one audited click, never in bulk). */
+  | { type: "adopt"; key: string }
+  /** WC design 6: the approver's "These are my own words" on a paragraph (refused while drafted residue remains). */
+  | { type: "markOwnWords"; key: string; paragraphId: string | null }
+  /** WC design 6: move the drafted sentences kept in a paragraph into a drafted paragraph of their own. */
+  | { type: "splitOutResidue"; key: string; paragraphId: string }
+  /** WB design 5 / WC design 4: the approver's "Accept as the note's words" (one phrase, their own note). */
+  | { type: "acceptNoteWords"; key: string; paragraphId: string | null; check?: string; phrase?: string; sentence?: string; noteId?: string; reason?: string }
+  /** WC design 1: "Take over as approver". */
+  | { type: "takeOverApprover" }
+  /** WC design 4 / WA1: a person's decision about a box – not applicable (on), cleared (off). */
+  | { type: "markNotApplicable"; key: string; on: boolean; reason?: string }
+  | { type: "setDisposition"; key: string; kind: SectionDispositionKind | null; reason?: string }
 ) & { actor: Actor };
 
 /**
@@ -84,19 +115,63 @@ function locked(report: Report): boolean {
   return report.status === "signed";
 }
 
+/** Person actions that write nothing a later decision depends on (no provenance step after them). */
+const NO_PROVENANCE: ReadonlySet<string> = new Set(["activity", "approved", "recordConsent"]);
+/**
+ * The approver's decisions (WC designs 1, 4–6): each writes its own provenance – who decided, and what the text's
+ * origin and author become – so the generic origin and stamp steps do not run after them.
+ */
+const DECISIONS: ReadonlySet<string> = new Set(["adopt", "markOwnWords", "splitOutResidue", "acceptNoteWords", "takeOverApprover", "markNotApplicable", "setDisposition"]);
+/** Person actions whose answer settles its own box's gaps (fix round 1, B0-8). */
+const SETTLING: ReadonlySet<string> = new Set(["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"]);
+
+const ackAllowed = (flag: ReportFlag, report: Report, actor: Actor) => canAcknowledge(flag, report, actor);
+
 export function reviewReducer(report: Report, action: ReviewAction): Report {
   let next = applyReviewAction(report, action);
   if (next === report || locked(report)) return next;
-  const key = "key" in action && typeof action.key === "string" ? action.key : null;
-  const actor = "actor" in action ? action.actor.name : "";
-  // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them).
-  if (key && actor && "actor" in action && ["editParagraph", "addParagraph", "removeParagraph", "setAnswer", "setRows"].indexOf(action.type) >= 0) {
-    // Safety amendment (NEW-1 stop-gap): never a clinician gap when staff answered (the action's actor, W0.6).
-    next = settleGapsByAnswer(report, next, key, actor, undefined, { actorIsStaff: isStaffActor(action.actor) });
+  if (!("actor" in action)) {
+    // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after a draft.
+    return action.type === "applyDraft" ? settleConditionalGaps(next, SYSTEM_ACTOR_NAME) : next;
   }
-  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer or a draft.
-  if (action.type === "setAnswer" || action.type === "applyDraft") next = settleConditionalGaps(next, actor || SYSTEM_ACTOR_NAME);
+  if (NO_PROVENANCE.has(action.type)) return next;
+  const actor = action.actor;
+  const key = "key" in action && typeof action.key === "string" ? action.key : null;
+  if (DECISIONS.has(action.type)) return confirmByApprover(report, maintainAdoptions(report, enforceDecisionRoles(report, next, actor, ackAllowed), actor), actor);
+  // bh2 WC design 6: the origin of a person's text – only the approver's own new words are "clinician" – and
+  // (design 2) who did what, stamped on every change.
+  next = stampDecisions(report, withPersonOrigins(report, next, actor), actor);
+  // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them) – a
+  // clinician gap only when the answer is the approver's (WC design 4; it replaced the NEW-1 stop-gap).
+  if (key && actor.name && SETTLING.has(action.type)) next = settleGapsByAnswer(report, next, key, actor.name, undefined, { by: actor });
+  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer.
+  if (action.type === "setAnswer") next = settleConditionalGaps(next, actor.name || SYSTEM_ACTOR_NAME);
+  // A decision this person may not take is undone, and so is a change that would take away what the approver
+  // confirmed in a clinician box without leaving a proposal; the approver's adoption follows the box's content (stale
+  // after anyone else's change), and the approver's own entry confirms the box.
+  next = enforceDecisionRoles(report, next, actor, ackAllowed);
+  next = keepApproverEntries(report, next, actor);
+  next = maintainAdoptions(report, next, actor);
+  next = confirmByApprover(report, next, actor);
   return next;
+}
+
+/**
+ * Who may apply a one-click fix (WC design 4): an attribution fix, a voice fix, a note-words acceptance and a
+ * one-click option tick are the approver's, and so is any fix whose proposal says so (FixProposal.ackPolicy
+ * "approver"); a fix whose policy is "never" is applied by nobody. WD's generators name themselves in `generator`.
+ */
+const APPROVER_FIX_GENERATORS: ReadonlySet<string> = new Set(["name-clinician", "attribution", "own-voice", "voice", "note-words", "option-tick", "tick-suggested"]);
+
+export function mayApplyFix(report: Report, proposal: FixProposal, actor: Actor): boolean {
+  if (proposal.ackPolicy === "never") return false;
+  if (proposal.ackPolicy === "approver" || APPROVER_FIX_GENERATORS.has(proposal.generator)) return actsAsApprover(actor, report);
+  return true;
+}
+
+/** The approver's decision, else the report unchanged (WC design 4: the UI hides it; the reducer refuses it too). */
+function approverOnly(report: Report, actor: Actor, decide: () => Report): Report {
+  return actsAsApprover(actor, report) ? decide() : report;
 }
 
 function applyReviewAction(report: Report, action: ReviewAction): Report {
@@ -108,53 +183,81 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
   if (locked(report)) return report;
   switch (action.type) {
     case "writeInOwnVoice":
-      return writeInOwnVoice(report, action.authorName, action.actor.name);
+      // The approver's own voice (WC design 4: a voice fix is the approver's).
+      return approverOnly(report, action.actor, () => writeInOwnVoice(report, action.authorName, action.actor.name));
     case "nameClinicians":
-      return nameCliniciansInstead(report, action.flags, action.actor.name);
+      // An attribution fix (WC design 4): the approver's.
+      return approverOnly(report, action.actor, () => nameCliniciansInstead(report, action.flags, action.actor.name));
     case "overrideRecord":
       return overrideRecordValue(report, action.key, action.actor.name);
     case "removeAbsence":
-      return removeAbsenceSentences(report, action.key, action.actor.name);
+      return approverOnly(report, action.actor, () => removeAbsenceSentences(report, action.key, action.actor.name));
     case "applyFix":
-      return applyFixProposal(report, action.proposal, action.actor);
+      return mayApplyFix(report, action.proposal, action.actor) ? applyFixProposal(report, action.proposal, action.actor) : report;
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":
       return revertParagraph(report, action.key, action.paragraphId);
     case "addParagraph": {
-      // Safety amendment (C-REV-2 stop-gap): a paragraph staff add is checked as edited text, never the clinician's own.
-      const next = addClinicianParagraph(report, action.key, action.text ?? "", undefined, { byStaff: isStaffActor(action.actor) });
+      // The origin is the reducer's (withPersonOrigins): the approver's own words, else checked like edited text.
+      const next = addClinicianParagraph(report, action.key, action.text ?? "");
       // A value typed straight into an empty answer supersedes a "left blank" acknowledgement of its gap.
-      return action.actor.name && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor.name) : next.report;
+      return action.actor.name && (action.text ?? "").trim() ? supersedeAcknowledgedGaps(next.report, action.key, action.actor.name, undefined, { by: action.actor }) : next.report;
     }
     case "removeParagraph": {
       const section = report.sections.find((s) => s.key === action.key);
-      const next = removeParagraph(report, action.key, action.paragraphId);
+      const next = removeParagraph(report, action.key, action.paragraphId, undefined, { by: action.actor });
       if (next === report || action.silent) return next;
       return appendActivity(next, { actor: action.actor.name, action: "edited", detail: `${action.key}: removed a paragraph from “${section?.title ?? action.key}”.` });
     }
     case "logEdit": {
       const section = report.sections.find((s) => s.key === action.key);
       const logged = appendActivity(report, { actor: action.actor.name, action: "edited", detail: `${action.key}: edited the answer to “${section?.title ?? action.key}”.` });
-      return supersedeAcknowledgedGaps(logged, action.key, action.actor.name);
+      return supersedeAcknowledgedGaps(logged, action.key, action.actor.name, undefined, { by: action.actor });
     }
     case "setAnswer":
-      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor.name), action.key, action.actor.name);
+      return supersedeAcknowledgedGaps(setStructuredAnswer(report, action.key, action.value, action.actor), action.key, action.actor.name, undefined, { by: action.actor });
     case "setRows":
       return setRowsAnswer(report, action.key, action.rows, action.actor.name);
-    case "resolveGap":
+    case "resolveGap": {
+      const gap = report.gaps.find((g) => g.id === action.gapId);
+      // WC design 4: a clinician gap is resolved or acknowledged by the approver only.
+      if (!gap || (isClinicianGap(report, gap) && !actsAsApprover(action.actor, report))) return report;
       // An optional box's gap acknowledged = left blank: its "no answer" warning is acknowledged with it.
       return action.kind === "acknowledged"
         ? acknowledgeGapLeavingBlank(report, action.gapId, action.text, action.actor.name)
-        : resolveGap(report, action.gapId, action.kind, action.text, action.actor.name);
+        : resolveGap(report, action.gapId, action.kind, action.text, action.actor.name, undefined, { by: action.actor });
+    }
     case "reopenGap":
       return reopenGap(report, action.gapId, action.actor.name);
-    case "acknowledgeFlag":
-      return acknowledgeFlag(report, action.flagId, action.reason, action.actor.name);
+    case "acknowledgeFlag": {
+      const flag = report.flags.find((f) => f.id === action.flagId);
+      if (!flag || !canAcknowledge(flag, report, action.actor)) return report;
+      // WC design 5: the approver's "acknowledgement" of a proposal is adopting it – one audited click.
+      if (flag.code === "APPROVER_DECISION") return flag.sectionKey ? adoptBox(report, flag.sectionKey, action.actor) : report;
+      return acknowledgeFlag(report, action.flagId, action.reason, action.actor.name, undefined, { by: action.actor });
+    }
     case "leaveOptionalBlank":
-      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, opinionKeys: action.opinionKeys, reason: action.reason, actor: action.actor.name });
+      return leaveOptionalBoxesBlank(report, { template: action.template, form: action.form, keys: action.keys, opinionKeys: action.opinionKeys, reason: action.reason, actor: action.actor.name, by: action.actor });
     case "recordConsent":
       return recordConsent(report, action.givenOn, action.actor.name);
+    case "adopt":
+      return adoptBox(report, action.key, action.actor);
+    case "markOwnWords":
+      return action.paragraphId ? markOwnWords(report, action.key, action.paragraphId, action.actor) : report;
+    case "splitOutResidue":
+      return splitOutResidue(report, action.key, action.paragraphId, action.actor);
+    case "acceptNoteWords": {
+      if (!action.paragraphId) return report;
+      const input = action.phrase && action.sentence ? { check: action.check ?? "OPINION_LANGUAGE", phrase: action.phrase, sentence: action.sentence, noteId: action.noteId, reason: action.reason } : null;
+      return acceptNoteWords(report, action.key, action.paragraphId, action.actor, input);
+    }
+    case "takeOverApprover":
+      return takeOverApprover(report, action.actor);
+    case "markNotApplicable":
+      return setDisposition(report, action.key, action.on ? "not_applicable" : null, action.actor, { reason: action.reason });
+    case "setDisposition":
+      return setDisposition(report, action.key, action.kind, action.actor, { reason: action.reason });
     case "setFlags":
       return { ...report, flags: action.flags };
     case "applyDraft":

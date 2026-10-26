@@ -9,7 +9,7 @@ import { computeFacts } from "../computed-facts";
 import { issueDetails } from "../issue-state";
 import { todayIso } from "../dates";
 import type { ComputedFact, DataCheck, FormDefinition, Gap, Report, ReportFlag, ReportFlagCode, ReportTemplate } from "../types";
-import { canAcknowledge } from "./acknowledge";
+import { ackPolicyOf, acknowledgementStands } from "./acknowledge";
 import { notApplicableAnsweredFlags, withoutChecksOfBoxesNotAsked } from "./conditions";
 import { dedupeFlags, makeFlag } from "./context";
 import { runDataChecks } from "./data-checks";
@@ -137,10 +137,20 @@ export function runValidators(input: ValidatorInput): ReportFlag[] {
   const previous = new Map((input.report.flags ?? []).filter((f) => f.acknowledged).map((f) => [f.id, f.acknowledged]));
   return ordered.map((f) => {
     const prev = previous.get(f.id);
-    // A flag that arrives acknowledged (edited OPINION_LANGUAGE with a paragraph ackReason) keeps it;
-    // only the original timestamp is carried over.
-    if (f.acknowledged) return prev ? { ...f, acknowledged: { reason: f.acknowledged.reason, at: prev.at } } : f;
-    return prev && canAcknowledge(f, input.report) ? { ...f, acknowledged: prev } : f;
+    if (f.acknowledged) {
+      // bh2 WC (check-WC A1): a flag that arrives acknowledged (edited OPINION_LANGUAGE with the paragraph's ackReason)
+      // keeps it only where the flag may be acknowledged at all – never on drafted text or drafted residue kept in the
+      // paragraph, which one acknowledgement of the person's own sentence must not clear too.
+      if (ackPolicyOf(f, input.report) === "never") {
+        const open = { ...f };
+        delete open.acknowledged;
+        return open;
+      }
+      // Only the original timestamp is carried over.
+      return prev ? { ...f, acknowledged: { reason: f.acknowledged.reason, at: prev.at, ...(prev.by ? { by: prev.by } : {}) } } : f;
+    }
+    // bh2 WC: an acknowledgement stands only where its own author (`by`, stamped by the review) may make it.
+    return prev && acknowledgementStands(f, input.report, prev) ? { ...f, acknowledged: prev } : f;
   });
 }
 

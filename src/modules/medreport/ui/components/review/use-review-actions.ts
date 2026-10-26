@@ -7,7 +7,7 @@
  * A clinic's Studio also reports report_approved / report_downloaded through HostHooks.track (counts and
  * enumerated values only – ui/studio-events.ts).
  *
- * Owner: studio-b agent.
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useCallback, useRef, useState } from "react";
 import type { RenderFormat, RenderRequest } from "../../../api/contract";
@@ -18,7 +18,8 @@ import { planDraftGroups } from "../../../core/report-factory";
 import { ReportSchema } from "../../../core/schemas";
 import type { FormDefinition, Report, ReportTemplate } from "../../../core/types";
 import { ApiError, api, passcodeVerifier, saveBlob, toBase64, type FileDownload } from "../../api-client";
-import { flushStore, saveReportDurable } from "../../store";
+import { flushStore, getReport, getStoreMode, saveReport, saveReportDurable } from "../../store";
+import { isSupersededBy, supersededEntry } from "../../../core/provenance";
 import type { HostHooks } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { downloadFormat, reportEventProps } from "../../studio-events";
@@ -114,6 +115,12 @@ export function useReviewActions(opts: {
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
         const saved = commit(approved) && (await flushStore());
+        // WC design 8: an approved amended version supersedes the version it amends. A clinic's store does that on the
+        // server when it stores this approval; the public demo's browser store has no server, so it happens here.
+        if (saved && approved.amends && getStoreMode() !== "server") {
+          const v1 = getReport(approved.amends.reportId);
+          if (v1 && !isSupersededBy(v1, approved.id)) saveReport({ ...v1, activity: [...v1.activity, supersededEntry(approved)] });
+        }
         hooks.track?.("report_approved", reportEventProps(approved));
         toast({
           tone: "success",

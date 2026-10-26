@@ -8,9 +8,16 @@
 import { conditionOf } from "../../../core/conditions";
 import { nowIso } from "../../../core/dates";
 import { isSectionAnswered } from "../../../core/forms";
+import { actsAsApprover, hasApproverWords, isClinicianBox, isClinicianGap as clinicianGapOf, type BoxContext } from "../../../core/provenance";
 import { appendActivity } from "../../../core/report-factory";
 import type { Actor, Gap, Report, ReportSection } from "../../../core/types";
+import { defineHook, hookEnabled } from "../../../core/validation/hooks";
 import { answeredByPerson } from "./provenance";
+
+/** Ledger hook "staff-answer-settles": a person's answer settles its box's gaps – a clinician gap only the approver's. */
+export const ANSWER_SETTLES_HOOK = defineHook("staff-answer-settles");
+/** Ledger hook "leave-blank-bulk": "Leave optional boxes blank" – optional boxes only, a clinician box only for the approver. */
+export const LEAVE_BLANK_BULK_HOOK = defineHook("leave-blank-bulk");
 
 /* ------------------------------------------------------------------------------------------------
  * Gaps: what "Resolve" may claim
@@ -25,7 +32,14 @@ export const MIN_GAP_REASON = 15;
  * opinion boxes blank in bulk is the approver's, staff never settle a clinician box (WC design 4) – lives here only.
  * `actor` null: the caller names nobody. Stub: whoever may use the action today may – WC fills it in.
  */
-export const mayLeaveBlankInBulk: (report: Pick<Report, "sections" | "approver">, section: ReportSection, actor: Actor | null) => boolean = () => true;
+export const mayLeaveBlankInBulk: (report: Pick<Report, "sections" | "approver">, section: ReportSection, actor: Actor | null) => boolean = (report, section, actor) => {
+  if (!hookEnabled(LEAVE_BLANK_BULK_HOOK)) return false;
+  // Listing the candidates (nobody named): every optional box; the action itself re-checks with the actor.
+  if (!actor) return true;
+  const gaps = (report as Partial<Pick<Report, "gaps">>).gaps ?? [];
+  const clinician = report.approver ? isClinicianBox({ gaps }, section) : section.kind === "clinician_opinion" || gaps.some((g) => g.sectionKey === section.key && g.id.endsWith("-physio"));
+  return !clinician || actsAsApprover(actor, report);
+};
 
 export interface GapResolutionOptions {
   /** "Resolve" is offered (otherwise only "Acknowledge with a reason"). */
@@ -41,6 +55,8 @@ export interface GapResolutionOptions {
    * acknowledging would not let the form be approved without its answer.
    */
   canAcknowledge?: boolean;
+  /** WC design 4: a clinician gap this person may not settle – nothing is offered, the hint says whose it is. */
+  approverOnly?: boolean;
 }
 
 /** gapResolutionOptions() for a gap in a required question that has no answer yet: answer it first (fix round 1, B0-3). */
@@ -56,18 +72,31 @@ export function requiredAnswerFirst(options: GapResolutionOptions): GapResolutio
  *   with a reason;
  * - any other gap → "Resolve" with the person's own words (at least MIN_GAP_REASON characters).
  */
-export function gapResolutionOptions(report: Pick<Report, "sections" | "activity">, gap: Gap, actor: string): GapResolutionOptions {
+export function gapResolutionOptions(report: Pick<Report, "sections" | "activity"> & Partial<Pick<Report, "gaps" | "approver">>, gap: Gap, actor: string | Actor): GapResolutionOptions {
   const section = report.sections.find((s) => s.key === gap.sectionKey);
-  return resolutionOptionsFor({ own: answeredByPerson(report, gap.sectionKey), opinion: section?.kind === "clinician_opinion", gap, actor });
+  const name = typeof actor === "string" ? actor : actor.name;
+  return resolutionOptionsFor({ own: answeredByPerson(report, gap.sectionKey), opinion: section?.kind === "clinician_opinion", gap, actor: name, approverOnly: typeof actor === "string" ? null : approverOnlyHint(report, gap, actor) });
 }
 
-/** gapResolutionOptions() from what the question card already knows. */
-export function resolutionOptionsFor(input: { own: boolean; opinion: boolean; gap: Gap; actor: string }): GapResolutionOptions {
+/**
+ * WC design 4: why `actor` may not settle this gap – "Only Sarah Reid, the approving clinician, can settle this." – or
+ * null when they may.
+ */
+export function approverOnlyHint(report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "approver">>, gap: Pick<Gap, "id" | "sectionKey" | "kind">, actor: Actor | null): string | null {
+  if (!actor || !isClinicianGap(report, gap) || actsAsApprover(actor, { approver: report.approver })) return null;
+  return report.approver ? `Only ${report.approver.name}, the approving clinician, can settle this.` : "Only a clinician who may approve can settle this.";
+}
+
+/**
+ * gapResolutionOptions() from what the question card already knows. `approverOnly` (WC design 4): a clinician gap the
+ * acting person may not settle – neither "Resolve" nor "Acknowledge" is offered, and the hint says whose it is.
+ */
+export function resolutionOptionsFor(input: { own: boolean; opinion: boolean; gap: Gap; actor: string; approverOnly?: string | null }): GapResolutionOptions {
   const { own, gap, actor } = input;
+  if (input.approverOnly) return { canResolve: false, canAcknowledge: false, approverOnly: true, prefill: "", minLength: MIN_GAP_REASON, hint: input.approverOnly };
   if (own) {
-    const prefill = gap.id.endsWith("-referrer")
-      ? `Entered by ${actor} from the referrer's instruction letter.`
-      : `Answered on the form by ${actor}.`;
+    // B1-7(d): who entered it – never a source they did not name ("from the referrer's instruction letter").
+    const prefill = gap.id.endsWith("-referrer") ? `Entered by ${actor}.` : `Answered on the form by ${actor}.`;
     return { canResolve: true, prefill, minLength: 3, hint: null };
   }
   if (input.opinion) {
@@ -89,6 +118,7 @@ export function resolveGap(
   text: string,
   actor: string,
   now?: Date,
+  opts: { by?: Actor } = {},
 ): Report {
   const gap = report.gaps.find((g) => g.id === gapId);
   const clean = text.trim();
@@ -97,7 +127,7 @@ export function resolveGap(
   // Fix round 1 (B0-24): whether this acknowledgement left an empty box blank (a value entered later replaces it).
   const section = report.sections.find((s) => s.key === gap.sectionKey);
   const leftBlank = kind === "acknowledged" ? { leftBlank: !section || !isSectionAnswered(section) } : {};
-  const gaps = report.gaps.map((g) => (g.id === gapId ? { ...g, resolution: { kind, text: clean, at, ...leftBlank } } : g));
+  const gaps = report.gaps.map((g) => (g.id === gapId ? { ...g, resolution: { kind, text: clean, at, ...leftBlank, ...(opts.by ? { by: opts.by } : {}) } } : g));
   return appendActivity(
     { ...report, gaps, updatedAt: at },
     { actor, action: kind === "resolved" ? "gap_resolved" : "gap_acknowledged", detail: `${gap.sectionKey}: ${kind === "resolved" ? "resolved" : "acknowledged"} gap “${gap.issue}” – ${clean}` },
@@ -112,28 +142,31 @@ export function resolveGap(
  * was empty (fix round 1, B0-24: an acknowledgement of a gap in an answered box – "dose not recorded" beside a drafted
  * answer – keeps its own reason), and only when the section now holds a person's own answer.
  */
-export function supersedeAcknowledgedGaps(report: Report, key: string, actor: string, now?: Date): Report {
+export function supersedeAcknowledgedGaps(report: Report, key: string, actor: string, now?: Date, opts: { by?: Actor } = {}): Report {
   const section = report.sections.find((s) => s.key === key);
   if (!section) return report;
   const personAnswered =
-    section.paragraphs.some((p) => (p.origin === "clinician" || p.origin === "edited") && p.text.trim() !== "") ||
+    section.paragraphs.some((p) => (p.origin === "clinician" || p.origin === "edited" || p.origin === "staff") && p.text.trim() !== "") ||
     (section.answer !== undefined && section.answer.kind !== "text" && section.answer.value !== null && section.answer.value !== "");
   if (!personAnswered) return report;
-  const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged" && g.resolution.leftBlank !== false);
+  // WC: a clinician gap is the approver's to settle – someone else's value leaves it as it is (a proposal).
+  const mayDecide = (g: Gap) => !opts.by || !clinicianGapOf(report, g) || actsAsApprover(opts.by, report);
+  const stale = report.gaps.filter((g) => g.sectionKey === key && g.resolution?.kind === "acknowledged" && g.resolution.leftBlank !== false && mayDecide(g));
   if (stale.length === 0) return report;
   const at = nowIso(now);
   const text = `Answered on the form by ${actor} (replaces “${(stale[0].resolution?.text ?? "").replace(/[.\s]+$/, "")}”).`;
-  const gaps = report.gaps.map((g) => (stale.indexOf(g) >= 0 ? { ...g, resolution: { kind: "resolved" as const, text, at } } : g));
+  const gaps = report.gaps.map((g) => (stale.indexOf(g) >= 0 ? { ...g, resolution: { kind: "resolved" as const, text, at, ...(opts.by ? { by: opts.by } : {}) } } : g));
   return appendActivity({ ...report, gaps, updatedAt: at }, { actor, action: "gap_resolved", detail: `${key}: a value was entered, so the earlier “left blank” acknowledgement no longer applies.` }, now);
 }
 
 /**
- * Safety amendment (NEW-1 stop-gap): a gap only a clinician settles – any gap of an opinion box (section kind
- * "clinician_opinion"), or of the physiotherapist's choice on each report (core/report-factory.ts "-physio" gap).
+ * A gap only the approving clinician settles (WC design 3, core/provenance.ts isClinicianGap): a gap of a clinician
+ * box, an opinion gap, and an older gap outside a record box. A report from an earlier build (no approver) keeps that
+ * build's rule – any gap of an opinion box (section kind "clinician_opinion"), or of the physiotherapist's choice on
+ * each report (core/report-factory.ts "-physio" gap).
  */
-export function isClinicianGap(report: Pick<Report, "sections">, gap: Pick<Gap, "id" | "sectionKey">): boolean {
-  if (gap.id.endsWith("-physio")) return true;
-  return report.sections.find((s) => s.key === gap.sectionKey)?.kind === "clinician_opinion";
+export function isClinicianGap(report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "approver">>, gap: Pick<Gap, "id" | "sectionKey"> & Partial<Pick<Gap, "kind">>, ctx?: BoxContext): boolean {
+  return clinicianGapOf({ sections: report.sections, gaps: report.gaps ?? [], approver: report.approver }, gap, ctx);
 }
 
 /**
@@ -147,15 +180,27 @@ export function isClinicianGap(report: Pick<Report, "sections">, gap: Pick<Gap, 
  * (isClinicianGap) is never settled this way – staff typing or ticking an opinion box leaves its gap open for the
  * clinician to resolve. Workstream WC replaces this with the approver rule.
  */
-export function settleGapsByAnswer(before: Report, after: Report, key: string, actor: string, now?: Date, opts: { actorIsStaff?: boolean } = {}): Report {
+export function settleGapsByAnswer(
+  before: Report,
+  after: Report,
+  key: string,
+  actor: string,
+  now?: Date,
+  opts: { actorIsStaff?: boolean; by?: Actor; ctx?: BoxContext } = {},
+): Report {
   const was = before.sections.find((s) => s.key === key);
   const is = after.sections.find((s) => s.key === key);
   if (!was || !is || !actor.trim()) return after;
   const answeredBefore = isSectionAnswered(was);
   const answeredNow = isSectionAnswered(is);
-  if (!answeredBefore && answeredNow && answeredByPerson(after, key)) {
-    // Safety amendment (NEW-1 stop-gap): staff answering never settles a clinician gap (isClinicianGap).
-    const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution && !(opts.actorIsStaff && isClinicianGap(after, g)));
+  // B1-10: a box that had only a drafted answer settles too once the approver's own words are in it (an added
+  // paragraph, or drafted text rewritten with no drafted residue left) – a small edit of the draft keeps its gaps.
+  const ownWordsNow = answeredBefore && answeredNow && Boolean(opts.by) && !hasApproverWords(before, was) && hasApproverWords(after, is);
+  if ((!answeredBefore && answeredNow && answeredByPerson(after, key)) || ownWordsNow) {
+    // WC design 4 (replaces the NEW-1 stop-gap): an answer settles a clinician gap only when it is the approver's.
+    // Without an actor's stamp (`by`), the earlier rule: never when the actor is staff.
+    const approver = opts.by ? actsAsApprover(opts.by, after) : !opts.actorIsStaff;
+    const open = after.gaps.filter((g) => g.sectionKey === key && !g.resolution && hookEnabled(ANSWER_SETTLES_HOOK) && (approver || !isClinicianGap(after, g, opts.ctx)));
     if (open.length === 0) return after;
     const at = nowIso(now);
     let next: Report = after;
@@ -163,14 +208,15 @@ export function settleGapsByAnswer(before: Report, after: Report, key: string, a
       const text = resolutionOptionsFor({ own: true, opinion: is.kind === "clinician_opinion", gap, actor }).prefill;
       next = {
         ...next,
-        gaps: next.gaps.map((g) => (g.id === gap.id ? { ...g, resolution: { kind: "resolved" as const, text, at, byAnswer: true } } : g)),
+        gaps: next.gaps.map((g) => (g.id === gap.id ? { ...g, resolution: { kind: "resolved" as const, text, at, byAnswer: true, ...(opts.by ? { by: opts.by } : {}) } } : g)),
         updatedAt: at,
       };
       next = appendActivity(next, { actor, action: "gap_resolved", detail: `${key}: resolved gap “${gap.issue}” – ${text}` }, now);
     }
     return next;
   }
-  if (answeredBefore && !answeredNow) {
+  const ownWordsGone = answeredBefore && answeredNow && Boolean(opts.by) && hasApproverWords(before, was) && !hasApproverWords(after, is);
+  if ((answeredBefore && !answeredNow) || ownWordsGone) {
     const settled = after.gaps.filter((g) => g.sectionKey === key && g.resolution?.byAnswer);
     if (settled.length === 0) return after;
     const gaps = after.gaps.map((g) => {
@@ -240,12 +286,12 @@ export function reopenGap(report: Report, gapId: string, actor: string, now?: Da
  * Acknowledge a flag with a reason. On an OPINION_LANGUAGE flag the reason is also stored on the
  * paragraph (`ackReason`), so it travels with the signed content.
  */
-export function acknowledgeFlag(report: Report, flagId: string, reason: string, actor: string, now?: Date): Report {
+export function acknowledgeFlag(report: Report, flagId: string, reason: string, actor: string, now?: Date, opts: { by?: Actor } = {}): Report {
   const flag = report.flags.find((f) => f.id === flagId);
   const clean = reason.trim();
   if (!flag || !clean) return report;
   const at = nowIso(now);
-  const flags = report.flags.map((f) => (f.id === flagId ? { ...f, acknowledged: { reason: clean, at } } : f));
+  const flags = report.flags.map((f) => (f.id === flagId ? { ...f, acknowledged: { reason: clean, at, ...(opts.by ? { by: opts.by } : {}) } } : f));
   let sections = report.sections;
   if (flag.code === "OPINION_LANGUAGE" && flag.paragraphId) {
     sections = report.sections.map((s) => ({

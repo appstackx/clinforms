@@ -27,6 +27,7 @@ import type {
   GenerationMode,
   InstructingParty,
   Report,
+  ReportApprover,
   ReportTemplate,
 } from "../../../core/types";
 import type { ApiClient } from "../../api-client";
@@ -69,6 +70,11 @@ export interface GenerateInput {
    * null: nobody named – drafts in the third person, so any signing clinician can approve them.
    */
   author?: Clinician | null;
+  /**
+   * bh2 WC design 1: the approving clinician chosen when the report is created (ui/components/new/approver-picker.tsx) –
+   * stored as Report.approver by the same factory for a new report and for one made from an earlier report's notes.
+   */
+  approver?: ReportApprover | null;
   /**
    * A live drafting passcode the server accepted is set in this tab (ui/passcode-check.ts), so /drafts may
    * draft live. When false and the bundle response lists the demo drafts it holds (`demoDrafts`), questions
@@ -152,7 +158,7 @@ export function templateOf(target: GenerateTarget): ReportTemplate {
 }
 
 /** Create the report (no drafting) – code-filled answers only. */
-export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now" | "reusedFrom">): Report {
+export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now" | "reusedFrom" | "approver">): Report {
   const now = input.now?.() ?? new Date();
   const common = {
     bundle: input.data.bundle,
@@ -160,6 +166,7 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
     computedFacts: input.data.computedFacts,
     now,
     actor: input.actor,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
   const made =
     input.target.kind === "form"
