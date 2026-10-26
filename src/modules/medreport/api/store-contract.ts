@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { MAX_FORM_FILE_BYTES } from "../config.public";
 import { FormDefinitionSchema, FormMimeTypeSchema, ReportSchema, Sha256HexSchema } from "../core/schemas";
+import { StoredFormDefinitionSchema, StoredReportSchema } from "../core/stored-schemas";
 import { ProblemSchema, REPORT_API_BASE } from "./contract";
 
 export const STORE_API_BASE = `${REPORT_API_BASE}/store` as const;
@@ -175,12 +176,14 @@ export const StoreSnapshotResponseSchema = z.object({
 });
 
 // GET/PUT /store/reports/{id}
+// A PUT body is strict (core/schemas.ts); the stored copy the Studio reads back is read as stored
+// (core/stored-schemas.ts: keys and flag codes a later release wrote are kept, so its receipt still verifies).
 export const StoreReportPutRequestSchema = z.object({ report: ReportSchema });
 export const StoreReportResponseSchema = z.object({
   rev: RevSchema,
   updatedAt: z.string(),
   /** The report as stored (the clinic is always the signed-in member's). */
-  report: ReportSchema,
+  report: StoredReportSchema,
 });
 
 // GET/PUT /store/forms/{id}
@@ -189,7 +192,7 @@ export const StoreFormResponseSchema = z.object({
   rev: RevSchema,
   updatedAt: z.string(),
   /** The map as stored: a confirmation without a valid server attestation for this clinic is stored as proposed. */
-  form: FormDefinitionSchema,
+  form: StoredFormDefinitionSchema,
   /** True when a "confirmed" map was stored as "proposed". */
   downgraded: z.boolean().optional(),
 });
@@ -203,8 +206,8 @@ export const StoreConflictSchema = ProblemSchema.extend({
     .object({
       rev: RevSchema,
       updatedAt: z.string(),
-      report: ReportSchema.optional(),
-      form: FormDefinitionSchema.optional(),
+      report: StoredReportSchema.optional(),
+      form: StoredFormDefinitionSchema.optional(),
     })
     .nullable()
     .optional(),

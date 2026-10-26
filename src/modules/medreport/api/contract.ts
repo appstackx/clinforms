@@ -9,6 +9,11 @@
  * logs hold IDs, timings and token counts, never note text.
  *
  * Shared contract (orchestrator-owned): additive optional fields only.
+ *
+ * Stored records a request carries for READING (the report, receipt and form map behind /validate, /render, the
+ * fill preview and the write-back; the form map behind /drafts and /sign) use the read schemas of
+ * core/stored-schemas.ts, so a record a later release wrote keeps its hashes and MACs. What this build signs or
+ * stores (/sign's report, /forms/confirm) keeps the strict schemas.
  */
 import { z } from "zod";
 import { NotesReviewSchema } from "../connectors/file-import/review-contract";
@@ -43,6 +48,7 @@ import {
   SignReceiptSchema,
   TraceEntrySchema,
 } from "../core/schemas";
+import { StoredFormDefinitionSchema, StoredReportSchema, StoredSignReceiptSchema } from "../core/stored-schemas";
 import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
 
 /* ------------------------------------------------------------------------------------------------
@@ -436,7 +442,7 @@ export const DraftsRequestSchema = z
      * Referrer forms (Revision 2): the form map being completed. The server drafts against
      * formToTemplate(form) instead of the template registry (forms live in the browser).
      */
-    form: FormDefinitionSchema.optional(),
+    form: StoredFormDefinitionSchema.optional(),
     /**
      * Referrer forms: the clinician who will sign the form (the report's author). Live drafting writes
      * what they recorded in the first person ("I recorded…"); other clinicians stay named.
@@ -470,9 +476,9 @@ export const DraftsResponseSchema = z.object({
 
 // POST /validate
 export const ValidateRequestSchema = z.object({
-  report: ReportSchema,
+  report: StoredReportSchema,
   /** Required for a form report (report.form set): its form map (the server has no form library). */
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
 });
 export const ValidateResponseSchema = z.object({
   flags: z.array(ReportFlagSchema),
@@ -489,8 +495,11 @@ export const SignRequestSchema = z.object({
   statementAccepted: z.boolean(),
   /** The attestations the signer ticked (must equal the template's attestations; FORM_ATTESTATIONS for forms). */
   attestations: z.array(z.string()),
-  /** Required for a form report (report.form set): its form map. */
-  form: FormDefinitionSchema.optional(),
+  /**
+   * Required for a form report (report.form set): its form map – read as stored, so its attestation verifies. The
+   * report stays strict: the receipt covers exactly the content this build understands and the store keeps.
+   */
+  form: StoredFormDefinitionSchema.optional(),
 });
 export const SignResponseSchema = z.object({
   receipt: SignReceiptSchema,
@@ -509,9 +518,9 @@ export const SignResponseSchema = z.object({
 export const RenderFormatSchema = z.enum(["docx", "pdf", "original"]);
 export const RenderQuerySchema = z.object({ format: RenderFormatSchema });
 export const RenderRequestSchema = z.object({
-  report: ReportSchema,
+  report: StoredReportSchema,
   /** FINAL only if this verifies (mac + recomputed hash) and no blocking flags remain. */
-  receipt: SignReceiptSchema.optional(),
+  receipt: StoredSignReceiptSchema.optional(),
   /** A clinic's own tagged template (base64, decoded ≤ MAX_TEMPLATE_DOCX_BYTES). docx only. */
   templateDocxBase64: z.string().optional(),
   /** Add [DD/MM/YYYY] source markers for internal review. */
@@ -525,7 +534,7 @@ export const RenderRequestSchema = z.object({
    */
   purpose: z.enum(["download", "preview", "file_back"]).optional(),
   /** Form reports: the form map (required when report.form is set). */
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
   /**
    * Form reports: the referrer's original file as base64 (decoded ≤ MAX_FORM_FILE_BYTES; its SHA-256 must
    * equal report.form.fileSha256, otherwise 409 FORM_MISMATCH). In a clinic's own Studio the server reads the
@@ -544,7 +553,7 @@ export const DocumentsRequestSchema = z.object({
   contentBase64: z.string().min(1),
   /** SHA-256 of the decoded file bytes. */
   sha256: Sha256HexSchema,
-  signReceipt: SignReceiptSchema,
+  signReceipt: StoredSignReceiptSchema,
   /**
    * The server's token from the FINAL /render response (HEADERS.fileToken). Required: only the exact
    * file ClinForms issued for this approval and this patient's episode is filed.
@@ -629,8 +638,8 @@ export const FormSamplesResponseSchema = z.object({ samples: z.array(FormSampleS
 
 // POST /forms/fill-preview → binary (same type as the original), HEADERS.renderKind "draft", HEADERS.fillWarnings
 export const FormFillPreviewRequestSchema = z.object({
-  report: ReportSchema,
-  form: FormDefinitionSchema,
+  report: StoredReportSchema,
+  form: StoredFormDefinitionSchema,
   /**
    * The referrer's original file (base64, decoded ≤ MAX_FORM_FILE_BYTES, SHA-256 = form.file.sha256). Optional
    * since wave 2: in a clinic's own Studio the server reads the file from the clinic's storage by SHA-256 (and
@@ -657,7 +666,7 @@ export const AiPayloadPreviewRequestSchema = z.object({
   templateId: z.string().min(1),
   bundle: EpisodeBundleSchema,
   instructingParty: InstructingPartySchema,
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
 });
 export const AiPayloadPreviewResponseSchema = z.object({
   model: z.string(),

@@ -6,7 +6,8 @@ import "server-only";
  * GET    → {rev, updatedAt, form}, ETag "<rev>"; 404 when the clinic has no such form map.
  * PUT    {form} → 201 / 200 {rev, updatedAt, form, downgraded?}, ETag "<rev>". No If-Match = create;
  *        If-Match: "<rev>" = update; 409 REV_CONFLICT {current} as for reports.
- *        Rules: FormDefinitionSchema (422); form.id = the path id; form.tenantId is set from the sign-in; a map
+ *        Rules: FormDefinitionSchema (422 – strict; a stored copy is READ with StoredFormDefinitionSchema,
+ *        core/stored-schemas.ts); form.id = the path id; form.tenantId is set from the sign-in; a map
  *        marked "confirmed" is stored as "proposed" unless it carries the server's valid attestation of exactly
  *        this map for this clinic (auth/attestations.ts) – "confirmed" is never just the browser's claim.
  *        Portal question sets (kind "questions") have no file: nothing here requires one.
@@ -24,7 +25,7 @@ import { CONFIRM_ROLES, assertActorTenant } from "../../auth/actor";
 import { formConfirmationProblem, verifyFormConfirmation } from "../../auth/attestations";
 import { DEMO_TENANT_ID } from "../../config.public";
 import { WORDING } from "../../core/wording";
-import { FormDefinitionSchema } from "../../core/schemas";
+import { StoredFormDefinitionSchema } from "../../core/stored-schemas";
 import type { FormDefinition } from "../../core/types";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import {
@@ -53,7 +54,7 @@ function readIfMatch(req: Request): number | null {
 async function currentCopy(store: TenantStore, tenantId: string, id: string): Promise<Omit<StoreFormResponse, "downgraded"> | null> {
   const stored = await store.getForm(tenantId, id);
   if (!stored) return null;
-  const parsed = FormDefinitionSchema.safeParse(stored.payload);
+  const parsed = StoredFormDefinitionSchema.safeParse(stored.payload);
   return parsed.success ? { rev: stored.rev, updatedAt: stored.updatedAt, form: parsed.data } : null;
 }
 
@@ -85,7 +86,8 @@ export const handleStoreFormGet: MedreportHandler = async (req, ctx, deps) => {
   const id = pathParam(ctx.params, "id", STORE_RECORD_ID_PATTERN);
   const stored = await t.store.getForm(t.tenantId, id);
   if (!stored) return problem(404, "Form mapping not found", { code: "NOT_FOUND", detail: "This form mapping is not in the clinic's library." });
-  const parsed = FormDefinitionSchema.safeParse(stored.payload);
+  // Read as stored (core/stored-schemas.ts): what a later release wrote stays in, so the map's attestation verifies.
+  const parsed = StoredFormDefinitionSchema.safeParse(stored.payload);
   if (!parsed.success) {
     logEvent("store_form_unreadable", { id });
     throw new HttpError(500, "The stored form mapping could not be read", { code: "INTERNAL", detail: "Please try again, or contact support." });

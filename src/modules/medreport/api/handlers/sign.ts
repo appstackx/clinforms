@@ -52,7 +52,6 @@ import {
   requireActor,
   type Actor,
 } from "../../auth/actor";
-import { formMapSha256 } from "../../auth/attestations";
 import { createReceipt } from "../../auth/sign-receipt";
 import { MAX_FORM_REQUEST_BYTES } from "../../config.public";
 import { isDemoHcpc, normaliseDemoHcpc } from "../../core/demo-clinic";
@@ -62,7 +61,7 @@ import { otherClinicianVoice } from "../../core/voice";
 import { WORDING } from "../../core/wording";
 import { SignRequestSchema, type ProblemIssue, type SignResponse } from "../contract";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
-import { requireAttestedForm, resolveTemplate } from "../resolve-template";
+import { checkAttestedForm, resolveTemplate } from "../resolve-template";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../usage";
 
 const normaliseName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
@@ -139,9 +138,13 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   if (!resolved.ok) return resolved.response;
   const { template } = resolved;
 
+  // The receipt records the map's attested hash: the hash of the map as read, or (an API client's copy with a key of
+  // its own) as this build knows it – exactly what it recorded before the rollback shim (auth/attestations.ts formMapMatches).
+  let attestedMapSha256: string | undefined;
   if (resolved.form) {
-    const unconfirmed = requireAttestedForm(resolved.form, actor.tenantId);
-    if (unconfirmed) return unconfirmed;
+    const attested = checkAttestedForm(resolved.form, actor.tenantId);
+    if (!attested.ok) return attested.response;
+    attestedMapSha256 = attested.mapSha256;
   }
 
   const issues: ProblemIssue[] = [];
@@ -179,7 +182,7 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
     signer,
     statementAccepted: true,
     attestations: [...template.attestations],
-    ...(resolved.form ? { formMapSha256: formMapSha256(resolved.form) } : {}),
+    ...(attestedMapSha256 ? { formMapSha256: attestedMapSha256 } : {}),
     approvedVia: approvedVia(actor),
   });
   const body: SignResponse = { receipt, flags: result.flags };

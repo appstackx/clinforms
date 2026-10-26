@@ -7,7 +7,7 @@ import "server-only";
  *
  * Shared contract (orchestrator-owned).
  */
-import { formConfirmationProblem, formMapSha256, verifyFormConfirmation } from "../auth/attestations";
+import { formConfirmationProblem, formMapMatches, verifyFormConfirmation } from "../auth/attestations";
 import { formIdFromTemplateId, formToTemplate } from "../core/forms";
 import type { FormDefinition, ReportFormRef, ReportTemplate } from "../core/types";
 import { WORDING } from "../core/wording";
@@ -66,8 +66,8 @@ export function resolveTemplate(input: ResolveTemplateInput): TemplateResolution
       };
     }
     // The report records the hash of the confirmed map it was started from (part of the signed
-    // content): every later request must send exactly that map.
-    if (input.reportForm?.mapSha256 && input.reportForm.mapSha256 !== formMapSha256(form)) {
+    // content): every later request must send exactly that map (as read, else as this build knows it – formMapMatches).
+    if (input.reportForm?.mapSha256 && !formMapMatches(form, input.reportForm.mapSha256)) {
       return {
         ok: false,
         response: problem(409, "The form's mapping has changed since this report was started", {
@@ -93,17 +93,29 @@ export function resolveTemplate(input: ResolveTemplateInput): TemplateResolution
 
 /**
  * 409 FORM_NOT_CONFIRMED unless the map carries a valid server-attested confirmation of exactly these
- * fields (auth/attestations.ts). Null when it does. With `tenantId` (wave 2: the caller's clinic), a map of
- * another clinic is 403 TENANT_MISMATCH.
+ * fields (auth/attestations.ts). With `tenantId` (wave 2: the caller's clinic), a map of another clinic is
+ * 403 TENANT_MISMATCH. On success, the attested hash (what a receipt for this map records).
  */
-export function requireAttestedForm(form: FormDefinition, tenantId?: string): Response | null {
+export function checkAttestedForm(form: FormDefinition, tenantId?: string): { ok: true; mapSha256: string } | { ok: false; response: Response } {
   const check = verifyFormConfirmation(form, tenantId !== undefined ? { tenantId } : {});
-  if (check.ok) return null;
+  if (check.ok) return { ok: true, mapSha256: check.mapSha256 };
   if (check.reason === "TENANT_MISMATCH") {
-    return problem(403, WORDING.server.access.otherClinicTitle, { code: "TENANT_MISMATCH", detail: WORDING.server.access.otherClinic("form") });
+    return {
+      ok: false,
+      response: problem(403, WORDING.server.access.otherClinicTitle, { code: "TENANT_MISMATCH", detail: WORDING.server.access.otherClinic("form") }),
+    };
   }
-  return problem(409, check.reason === "NOT_CONFIRMED" ? "The form mapping has not been confirmed" : "The form mapping needs confirming again", {
-    code: "FORM_NOT_CONFIRMED",
-    detail: formConfirmationProblem(check.reason),
-  });
+  return {
+    ok: false,
+    response: problem(409, check.reason === "NOT_CONFIRMED" ? "The form mapping has not been confirmed" : "The form mapping needs confirming again", {
+      code: "FORM_NOT_CONFIRMED",
+      detail: formConfirmationProblem(check.reason),
+    }),
+  };
+}
+
+/** checkAttestedForm's refusal, or null when the map is attested. */
+export function requireAttestedForm(form: FormDefinition, tenantId?: string): Response | null {
+  const check = checkAttestedForm(form, tenantId);
+  return check.ok ? null : check.response;
 }

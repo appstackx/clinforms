@@ -20,6 +20,7 @@ import "server-only";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { signingKey } from "../config.server";
 import { canonicalize } from "../core/fingerprint";
+import { FormDefinitionSchema } from "../core/schemas";
 import type { FormDefinition } from "../core/types";
 
 function hmac(key: string, payload: unknown): string {
@@ -58,6 +59,28 @@ export function formMapSha256(form: Pick<FormDefinition, "id" | "kind" | "file" 
   return createHash("sha256").update(canonicalize(payload), "utf8").digest("hex");
 }
 
+function mapSha256OrNull(form: FormDefinition): string | null {
+  try {
+    return formMapSha256(form);
+  } catch {
+    // canonicalize() throws on a value no ClinForms build writes (a non-finite number, nesting too deep), which only a
+    // key this build does not know can hold (core/stored-schemas.ts): no match as read.
+    return null;
+  }
+}
+
+/**
+ * Rollback shim: whether the map hashes to `expected` as read (core/stored-schemas.ts – keys a later release wrote
+ * count, so its attestation verifies) or, failing that, as this build knows it (core/schemas.ts – keys it does not know
+ * left out, which is how every map was hashed before the shim, e.g. an API client's copy with a note of its own in a
+ * field). So whatever matched before still matches.
+ */
+export function formMapMatches(form: FormDefinition, expected: string): boolean {
+  if (mapSha256OrNull(form) === expected) return true;
+  const known = FormDefinitionSchema.safeParse(form);
+  return known.success && mapSha256OrNull(known.data) === expected;
+}
+
 export interface FormConfirmation {
   by: string;
   at: string;
@@ -89,7 +112,8 @@ export type FormConfirmationCheck =
   | { ok: false; reason: "NOT_CONFIRMED" | "NOT_ATTESTED" | "MAP_CHANGED" | "BAD_MAC" | "TENANT_MISMATCH" };
 
 /**
- * Verify that the map is confirmed AND that the server attested exactly this map. With `tenantId` (wave 2:
+ * Verify that the map is confirmed AND that the server attested exactly this map (as read, else as this build knows it:
+ * formMapMatches). `mapSha256` on success is the attested hash – the one a receipt for this map carries. With `tenantId` (wave 2:
  * the caller's clinic) the map must also belong to that clinic: the attestation MAC covers form.tenantId,
  * so a map confirmed for clinic A can neither be relabelled for clinic B nor used by clinic B as it is.
  */
@@ -98,8 +122,7 @@ export function verifyFormConfirmation(form: FormDefinition, opts: { tenantId?: 
   if (form.status !== "confirmed" || !form.confirmed) return { ok: false, reason: "NOT_CONFIRMED" };
   const { by, at, mapSha256, mac } = form.confirmed;
   if (!mapSha256 || !mac) return { ok: false, reason: "NOT_ATTESTED" };
-  const actual = formMapSha256(form);
-  if (actual !== mapSha256) return { ok: false, reason: "MAP_CHANGED" };
+  if (!formMapMatches(form, mapSha256)) return { ok: false, reason: "MAP_CHANGED" };
   const expected = hmac(signingKey("form-confirmation"), confirmationPayload(form, mapSha256, by, at));
   return safeEqual(expected, mac) ? { ok: true, mapSha256 } : { ok: false, reason: "BAD_MAC" };
 }

@@ -956,6 +956,14 @@ export const FormAnchorSchema = z.discriminatedUnion("kind", [
 export const AppointmentColumnSchema = z.enum(["date", "clinician", "service", "amount", "paid", "clinic"]);
 
 /**
+ * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
+ * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
+ * last line taking any that are left; a line the record does not have is written as nothing. Only for
+ * "patient.addressLines" and "clinic.addressLines". (Named for the rollback shim, core/stored-schemas.ts.)
+ */
+export const RegistrationPartSchema = z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) });
+
+/**
  * Where the answer comes from.
  * - registration: filled by CODE from TM3 registration/referral/episode data (identifiers never come from the AI);
  * - computed_fact: filled by CODE from a FACT-* (attendance, DNA count, …);
@@ -973,13 +981,8 @@ export const FillSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("registration"),
     path: RegistrationPathSchema,
-    /**
-     * Additive (10/2026): one part of a postal address printed over several lines (a clinic system's address codes,
-     * <<P_ADDRESS1>>…): line `index` of the `of` lines the form prints – the record's address lines in order, the
-     * last line taking any that are left; a line the record does not have is written as nothing. Only for
-     * "patient.addressLines" and "clinic.addressLines".
-     */
-    part: z.object({ index: z.number().int().min(1).max(12), of: z.number().int().min(1).max(12) }).optional(),
+    /** One line of an address printed over several lines (RegistrationPartSchema). */
+    part: RegistrationPartSchema.optional(),
   }),
   z.object({ kind: z.literal("computed_fact"), factId: FactIdSchema, format: ComputedFactFormatSchema.optional() }),
   z.object({ kind: z.literal("notes_narrative") }),

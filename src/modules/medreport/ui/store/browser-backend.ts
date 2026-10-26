@@ -7,10 +7,12 @@
  * (private windows, blocked storage, SSR).
  *
  * ui/store.ts calls these functions while the store mode is "browser" (ui/store/mode.ts).
+ * Stored records are read with core/stored-schemas.ts: what a later release wrote into this browser stays readable.
  */
 import { STORAGE_PREFIX } from "../../config.public";
 import { hasAttestedConfirmation } from "../../core/forms";
-import { FormDefinitionSchema, FormMimeTypeSchema, ReportSchema } from "../../core/schemas";
+import { FormMimeTypeSchema } from "../../core/schemas";
+import { StoredFormDefinitionSchema, StoredReportSchema } from "../../core/stored-schemas";
 import type { FormDefinition, Report } from "../../core/types";
 import { notify } from "./events";
 import { fetchSampleForms, resetSampleCache } from "./samples";
@@ -74,14 +76,14 @@ export function listReports(): Report[] {
   const reports: Report[] = [];
   for (const key of storageKeys(storage)) {
     if (!key.startsWith(REPORT_KEY_PREFIX)) continue;
-    const parsed = ReportSchema.safeParse(readJson(storage, key));
+    const parsed = StoredReportSchema.safeParse(readJson(storage, key));
     if (parsed.success) reports.push(parsed.data);
   }
   return reports.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
 }
 
 export function getReport(id: string): Report | null {
-  const parsed = ReportSchema.safeParse(readJson(localStore(), REPORT_KEY_PREFIX + id));
+  const parsed = StoredReportSchema.safeParse(readJson(localStore(), REPORT_KEY_PREFIX + id));
   return parsed.success ? parsed.data : null;
 }
 
@@ -140,7 +142,7 @@ function readForms(): FormDefinition[] {
   if (!Array.isArray(raw)) return [];
   const forms: FormDefinition[] = [];
   for (const item of raw) {
-    const parsed = FormDefinitionSchema.safeParse(item);
+    const parsed = StoredFormDefinitionSchema.safeParse(item);
     if (!parsed.success) continue;
     const form = parsed.data;
     // A confirmation without the server's attestation (saved before confirmations were attested) is
