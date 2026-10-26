@@ -187,8 +187,13 @@ test("the tenant store keeps every follow-up key (PUT then GET), for reports and
   const put = (path: string, body: unknown) => f(path, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const base = viaJson(followupReport());
   const report = { ...base, tenantId, bundleSnapshot: { ...base.bundleSnapshot, tenantId } };
-  const created = await put(storeApiPaths.report(report.id), { report });
-  assert.equal(created.status, 201, await created.clone().text());
+  // bh2 WC (check-WC problem 3, integrator grant): a create is checked like an update – every decision must be the
+  // signed-in member's – and this fixture holds several members' decisions, so it is stored as the release stores it
+  // and PUT back unchanged (an update of that revision: every key goes through the handler again).
+  const seeded = await store.createReport(tenantId, { id: report.id, status: report.status, templateId: report.templateId, formId: report.form?.formId ?? null, payload: report });
+  assert.ok(seeded.ok);
+  const created = await f(storeApiPaths.report(report.id), { method: "PUT", headers: { "content-type": "application/json", "if-match": `"${seeded.ok ? seeded.rev : 0}"` }, body: JSON.stringify({ report }) });
+  assert.equal(created.status, 200, await created.clone().text());
   const got = await (await f(storeApiPaths.report(report.id))).json();
   assert.equal(canonicalize(ReportSchema.parse(got.report)), canonicalize(report));
 

@@ -6,12 +6,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Actor, Gap, Report, ReportFlag } from "../../../core/types";
-import { acknowledgementStands, canAcknowledge, validateReport } from "../../../core/validation";
+import { acknowledgementStands, canAcknowledge, canSign, validateReport } from "../../../core/validation";
+import { adoptionCurrent } from "../../../core/provenance";
 import { buildCase, ownerOf, type Built } from "../../../core/validation/__corpus__/harness/build";
 import { actorOf } from "../../../core/validation/__corpus__/harness/fixtures";
 import { CaseInputSchema } from "../../../core/validation/__corpus__/harness/types";
 import { answerSource, ownWordsBlockers, questionStatus } from "./review-model";
-import { reviewReducer, type ReviewAction } from "./use-review-state";
+import { mayApplyFix, reviewReducer, type ReviewAction } from "./use-review-state";
 
 const SARAH = actorOf("sarah") as Actor;
 const TOM = actorOf("tom") as Actor;
@@ -61,10 +62,10 @@ describe("proposals: what staff or a colleague enter in a clinician box waits fo
     assert.equal(s.paragraphs[0].origin, "clinician");
     assert.equal(s.paragraphs[0].by?.memberId, PAT.memberId, "who typed it is kept");
     assert.ok(adopted.activity.some((a) => a.action === "adopted" && /entered by Pat Morgan \(staff\)/.test(a.detail)));
-    // A later change by Pat clears the adoption; the approver's own change keeps it.
+    // A later change by Pat leaves the adoption stale (no longer covering the box); the approver's own change keeps it.
     const pid = s.paragraphs[0].id;
     const patAgain = run(b, adopted, { type: "editParagraph", key: "F-10", paragraphId: pid, text: "Settling well with exercise and walking.", actor: PAT });
-    assert.equal(box(patAgain, "F-10").adoptedBy, undefined);
+    assert.equal(adoptionCurrent(box(patAgain, "F-10"), patAgain.approver ?? null), false);
     assert.equal(flagsOn(patAgain, "F-10", "APPROVER_DECISION").length, 1);
     const sarahEdit = run(b, adopted, { type: "editParagraph", key: "F-10", paragraphId: pid, text: "Settling well with daily exercise.", actor: SARAH });
     assert.equal(flagsOn(sarahEdit, "F-10", "APPROVER_DECISION").length, 0);
@@ -273,5 +274,135 @@ describe("B1-15 / NEW-1: a 'staff entry' that asks for a clinical decision is th
     assert.ok(byPat.gaps.some((g) => g.sectionKey === "F-01" && !g.resolution));
     const bySarah = check(reviewReducer(check(r0), { type: "setAnswer", key: "F-01", value: true, actor: SARAH }));
     assert.equal(canSign(bySarah.flags, bySarah.gaps).ok, true, JSON.stringify(canSign(bySarah.flags, bySarah.gaps).blocking.map((x) => x.code)));
+  });
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * check-WC (independent review of 549a06f): the problems it found, each as it was reached
+ * ----------------------------------------------------------------------------------------------*/
+
+describe("check-WC problem 1: one acknowledgement never clears drafted residue kept in the same paragraph", () => {
+  it("A1: the approver acknowledges the check on her own sentence; the drafted opinion kept beside it still blocks", async () => {
+    const b = await form({ "F-10": [{ text: OPINION, cites: ["N-001"] }] });
+    const pid = box(b.report, "F-10").paragraphs[0].id;
+    const mine = "In my opinion he is fit for full duties.";
+    const edited = run(b, b.report, { type: "editParagraph", key: "F-10", paragraphId: pid, text: `${mine} ${OPINION}`, actor: SARAH });
+    const ops = flagsOn(edited, "F-10", "OPINION_LANGUAGE");
+    const ackable = ops.filter((f) => canAcknowledge(f, edited, SARAH));
+    const never = ops.filter((f) => !canAcknowledge(f, edited, SARAH));
+    assert.ok(ackable.length > 0 && never.length > 0, ops.map((f) => f.evidence).join(" | "));
+    const acked = run(b, edited, { type: "acknowledgeFlag", flagId: ackable[0].id, reason: "My own clinical opinion.", actor: SARAH });
+    const after = flagsOn(acked, "F-10", "OPINION_LANGUAGE");
+    for (const n of never) assert.ok(after.some((f) => f.id === n.id && !f.acknowledged), `the drafted residue "${n.evidence}" is still open`);
+    assert.ok(after.some((f) => f.id === ackable[0].id && f.acknowledged), "her own sentence's check is acknowledged");
+    assert.equal(canSign(acked.flags, acked.gaps).ok, false);
+  });
+
+  it("a paragraph's acknowledgement reason does not survive someone else's change to its words", async () => {
+    const b = await form({ "F-31": [{ text: "In my own view he is fit for normal duties.", cites: ["N-001"], origin: "edited", originalText: "He reported a lifting injury at work on 12/03/2026.", by: "sarah" }] });
+    const r = validated(b, b.report);
+    const flag = flagsOn(r, "F-31", "OPINION_LANGUAGE")[0];
+    assert.ok(flag, "an opinion check on the narrative box");
+    const acked = run(b, r, { type: "acknowledgeFlag", flagId: flag.id, reason: "My own clinical opinion.", actor: SARAH });
+    const pid = box(acked, "F-31").paragraphs[0].id;
+    assert.ok(box(acked, "F-31").paragraphs[0].ackReason);
+    const patEdit = run(b, acked, { type: "editParagraph", key: "F-31", paragraphId: pid, text: "In my own view he is fit for normal duties and heavy lifting.", actor: PAT });
+    assert.equal(box(patEdit, "F-31").paragraphs[0].ackReason, undefined);
+    assert.ok(flagsOn(patEdit, "F-31", "OPINION_LANGUAGE").some((f) => !f.acknowledged));
+  });
+
+  it("minor 9: an acknowledgement with no stamp stands only where anyone may acknowledge", async () => {
+    const b = await form({ "F-10": [{ text: "In my own view he will make a full recovery within 6 weeks.", cites: ["N-001"], origin: "edited", originalText: "He reported a lifting injury at work on 12/03/2026.", by: "sarah" }] });
+    const r = validated(b, b.report);
+    const flag = flagsOn(r, "F-10", "OPINION_LANGUAGE")[0];
+    assert.equal(acknowledgementStands(flag, r, { reason: "Unstamped." } as never), false, "approver-only: needs the approver's stamp");
+    assert.equal(acknowledgementStands(flag, { ...r, approver: undefined }, { reason: "Unstamped." } as never), true, "an earlier build's report keeps its rule");
+  });
+});
+
+describe("check-WC problem 5: what the approver confirmed in a clinician box is never removed behind her back", () => {
+  it("E1: the approver's own words confirm the box; staff removing one of them leaves it 'changed since … last confirmed it'", async () => {
+    const b = await form({ "F-10": [] });
+    const written = run(
+      b,
+      b.report,
+      { type: "addParagraph", key: "F-10", text: "Settling with exercise.", actor: SARAH },
+      { type: "addParagraph", key: "F-10", text: "He is not fit for heavy lifting.", actor: SARAH },
+    );
+    assert.equal(flagsOn(written, "F-10", "APPROVER_DECISION").length, 0, "her own words need no extra click");
+    assert.ok(adoptionCurrent(box(written, "F-10"), written.approver ?? null), "recorded as hers as it stands");
+    assert.equal(written.activity.filter((a) => a.action === "adopted").length, 0, "no adoption is logged for her own entry");
+    const pid = box(written, "F-10").paragraphs[1].id;
+    const removed = run(b, written, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: PAT });
+    assert.equal(box(removed, "F-10").paragraphs.length, 1);
+    const d = flagsOn(removed, "F-10", "APPROVER_DECISION");
+    assert.equal(d.length, 1);
+    assert.match(d[0].message, /^Changed since Sarah Reid last confirmed it – the approving physio must adopt it/);
+    assert.equal(canSign(removed.flags, removed.gaps).ok, false);
+    // Sarah adopts the box as it now is (one click) – or puts her words back herself.
+    const adopted = run(b, removed, { type: "adopt", key: "F-10", actor: SARAH });
+    assert.equal(flagsOn(adopted, "F-10", "APPROVER_DECISION").length, 0);
+    // Tom (a colleague, not the approver) emptying her words is the same.
+    const emptied = run(b, written, { type: "editParagraph", key: "F-10", paragraphId: pid, text: "", actor: TOM });
+    assert.equal(flagsOn(emptied, "F-10", "APPROVER_DECISION").length, 1);
+  });
+
+  it("a box her words were in before adoptions were recorded: removing them is undone (the store refuses it too)", async () => {
+    const b = await form({ "F-10": [{ text: "Settling with exercise.", cites: [], origin: "clinician", by: "sarah" }, { text: "He is not fit for heavy lifting.", cites: [], origin: "clinician", by: "sarah" }] });
+    const r0 = validated(b, b.report);
+    const pid = box(r0, "F-10").paragraphs[1].id;
+    const r1 = run(b, r0, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: PAT });
+    assert.equal(box(r1, "F-10").paragraphs.length, 2, "her restriction stays");
+    // Her own removal is hers to make.
+    const r2 = run(b, r0, { type: "removeParagraph", key: "F-10", paragraphId: pid, actor: SARAH });
+    assert.equal(box(r2, "F-10").paragraphs.length, 1);
+  });
+
+  it("staff changing or clearing the approver's tick waits for her; staff removing their own proposal is fine", async () => {
+    const b = await form({}, { box: "F-11" });
+    const ticked = run(b, b.report, { type: "setAnswer", key: "F-11", value: "0-3 months", actor: SARAH });
+    assert.equal(flagsOn(ticked, "F-11", "APPROVER_DECISION").length, 0);
+    const cleared = run(b, ticked, { type: "setAnswer", key: "F-11", value: null, actor: PAT });
+    assert.equal(flagsOn(cleared, "F-11", "APPROVER_DECISION").length, 1, "a cleared answer waits for the approver");
+    const b2 = await form({ "F-10": [] });
+    const typed = run(b2, b2.report, { type: "addParagraph", key: "F-10", text: "Settling well.", actor: PAT });
+    const gone = run(b2, typed, { type: "removeParagraph", key: "F-10", paragraphId: box(typed, "F-10").paragraphs[0].id, actor: PAT });
+    assert.equal(box(gone, "F-10").paragraphs.length, 0);
+    assert.equal(flagsOn(gone, "F-10", "APPROVER_DECISION").length, 0);
+  });
+
+  it("a stale adoption is renewed only by the approver's own Adopt, not by her next edit elsewhere in the box", async () => {
+    const b = await form({ "F-10": [] });
+    const written = run(b, b.report, { type: "addParagraph", key: "F-10", text: "Settling with exercise.", actor: SARAH }, { type: "addParagraph", key: "F-10", text: "He is not fit for heavy lifting.", actor: SARAH });
+    const removed = run(b, written, { type: "removeParagraph", key: "F-10", paragraphId: box(written, "F-10").paragraphs[1].id, actor: PAT });
+    const pid = box(removed, "F-10").paragraphs[0].id;
+    const sarahEdit = run(b, removed, { type: "editParagraph", key: "F-10", paragraphId: pid, text: "Settling well with exercise.", actor: SARAH });
+    assert.equal(flagsOn(sarahEdit, "F-10", "APPROVER_DECISION").length, 1);
+  });
+});
+
+describe("check-WC minors 10 and 11: one-click fixes and note words", () => {
+  it("an attribution, voice or note-words fix – or one whose proposal says so – is the approver's", async () => {
+    const b = await form({ "F-10": [{ text: OPINION, cites: ["N-001"] }] });
+    const pid = box(b.report, "F-10").paragraphs[0].id;
+    const proposal = (generator: string, ackPolicy?: "approver" | "member" | "never") => ({ generator, sectionKey: "F-10", paragraphId: pid, label: "Fix", before: OPINION, after: OPINION, removedSpans: [], ...(ackPolicy ? { ackPolicy } : {}) });
+    for (const g of ["name-clinician", "note-words", "own-voice"]) {
+      assert.equal(mayApplyFix(b.report, proposal(g), PAT), false, g);
+      assert.equal(mayApplyFix(b.report, proposal(g), TOM), false, g);
+      assert.equal(mayApplyFix(b.report, proposal(g), SARAH), true, g);
+    }
+    assert.equal(mayApplyFix(b.report, proposal("shorten", "approver"), PAT), false);
+    assert.equal(mayApplyFix(b.report, proposal("shorten"), PAT), true);
+    assert.equal(mayApplyFix(b.report, proposal("shorten", "never"), SARAH), false);
+  });
+
+  it("'Accept as the note's words' with no phrase named accepts nothing when more than one phrase is open", async () => {
+    const b = await form({ "F-10": [{ text: "He is fit for normal duties and expected to make a full recovery.", cites: ["N-001"] }] });
+    const r = validated(b, b.report);
+    const open = flagsOn(r, "F-10", "OPINION_LANGUAGE");
+    if (open.length > 1) {
+      const pid = box(r, "F-10").paragraphs[0].id;
+      assert.equal(reviewReducer(r, { type: "acceptNoteWords", key: "F-10", paragraphId: pid, actor: SARAH }), r);
+    }
   });
 });

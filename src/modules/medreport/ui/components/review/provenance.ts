@@ -6,7 +6,7 @@
  * Pure, no React. Split out of review-model.ts by W0.4 (bh2 module split; review-model.ts re-exports it).
  * Owner: WC (review roles and provenance) – docs/bh2-ownership.json.
  */
-import { enteredByName, isPersonParagraph, sameMember } from "../../../core/provenance";
+import { boxContentSha, enteredByName, isPersonParagraph, sameMember } from "../../../core/provenance";
 import type { Actor, ActivityEntry, Paragraph, Report, ReportSection } from "../../../core/types";
 
 /**
@@ -70,9 +70,13 @@ export function answerSource(section: Pick<ReportSection, "kind" | "paragraphs" 
  * "Entered by Pat Morgan (staff)" / "Your own words" / "Adopted by Sarah Reid" – the line under a person's paragraph
  * (B1-7(b)): from its stamps, never from the box's fill source alone.
  */
-export function paragraphProvenanceLine(p: Paragraph, section: Pick<ReportSection, "adoptedBy">, viewer: Pick<Actor, "memberId"> | null): string | null {
+export function paragraphProvenanceLine(p: Paragraph, section: Pick<ReportSection, "adoptedBy"> & Partial<Pick<ReportSection, "answer" | "paragraphs">>, viewer: Pick<Actor, "memberId"> | null): string | null {
   if (!isPersonParagraph(p)) return null;
-  const adopted = section.adoptedBy;
+  // "– adopted by …" only while the adoption covers the box as it is, and only for someone else's words (the approver's
+  // own entry confirms the box as theirs without an adoption to show).
+  const a = section.adoptedBy;
+  const current = Boolean(a && (!section.paragraphs || a.contentSha === boxContentSha({ answer: section.answer, paragraphs: section.paragraphs })));
+  const adopted = a && current && !(p.by ? sameMember(p.by, a.by) : p.origin === "clinician") ? a : undefined;
   if (p.ownWords) return sameMember(p.ownWords.by, viewer) ? "Recorded as your own words" : `Recorded as ${p.ownWords.by.name}'s own words`;
   if (p.by && viewer && sameMember(p.by, viewer)) return p.origin === "edited" && p.originalText !== undefined ? "Edited by you" : p.origin === "edited" ? "Typed by you – checked like drafted text" : "Your own words – no citation needed";
   const who = p.by ? enteredByName(p.by) : p.origin === "staff" ? "staff" : null;

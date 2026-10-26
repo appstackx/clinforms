@@ -1,9 +1,11 @@
 /**
  * APPROVER_DECISION (bh2 WC design 5): what staff, or a clinician who is not the approver, entered in a clinician box
- * is a proposal. It blocks approval until the approving clinician adopts it with one audited click (Section.adoptedBy;
- * any later change by someone else clears the adoption). The approver's own answer needs no extra click. One flag per
- * box, naming who entered it ("Entered by Pat Morgan (staff) – the approving physio must adopt it."); its policy is
- * "approver" – cleared by the approver's adoption, never by an acknowledgement (validation/acknowledge.ts).
+ * is a proposal. It blocks approval until the approving clinician adopts it with one audited click (Section.adoptedBy).
+ * The approver's own answer needs no extra click (the review records it as confirmed by them). A later change by anyone
+ * else leaves that adoption stale, so the box is a proposal again – also when it only took something away ("Changed
+ * since Sarah Reid last confirmed it"). One flag per box, naming who entered it ("Entered by Pat Morgan (staff) – the
+ * approving physio must adopt it."); its policy is "approver" – cleared by the approver's adoption, never by an
+ * acknowledgement (validation/acknowledge.ts).
  *
  * Reads the stored provenance only (paragraph `by`, Section.answerBy, Section.adoptedBy, Report.approver – all hashed),
  * never who is viewing, so the review, /validate and /sign agree. A report with no approver (an earlier build's) has
@@ -30,8 +32,8 @@ export const validateApproverDecisions: Validator = (input) => {
         code: "APPROVER_DECISION",
         severity: "blocking",
         sectionKey: section.key,
-        evidence: `entered by ${proposal.names}`,
-        message: `Entered by ${proposal.names} – the approving physio must adopt it (${report.approver.name}).`,
+        evidence: proposal.names ? `entered by ${proposal.names}` : "changed since confirmed",
+        message: `${proposal.summary} – the approving physio must adopt it (${report.approver.name}).`,
       }),
       ackPolicy: "approver",
     });

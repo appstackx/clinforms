@@ -347,7 +347,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     const out = new Map<string, string>();
     for (const s of report.sections) {
       const p = pendingProposal(report, s, { fields: form?.fields ?? null });
-      if (p) out.set(s.key, `Entered by ${p.names} – the approving physio must adopt it`);
+      if (p) out.set(s.key, `${p.summary} – the approving physio must adopt it`);
     }
     return out;
   }, [report, form]);
@@ -456,6 +456,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const [approveOpen, setApproveOpen] = useState(false);
   // B2-25: an amended version is started after a confirm step, never by one stray click.
   const [amendOpen, setAmendOpen] = useState(false);
+  // WC design 1 (check-WC minor 12): taking over as approver voids the approver's decisions – a confirm step too.
+  const [takeOverOpen, setTakeOverOpen] = useState(false);
   const approvedRef = useRef<HTMLDivElement>(null);
   const centreRef = useRef<HTMLDivElement>(null);
 
@@ -670,7 +672,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           title={`Approving clinician: ${report.approver.name}`}
           action={
             mayTakeOver ? (
-              <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => dispatch({ type: "takeOverApprover", actor })}>
+              <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => setTakeOverOpen(true)}>
                 Take over as approver
               </Button>
             ) : undefined
@@ -902,6 +904,33 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </DialogContent>
           </Dialog>
         </>
+      )}
+
+      {report.approver && (
+        <Dialog open={takeOverOpen} onOpenChange={setTakeOverOpen}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>Take over as the approving clinician?</DialogTitle>
+            <DialogDescription>
+              You approve this report instead of {report.approver.name}. Their adoptions, acceptances and acknowledgements on it are cancelled and need
+              your own, the clinician-only questions they settled open again, and what they wrote waits for you to adopt it. The takeover is recorded in
+              the activity log and on the approval.
+            </DialogDescription>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setTakeOverOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setTakeOverOpen(false);
+                  dispatch({ type: "takeOverApprover", actor });
+                }}
+              >
+                Take over
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       <Dialog open={amendOpen} onOpenChange={setAmendOpen}>

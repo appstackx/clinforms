@@ -11,13 +11,18 @@
  *   physiotherapist's choice, a box whose label or guidance asks for an opinion (OPINION_BOX_WORDING), or a box with
  *   an opinion gap. When in doubt it is a clinician box.
  * - What someone other than the approver enters in a clinician box is a proposal (pendingProposal): the approver
- *   adopts it with one click (Section.adoptedBy, whose contentSha covers the box's answer and paragraphs, so any later
- *   change clears it). Until then APPROVER_DECISION blocks approval.
+ *   adopts it with one click (Section.adoptedBy, whose contentSha covers the box's answer and paragraphs). The
+ *   approver's own entry in a clinician box confirms it the same way (the review stamps adoptedBy for them). A later
+ *   change by anyone else leaves that adoption stale – it no longer matches – so the box reads "changed since Sarah
+ *   Reid last confirmed it" and waits for the approver again, whether the change added, rewrote or removed something
+ *   (approverEntryLost: a change that would take away what the approver confirmed without leaving a proposal is
+ *   refused). Until then APPROVER_DECISION blocks approval.
  * - Drafted residue (residueSpans): a span of a person's text that reproduces a drafted sentence of the box (its
  *   drafted paragraphs, the drafted wording of edited ones, and drafted paragraphs a person deleted – tombstones) with
  *   at least RESIDUE_THRESHOLD of its words keeps drafted-text strictness: cut and paste back, delete and add, a
- *   one-word or a punctuation change. A drafted sentence of fewer than SHORT_SENTENCE_TOKENS words counts only where
- *   a whole sentence of the text repeats it.
+ *   one-word or a punctuation change, words inserted inside it (a window up to RESIDUE_WINDOW_GROWTH times the drafted
+ *   sentence's length). A drafted sentence of fewer than SHORT_SENTENCE_TOKENS words counts only where a whole
+ *   sentence of the text repeats it.
  *
  * Ledger hooks (core/validation/hooks.ts, __corpus__/ledger.json) defined here: "draft-residue" (the threshold lets a
  * genuinely rewritten sentence count as the person's own; disabled, every person-changed paragraph of a box with
@@ -233,6 +238,13 @@ export function boxContentSha(section: Pick<ReportSection, "answer" | "paragraph
   );
 }
 
+/**
+ * Section.adoptedBy.contentSha once someone other than the approver changed the box (the review writes it; the store lets
+ * anyone write exactly this change and nothing else to an adoption): never equal to a real box's SHA-256, so the box
+ * waits for the approver's Adopt again even if it is changed back to what they adopted.
+ */
+export const VOIDED_ADOPTION_SHA = "0".repeat(64);
+
 /** The adoption still covers exactly what the box holds, and it is the approver's. */
 export function adoptionCurrent(section: Pick<ReportSection, "answer" | "paragraphs" | "adoptedBy">, approver: ReportApprover | null): boolean {
   const a = section.adoptedBy;
@@ -242,18 +254,24 @@ export function adoptionCurrent(section: Pick<ReportSection, "answer" | "paragra
 export interface Proposal {
   /** Who entered it (their stamps; null where no stamp says). */
   by: Array<Pick<Actor, "memberId" | "name" | "role">>;
-  /** "Pat Morgan (staff)", or "Pat Morgan (staff) and Tom Ellis". */
+  /** "Pat Morgan (staff)", or "Pat Morgan (staff) and Tom Ellis"; "" when nobody's stamp is in the box (stale only). */
   names: string;
+  /** The approver's adoption of the box no longer covers what it holds: someone else changed (or removed) something. */
+  stale: boolean;
+  /** "Entered by Pat Morgan (staff)" / "Changed since Sarah Reid last confirmed it" – the label's first words. */
+  summary: string;
 }
 
 /**
  * What someone other than the approver entered in a clinician box and the approver has not adopted (WC design 5), or
  * null. Only on a report with an approver; a drafted answer or paragraph is not a proposal (it is drafted text, checked
- * as such).
+ * as such). A box the approver adopted or confirmed (Section.adoptedBy) that has changed since – an entry added,
+ * rewritten or removed by someone else – is one too (`stale`), even when no one else's stamp is left in it.
  */
 export function pendingProposal(report: Pick<Report, "approver" | "gaps">, section: ReportSection, ctx?: BoxContext): Proposal | null {
   const approver = approverOf(report);
   if (!approver || !isClinicianBox(report, section, ctx)) return null;
+  if (adoptionCurrent(section, approver)) return null;
   const by: Array<Pick<Actor, "memberId" | "name" | "role">> = [];
   let unstamped = false;
   const add = (stamp: Pick<Actor, "memberId" | "name" | "role"> | undefined) => {
@@ -269,10 +287,95 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
   }
   const answer = section.answer;
   if (answer && answer.kind !== "text" && answer.value !== null && answer.value !== "" && section.answerBy && !sameMember(section.answerBy, approver)) add(section.answerBy);
-  if (by.length === 0 && !unstamped) return null;
-  if (adoptionCurrent(section, approver)) return null;
-  const names = [...by.map((b) => enteredByName(b)), ...(unstamped ? [enteredByName(null)] : [])];
-  return { by, names: names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] };
+  const stale = Boolean(section.adoptedBy && sameMember(section.adoptedBy.by, approver));
+  if (by.length === 0 && !unstamped && !stale) return null;
+  const list = [...by.map((b) => enteredByName(b)), ...(unstamped ? [enteredByName(null)] : [])];
+  const names = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : (list[0] ?? "");
+  return { by, names, stale, summary: names ? `Entered by ${names}` : `Changed since ${approver.name} last confirmed it` };
+}
+
+/** A structured answer that says something (not blank, not an empty table). */
+export function answerSet(answer: ReportSection["answer"]): boolean {
+  if (!answer || answer.kind === "text") return false;
+  const v = answer.value;
+  return v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+}
+
+const sameJson = (a: unknown, b: unknown) => canonicalize(a ?? null) === canonicalize(b ?? null);
+
+/**
+ * Whether a change to a clinician box (the box `key` in `before` → `after`, both with the same approver) takes away
+ * what the approving clinician confirmed there – their own paragraphs (stamped by them, or unstamped "clinician"
+ * text) and their own answer; everything in the box while their adoption covered it, or once they settled one of its
+ * clinician gaps – WITHOUT the box then reading as a proposal (pendingProposal). The review undoes such a change and
+ * the store refuses it (403): what the approver said is never removed or replaced behind their back (problem E1). The
+ * review itself always leaves a trace (its stale adoption, or the person's stamp), so this only refuses what a
+ * modified client, or a box confirmed before adoptions were stamped, would lose silently.
+ */
+export function approverEntryLost(before: Report, after: Report, key: string, ctx?: BoxContext): boolean {
+  const approver = approverOf(after);
+  if (!approver || !before.approver || !sameMember(before.approver, approver)) return false;
+  const was = before.sections.find((s) => s.key === key);
+  if (!was || !isClinicianBox(before, was, ctx)) return false;
+  const now = after.sections.find((s) => s.key === key);
+  const whole =
+    adoptionCurrent(was, approver) ||
+    (before.gaps ?? []).some((g) => g.sectionKey === key && g.resolution && !g.resolution.notApplicable && sameMember(g.resolution.by, approver));
+  let lost = false;
+  for (const p of was.paragraphs) {
+    if (!p.text.trim()) continue;
+    const own = isPersonParagraph(p) && (p.by ? sameMember(p.by, approver) : p.origin === "clinician");
+    if (!whole && !own) continue;
+    const q = now?.paragraphs.find((x) => x.id === p.id);
+    if (!q || q.text !== p.text || !sameJson(q.sourceIds, p.sourceIds)) {
+      lost = true;
+      break;
+    }
+  }
+  if (!lost && answerSet(was.answer) && (whole || (was.answerBy && sameMember(was.answerBy, approver))) && !sameJson(now?.answer, was.answer)) lost = true;
+  if (!lost) return false;
+  return !now || pendingProposal(after, now, ctx) === null;
+}
+
+/**
+ * The decisions on a report that do not stand for `keeps` (WC design 1's takeover; the store's import of a case from
+ * the public demo): acceptances, adoptions, acknowledgements, own-words records, paragraph acknowledgement reasons and
+ * approver-only dispositions made by anyone else are removed; "clinician" text anyone else wrote becomes a proposal
+ * ("edited", or "staff" in a record box); clinician gaps someone else settled open again. Pure.
+ */
+export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: string } | null | undefined) => boolean): Pick<Report, "sections" | "gaps" | "flags"> {
+  const sections = report.sections.map((s): ReportSection => {
+    const next: ReportSection = { ...s };
+    if (next.accepted?.length) {
+      const kept = next.accepted.filter((a) => keeps(a.by));
+      if (kept.length) next.accepted = kept;
+      else delete next.accepted;
+    }
+    if (next.adoptedBy && !keeps(next.adoptedBy.by)) delete next.adoptedBy;
+    if (next.disposition && !keeps(next.disposition.by) && (next.disposition.kind === "applies_anyway" || isClinicianBox(report, s))) delete next.disposition;
+    next.paragraphs = s.paragraphs.map((p): Paragraph => {
+      const q: Paragraph = { ...p };
+      delete q.ackReason;
+      if (q.ownWords && !keeps(q.ownWords.by)) delete q.ownWords;
+      if (q.origin === "clinician" && !keeps(q.by)) q.origin = s.kind === "from_records" ? "staff" : "edited";
+      return q;
+    });
+    return next;
+  });
+  const voided = { ...report, sections };
+  const gaps = report.gaps.map((g) => {
+    if (!g.resolution || g.resolution.notApplicable || keeps(g.resolution.by) || !isClinicianGap(voided, g)) return g;
+    const open = { ...g };
+    delete open.resolution;
+    return open;
+  });
+  const flags = report.flags.map((f) => {
+    if (!f.acknowledged || keeps(f.acknowledged.by) || f.severity === "warning") return f;
+    const open = { ...f };
+    delete open.acknowledged;
+    return open;
+  });
+  return { sections, gaps, flags };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -283,6 +386,12 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
 export const RESIDUE_THRESHOLD = 0.8;
 /** Drafted sentences shorter than this (in words) count only where a whole sentence of the text repeats them. */
 export const SHORT_SENTENCE_TOKENS = 4;
+/**
+ * The longest span a drafted sentence of m words is looked for in: 1.5 × m words, so a drafted opinion with a clause
+ * inserted inside it ("He is expected, given the progress he has shown so far, to make a full recovery …") is still
+ * drafted residue.
+ */
+export const RESIDUE_WINDOW_GROWTH = 1.5;
 
 interface Token {
   t: string;
@@ -316,18 +425,47 @@ export function draftedSentences(section: Pick<ReportSection, "paragraphs" | "to
   return out;
 }
 
-function countOverlap(window: readonly Token[], drafted: readonly string[]): number {
-  const pool = new Map<string, number>();
-  for (const t of drafted) pool.set(t, (pool.get(t) ?? 0) + 1);
-  let n = 0;
-  for (const w of window) {
-    const left = pool.get(w.t) ?? 0;
-    if (left > 0) {
-      n += 1;
-      pool.set(w.t, left - 1);
+/**
+ * Where `all` reproduces the drafted words `dt` (m words): the shortest window, from m up to RESIDUE_WINDOW_GROWTH × m
+ * words, that holds at least RESIDUE_THRESHOLD of them (each drafted word counted as often as the sentence has it) –
+ * its best-scoring position, trimmed to its first and last drafted word – or null. Shortest first, so a kept drafted
+ * sentence next to the person's own sentence never reaches into it. Sliding counts: O(words × window lengths).
+ */
+function residueWindow(all: readonly Token[], dt: readonly string[]): { start: number; end: number } | null {
+  const m = dt.length;
+  const want = new Map<string, number>();
+  for (const t of dt) want.set(t, (want.get(t) ?? 0) + 1);
+  const minLen = Math.min(m, all.length);
+  const maxLen = Math.min(all.length, Math.max(minLen, Math.ceil(m * RESIDUE_WINDOW_GROWTH)));
+  for (let len = minLen; len <= maxLen; len++) {
+    const have = new Map<string, number>();
+    let overlap = 0;
+    let best = -1;
+    let bestAt = -1;
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i].t;
+      const c = have.get(t) ?? 0;
+      if (c < (want.get(t) ?? 0)) overlap += 1;
+      have.set(t, c + 1);
+      if (i >= len) {
+        const o = all[i - len].t;
+        const left = (have.get(o) ?? 0) - 1;
+        have.set(o, left);
+        if (left < (want.get(o) ?? 0)) overlap -= 1;
+      }
+      if (i >= len - 1 && overlap > best) {
+        best = overlap;
+        bestAt = i - len + 1;
+      }
     }
+    if (bestAt < 0 || best / m < RESIDUE_THRESHOLD) continue;
+    let start = bestAt;
+    let end = bestAt + len - 1;
+    while (start < end && !want.has(all[start].t)) start += 1;
+    while (end > start && !want.has(all[end].t)) end -= 1;
+    return { start, end };
   }
-  return n;
+  return null;
 }
 
 /**
@@ -350,18 +488,8 @@ export function residueSpans(text: string, drafted: readonly string[]): Span[] {
       }
       continue;
     }
-    const m = dt.length;
-    const len = Math.min(m, all.length);
-    let best = 0;
-    let bestAt = -1;
-    for (let i = 0; i + len <= all.length; i++) {
-      const score = countOverlap(all.slice(i, i + len), dt) / m;
-      if (score > best) {
-        best = score;
-        bestAt = i;
-      }
-    }
-    if (bestAt >= 0 && best >= RESIDUE_THRESHOLD) spans.push({ start: all[bestAt].start, end: all[bestAt + len - 1].end });
+    const w = residueWindow(all, dt);
+    if (w) spans.push({ start: all[w.start].start, end: all[w.end].end });
   }
   spans.sort((a, b) => a.start - b.start);
   const merged: Span[] = [];
@@ -376,9 +504,12 @@ export function residueSpans(text: string, drafted: readonly string[]): Span[] {
 /**
  * The drafted residue in a paragraph of a box: drafted text itself is drafted throughout; a person's paragraph keeps
  * drafted strictness where it reproduces a drafted sentence of the box (residueSpans). `forAcknowledgement`: an
- * edited paragraph whose words are exactly its drafted wording is the editor's text as stored (the review itself
- * turns such a paragraph back into drafted text), so the approver may acknowledge its checks as on any edited text;
- * for "These are my own words" and adoption it is still drafted throughout.
+ * edited paragraph whose words are exactly its drafted wording is taken as the person's edit as stored – the safety
+ * corpus's model of edited text (its "~origin-edited" variants and OPN-carrier-08: the approver acknowledges) – so the
+ * approver may acknowledge its checks as on any edited text; for "These are my own words" and adoption it is still
+ * drafted throughout. Neither the review nor the store can produce it from drafted text: the review turns such a
+ * paragraph back into drafted text, and the store refuses relabelling drafted text as a person's without a change, and
+ * any rewrite of the drafted wording (api/handlers/store-reports.ts, check-WC minor 8).
  * With the "draft-residue" hook disabled, any person-changed paragraph in a box with drafted text is drafted throughout.
  */
 export function paragraphResidue(section: Pick<ReportSection, "paragraphs" | "tombstones">, paragraph: Paragraph, opts: { forAcknowledgement?: boolean } = {}): Span[] {

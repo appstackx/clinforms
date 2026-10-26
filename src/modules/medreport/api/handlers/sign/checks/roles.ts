@@ -60,10 +60,14 @@ export async function demoNumberCheck(input: { deps: MedreportDeps; actor: Actor
   return { demoClinic, response: null };
 }
 
-/** The signer is this approver: the same member account, or the same registration number (the signing identity). */
-function signerIsApprover(ctx: Pick<SignerCheckContext, "actor" | "signer">, approver: ReportApprover): boolean {
-  if (ctx.actor.userId && approver.memberId === ctx.actor.userId) return true;
-  return normaliseHcpc(approver.hcpc) === normaliseHcpc(ctx.signer.hcpc);
+/**
+ * The signer is this approver: the same member account – the member id the review compares when it decides who makes
+ * the approver's decisions (core/provenance.ts sameMember). Never the registration number alone (check-WC problem 2):
+ * the approver chosen on a report could otherwise name one member's id with another's number. The receipt carries the
+ * signer's own number from their member profile.
+ */
+function signerIsApprover(ctx: Pick<SignerCheckContext, "actor">, approver: ReportApprover): boolean {
+  return Boolean(ctx.actor.userId && approver.memberId === ctx.actor.userId);
 }
 
 /**

@@ -21,7 +21,9 @@ const MEMBER_HEADER = "x-corpus-member";
 function authContextOf(key: PersonKey): AuthContext {
   const p = person(key);
   return {
-    userId: p.userId,
+    // The account id is the member id the Studio stamps (core/actor.ts: memberId = the account's userId), so the server
+    // sees each fictional member as the review does (bh2 WC: stamps match by member id, never by number alone).
+    userId: p.memberId,
     authSessionId: `sess_${p.key}`,
     tenantId: CORPUS_TENANT,
     role: p.role,

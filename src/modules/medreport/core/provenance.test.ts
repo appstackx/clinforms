@@ -52,12 +52,24 @@ describe("drafted residue (0.8 of a drafted sentence's words keeps drafted stric
     ["a word inserted", OPINION.replace("expected", "now expected"), true],
     ["a genuine rewrite", "In my opinion his back should settle with exercise.", false],
     ["most words gone (11 of 14)", "He will make a full recovery within 6 weeks of the accident.", false],
+    // check-WC minor 6: words inserted inside the drafted sentence (the window grows to 1.5 × its length).
+    ["5 words inserted inside it", "He is expected, as I explained today, to make a full recovery within 6 weeks of the accident.", true],
+    ["an 8-word clause inserted inside it", "He is expected, given the progress he has shown so far, to make a full recovery within 6 weeks of the accident.", true],
+    ["two words changed", "He is anticipated to make a complete recovery within 6 weeks of the accident.", true],
+    ["three words changed", "He is anticipated to achieve a complete recovery within 6 weeks of the accident.", false],
   ];
   for (const [what, text, residue] of cases) {
     it(`${what}: ${residue ? "residue" : "the person's own words"}`, () => {
       assert.equal(residueSpans(text, [OPINION]).length > 0, residue);
     });
   }
+  it("a kept drafted sentence with one word changed never reaches into the person's own sentence before it", () => {
+    const mine = "In my opinion he is fit for full duties.";
+    const text = `${mine} ${OPINION.replace("full", "complete")}`;
+    const spans = residueSpans(text, [OPINION]);
+    assert.equal(spans.length, 1);
+    assert.ok(spans[0].start >= mine.length, JSON.stringify({ spans, text }));
+  });
   it("a short drafted sentence counts only where a whole sentence repeats it", () => {
     assert.equal(residueSpans("Neck pain eased with exercise.", ["Neck."]).length, 0);
     assert.equal(residueSpans("Full recovery. Back to work now.", ["Full recovery."]).length, 1);

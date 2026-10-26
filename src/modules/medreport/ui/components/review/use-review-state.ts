@@ -25,9 +25,11 @@ import {
   acknowledgeFlag,
   addClinicianParagraph,
   adoptBox,
+  confirmByApprover,
   editParagraph,
   enforceDecisionRoles,
   isClinicianGap,
+  keepApproverEntries,
   maintainAdoptions,
   markApproved,
   markOwnWords,
@@ -135,7 +137,7 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   if (NO_PROVENANCE.has(action.type)) return next;
   const actor = action.actor;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
-  if (DECISIONS.has(action.type)) return maintainAdoptions(report, enforceDecisionRoles(report, next, actor, ackAllowed), actor);
+  if (DECISIONS.has(action.type)) return confirmByApprover(report, maintainAdoptions(report, enforceDecisionRoles(report, next, actor, ackAllowed), actor), actor);
   // bh2 WC design 6: the origin of a person's text – only the approver's own new words are "clinician" – and
   // (design 2) who did what, stamped on every change.
   next = stampDecisions(report, withPersonOrigins(report, next, actor), actor);
@@ -144,10 +146,27 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   if (key && actor.name && SETTLING.has(action.type)) next = settleGapsByAnswer(report, next, key, actor.name, undefined, { by: actor });
   // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer.
   if (action.type === "setAnswer") next = settleConditionalGaps(next, actor.name || SYSTEM_ACTOR_NAME);
-  // A decision this person may not take is undone; the approver's adoption follows the box's content.
+  // A decision this person may not take is undone, and so is a change that would take away what the approver
+  // confirmed in a clinician box without leaving a proposal; the approver's adoption follows the box's content (stale
+  // after anyone else's change), and the approver's own entry confirms the box.
   next = enforceDecisionRoles(report, next, actor, ackAllowed);
+  next = keepApproverEntries(report, next, actor);
   next = maintainAdoptions(report, next, actor);
+  next = confirmByApprover(report, next, actor);
   return next;
+}
+
+/**
+ * Who may apply a one-click fix (WC design 4): an attribution fix, a voice fix, a note-words acceptance and a
+ * one-click option tick are the approver's, and so is any fix whose proposal says so (FixProposal.ackPolicy
+ * "approver"); a fix whose policy is "never" is applied by nobody. WD's generators name themselves in `generator`.
+ */
+const APPROVER_FIX_GENERATORS: ReadonlySet<string> = new Set(["name-clinician", "attribution", "own-voice", "voice", "note-words", "option-tick", "tick-suggested"]);
+
+export function mayApplyFix(report: Report, proposal: FixProposal, actor: Actor): boolean {
+  if (proposal.ackPolicy === "never") return false;
+  if (proposal.ackPolicy === "approver" || APPROVER_FIX_GENERATORS.has(proposal.generator)) return actsAsApprover(actor, report);
+  return true;
 }
 
 /** The approver's decision, else the report unchanged (WC design 4: the UI hides it; the reducer refuses it too). */
@@ -174,7 +193,7 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
     case "removeAbsence":
       return approverOnly(report, action.actor, () => removeAbsenceSentences(report, action.key, action.actor.name));
     case "applyFix":
-      return applyFixProposal(report, action.proposal, action.actor);
+      return mayApplyFix(report, action.proposal, action.actor) ? applyFixProposal(report, action.proposal, action.actor) : report;
     case "editParagraph":
       return editParagraph(report, action.key, action.paragraphId, action.text);
     case "revertParagraph":

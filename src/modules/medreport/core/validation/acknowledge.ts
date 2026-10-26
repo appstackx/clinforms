@@ -86,8 +86,10 @@ export function canAcknowledge(
 
 /**
  * Whether an acknowledgement already on the report stands when the validators run again (runValidators' carry-over):
- * only where the flag may be acknowledged at all, by the member it is stamped with (FlagAcknowledgement.by; an older
- * acknowledgement with no stamp stands where anyone may). A proposal (APPROVER_DECISION) is never cleared this way.
+ * only where the flag may be acknowledged at all, by the member it is stamped with (FlagAcknowledgement.by – the review
+ * stamps every acknowledgement it makes). One with no stamp stands only where anyone may acknowledge (policy
+ * "member"); on a report from an earlier build (no approver) it stands as it did there. A proposal (APPROVER_DECISION)
+ * is never cleared this way.
  */
 export function acknowledgementStands(
   flag: ReportFlag,
@@ -95,7 +97,8 @@ export function acknowledgementStands(
   ack: { by?: Pick<Actor, "memberId" | "role"> } | null | undefined,
 ): boolean {
   if (!ack || flag.code === "APPROVER_DECISION") return false;
-  return canAcknowledge(flag, report, ack.by ?? null);
+  if (!ack.by) return report.approver ? ackPolicyOf(flag, report) === "member" : canAcknowledge(flag, report, null);
+  return canAcknowledge(flag, report, ack.by);
 }
 
 /** Why an actor may not acknowledge a flag, for the review's "only … can" line (null when they may). */
