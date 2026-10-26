@@ -19,6 +19,7 @@ wording – see "Third-party wording" below.
 | `pending.json` | What may still fail, each with its owner workstream and why. **Only the integrator edits it; it is empty at release.** |
 | `ledger.json` | Every allow hook, exemption, pre-strip, threshold, acknowledgement rule and one-click generator, with its owner. |
 | `allowlist.json` | Differential-gate exceptions. Each needs Khuram's recorded approval. |
+| `retired.json` | Locked rows that cannot hold as written, retired (never edited or deleted) with the reason, the decision and the case(s) that supersede them (`harness/retired.ts`). **Only the integrator edits it; append-only.** |
 | `required-sources.json` | Every R-* finding, every HIGH/MEDIUM B* bug and the critics' new findings: each must be some case's `source` (or be listed as not pinnable, with the reason). |
 | `ngram-ignore.json` | ClinForms' own generator wording and generic clinical phrases the third-party check does not count – each with a reason. |
 | `harness/` | The runner's code (pure: the test files and scripts do the file reading). |
@@ -27,8 +28,9 @@ wording – see "Third-party wording" below.
 | `third-party-wording.test.ts` | The env-gated wording check. |
 
 Scripts (`scripts/medreport/corpus-*`): `corpus-run.ts` (print every result; `--suggest-pending` for the integrator),
-`corpus-lock.mjs` (`--add` locks NEW cases, `--check`), `corpus-guard.mjs <base-ref>`, `corpus-diff.ts` (the
-differential gate) and `corpus-diff.test.ts` (the gate in `test:medreport`).
+`corpus-lock.mjs` (`--add` locks NEW cases, `--check`), `corpus-guard.mjs <base-ref>` (also checks `retired.json`),
+`corpus-diff.ts` (the differential gate) and `corpus-diff.test.ts` (the gate in `test:medreport`). The differential
+gate still compares every input, retired or not: retirement retires an expectation, never an input.
 
 ## A case
 
@@ -41,7 +43,7 @@ differential gate) and `corpus-diff.test.ts` (the gate in `test:medreport`).
 - `source`: the bug ids and seed references it pins. `owner`: the workstream that owns the behaviour (W0 WA1 WA2 WB WC WD WE WF).
 - `paths`: where it runs – `validate`, `sign`, `render`, `store`, `reducer`, `fill`, `lint`, `assemble`, `split`, `scope`, `probe` (see `harness/types.ts` and `harness/evaluate.ts`).
 - `input` (`harness/types.ts` CaseInputSchema): the report (`template:solicitor_rta`, `template:employer_ffw` or `form:<fictional form>`), the bundle and note overrides, `author`, `approver` (the voice owner; default Sarah Reid; `null` = none chosen), `signer`, `actor`, the subject `box` and `paragraph` (with `origin`, `basis`, `by`, `ownWords`), other `boxes`, structured `answers` (and `answersBy`), `gaps`, `dispositions`, reducer `steps`, and per-path input.
-- `expect`: `BLOCK` | `FLAG` | `PASS` | `NOT_OFFERED` | `REFUSED_403` | `REFUSED_409` | `IDENTICAL`; `ack`: `never` | `approver` | `member` (who may acknowledge the blocking flags); `blockBy`: incidental codes that may count for this BLOCK; `check`: path-specific checks.
+- `expect`: `BLOCK` | `FLAG` | `PASS` | `NOT_OFFERED` | `REFUSED_403` | `REFUSED_409` | `IDENTICAL`; `ack`: `never` | `approver` | `member` (who may acknowledge the blocking flags); `blockBy`: incidental codes that may count for this BLOCK; `check`: path-specific checks (on a validate NOT_OFFERED case, `check.flag` also requires that flag to stay on the subject).
 - `negativeTwin`: required for every PASS case on an approval path (validate, sign, render, store, reducer) – a BLOCK (or refusal) case that differs only in what makes it unsafe.
 - `mutate`: `strip`, `denyList {find, replace}` (required for PASS cases tagged `narrated` or `anchored`), `origin`, `actors {staff, other, approver, admin}`, `oneClick`.
 - `tags`: `hook:<ledger id>` for the hook it pins.
@@ -61,6 +63,16 @@ What BLOCK, FLAG and PASS mean is in `harness/judge.ts`: a BLOCK needs a **subst
 ## Rules
 
 - **Append-only.** Workstream and fix agents only ADD cases (then `node scripts/medreport/corpus-lock.mjs --add`). Never change or remove a case, a lock entry or a ledger hook: `corpus-guard.mjs <base>` refuses it, and so does the lock test.
+- **Retirement** (`retired.json`, since the W0 decisions of 26/10/2026) is the only way a locked row stops counting. A
+  hand-written case, a generated mutation (`<case>~<mutation>`) or a one-click variant (`<case>~fix-<kind>-<n>`) that
+  cannot hold as written – it contradicts an approved design, duplicates another case with the opposite expectation,
+  or pins the wrong property – stays in its file and in the lock, and gets an entry: `kind`, `lockHash` (a case) or
+  `parent` + `parentLockHash` (a generated row), `retiredOn`, `decidedBy`, `decision`, `reason` and `supersededBy` (the
+  hand-written case(s) that pin the intended property). The runner still runs a retired row and reports it ("retd"),
+  but it counts neither as a failure nor as a hold; a retired case does not count for the ledger, the coverage check
+  or as a negativeTwin. Every superseding case must exist, must not be retired and must HOLD (not pending); a retired
+  row is never pending; the pinned lock hash means a retired id is never reused. `corpus-guard.mjs` refuses a removed
+  (un-retired) or changed entry and an entry without its record; `corpus-self.test.ts` shows each rule firing.
 - **pending.json** is the integrator's. A passing case never moves back to pending (the guard refuses it). When a workstream's fix makes a pending item hold, the run reports it as stale; the integrator removes it at the merge. `CORPUS_STRICT_PENDING=1` makes stale pending fail (release).
 - **Differential gate.** Every corpus input that blocks on the production validators (`e132057`, `git archive` into `node_modules/.cache/clinforms-corpus/`) must still block, unless `allowlist.json` records Khuram's approval, or – until the owning workstream lands – `pending.json` lists it as `DIFF:<id>`. `--base-dir` accepts an existing snapshot (e.g. the read-only `bh-quality/attr/basesnap`); `--replay <dir>` adds recorded drafts (gitignored `demo-assets/bh2-replay/`).
 - **Ledger.** Each hook needs at least `minBlock` (5) must-block cases tagged `hook:<id>` (BLOCK, NOT_OFFERED or REFUSED_*) and a test seam: `core/validation/registry.ts` exports `HOOK_IDS` and `withHookDisabled(id, fn)` (from `core/validation/hooks.ts`, since bh2-base); the hook's owner registers it with `defineHook(id)` in its own file and applies it only while `hookEnabled(id)`; disabling the hook must turn at least one tagged PASS case red. Until a seam exists, `LEDGER-<id>-seam` is pending with the hook's owner. A new hook goes into `ledger.json` in the same commit that adds it to the product.

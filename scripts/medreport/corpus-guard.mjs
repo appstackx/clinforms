@@ -13,14 +13,20 @@
  *   a case, a generated mutation or one-click variant of a base case (`<id>~…`), a differential item of one
  *   (`DIFF:<id>`), or a ledger item of a base hook;
  * - a ledger hook was removed or `minBlock` lowered;
- * - a differential allowlist entry has no Khuram approval recorded (`approvedBy`, `approvedOn`, `decision`).
- * Workstream and fix agents may only ADD cases (with lock entries: corpus-lock.mjs --add). Only the integrator edits
- * pending.json and the allowlist. Run from the repository root; needs git.
+ * - a differential allowlist entry has no Khuram approval recorded (`approvedBy`, `approvedOn`, `decision`);
+ * - a retired row (retired.json) was un-retired or its entry changed, or a retirement lacks its decision record
+ *   (retiredOn, decidedBy, decision, reason), its superseding case(s) or its pin (the retired case's lock hash, or the
+ *   parent case's for a generated row – so a retired id is never reused), names a superseding case that does not
+ *   exist or is retired, or is pending (corpus-lib.mjs checkRetiredFile).
+ * Retirement is the only supported way a locked row stops counting: the case line and its lock entry stay, and the
+ * runner requires every superseding case to hold. Workstream and fix agents may only ADD cases (with lock entries:
+ * corpus-lock.mjs --add). Only the integrator edits pending.json, the allowlist and retired.json. Run from the
+ * repository root; needs git.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { CASES_DIR, CORPUS_DIR, LOCK_FILE, PENDING_FILE, caseLockHash, parseCases } from "./corpus-lib.mjs";
+import { CASES_DIR, CORPUS_DIR, LOCK_FILE, PENDING_FILE, RETIRED_FILE, canonical, caseLockHash, checkRetiredFile, parseCases } from "./corpus-lib.mjs";
 
 const LEDGER_FILE = `${CORPUS_DIR}/ledger.json`;
 const ALLOWLIST_FILE = `${CORPUS_DIR}/allowlist.json`;
@@ -75,6 +81,8 @@ export function guard(ref) {
   const headPending = json(fs.existsSync(PENDING_FILE) ? fs.readFileSync(PENDING_FILE, "utf8") : null, { cases: {} }).cases ?? {};
   const baseLedger = json(baseFile(ref, LEDGER_FILE), { minBlock: 0, hooks: [] });
   const headLedger = json(fs.existsSync(LEDGER_FILE) ? fs.readFileSync(LEDGER_FILE, "utf8") : null, { minBlock: 0, hooks: [] });
+  const baseRetired = json(baseFile(ref, RETIRED_FILE), { entries: {} });
+  const headRetired = json(fs.existsSync(RETIRED_FILE) ? fs.readFileSync(RETIRED_FILE, "utf8") : null, { entries: {} });
 
   // Cases: never removed, never changed.
   for (const [id, raw] of baseCases) {
@@ -108,6 +116,13 @@ export function guard(ref) {
   const headHooks = new Set((headLedger.hooks ?? []).map((h) => h.id));
   for (const id of baseHooks) if (!headHooks.has(id)) problems.push(`ledger hook ${id} was removed`);
   if ((headLedger.minBlock ?? 0) < (baseLedger.minBlock ?? 0)) problems.push(`ledger minBlock lowered from ${baseLedger.minBlock} to ${headLedger.minBlock}`);
+  // Retired rows: append-only, each with its decision record, its pin and existing, live superseding cases.
+  for (const [id, e] of Object.entries(baseRetired.entries ?? {})) {
+    const now = headRetired.entries?.[id];
+    if (!now) problems.push(`retired ${id} was un-retired (its retired.json entry was removed) – retired.json is append-only`);
+    else if (canonical(now) !== canonical(e)) problems.push(`retired ${id}: its retired.json entry changed – retired.json is append-only`);
+  }
+  problems.push(...checkRetiredFile(headRetired, headCases, headPending));
   // Differential allowlist: Khuram's approval on every entry.
   const allow = json(fs.existsSync(ALLOWLIST_FILE) ? fs.readFileSync(ALLOWLIST_FILE, "utf8") : null, { entries: {} });
   for (const [id, e] of Object.entries(allow.entries ?? {})) {

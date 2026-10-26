@@ -172,6 +172,7 @@
     "src/modules/medreport/README.md",
     "src/modules/medreport/core/validation/__corpus__/pending.json",
     "src/modules/medreport/core/validation/__corpus__/allowlist.json",
+    "src/modules/medreport/core/validation/__corpus__/retired.json",
     "docs/bh2-ownership.json",
     "scripts/medreport/ownership-guard.mjs",
     "package.json",
@@ -188,7 +189,7 @@
   "rules": {
     "owned": "A workstream may add, change, rename or delete the paths mapped to it.",
     "tests": "Any workstream may ADD a new test file (*.test.ts, *.test.tsx, *.test.mjs) anywhere. In an existing test file it does not own it may only add lines (0 deleted lines); a changed or removed expectation there needs an integrator grant and is listed with its reason (DoC-1 C1).",
-    "corpus": "Corpus cases (__corpus__/cases/*.jsonl) and fixtures are append-only for every workstream: new files and added lines only. safety-corpus.lock.json takes new entries only (node scripts/medreport/corpus-lock.mjs --add, in the commit that adds the case); corpus-guard.mjs <base>, run by the integrator at every merge, refuses a changed or removed entry. Only the integrator edits pending.json and the allowlist.",
+    "corpus": "Corpus cases (__corpus__/cases/*.jsonl) and fixtures are append-only for every workstream: new files and added lines only. safety-corpus.lock.json takes new entries only (node scripts/medreport/corpus-lock.mjs --add, in the commit that adds the case); corpus-guard.mjs <base>, run by the integrator at every merge, refuses a changed or removed entry. Only the integrator edits pending.json, the allowlist and retired.json (retired rows: append-only, each with its decision and superseding cases).",
     "crossCutting": "A cross-cutting path may be changed by its owner in `paths` or by a workstream named in the entry's wiredBy, and the change must keep the entry's rule.",
     "grants": "The integrator may grant one path to one workstream for one branch in `grants` (path, workstream, branch, reason). Grants are the only way to touch another workstream's or the integrator's file.",
     "default": "Everything else – any unmapped path, another workstream's path, an integrator-only path – is refused. W0 and WI branches are exempt."

@@ -1,0 +1,114 @@
+{
+ "_about": "Retired corpus rows (harness/retired.ts; W0 decisions of 26/10/2026). The corpus is append-only: a locked row that cannot hold as written is never edited or deleted – it is listed here with the reason, the decision (who, when) and the hand-written case(s) that supersede it. Its line and lock entry stay. A retired row still runs and is reported, but counts neither as a failure nor as a hold; retired cases do not count for the ledger; every superseding case must hold; a retired row is never pending; `lockHash` (a case) or `parentLockHash` (a generated row) pins what was retired, so a retired id is never reused. Append-only: corpus-guard.mjs refuses a removed or changed entry. Only the integrator edits this file.",
+ "entries": {
+  "COM-colleague-01": {
+   "kind": "case",
+   "lockHash": "fc035f97413fa20cfd8d2b6b782883ec44a0b0d7eee20dc9ecbc3941fd8e9f0d",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B5). Supersede with the satisfiable form, where the comment is not the box's only sentence (flagged, and 'Remove the comment' clears it), and with a separate case that the box's only comment sentence keeps its warning and is never removed by one click.",
+   "reason": "The box's only sentence is the comment about the notes. The case asks for a one-click fix that clears every flag (check.fixClears), which needs that sentence removed – but the engine never removes a box's only answering sentence (plan WD 6; attribution-fixes.ts removeCommentary), so the case cannot hold as written.",
+   "supersededBy": [
+    "COM-colleague-09",
+    "COM-colleague-only-01"
+   ]
+  },
+  "COM-colleague-02": {
+   "kind": "case",
+   "lockHash": "6d52289b05d7b3fb78878e7084e7d45f0833bd4310a6906eb0ba79cc3daeeec5",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B5). Supersede with the satisfiable form, where the comment is not the box's only sentence (flagged, and 'Remove the comment' clears it), and with a separate case that the box's only comment sentence keeps its warning and is never removed by one click. The satisfiable form with this comment is COM-remove-ok-01 (same sentence after an answer; PASS, and the removal clears every flag).",
+   "reason": "The box's only sentence is the comment about the notes. The case asks for a one-click fix that clears every flag (check.fixClears), which needs that sentence removed – but the engine never removes a box's only answering sentence (plan WD 6; attribution-fixes.ts removeCommentary), so the case cannot hold as written.",
+   "supersededBy": [
+    "COM-remove-ok-01",
+    "COM-colleague-only-02"
+   ]
+  },
+  "COM-colleague-03": {
+   "kind": "case",
+   "lockHash": "9ae619ed04fb1f8e26b6c08d37b009c34a6a52802e7c754826c1946e9fc6b9f6",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B5). Supersede with the satisfiable form, where the comment is not the box's only sentence (flagged, and 'Remove the comment' clears it), and with a separate case that the box's only comment sentence keeps its warning and is never removed by one click. The satisfiable form with this comment is COM-colleague-07.",
+   "reason": "The box's only sentence is the comment about the notes. The case asks for a one-click fix that clears every flag (check.fixClears), which needs that sentence removed – but the engine never removes a box's only answering sentence (plan WD 6; attribution-fixes.ts removeCommentary), so the case cannot hold as written.",
+   "supersededBy": [
+    "COM-colleague-07",
+    "COM-colleague-only-03"
+   ]
+  },
+  "COM-colleague-04": {
+   "kind": "case",
+   "lockHash": "e06cafa8b85d90f901fe943cd9548ae4be847f8a6f74a09e7b4cd0397d8d804f",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B5). Supersede with the satisfiable form, where the comment is not the box's only sentence (flagged, and 'Remove the comment' clears it), and with a separate case that the box's only comment sentence keeps its warning and is never removed by one click. The satisfiable form with this comment is COM-colleague-08.",
+   "reason": "The box's only sentence is the comment about the notes. The case asks for a one-click fix that clears every flag (check.fixClears), which needs that sentence removed – but the engine never removes a box's only answering sentence (plan WD 6; attribution-fixes.ts removeCommentary), so the case cannot hold as written.",
+   "supersededBy": [
+    "COM-colleague-08",
+    "COM-colleague-only-04"
+   ]
+  },
+  "COM-colleague-05": {
+   "kind": "case",
+   "lockHash": "8e1e95047fa5b69fb53f7347920281060a79251e9861a4d77585ec8befdc6b15",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B5). Supersede with the satisfiable form, where the comment is not the box's only sentence (flagged, and 'Remove the comment' clears it), and with a separate case that the box's only comment sentence keeps its warning and is never removed by one click. The satisfiable form with this comment is COM-colleague-06.",
+   "reason": "The box's only sentence is the comment about the notes. The case asks for a one-click fix that clears every flag (check.fixClears), which needs that sentence removed – but the engine never removes a box's only answering sentence (plan WD 6; attribution-fixes.ts removeCommentary), so the case cannot hold as written.",
+   "supersededBy": [
+    "COM-colleague-06",
+    "COM-colleague-only-05"
+   ]
+  },
+  "LINT-pass-headingless": {
+   "kind": "case",
+   "lockHash": "d0d79ca82e4e0926071d43858c1b11a9278b2bf44d9192f9e231c5c2dde36af4",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire as a duplicate (bh2-rc1 §5 B6): dropped in favour of LINT-l10-fail-01, which pins the correct expectation for the same input. No other superseding case.",
+   "reason": "It has the same input as LINT-l10-fail-01 (the cf-merge map, no field overrides) with the opposite expectation: that map's conditional box F-03 has a merge code as its own placeholder, which lint rule L10 rightly reports, so 'lint passes' cannot hold. The headingless map that does pass, once the merge-code place is cleared, is LINT-pass-headingless-02.",
+   "supersededBy": [
+    "LINT-l10-fail-01"
+   ]
+  },
+  "REP-remove-pass-02": {
+   "kind": "case",
+   "lockHash": "f31bf26d57c8eba239cd0f7647257ae3db1eb6e31cdf70d4edd437a44462961a",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B7). Supersede with: Tom Ellis's finding on Sarah Reid's report must name him, and the one-click 'Tom Ellis recorded that …' is offered (REP-colleague-01, with the named text approvable: REP-colleague-02); the repeat-removal property itself is kept on Tom Ellis's own report (REP-remove-pass-03, twin REP-remove-block-03).",
+   "reason": "Its PASS predates WB's approved design 8: every finding a drafted sentence takes from a colleague's note names that colleague. The subject 'Lumbar movement was full and pain-free.' cites Tom Ellis's note on Sarah Reid's report, so the release blocks it as unattributed (OTHER_CLINICIAN_VOICE) and offers 'Tom Ellis recorded that …'. It held only on ws/bh2-drafting alone.",
+   "supersededBy": [
+    "REP-colleague-01",
+    "REP-colleague-02",
+    "REP-remove-pass-03"
+   ]
+  },
+  "ISSUE-na-voice-01~fix-name-instead-1": {
+   "kind": "one-click",
+   "parent": "ISSUE-na-voice-01",
+   "parentLockHash": "dfc8fb6cccf18c6daffd2ff8996245445d877c9472bce5c2ff024c242c5216c2",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B8). Supersede with a case that lists allowFixes ['name-instead'] and pins the faithful attribution the fix leaves (ISSUE-na-voice-02), and that text as PASS after the fix (ISSUE-na-voice-03). ISSUE-na-voice-01 itself (validate, sign, its anti-strip variants) keeps running.",
+   "reason": "A one-click variant that appeared with WA1 (the box printed anyway now gets every check): 'Name Tom Ellis instead' turns 'I assessed his back … and advised a phased return' into the faithful 'Tom Ellis assessed his back on 06/05/2026 and advised a phased return.', which is approvable – but ISSUE-na-voice-01 lists no allowFixes, so the variant reports a safe correction as unsafe. The case is locked and cannot gain allowFixes.",
+   "supersededBy": [
+    "ISSUE-na-voice-02",
+    "ISSUE-na-voice-03"
+   ]
+  },
+  "OPN-twin-priya~origin-staff": {
+   "kind": "mutation",
+   "parent": "OPN-twin-priya",
+   "parentLockHash": "4dd928d0f5221b24dd981fa4f8f8c949321aea825d9650dbd2b9ea85025041ba",
+   "retiredOn": "2026-10-26",
+   "decidedBy": "the release orchestrator, under Khuram's delegation for the Blue Heart release (decisions of 26/10/2026 21:20; bh2-handover STATUS.md)",
+   "decision": "Retire (bh2-rc1 §5 B9). Supersede with a case that expects BLOCK through UNCITED_PARAGRAPH, never acknowledgeable (OPN-twin-priya-staff). KL-WI-01 stays on the known-limits list; the diagnosis-category fix adds OPN-diagnosis-* cases during the trial.",
+   "reason": "The origin-staff mutation expects a substantive opinion flag that only the approver may clear. A staff-typed, uncited diagnosis ('Grade I-II sprain … possible irritation of the medial meniscus.') is blocked only by UNCITED_PARAGRAPH, which is never acknowledgeable, but the judge counts it as incidental – the opinion detectors have no diagnosis category yet (known limit KL-WI-01).",
+   "supersededBy": [
+    "OPN-twin-priya-staff"
+   ]
+  }
+ }
+}
