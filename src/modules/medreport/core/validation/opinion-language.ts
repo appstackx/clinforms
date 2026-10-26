@@ -70,6 +70,7 @@ import { noteSourceText } from "./sources";
 import { escapeRegExp, normaliseForMatch } from "./text";
 import { sentenceKey } from "../text/sentences";
 import { expandNoteShorthand } from "../voice";
+import { adoptionCurrent, paragraphResidue } from "../provenance";
 
 /* Ledger hooks (ledger.json). Each applies only while hookEnabled(id) (the corpus disables them one by one). */
 export const STATUS_RECORDED = defineHook("statusRecorded");
@@ -852,8 +853,25 @@ export type TextAuthorship = "drafted" | "person" | "approver" | "record";
  * clinician – edited text, staff text, or a person's paragraph stamped (`by`) by someone who is not the approver
  * ("person": checked, only the approver may acknowledge); the approver's own words ("approver": a paragraph origin
  * "clinician" not stamped by anyone else – legacy paragraphs carry no stamp); values from the records ("record").
+ *
+ * bh2-rc1 (WB x WC): with its box (`section`), a person's paragraph in a box the approving clinician adopted
+ * (core/provenance.ts adoptionCurrent: Section.adoptedBy by the approver, over exactly the box's present content) is the
+ * approver's – the one audited Adopt (WC design 5) is the approver taking those words as their own – unless it keeps
+ * drafted residue (core/provenance.ts paragraphResidue: a drafted sentence kept or pasted back keeps drafted-text
+ * strictness; WC's Adopt leaves such a paragraph as it is). Changed since, it is a person's again. Drafted text stays
+ * drafted, adopted or not.
  */
-export function authorshipOf(p: Pick<Paragraph, "origin"> & { by?: { memberId: string } }, report: Pick<Report, "approver">): TextAuthorship {
+export function authorshipOf(
+  p: Pick<Paragraph, "origin"> & { by?: { memberId: string } },
+  report: Pick<Report, "approver">,
+  section?: Pick<ReportSection, "answer" | "paragraphs" | "adoptedBy" | "tombstones">,
+): TextAuthorship {
+  const who = paragraphAuthorship(p, report);
+  if (who === "person" && section && adoptionCurrent(section, report.approver ?? null) && "text" in p && paragraphResidue(section, p as Paragraph).length === 0) return "approver";
+  return who;
+}
+
+function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: string } }, report: Pick<Report, "approver">): TextAuthorship {
   switch (p.origin as string) {
     case "ai":
       return "drafted";
@@ -888,7 +906,7 @@ export function validateOpinionLanguage(input: ValidatorInput): ReportFlag[] {
 
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p)) continue;
-    const who = authorshipOf(p, input.report);
+    const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const judged = judgeParagraphOpinions({ paragraph: p, section, report: input.report, notes: input.bundle.notes, people, owner });
     const seen = new Set<string>();

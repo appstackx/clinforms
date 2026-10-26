@@ -201,7 +201,7 @@ export const validateClinicianNamed: Validator = (input) => {
   const flags: ReportFlag[] = [];
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p)) continue;
-    const who = authorshipOf(p, input.report);
+    const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const cited = p.sourceIds.filter((id) => /^N-\d+$/.test(id)).map((id) => input.bundle.notes.find((n) => n.id === id)).filter((n): n is Note => Boolean(n));
     if (cited.length === 0) continue;

@@ -205,7 +205,7 @@ export const validateColleagueNamed: Validator = (input) => {
   const flags: ReportFlag[] = [];
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p)) continue;
-    const who = authorshipOf(p, input.report);
+    const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const label = input.form?.fields.find((f) => f.id === section.key)?.label ?? "";
     const records = p.sourceIds.filter((id) => !/^N-\d+$/.test(id)).map((id) => normaliseForMatch(ctx.sourceTexts.get(id) ?? "")).filter(Boolean);

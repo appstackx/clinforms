@@ -147,7 +147,7 @@ export const validateOpinionBoxQuotes: Validator = (input) => {
     if (section.answer && section.answer.kind !== "text" && p.basis !== "clinician_opinion_recorded") continue;
     const label = input.form?.fields.find((f) => f.id === section.key)?.label ?? "";
     if (!isOpinionPlace(section, p, label)) continue;
-    const who = authorshipOf(p, input.report);
+    const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const records = [
       ...p.sourceIds.filter((id) => !/^N-\d+$/.test(id)).map((id) => normaliseForMatch(ctx.sourceTexts.get(id) ?? "")),

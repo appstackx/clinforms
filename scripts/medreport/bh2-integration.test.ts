@@ -9,6 +9,8 @@
  *   covering my annual leave", a colleague's note naming the approver) is the approver's to confirm; any other drafted
  *   first person is never acknowledged; a person's own "I recorded …" beside a kept drafted sentence is the approver's
  *   to confirm, a first person inside drafted residue never.
+ * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
+ *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
  * Fictional data only: the safety corpus's fictional clinic and synthetic forms.
  */
@@ -25,6 +27,8 @@ import { CaseInputSchema, type CaseInput } from "../../src/modules/medreport/cor
 import { buildCase, type Built } from "../../src/modules/medreport/core/validation/__corpus__/harness/build";
 import { actorOf, clinicianOf } from "../../src/modules/medreport/core/validation/__corpus__/harness/fixtures";
 import { bytesToBase64, createHttpHarness } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
+import { runSteps } from "../../src/modules/medreport/core/validation/__corpus__/harness/reducer";
+import { CANDIDATE_ENGINE } from "../../src/modules/medreport/core/validation/__corpus__/harness/engine";
 import { resolveChoice } from "../../src/modules/medreport/forms/choice-marks";
 
 process.env.MEDREPORT_AI_MODE = "demo";
@@ -114,5 +118,34 @@ describe("WB's voice flags through WC's acknowledgement policy", () => {
     const g = voiceFlag(residue.flags);
     assert.ok(g, "flagged");
     assert.equal(canAcknowledge(g!, residue.report, actorOf("sarah")), false, "the drafted first person kept: drafted-text strictness");
+  });
+});
+
+describe("WC's Adopt through WB's opinion and attribution checks", () => {
+  const opinionOn = (report: Report, box: string) => report.flags.filter((f) => f.sectionKey === box && f.severity === "blocking" && (f.code === "OPINION_LANGUAGE" || f.code === "OTHER_CLINICIAN_VOICE"));
+  const run = async (steps: Array<Record<string, unknown>>, boxes: Record<string, unknown> = { "F-10": [] }) => {
+    const b = await buildCase(CaseInputSchema.parse({ report: "form:cf-discharge", box: "F-10", boxes, actor: "sarah" }) as CaseInput, {});
+    return runSteps(b, steps as never, CANDIDATE_ENGINE);
+  };
+
+  it("a colleague's or staff entry the approver adopted is the approver's own: no opinion flag", async () => {
+    for (const [by, text] of [["tom", "Settling well with exercise."], ["pat", "He should make a full recovery within 6 weeks."]] as const) {
+      const before = await run([{ do: "add", by, box: "F-10", text }]);
+      assert.ok(before.report.flags.some((f) => f.sectionKey === "F-10" && f.severity === "blocking"), `${by}: blocked before the Adopt`);
+      const after = await run([{ do: "add", by, box: "F-10", text }, { do: "adopt", by: "sarah", box: "F-10" }]);
+      assert.equal(after.error, undefined, after.log.join(" | "));
+      assert.deepEqual(opinionOn(after.report, "F-10").map((f) => f.evidence), [], `${by}: adopted`);
+    }
+  });
+
+  it("changed by someone else after the Adopt, the box is checked again", async () => {
+    const changed = await run([{ do: "add", by: "pat", box: "F-10", text: "He should make a full recovery within 6 weeks." }, { do: "adopt", by: "sarah", box: "F-10" }, { do: "add", by: "pat", box: "F-10", text: "He will be fit for full duties in 2 weeks." }]);
+    assert.ok(changed.report.flags.some((f) => f.sectionKey === "F-10" && f.severity === "blocking" && !f.acknowledged), changed.log.join(" | "));
+  });
+
+  it("drafted residue kept in an adopted box keeps drafted-text strictness", async () => {
+    const drafted = { "F-10": [{ text: "He is expected to make a full recovery within 6 weeks.", cites: ["N-001"] }] };
+    const res = await run([{ do: "edit", by: "pat", box: "F-10", text: "He is expected to make a full recovery within 6 weeks. Seen by Pat." }, { do: "adopt", by: "sarah", box: "F-10" }], drafted);
+    assert.ok(opinionOn(res.report, "F-10").length > 0, res.log.join(" | "));
   });
 });

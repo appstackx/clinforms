@@ -108,7 +108,7 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
   const flags: ReportFlag[] = [];
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p)) continue;
-    const who = authorshipOf(p, input.report);
+    const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const issue = voiceIssue(p, input.bundle, strict ? null : owner);
     if (!issue) {
