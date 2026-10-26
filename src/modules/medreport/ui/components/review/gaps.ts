@@ -6,6 +6,7 @@
  * Owner: WC (review roles and provenance) – docs/bh2-ownership.json.
  */
 import { conditionOf } from "../../../core/conditions";
+import { isReleaseModel } from "../../../core/issue-state";
 import { nowIso } from "../../../core/dates";
 import { isSectionAnswered } from "../../../core/forms";
 import { actsAsApprover, hasApproverWords, isClinicianBox, isClinicianGap as clinicianGapOf, type BoxContext } from "../../../core/provenance";
@@ -242,7 +243,9 @@ export function settleConditionalGaps(report: Report, actor: string, now?: Date)
   for (const section of report.sections) {
     const own = next.gaps.filter((g) => g.sectionKey === section.key);
     if (own.length === 0) continue;
-    const condition = conditionOf(next.sections, section.key);
+    // bh2-rc1 (WA1 x WC): a report of this release reads only its frozen conditions (WA1 design 3) – never the earlier
+    // run-time reading of the printed words, which could settle the question of a box the server's reading keeps.
+    const condition = conditionOf(next.sections, section.key, { release: isReleaseModel(next) });
     if (condition?.applies === false) {
       const open = own.filter((g) => !g.resolution);
       if (open.length === 0) continue;

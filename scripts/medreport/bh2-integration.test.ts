@@ -14,6 +14,8 @@
  *   /sign reads the attested map's own conditions.
  * - WC's decisions through WA1's issue state: a person's "applies anyway" / "not applicable" about a box read from a
  *   TEXT controller records that text (WA1's controllerSnapshotOf), so the decision stands until the text changes.
+ *   And the review settles a box's open question as "not applicable" only by the report's own frozen conditions (a
+ *   release report never by the earlier run-time reading of the printed words).
  * - WC's Adopt through WB's opinion and attribution checks: what the approver adopted with one audited click is the
  *   approver's own (no OPINION_LANGUAGE); changed since, it is checked again; drafted residue kept in it never is.
  *
@@ -29,6 +31,7 @@ import { parseFormAnswerValue } from "../../src/modules/medreport/core/forms";
 import { compileConditions, type ConditionField } from "../../src/modules/medreport/core/conditions";
 import { dispositionIsStale } from "../../src/modules/medreport/core/issue-state";
 import { setDisposition } from "../../src/modules/medreport/ui/components/review/reducer";
+import { settleConditionalGaps } from "../../src/modules/medreport/ui/components/review/gaps";
 import type { Report, ReportFlag } from "../../src/modules/medreport/core/types";
 import { canAcknowledge, validateReport } from "../../src/modules/medreport/core/validation";
 import { CaseInputSchema, type CaseInput } from "../../src/modules/medreport/core/validation/__corpus__/harness/types";
@@ -197,5 +200,24 @@ describe("WC's decisions through WA1's issue state", () => {
     assert.deepEqual(d!.controllerSnapshot, [{ sectionKey: "F-27", answer: { kind: "text", value: "Gardening" } }]);
     assert.equal(dispositionIsStale(d!, decided.sections), false, "stands as made");
     assert.equal(dispositionIsStale(d!, sections("Gardening and DIY")), true, "cancelled when the text changes");
+  });
+});
+
+describe("WC's gap settling through WA1's frozen conditions", () => {
+  const sections = (frozen: boolean) =>
+    [
+      { key: "F-05", title: "Is more treatment advised?", kind: "clinician_opinion", status: "complete", paragraphs: [], answer: { kind: "yes_no", value: false } },
+      { key: "F-06", title: "If yes, describe the treatment advised", kind: "ai_narrative", status: "needs_input", paragraphs: [], ...(frozen ? { condition: { controllers: ["F-05"], wants: "yes", text: "If yes", parser: "wa1-c3" } } : {}) },
+    ] as unknown as Report["sections"];
+  const gap = { id: "gap-F-06", sectionKey: "F-06", issue: "Describe the treatment advised.", suggestedQuestion: "What treatment is advised?", relatedNoteIds: [], raisedBy: "system" };
+  const reportOf = (frozen: boolean, reportModel?: number) => ({ id: "rpt_gap", ...(reportModel ? { reportModel } : {}), sections: sections(frozen), gaps: [gap], flags: [], activity: [], updatedAt: "2026-10-26T10:00:00.000Z" }) as unknown as Report;
+
+  it("a release report: settled only by a frozen condition; with none (the reader left it unresolved) the question stays open", () => {
+    assert.ok(settleConditionalGaps(reportOf(true, 2), "Sarah Reid").gaps[0].resolution?.notApplicable, "frozen: settled");
+    assert.equal(settleConditionalGaps(reportOf(false, 2), "Sarah Reid").gaps[0].resolution, undefined, "no frozen condition: open");
+  });
+
+  it("a report from before the release reads the printed words, as it did", () => {
+    assert.ok(settleConditionalGaps(reportOf(false), "Sarah Reid").gaps[0].resolution?.notApplicable);
   });
 });
