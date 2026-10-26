@@ -1,5 +1,5 @@
 {
- "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3).",
+ "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB).",
  "cases": {
   "ASAT-dc-01": {
    "owner": "WD",
@@ -236,6 +236,10 @@
   "ATT-staff-02": {
    "owner": "WB",
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-staff-02~fix-name-instead-1": {
+   "owner": "WB",
+   "reason": "New at bh2-base (not generated on bh2-r1, where the paragraph raised no flag): W0.6 validates with the approver as voice owner, so OTHER_CLINICIAN_VOICE (Tom Ellis) now flags and offers “Name Tom Ellis instead”, which turns this unsafe text into an approvable one (same class as ATT-firstperson-02~fix-name-instead-1)."
   },
   "ATT-staff-02~strip-joiner": {
    "owner": "WB",
@@ -872,10 +876,6 @@
   "ISSUE-na-voice-01~strip-wrapper": {
    "owner": "WA1",
    "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
-  },
-  "ISSUE-schema-01": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: FAIL probe: ReportSchema drops the release fields (approver, model)"
   },
   "ISSUE-unknown-choice": {
    "owner": "WA1",
@@ -2632,66 +2632,6 @@
   "SCOPE-decimal-01": {
    "owner": "WD",
    "reason": "Fails on bh2-r1: FAIL scope: matches /PSFS 6\\.(?!5)/ → \"PSFS 6.\""
-  },
-  "TEXT-split-cut-01": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-cut-02": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-cut-03": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-01": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-02": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-03": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-04": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-05": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-06": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-07": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-08": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-09": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-keep-10": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-notes-01": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
-  },
-  "TEXT-split-notes-02": {
-   "owner": "W0",
-   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
   }
  }
 }

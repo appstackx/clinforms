@@ -447,10 +447,15 @@ async function runProbe(c: RunCase): Promise<PathOutcome> {
     return { path: "probe", ok: media.length > 0, detail: media.length ? `the picture is kept (${media.join(", ")})` : "the converted file has no picture" };
   }
   if (name === "schema-keeps-release-fields") {
-    const r = { ...built.report, approver: { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" }, model: 2 } as Report & Loose;
+    // The plan's "model" is stored as Report.reportModel (W0.3: "model" is a banned key in the clinic's case export).
+    const r = { ...built.report, approver: { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" }, reportModel: 2 } as Report & Loose;
     const parsed = ReportSchema.safeParse(r) as { success: boolean; data?: Loose };
-    const kept = parsed.success && parsed.data && "approver" in parsed.data && "model" in parsed.data;
-    return { path: "probe", ok: Boolean(kept), detail: kept ? "release fields kept by ReportSchema" : "ReportSchema drops the release fields (approver, model)" };
+    const kept = parsed.success && parsed.data && "approver" in parsed.data && parsed.data.reportModel === 2;
+    // …and the release's factory writes them (W0.6): the corpus report is made by createReport / createFormReport.
+    const made = (built.report as Report & Loose).reportModel === 2 && (built.report as Report & Loose).approver !== undefined;
+    const ok = Boolean(kept) && made;
+    const detail = !kept ? "ReportSchema drops the release fields (approver, reportModel)" : !made ? "the report factory does not set reportModel 2 and the approver" : "release fields kept by ReportSchema and set by the factory";
+    return { path: "probe", ok, detail };
   }
   return { path: "probe", ok: false, detail: `unknown probe ${name}` };
 }

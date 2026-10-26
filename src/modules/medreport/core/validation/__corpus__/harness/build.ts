@@ -9,7 +9,7 @@
 import { computeFacts } from "../../../computed-facts";
 import { answerKindFor, formToTemplate } from "../../../forms";
 import { createFormReport, createReport } from "../../../report-factory";
-import type { ComputedFact, FormAnswer, FormDefinition, Gap, Paragraph, Report, ReportSection, ReportTemplate } from "../../../types";
+import type { Actor, ComputedFact, FormAnswer, FormDefinition, Gap, Paragraph, Report, ReportSection, ReportTemplate } from "../../../types";
 import { EMPLOYER_FFW_TEMPLATE, SOLICITOR_RTA_TEMPLATE } from "../../../../templates/registry";
 import { withAttestedConfirmation } from "../../../../auth/attestations";
 import { findFormMergeFields } from "../../../../forms/merge-scan";
@@ -63,9 +63,9 @@ export function rolesOf(input: CaseInput): { approver: PersonKey | null; author:
   return { approver, author, signer, actor };
 }
 
-function stamp(key: PersonKey): { memberId: string; name: string } {
-  const p = person(key);
-  return { memberId: p.memberId, name: p.name };
+/** The release's `by` stamp: the stored Actor (core/schemas.ts ActorSchema – memberId, name, role, canSign, hcpc?). */
+function stamp(key: PersonKey): Actor {
+  return actorOf(key);
 }
 
 /** One paragraph of the case, with the release's provenance stamps. */
@@ -80,7 +80,7 @@ export function paragraphOf(p: ParagraphInput, id: string): Paragraph {
     ...(p.ackReason ? { ackReason: p.ackReason } : {}),
   };
   if (p.by) out.by = stamp(p.by);
-  if (p.ownWords) out.ownWords = { ...stamp(p.ownWords), by: stamp(p.ownWords), at: CORPUS_AT };
+  if (p.ownWords) out.ownWords = { by: stamp(p.ownWords), at: CORPUS_AT };
   return out;
 }
 
@@ -149,7 +149,8 @@ export async function buildCase(input: CaseInput, opts: { signMode?: "tenant" | 
   let template: ReportTemplate;
   let form: FormDefinition | null = null;
   let fileBytes: Uint8Array | null = null;
-  const approverRef = approver ? { ...stamp(approver), hcpc: person(approver).hcpc ?? "" } : null;
+  // Report.approver is exactly {memberId, name, hcpc} (core/schemas.ts ReportApproverSchema) – it is hashed.
+  const approverRef = approver ? { memberId: person(approver).memberId, name: person(approver).name, hcpc: person(approver).hcpc ?? "" } : null;
   if (reportSpec.startsWith("form:")) {
     const patches = (input.fill?.layoutPatches ?? []) as Array<{ table: number; row: number; cell: number; spec: CellSpec }>;
     const built = await buildForm(reportSpec.slice(5), tenantId, patches, (input.fill?.fieldPatches ?? {}) as Record<string, Record<string, unknown>>);

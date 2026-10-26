@@ -1,8 +1,8 @@
 /**
  * Safety corpus: review-reducer action sequences, each step by a named member (the role matrix).
  *
- * Steps go through the product's reviewReducer with the actor's name, the base tree's stop-gap context
- * (`actorIsStaff`) and the release's Actor (`by`). An approver-only step a member is not allowed to take must have no
+ * Steps go through the product's reviewReducer with the acting member as the release's Actor (`actor`, W0.6
+ * ReviewAction.actor – it replaced bh2-r1's actor name and `actorIsStaff` stop-gap context). An approver-only step a member is not allowed to take must have no
  * effect; a step the UI only offers when allowed (acknowledging a flag) is skipped and logged "NOT OFFERED" when the
  * product says that member may not take it (canAcknowledge with the actor). A step the tree does not support yet
  * (an action type it does not know) leaves the report unchanged and is logged "UNSUPPORTED".
@@ -29,8 +29,8 @@ export interface StepsResult {
 type Loose = Record<string, unknown>;
 
 function act(report: Report, action: Loose, key: PersonKey): { report: Report; supported: boolean } {
-  const p = person(key);
-  const full = { ...action, actor: p.name, actorIsStaff: p.role === "staff", by: actorOf(key) };
+  // W0.6: every person action carries the acting member as `actor: Actor` (ReviewAction.actor).
+  const full = { ...action, actor: actorOf(key) };
   try {
     const next = reviewReducer(report, full as unknown as Parameters<typeof reviewReducer>[1]);
     if (!next || typeof next !== "object" || !Array.isArray((next as Report).sections)) return { report, supported: false };

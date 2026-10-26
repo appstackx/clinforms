@@ -63,16 +63,21 @@ What BLOCK, FLAG and PASS mean is in `harness/judge.ts`: a BLOCK needs a **subst
 - **Append-only.** Workstream and fix agents only ADD cases (then `node scripts/medreport/corpus-lock.mjs --add`). Never change or remove a case, a lock entry or a ledger hook: `corpus-guard.mjs <base>` refuses it, and so does the lock test.
 - **pending.json** is the integrator's. A passing case never moves back to pending (the guard refuses it). When a workstream's fix makes a pending item hold, the run reports it as stale; the integrator removes it at the merge. `CORPUS_STRICT_PENDING=1` makes stale pending fail (release).
 - **Differential gate.** Every corpus input that blocks on the production validators (`e132057`, `git archive` into `node_modules/.cache/clinforms-corpus/`) must still block, unless `allowlist.json` records Khuram's approval, or – until the owning workstream lands – `pending.json` lists it as `DIFF:<id>`. `--base-dir` accepts an existing snapshot (e.g. the read-only `bh-quality/attr/basesnap`); `--replay <dir>` adds recorded drafts (gitignored `demo-assets/bh2-replay/`).
-- **Ledger.** Each hook needs at least `minBlock` (5) must-block cases tagged `hook:<id>` (BLOCK, NOT_OFFERED or REFUSED_*) and a test seam: `core/validation/registry.ts` exports `HOOK_IDS` and `withHookDisabled(id, fn)`; disabling the hook must turn at least one tagged PASS case red. Until a seam exists, `LEDGER-<id>-seam` is pending with the hook's owner. A new hook goes into `ledger.json` in the same commit that adds it to the product.
+- **Ledger.** Each hook needs at least `minBlock` (5) must-block cases tagged `hook:<id>` (BLOCK, NOT_OFFERED or REFUSED_*) and a test seam: `core/validation/registry.ts` exports `HOOK_IDS` and `withHookDisabled(id, fn)` (from `core/validation/hooks.ts`, since bh2-base); the hook's owner registers it with `defineHook(id)` in its own file and applies it only while `hookEnabled(id)`; disabling the hook must turn at least one tagged PASS case red. Until a seam exists, `LEDGER-<id>-seam` is pending with the hook's owner. A new hook goes into `ledger.json` in the same commit that adds it to the product.
 - **Third-party wording.** `CLINFORMS_THIRD_PARTY_MAPS=<dir> npm run test:medreport` fails when committed corpus or fixture text shares 4+ consecutive words with a referrer's maps (`*.json`) or text dumps (`*.txt`). It prints only the shared runs. Run it before committing new cases.
 
 ## Release action names the reducer harness dispatches (contract for WA1 / WC)
 
 `markNotApplicable {key, on}` (else `setDisposition {key, kind: "not_applicable"}`), `setDisposition {key, kind: "applies_anyway", reason}`,
-`adopt {key}`, `markOwnWords {key, paragraphId}`, `acceptNoteWords {key, paragraphId}`, `takeOverApprover {}` – each with `actor` (name),
-`actorIsStaff` (the bh2-r1 stop-gap) and `by` (the release Actor). An action a tree does not know leaves the report unchanged ("UNSUPPORTED").
+`adopt {key}`, `markOwnWords {key, paragraphId}`, `acceptNoteWords {key, paragraphId}`, `takeOverApprover {}` – each with `actor`, the
+acting member as the stored Actor (W0.6 `ReviewAction.actor`; it replaced bh2-r1's name and `actorIsStaff` stop-gap at bh2-base).
+Provenance stamps the corpus writes (`by`, `answerBy`, `disposition.by`, `ownWords.by`, forged `accepted`/`adoptedBy`) are the same Actor;
+`Report.approver` is `{memberId, name, hcpc}` and the plan's "model" is `Report.reportModel` (W0.3). An action a tree does not know leaves
+the report unchanged ("UNSUPPORTED").
 Release fix generators are picked up from `offeredFixes(report, {actor, form, template})` in `core/fix-types.ts` or
-`ui/components/review/review/fixes.ts` (kinds the corpus names: `attribution-prefix`, `use-note-words`, `name-instead`,
+`ui/components/review/fixes.ts` (WD, after the W0.4 split). Each item is either `{kind, label, key, apply(report)}` or W0.6's
+`FixProposal` (`core/fix-types.ts`), which the harness applies as the reducer action `applyFix {proposal}` by the acting member
+(kinds the corpus names: `attribution-prefix`, `use-note-words`, `name-instead`,
 `accept-note-words`, `remove-commentary`, `repeat-removal`, `value-only`, `dose-not-stated`). Lint: `core/form-map-lint.ts`
 `lintFormMap(form, opts) → [{rule, fieldId?, severity}]`. Tokenizer: `core/text/sentences.ts` `splitSentences(text, policy)`.
 Issue state: `core/issue-state.ts` `issueState(content, form, approval)`.

@@ -18,7 +18,7 @@ import type { Report, ReportFlag } from "../../../types";
 import { buildCase, ownerOf, rolesOf, type Built } from "./build";
 import type { ValidatorEngine } from "./engine";
 import { checkFixRules, offeredFixes, type OfferedFix } from "./fixes";
-import { person } from "./fixtures";
+import { actorOf, person } from "./fixtures";
 import { createHttpHarness, getStoredReport, postRenderFinal, postSign, putStoredReport, type HttpHarness } from "./http";
 import { createAmendedVersion } from "../../../../ui/components/review/review-model";
 import { judge, onSubject, describeFlags, matches, INCIDENTAL_CODES, type FlagMatcher, type Judgement } from "./judge";
@@ -273,8 +273,9 @@ async function runRender(c: RunCase, built: Built, h: HttpHarness): Promise<Path
 type Forge = "ack-by-approver" | "accept-by-approver" | "own-words-by-approver" | "adopt-by-approver" | "signed-flags-change" | "signed-activity-rewrite" | "none";
 
 function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: string | null): Report {
-  const p = person(approver);
-  const by = { memberId: p.memberId, name: p.name };
+  // The release's `by` stamp is the stored Actor (core/schemas.ts ActorSchema), so a forged PUT is schema-valid and only
+  // the server's role rules (WC) can refuse it.
+  const by = actorOf(approver);
   const at = report.updatedAt;
   const key = box ?? report.sections[0]?.key;
   switch (forge) {

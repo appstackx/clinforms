@@ -16,7 +16,7 @@
 import { nameClinicianFix, ownVoiceCandidates, supersededAbsenceSentences } from "../../../../ui/components/review/review-model";
 import { reviewReducer } from "../../../../ui/components/review/use-review-state";
 import type { FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../types";
-import { person } from "./fixtures";
+import { actorOf, person } from "./fixtures";
 import type { PersonKey } from "./types";
 
 export interface OfferedFix {
@@ -30,12 +30,13 @@ export interface OfferedFix {
 type Loose = Record<string, unknown>;
 
 function dispatch(report: Report, action: Loose, actorKey: PersonKey): Report {
-  const p = person(actorKey);
-  const full = { ...action, actor: p.name, actorIsStaff: p.role === "staff", by: { memberId: p.memberId, name: p.name, role: p.role, canSign: p.canSign, ...(p.hcpc ? { hcpc: p.hcpc } : {}) } };
+  // W0.6: every person action carries the acting member as `actor: Actor` (ReviewAction.actor).
+  const full = { ...action, actor: actorOf(actorKey) };
   return reviewReducer(report, full as unknown as Parameters<typeof reviewReducer>[1]);
 }
 
-const RELEASE_FIX_MODULES = ["../../../fix-types", "../../../../ui/components/review/review/fixes"];
+/** Where the release's fix generators live: W0.6's core/fix-types.ts, and WD's review fixes (W0.4 split: ui/components/review/fixes.ts). */
+const RELEASE_FIX_MODULES = ["../../../fix-types", "../../../../ui/components/review/fixes"];
 
 async function releaseFixes(report: Report, ctx: { actor: PersonKey; form: FormDefinition | null; template: ReportTemplate }): Promise<OfferedFix[]> {
   const out: OfferedFix[] = [];
@@ -48,11 +49,19 @@ async function releaseFixes(report: Report, ctx: { actor: PersonKey; form: FormD
     }
     const fn = mod.offeredFixes;
     if (typeof fn !== "function") continue;
-    const proposals = (fn as (r: Report, c: Loose) => unknown)(report, { actor: person(ctx.actor), form: ctx.form, template: ctx.template });
+    const proposals = (fn as (r: Report, c: Loose) => unknown)(report, { actor: actorOf(ctx.actor), form: ctx.form, template: ctx.template });
     if (!Array.isArray(proposals)) continue;
     for (const p of proposals as Loose[]) {
-      if (typeof p.apply !== "function" || typeof p.kind !== "string") continue;
-      out.push({ kind: p.kind, label: String(p.label ?? p.kind), box: typeof p.key === "string" ? p.key : null, apply: p.apply as (r: Report) => Report });
+      if (typeof p.apply === "function" && typeof p.kind === "string") {
+        out.push({ kind: p.kind, label: String(p.label ?? p.kind), box: typeof p.key === "string" ? p.key : null, apply: p.apply as (r: Report) => Report });
+        continue;
+      }
+      // W0.6's FixProposal (core/fix-types.ts): applied the way the review screen applies it – the reducer action
+      // `applyFix {proposal}` by the acting member (WD). A tree whose reducer does not know it leaves the report unchanged.
+      if (typeof p.generator === "string" && typeof p.sectionKey === "string" && typeof p.after === "string") {
+        const proposal = p;
+        out.push({ kind: p.generator, label: String(p.label ?? p.generator), box: p.sectionKey, apply: (r) => dispatch(r, { type: "applyFix", proposal }, ctx.actor) });
+      }
     }
   }
   return out;
