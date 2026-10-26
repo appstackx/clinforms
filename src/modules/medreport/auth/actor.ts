@@ -308,6 +308,11 @@ export const AUDIT_ACTIONS = {
   draftLive: "report.draft_live",
   sign: "report.sign",
   renderFinal: "report.render_final",
+  /**
+   * bh2-rc1 (WA1 design 7 x WF): /render refused a FINAL copy whose issued content or acknowledgements no longer
+   * match the receipt (409 ISSUED_COPY_CHANGED) – labelled on the clinic activity page (src/lib/activity-copy-release.ts).
+   */
+  issueRefused: "report.issue_refused",
   fileBack: "report.file_back",
   /** For the server store's endpoints (report deletion / export). */
   reportDelete: "report.delete",

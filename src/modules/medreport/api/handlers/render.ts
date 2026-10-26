@@ -160,8 +160,10 @@ function issuedCopyChanged(what: "acknowledgements" | "document"): Response {
 /** A refused final copy goes into the clinic's audit trail too (ids only). */
 async function auditIssuedChanged(deps: MedreportDeps, actor: Actor, report: Report, receipt: SignReceipt | undefined, what: "acknowledgements" | "document"): Promise<void> {
   logEvent("render_refused_issued_changed", { report: report.id, what });
+  // bh2-rc1: its own audit action – written as report.render_final it read "Final document produced" on the clinic's
+  // activity page although nothing was produced (WF labels report.issue_refused: "Final document refused – …").
   await auditActor(deps, actor, {
-    action: AUDIT_ACTIONS.renderFinal,
+    action: AUDIT_ACTIONS.issueRefused,
     targetType: "report",
     targetId: report.id,
     detail: { refused: "ISSUED_COPY_CHANGED", what, receiptMac: macPrefix(receipt?.mac) },

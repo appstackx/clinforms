@@ -145,6 +145,8 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     }
     assert.ok(audit.some((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED" && (e.detail as Record<string, unknown>)?.what === "acknowledgements"));
     assert.ok(audit.some((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED" && (e.detail as Record<string, unknown>)?.what === "document"));
+    // bh2-rc1 (WA1 x WF): under its own action, never as a produced final document.
+    assert.ok(audit.filter((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED").every((e) => e.action === "report.issue_refused"));
   });
 
   it("a receipt from before the release (no bound hashes) renders exactly the release's document (AC-ISSUE-6)", async () => {
