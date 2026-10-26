@@ -190,9 +190,53 @@ test("a choice is ticked only when the cited notes use the option's words", () =
   assert.match(res.gaps[0].issue, /“Fit with a phased return” is not stated in the cited notes \(they do not use the words “phased” and “return”\)/);
   assert.match(res.gaps[0].suggestedQuestion, /\(Fit for normal duties \/ Fit with a phased return \/ Not fit\)/);
   assert.deepEqual(res.gaps[0].relatedNoteIds, ["N-001"]);
-  assert.equal(res.gaps[0].suggestedAnswer, "Fit with a phased return", "fix round 1 (B0-8): offered to the person as one click");
+  // Safety amendment (C-2): F-03 is a clinician_opinion box, so the held-back option is NOT offered as one click
+  // (was "Fit with a phased return" under fix round 1, B0-8).
+  assert.equal(res.gaps[0].suggestedAnswer, undefined, "C-2: no one-click answer on an opinion box");
   assert.deepEqual(optionWordsNotIn("Goals achieved", "Episode of care complete. Discharged to self-management."), ["goals", "achieved"]);
   assert.deepEqual(optionWordsNotIn("Goals achieved", "All treatment goals were achieved."), []);
+});
+
+test("safety amendment (C-2): a held-back choice is offered as one click only on a box that is neither an opinion nor the physiotherapist's choice", () => {
+  const output: FormDraftGroupOutput = {
+    sections: [
+      {
+        sectionKey: "F-03",
+        answer: "Fit with a phased return",
+        paragraphs: [{ text: "On 18/03/2026 Sarah Reid recorded that he was off work since 13/03/2026.", sourceIds: ["N-001"], basis: "record" }],
+      },
+    ],
+    gaps: [],
+  };
+  const withF03 = (rest: Partial<FormField>): FormDefinition => ({ ...FORM, fields: FORM.fields.map((f) => (f.id === "F-03" ? { ...f, ...rest } : f)) });
+  const run = (form: FormDefinition) => {
+    const bundle = testBundle();
+    return assembleDraft({
+      template: formToTemplate(form),
+      bundle,
+      instructingParty: bundle.referral,
+      sectionKeys: ["F-03"],
+      computedFacts: computeFacts(bundle, { asOf: TEST_FACTS_DATE }),
+      output,
+      meta: { ...META, sectionKeys: ["F-03"] },
+      form,
+      idSeed: "t1",
+    });
+  };
+  const choiceGap = (res: ReturnType<typeof run>) => res.gaps.find((g) => g.id.endsWith("-choice"));
+  // An opinion box (the default F-03): held back, no one-click answer.
+  const opinion = run(FORM);
+  assert.equal(opinion.sections[0].answer?.value, null);
+  assert.ok(choiceGap(opinion), "still held back for a person to decide");
+  assert.equal(choiceGap(opinion)?.suggestedAnswer, undefined);
+  // The physiotherapist's choice on each report (staff.entry, "chosen by the physiotherapist"): no one-click answer either.
+  const physio = run(withF03({ fillSource: { kind: "registration", path: "staff.entry" }, guidance: "Chosen by the physiotherapist on each report." }));
+  assert.equal(physio.sections[0].answer?.value, null);
+  assert.ok(choiceGap(physio), "held back for the physiotherapist");
+  assert.equal(choiceGap(physio)?.suggestedAnswer, undefined, "no one-click answer on the physiotherapist's choice");
+  // Negative twin: an ordinary notes box keeps the one-click "Tick “Fit with a phased return”" (fix round 1, B0-8).
+  const notes = run(withF03({ fillSource: { kind: "notes_narrative" } }));
+  assert.equal(choiceGap(notes)?.suggestedAnswer, "Fit with a phased return");
 });
 
 test("gap wording is readable: record IDs become note dates, note shorthand is written out", () => {

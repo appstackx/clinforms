@@ -22,7 +22,7 @@ import "server-only";
  */
 import { DraftsResponseSchema, type DraftsResponse } from "../api/contract";
 import { otherInsurerOnForm, withoutOtherInsurerName } from "../core/form-record-rules";
-import { answerKindFor, parseFormAnswerValue, primaryTreatingClinician } from "../core/forms";
+import { answerKindFor, parseFormAnswerValue, primaryTreatingClinician, recordSourceOf } from "../core/forms";
 import { isNoteId } from "../core/ids";
 import { createFormReport, createReport } from "../core/report-factory";
 import { applyScope } from "../core/scope";
@@ -257,6 +257,9 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
         if (unstated.length > 0) {
           const option = String(answer.value);
           answer = { ...answer, value: null };
+          // Safety amendment (C-2, release/bh-trial-2): never a one-click answer on an opinion box or on a choice the
+          // physiotherapist makes on each report – only a clinician decides those, never a drafted guess ticked in one click.
+          const oneClick = field.fillSource.kind !== "clinician_opinion" && recordSourceOf(field) !== "physio_choice";
           sectionGaps.push({
             id: `gap-${key}-${seed}-choice`,
             sectionKey: key,
@@ -265,7 +268,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
             relatedNoteIds: Array.from(new Set(paragraphs.flatMap((p) => p.sourceIds).filter((x) => isNoteId(x)))),
             raisedBy: "system",
             // Fix round 1 (B0-8): offered as one click; ticking it is the person's own decision.
-            suggestedAnswer: option,
+            ...(oneClick && { suggestedAnswer: option }),
           });
         }
       }

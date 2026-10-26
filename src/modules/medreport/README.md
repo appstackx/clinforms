@@ -1810,7 +1810,8 @@ An end-to-end test run on a local copy of Dell's trial clinic (all nine provider
   the code stays printed and the final copy would refuse to issue the form.
 - **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
 - **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`); held-back choices in one click
-  (`Gap.suggestedAnswer`); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
+  (`Gap.suggestedAnswer`) – safety amendment (C-2): never on a clinician_opinion box or the physiotherapist's choice
+  (`recordSourceOf` "physio_choice"); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
 - **Typography on converted RTF forms** (`completeTypography`), no negative right indents in cells, no empty record lines;
   **RTF pictures** (PNG / JPEG logos, picture frames, text boxes) carried over (`rtf-docx-3`).
 - **Record values**: appointment times (`episode.firstSeenTime`, `episode.attendedDate` / `episode.attendedTime` with
