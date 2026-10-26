@@ -105,7 +105,11 @@ export function useReviewActions(opts: {
         const demoFile = form && form.kind !== "questions" && hooks.mode !== "tenant" && file.status === "ready" ? { fileBase64: file.base64 } : {};
         // bh2 WA1 design 6: a clinic's /sign approves exactly the stored revision (409 STALE_REPORT otherwise) – store
         // what is being approved first.
-        if (hooks.mode === "tenant") await saveReportDurable(fresh);
+        // harden-WA1 (check2 N6): a save the clinic's Studio refused (a decision it does not allow, a newer revision) stops
+        // here – never sent on to be refused by /sign as "a change is not saved yet, or someone else saved a newer version".
+        if (hooks.mode === "tenant" && !(await saveReportDurable(fresh))) {
+          return { ok: false, title: "This report could not be saved", detail: "Nothing was approved: the clinic's Studio did not accept your latest changes, so they are not part of its copy. Reload the report, check it, and approve again." };
+        }
         const res = await api.sign({ report: fresh, ...input, ...(form ? { form } : {}), ...demoFile }, { sessionToken });
         const approved = markApproved(fresh, res.receipt, res.flags, { isForm, prefill: Boolean(form && prefillSigners(form)), plain: hooks.mode === "tenant" });
         // The approval must reach the store before the clinician moves on (a clinic's Studio: the server).
