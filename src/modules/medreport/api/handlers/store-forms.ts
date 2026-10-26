@@ -18,8 +18,11 @@ import "server-only";
  *        browser store). If-Match optional. (Fix wave 2) a confirmed map is deleted only by a role that may confirm.
  * Every change writes an audit row (ids, revision and status only).
  * Usage (25/10/2026): a portal question set (kind "questions") stored for the first time is counted for the clinic.
+ * bh2 WE design 2 (map lint L5): a map newly stored as "confirmed" (not the same confirmation stored again) is refused
+ * (422 VALIDATION_FAILED) while a question asking for a clinical judgement would be answered by staff, a fixed value or
+ * a draft without an acceptance stamped by a clinician (/forms/confirm stamps it; the attestation covers it).
  *
- * Owner: store slice (wave 2).
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import { CONFIRM_ROLES, assertActorTenant } from "../../auth/actor";
 import { formConfirmationProblem, verifyFormConfirmation } from "../../auth/attestations";
@@ -40,6 +43,26 @@ import type { TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
 import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { recordUsage } from "../usage";
+import { judgementOnNonClinicianSource } from "../../core/form-map-lint";
+
+/**
+ * L5 for a confirmed map: every question that asks for a clinical judgement but would be answered by staff, a fixed
+ * value or a draft carries an acceptance stamped by a clinician (the role clinician, or a member who may sign). The
+ * problems found, as API issues (empty: none).
+ */
+export function confirmedJudgementIssues(form: Pick<FormDefinition, "fields">): Array<{ path: string; message: string }> {
+  const issues: Array<{ path: string; message: string }> = [];
+  for (const f of form.fields) {
+    const j = judgementOnNonClinicianSource(f);
+    if (!j) continue;
+    const acceptance = f.lintAccepted?.find((a) => a.rule === "L5");
+    if (!acceptance) issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) not left to the clinician, and not accepted.` });
+    else if (!acceptance.by || !(acceptance.by.role === "clinician" || acceptance.by.canSign)) {
+      issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) accepted, but not by a clinician.` });
+    }
+  }
+  return issues;
+}
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -108,6 +131,17 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
   }
   if (parsed.data.form.tenantId !== DEMO_TENANT_ID) assertActorTenant(t.actor, parsed.data.form.tenantId, "form");
   const { form, downgraded } = normaliseStoredForm(parsed.data.form, t.tenantId);
+  // bh2 WE design 2: a new confirmation settles every clinical judgement (L5); the same confirmation stored again is not new.
+  if (form.status === "confirmed") {
+    const issues = confirmedJudgementIssues(form);
+    if (issues.length > 0) {
+      const stored = ifMatch !== null ? await currentCopy(t.store, t.tenantId, id) : null;
+      const same = stored?.form.status === "confirmed" && stored.form.confirmed?.mapSha256 === form.confirmed?.mapSha256;
+      if (!same) {
+        return problem(422, "A clinical judgement is not left to the clinician", { code: "VALIDATION_FAILED", detail: issues[0].message, issues });
+      }
+    }
+  }
   if (new TextEncoder().encode(JSON.stringify(form)).byteLength > STORE_MAX_RECORD_BYTES) {
     return problem(413, "This form mapping is too large to store", { code: "PAYLOAD_TOO_LARGE" });
   }

@@ -60,7 +60,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Forms",
-    actions: ["file.upload", "form.create", "form.replace", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
+    actions: ["file.upload", "form.create", "form.replace", "form.update", "form.analyse_live", "form.confirm", "form.lint_accepted", "form.store_confirmed", "form.delete", "settings.update"],
   },
   {
     label: "Reports",
@@ -122,6 +122,8 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "form.update": "Form mapping saved",
   "form.analyse_live": "Form questions read from the file",
   "form.confirm": "Form mapping confirmed",
+  // bh2 WE design 2: a clinician accepted a clinical-judgement question as the map words it (map lint L5, /forms/confirm).
+  "form.lint_accepted": "Form question accepted as worded by a clinician",
   "form.store_confirmed": "Confirmed form mapping saved",
   "form.delete": "Form removed from the library",
   "settings.update": "Referrer form links updated",
@@ -305,6 +307,12 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     }
     case "form.replace":
       return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"} to check and confirm` : null;
+    case "form.lint_accepted": {
+      const which = typeof detail.fieldId === "string" ? `Question ${detail.fieldId}` : null;
+      const what = typeof detail.judgement === "string" ? `asks for a clinical judgement (${detail.judgement})` : null;
+      const why = typeof detail.reason === "string" && detail.reason.trim() ? `because: “${detail.reason.trim().slice(0, 200)}”` : null;
+      return [which, what, why].filter(Boolean).join(" ") || null;
+    }
     case "clinic.trial_started":
       return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
     case "clinic.trial_extended":
