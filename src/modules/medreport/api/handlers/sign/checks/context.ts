@@ -17,7 +17,7 @@ import "server-only";
  */
 import type { Actor } from "../../../../auth/actor";
 import type { ReceiptAdditions } from "../../../../auth/sign-receipt";
-import type { Clinician, FormDefinition, Report, ReportTemplate } from "../../../../core/types";
+import type { Clinician, FormDefinition, Report, ReportTemplate, SignerConfirmation } from "../../../../core/types";
 import type { MedreportDeps } from "../../../deps";
 
 export interface SignerCheckContext {
@@ -32,6 +32,11 @@ export interface SignerCheckContext {
   signer: Clinician;
   /** What the checks add to the receipt (one object for the whole pipeline; empty unless a check sets a key). */
   receiptAdditions: ReceiptAdditions;
+  /**
+   * bh2 (WB design 13; ownership exception – W0's file): the confirmations the approver gave in the approve dialog
+   * (SignRequest.confirmations), read by voice.ts signerConfirmationsCheck. Absent: none given.
+   */
+  confirmations?: SignerConfirmation[];
 }
 
 export interface SignCheckContext extends SignerCheckContext {

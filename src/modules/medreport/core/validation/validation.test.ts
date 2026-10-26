@@ -250,7 +250,9 @@ function f37Report(text: string): { report: Report; p: ReturnType<typeof para> }
     plan: "",
   });
   const p = para(text, ["N-003"], { basis: "patient_reported" });
-  return { report: withSection(testReport(SOL, bundle), "progress_current_status", [p]), p };
+  // bh2 WB design 6: the voice owner is the approver (no approver and no author: strict mode) – Sarah Reid approves.
+  const approver = { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" };
+  return { report: withSection({ ...testReport(SOL, bundle), approver }, "progress_current_status", [p]), p };
 }
 
 /** Labels of the opinion phrases in `draft` that a note with `note` as its Subjective does not support. */
@@ -343,7 +345,9 @@ test("opinion: a note that says the opposite, or names another activity, does no
     ["He can't return to normal duties.", "Not yet back on normal duties."],
   ];
   for (const [draft, note] of cases) {
-    assert.deepEqual(opinionLabels(draft, note), ["return to normal work or activity"], `${draft} | ${note}`);
+    // bh2 check-WB M1: a modal beside the return ("He can return …") is judged as well – the return is flagged either way.
+    const labels = opinionLabels(draft, note);
+    assert.ok(labels.includes("return to normal work or activity"), `${draft} | ${note}: ${labels.join(", ")}`);
   }
 });
 

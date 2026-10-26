@@ -74,7 +74,8 @@ describe("W0.6 plumbing", () => {
     assert.deepEqual(otherVoice(validateReport(withAuthor, SOL, { voice: { owner: tom } }).flags), [], "Tom Ellis's own note in his own voice");
     // No author: no voice check unless the caller names an owner.
     const noAuthor = voiceReport(undefined);
-    assert.deepEqual(otherVoice(validateReport(noAuthor, SOL).flags), []);
+    // bh2 WB design 6: no approver and no author is strict mode – every cited note is another clinician's.
+    assert.equal(otherVoice(validateReport(noAuthor, SOL).flags).length, 1);
     assert.equal(otherVoice(validateReport(noAuthor, SOL, { voice: { owner: sarah } }).flags).length, 1);
     // runValidators reads it from its input too.
     const input = { report: noAuthor, bundle: noAuthor.bundleSnapshot, template: SOL, computedFacts: computeFacts(noAuthor.bundleSnapshot, { asOf: TEST_FACTS_DATE }) };
@@ -87,7 +88,8 @@ describe("W0.6 plumbing", () => {
     assert.ok(voice);
     assert.equal(canAcknowledge(voice, voiceReport(sarah)), false);
     assert.equal(ackPolicyOf(voice, voiceReport(sarah)), "never", "drafted text in another clinician's first person");
-    const warning = { ...voice, severity: "warning" as const };
+    // bh2 WB: the voice validator states its own policy; a flag without one follows today's rule.
+    const warning = { ...voice, severity: "warning" as const, ackPolicy: undefined };
     assert.equal(ackPolicyOf(warning), "member");
     assert.equal(ackPolicyOf({ ...warning, ackPolicy: "approver" }), "approver", "a validator's own policy wins");
   });
