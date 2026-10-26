@@ -1,0 +1,2697 @@
+{
+ "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3).",
+ "cases": {
+  "ASAT-dc-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “7/10” – printed: \"Pain 7/10 at worst.\"; gaps: none"
+  },
+  "ASAT-ia-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “by 20/10/2026” – printed: \"She was taking no medication by 20/10/2026.\"; gaps: none"
+  },
+  "ASSEMBLE-fragment-02": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “2026: in my” – printed: \"On 18/03/2026: in my assessment mild lumbar stiffness.\"; gaps: none"
+  },
+  "ASSEMBLE-fragment-03": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “consistent with lifting, and noted” – printed: \"The symptoms were consistent with lifting, and noted mild stiffness when sitting.\"; gaps: none"
+  },
+  "ASSEMBLE-reportframe-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: not printed: “I recorded that” – printed: \"On 18/03/2026, Mr Testcase took 3 days off work after the lifting incident.\"; gaps: none"
+  },
+  "ATT-assessor-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-cover-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis) || ok sign: /sign by Sarah Reid: 409 SIGNOFF_BLOCKED – OTHER_CLINICIAN_VOICE/blocking:Tom Ellis"
+  },
+  "ATT-cover-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis) || ok sign: /sign by Sarah Reid: 409 SIGNOFF_BLOCKED – OTHER_CLINICIAN_VOICE/blocking:Tom Ellis"
+  },
+  "ATT-cover-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected the approver to be able to acknowledge – forced rewrite (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-cover-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-firstperson-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-firstperson-02~fix-name-instead-1": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: “Name Tom Ellis instead” turns this unsafe text into an approvable one"
+  },
+  "ATT-firstperson-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-firstperson-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-licence-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-licence-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-licence-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-licence-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-nameinstead-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Tom Ellis instead”) to sarah; name-instead (“Name Tom Ellis instead”) to tom; name-instead (“Name Tom Ellis instead”) to pat; name-instead (“Name Tom Ellis instead”) to chris"
+  },
+  "ATT-nameinstead-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Tom Ellis instead”) to sarah; name-instead (“Name Tom Ellis instead”) to tom; name-instead (“Name Tom Ellis instead”) to pat; name-instead (“Name Tom Ellis instead”) to chris"
+  },
+  "ATT-nameinstead-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Sarah Reid instead”) to sarah; name-instead (“Name Sarah Reid instead”) to tom; name-instead (“Name Sarah Reid instead”) to pat; name-instead (“Name Sarah Reid instead”) to chris"
+  },
+  "ATT-nameinstead-05": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: offered: name-instead (“Name Tom Ellis instead”) to pat"
+  },
+  "ATT-ownvoice-gp-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL probe: wrote “I advised” → \"On 15/07/2026 I recorded that he saw his GP, Dr Khan, on 07/07/2026 and I advised ibuprofen and referred him for an X-ray.\""
+  },
+  "ATT-regnumber-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-signer-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-signer-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-signer-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-signer-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-staff-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-staff-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-staff-03~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-03~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-03~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-staff-03~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-unattributed-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-unattributed-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-unattributed-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-03~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: DRAFT_FIT/warning:shorten"
+  },
+  "ATT-unattributed-03~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-unattributed-03~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: DRAFT_FIT/warning:shorten"
+  },
+  "ATT-unattributed-03~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: DRAFT_FIT/warning:shorten"
+  },
+  "ATT-usemyname-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-usemyname-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-usemyname-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OTHER_CLINICIAN_VOICE/blocking:Tom Ellis)"
+  },
+  "ATT-we-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-we-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-we-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-we-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-wrongname-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-wrongname-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-wrongname-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-03~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-03~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-03~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-03~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ATT-wrongname-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-04~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-04~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-04~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-04~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ATT-wrongname-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026 || FAIL sign: /sign by Sarah Reid: 409 SIGNOFF_BLOCKED – FIGURE_NOT_IN_SOURCE/blocking:18/03/2026 – refused, but not because of the subject"
+  },
+  "ATT-wrongname-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026"
+  },
+  "ATT-wrongname-05~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026"
+  },
+  "ATT-wrongname-05~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026"
+  },
+  "ATT-wrongname-05~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026"
+  },
+  "ATT-wrongname-05~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK (only incidental codes block) – subject: FIGURE_NOT_IN_SOURCE/blocking:18/03/2026"
+  },
+  "COM-colleague-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG – subject: no flags"
+  },
+  "COM-colleague-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG – subject: no flags"
+  },
+  "COM-colleague-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: subject: DRAFT_FIT/warning:comment; no remove-commentary/remove-absence fix offered"
+  },
+  "COM-colleague-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG – subject: no flags"
+  },
+  "COM-colleague-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG – subject: no flags"
+  },
+  "COM-supporting-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"message\":\"kept with the report|not (?:recorded|found)|commentary|about the notes\"} – subject: no flags"
+  },
+  "COND-checks-03": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "COND-checks-03~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "COND-checks-03~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "COND-checks-03~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "COND-checks-03~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "COND-either-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-41 does not apply (expected applies) – depends on F-40"
+  },
+  "COND-lettered-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-19 applies (expected does not apply) – read as an ordinary question"
+  },
+  "COND-lettered-03": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-19 applies (expected does not apply) – read as an ordinary question"
+  },
+  "COND-onlyif-02": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-09 applies (expected does not apply) – read as an ordinary question"
+  },
+  "COND-pattern-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-06 applies (expected does not apply) – read as an ordinary question"
+  },
+  "COND-pattern-02": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-08 applies (expected does not apply) – read as an ordinary question"
+  },
+  "DIFF:COND-checks-03": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
+  },
+  "DIFF:COND-checks-03~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:COND-checks-03~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
+  },
+  "DIFF:COND-checks-03~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
+  },
+  "DIFF:COND-checks-03~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:01/12/2026, OPINION_LANGUAGE/blocking:fit for full duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-figure-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-noprint-01": {
+   "owner": "WA1",
+   "reason": "A box ruled out by its condition prints nothing; bh2-r1 drops its checks (B0-7), production still checked it. By design per WA1 (checks dropped only when the box issues nothing) – needs Khuram's allowlist decision once WA1 lands. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-01": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-02": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-02~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-02~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-02~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-opinion-02~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: FIGURE_NOT_IN_SOURCE/blocking:6 weeks, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-uncited-01": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-uncited-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking, OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-uncited-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-uncited-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-uncited-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: UNCITED_PARAGRAPH/blocking | candidate: no flags"
+  },
+  "DIFF:ISSUE-na-voice-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Checks dropped for a box bh2-r1 treats as not applicable (B0-7 / the condition parser); WA1's issue state and applies_anyway restore them. production: OPINION_LANGUAGE/blocking:No restrictions | candidate: no flags"
+  },
+  "DIFF:OPN-ok-f1": {
+   "owner": "WB",
+   "reason": "Production (e132057) blocks the faithful F1 narrated return; bh2-r1 passes it (the intended F1 fix, fa14c72). Needs Khuram's allowlist decision (allowlist.json), not a code change. production: OPINION_LANGUAGE/blocking:returned to normal | candidate: no flags"
+  },
+  "EDIT-abbr-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "EDIT-builtin-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "EDIT-compact-02": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: flagged: DRAFT_FIT/warning:shorten"
+  },
+  "EDIT-compact-04": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: subject: DRAFT_FIT/warning:shorten; no value-only fix offered"
+  },
+  "EDIT-compact-04~fix-own-voice-1": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: F-12: a sentence starts with a digit – “7/10 at worst, as recorded by me using t”"
+  },
+  "EDIT-decimal-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "EDIT-decimal-02": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "EDIT-dose-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\"} – subject: no flags"
+  },
+  "EDIT-mustwork-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "EDIT-orphan-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "FILL-collision-01": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
+  },
+  "FILL-frame-01": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: “Next step” cell 1 still prints “To return to” (\"To return to …\"); “Next step” cell 1 still prints “…” (\"To return to …\")"
+  },
+  "FILL-frame-03": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: “Goal” cell 1 still prints “To return to” (\"To return to …\"); “Goal” cell 1 still prints “…” (\"To return to …\")"
+  },
+  "FILL-notfound-01": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
+  },
+  "FILL-unknown-01": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: “Main treatment given (strike out the others)” cell 1 still prints “Acupuncture” (\"Exercise / Manual therapy / Acupuncture / Taping\")"
+  },
+  "FILL-unknown-03": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: FAIL fill: the FINAL copy was made"
+  },
+  "ISSUE-bulk-heldback-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Sarah Reid ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ISSUE-bulk-heldback-02": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Sarah Reid ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ISSUE-copy-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL probe: F-06: copied but not printed"
+  },
+  "ISSUE-merge-na-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected PASS, blocked – subject: MISSING_PLACEHOLDER/blocking:mail-merge field <<P_TREATMENT>> in tabl || FAIL sign: /sign by Sarah Reid: 409 SIGNOFF_BLOCKED – MISSING_PLACEHOLDER/blocking:mail-merge field <<P_TREATMENT>> in tabl || FAIL fill: the FINAL fill was r"
+  },
+  "ISSUE-merge-render-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL render: /sign refused (409 SIGNOFF_BLOCKED) – no final copy"
+  },
+  "ISSUE-na-figure-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ISSUE-na-figure-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-figure-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-figure-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-figure-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ISSUE-na-opinion-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-02": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ISSUE-na-opinion-02~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-02~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-02~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-opinion-02~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-uncited-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ISSUE-na-uncited-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-uncited-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-uncited-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-uncited-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-voice-01": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ISSUE-na-voice-01~strip-joiner": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-voice-01~strip-prefix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-voice-01~strip-suffix": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-na-voice-01~strip-wrapper": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "ISSUE-schema-01": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: FAIL probe: ReportSchema drops the release fields (approver, model)"
+  },
+  "ISSUE-unknown-choice": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "LEDGER-approver-acceptance-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for approver-acceptance in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-clinician-origin-skip-seam": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for clinician-origin-skip in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-condition-parser-seam": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for condition-parser in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-draft-residue-seam": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for draft-residue in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-edited-ack-seam": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for edited-ack in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-exerciseOnBalance-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for exerciseOnBalance in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-fill-leave-blank-seam": {
+   "owner": "WA2",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for fill-leave-blank in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-first-person-licence-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for first-person-licence in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-leave-blank-bulk-seam": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for leave-blank-bulk in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-meta-wording-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for meta-wording in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-name-instead-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for name-instead in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-narrated-return-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for narrated-return in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-not-applicable-drop-seam": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for not-applicable-drop in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-noteGivesOpinion-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for noteGivesOpinion in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-notes-absence-strip-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for notes-absence-strip in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-own-voice-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for own-voice in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-plain-wording-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for plain-wording in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-quoted-in-source-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for quoted-in-source in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-remove-absence-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for remove-absence in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-repeat-removal-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for repeat-removal in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-sameCausalWording-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for sameCausalWording in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-sameRestrictionWording-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for sameRestrictionWording in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-scope-strip-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for scope-strip in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-staff-answer-settles-seam": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for staff-answer-settles in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-statusRecorded-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for statusRecorded in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-tick-suggested-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for tick-suggested in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-use-my-name-seam": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for use-my-name in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LEDGER-value-only-seam": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: No test seam yet: core/validation/registry.ts must export HOOK_IDS and withHookDisabled, and the hook's owner wires it. no seam for value-only in core/validation/registry.ts (withHookDisabled)"
+  },
+  "LINT-l1-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-03": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-04": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-05": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-06": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l1-fail-07": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l10-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l11-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l12-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l12-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l12-fail-03": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l2-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l2-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l2-fail-03": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l3-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l3-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l4-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l4-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-03": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-04": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-05": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-06": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-07": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l5-fail-08": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l6-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l6-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l7-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l7-fail-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l8-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-l9-fail-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-01": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-02": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-03": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-04": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-05": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-06": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-07": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-08": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-09": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-10": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-11": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-12": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-13": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "LINT-pass-headingless": {
+   "owner": "WE",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL lint: core/form-map-lint.ts (lintFormMap) is not on this tree"
+  },
+  "META-heldback-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “so there is no 4th..” – printed: \"Lumbar movement was full and pain-free at discharge. so there is no 4th... wait, the 4th attended session is 13/10/2026\"; gaps: none"
+  },
+  "META-heldback-02": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “These are recorded-o” – printed: \"Lumbar movement was full and pain-free at discharge. These are recorded-opinion questions.\"; gaps: none"
+  },
+  "META-heldback-03": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: printed: “(recorded” – printed: \"Lumbar movement was full and pain-free at discharge. (recorded opinion only)\"; gaps: none"
+  },
+  "NEG-silent-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"severity\":\"warning\"} – subject: no flags"
+  },
+  "NEG-silent-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"severity\":\"warning\"} – subject: no flags"
+  },
+  "NEG-silent-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"severity\":\"warning\"} – subject: no flags"
+  },
+  "NEG-silent-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"severity\":\"warning\"} – subject: no flags"
+  },
+  "NEG-silent-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"severity\":\"warning\"} – subject: no flags"
+  },
+  "OPN-accept-colleague~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-accept-colleague~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-accept-plan~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returned to normal duties)"
+  },
+  "OPN-accept-plan~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returned to normal duties, OPINION_LANGUAGE/blocking:within 2 weeks)"
+  },
+  "OPN-accept-silent~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returned to normal duties)"
+  },
+  "OPN-accept-silent~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returned to normal duties)"
+  },
+  "OPN-accept-strengthened": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-accept-strengthened~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-accept-strengthened~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-accept-strengthened~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-accept-strengthened~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-accept-strengthened~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-accept-strengthened~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-baseline-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:expected to, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-baseline-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:expected to, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-baseline-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:return to his normal duties)"
+  },
+  "OPN-baseline-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:return to his normal duties)"
+  },
+  "OPN-carrier-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:recovered, OPINION_LANGUAGE/blocking:fit for full duties)"
+  },
+  "OPN-carrier-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:recovered, OPINION_LANGUAGE/blocking:fit for full duties)"
+  },
+  "OPN-carrier-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:No restrictions)"
+  },
+  "OPN-carrier-03~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:No restrictions)"
+  },
+  "OPN-carrier-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:no restrictions)"
+  },
+  "OPN-carrier-04~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:no restrictions)"
+  },
+  "OPN-carrier-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent, OPINION_LANGUAGE/blocking:caused)"
+  },
+  "OPN-carrier-05~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent, OPINION_LANGUAGE/blocking:caused)"
+  },
+  "OPN-carrier-06~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent)"
+  },
+  "OPN-carrier-06~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent)"
+  },
+  "OPN-carrier-07~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:long-term)"
+  },
+  "OPN-carrier-07~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:long-term)"
+  },
+  "OPN-carrier-08": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-08~strip-joiner": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-08~strip-prefix": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-08~strip-suffix": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-carrier-08~strip-wrapper": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-holder-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-holder-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-holder-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:will need)"
+  },
+  "OPN-holder-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-holder-03~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-03~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:return to normal duties, OPINION_LANGUAGE/blocking:fit for a phased return to normal duties)"
+  },
+  "OPN-holder-04~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-04~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:will settle)"
+  },
+  "OPN-holder-05~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-holder-05~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-licence-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent)"
+  },
+  "OPN-licence-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-03~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-licence-03~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-03~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-03~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-03~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-04~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:permanent)"
+  },
+  "OPN-licence-04~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-04~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-04~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-04~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-05~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:caused)"
+  },
+  "OPN-licence-05~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-05~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-05~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-05~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-06~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-06~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:caused)"
+  },
+  "OPN-licence-06~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-06~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-06~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-06~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-licence-07~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-07~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-licence-07~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-07~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-07~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-licence-07~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-modality-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for full duties)"
+  },
+  "OPN-modality-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-modality-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for normal duties)"
+  },
+  "OPN-modality-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for normal duties)"
+  },
+  "OPN-ok-attributed~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-attributed~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-b12": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected PASS, blocked – subject: OPINION_LANGUAGE/blocking:returning to normal duties; no approver acceptance offered"
+  },
+  "OPN-ok-b211": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected PASS, blocked – subject: OPINION_LANGUAGE/blocking:back to normal duties; no approver acceptance offered"
+  },
+  "OPN-ok-causal~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-causal~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-own~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-priya~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-quote~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-aims-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-has-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-is-required-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-must": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-needs-to": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-should": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-ok-status~deny-will": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-paraphrase-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties, OPINION_LANGUAGE/blocking:will need)"
+  },
+  "OPN-paraphrase-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties, OPINION_LANGUAGE/blocking:will need)"
+  },
+  "OPN-paraphrase-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-03~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (FIGURE_NOT_IN_SOURCE/blocking:5 days, OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-04~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-paraphrase-05~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-polarity-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags || FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "OPN-polarity-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery)"
+  },
+  "OPN-polarity-01~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-01~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-01~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-01~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:resolved)"
+  },
+  "OPN-polarity-02~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-polarity-02~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-provenance-01": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Sarah Reid ⇒ expected BLOCK that nobody can acknowledge – every blocking flag can be acknowledged (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:expected to, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-provenance-02": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Sarah Reid ⇒ expected BLOCK that nobody can acknowledge – every blocking flag can be acknowledged (OPINION_LANGUAGE/blocking:complete recovery, OPINION_LANGUAGE/blocking:expected to, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-provenance-03": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Sarah Reid ⇒ expected BLOCK that nobody can acknowledge – every blocking flag can be acknowledged (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:expected to, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-provenance-05": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.remove by Sarah Reid | DONE 2.add by Sarah Reid ⇒ expected BLOCK – subject: no flags"
+  },
+  "OPN-provenance-06": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks)"
+  },
+  "OPN-provenance-07": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for full duties)"
+  },
+  "OPN-provenance-08": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks, OPINION_LANGUAGE/blocking:fit for normal duties)"
+  },
+  "OPN-provenance-09": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-causation-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-causation-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-causation-09": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-fitness-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-fitness-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-fitness-09": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-permanence-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-permanence-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-permanence-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-prognosis-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-prognosis-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-09": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-prognosis-10": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-recovery-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-recovery-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-09": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-recovery-10": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-01": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-treatment-02": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-recall-treatment-03": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-04": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-05": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-06": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-07": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-08": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-09": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-recall-treatment-10": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-return-01~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-01~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-02~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-02~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-03~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-03~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-04~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:back to normal duties)"
+  },
+  "OPN-return-04~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:back to normal duties)"
+  },
+  "OPN-return-05~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-05~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-06~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-return-06~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-twin-b12~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-twin-b12~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-twin-b211~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:back to normal duties)"
+  },
+  "OPN-twin-b211~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:back to normal duties)"
+  },
+  "OPN-twin-f1~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-twin-f1~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:returning to normal duties)"
+  },
+  "OPN-twin-own~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:will settle, OPINION_LANGUAGE/blocking:within 2 weeks)"
+  },
+  "OPN-twin-own~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:will settle, OPINION_LANGUAGE/blocking:within 2 weeks)"
+  },
+  "OPN-twin-priya": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-priya~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-priya~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "OPN-twin-priya~strip-joiner": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-priya~strip-prefix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-priya~strip-suffix": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-priya~strip-wrapper": {
+   "owner": "WB",
+   "reason": "Fails on bh2-r1: FAIL validate: expected BLOCK – subject: no flags"
+  },
+  "OPN-twin-quote~origin-edited": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL validate: expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for normal duties)"
+  },
+  "OPN-twin-quote~origin-staff": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for normal duties)"
+  },
+  "REP-true-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL validate: expected FLAG {\"code\":\"DRAFT_FIT\",\"severity\":\"warning\"} – subject: no flags"
+  },
+  "ROLE-ack-opinion": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackFlag by Pat Morgan ⇒ expected BLOCK – subject: OPINION_LANGUAGE/blocking/ack:full recovery, OPINION_LANGUAGE/blocking/ack:within 6 weeks"
+  },
+  "ROLE-ack-opinion~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackFlag by Chris Dale ⇒ expected BLOCK – subject: OPINION_LANGUAGE/blocking/ack:full recovery, OPINION_LANGUAGE/blocking/ack:within 6 weeks"
+  },
+  "ROLE-ack-opinion~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackFlag by Tom Ellis ⇒ expected BLOCK – subject: OPINION_LANGUAGE/blocking/ack:full recovery, OPINION_LANGUAGE/blocking/ack:within 6 weeks"
+  },
+  "ROLE-adopt-01": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan | UNSUPPORTED 2.adopt by Sarah Reid ⇒ expected PASS, blocked – subject: UNCITED_PARAGRAPH/blocking, OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks"
+  },
+  "ROLE-amend-01": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: after v2 was approved and stored, the stored v1 does not say it was superseded"
+  },
+  "ROLE-forge-accept": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (accept-by-approver): 200"
+  },
+  "ROLE-forge-ack": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (ack-by-approver): 200"
+  },
+  "ROLE-forge-adopt": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (adopt-by-approver): 200"
+  },
+  "ROLE-forge-own": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (own-words-by-approver): 200"
+  },
+  "ROLE-forge-signedactivity": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (signed-activity-rewrite): 200"
+  },
+  "ROLE-forge-signedflags": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL store: PUT by Pat Morgan (signed-flags-change): 200"
+  },
+  "ROLE-label-01": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL probe: F-04 is labelled “drafted” – wrong for who answered it"
+  },
+  "ROLE-label-02": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL probe: F-25 is labelled “clinician” – wrong for who answered it"
+  },
+  "ROLE-label-03": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL probe: F-10 is labelled “clinician” – wrong for who answered it"
+  },
+  "ROLE-leaveblank-bulk": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Pat Morgan ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-leaveblank-bulk~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Chris Dale ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-leaveblank-bulk~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.leaveBlankBulk by Tom Ellis ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-leaveblank-opinion": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackGap by Pat Morgan ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-leaveblank-opinion~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackGap by Chris Dale ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-leaveblank-opinion~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackGap by Tom Ellis ⇒ expected BLOCK – subject: MISSING_PLACEHOLDER/warning/ack:optional field blank"
+  },
+  "ROLE-mark-na~actor-approver": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: UNSUPPORTED 1.markNotApplicable by Sarah Reid ⇒ expected PASS, blocked – subject: MISSING_PLACEHOLDER/blocking:empty section, OPEN_GAP/blocking"
+  },
+  "ROLE-narrative-rewrite": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Pat Morgan ⇒ expected only the approver to clear it – staff or another member can acknowledge (OPINION_LANGUAGE/blocking:fit for full duties)"
+  },
+  "ROLE-ownanswer-settles": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.edit by Sarah Reid ⇒ expected PASS, blocked – subject: OPINION_LANGUAGE/blocking:should settle, OPEN_GAP/blocking"
+  },
+  "ROLE-ownwords~actor-approver": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: UNSUPPORTED 1.ownWords by Sarah Reid ⇒ expected PASS, blocked – subject: OPINION_LANGUAGE/blocking:full recovery, OPINION_LANGUAGE/blocking:within 6 weeks"
+  },
+  "ROLE-sign-edited": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ROLE-sign-nonapprover": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL sign: /sign by Tom Ellis: 200 – DATA_CHECK/warning:NO_PRE_INCIDENT_HISTORY"
+  },
+  "ROLE-sign-stale": {
+   "owner": "WA1",
+   "reason": "Fails on bh2-r1: FAIL sign: /sign by Sarah Reid: 200"
+  },
+  "ROLE-takeover-01": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.ackFlag by Sarah Reid | UNSUPPORTED 2.takeOver by Tom Ellis ⇒ expected BLOCK – subject: OPINION_LANGUAGE/blocking/ack:full recovery, OPINION_LANGUAGE/blocking/ack:within 6 weeks"
+  },
+  "ROLE-tick-opinion-choice~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.setAnswer by Chris Dale ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-tick-opinion-choice~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.setAnswer by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-tick-physio~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.setAnswer by Chris Dale ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-tick-physio~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.setAnswer by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-tick-suggested~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.tickSuggested by Chris Dale ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-tick-suggested~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.tickSuggested by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-type-opinion-plain": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Pat Morgan ⇒ expected BLOCK (only incidental codes block) – subject: UNCITED_PARAGRAPH/blocking"
+  },
+  "ROLE-type-opinion-plain~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Chris Dale ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-type-opinion-plain~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-type-opinion~actor-admin": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Chris Dale ⇒ expected BLOCK – subject: no flags"
+  },
+  "ROLE-type-opinion~actor-other": {
+   "owner": "WC",
+   "reason": "Fails on bh2-r1: FAIL reducer: DONE 1.add by Tom Ellis ⇒ expected BLOCK – subject: no flags"
+  },
+  "SCALE-grade-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: \"Grade 2\" – printed: \"Priya Shah recorded a grade 2 sprain.\"; gaps: none"
+  },
+  "SCALE-negation-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: \"Some difficulty\" – printed: \"Some stiffness in the morning; no difficulty sleeping since the second week.\"; gaps: none"
+  },
+  "SCALE-restriction-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL assemble: code set the answer: true – printed: \"She lifts boxes at work.\"; gaps: none"
+  },
+  "SCOPE-decimal-01": {
+   "owner": "WD",
+   "reason": "Fails on bh2-r1: FAIL scope: matches /PSFS 6\\.(?!5)/ → \"PSFS 6.\""
+  },
+  "TEXT-split-cut-01": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-cut-02": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-cut-03": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-01": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-02": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-03": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-04": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-05": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-06": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-07": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-08": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-09": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-keep-10": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-notes-01": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  },
+  "TEXT-split-notes-02": {
+   "owner": "W0",
+   "reason": "Fails on bh2-r1: The module this case runs through is not on bh2-r1 yet. FAIL split: core/text/sentences.ts (splitSentences) is not on this tree"
+  }
+ }
+}

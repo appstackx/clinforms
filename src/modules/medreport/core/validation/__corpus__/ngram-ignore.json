@@ -1,0 +1,51 @@
+{
+ "_about": "4-word runs the third-party wording check does not count. clinformsWording: phrases ClinForms itself writes into form maps (its converter's and generator's notes and guidance), which therefore also appear in the referrers' stored maps. generic: everyday clinical English the corpus must use to test the opinion guard. Add an entry only with a reason; never add a referrer's own printed wording.",
+ "clinformsWording": [
+  {
+   "text": "Chosen by the physiotherapist from the clinical notes.",
+   "why": "ClinForms' guidance for a physio-only choice (core/forms.ts recordSourceOf reads 'chosen by the physiotherapist')."
+  },
+  {
+   "text": "Typed by staff on each report.",
+   "why": "ClinForms' guidance for a staff entry."
+  },
+  {
+   "text": "From the clinic system's merge code",
+   "why": "ClinForms' converter note (ai/practice-merge-binding.ts)."
+  },
+  {
+   "text": "Filled from the record:",
+   "why": "ClinForms' converter guidance (ai/practice-merge-binding.ts); lint rule L3 is about this exact phrase."
+  },
+  {
+   "text": ": filled from the record.",
+   "why": "ClinForms' converter note ending (ai/practice-merge-binding.ts)."
+  }
+ ],
+ "generic": [
+  {
+   "text": "make a full recovery",
+   "why": "The standard clinical phrase for a recovery prognosis – the opinion guard's own target wording."
+  },
+  {
+   "text": "to make a full",
+   "why": "Part of 'expected to make a full recovery', standard prognosis wording."
+  },
+  {
+   "text": "due to the accident",
+   "why": "Standard causation wording the opinion guard targets."
+  },
+  {
+   "text": "as a result of",
+   "why": "Everyday English; a causation phrase the opinion guard targets."
+  },
+  {
+   "text": "b c or d",
+   "why": "Four list letters – no wording."
+  },
+  {
+   "text": "if you do not",
+   "why": "Everyday English; the conditional construct the condition parser must read (B1-9)."
+  }
+ ]
+}
