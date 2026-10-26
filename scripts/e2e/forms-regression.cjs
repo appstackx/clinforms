@@ -73,6 +73,31 @@ async function confirmMapping(page) {
   await page.waitForTimeout(1000); // let the "Use for a patient" link's prefetch finish before leaving the page
 }
 
+/**
+ * bh2-rc1 (WE, map lint L5): a question that asks for a clinical judgement but is drafted from the notes blocks the
+ * confirm until it is the clinician's own answer or someone who may accept it does so with a reason. The bundled
+ * Meridian sample has two (F-08 daily activities, F-11 reason for discharge – both recorded in the notes): accepted
+ * here with that reason, as a demo visitor would. Returns the ids accepted.
+ */
+async function acceptJudgementChecks(page, ids, reason) {
+  const done = [];
+  for (const id of ids) {
+    const row = page.locator("li").filter({ has: page.locator("span.font-mono", { hasText: new RegExp(`^${id}$`) }) }).first();
+    if (!(await row.count())) continue;
+    const toggle = row.locator("button[aria-expanded]").first();
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    const group = page.locator(`[role=group][aria-label="Checks for ${id}"]`);
+    if (!(await group.count())) continue;
+    const input = group.getByLabel("Or accept it as it is, because");
+    if (!(await input.count())) continue;
+    await input.fill(reason);
+    await group.getByRole("button", { name: /^Accept$/ }).click();
+    await group.getByText(/^Accepted – /).first().waitFor({ timeout: 10000 });
+    done.push(id);
+  }
+  return done;
+}
+
 async function analyseSample(page, title) {
   await page.goto(`${L.BASE}/reports/forms`);
   await page.waitForLoadState("networkidle");
@@ -100,6 +125,8 @@ async function analyseSample(page, title) {
     const r = await analyseSample(page, "Physiotherapy Discharge Report");
     console.log("   analysed in", r.ms, "ms:", r.dialog.slice(0, 300));
     await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 30000 });
+    const accepted = await acceptJudgementChecks(page, ["F-08", "F-11"], "Recorded in the clinical notes (the patient's own report and the discharge note).");
+    console.log("   judgement checks accepted (L5):", accepted.join(", ") || "none");
     await confirmMapping(page);
   });
 
