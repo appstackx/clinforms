@@ -13,7 +13,13 @@
  * Tenant mode (a clinic's own Studio): the signed-in member is the actor and the default signer, and
  * no demo wording or prepared demo drafts are offered.
  *
- * Owner: studio-b agent.
+ * bh2 WC: the report's approving clinician (Report.approver) decides on its clinician boxes – the screen offers their
+ * decisions to them alone (adopt a proposal, own words, acknowledgements, attribution fixes, leaving opinion boxes
+ * blank), says who decides to everyone else, and offers a member who may approve "Take over as approver". An amended
+ * version reads "Version 2 – amends the form approved on …"; the version it amends reads superseded once version 2 is
+ * approved (the server writes that – never this screen).
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -26,8 +32,9 @@ import { isDemoHcpc } from "../../../core/demo-clinic";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
-import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
-import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
+import type { Clinician, FormDefinition, Gap, Report, ReportFlag, ReportTemplate } from "../../../core/types";
+import { acknowledgeRefusal, canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
+import { actsAsApprover, isClinicianGap, mayApprove, pendingProposal } from "../../../core/provenance";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
 import { notApplicable } from "../../../core/conditions";
 import { getTemplate } from "../../../templates/registry";
@@ -64,8 +71,8 @@ import { SourcesPanel } from "../../components/review/sources-panel";
 import { ProgressSummary, QuestionJump, QuestionNav } from "../../components/review/question-nav";
 import { ApprovedBanner, ReviewHeader } from "../../components/review/review-header";
 import {
-  answerChangedByClinician,
   answeredByPerson,
+  approverOnlyLine,
   createAmendedVersion,
   ownVoiceCandidates,
   buildQuestionGroups,
@@ -302,20 +309,50 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
   // Fix round 1 (B0-8): opinion questions are offered too, unticked – the clinician ticks each one.
+  // WC design 4: only the boxes this person may leave blank (opinion boxes: the approving clinician's).
   const blankCandidates = useMemo(
-    () => (signed ? [] : [...optionalBlankCandidates(report, { template, form }), ...optionalOpinionBlankCandidates(report, { template, form })]),
-    [report, template, form, signed],
+    () => (signed ? [] : [...optionalBlankCandidates(report, { template, form, actor }), ...optionalOpinionBlankCandidates(report, { template, form, actor })]),
+    [report, template, form, signed, actor],
   );
   const blankSummary = useMemo(() => emptyOptionalSummary(report, { template, form }, blankCandidates), [report, template, form, blankCandidates]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
-  const editedAnswers = useMemo(() => new Set(questions.filter((q) => answerChangedByClinician(report, q.key)).map((q) => q.key)), [questions, report]);
+  // B2-20 / WC design 7: "changed" only where a person set a structured answer (its stamp), never read from the log.
+  const editedAnswers = useMemo(() => new Set(questions.filter((q) => Boolean(q.section?.answerBy)).map((q) => q.key)), [questions]);
   const labelOf = useCallback((key: string) => questions.find((q) => q.key === key)?.label ?? key, [questions]);
 
   const reportRef = useRef(report);
   reportRef.current = report;
-  const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
+  // WC design 4: what this person may acknowledge (the flag's policy: never / the approver / any member).
+  const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current, actor), [actor]);
+  const mayDecide = actsAsApprover(actor, report);
+  const approverName = report.approver?.name ?? null;
+  const onlyWhoFor = useCallback(
+    (flag: ReportFlag) => {
+      const r = reportRef.current;
+      if (flag.code === "APPROVER_DECISION") return actsAsApprover(actor, r) ? null : approverOnlyLine(r, "adopt it");
+      return acknowledgeRefusal(flag, r, actor) === "approver" ? approverOnlyLine(r, "acknowledge this") : null;
+    },
+    [actor],
+  );
+  const approverOnlyFor = useCallback(
+    (gap: Gap) => {
+      const r = reportRef.current;
+      return isClinicianGap(r, gap, { fields: form?.fields ?? null }) && !actsAsApprover(actor, r) ? approverOnlyLine(r, "settle this") : null;
+    },
+    [actor, form],
+  );
+  const proposals = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const s of report.sections) {
+      const p = pendingProposal(report, s, { fields: form?.fields ?? null });
+      if (p) out.set(s.key, `Entered by ${p.names} – the approving physio must adopt it`);
+    }
+    return out;
+  }, [report, form]);
+  // WC design 1: a member who may approve, and is not the approver, may take over.
+  const mayTakeOver = !signed && Boolean(report.approver) && !mayDecide && mayApprove(actor);
   const leaveBlank = useCallback(
     (keys: string[], reason: string, opinionKeys: string[] = []) => {
       const n = keys.length + opinionKeys.length;
@@ -344,9 +381,12 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const demoClinic = useDemoClinic();
   const tenantSignProblem = useMemo((): string | null => {
     if (!tenant || signed || !member) return null;
-    // Fix round 1 (B0-26): "Ready for a signing clinician" only once nothing blocks approval; else what is left first.
+    // Fix round 1 (B0-26): "Ready for a signing clinician" only once nothing blocks approval (an open proposal blocks
+    // too – it is the approver's decision); else what is left first.
     if (member.role === "staff") return staffApprovalNote(items.count);
     if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
+    // WC design 1: the report's approving clinician approves it – another member takes over first.
+    if (report.approver && !actsAsApprover(actor, report)) return `${report.approver.name} is this report's approving clinician. To approve it yourself, take over as approver first.`;
     if (!demoClinic && isDemoHcpc(member.hcpc)) return WORDING.demoClinic.numberNotAllowedDetail;
     const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
     if (!voice) {
@@ -356,8 +396,14 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
     }
     const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
     return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
-  }, [tenant, signed, member, report, questions, demoClinic, items.count]);
-  const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
+  }, [tenant, signed, member, report, questions, demoClinic, items.count, actor]);
+  // Own voice is the approving clinician's (WC design 4).
+  const ownVoice = useMemo(() => (voiceAuthor && !signed && mayDecide ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed, mayDecide]);
+  // WC design 8: the server's "superseded" entry on this version (ActivityEntry.reportId names the version that replaced it).
+  const supersededBy = useMemo(() => {
+    const entry = [...report.activity].reverse().find((a) => a.action === "superseded" && typeof a.reportId === "string");
+    return entry?.reportId ? { reportId: entry.reportId, title: entry.detail.replace(/\.$/, "") || "Superseded by an amended version" } : null;
+  }, [report.activity]);
 
   const startAmendment = useCallback(async () => {
     const id = createId("rpt");
@@ -367,11 +413,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
       toast({ tone: "error", title: "The amended version could not be saved. Please try again." });
       return;
     }
+    // B2-25: no "superseded" yet, and no raw id – version 1 reads superseded only once version 2 is approved (the server
+    // writes that entry, WC design 8).
     dispatch({
       type: "activity",
-      action: "superseded",
+      action: "amendment_started",
       actor,
-      detail: `Amended version ${amended.version} started (${id}). This approval is superseded once the amended version is approved.`,
+      detail: `Amended version ${amended.version} started – this approval stands until version ${amended.version} is approved.`,
     });
     router.push(paths.report(id));
   }, [report, actor, toast, dispatch, router, paths]);
@@ -406,6 +454,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const activeSourceId = sourceRequest?.id ?? null;
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
+  // B2-25: an amended version is started after a confirm step, never by one stray click.
+  const [amendOpen, setAmendOpen] = useState(false);
   const approvedRef = useRef<HTMLDivElement>(null);
   const centreRef = useRef<HTMLDivElement>(null);
 
@@ -585,14 +635,50 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </Link>
           }
         >
-          A staff member checks and confirms each referrer form&apos;s mapping once before completed forms can be approved.
+          An owner, administrator or clinician confirms each referrer form&apos;s mapping once before completed forms can be approved.
         </InlineAlert>
       )}
 
       {report.amends && (
-        <InlineAlert tone="info" title={`Amended version ${report.version ?? 2}`}>
-          This version amends the form approved on {formatUkDateTime(report.amends.approvedAt)}. Make the corrections, then approve it again – the
-          earlier approval is superseded, and the files are marked “Amended – v{report.version ?? 2}”.
+        // B3-3: no "Make the corrections" – the notice says what this version is, before and after its approval.
+        <InlineAlert tone="info" title={`Version ${report.version ?? 2} – amends the form approved on ${formatUkDateTime(report.amends.approvedAt)}`}>
+          {signed
+            ? `Approved: it supersedes the earlier approval. Its file names are marked “Amended – v${report.version ?? 2}”.`
+            : `Approving it supersedes the earlier approval. Its file names are marked “Amended – v${report.version ?? 2}”.`}
+        </InlineAlert>
+      )}
+
+      {supersededBy && (
+        // WC design 8: written by the server when the amended version was approved – every tab reads it.
+        <InlineAlert
+          tone="warning"
+          title={supersededBy.title}
+          action={
+            <Link className="font-medium underline" href={paths.report(supersededBy.reportId)}>
+              Open the amended version
+            </Link>
+          }
+        >
+          This approval has been superseded: send the amended version instead of this one.
+        </InlineAlert>
+      )}
+
+      {!signed && report.approver && (mayTakeOver || !mayDecide) && (
+        // WC design 1: who approves, and – for a member who may approve – taking over.
+        <InlineAlert
+          tone="info"
+          title={`Approving clinician: ${report.approver.name}`}
+          action={
+            mayTakeOver ? (
+              <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => dispatch({ type: "takeOverApprover", actor })}>
+                Take over as approver
+              </Button>
+            ) : undefined
+          }
+        >
+          {mayTakeOver
+            ? `Their decisions on the clinician-only questions are theirs. If you take over, you approve it instead – their adoptions, acceptances and acknowledgements on it then need your own, and what they wrote waits for you to adopt it.`
+            : `What you enter in a clinician-only question is a proposal: ${report.approver.name} adopts it, or changes it, before approving.`}
         </InlineAlert>
       )}
 
@@ -680,7 +766,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           fileMissing={isForm && !questionSet && file.status === "missing"}
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
-          onAmend={startAmendment}
+          onAmend={supersededBy ? undefined : () => setAmendOpen(true)}
           prefillFor={prefillFor}
         />
       )}
@@ -735,6 +821,11 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
                   notApplicableBecause={notApplicable(report.sections, q.key)?.because ?? null}
+                  mayDecide={mayDecide}
+                  proposal={proposals.get(q.key) ?? null}
+                  approverOnlyFor={approverOnlyFor}
+                  onlyWhoFor={onlyWhoFor}
+                  approverName={approverName}
                   onDraft={
                     draftingUnavailable
                       ? undefined
@@ -812,6 +903,30 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           </Dialog>
         </>
       )}
+
+      <Dialog open={amendOpen} onOpenChange={setAmendOpen}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Start an amended version?</DialogTitle>
+          <DialogDescription>
+            Version {(report.version ?? 1) + 1} starts from this approved form for a correction or a referrer&apos;s query. This approval stands until
+            version {(report.version ?? 1) + 1} is approved; then it reads as superseded.
+          </DialogDescription>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setAmendOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setAmendOpen(false);
+                void startAmendment();
+              }}
+            >
+              Start version {(report.version ?? 1) + 1}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {template && (
         <ApproveDialog

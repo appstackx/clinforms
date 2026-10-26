@@ -38,6 +38,7 @@ export default async function TenantStudioLayout({ children }: { children: React
           name: context.clinicName,
           draftingEnabled: context.draftingEnabled,
           clinicians: context.clinicians,
+          ...(context.signers ? { signers: context.signers } : {}),
           demoClinic: context.demoClinic,
         }}
         member={{

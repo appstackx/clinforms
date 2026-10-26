@@ -7,10 +7,14 @@
  * Flags & gaps tab. A question's open gaps and the checks its own answer clears are one item (BoxIssue, fix 10/2026 –
  * see box-items.ts).
  *
- * Owner: studio-b agent.
+ * bh2 WC design 4: what the acting person may not do is not offered – the item says who decides instead ("Only Sarah
+ * Reid, the approving clinician, can …"); a proposal in a clinician box (APPROVER_DECISION) offers the approver one
+ * "Adopt" click; acknowledgements and resolutions say who made them.
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useId, useState } from "react";
-import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw, UserRoundCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
 import { DATA_CHECK_LABELS, flagCodeLabel } from "../../../core/labels";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
@@ -106,6 +110,8 @@ export function FlagItem({
   jumpLabel,
   compact,
   fix,
+  onAdopt,
+  onlyWho,
 }: {
   flag: ReportFlag;
   canAck: boolean;
@@ -116,6 +122,10 @@ export function FlagItem({
   compact?: boolean;
   /** A one-click correction the check offers ("Name Tom Ellis instead"). */
   fix?: { label: string; onFix(): void };
+  /** WC design 5: a proposal the approver adopts with one click (APPROVER_DECISION) – only offered to the approver. */
+  onAdopt?: () => void;
+  /** WC design 4: who may clear this, when the person here may not ("Only Sarah Reid, the approving clinician, can …"). */
+  onlyWho?: string | null;
 }) {
   const [acking, setAcking] = useState(false);
   const acked = Boolean(flag.acknowledged);
@@ -146,9 +156,10 @@ export function FlagItem({
         )}
         {flag.acknowledged && (
           <p className="mt-1 text-xs">
-            Acknowledged: “{flag.acknowledged.reason}” · {formatUkDateTime(flag.acknowledged.at)}
+            Acknowledged{flag.acknowledged.by ? ` by ${flag.acknowledged.by.name}` : ""}: “{flag.acknowledged.reason}” · {formatUkDateTime(flag.acknowledged.at)}
           </p>
         )}
+        {!acked && !readOnly && onlyWho && <p className="mt-1 text-[11px] font-medium opacity-80">{onlyWho}</p>}
         {acking ? (
           <ReasonForm
             label="Why is this acceptable? (kept in the audit trail)"
@@ -161,8 +172,17 @@ export function FlagItem({
             }}
           />
         ) : (
-          (onJump || (canAck && !acked && !readOnly) || (fix && !acked && !readOnly)) && (
+          (onJump || (canAck && !acked && !readOnly) || (fix && !acked && !readOnly) || (onAdopt && !readOnly)) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {onAdopt && !acked && !readOnly && (
+                <button
+                  type="button"
+                  onClick={onAdopt}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  <UserRoundCheck className="h-3.5 w-3.5" aria-hidden /> Adopt as my answer
+                </button>
+              )}
               {fix && !acked && !readOnly && (
                 <button
                   type="button"
@@ -172,7 +192,7 @@ export function FlagItem({
                   {fix.label}
                 </button>
               )}
-              {canAck && !acked && !readOnly && (
+              {canAck && !acked && !readOnly && flag.code !== "APPROVER_DECISION" && (
                 <button type="button" onClick={() => setAcking(true)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
                   Acknowledge with a reason
                 </button>
@@ -257,10 +277,11 @@ function GapBody({
       <p className="mt-1 text-[11px] opacity-70">{gapProvenance(gap)}</p>
       {done && (
         <p className="mt-1 text-xs">
-          {done.kind === "resolved" ? "Resolution" : "Reason"}: “{done.text}” · {formatUkDateTime(done.at)}
+          {done.kind === "resolved" ? "Resolution" : "Reason"}
+          {done.by ? ` (${done.by.name})` : ""}: “{done.text}” · {formatUkDateTime(done.at)}
         </p>
       )}
-      {!done && !readOnly && !mode && !hideHint && resolution.hint && <p className="mt-1 text-[11px] font-medium opacity-80">{resolution.hint}</p>}
+      {!done && !readOnly && !mode && (!hideHint || resolution.approverOnly) && resolution.hint && <p className="mt-1 text-[11px] font-medium opacity-80">{resolution.hint}</p>}
       {mode ? (
         <ReasonForm
           label={mode === "resolved" ? "How was this resolved?" : "Why can this stay open? (kept in the audit trail)"}
@@ -282,7 +303,7 @@ function GapBody({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {!readOnly && !done && (
             <>
-              {gap.suggestedAnswer && onTickSuggested && (
+              {gap.suggestedAnswer && onTickSuggested && !resolution.approverOnly && (
                 <button
                   type="button"
                   onClick={() => onTickSuggested(gap)}

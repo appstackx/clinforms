@@ -6,10 +6,15 @@
  * of the answer came from (origin pills and citation chips) and the checks and gaps on it – its open gaps and the
  * checks its own answer clears as one item (BoxIssue, fix 10/2026).
  *
- * Owner: studio-b agent.
+ * bh2 WC: who entered each part is read from its stamps (provenance.ts – never from the box's fill source alone); a
+ * proposal in a clinician box says so and offers the approving clinician one "Adopt" click; "These are my own words"
+ * is the approver's, refused while drafted wording is still in the paragraph ("Split it out"); what the person here may
+ * not do is not offered, and the card says who decides.
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { memo, useEffect, useRef, useState } from "react";
-import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Trash2, UserRound } from "lucide-react";
+import { Loader2, Lock, NotebookPen, PenLine, Plus, RotateCcw, Scissors, Trash2, UserRound, UserRoundCheck } from "lucide-react";
 import { formatUkDate, isValidIsoDate, parseUkDate } from "../../../core/dates";
 import { blankFor, blankForWording } from "../../../core/parties";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
@@ -17,7 +22,7 @@ import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { nameClinicianInstead } from "../../../core/voice";
-import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, SignReceipt } from "../../../core/types";
+import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, ReportSection, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
@@ -32,7 +37,10 @@ import {
   answerOptions,
   nextClinicianParagraphId,
   originLabel,
+  ownWordsBlockers,
+  paragraphProvenanceLine,
   resolutionOptionsFor,
+  structuredAnswerBy,
   supersededAbsenceSentences,
   type QuestionStatus,
   type ReviewQuestion,
@@ -40,6 +48,7 @@ import {
 import { CopyAnswerButton } from "./copy-answers";
 import { AutoTextarea, CitationChip, OriginPill, Pill, StatusDot } from "./review-ui";
 import type { Actor } from "../../../core/actor";
+import { enteredByName, sameMember } from "../../../core/provenance";
 import type { ReviewAction } from "./use-review-state";
 
 export interface QuestionCardProps {
@@ -85,9 +94,21 @@ export interface QuestionCardProps {
   copyable?: boolean;
   /** Fix round 1 (B0-7): why this conditional question does not apply ("“ANY FURTHER TREATMENT…?” is “NO”"), or null. */
   notApplicableBecause?: string | null;
+  /** bh2 WC: the person here makes the approving clinician's decisions on this report (core/provenance.ts actsAsApprover). */
+  mayDecide?: boolean;
+  /** WC design 5: "Entered by Pat Morgan (staff) – the approving physio must adopt it", when the box holds a proposal. */
+  proposal?: string | null;
+  /** WC design 4: who settles a gap the person here may not ("Only Sarah Reid, the approving clinician, can settle this."). */
+  approverOnlyFor?: (gap: Gap) => string | null;
+  /** WC design 4: who may acknowledge a flag the person here may not. */
+  onlyWhoFor?: (flag: ReportFlag) => string | null;
+  /** The approving clinician's name (for the card's wording), or null. */
+  approverName?: string | null;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
+
+const isPersonOrigin = (o: Paragraph["origin"]) => o === "clinician" || o === "edited" || o === "staff";
 
 function ParagraphEditor({
   paragraph,
@@ -107,8 +128,16 @@ function ParagraphEditor({
   canAcknowledge,
   onFocused,
   staffEntry = false,
+  section,
+  mayDecide = true,
+  onlyWhoFor,
 }: {
   staffEntry?: boolean;
+  /** The box (stamps, adoption and the drafted wording "These are my own words" is checked against). */
+  section?: ReportSection | null;
+  /** The person here makes the approver's decisions (own words, attribution fixes). */
+  mayDecide?: boolean;
+  onlyWhoFor?: (flag: ReportFlag) => string | null;
   paragraph: Paragraph;
   index: number;
   total: number;
@@ -139,6 +168,13 @@ function ParagraphEditor({
   }, [autoFocus, onFocused]);
 
   const label = total > 1 ? `Answer to “${questionLabel}”, paragraph ${index + 1} of ${total}` : `Answer to “${questionLabel}”`;
+  // WC design 7: who wrote it, from its stamps; an older paragraph with none keeps the earlier wording.
+  const byOther = Boolean(paragraph.by && isPersonOrigin(paragraph.origin) && !sameMember(paragraph.by, actor));
+  const provenance =
+    section && (paragraph.ownWords || section.adoptedBy || (paragraph.by && !byOther)) ? paragraphProvenanceLine(paragraph, section, actor) : null;
+  // WC design 6: "These are my own words" – the approver's, on a paragraph they edited; refused while drafted wording is in it.
+  const ownWordsOffer = !readOnly && mayDecide && section && paragraph.origin === "edited" && paragraph.text.trim() && !paragraph.ownWords;
+  const blockers = ownWordsOffer && section ? ownWordsBlockers(section, paragraph) : [];
 
   return (
     <div className="space-y-1.5">
@@ -173,7 +209,13 @@ function ParagraphEditor({
       <div className="flex flex-wrap items-center gap-1.5">
         <OriginPill
           origin={paragraph.origin}
-          label={staffEntry && paragraph.origin === "clinician" ? "Entered by staff" : originLabel(paragraph.origin, connectorId, readOnly)}
+          label={
+            byOther && paragraph.by
+              ? `${paragraph.origin === "edited" && paragraph.originalText !== undefined ? "Edited" : "Entered"} by ${enteredByName(paragraph.by)}`
+              : staffEntry && paragraph.origin === "clinician" && !paragraph.by
+                ? "Entered by staff"
+                : originLabel(paragraph.origin, connectorId, readOnly)
+          }
         />
         {paragraph.basis && paragraph.origin !== "from_records" && (
           <span className="text-[11px] text-slate-500">{PARAGRAPH_BASIS_LABELS[paragraph.basis]}</span>
@@ -184,8 +226,21 @@ function ParagraphEditor({
         {(paragraph.origin === "ai" || paragraph.origin === "edited") && paragraph.sourceIds.length === 0 && (
           <span className="text-[11px] font-medium text-red-700">No source cited</span>
         )}
-        {paragraph.origin === "clinician" && (
-          <span className="text-[11px] text-slate-500">{staffEntry ? "Typed in by staff – kept in the activity log" : "Your own words – no citation needed"}</span>
+        {provenance ? (
+          <span className="text-[11px] text-slate-500">{provenance}</span>
+        ) : (
+          paragraph.origin === "clinician" && (
+            <span className="text-[11px] text-slate-500">{staffEntry ? "Typed in by staff – kept in the activity log" : "Your own words – no citation needed"}</span>
+          )
+        )}
+        {ownWordsOffer && blockers.length === 0 && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "markOwnWords", key: sectionKey, paragraphId: paragraph.id, actor })}
+            className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-indigo-800 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
+          >
+            <UserRoundCheck className="h-3 w-3" aria-hidden /> These are my own words
+          </button>
         )}
         {!readOnly && paragraph.origin === "edited" && paragraph.originalText !== undefined && (
           <button
@@ -211,17 +266,34 @@ function ParagraphEditor({
         )}
       </div>
       {paragraph.ackReason && <p className="text-[11px] text-slate-500">Wording acknowledged: “{paragraph.ackReason}”</p>}
+      {ownWordsOffer && blockers.length > 0 && (
+        // WC design 6: refused while drafted wording remains – the drafted sentence can be moved out first.
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-lg border border-sky-200 bg-sky-50/70 px-2.5 py-1.5 text-[12px] text-sky-950">
+          <p className="min-w-0 flex-1 basis-56">
+            Drafted wording is still in this paragraph, so it cannot be recorded as your own words: <q>{blockers[0]}</q>
+            {blockers.length > 1 ? ` (+${blockers.length - 1} more)` : ""}
+          </p>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "splitOutResidue", key: sectionKey, paragraphId: paragraph.id, actor })}
+            className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-sky-900 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
+          >
+            <Scissors className="h-3 w-3" aria-hidden /> Split it out
+          </button>
+        </div>
+      )}
       {flags.length > 0 && (
         <div className="space-y-1.5">
           {flags.map((f) => {
             // "Name Tom Ellis instead" (fix round 1): another clinician's note written as "I" / "my".
-            const named = f.code === "OTHER_CLINICIAN_VOICE" && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
+            const named = mayDecide && f.code === "OTHER_CLINICIAN_VOICE" && f.evidence && !/,| and /.test(f.evidence) ? nameClinicianInstead(paragraph.text, f.evidence) : null;
             return (
               <FlagItem
                 key={f.id}
                 flag={f}
                 compact
                 readOnly={readOnly}
+                onlyWho={onlyWhoFor?.(f) ?? null}
                 canAck={canAcknowledge(f)}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
                 {...(named && { fix: { label: `Name ${f.evidence} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
@@ -382,6 +454,8 @@ function TypedValueEditor({
 
 function QuestionCardImpl(props: QuestionCardProps) {
   const { q, status, flags, gaps, bundle, connectorId, readOnly, receipt, actor, dispatch, onOpenSource, canAcknowledge } = props;
+  const mayDecide = props.mayDecide ?? true;
+  const approverOnlyFor = props.approverOnlyFor ?? (() => null);
   const notApplicableBecause = props.notApplicableBecause ?? null;
   const tenant = useStudioMode() === "tenant";
   const sourceLabels = useFillSourceLabels();
@@ -394,8 +468,11 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // A box left blank says whose it is ("For the patient to complete"), not just "referrer's use".
   const blankWording = !section && field ? blankForWording(blankFor(field), props.referrerName) : null;
   // A value the record lacks (a withheld insurer number), typed in by staff: say so, not "by the clinician".
+  // (bh2 WC: an entry stamped by a clinician is theirs – B1-7(b); an older entry with no stamp keeps "entered by staff".)
   const staffEntered =
-    section?.kind === "from_records" && section.paragraphs.some((p) => p.origin === "clinician" && p.text.trim() !== "") && !section.paragraphs.some((p) => p.origin === "from_records");
+    section?.kind === "from_records" &&
+    section.paragraphs.some((p) => (p.origin === "staff" || (p.origin === "clinician" && (!p.by || p.by.role === "staff"))) && p.text.trim() !== "") &&
+    !section.paragraphs.some((p) => p.origin === "from_records");
   // A record value the record does not hold (another insurer's membership number withheld) is for staff to
   // enter, not a clinical question.
   // Fix round 1 (B0-19): a staff entry, the physiotherapist's choice or the clinic's own details, said as such.
@@ -415,7 +492,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // An unanswered opinion question already says "Needs clinician input" (and its gap explains why), so
   // its "required and empty" check is listed in the Flags tab rather than repeated here.
   // (A question that does not apply asks nobody for an opinion – fix round 2.)
-  const showsNeedsClinician = section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section) && !notApplicableBecause;
+  // B2-23: not once the box is left blank on purpose (every gap of it settled).
+  const showsNeedsClinician =
+    section?.kind === "clinician_opinion" && !readOnly && section.status !== "pending" && !isSectionAnswered(section) && !notApplicableBecause && gaps.some((g) => !g.resolution);
   const box = props.box;
   const hidden = props.hiddenFlagIds;
   const sectionFlags = flags.filter(
@@ -451,7 +530,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   // entered for a missing record value stays editable).
   const recordsLocked = isRecords && answered && paragraphsAll.length > 0 && paragraphsAll.every((p) => p.origin === "from_records");
 
-  const absence = section && !readOnly ? supersededAbsenceSentences(section) : [];
+  const absence = section && !readOnly && mayDecide ? supersededAbsenceSentences(section) : [];
   const referrerGap = gaps.find((g) => g.id.endsWith("-referrer") && !g.resolution) ?? null;
   const referrerField =
     field?.fillSource.kind === "registration" && showsReferrerReferenceNotice(field.fillSource.path, props.referrerName ?? null, bundle);
@@ -496,6 +575,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
           canAcknowledge={canAcknowledge}
           onFocused={clearFocus}
           staffEntry={isRecords}
+          section={section}
+          mayDecide={mayDecide}
+          onlyWhoFor={props.onlyWhoFor}
         />
       ))}
       {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && (
@@ -506,7 +588,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
           aria-label={`Answer to “${q.label}”`}
           value=""
           minRows={isOpinion ? 3 : 2}
-          placeholder={isRecords && referrerField ? `${props.referrerName ?? "The referrer"}'s reference` : opts.emptyPlaceholder}
+          placeholder={isRecords && referrerField ? `${props.referrerName ?? "The referrer"}'s reference` : isRecords ? "Type the value – it is marked as entered by you." : opts.emptyPlaceholder}
           onChange={(e) => startClinicianText(e.target.value)}
         />
       )}
@@ -596,10 +678,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
     const raw = section.answer?.value ?? null;
     const value = Array.isArray(raw) ? null : raw;
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
-    const proposedBy = isRecords ? null : props.answerEdited ? "edited" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
+    // WC design 7 / B2-20: who chose the answer is its stamp (Section.answerBy) – never "changed" when nothing was there.
+    const chosenBy = structuredAnswerBy(section);
+    const proposedBy = isRecords && !chosenBy ? null : chosenBy ? "person" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
     body = (
       <div className="space-y-3">
-        {isOpinion && value === null && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
+        {isOpinion && value === null && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} />}
         {recordsLocked ? (
           <LockedRecordsAnswer
             text={paragraphs[0]?.text ?? String(value ?? "")}
@@ -621,7 +705,11 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 {proposedBy === "ai" && (
                   <Pill className="border-sky-200 bg-sky-50 text-sky-800">{readOnly ? WORDING.origin.answerDraftedApproved : WORDING.origin.answerDrafted}</Pill>
                 )}
-                {proposedBy === "edited" && <Pill className="border-violet-200 bg-violet-50 text-violet-800">Answer changed by the clinician</Pill>}
+                {proposedBy === "person" && chosenBy && (
+                  <Pill className={chosenBy.role === "staff" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-indigo-200 bg-indigo-50 text-indigo-800"}>
+                    {sameMember(chosenBy, actor) ? "Your answer" : `Chosen by ${enteredByName(chosenBy)}`}
+                  </Pill>
+                )}
                 {proposedBy === "clinician" && <Pill className="border-indigo-200 bg-indigo-50 text-indigo-800">Clinician</Pill>}
               </div>
             )}
@@ -647,7 +735,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   } else {
     body = (
       <div className="space-y-3">
-        {isOpinion && !answered && !readOnly && !notApplicableBecause && <NeedsClinician gaps={gaps} />}
+        {isOpinion && !answered && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} />}
         {referrerNotice ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
@@ -689,7 +777,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
         ) : isRecords && !answered && !readOnly ? (
           <p className="text-[13px] text-slate-600">
             {recordSource === "staff_entry"
-              ? "Entered by staff on each report: type it from your records – it is marked as entered by staff."
+              ? `Entered by staff on each report: ${field && (answerKindFor(field.answerType) === "checkbox" || answerKindFor(field.answerType) === "yes_no") ? "tick it" : field && answerKindFor(field.answerType) === "choice" ? "choose it" : "type it"} from your records – it is marked as entered by you.`
               : recordSource === "physio_choice"
                 ? "Chosen by the physiotherapist on each report."
                 : recordSource === "clinic"
@@ -751,6 +839,20 @@ function QuestionCardImpl(props: QuestionCardProps) {
           Not applicable: {notApplicableBecause} – nothing is printed here, and its checks do not block approval.
         </p>
       )}
+      {props.proposal && !readOnly && (
+        // WC design 5: someone other than the approver entered this – a proposal until the approver adopts it.
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-950" data-testid="proposal">
+          <p className="min-w-0 flex-1 basis-56">
+            <span className="font-medium">{props.proposal}.</span>{" "}
+            {mayDecide ? "Check it, then adopt it as your answer – or change it yourself." : `${props.approverName ?? "The approving clinician"} adopts it, or changes it.`}
+          </p>
+          {mayDecide && (
+            <Button type="button" size="sm" className="h-8" onClick={() => dispatch({ type: "adopt", key: q.key, actor })}>
+              <UserRoundCheck className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Adopt as my answer
+            </Button>
+          )}
+        </div>
+      )}
       <div className="mt-3">{body}</div>
       {(status === "blank" || status === "left_blank") && section && field && leftBlankEffect(field) && (
         // Fix round 1 (B0-2): what leaving it blank changes on the printed form.
@@ -779,7 +881,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               hideQuestion={showsNeedsClinician}
               bundle={bundle}
               readOnly={readOnly}
-              resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name })}
+              resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name, approverOnly: approverOnlyFor(g) })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
               onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
@@ -794,7 +896,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               hideQuestion={showsNeedsClinician}
               bundle={bundle}
               readOnly={readOnly}
-              resolution={resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name })}
+              resolution={resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name, approverOnly: approverOnlyFor(g) })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
               onOpenSource={onOpenSource}
@@ -809,7 +911,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 compact
                 readOnly={readOnly}
                 canAck={canAcknowledge(f)}
+                onlyWho={props.onlyWhoFor?.(f) ?? null}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
+                {...(f.code === "APPROVER_DECISION" && mayDecide ? { onAdopt: () => dispatch({ type: "adopt", key: q.key, actor }) } : {})}
               />
             ))}
         </div>
@@ -818,7 +922,26 @@ function QuestionCardImpl(props: QuestionCardProps) {
   );
 }
 
-function NeedsClinician({ gaps }: { gaps: Gap[] }) {
+/**
+ * "Needs clinician input" (WC design 7, B3-10, B2-23): worded from the gap's kind (Gap.kind), never from guesses about
+ * its wording – and only while one of the box's gaps is open.
+ */
+export function needsClinicianText(gap: Pick<Gap, "kind" | "id"> | undefined): string {
+  switch (gap?.kind) {
+    case "no_opinion_recorded":
+      return "No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed.";
+    case "opinion_not_fitting_options":
+      return "The opinion recorded in the notes does not fit any of the printed options, so none has been ticked.";
+    case "band":
+      return "The printed band is the clinician's choice, so none has been ticked.";
+    case "choice_held_back":
+      return "The drafted choice was held back: the cited notes do not use its words.";
+    default:
+      return gap?.id.endsWith("-physio") ? "The physiotherapist chooses this on each report." : "The notes do not settle this, so it has been left blank rather than guessed.";
+  }
+}
+
+function NeedsClinician({ gaps, approverName }: { gaps: Gap[]; approverName: string | null }) {
   const open = gaps.find((g) => !g.resolution);
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-[13px] text-amber-950">
@@ -826,7 +949,7 @@ function NeedsClinician({ gaps }: { gaps: Gap[] }) {
         <UserRound className="h-4 w-4 text-amber-700" aria-hidden /> Needs clinician input
       </p>
       <p className="mt-0.5 leading-relaxed">
-        No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed. Only the treating clinician can answer it.
+        {needsClinicianText(open)} {approverName ? `Only the approving clinician (${approverName}) can answer it.` : "Only the treating clinician can answer it."}
       </p>
       {open?.suggestedQuestion && (
         <p className="mt-1">

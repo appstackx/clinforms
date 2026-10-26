@@ -44,6 +44,11 @@ export interface TenantStudioContext {
   demoClinic: boolean;
   /** Members other than staff (and anyone with an HCPC number): name and HCPC number. No e-mail addresses or ids. */
   clinicians: Array<{ name: string; hcpc?: string }>;
+  /**
+   * bh2 WC design 1: the members who may approve a report (not staff, "may sign", an HCPC number) – a new report's
+   * approving clinician is chosen from them. The account id is what the Studio stamps (not a secret). Absent when none.
+   */
+  signers?: Array<{ userId: string; name: string; hcpc: string }>;
   member: {
     name: string;
     /** The account id (scopes the Studio's in-memory records to this member; not a secret). */
@@ -83,6 +88,10 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
     .filter((m) => m.name.trim() && (m.role !== "staff" || Boolean(m.hcpcNumber)))
     .slice(0, 200)
     .map((m) => ({ name: m.name.trim(), ...(m.hcpcNumber ? { hcpc: m.hcpcNumber } : {}) }));
+  const signers = members
+    .filter((m) => m.name.trim() && m.role !== null && m.role !== "staff" && m.canSign && Boolean(m.hcpcNumber?.trim()))
+    .slice(0, 200)
+    .map((m) => ({ userId: m.userId, name: m.name.trim(), hcpc: (m.hcpcNumber ?? "").trim() }));
   return {
     kind: "ok",
     context: {
@@ -92,6 +101,7 @@ export async function resolveStudioAccess(deps: { auth: Auth; db: Kysely<Databas
       ...(trial ? { trial } : {}),
       demoClinic,
       clinicians,
+      ...(signers.length ? { signers } : {}),
       member: {
         name: session.user.name,
         userId: session.user.id,
