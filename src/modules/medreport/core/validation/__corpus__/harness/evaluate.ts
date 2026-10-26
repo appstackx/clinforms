@@ -165,9 +165,30 @@ function withEditedSubject(built: Built): Report {
   };
 }
 
+/**
+ * harden-WA1 (check2 N1): what a member's store write may rewrite in the report it stores – a box's frozen condition or
+ * printed question (input.store.rewrite: box → {condition (null: removed), title}), every frozen condition
+ * (dropConditions) and Report.reportModel (dropReportModel). Report content the server must not trust.
+ */
+type StoreRewrite = { rewrite?: Record<string, { condition?: Record<string, unknown> | null; title?: string }>; dropConditions?: boolean; dropReportModel?: boolean };
+
+function rewrittenReport(report: Report, r: StoreRewrite): Report {
+  const sections = report.sections.map((s) => {
+    const patch = r.rewrite?.[s.key];
+    let next = { ...s } as Report["sections"][number];
+    if (r.dropConditions || (patch && patch.condition === null)) delete next.condition;
+    if (patch?.condition) next = { ...next, condition: patch.condition as unknown as NonNullable<typeof s.condition> };
+    if (patch?.title !== undefined) next = { ...next, title: patch.title };
+    return next;
+  });
+  const out = { ...report, sections } as Report;
+  if (r.dropReportModel) delete (out as { reportModel?: number }).reportModel;
+  return out;
+}
+
 async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
-  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" };
-  let report = built.report;
+  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" } & StoreRewrite;
+  let report = store.rewrite || store.dropConditions || store.dropReportModel ? rewrittenReport(built.report, store) : built.report;
   if (store.seedAs) {
     const seeded = await putStoredReport(h, report, store.seedAs, null);
     if (seeded.status !== 201 && seeded.status !== 200) return { path: "sign", ok: false, detail: `could not store the report first (${seeded.status} ${seeded.code ?? ""})` };
