@@ -1,0 +1,31 @@
+{
+  "$comment": "release/bh-trial-2 ownership map (bh-quality plan, W0). Seeded by W0.1 with the cross-cutting paths only; W0.4 fills `paths` (path or glob -> workstream) and adds the guard script that refuses a workstream branch touching files outside its map. Shared and cross-cutting files change only through the integrator.",
+  "version": 1,
+  "paths": {},
+  "crossCutting": [
+    {
+      "id": "reuse-notes",
+      "since": "6d897da (merge of feat/reuse-notes 5d92879, Khuram's decision 26/10: ships with this release)",
+      "paths": [
+        "src/modules/medreport/core/reuse.ts",
+        "src/modules/medreport/api/handlers/store-report-reuse.ts",
+        "src/app/api/reports/v1/store/reports/[id]/reuse/route.ts",
+        "src/app/app/studio/new/page.tsx",
+        "src/modules/medreport/ui/components/new/generate.ts",
+        "src/modules/medreport/ui/screens/new/new-report-screen.tsx",
+        "src/modules/medreport/core/report-factory.ts",
+        "scripts/medreport/report-reuse.test.ts",
+        "scripts/e2e/reuse-notes.cjs"
+      ],
+      "owner": "integrator",
+      "rule": "A report made from an earlier report's notes (\"Complete another form for this patient\") goes through the same report factory as a new one (generate.ts createTargetReport -> core/report-factory.ts createFormReport / createReport) and gets everything a new report gets: the approver (W0.6 plumbing, WC picker), conditions frozen at creation in section.condition and the issue state (WA1), and model 2 (W0.6). No reuse-only creation path. The reuse endpoint stays tenant-scoped (the clinic's own store, id only) and consent is never carried over (core/reuse.ts recordForAnotherForm).",
+      "wiredBy": ["W0.6", "WA1", "WC"],
+      "tests": [
+        "scripts/medreport/report-reuse.test.ts",
+        "src/modules/medreport/ui/tenant-mode.test.ts",
+        "src/modules/medreport/ui/routes.test.ts",
+        "scripts/e2e/reuse-notes.cjs"
+      ]
+    }
+  ]
+}

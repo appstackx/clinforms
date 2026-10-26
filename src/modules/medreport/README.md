@@ -1872,6 +1872,11 @@ keeps the consent the clinic system holds (fetching it afresh gives the same; it
 Opinion attribution, the merge-code block and every approval check are unchanged (the new report is an ordinary
 report).
 
+**Release `release/bh-trial-2`** (merged 26/10/2026, Khuram's decision): reuse ships with the Blue Heart trial release.
+A reused report is made by the same factory as a new one (`createTargetReport` → `createFormReport` / `createReport`),
+so whatever a new report gets in this release – the approver, conditions frozen at creation, the issue state, model 2 –
+it gets too; there is no reuse-only creation path. `docs/bh2-ownership.json` lists the reuse paths as cross-cutting.
+
 **Retention:** the new report holds its own copy of the record with its own retention clock; reusing reads the
 earlier report and does not change it (no save, no new revision). Once the earlier report is deleted or removed by
 retention, its notes cannot be reused – upload them again.
