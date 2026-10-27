@@ -28,7 +28,8 @@ import { createServerStore } from "../../src/modules/medreport/ui/store/server-s
 import { TENANT_COPY } from "../../src/modules/medreport/ui/studio-copy";
 import { WriteQueue, type SendOutcome } from "../../src/modules/medreport/ui/store/write-queue";
 import { completedSampleReport } from "./form-sample-answers";
-import { member, storeDeps, storeFetch, type FetchLog } from "./store-harness";
+import { storeDeps, storeFetch, type FetchLog } from "./store-harness";
+import { asApproversReport, signingMember } from "./release-store-fixture";
 
 const CLINIC = "clinic-rate-limit";
 
@@ -54,7 +55,7 @@ function counters() {
 function backend() {
   const tenantStore = createMemoryTenantStore();
   const limits = counters();
-  const deps: MedreportDeps = { ...storeDeps(tenantStore, { sarah: member(CLINIC) }), sharedState: limits.store };
+  const deps: MedreportDeps = { ...storeDeps(tenantStore, { sarah: signingMember(CLINIC) }), sharedState: limits.store };
   return { tenantStore, deps, limits };
 }
 
@@ -93,8 +94,10 @@ function tab(deps: MedreportDeps, opts: { fetch?: typeof fetch } = {}) {
   return { client, log, timers, settle, runNext };
 }
 
+// merge:r1 (WF x WC): R1T-WC-06/03 – a create names its approver and stamps the opinion answers they chose, as the Studio
+// stores it (the same fixture re-baseline WC made in store-client.test.ts); the member who saves is that approver.
 function report(id = "rpt_rate_limit"): Report {
-  return { ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: CLINIC }, { id }), tenantId: CLINIC, patientLabel: "Megan Hart" };
+  return asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: CLINIC }, { id }), tenantId: CLINIC, patientLabel: "Megan Hart" }, signingMember(CLINIC));
 }
 
 function edited(r: Report, n: number): Report {
