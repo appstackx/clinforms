@@ -472,7 +472,9 @@ test("fix round 1: the final instruction says which notes are the signing author
   const bundle = testBundle();
   const sarah = { name: "Sarah Reid", hcpc: "PH-DEMO-01" };
   const mixed = buildFormFinalInstruction(FORM, ["F-02"], sarah, bundle.notes);
-  assert.match(mixed, /The clinician who will approve this form: Sarah Reid \(PH-DEMO-01\)\. Their own notes: N-001 – only these are written in the first person\. N-002 was written by another clinician: name that clinician, never "I", "me" or "my"\./);
+  assert.match(mixed, /The clinician who will approve this form: Sarah Reid \(PH-DEMO-01\)\. Their own notes: N-001 – only these are written in the first person\. N-002 was written by another clinician: name that clinician, never "I", "me" or "my"/);
+  // bh2 fix round 1 (forms-10, R1T-WD-02): and the colleague is named in every sentence, never a pronoun.
+  assert.match(mixed, /name them in every sentence that rests on that note, never "he", "she", "his" or "her" for them\.$/);
   const toms = bundle.notes.map((n) => ({ ...n, author: { name: "Tom Ellis", hcpc: "PH-DEMO-02" } }));
   assert.match(buildFormFinalInstruction(FORM, ["F-02"], sarah, toms), /None of the notes is theirs: write in the third person throughout/);
   const hers = bundle.notes.map((n) => ({ ...n, author: sarah }));
@@ -516,4 +518,30 @@ test("fix round 1 (B0-5, B0-7, B0-16, B0-23): compact places, conditions, number
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /11\. Numbered rows\.[^\n]*row N gives the Nth item/);
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /never as "my note" or "your note"/);
   assert.match(FORM_DRAFT_SYSTEM_PROMPT, /"The notes are written by…", "so I can only describe…"/);
+});
+
+/* bh2 fix round 1 (forms-10, R1T-WD-02 / -05 / -L3): the orchestrator's E7/E8 decision of 26/10 – colleague findings are
+ * drafted in the third person, the clinician named in every sentence; opinion boxes never hold the record's figures alone;
+ * attendance is whole and never "N of N". */
+test("forms-10 (R1T-WD-02): every sentence that rests on a colleague's note names them – never a pronoun, never unnamed, one clinician per sentence", () => {
+  assert.equal(FORM_DRAFT_PROMPT_VERSION, "forms-10");
+  const p = FORM_DRAFT_SYSTEM_PROMPT;
+  assert.match(p, /Name the clinician in EVERY sentence that rests on another clinician's note/);
+  assert.match(p, /never refer to another clinician as "he", "she", "his" or "her" \("She recorded…", "His assessment was…"/);
+  assert.match(p, /never leave them out \("Assessment on 08\/09\/2026: …", "Advice was given…"/);
+  assert.match(p, /One sentence rests on one clinician's notes\./);
+  assert.match(p, /give each clinician's part in its own paragraph with its own sourceIds – the approving clinician's own paragraph may be in the first person, every other one names its clinician in each sentence/);
+  assert.match(p, /Where one paragraph has to hold both \(a short answer\), still give each clinician's part its own sentences, each naming its clinician, and never join two clinicians' notes in one sentence/);
+  assert.match(p, /never "…, and on 05\/08\/2026 Tom Ellis recorded…" or "Tom Ellis, covering my leave, …"/);
+  // A compact value from a colleague's note keeps their name, whatever it is ("Running (Priya Shah)").
+  assert.match(p, /except a value that rests on another clinician's note, whatever it is \(a finding, an opinion, a score, or an activity or symptom the patient told them\), which keeps that clinician's name after the value \("Running \(Priya Shah\)"/);
+  // The old all-or-nothing rule ("A paragraph that relies on notes by two or more clinicians uses the third person … never "I" in it") is replaced.
+  assert.doesNotMatch(p, /uses the third person, with each clinician named – never "I" in it/);
+});
+
+test("forms-10 (R1T-WD-05, R1T-WD-L3): an opinion box never holds the record's figures alone; attendance is grammatical and never 'N of N'", () => {
+  const p = FORM_DRAFT_SYSTEM_PROMPT;
+  assert.match(p, /Every paragraph of an opinion answer cites the note it is from: never add a paragraph that gives only the record's own figures \(attendance, outcome scores, dates\)/);
+  assert.match(p, /"1 appointment was missed \(did not attend\) on 22\/09\/2026", never "with 1 did not attend"/);
+  assert.match(p, /never "7 of 7", which reads as if those were all the appointments/);
 });
