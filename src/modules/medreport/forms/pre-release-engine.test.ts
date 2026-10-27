@@ -202,9 +202,13 @@ test("R1T-WA2-02: the FINAL copy of a pre-release receipt is the document produc
 });
 
 test("R1T-WA2-02: the scenarios are not vacuous – this release's own fill issues a different document for some of them", async () => {
+  // merge:r1 (WA1 x WA2): with R1T-WA1-01 merged, this release's answers for a report without reportModel no longer read
+  // conditions at run time, so its fill now gives production's document on most scenarios (meridian:rg1 included – the
+  // RG-1 fix). The guard therefore looks at every scenario: at least one must still differ (cf-discharge answered and
+  // mixed do), so the frozen engine's pins are not vacuous.
   const differs: string[] = [];
-  for (const id of ["cf-discharge:blank", "meridian:blank", "meridian:rg1"]) {
-    const s = SCENARIOS.find((x) => x.id === id)!;
+  for (const s of SCENARIOS) {
+    const { id } = s;
     const { form, file } = await s.load();
     const report = reportFor(form, s.variant);
     const release = await outcome(form, () => renderFormFile({ form, file, answers: buildFormAnswers(report, form, { receipt: RECEIPT }), draft: false, format: "original", strict: false }));
