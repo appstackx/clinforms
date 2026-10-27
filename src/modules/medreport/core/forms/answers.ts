@@ -244,7 +244,12 @@ export function isSectionAnswered(section: Pick<ReportSection, "paragraphs" | "a
   // 10/2026: an answer space the record leaves empty on purpose (an address line it does not have) is answered.
   if (section.blankFromRecords && !section.paragraphs.some((p) => p.text.trim().length > 0)) return true;
   if (section.answer && section.answer.kind !== "text") {
-    return section.answer.value !== null && section.answer.value !== "";
+    // R2-TPN-01 (final check, fix r2c; WC, ownership exception): only a value the box can hold answers it – true or
+    // false, or words. A list on a yes/no, tick box, choice, date or number box ([] , [""], [{}]) and blank words are no
+    // answer (MISSING_PLACEHOLDER), as the forms engine prints them blank; core/provenance.ts answerSet reads every
+    // answered value as set (it needs a stamp), and the store refuses these shapes (store-reports.ts).
+    const v = section.answer.value;
+    return typeof v === "boolean" || (typeof v === "string" && v.trim() !== "");
   }
   return section.paragraphs.some((p) => p.text.trim().length > 0);
 }

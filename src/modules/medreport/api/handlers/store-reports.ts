@@ -516,12 +516,39 @@ interface ClaimedFix {
   after: string;
 }
 
+/**
+ * R2-SEC-2 (final check, fix r2c): the replay below costs per edit it replays times the paragraph's length (each edit
+ * slices and joins the whole text), and nothing bounded either before it – one forged claimed fix with 22,000 identity
+ * edits on a 650,000-character drafted paragraph cost 1.3 s CPU (2.6 s with a two-byte paragraph) before its 403. So,
+ * before ANY replay:
+ *   - every text the replay reads or must reach (the stored text, its drafted wording, the sent text) holds at most
+ *     STORE_FIX_PARAGRAPH_CHARS characters – the engine phase's own bound (a longer paragraph is edited by hand: 413);
+ *   - a fix carries at most STORE_FIX_EDITS edits, each writing at most STORE_FIX_PARAGRAPH_CHARS characters (the engine
+ *     records ONE edit per fix, ui/components/review/fixes.ts applyFixProposal – more is not an engine fix: 403);
+ *   - each step of the replay stays within STORE_FIX_PARAGRAPH_CHARS (no edit grows the text it works on);
+ *   - the stored fixes are replayed (only to learn what an undo may return to) while the save's replays stay within
+ *     STORE_FIX_REPLAYS_PER_SAVE fixes; beyond that, or past a stored fix over the bounds, the earlier texts are not
+ *     read further (an undo of such a fix is refused, never accepted).
+ * So step 1 replays at most (FIXES_PER_SAVE + STORE_FIX_REPLAYS_PER_SAVE) × STORE_FIX_EDITS edits on texts of at most
+ * STORE_FIX_PARAGRAPH_CHARS characters, whatever the request holds (scripts/medreport/wc-fix2c-store.test.ts sweeps it
+ * to the record cap).
+ */
+const STORE_FIX_EDITS = 16;
+const STORE_FIX_REPLAYS_PER_SAVE = 200;
+
+/** Whether a fix's edits are within the replay's bounds (the count, and the words each one writes). */
+function fixWithinReplayBounds(f: NonNullable<Paragraph["fixes"]>[number]): boolean {
+  const edits = f.edits ?? [];
+  return edits.length <= STORE_FIX_EDITS && edits.every((e) => e.text.length <= STORE_FIX_PARAGRAPH_CHARS);
+}
+
 /** The structural checks (step 1): the engine fixes to verify, or the first refusal. No validator runs here. */
 function draftedRewritePlan(after: Report, rewrites: ReadonlyArray<{ key: string; p: Paragraph; b: Paragraph }>, m: StoreMember, ctx: StoreCheckContext, approver: boolean): { refused: string } | { claims: ClaimedFix[] } {
   if (rewrites.length > FIXED_PARAGRAPHS_PER_SAVE) return { refused: "drafted-text-rewritten" };
   if (!ctx.template) return { refused: "drafted-text-rewritten" };
   const claims: ClaimedFix[] = [];
   let total = 0;
+  let replays = 0;
   for (const { key, p, b } of rewrites) {
     const stored = b.fixes ?? [];
     const now = p.fixes ?? [];
@@ -533,12 +560,17 @@ function draftedRewritePlan(after: Report, rewrites: ReadonlyArray<{ key: string
     if (added.some((f) => !isOwnStamp(f.by, m))) return { refused: "fix-by-other" };
     const section = after.sections.find((s) => s.key === key);
     if (section && isClinicianBox(after, section, ctx) && !approver) return { refused: "fix-approver-only" };
+    // R2-SEC-2 (fix r2c): the replay's bounds, before any replay (see STORE_FIX_EDITS).
+    if (b.text.length > STORE_FIX_PARAGRAPH_CHARS || (b.originalText ?? "").length > STORE_FIX_PARAGRAPH_CHARS || p.text.length > STORE_FIX_PARAGRAPH_CHARS) return { refused: FIX_CHECK_TOO_LARGE };
+    if (!added.every(fixWithinReplayBounds)) return { refused: "drafted-text-rewritten" };
     // The texts the paragraph held before this save: its drafted wording and each earlier fix's result.
     const earlier = new Set<string>([b.originalText ?? b.text, b.text]);
     let replay = b.originalText ?? b.text;
     for (const f of stored) {
+      if (replays >= STORE_FIX_REPLAYS_PER_SAVE || !fixWithinReplayBounds(f)) break;
+      replays += 1;
       const next = replayFix(replay, f);
-      if (next === null) break;
+      if (next === null || next.length > STORE_FIX_PARAGRAPH_CHARS) break;
       earlier.add(next);
       replay = next;
     }
@@ -547,6 +579,8 @@ function draftedRewritePlan(after: Report, rewrites: ReadonlyArray<{ key: string
       const f = added[i];
       const next = replayFix(text, f) ?? (i === added.length - 1 ? p.text : null);
       if (next === null) return { refused: "drafted-text-rewritten" };
+      // Each step's text within the bound too (the engine phase refuses a longer one alike), so no replay grows it.
+      if (next.length > STORE_FIX_PARAGRAPH_CHARS) return { refused: FIX_CHECK_TOO_LARGE };
       if (f.kind.startsWith("undo-")) {
         if (!earlier.has(next)) return { refused: "drafted-text-rewritten" };
       } else {
@@ -774,6 +808,11 @@ export function decisionViolations(
     if (before && was && !redraft && was.answer && (!s.answer || s.answer.kind !== was.answer.kind)) out.push("answer-kind-changed");
     // A text answer holds no value (toFormAnswer, parseFormAnswerValue: the box's paragraphs are its answer).
     if (s.answer && s.answer.kind === "text" && s.answer.value !== null && s.answer.value !== undefined && !same(s.answer, was?.answer)) out.push("answer-kind-changed");
+    // R2-TPN-01 (final check, fix r2c): a new or changed answer is a value its box can hold or a clear (null, "") – never
+    // an empty-ish shape the review never writes: a list on a yes/no, tick box, choice, date or number box ([], [""],
+    // [{}]) or blank words. Unstamped, [] read as a clear here and as an answer at approval, so a records or drafted
+    // answer went blank, signed, with no one's stamp; stamped, it would still print blank with no question raised.
+    if (s.answer && answerValueMalformed(s.answer) && !same(s.answer, was?.answer)) out.push("answer-value-invalid");
     // R1T-WC-03 (SAF-2): drafting never answers an opinion box or the physiotherapist's choice – not on a create, not in
     // a redraft – so an answer there with no one's stamp is refused there too (the review stamps every answer a person sets).
     if ((isOpinionBox(s, ctx) || isPhysioChoiceBox(ctx, s.key)) && answerSet(s.answer) && !same(s.answer, was?.answer) && !s.answerBy && (create || redraft || !before)) out.push("answer-unstamped");
@@ -844,6 +883,16 @@ export function decisionViolations(
     if (refused) out.push(refused);
   }
   return Array.from(new Set(out));
+}
+
+/**
+ * R2-TPN-01 (fix r2c): an answer value no box of its kind holds – a list on any kind but a table (rows), or words that
+ * are only blanks. (null and "" are the review's clears; a table's [] is an empty table – both no answer, no stamp.)
+ */
+function answerValueMalformed(answer: NonNullable<ReportSection["answer"]>): boolean {
+  const v = answer.value;
+  if (Array.isArray(v)) return answer.kind !== "rows";
+  return typeof v === "string" && v !== "" && v.trim() === "";
 }
 
 /** R2-SEC-2: the refusal code answered 413 (the validators' budget) rather than 403. */
