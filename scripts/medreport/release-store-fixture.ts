@@ -10,9 +10,18 @@
  * - asApproversReport(report, member): the report with that member as its approving clinician, and their stamp on every
  *   opinion box's answer and every answer in a records box the factory did not fill (they chose it);
  * - asFactoryCopy(report): the report as the factory hands it to anyone else – no opinion box answered.
+ *
+ * bh2 fix round 2 (WC, R2-SAF-2): the store also refuses a create it cannot check against the boxes the report factory
+ * makes – the clinic's stored copy of the very map the report names (report.form.mapSha256), or the built-in template of
+ * the same version. The Studio saves a map (durably) before any report is started from it, and names its attested hash:
+ *
+ * - withMapHash(report, form): the report naming the map it is started from (as core/forms.ts formRefOf writes it);
+ * - storeClinicForm(store, tenantId, form): the clinic's stored copy of the map (the memory store sets it at once).
  */
 import type { AuthContext } from "../../src/modules/medreport/api/deps";
-import type { Actor, Report } from "../../src/modules/medreport/core/types";
+import type { TenantStore } from "../../src/modules/medreport/api/store-port";
+import { formMapSha256 } from "../../src/modules/medreport/auth/attestations";
+import type { Actor, FormDefinition, Report } from "../../src/modules/medreport/core/types";
 import { member } from "./store-harness";
 
 /** The fictional clinician store fixtures name as the approving clinician. */
@@ -76,4 +85,14 @@ export function asFactoryCopy(report: Report): Report {
       return next;
     }),
   };
+}
+
+/** R2-SAF-2: `report` naming the very map it is started from (Report.form.mapSha256), as the Studio starts one. */
+export function withMapHash<R extends Report>(report: R, form: FormDefinition): R {
+  return report.form ? { ...report, form: { ...report.form, mapSha256: formMapSha256(form) } } : report;
+}
+
+/** R2-SAF-2: the clinic's stored copy of `form` – the map its reports are started from (as the Studio saves it). */
+export function storeClinicForm(store: TenantStore, tenantId: string, form: FormDefinition): Promise<unknown> {
+  return store.createForm(tenantId, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: form.sampleId ?? null, payload: { ...form, tenantId } });
 }

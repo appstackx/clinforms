@@ -37,7 +37,7 @@ import { FILE_CHUNK_BYTES } from "../../src/server/repos/form-files";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
 import { demoBearer } from "./test-actors";
 import { completedSampleReport } from "./form-sample-answers";
-import { asApproversReport, asFactoryCopy, signingMember } from "./release-store-fixture";
+import { asApproversReport, asFactoryCopy, signingMember, storeClinicForm, withMapHash } from "./release-store-fixture";
 
 const A = "clinic-a";
 const B = "clinic-b";
@@ -67,7 +67,8 @@ function reportFor(tenantId: string, id = "rpt_store_test"): Report {
   const form = { ...HARROW_PIKE_RAW, tenantId };
   // bh2 fix round 1 (WC): as the Studio stores it – the clinic's signing member as its approving clinician.
   const r = { ...completedSampleReport("megan-hart", form, { id }), tenantId };
-  return tenantId === "demo" ? asApproversReport(r, { ...signingMember("demo"), userId: "demo" }) : asApproversReport(r, signingMember(tenantId));
+  // bh2 fix round 2 (WC, R2-SAF-2): naming the very map it is started from, as the Studio starts one.
+  return withMapHash(tenantId === "demo" ? asApproversReport(r, { ...signingMember("demo"), userId: "demo" }) : asApproversReport(r, signingMember(tenantId)), form);
 }
 
 function formFor(tenantId: string): FormDefinition {
@@ -141,6 +142,8 @@ test("store endpoints: 501 without storage, 401 signed out, 403 without two-step
 
 test("reports: create, read, update with If-Match, 409 with the stored copy, clinic forced from the sign-in, audit", async () => {
   const { as, store } = setup();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinics hold the map their reports are started from
+  void storeClinicForm(store, B, formFor(B));
   const f = as("a");
   const report = { ...reportFor("demo"), tenantId: "demo" }; // a browser copy filed under another clinic
   const created = await f(storeApiPaths.report(report.id), json({ report }));
@@ -207,7 +210,9 @@ test("reports: create, read, update with If-Match, 409 with the stored copy, cli
 });
 
 test("tenant isolation: another clinic can neither see nor change a clinic's records", async () => {
-  const { as } = setup();
+  const { as, store } = setup();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinics hold the map their reports are started from
+  void storeClinicForm(store, B, formFor(B));
   const report = reportFor(A);
   assert.equal((await as("a")(storeApiPaths.report(report.id), json({ report }))).status, 201);
   const b = as("b");
@@ -233,7 +238,9 @@ test("tenant isolation: another clinic can neither see nor change a clinic's rec
 });
 
 test("signed reports: only with a receipt that verifies for this clinic and content; approval cannot be undone", async () => {
-  const { as } = setup();
+  const { as, store } = setup();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinics hold the map their reports are started from
+  void storeClinicForm(store, B, formFor(B));
   const f = as("a");
   const draft = reportFor(A, "rpt_signed");
   const forged = { ...draft, status: "signed" as const };
@@ -468,7 +475,9 @@ test("/forms/fill-preview and /render prefer the clinic's stored copy of the for
 });
 
 test("fix wave 2: the page's clinic and member must be the sign-in's (x-clinforms-tenant / x-clinforms-member)", async () => {
-  const { as } = setup();
+  const { as, store } = setup();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinics hold the map their reports are started from
+  void storeClinicForm(store, B, formFor(B));
   const f = as("a");
   const report = reportFor(A, "rpt_scope");
   const scoped = (headers: Record<string, string>) => f(storeApiPaths.report(report.id), json({ report }, headers));
@@ -490,6 +499,8 @@ test("fix wave 2: the page's clinic and member must be the sign-in's (x-clinform
 
 test("fix wave 2: an approved report cannot be deleted (and re-created as a draft) by staff or clinicians; owners/admins can", async () => {
   const { as, store } = setup();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinics hold the map their reports are started from
+  void storeClinicForm(store, B, formFor(B));
   const draft = reportFor(A, "rpt_locked");
   const receipt = await createReceipt({ report: draft, signer: SARAH, statementAccepted: true, attestations: [...FORM_ATTESTATIONS] });
   const signed = { ...draft, status: "signed" as const, receipt };
@@ -542,6 +553,7 @@ test("fix wave 2: staff can neither un-confirm nor delete a confirmed form map; 
 test("fix wave 2: store writes are limited per member and per clinic (429 with Retry-After)", async () => {
   const { STORE_WRITES_PER_MEMBER_PER_MINUTE } = await import("../../src/modules/medreport/api/store-contract");
   const store = createMemoryTenantStore();
+  void storeClinicForm(store, A, formFor(A)); // R2-SAF-2: the clinic holds the map its reports are started from
   const counts = new Map<string, number>();
   const deps = {
     ...storeDeps(store, { a: signingMember(A) }),

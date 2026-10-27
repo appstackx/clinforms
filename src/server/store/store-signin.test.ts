@@ -17,7 +17,7 @@ import { StoreReportResponseSchema, StoreSnapshotResponseSchema, storeApiPaths }
 import type { Report } from "../../modules/medreport/core/types";
 import { HARROW_PIKE_FORM } from "../../modules/medreport/forms/samples/maps/harrow-pike";
 import { completedSampleReport } from "../../../scripts/medreport/form-sample-answers";
-import { FIXTURE_APPROVER_REF, asFactoryCopy } from "../../../scripts/medreport/release-store-fixture";
+import { FIXTURE_APPROVER_REF, asFactoryCopy, storeClinicForm, withMapHash } from "../../../scripts/medreport/release-store-fixture";
 import { createAuth, type Auth } from "../auth/create-auth";
 import { buildAuthContext } from "../auth/medreport-actor";
 import { createClinic } from "../auth/platform";
@@ -90,7 +90,9 @@ describe("clinic storage behind a real sign-in (Better Auth on SQLite)", () => {
 
     // The browser's copy says "demo": the store files it under the member's clinic.
     // bh2 fix round 1 (WC, R1T-WC-06): as the Studio creates it – naming its approving clinician, nobody's decisions in it.
-    const report: Report = { ...asFactoryCopy(completedSampleReport("megan-hart", HARROW_PIKE_FORM, { id: "rpt_signed_in" })), approver: { ...FIXTURE_APPROVER_REF } };
+    // bh2 fix round 2 (WC, R2-SAF-2): the clinic holds the map the report is started from, and the report names it.
+    await storeClinicForm(deps.tenantStore!, "riverside-test", HARROW_PIKE_FORM);
+    const report: Report = withMapHash({ ...asFactoryCopy(completedSampleReport("megan-hart", HARROW_PIKE_FORM, { id: "rpt_signed_in" })), approver: { ...FIXTURE_APPROVER_REF } }, HARROW_PIKE_FORM);
     assert.equal(report.tenantId, "demo");
     const put = await call(handleStoreReportPut, owner, storeApiPaths.report(report.id), {
       method: "PUT",

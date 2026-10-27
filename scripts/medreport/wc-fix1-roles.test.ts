@@ -229,6 +229,7 @@ test("R1T-WC-05: in the review, a 'not applicable' settle stands only where a ru
 test("R1T-WC-06: a create with no approver is refused (staff and clinicians alike); the approver cannot be removed; approver-only rules apply on a report with none", async () => {
   const b = await formCase({ actor: "pat" });
   const h = createHttpHarness();
+  await storeForm(h, b.form!); // R2-SAF-2: the clinic holds the map its reports are started from
   const none = { ...b.v };
   delete none.approver;
   for (const who of ["pat", "tom", "sarah"] as const) assert.equal((await putStoredReport(h, { ...none, id: `rpt_none_${who}` }, who, null)).status, 403, who);
@@ -248,6 +249,7 @@ test("R1T-WC-06: a create with no approver is refused (staff and clinicians alik
 test("R1T-WC-07: a case imported from the public demo reads as the demo's one fixed user, whatever name its stamps carried", async () => {
   const b = await formCase({ boxes: { "F-31": [{ text: "Lifting injury at work on 12/03/2026.", cites: ["N-001"] }] } });
   const h = createHttpHarness();
+  await storeForm(h, b.form!); // R2-SAF-2: the clinic holds the map its reports are started from
   const demoAs = { ...actorOf("sarah"), memberId: "demo" };
   const r: Report = {
     ...b.report,
@@ -282,6 +284,7 @@ test("R1T-WC-08: 'These are my own words' over staff's text is refused (review a
   const b = await formCase({ boxes: { "F-31": [] } });
   const ctx = ctxOf(b);
   const h = createHttpHarness();
+  await storeForm(h, b.form!); // R2-SAF-2: the clinic holds the map its reports are started from
   const rev0 = await seed(h, b.v);
   let r = revalidate(b, reviewReducer(b.v, { type: "addParagraph", key: "F-31", text: "Lifting injury at work in March; back pain since.", actor: PAT }, ctx));
   const typed = await putStoredReport(h, r, "pat", rev0);
@@ -440,6 +443,7 @@ test("R1T-WC-12: on a ruled-out card the approver is offered 'This applies – p
   assert.equal((await putStoredReport(h, staffNa, "pat", rev)).status, 403);
   const staffApplies = mapBox(b.v, "F-19", (s) => ({ ...s, disposition: { kind: "applies_anyway" as const, by: PAT, at: b.v.updatedAt } }));
   const h2 = createHttpHarness();
+  await storeForm(h2, b.form!); // R2-SAF-2: the clinic holds the map its reports are started from
   const rev2 = await seed(h2, b.v);
   assert.equal((await putStoredReport(h2, staffApplies, "pat", rev2)).status, 403);
 });
@@ -525,6 +529,7 @@ test("R1T-WC-L8: the store refuses an acknowledgement nobody may make (a 'never'
   assert.ok(flag && ackPolicyOf(flag, typed) === "never");
   for (const who of ["pat", "sarah"] as const) {
     const h = createHttpHarness();
+    await storeForm(h, b.form!); // R2-SAF-2: the clinic holds the map its reports are started from
     const rev0 = await seed(h, b.v);
     const put = await putStoredReport(h, typed, "pat", rev0);
     assert.equal(put.status, 200, JSON.stringify(put.body));

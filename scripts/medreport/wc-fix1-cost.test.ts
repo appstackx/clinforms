@@ -30,7 +30,7 @@ import { tombstonePieces } from "../../src/modules/medreport/ui/components/revie
 import type { Paragraph, Report, ReportFlag, ReportSection } from "../../src/modules/medreport/core/types";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch } from "./store-harness";
-import { asApproversReport, signingMember, stampOf } from "./release-store-fixture";
+import { asApproversReport, signingMember, stampOf, storeClinicForm, withMapHash } from "./release-store-fixture";
 
 const A = "clinic-wc-cost";
 
@@ -206,6 +206,7 @@ test("R1T-WC-01: the schema caps a tombstone's text; the review keeps a long dra
 
 function clinic() {
   const store = createMemoryTenantStore();
+  void storeClinicForm(store, A, { ...RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const sam = signingMember(A);
   const pat = member(A, { userId: "user-pat-cost", authSessionId: "sess-pat-cost", role: "staff", name: "Pat Morgan (fictional)" });
   const deps = storeDeps(store, { sam, pat });
@@ -215,7 +216,7 @@ function clinic() {
 }
 
 function sample(id: string): Report {
-  return asApproversReport({ ...completedSampleReport("megan-hart", { ...RAW, tenantId: A }, { id }), tenantId: A }, signingMember(A));
+  return withMapHash(asApproversReport({ ...completedSampleReport("megan-hart", { ...RAW, tenantId: A }, { id }), tenantId: A }, signingMember(A)), { ...RAW, tenantId: A });
 }
 
 test("R1T-WC-02 (SEC-2): an update of 20,000 paragraphs in one box is checked in linear time", async () => {

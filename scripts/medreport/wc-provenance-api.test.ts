@@ -36,6 +36,18 @@ const PAT = actorOf("pat");
 const TOM = actorOf("tom");
 const DRAFTED = "He is expected to make a full recovery within 6 weeks of the accident.";
 
+/**
+ * bh2 fix round 2 (WC, R2-SAF-2): the corpus clinic as the Studio keeps it – holding the discharge form's map, the map its
+ * form reports are started from (the store refuses a create it cannot check against the clinic's map).
+ */
+let dischargeForm: NonNullable<Built["form"]> | null = null;
+async function clinicHarness(): Promise<HttpHarness> {
+  const h = createHttpHarness();
+  dischargeForm ??= (await buildCase(CaseInputSchema.parse({ report: "form:cf-discharge" }))).form;
+  if (dischargeForm) await h.store.createForm(CORPUS_TENANT, { id: dischargeForm.id, status: dischargeForm.status, title: dischargeForm.title, referrer: dischargeForm.referrer.name, kind: dischargeForm.kind, fileSha256: dischargeForm.file.sha256, sampleId: null, payload: dischargeForm });
+  return h;
+}
+
 /** The corpus's discharge form: F-10 (prognosis) holds Sarah's edited opinion; validated, so its flags are on it. */
 async function opinionReport(): Promise<Built & { validated: Report }> {
   const input = CaseInputSchema.parse({
@@ -66,7 +78,7 @@ function withAck(r: Report, flagId: string, by: ReturnType<typeof actorOf>): Rep
 
 test("store: an acknowledgement stamped as the approver by staff is refused; the approver's own is stored", async () => {
   const { validated } = await opinionReport();
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, validated);
   const flag = opinionFlag(validated);
   const forged = await putStoredReport(h, withAck(validated, flag.id, SARAH), "pat", rev);
@@ -81,7 +93,7 @@ test("store: an acknowledgement stamped as the approver by staff is refused; the
 
 test("store: staff cannot rewrite the approver's text under her stamp, nor write 'clinician' text, nor settle a clinician gap", async () => {
   const { validated } = await opinionReport();
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, validated);
   const f10 = validated.sections.find((s) => s.key === "F-10")!;
   const edit = (patch: (p: Report["sections"][number]["paragraphs"][number]) => Report["sections"][number]["paragraphs"][number]): Report => ({
@@ -110,7 +122,7 @@ test("store: staff cannot rewrite the approver's text under her stamp, nor write
 
 test("store: the approver changes only by the member's own takeover", async () => {
   const { validated } = await opinionReport();
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, validated);
   const tomRef = { memberId: TOM.memberId, name: TOM.name, hcpc: TOM.hcpc! };
   const reassigned = { ...validated, approver: tomRef };
@@ -123,7 +135,7 @@ test("store: the approver changes only by the member's own takeover", async () =
   const res = await putStoredReport(h, taken, "tom", rev);
   assert.equal(res.status, 200, JSON.stringify(res.body));
   // A takeover that keeps Sarah's decisions (here her acknowledgement and her paragraph's acknowledgement reason): refused.
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const flag = opinionFlag(validated);
   const acked = reviewReducer(validated, { type: "acknowledgeFlag", flagId: flag.id, reason: "My own clinical opinion.", actor: SARAH });
   const revA = await seed(h2, acked);
@@ -138,7 +150,7 @@ test("store: the approver changes only by the member's own takeover", async () =
 test("/sign: a clinician who is not the approver is refused (409 APPROVER_MISMATCH) until they take over; the receipt records the takeover", async () => {
   const input = CaseInputSchema.parse({ report: "template:solicitor_rta", approver: "sarah" });
   const built = await buildCase(input);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const refused = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: "tom", mode: "tenant" });
   assert.equal(refused.status, 409);
   assert.equal(refused.code, "APPROVER_MISMATCH");
@@ -163,7 +175,7 @@ test("/sign: a clinician who is not the approver is refused (409 APPROVER_MISMAT
 test("store: an approved report's flags never change and its activity only grows; the server's own entry is kept", async () => {
   const input = CaseInputSchema.parse({ report: "template:solicitor_rta", approver: "sarah" });
   const built = await buildCase(input);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const s = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: "sarah", mode: "tenant" });
   assert.ok(s.receipt);
   const approved: Report = {
@@ -184,7 +196,7 @@ test("store: an approved report's flags never change and its activity only grows
 test("amendment: storing the approved version 2 marks version 1 superseded on the server, once; any later copy of v1 keeps it", async () => {
   const input = CaseInputSchema.parse({ report: "template:solicitor_rta", approver: "sarah" });
   const built = await buildCase(input);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const s1 = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: "sarah", mode: "tenant" });
   const v1: Report = { ...built.report, status: "signed", receipt: s1.receipt!, flags: (s1.body as { flags: ReportFlag[] }).flags };
   const rev1 = await seed(h, v1);
@@ -234,7 +246,7 @@ const proposalOn = (r: Report, key: string) => r.flags.some((f) => f.sectionKey 
 
 test("check-WC 2 (S1, S1b, S1c): a stamp naming the approver's member id with the sender's own registration number is refused", async () => {
   const b = await formCase({ "F-10": [] }, { box: "F-11" });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, b.v);
   const forgedBy = { memberId: b.v.approver!.memberId, name: "Sarah Reid", role: "owner" as const, canSign: true, hcpc: TOM.hcpc };
   const prognosis = mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: "Settling well with his home exercise programme.", sourceIds: ["N-001"], origin: "edited" as const, by: forgedBy }] }));
@@ -246,7 +258,7 @@ test("check-WC 2 (S1, S1b, S1c): a stamp naming the approver's member id with th
   assert.equal((await putStoredReport(h, own, "tom", rev)).status, 200);
   assert.ok(proposalOn(revalidate(b, own), "F-10"));
   // S1c: Sarah's tick changed by Tom under the same forged stamp.
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const ticked = revalidate(b, reviewReducer(b.v, { type: "setAnswer", key: "F-11", value: "0-3 months", actor: SARAH as never }));
   const rev2 = await seed(h2, ticked);
   const s1c = mapBox(ticked, "F-11", (s) => ({ ...s, answer: { ...s.answer!, value: "6-12 months" }, answerBy: forgedBy }));
@@ -255,7 +267,7 @@ test("check-WC 2 (S1, S1b, S1c): a stamp naming the approver's member id with th
 
 test("check-WC 3 (S2): staff replacing the approver's tick with no stamp is refused; stamped as theirs it is a proposal", async () => {
   const b = await formCase({}, { box: "F-11", gaps: [{ box: "F-11", issue: "No clinician recorded an expected recovery time." }] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const sarahs = revalidate(b, reviewReducer(b.v, { type: "setAnswer", key: "F-11", value: "0-3 months", actor: SARAH as never }));
   assert.ok(sarahs.sections.find((s) => s.key === "F-11")?.adoptedBy, "her own answer confirms the box");
   const rev = await seed(h, sarahs);
@@ -282,7 +294,7 @@ test("check-WC 3 (S2): staff replacing the approver's tick with no stamp is refu
   assert.equal((await putStoredReport(h, noAdoption, "pat", rev2)).status, 403);
   // Clearing her tick through the review: stored, and it waits for her (her confirmation is void).
   const cleared = revalidate(b, reviewReducer(sarahs, { type: "setAnswer", key: "F-11", value: null, actor: PAT as never }));
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const rev3 = await seed(h2, sarahs);
   assert.equal((await putStoredReport(h2, cleared, "pat", rev3)).status, 200);
   assert.ok(proposalOn(cleared, "F-11"));
@@ -290,7 +302,7 @@ test("check-WC 3 (S2): staff replacing the approver's tick with no stamp is refu
 
 test("check-WC 3 (S6): a create holding the approver's own-words record, adoption or acknowledgement made by someone else is refused", async () => {
   const b = await formCase({ "F-10": [] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const sarahStamp = { memberId: b.v.approver!.memberId, name: "Sarah Reid", role: "owner" as const, canSign: true, hcpc: SARAH.hcpc };
   let forged = mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: "He will make a full recovery within 6 weeks.", sourceIds: [], origin: "clinician" as const, by: PAT as never, ownWords: { by: sarahStamp, at: b.v.updatedAt } }] }));
   forged = mapBox(forged, "F-10", (s) => ({ ...s, adoptedBy: { by: sarahStamp, at: b.v.updatedAt, contentSha: boxContentSha(s) } }));
@@ -321,7 +333,7 @@ test("check-WC 3 (S6): a create holding the approver's own-words record, adoptio
 test("check-WC 3: an amended version is checked against the version it amends – its copied decisions stand, new ones are the member's", async () => {
   const built = await opinionReport();
   const { validated } = built;
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const withSarahAck: Report = { ...validated, flags: validated.flags.map((f) => (f.code === "OPINION_LANGUAGE" ? { ...f, acknowledged: { reason: "My own clinical opinion.", at: validated.updatedAt, by: SARAH } } : f)) };
   // bh2-rc1 (WA1 x WC): a clinic's /sign fills the referrer's form file as a dry run and refuses without one (WA1
   // design 6, fail closed) – the approval sends it, as the corpus harness's other /sign calls do.
@@ -340,7 +352,7 @@ test("check-WC 3: an amended version is checked against the version it amends �
 
 test("check-WC 4 (S3, S4, S5): origin and drafted wording are the server's to check, not the client's to assert", async () => {
   const b = await formCase({ "F-10": [{ text: DRAFTED, cites: ["N-001"] }] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, b.v);
   // S3: drafted opinion relabelled "from the records".
   const s3 = mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "from_records" as const })) }));
@@ -355,7 +367,7 @@ test("check-WC 4 (S3, S4, S5): origin and drafted wording are the server's to ch
   const staffText = mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [...s.paragraphs, { id: "F-10-c1", text: "Settling well.", sourceIds: [], origin: "staff" as const, by: PAT as never }] }));
   assert.equal((await putStoredReport(h, staffText, "pat", rev)).status, 403);
   // S5: the drafted wording behind Sarah's edited paragraph rewritten, so her kept drafted sentence would no longer count.
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const b2 = await formCase({ "F-10": [{ text: `In my opinion his back should settle. ${DRAFTED}`, cites: ["N-001"], origin: "edited", originalText: DRAFTED, by: "sarah" }] });
   const rev2 = await seed(h2, b2.v);
   const s5 = mapBox(b2.v, "F-10", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, originalText: "He reported a lifting injury." })) }));
@@ -373,7 +385,7 @@ test("check-WC 4 (S3, S4, S5): origin and drafted wording are the server's to ch
 
 test("check-WC 5 (S8): staff removing the approver's words from a clinician box – shown as a proposal, or refused", async () => {
   const b = await formCase({ "F-10": [] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const written = revalidate(
     b,
     reviewReducer(reviewReducer(b.v, { type: "addParagraph", key: "F-10", text: "Settling with exercise.", actor: SARAH as never }), { type: "addParagraph", key: "F-10", text: "He is not fit for heavy lifting.", actor: SARAH as never }),
@@ -384,7 +396,7 @@ test("check-WC 5 (S8): staff removing the approver's words from a clinician box 
   assert.equal(res.status, 200, "stored: her confirmation is now stale");
   assert.ok(proposalOn(revalidate(b, (res.body as { report: Report }).report), "F-10"));
   // The same removal from a box with no recorded confirmation (her words stamped, no adoption): refused.
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const legacy = mapBox(written, "F-10", (s) => {
     const n = { ...s };
     delete n.adoptedBy;
@@ -398,7 +410,7 @@ test("check-WC 5 (S8): staff removing the approver's words from a clinician box 
 test("check-WC minor 7 (S9): a client never writes a 'superseded' entry", async () => {
   const input = CaseInputSchema.parse({ report: "template:solicitor_rta", approver: "sarah" });
   const built = await buildCase(input);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const s = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: "sarah", mode: "tenant" });
   const approved: Report = { ...built.report, status: "signed", receipt: s.receipt!, flags: (s.body as { flags: ReportFlag[] }).flags };
   const rev = await seed(h, approved);
@@ -424,7 +436,7 @@ test("a case imported from the public demo keeps none of the demo's decisions; i
     ),
     gaps: validated.gaps.map((g) => (g.resolution?.by ? { ...g, resolution: { ...g.resolution, by: demoUser as never } } : g)),
   };
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const res = await putStoredReport(h, demo, "pat", null);
   assert.equal(res.status, 201, JSON.stringify(res.body));
   const stored = (res.body as { report: Report }).report;
@@ -474,7 +486,7 @@ function factoryCopy(r: Report): Report {
 
 test("harden-WC major A: on an update every box keeps its kind, title, field, frozen condition and place; the report its model and form", async () => {
   const b = await formCase({ "F-10": [] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, b.v);
   const staffProg = { id: "F-10-c1", text: "He will make a full recovery within 6 weeks.", sourceIds: [], origin: "staff" as const, by: PAT_STAMP as never };
   // N1a: the Prognosis box relabelled as a records box, holding staff's prognosis.
@@ -496,7 +508,7 @@ test("harden-WC major A: on an update every box keeps its kind, title, field, fr
   assert.equal((await putStoredReport(h, legacy, "sarah", rev)).status, 403);
   assert.equal((await putStoredReport(h, { ...b.v, form: { ...b.v.form!, mapSha256: "0".repeat(64) } }, "sarah", rev)).status, 403);
   // N1d': Sarah's lifting restriction relabelled and reversed under Pat's stamp, her adoption kept – refused.
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const sarahs = revalidate(b, reviewReducer(b.v, { type: "setAnswer", key: "F-15", value: true, actor: SARAH as never }));
   const rev2 = await seed(h2, sarahs);
   const n1d = mapBox(sarahs, "F-15", (s) => ({ ...s, kind: "from_records" as const, title: "Lifting", answer: { ...s.answer!, value: false }, answerBy: PAT_STAMP as never }));
@@ -512,17 +524,18 @@ test("harden-WC major A on a create: checked against the clinic's stored map; wi
   const prognosis = (r: Report) => mapBox(r, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: CITED, sourceIds: ["N-001"], origin: "edited" as const, by: PAT_STAMP as never }] }));
   const relabel = (r: Report) => mapBox(prognosis(r), "F-10", (s) => ({ ...s, kind: "ai_narrative" as const, title: "Notes" }));
   const fresh = factoryCopy(b.v);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   await storeForm(h, b.form!);
   assert.equal((await putStoredReport(h, { ...relabel(fresh), id: "rpt_relabel" }, "pat", null)).status, 403, "N1c': a relabelled box against the stored map");
   const plain = await putStoredReport(h, { ...prognosis(fresh), id: "rpt_plain" }, "pat", null);
   assert.equal(plain.status, 201, JSON.stringify(plain.body));
   assert.equal((await putStoredReport(h, { ...fresh, id: "rpt_missing", sections: fresh.sections.filter((s) => s.key !== "F-10") }, "pat", null)).status, 403, "a box of the map left out");
-  // The map not in this clinic's store: stored as sent, but the box is still the map's opinion box everywhere it is checked.
+  // The map not in this clinic's store: R2-SAF-2 (WC fix round 2) – a create the store cannot check against the clinic's
+  // map is refused (it used to be stored as sent); and the box is still the map's opinion box everywhere it is checked.
   const h2 = createHttpHarness();
   const res = await putStoredReport(h2, { ...relabel(fresh), id: "rpt_relabel" }, "pat", null);
-  assert.equal(res.status, 201);
-  const v = revalidate(b, (res.body as { report: Report }).report);
+  assert.equal(res.status, 403, "R2-SAF-2: form-map-unknown");
+  const v = revalidate(b, { ...relabel(fresh), id: "rpt_relabel" });
   assert.ok(proposalOn(v, "F-10"), "APPROVER_DECISION on the relabelled box");
   assert.equal((await postSign(h2, { report: v, template: b.template, form: b.form, signer: "sarah", mode: "tenant" })).status, 409);
 });
@@ -530,7 +543,7 @@ test("harden-WC major A on a create: checked against the clinic's stored map; wi
 test("harden-WC major B: an answer set with no stamp, and a question removed or rewritten, are refused; a redraft of a waiting box is stored", async () => {
   // N3: the empty clinician box "Expected date of a full return" (F-09) filled with no stamp.
   const b = await formCase({});
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, b.v);
   const date = (by?: unknown) => mapBox(b.v, "F-09", (s) => ({ ...s, answer: { kind: "date" as const, value: "2026-12-01" }, status: "complete" as const, ...(by ? { answerBy: by as never } : {}) }));
   assert.equal((await putStoredReport(h, date(), "pat", rev)).status, 403, "N3");
@@ -543,7 +556,7 @@ test("harden-WC major B: an answer set with no stamp, and a question removed or 
   assert.equal(canSign(bare.flags, bare.gaps).ok, false);
   // N2 / N3b: the open clinician question on F-11 deleted (with an unstamped answer, or without one).
   const g = await formCase({}, { box: "F-11", gaps: [{ box: "F-11", issue: "No clinician recorded an expected recovery time." }] });
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const rev2 = await seed(h2, g.v);
   const noGap = (r: Report) => ({ ...r, gaps: r.gaps.filter((x) => x.sectionKey !== "F-11"), flags: r.flags.filter((f) => f.sectionKey !== "F-11") });
   assert.equal((await putStoredReport(h2, noGap(g.v), "pat", rev2)).status, 403, "N2");
@@ -553,11 +566,11 @@ test("harden-WC major B: an answer set with no stamp, and a question removed or 
   assert.equal((await putStoredReport(h2, rekinded, "pat", rev2)).status, 403, "a question relabelled as staff's");
   // N2b: the open question of the optional opinion box F-08 deleted – it would print blank with nobody's decision.
   const o = await formCase({}, { box: "F-08", answers: { "F-07": false }, gaps: [{ box: "F-08", issue: "No clinician recorded an expected date back at work." }] });
-  const h3 = createHttpHarness();
+  const h3 = await clinicHarness();
   const rev3 = await seed(h3, o.v);
   assert.equal((await putStoredReport(h3, { ...o.v, gaps: o.v.gaps.filter((x) => x.sectionKey !== "F-08") }, "pat", rev3)).status, 403, "N2b");
   // Drafting a box that waits for it (as "Draft the remaining questions" does) replaces its answer, text and questions: stored.
-  const p = createHttpHarness();
+  const p = await clinicHarness();
   const fresh = await formCase({});
   const pendingKey = fresh.v.sections.find((s) => s.status === "pending" && s.answer && s.answer.kind === "date")?.key ?? fresh.v.sections.find((s) => s.status === "pending")!.key;
   const revP = await seed(p, fresh.v);
@@ -585,7 +598,7 @@ test("harden-WC major C: a kept acknowledgement stays on the paragraph the store
   const op = r.flags.find((f) => f.sectionKey === "F-31" && f.code === "OPINION_LANGUAGE")!;
   assert.ok(op);
   r = revalidate(b, reviewReducer(r, { type: "acknowledgeFlag", flagId: op.id, reason: "My own clinical opinion.", actor: SARAH as never }));
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, r);
   const patText = "He hurt his back lifting a box at work. In my opinion he is fit for full duties and needs no further treatment.";
   const rewritten = mapBox(r, "F-31", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => {
@@ -607,7 +620,7 @@ test("harden-WC major C: a kept acknowledgement stays on the paragraph the store
 
 test("harden-WC minor 1: a new stamp carries the member's own name and role, and 'may sign' only for a member who may", async () => {
   const b = await formCase({ "F-10": [] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const rev = await seed(h, b.v);
   const withBy = (by: unknown) => mapBox(b.v, "F-10", (s) => ({ ...s, paragraphs: [{ id: "F-10-c1", text: CITED, sourceIds: ["N-001"], origin: "edited" as const, by: by as never }] }));
   assert.equal((await putStoredReport(h, withBy({ ...PAT_STAMP, name: "Sarah Reid", role: "owner", canSign: true }), "pat", rev)).status, 403, "N5");
@@ -623,7 +636,7 @@ test("harden-WC minor 1: a new stamp carries the member's own name and role, and
 test("harden-WC minors 2 and 3: a create's base is an approved version; a new report has had no takeover", async () => {
   const { validated } = await opinionReport();
   const flag = opinionFlag(validated);
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   const draft = withAck(validated, flag.id, SARAH);
   await seed(h, draft);
   // N7: "version 2" of Sarah's draft, carrying her acknowledgement – checked as all-new, so refused.
@@ -645,7 +658,7 @@ test("harden-WC minors 2 and 3: a create's base is an approved version; a new re
 test("harden-WC minors 4 and 5: verbatim drafted text is never a person's; drafted text appears only by drafting or 'Split it out'", async () => {
   const D8 = "In my opinion he is fit for full duties.";
   const b = await formCase({ "F-31": [{ text: D8, cites: ["N-001"] }] });
-  const h = createHttpHarness();
+  const h = await clinicHarness();
   // M8c: a create holding drafted wording labelled as a person's edit (text = its drafted wording).
   const m8c = { ...mapBox(factoryCopy(b.v), "F-31", (s) => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, origin: "edited" as const, originalText: p.text, by: PAT_STAMP as never })) })), id: "rpt_m8c" };
   assert.equal((await putStoredReport(h, m8c, "pat", null)).status, 403);
@@ -659,7 +672,7 @@ test("harden-WC minors 4 and 5: verbatim drafted text is never a person's; draft
   // "Split it out" by the approver: the drafted sentence kept in her paragraph moves into a drafted paragraph – stored.
   const DRAFT = "He is expected to make a full recovery within 6 weeks of the accident.";
   const s = await formCase({ "F-10": [{ text: `In my opinion his back should settle with exercise. ${DRAFT}`, cites: ["N-001"], origin: "edited", originalText: DRAFT, by: "sarah" }] });
-  const h2 = createHttpHarness();
+  const h2 = await clinicHarness();
   const rev2 = await seed(h2, s.v);
   const pid = s.v.sections.find((x) => x.key === "F-10")!.paragraphs[0].id;
   const split = reviewReducer(s.v, { type: "splitOutResidue", key: "F-10", paragraphId: pid, actor: SARAH as never });

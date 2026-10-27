@@ -39,6 +39,7 @@ import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch } from "./store-harness";
 import { asApproversReport } from "./release-store-fixture";
+import { storeClinicForm } from "./release-store-fixture"; // bh2 fix round 2 (WC, R2-SAF-2)
 import { demoBearer } from "./test-actors";
 
 const A = "usage-clinic-a";
@@ -108,6 +109,7 @@ const fakeClient: ClaudeClient = {
 
 function setup(usage: MedreportDeps["usage"], actors: Record<string, AuthContext> = { a: CLIN }) {
   const store = createMemoryTenantStore();
+  void storeClinicForm(store, A, FORM); // R2-SAF-2: the clinic holds the map its reports are started from
   const deps: MedreportDeps = { ...storeDeps(store, actors), clinicProfile: async (t) => (t === A ? PROFILE : null), ...(usage ? { usage } : {}) };
   return { deps, as: storeFetch(deps, { member: "a" }) };
 }

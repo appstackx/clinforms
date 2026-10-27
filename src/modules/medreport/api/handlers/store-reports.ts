@@ -76,10 +76,9 @@ import {
 } from "../../core/provenance";
 import { StoredFormDefinitionSchema, StoredReportSchema } from "../../core/stored-schemas";
 import type { Actor, ActivityEntry, FormDefinition, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate } from "../../core/types";
-import type { FixProposal } from "../../core/fix-types";
-import { validateReport } from "../../core/validation";
+import { validateReport, validationBudgetExcess } from "../../core/validation";
 import { ackPolicyOf } from "../../core/validation/acknowledge";
-import { offeredFixes } from "../../ui/components/review/fixes";
+import { ENGINE_FIX_KINDS, fixCandidates, fixTextProblems, revalidationProblems, type FixCandidate } from "../../ui/components/review/fixes";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import {
   STORE_MAX_PUT_BYTES,
@@ -294,11 +293,19 @@ function splitOutParagraph(wasParagraphs: ReadonlyMap<string, Paragraph>, p: Par
 function redraftedKeys(before: Report | null, after: Report): Set<string> {
   const out = new Set<string>();
   if (!before) return out;
-  const pending = new Set(before.sections.filter((s) => s.status === "pending").map((s) => s.key));
+  // R2-SAF-1: only a box as the report factory makes it – waiting and empty: no paragraph, no answer, no tombstone. A
+  // box that holds anything is never "redrafted" (a stored box is never put back to "pending": box-reset-pending), so
+  // drafted text, answers and questions in it keep every check.
+  const pending = new Set(before.sections.filter(waitingAndEmpty).map((s) => s.key));
   for (const g of (after.generation ?? []).slice((before.generation ?? []).length)) {
     for (const key of g.sectionKeys ?? []) if (pending.has(key)) out.add(key);
   }
   return out;
+}
+
+/** A box waiting for drafting as the report factory makes it (core/report-factory.ts): "pending" with nothing in it. */
+function waitingAndEmpty(s: ReportSection): boolean {
+  return s.status === "pending" && s.paragraphs.length === 0 && !answerSet(s.answer) && (s.tombstones ?? []).length === 0;
 }
 
 /** What makes a box the box it is: its key, kind, printed title, form field and the condition frozen when it was made. */
@@ -439,31 +446,60 @@ function replayFix(text: string, fix: NonNullable<Paragraph["fixes"]>[number]): 
  * approver applies one (the engine's own policy too). Anything else – a rewrite, a dropped clause, a flipped negation –
  * is refused: a person's change to drafted text is "edited", with their stamp.
  */
-function draftedRewriteViolations(before: Report, after: Report, rewrites: ReadonlyArray<{ key: string; p: Paragraph; b: Paragraph }>, m: StoreMember, ctx: StoreCheckContext, approver: boolean): string[] {
-  const out: string[] = [];
-  if (rewrites.length > FIXED_PARAGRAPHS_PER_SAVE) return ["drafted-text-rewritten"];
-  const actor: Actor = { memberId: m.memberId, name: m.name, role: m.role as Actor["role"], canSign: stampMaySign(m), ...(m.hcpc ? { hcpc: m.hcpc } : {}) };
+/**
+ * R2-SEC-2 (= R2-REG-1): the R1T-WC-04 rule above, at a bounded cost. It used to run the validators over the whole
+ * report – and the engine's own re-validation of every candidate – once per claimed fix, before refusing (any member,
+ * unbudgeted). Now:
+ *   1. the cheap structural checks of every claimed fix come first, with no validator, and the first refusal stops the
+ *      check (draftedRewritePlan): the fix kind is one the engine makes, the stored entries are kept as a prefix, each
+ *      new entry is the member's own, its edits replay to the next text, an undo returns to a text held before, only
+ *      the approver changes a clinician box, at most FIXED_PARAGRAPHS_PER_SAVE paragraphs and FIXES_PER_SAVE fixes;
+ *   2. only then, and only when some claimed fix needs the engine, the report is held to the validators' budget
+ *      (VALIDATION_BUDGET, as /validate and /sign) and to the store's stricter bound on its notes
+ *      (STORE_FIX_CHECK_NOTES_JSON): 413 before any validator – an ordinary save is never refused by either;
+ *   3. the validators run once on the stored copy (the flags the engine works from, and the blocking flags before), each
+ *      claimed fix must be exactly a candidate the engine makes for the member from that paragraph's flags and pass its
+ *      text rules (fixTextProblems: whole sentences, figures, negations, clinical negatives, the box's answer, twins),
+ *      and the validators run once more on the result (revalidationProblems over all the fixes together, per check and
+ *      box; with more than one fix, a box whose answered check also gains a flag is refused – no fix can hide another's).
+ * So a save costs at most two validator runs within those bounds, whatever it claims.
+ */
+const FIXES_PER_SAVE = 20;
+
+/**
+ * The store's own, stricter bound on the clinical notes of a report whose claimed fixes it checks (R2-SEC-2: the notes
+ * set the validators' cost – one run on the validators' full budget, 300,000 characters, takes about a second). Counted
+ * as the notes' JSON (a little more than their characters). The largest real report of the bh2 runs holds 5,647
+ * characters of notes; beyond this the one-click fix is refused (413) and the paragraph is edited by hand instead.
+ */
+const STORE_FIX_CHECK_NOTES_JSON = 120_000;
+
+/** One claimed fix the engine must make: the paragraph's text before and after it, as the save replays it. */
+interface ClaimedFix {
+  key: string;
+  paragraphId: string;
+  kind: string;
+  before: string;
+  after: string;
+}
+
+/** The structural checks (step 1): the engine fixes to verify, or the first refusal. No validator runs here. */
+function draftedRewritePlan(after: Report, rewrites: ReadonlyArray<{ key: string; p: Paragraph; b: Paragraph }>, m: StoreMember, ctx: StoreCheckContext, approver: boolean): { refused: string } | { claims: ClaimedFix[] } {
+  if (rewrites.length > FIXED_PARAGRAPHS_PER_SAVE) return { refused: "drafted-text-rewritten" };
+  if (!ctx.template) return { refused: "drafted-text-rewritten" };
+  const claims: ClaimedFix[] = [];
+  let total = 0;
   for (const { key, p, b } of rewrites) {
     const stored = b.fixes ?? [];
     const now = p.fixes ?? [];
     const added = now.slice(stored.length);
-    if (!same(now.slice(0, stored.length), stored) || added.length === 0 || added.length > FIXES_PER_PARAGRAPH_PER_SAVE) {
-      out.push("drafted-text-rewritten");
-      continue;
-    }
-    if (added.some((f) => !isOwnStamp(f.by, m))) {
-      out.push("fix-by-other");
-      continue;
-    }
+    total += added.length;
+    if (added.length === 0 || added.length > FIXES_PER_PARAGRAPH_PER_SAVE || total > FIXES_PER_SAVE || !same(now.slice(0, stored.length), stored)) return { refused: "drafted-text-rewritten" };
+    // The fix kind is one the engine makes (or the undo of one).
+    if (added.some((f) => !ENGINE_FIX_KINDS.has(f.kind.startsWith("undo-") ? f.kind.slice("undo-".length) : f.kind))) return { refused: "drafted-text-rewritten" };
+    if (added.some((f) => !isOwnStamp(f.by, m))) return { refused: "fix-by-other" };
     const section = after.sections.find((s) => s.key === key);
-    if (section && isClinicianBox(after, section, ctx) && !approver) {
-      out.push("fix-approver-only");
-      continue;
-    }
-    if (!ctx.template) {
-      out.push("drafted-text-rewritten");
-      continue;
-    }
+    if (section && isClinicianBox(after, section, ctx) && !approver) return { refused: "fix-approver-only" };
     // The texts the paragraph held before this save: its drafted wording and each earlier fix's result.
     const earlier = new Set<string>([b.originalText ?? b.text, b.text]);
     let replay = b.originalText ?? b.text;
@@ -473,49 +509,81 @@ function draftedRewriteViolations(before: Report, after: Report, rewrites: Reado
       earlier.add(next);
       replay = next;
     }
-    let current: Report = before;
     let text = b.text;
-    let ok = true;
-    for (let i = 0; i < added.length && ok; i++) {
+    for (let i = 0; i < added.length; i++) {
       const f = added[i];
       const next = replayFix(text, f) ?? (i === added.length - 1 ? p.text : null);
-      if (next === null) {
-        ok = false;
-        break;
-      }
+      if (next === null) return { refused: "drafted-text-rewritten" };
       if (f.kind.startsWith("undo-")) {
-        ok = earlier.has(next);
+        if (!earlier.has(next)) return { refused: "drafted-text-rewritten" };
       } else {
-        const offered = engineOffers(current, key, b.id, ctx, actor);
-        ok = offered.some((o) => o.paragraphId === b.id && o.before === text && o.after === next && o.generator.slice(0, 64) === f.kind);
+        claims.push({ key, paragraphId: b.id, kind: f.kind, before: text, after: next });
       }
-      if (ok) {
-        earlier.add(next);
-        current = { ...current, sections: current.sections.map((s) => (s.key !== key ? s : { ...s, paragraphs: s.paragraphs.map((x) => (x.id === b.id ? { ...x, text: next, fixes: [...(x.fixes ?? []), f] } : x)) })) };
-        text = next;
-      }
+      earlier.add(next);
+      text = next;
     }
-    if (!ok || text !== p.text) out.push("drafted-text-rewritten");
+    if (text !== p.text) return { refused: "drafted-text-rewritten" };
   }
-  return out;
+  return { claims };
 }
 
-/** The one-click fixes the engine offers `actor` on one paragraph of `report` (its flags worked out afresh, and the stored ones). */
-function engineOffers(report: Report, key: string, paragraphId: string, ctx: StoreCheckContext, actor: Actor): FixProposal[] {
-  if (!ctx.template) return [];
+/** A report with one paragraph's text replaced (the claimed fix applied, as the engine checks it). */
+function withText(report: Report, key: string, paragraphId: string, text: string): Report {
+  return { ...report, sections: report.sections.map((s) => (s.key !== key ? s : { ...s, paragraphs: s.paragraphs.map((x) => (x.id === paragraphId ? { ...x, text } : x)) })) };
+}
+
+/**
+ * Steps 2 and 3: the claimed fixes, each exactly one the engine makes and its rules accept, on the stored copy. Returns
+ * a refusal code, or null. "fix-check-too-large" is answered 413 (the validators' budget).
+ */
+function engineFixViolation(before: Report, claims: readonly ClaimedFix[], m: StoreMember, ctx: StoreCheckContext): string | null {
+  const template = ctx.template;
+  if (!template) return "drafted-text-rewritten";
+  const form = ctx.engineForm ?? null;
+  // The fixed report (every claimed fix applied to the stored copy) is what the validators read last.
+  let fixed: Report = before;
+  for (const c of claims) fixed = withText(fixed, c.key, c.paragraphId, c.after);
+  if (validationBudgetExcess(before, form) || validationBudgetExcess(fixed, form)) return "fix-check-too-large";
+  if (JSON.stringify(before.bundleSnapshot?.notes ?? []).length > STORE_FIX_CHECK_NOTES_JSON) return "fix-check-too-large";
   try {
-    const owner = report.approver ? { memberId: report.approver.memberId, name: report.approver.name, hcpc: report.approver.hcpc } : null;
-    const fresh = validateReport({ ...report, flags: [] }, ctx.template, { form: ctx.engineForm ?? null, ...(owner ? { voice: { owner } } : {}) }).flags;
-    const seen = new Set<string>();
-    const flags: ReportFlag[] = [];
-    for (const f of [...fresh, ...report.flags]) {
-      if (f.sectionKey !== key || f.paragraphId !== paragraphId || seen.has(f.id)) continue;
-      seen.add(f.id);
-      flags.push(f);
+    const actor: Actor = { memberId: m.memberId, name: m.name, role: m.role as Actor["role"], canSign: stampMaySign(m), ...(m.hcpc ? { hcpc: m.hcpc } : {}) };
+    const owner = before.approver ? { memberId: before.approver.memberId, name: before.approver.name, hcpc: before.approver.hcpc } : null;
+    const validate = (r: Report) => validateReport({ ...r, flags: [] }, template, { form, ...(owner ? { voice: { owner } } : {}) });
+    const engine = { actor, template, form };
+    // The validators once on the stored copy: the flags the engine works from (with the stored ones), the blocking ones before.
+    const first = validate(before);
+    const matched: FixCandidate[] = [];
+    // Each paragraph's claimed fixes in order, each on the paragraph as the earlier ones left it.
+    let current: Report = before;
+    for (const c of claims) {
+      const seen = new Set<string>();
+      const flags: ReportFlag[] = [];
+      for (const f of [...first.flags, ...before.flags]) {
+        if (f.sectionKey !== c.key || f.paragraphId !== c.paragraphId || seen.has(f.id)) continue;
+        seen.add(f.id);
+        flags.push(f);
+      }
+      if (current.status === "signed") return "drafted-text-rewritten";
+      const candidate = fixCandidates({ ...current, flags }, engine).find(
+        (x) => x.paragraphId === c.paragraphId && x.sectionKey === c.key && x.before === c.before && x.after === c.after && x.generator.slice(0, 64) === c.kind && fixTextProblems(current, x, engine).length === 0,
+      );
+      if (!candidate) return "drafted-text-rewritten";
+      matched.push(candidate);
+      current = withText(current, c.key, c.paragraphId, c.after);
     }
-    return offeredFixes({ ...report, flags }, { actor, template: ctx.template, form: ctx.engineForm ?? null });
+    // The validators once more, on the fixed report: no blocking flag added, none cleared but the ones the fixes answer.
+    const last = validate(fixed);
+    if (revalidationProblems(first.blocking, last.blocking, matched).length > 0) return "drafted-text-rewritten";
+    if (matched.length > 1) {
+      // No fix hides another's: a box where a fix answers a check keeps no new flag of that check.
+      const sig = (f: ReportFlag) => `${f.code}|${f.sectionKey ?? ""}|${f.paragraphId ?? ""}|${f.evidence ?? ""}|${f.message}`;
+      const had = new Set(first.blocking.map(sig));
+      const answeredKeys = new Set(matched.flatMap((x) => x.answers).map((f) => `${f.code}|${f.sectionKey ?? ""}`));
+      if (last.blocking.some((f) => answeredKeys.has(`${f.code}|${f.sectionKey ?? ""}`) && !had.has(sig(f)))) return "drafted-text-rewritten";
+    }
+    return null;
   } catch {
-    return [];
+    return "drafted-text-rewritten";
   }
 }
 
@@ -546,6 +614,12 @@ export function decisionViolations(
   // without one is refused – the approver-only rules below then always have an approver to keep decisions for. (A
   // version 2 amending an approval from before the release keeps that approval's absence of one.)
   if (create && !after.approver && !(before && before.status === "signed" && !before.approver)) out.push("approver-missing");
+  // R2-SAF-2: a new report is checked against the boxes the report factory makes – the clinic's stored form map it names
+  // (report.form.mapSha256, the very map) or the built-in template of the same version. A create whose boxes the server
+  // cannot establish is refused, never checked against its own boxes, kinds, titles and frozen conditions. (An
+  // amendment is checked against the approved version 1 it amends, which fixes its boxes – even after the template
+  // or map moved on.)
+  if (create && !before && !ctx.boxes) out.push(after.form ? "form-map-unknown" : "template-unknown");
   // What makes each box the box it is, and the questions stored about it (harden-WC majors A and B).
   out.push(...boxViolations(before, after, ctx.boxes ?? null));
   out.push(...gapViolations(before, after, redrafted));
@@ -602,6 +676,8 @@ export function decisionViolations(
     const nowParagraphs = new Map(s.paragraphs.map((p) => [p.id, p]));
     const clinician = isClinicianBox(after, s, ctx);
     const redraft = redrafted.has(s.key);
+    // R2-SAF-1: a stored box is never put back to waiting for drafting – only the report factory makes a box "pending".
+    if (was && was.status !== "pending" && s.status === "pending") out.push("box-reset-pending");
     for (const p of s.paragraphs) {
       const b = wasParagraphs.get(p.id);
       const contentChanged = !b || !same(paragraphContent(p), paragraphContent(b));
@@ -633,10 +709,14 @@ export function decisionViolations(
       out.push(...originViolations(s, p, b, { create: create && !before, was, wasParagraphs, redrafted: redraft }));
     }
     if (s.answer && !same(s.answer, was?.answer) && s.answerBy && !author(s.answerBy)) out.push("answer-by-other");
-    // A clinician box's answer set or replaced with no one's stamp (check-WC problem 3; harden-WC, check2-WC major B: an
-    // empty box filled too): the review stamps every answer a person sets, and drafting fills only a box that waits for
-    // it – so it would read as drafted, or as the approver's.
-    if (before && was && clinician && !approver && answerSet(s.answer) && !same(s.answer, was.answer) && !s.answerBy && !redraft) out.push("answer-unstamped");
+    // An answer set or replaced with no one's stamp (check-WC problem 3; harden-WC, check2-WC major B: an empty box filled
+    // too). R2-TPN-01: in EVERY box, whoever saves it – a records box's code-filled value, a drafted yes/no, tick or
+    // choice, a clinician box: the review stamps every answer a person sets (reducer setStructuredAnswer,
+    // stampDecisions), the report factory fills a records box only when the report is made, and drafting fills only an
+    // empty box that waits for it (a redraft) – so an unstamped change would read as drafted or as the records, with no
+    // one's name, no activity and no check. Clearing an answer (no value, no stamp) stays the member's to do; a stamp is
+    // never taken off an answer that stays (it would turn a person's answer back into "drafted" or "records").
+    if (before && was && !redraft && answerSet(s.answer) && !s.answerBy && (!same(s.answer, was.answer) || was.answerBy)) out.push("answer-unstamped");
     // R1T-WC-03 (SAF-2): drafting never answers an opinion box or the physiotherapist's choice – not on a create, not in
     // a redraft – so an answer there with no one's stamp is refused there too (the review stamps every answer a person sets).
     if ((isOpinionBox(s, ctx) || isPhysioChoiceBox(ctx, s.key)) && answerSet(s.answer) && !same(s.answer, was?.answer) && !s.answerBy && (create || redraft || !before)) out.push("answer-unstamped");
@@ -657,7 +737,13 @@ export function decisionViolations(
     if (before && clinician && !approver && approverEntryLost(before, after, s.key, ctx)) out.push("approver-entry-removed");
   }
   if (splitOuts > SPLIT_OUT_MAX_PER_SAVE) out.push("drafted-text-added");
-  if (before && draftedRewrites.length > 0) out.push(...draftedRewriteViolations(before, after, draftedRewrites, m, ctx, approver));
+  // R2-SEC-2: claimed one-click fixes – their structural checks here (no validator); the engine's, last, below.
+  let engineClaims: ClaimedFix[] = [];
+  if (before && draftedRewrites.length > 0) {
+    const plan = draftedRewritePlan(after, draftedRewrites, m, ctx, approver);
+    if ("refused" in plan) out.push(plan.refused);
+    else engineClaims = plan.claims;
+  }
   const gapsBefore = new Map((before?.gaps ?? []).map((g) => [g.id, g]));
   // R1T-WC-05 (SAF-4): which boxes a rule rules out, as the server reads them – now and in the stored copy – worked out once.
   let ruledOutNow: ReadonlySet<string> | null = null;
@@ -695,8 +781,16 @@ export function decisionViolations(
   // "Superseded" entries are the server's (markSuperseded): a client never adds one (check-WC minor 7).
   const kept = new Set((before?.activity ?? []).map((e) => canonicalize(e)));
   if ((after.activity ?? []).some((e) => e.action === "superseded" && !kept.has(canonicalize(e)))) out.push("superseded-by-client");
+  // R2-SEC-2: the validators run only for a save every other check accepts, and only for fixes the engine must confirm.
+  if (out.length === 0 && before && engineClaims.length > 0) {
+    const refused = engineFixViolation(before, engineClaims, m, ctx);
+    if (refused) out.push(refused);
+  }
   return Array.from(new Set(out));
 }
+
+/** R2-SEC-2: the refusal code answered 413 (the validators' budget) rather than 403. */
+export const FIX_CHECK_TOO_LARGE = "fix-check-too-large";
 
 /**
  * A takeover (the approver changes to the member) keeps a decision someone else made before it – an acknowledgement
@@ -947,6 +1041,14 @@ export const handleStoreReportPut: MedreportHandler = async (req, ctx, deps) => 
     if (demoImport) checked = importedFromDemo(report, member, checkCtx);
   }
   const violations = ifMatch === null || stored ? decisionViolations(base, checked, member, checkCtx, { create: ifMatch === null, demoAuthors: demoImport }) : [];
+  if (violations.length === 1 && violations[0] === FIX_CHECK_TOO_LARGE) {
+    // R2-SEC-2: the one-click fixes this save claims would be checked by the validators, over their budget (as /validate).
+    logEvent("store_fix_check_refused", { id });
+    return problem(413, "The report is too large to check", {
+      code: "PAYLOAD_TOO_LARGE",
+      detail: "This change claims one-click fixes, which are checked on the whole report, and the report holds more than any report ClinForms checks. Nothing was saved.",
+    });
+  }
   if (violations.length > 0) {
     logEvent("store_decision_refused", { id, count: violations.length, first: violations[0], codes: violations.slice(0, 8).join(",") });
     return problem(403, "This change cannot be saved as yours", {

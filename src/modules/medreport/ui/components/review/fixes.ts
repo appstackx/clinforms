@@ -366,10 +366,25 @@ function countBy(flags: readonly ReportFlag[]): Map<string, number> {
  * offered. `blockingBefore` is the report's blocking flags now (computed once by the caller).
  */
 export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext, blockingBefore: readonly ReportFlag[]): string[] {
+  const problems = fixTextProblems(report, c, ctx);
+  if (problems.length === 1 && problems[0] === PARAGRAPH_CHANGED) return problems;
+  // Re-validation: no blocking flag added, none cleared but the ones the fix answers.
+  const after = validationOf({ ...withParagraphText(report, c.sectionKey, c.paragraphId, c.after), flags: [] }, ctx);
+  return [...problems, ...revalidationProblems(blockingBefore, after, [c])];
+}
+
+const PARAGRAPH_CHANGED = "the paragraph has changed";
+
+/**
+ * bh2 fix round 2 (R2-SEC-2, WC – split out of fixRuleProblems, unchanged): every rule of fixRuleProblems but the
+ * re-validation – no validator runs. The store checks a save's claimed one-click fixes with these rules, then
+ * re-validates once for all of them (revalidationProblems), instead of once per fix.
+ */
+export function fixTextProblems(report: Report, c: FixCandidate, ctx: FixContext): string[] {
   const problems: string[] = [];
   const section = report.sections.find((s) => s.key === c.sectionKey);
   const paragraph = section?.paragraphs.find((p) => p.id === c.paragraphId);
-  if (!section || !paragraph || paragraph.text !== c.before) return ["the paragraph has changed"];
+  if (!section || !paragraph || paragraph.text !== c.before) return [PARAGRAPH_CHANGED];
   const field = ctx.form?.fields.find((f) => f.id === (section.fieldId ?? section.key));
   const compact = compactPlace(field) !== null || (field ? printedLeadOf(field, ctx.form) !== null : false);
 
@@ -466,14 +481,23 @@ export function fixRuleProblems(report: Report, c: FixCandidate, ctx: FixContext
     // "occasional" for "constant", the discharge state for the first assessment's, a finding for its negative.
     else if (!removableRepeat(t.removed, t.text, nameWords(report.bundleSnapshot))) problems.push(`“${label}” does not say all of “${t.removed.slice(0, 40)}…”`);
   }
-  // Re-validation: no blocking flag added, none cleared but the ones the fix answers.
-  const after = validationOf({ ...next, flags: [] }, ctx);
+  return problems;
+}
+
+/**
+ * The re-validation rule (fixRuleProblems; R2-SEC-2: split out, unchanged for one fix): the blocking flags after the
+ * fixes (`after`, the validators' blocking flags of the fixed report) against those before – none added, none cleared
+ * but the ones the fixes answer (counted per check and box). For several fixes applied together the store passes them
+ * all: their answered flags count together.
+ */
+export function revalidationProblems(blockingBefore: readonly ReportFlag[], after: readonly ReportFlag[], fixes: readonly Pick<FixCandidate, "paragraphId" | "answers" | "twins">[]): string[] {
+  const problems: string[] = [];
   const was = countBy(blockingBefore);
   const now = countBy(after);
   // bh2-rc1 (WB x WD): a repeat removal whose twin still prints (checked above) may take with it a blocking flag about
   // its own paragraph – the sentence is gone from this box and still printed, as checked, in the earlier one.
-  const ownGone = c.twins?.length ? blockingBefore.filter((f) => f.paragraphId === c.paragraphId && !after.some((g) => g.code === f.code && g.paragraphId === f.paragraphId && g.evidence === f.evidence)) : [];
-  const answered = countBy([...c.answers, ...ownGone].filter((f) => f.severity === "blocking"));
+  const ownGone = fixes.flatMap((c) => (c.twins?.length ? blockingBefore.filter((f) => f.paragraphId === c.paragraphId && !after.some((g) => g.code === f.code && g.paragraphId === f.paragraphId && g.evidence === f.evidence)) : []));
+  const answered = countBy([...fixes.flatMap((c) => c.answers), ...ownGone].filter((f) => f.severity === "blocking"));
   now.forEach((n, k) => {
     if (n > (was.get(k) ?? 0)) problems.push(`re-validation adds a blocking ${k.split("|")[0]}`);
   });
@@ -656,11 +680,11 @@ function mayApply(policy: FixProposal["ackPolicy"], report: Pick<Report, "approv
 }
 
 /**
- * Every one-click fix the engine offers `actor` on `report` (whose flags are the validators' latest), each checked by
- * planFix. A signed report offers none. Used by the review (fix-preview.tsx) and the safety corpus.
+ * bh2 fix round 2 (R2-SEC-2, WC – split out of offeredFixes, unchanged): the candidates the generators make for `actor`
+ * from `report`'s flags, each with the policy offeredFixes gives it, those `actor` may not apply left out. Not yet checked
+ * by the engine's rules (planFix, or fixTextProblems + revalidationProblems); no validator runs.
  */
-export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor }): FixProposal[] {
-  if (report.status === "signed") return [];
+export function fixCandidates(report: Report, ctx: FixContext & { actor: Actor }): FixCandidate[] {
   // A text fix in a clinician's box is the approver's (WC design 4); WB's generators set their own policy.
   const own = [...repeatCandidates(report, ctx), ...duplicateCandidates(report), ...valueOnlyCandidates(report, ctx), ...doseCandidates(report), ...printedLeadCandidates(report, ctx)].map(
     (c): FixCandidate => {
@@ -669,7 +693,34 @@ export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor })
       return section && clinicianBox(section, field) ? { ...c, ackPolicy: "approver" } : c;
     },
   );
-  const candidates = [...own, ...attributionCandidates(report, ctx.actor, ctx.form)].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
+  return [...own, ...attributionCandidates(report, ctx.actor, ctx.form)].filter((c) => mayApply(c.ackPolicy, report, ctx.actor));
+}
+
+/**
+ * bh2 fix round 2 (R2-SEC-2): every generator name a fix the engine offers carries (FixProposal.generator, recorded as
+ * Paragraph.fixes[].kind) – this file's and WB's (core/validation/attribution-fixes.ts). The store refuses a claimed fix
+ * of any other kind before any validator runs; an undo is "undo-<kind>". Kept equal to the generators by
+ * scripts/medreport/wc-fix2-store.test.ts.
+ */
+export const ENGINE_FIX_KINDS: ReadonlySet<string> = new Set([
+  "repeat-removal",
+  "duplicate-paragraph",
+  "value-only",
+  "dose-not-stated",
+  "printed-lead",
+  "attribution-prefix",
+  "use-note-words",
+  "name-instead",
+  "remove-commentary",
+]);
+
+/**
+ * Every one-click fix the engine offers `actor` on `report` (whose flags are the validators' latest), each checked by
+ * planFix. A signed report offers none. Used by the review (fix-preview.tsx) and the safety corpus.
+ */
+export function offeredFixes(report: Report, ctx: FixContext & { actor: Actor }): FixProposal[] {
+  if (report.status === "signed") return [];
+  const candidates = fixCandidates(report, ctx);
   if (candidates.length === 0) return [];
   const blockingBefore = validationOf({ ...report, flags: [] }, ctx);
   const out: FixProposal[] = [];
