@@ -162,6 +162,7 @@ export function contentStems(norm: string, ignore: IgnoreNames = { people: [] },
   let s = ` ${opts.canonical === false ? norm : canonicalContent(norm)} `.replace(/\[claimant\]/g, " ").replace(TITLE_NAME, " ").replace(DATE, " ");
   for (const name of ignore.people) if (name) s = s.replace(new RegExp(`\\b${escapeRegExp(name)}(?:['’]s)?\\b`, "g"), " ");
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const m of Array.from(s.matchAll(/[a-z0-9]+(?:[-'’.][a-z0-9]+)*/g))) {
     const whole = m[0].replace(/[’]/g, "'");
     // A hyphenated word counts by its parts ("full-time" is "full time", "pain-free" is "pain free"); figures stay whole.
@@ -171,7 +172,11 @@ export function contentStems(norm: string, ignore: IgnoreNames = { people: [] },
       const w = SIDE[raw] ?? raw;
       if (STOP.has(w) || (w.length < 3 && !/\d/.test(w))) continue;
       const st = stem(w);
-      if (!out.includes(st)) out.push(st);
+      // Fix round 2 (R2-SEC-1): duplicates found through a set, not a scan of `out` (quadratic on a long record source).
+      if (!seen.has(st)) {
+        seen.add(st);
+        out.push(st);
+      }
     }
   }
   return out;

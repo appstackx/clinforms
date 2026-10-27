@@ -651,11 +651,26 @@ interface CitedNote {
   norm: string;
 }
 
+const NOTE_NORM = new WeakMap<Note, string>();
+
+/**
+ * A note's text normalised as the allows read it, once per note (fix round 2, R2-SEC-1: not once per drafted paragraph –
+ * 1,000 small paragraphs citing a 300,000-character note re-read it 1,000 times).
+ */
+function noteNorm(note: Note): string {
+  let norm = NOTE_NORM.get(note);
+  if (norm === undefined) {
+    norm = normaliseForMatch(noteSourceText(note));
+    NOTE_NORM.set(note, norm);
+  }
+  return norm;
+}
+
 function citedNotes(ids: readonly string[], notes: readonly Note[]): CitedNote[] {
   const out: CitedNote[] = [];
   for (const id of ids) {
     const note = notes.find((n) => n.id === id);
-    if (note && !out.some((c) => c.note.id === id)) out.push({ note, norm: normaliseForMatch(noteSourceText(note)) });
+    if (note && !out.some((c) => c.note.id === id)) out.push({ note, norm: noteNorm(note) });
   }
   return out;
 }
@@ -718,7 +733,7 @@ function acceptedByApprover(section: ReportSection, report: Pick<Report, "approv
     if (a.by.memberId !== approver.memberId || !a.by.canSign) return false;
     if (!a.noteId || !cited.includes(a.noteId)) return false;
     const note = notes.find((n) => n.id === a.noteId);
-    return Boolean(note) && sameName(note!.author.name, approver.name) && noteRecordsReturn(raw.hit, normaliseForMatch(noteSourceText(note!)));
+    return Boolean(note) && sameName(note!.author.name, approver.name) && noteRecordsReturn(raw.hit, noteNorm(note!));
   });
 }
 
