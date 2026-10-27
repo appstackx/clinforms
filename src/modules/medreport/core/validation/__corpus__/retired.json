@@ -109,6 +109,49 @@
    "supersededBy": [
     "OPN-twin-priya-staff"
    ]
+  },
+  "ATT-staff-01~fix-attribution-prefix-1": {
+   "kind": "one-click",
+   "parent": "ATT-staff-01",
+   "parentLockHash": "bf4e483e148a2e9f9f02d2c4892f5e5f3a5e828a0503b6b8e1a9318a709e935e",
+   "retiredOn": "2026-10-27",
+   "decidedBy": "the release orchestrator – orchestrator decision 27/10 under Khuram's delegation (merge:r1 of the Blue Heart release; bh2-handover STATUS.md); Khuram's binding decisions: E7/E8 colleague voice (26/10) and the opinion rule (26/10 – every opinion must quote a physio's note or be written by the approver)",
+   "decision": "Retire (merge:r1). Supersede with a case that lists allowFixes ['attribution-prefix','use-note-words'] and pins the faithful text the approver's one-click leaves (ATT-staff-05; WB's ATT-staff-04 with the same input), that text as PASS (ATT-staff-ok), and the one-click never offered to staff (ATT-staff-nameinstead-pat). ATT-staff-01 itself (validate, sign, its anti-strip and origin variants) keeps running and still blocks, never acknowledgeable.",
+   "reason": "A one-click variant that the fix round's R1T-WB-10 made fail: on a staff-prepared report the approver is now offered 'Name Tom Ellis', which turns the unattributed 'He is fit for a phased return …' into the faithful 'Tom Ellis recorded that he is fit for a phased return to normal duties over 2 weeks.' – Tom Ellis's own recorded opinion, attributed to him, which Khuram's opinion rule allows. ATT-staff-01 lists no allowFixes, so the variant reports a safe, faithful correction as unsafe; the case is locked and cannot gain allowFixes.",
+   "supersededBy": [
+    "ATT-staff-05",
+    "ATT-staff-04",
+    "ATT-staff-ok",
+    "ATT-staff-nameinstead-pat"
+   ]
+  },
+  "ATT-signer-02~fix-attribution-prefix-1": {
+   "kind": "one-click",
+   "parent": "ATT-signer-02",
+   "parentLockHash": "3da1c177d56b3358d37bdde0bc5c28214bde779b1d498773e57d6532ff1d5d6a",
+   "retiredOn": "2026-10-27",
+   "decidedBy": "the release orchestrator – orchestrator decision 27/10 under Khuram's delegation (merge:r1 of the Blue Heart release; bh2-handover STATUS.md); Khuram's binding decisions: E7/E8 colleague voice (26/10) and the opinion rule (26/10 – every opinion must quote a physio's note or be written by the approver)",
+   "decision": "Retire (merge:r1). Supersede with a case that lists allowFixes ['attribution-prefix','use-note-words'] and pins the faithful text Sarah's one-click leaves (ATT-signer-04; WB's ATT-signer-03 with the same input) and that text as PASS (ATT-signer-ok-03). ATT-signer-02 itself (validate, sign, its anti-strip and origin variants) keeps running and still blocks, never acknowledgeable.",
+   "reason": "A one-click variant that R1T-WB-10 made fail: on a report drafted for Tom Ellis and approved by Sarah Reid, Sarah is now offered 'Name Tom Ellis', which turns the unattributed opinion into the faithful 'Tom Ellis recorded that he is fit for a phased return to normal duties over 2 weeks.' (allowed by Khuram's opinion rule). ATT-signer-02 lists no allowFixes, so the variant reports a safe, faithful correction as unsafe; the case is locked and cannot gain allowFixes.",
+   "supersededBy": [
+    "ATT-signer-04",
+    "ATT-signer-03",
+    "ATT-signer-ok-03"
+   ]
+  },
+  "ATT-licence-01~fix-name-instead-1": {
+   "kind": "one-click",
+   "parent": "ATT-licence-01",
+   "parentLockHash": "acf82fa96ee2fb90c1bbe86bcdbc9db3e1b4d68edc35a6f7ee6a96d9907ca582",
+   "retiredOn": "2026-10-27",
+   "decidedBy": "the release orchestrator – orchestrator decision 27/10 under Khuram's delegation (merge:r1 of the Blue Heart release; bh2-handover STATUS.md); Khuram's binding decisions: E7/E8 colleague voice (26/10) and the opinion rule (26/10 – every opinion must quote a physio's note or be written by the approver)",
+   "decision": "Retire (merge:r1). Supersede with a case that lists allowFixes ['name-instead'] and pins the faithful text the one-click leaves – Tom Ellis named in his clause, the approver's own clause kept in the first person (ATT-licence-04; WB's ATT-licence-03 with the same input) – and that text as PASS (ATT-licence-ok-03). ATT-licence-01 itself (validate, sign, its anti-strip and origin variants) keeps running and still blocks, never acknowledgeable.",
+   "reason": "A one-click variant that R1T-WB-09/11 made fail: under Khuram's E7/E8 decision the first person is licensed clause by clause, so 'Name Tom Ellis' now renames only the clause that gives Tom Ellis's findings ('… when Tom Ellis found lumbar movement full and pain-free and an ODI of 18%.') and keeps the approver's own 'I assessed Mr Testcase on 18/03/2026.' – a faithful attribution that is approvable. ATT-licence-01 lists no allowFixes, so the variant reports a safe correction as unsafe; the case is locked and cannot gain allowFixes.",
+   "supersededBy": [
+    "ATT-licence-04",
+    "ATT-licence-03",
+    "ATT-licence-ok-03"
+   ]
   }
  }
 }
