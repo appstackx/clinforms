@@ -7,13 +7,24 @@
  *     --base-dir <dir>   use an existing snapshot instead (a tree holding src/modules/medreport, e.g. the read-only
  *                        bh-quality/attr/basesnap copy) – the base ref is then not read from git
  *     --replay <dir>     also every recorded draft under <dir> (gitignored demo-assets/bh2-replay/: *.json, each
- *                        {report, form?}) – each box of each report is compared
+ *                        {report, form?}) – each box of each report is compared (see "Replay rows" below)
  *     --json <file>      write the comparison as JSON
  *
  * Inputs: every case and generated mutation whose paths include validate or reducer, built by this tree's harness
  * (the same report goes to both validator sets). "Blocks" = an unacknowledged blocking flag on the case's subject
  * (paragraph, box) – any code. The production snapshot is `git archive <base> src/modules/medreport` extracted into
  * node_modules/.cache/clinforms-corpus/<sha>/ (gitignored, reused). Fictional data only; prints case ids and codes.
+ *
+ * Replay rows (bh2 fix round 1, R1T-WA1-07 – a W0 tooling exception made by WA1): a recorded report is validated as its
+ * approver would see it – the voice owner is Report.approver (else the author; a staff-prepared report has no author,
+ * and reading it in strict mode raised voice flags its approver never sees) – and its blocking set is compared by code
+ * and evidence ACROSS boxes:
+ *   - a box that blocks on production still counts as blocked when the candidate blocks the same code with the same
+ *     evidence on another box of the same report (a mail-merge code now raised on the box that replaces it);
+ *   - a row that still differs is keyed to an approved allowlist entry when the difference IS that entry's approved
+ *     behaviour: disabling the ledger hook the entry's case pins (its `hook:` tags, e.g. OPN-ok-f1 → statusRecorded) in
+ *     the candidate brings the box's block back. No allowlist entry is added or widened by this – a row the approved
+ *     hook does not explain stays a regression.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -116,22 +127,53 @@ export async function runDiff(opts: { base?: string; baseDir?: string; replay?: 
     const { formToTemplate } = await import("../../src/modules/medreport/core/forms");
     const { getTemplate } = await import("../../src/modules/medreport/templates/registry");
     const { computeFacts } = await import("../../src/modules/medreport/core/computed-facts");
-    const { reportFactsDate } = await import("../../src/modules/medreport/core/validation");
+    const { reportFactsDate, withHookDisabled, HOOK_IDS } = await import("../../src/modules/medreport/core/validation");
+    // R1T-WA1-07: the approved allowlist entries that name the ledger hook their behaviour comes from (the case's tags).
+    const caseById = new Map(loaded.cases.map((l) => [l.case.id, l.case]));
+    const classes = Object.keys(allow)
+      .filter(approved)
+      .map((entry) => ({ entry, hooks: (caseById.get(entry)?.tags ?? []).filter((t) => t.startsWith("hook:")).map((t) => t.slice(5)).filter((h) => HOOK_IDS.includes(h)) }))
+      .filter((c) => c.hooks.length > 0);
     for (const f of fs.readdirSync(opts.replay).filter((x) => x.endsWith(".json")).sort()) {
       const rec = JSON.parse(fs.readFileSync(path.join(opts.replay, f), "utf8")) as { report: Report; form?: FormDefinition };
       const template = rec.form ? formToTemplate(rec.form) : getTemplate(rec.report.templateId);
       if (!template) continue;
       const computedFacts = computeFacts(rec.report.bundleSnapshot, { asOf: reportFactsDate(rec.report) });
-      const owner = rec.report.author ? { name: rec.report.author.name, hcpc: rec.report.author.hcpc } : null;
-      const p = prod.validate(rec.report, template, { computedFacts, form: rec.form ?? null, owner });
-      const q = CANDIDATE_ENGINE.validate(rec.report, template, { computedFacts, form: rec.form ?? null, owner });
+      const owner = replayVoiceOwner(rec.report);
+      const run = (engine: Engine) => engine.validate(rec.report, template, { computedFacts, form: rec.form ?? null, owner });
+      const p = run(prod);
+      const q = run(CANDIDATE_ENGINE);
+      // The candidate with one approved class's hook disabled, worked out once per report and hook when a row needs it.
+      const withoutHook = new Map<string, ReturnType<typeof run>>();
+      const candidateWithout = async (hook: string) => {
+        if (!withoutHook.has(hook)) withoutHook.set(hook, await withHookDisabled(hook, async () => run(CANDIDATE_ENGINE)));
+        return withoutHook.get(hook) as ReturnType<typeof run>;
+      };
       for (const s of rec.report.sections) {
         const id = `replay:${f}#${s.key}`;
         if (opts.filter && !opts.filter(id)) continue;
         const pb = p.blocking.filter((x) => x.sectionKey === s.key);
         const qb = q.blocking.filter((x) => x.sectionKey === s.key);
-        const regression = pb.length > 0 && qb.length === 0;
-        rows.push({ id, production: pb.length > 0, candidate: qb.length > 0, regression, allowlisted: regression && approved(id), detail: `production: ${describeFlags(pb)} | candidate: ${describeFlags(qb)}` });
+        // Compared by code and evidence across the report's boxes: the same block raised on another box still blocks.
+        const movedTo = qb.length === 0 && pb.length > 0 ? movedBlocks(pb, q.blocking) : null;
+        const regression = pb.length > 0 && qb.length === 0 && movedTo === null;
+        let allowlisted = regression && approved(id);
+        let keyedTo = "";
+        if (regression && !allowlisted) {
+          for (const c of classes) {
+            for (const hook of c.hooks) {
+              if ((await candidateWithout(hook)).blocking.some((x) => x.sectionKey === s.key)) {
+                allowlisted = true;
+                keyedTo = c.entry;
+                break;
+              }
+            }
+            if (allowlisted) break;
+          }
+        }
+        const moved = movedTo ? ` (blocked on ${movedTo.join(", ")} with the same code and evidence)` : "";
+        const keyed = keyedTo ? ` – the approved DIFF:${keyedTo} behaviour (its hook brings the block back)` : "";
+        rows.push({ id, production: pb.length > 0, candidate: qb.length > 0 || movedTo !== null, regression, allowlisted, detail: `production: ${describeFlags(pb)} | candidate: ${describeFlags(qb)}${moved}${keyed}` });
       }
     }
   }
@@ -142,6 +184,33 @@ export async function runDiff(opts: { base?: string; baseDir?: string; replay?: 
     stricter: rows.filter((r) => r.candidate && !r.production).length,
     inputs: rows.length,
   };
+}
+
+/** Whose "I" a recorded report is read in (R1T-WA1-07): its approver, as the review and /sign read it; else its author. */
+export function replayVoiceOwner(report: Pick<Report, "approver" | "author">): { name: string; hcpc: string } | null {
+  const a = report.approver;
+  if (a && a.name.trim()) return { name: a.name, hcpc: a.hcpc };
+  return report.author ? { name: report.author.name, hcpc: report.author.hcpc } : null;
+}
+
+type Flag = import("../../src/modules/medreport/core/types").ReportFlag;
+
+const evidenceOf = (f: Pick<Flag, "evidence">) => (f.evidence ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * The boxes where the candidate blocks every one of `production`'s blocking flags with the same code and evidence
+ * (R1T-WA1-07: a merge code raised on the box that replaces it), or null when one of them is blocked nowhere.
+ */
+export function movedBlocks(production: readonly Flag[], candidate: readonly Flag[]): string[] | null {
+  const boxes = new Set<string>();
+  for (const f of production) {
+    const ev = evidenceOf(f);
+    if (!ev) return null;
+    const hit = candidate.find((x) => x.code === f.code && evidenceOf(x) === ev);
+    if (!hit) return null;
+    boxes.add(hit.sectionKey ?? "the report");
+  }
+  return Array.from(boxes).sort();
 }
 
 function arg(name: string): string | null {
