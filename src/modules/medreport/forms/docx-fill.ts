@@ -450,6 +450,11 @@ interface Ctx {
    * colour on every run, and its document defaults (the converter's Times New Roman 12 pt) are never the form's own.
    */
   rtf: boolean;
+  /**
+   * bh2 fix round 1 (R1T-WA2-L1): table-cell lines a placeholder was cleared from, decided once every text answer is
+   * written (leaveOffEmptiedLines): left off, or kept to line up with a label beside them.
+   */
+  emptiedLines: XmlElement[];
 }
 
 function where(field: FormField): string {
@@ -1447,9 +1452,61 @@ function clearPlaceholder(ctx: Ctx, job: Job): boolean {
     return false;
   }
   // Fix round 1 (B0-32): a line left empty (an address line the record does not have) goes too – a cell keeps its last
-  // line, and a line that keeps two tables apart stays (removeIfBlank).
-  removeIfBlank(ctx, target.p);
+  // line, and a line that keeps two tables apart stays (removeIfBlank). bh2 fix round 1 (R1T-WA2-L1): a line of a table
+  // cell is decided once every answer is written (leaveOffEmptiedLines) – it stays where the cell beside prints a label
+  // on a later line, the form's "Postcode:" beside the postcode, that the lines below would no longer line up with.
+  if (inTableRow(target.p)) ctx.emptiedLines.push(target.p);
+  else removeIfBlank(ctx, target.p);
   return true;
+}
+
+/** A line directly in a table cell of a row. */
+function inTableRow(p: XmlElement): boolean {
+  const cell = p.parentNode as XmlElement | null;
+  return Boolean(cell && isW(cell, "tc") && isW(cell.parentNode as XmlElement | null, "tr"));
+}
+
+/** Most cells beside a line read to tell whether it lines up with a label (bounded work). */
+const MAX_LABEL_CELLS = 16;
+
+/** Whether a line prints anything (its text). */
+function printsText(ctx: Ctx, q: XmlElement): boolean {
+  readLines(ctx, [q]);
+  return segmentsText(paragraphSegments(q)).trim() !== "";
+}
+
+/**
+ * bh2 fix round 1 (R1T-WA2-L1, the CLM EOTS postcode): whether leaving the empty line `p` of a table cell off would move
+ * a later line of that cell away from a label printed beside it: a cell of the same row prints text on a line after
+ * `p`'s, at most as far down as this cell's last line with text (address lines 1–5 and the postcode, one per line,
+ * beside "Address:" on the first line and "Postcode:" on the sixth). An empty line with no text after it in its cell,
+ * or beside cells whose text is all on earlier lines (a one-line "Location of treatment" label), still goes. Bounded:
+ * cells of at most MAX_SOURCE_PARAGRAPHS lines, MAX_LABEL_CELLS cells beside, each line read once.
+ */
+function linesUpWithLabelBeside(ctx: Ctx, p: XmlElement): boolean {
+  if (!inTableRow(p)) return false;
+  const cell = p.parentNode as XmlElement;
+  const own = wChildren(cell, "p");
+  const at = own.indexOf(p);
+  if (at < 0 || own.length > MAX_SOURCE_PARAGRAPHS) return false;
+  let last = -1;
+  for (let i = own.length - 1; i > at; i--) {
+    if (printsText(ctx, own[i])) {
+      last = i;
+      break;
+    }
+  }
+  if (last < 0) return false;
+  const beside = wChildren(cell.parentNode as XmlElement, "tc").filter((c) => c !== cell).slice(0, MAX_LABEL_CELLS);
+  return beside.some((other) => wChildren(other, "p").slice(at + 1, last + 1).some((q) => printsText(ctx, q)));
+}
+
+/** The table-cell lines placeholders were cleared from (clearPlaceholder): left off unless they keep a label in line. */
+function leaveOffEmptiedLines(ctx: Ctx): void {
+  for (const p of ctx.emptiedLines.slice().reverse()) {
+    if (!isAttached(ctx, p) || linesUpWithLabelBeside(ctx, p)) continue;
+    removeIfBlank(ctx, p);
+  }
 }
 
 /**
@@ -2738,6 +2795,7 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
     deletedParas: new Set(),
     chosenLists: new Set(),
     rtf: isConvertedFromRtf(form.file),
+    emptiedLines: [],
   };
 
   // 1. Resolve every anchor on the untouched document – and (10/2026) the form author's instructions: the repeat rows a
@@ -2817,6 +2875,13 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
     // placeholder (a clinic system's merge code) is removed, never left or marked.
     const blank = text === "" && job.answer.blank === true;
     if (blank) {
+      // bh2 fix round 1 (R1T-WA2-01, review RG-4): a box that issues nothing – the record empty, a session not attended,
+      // a box its frozen condition rules out (core/forms answers: blank, leftBlank) – on a Word content control or form
+      // field prints nothing there either: never Word's "Click or tap here to enter text." prompt or the field's default.
+      if (anchor.target === "content_control" || anchor.target === "legacy_form_field") {
+        fillBlankBox(ctx, job, t);
+        continue;
+      }
       if (anchor.target === "replace_placeholder" && !anchor.writeAfter) {
         if (clearPlaceholder(ctx, job)) setOutcome(t, "cleared");
         else if (anchor.placeholderText) addSkip(ctx, job.ref.el, anchor.placeholderText);
@@ -2882,6 +2947,8 @@ export function fillDocxReport(buf: Uint8Array, form: FormDefinition, answers: F
     if (!skip) growExactRows(ctx, job.ref.el);
   }
   ctx.current = null;
+  // bh2 fix round 1 (R1T-WA2-L1): the cell lines placeholders were cleared from – now that every answer is written.
+  leaveOffEmptiedLines(ctx);
 
   // 4. The form author's instructions for whoever completes it are left off (10/2026, core/template-instructions.ts) –
   //    bounded (MAX_INSTRUCTIONS_PER_FORM, MAX_LINE_SIZE, fewSiblings, MAX_ROWS_LEFT_OFF) and, harden 26/10 (check2-WA2

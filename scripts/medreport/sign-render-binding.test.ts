@@ -36,6 +36,8 @@ import { completedSampleReport } from "./form-sample-answers";
 import { bytesToBase64, createHttpHarness, postRenderFinal, postSign, putStoredReport } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { openZipSafely } from "../../src/modules/medreport/forms/zip-guard";
 import { issuedContentSha256 } from "../../src/modules/medreport/api/handlers/sign/receipt";
+import { renderPreReleaseFinal } from "../../src/modules/medreport/forms/render-form";
+import { DOCX_MIME } from "../../src/modules/medreport/forms/file";
 
 process.env.MEDREPORT_AI_MODE = "demo";
 
@@ -149,15 +151,14 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     assert.ok(audit.filter((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED").every((e) => e.action === "report.issue_refused"));
   });
 
-  // bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – an expectation changed): a receipt with neither hash
-  // was minted by production (every approval this release makes binds the acknowledgements at least), so what it approved
-  // is the document PRODUCTION issued – every box printed what it held. /render FINAL fills it with production's answers
-  // (core/forms productionFormAnswers), never this release's issue state: the box the release rules out IS printed.
-  it("a receipt from before the release (no bound hashes) issues the answers production wrote – the box the release rules out is printed (R1T-WA1-01)", async () => {
+  // bh2 fix round 1 (R1T-WA1-01 / RG-1 and R1T-WA2-02; merge:r1 took WA2's version, as WA1's report asks): a receipt
+  // with neither hash was minted by production (every approval this release makes binds the acknowledgements at least),
+  // so what it approved is the document PRODUCTION issued. /render FINAL (render.ts finalFormCopy) issues it with
+  // production's frozen forms engine – production's answers and fill, printed defaults of unanswered boxes included –
+  // never this release's issue state: the box the release rules out IS printed.
+  it("a receipt from before the release (no bound hashes) renders the document production issued, not the release's (AC-ISSUE-6, R1T-WA2-02, R1T-WA1-01)", async () => {
     const { deps } = createHttpHarness();
-    // Every printed default answered (production printed defaults left in unanswered boxes; this release's FINAL refuses
-    // to issue a printed default as an answer – ISSUE-legacy-final-05).
-    const b = await built({ ...NA_CASE, answers: { ...NA_CASE.answers, "F-37": "A little", "F-38": true }, boxes: { ...NA_CASE.boxes, "F-26": [{ text: "45 minutes", origin: "clinician", by: "sarah" }] } });
+    const b = await built(NA_CASE);
     const signed = await demoSign(deps, b);
     const receipt = signed.receipt as SignReceipt;
     const bound = await demoRender(deps, b, { ...b.report, status: "signed", receipt }, receipt);
@@ -166,10 +167,13 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     const old = await demoRender(deps, b, { ...b.report, status: "signed", receipt: legacy }, legacy);
     assert.equal(old.status, 200, JSON.stringify(old.json));
     assert.equal(old.headers.get("x-medreport-render"), "final");
-    const text = (bytes: Uint8Array) => (openZipSafely(bytes).file("word/document.xml")?.asText() ?? "").replace(/<[^>]+>/g, "");
-    assert.equal(text(bound.bytes as Uint8Array).includes("More physiotherapy is advised."), false, "the release's own approval leaves the ruled-out box out");
-    assert.equal(text(old.bytes as Uint8Array).includes("More physiotherapy is advised."), true, "production's approval prints it, as production did");
+    assert.equal(documentText(bound.bytes as Uint8Array).includes("More physiotherapy is advised."), false, "the release's own approval leaves the ruled-out box out");
+    // bh2 fix round 1 (R1T-WA2-02): production's frozen forms engine issues it – production's answers (no condition
+    // reading: the ruled-out F-06 prints, as production printed it) – so it is not the release's bound document.
+    const production = await renderPreReleaseFinal({ report: b.report, form: b.form as FormDefinition, file: { bytes: b.fileBytes as Uint8Array, mimeType: DOCX_MIME, sha256: (b.form as FormDefinition).file.sha256, sizeBytes: (b.fileBytes as Uint8Array).byteLength }, receipt: legacy, format: "original" });
+    assert.equal(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(production.bytes));
     assert.notEqual(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(bound.bytes as Uint8Array));
+    assert.equal(documentText(old.bytes as Uint8Array).includes("More physiotherapy is advised."), true, "production's approval prints it, as production did");
   });
 });
 

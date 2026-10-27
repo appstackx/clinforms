@@ -4,6 +4,9 @@
  * fill     – the docx fill of a fictional form with FINAL semantics (answers from the built report as approved, or
  *            input.fill.answers); check.fill: {refused, contains[], notContains[], xmlMatch[], xmlNotMatch[], maxMs}.
  *            BLOCK = the FINAL fill is refused (4xx). input.fill.hostile builds a hostile-size Word file instead.
+ *            input.fill.issuedWith "pre-release" (bh2 fix round 1, R1T-WA2-02): the FINAL copy of a receipt from before
+ *            the release – forms/render-form.ts renderPreReleaseFinal (production's frozen answers and fill; no
+ *            input.fill.answers).
  * lint     – core/form-map-lint.ts lintFormMap(form) (WE); check.lint {rule, field}: FLAG = that rule reports an
  *            error, PASS = no error. Missing module = the case fails (pending WE).
  * assemble – ai/assemble.ts assembleDraft with input.assemble.output (a hand-written DraftOutput); check.assemble
@@ -26,7 +29,7 @@ import { answeredByPerson, questionStatus } from "../../../../ui/components/revi
 import { CANDIDATE_ENGINE } from "./engine";
 import type { FormDefinition, FormField, Report } from "../../../types";
 import { DOCX_MIME, sha256Hex as fileSha256 } from "../../../../forms/file";
-import { renderFormFile } from "../../../../forms/render-form";
+import { renderFormFile, renderPreReleaseFinal } from "../../../../forms/render-form";
 import { openZipSafely } from "../../../../forms/zip-guard";
 import { buildCase, buildForm, CORPUS_AT, ownerOf, rolesOf } from "./build";
 import type { ValidatorEngine } from "./engine";
@@ -337,7 +340,11 @@ async function runFill(c: RunCase): Promise<PathOutcome> {
   let out: Awaited<ReturnType<typeof renderFormFile>> | null = null;
   let refusal: string | null = null;
   try {
-    out = await renderFormFile({ form, file: { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength }, answers, draft: fill.draft === true, format: "original" });
+    const file = { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength } as const;
+    out =
+      fill.issuedWith === "pre-release"
+        ? await renderPreReleaseFinal({ report: built.report, form, file, receipt: { signer: clinicianOf(roles.signer), signedAt: CORPUS_AT }, format: "original" })
+        : await renderFormFile({ form, file, answers, draft: fill.draft === true, format: "original" });
   } catch (err) {
     const e = err as { status?: number; init?: { code?: string; detail?: string } };
     if (typeof e.status === "number" && e.status < 500) refusal = `${e.status} ${e.init?.code ?? ""} ${String(e.init?.detail ?? "").slice(0, 120)}`;

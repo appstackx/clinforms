@@ -85,6 +85,7 @@
     "src/modules/medreport/api/handlers/forms-fill-preview.ts": "WA2",
     "src/modules/medreport/core/rtf/**": "WA2",
     "src/modules/medreport/forms/request-caps.ts": "WA2",
+    "src/modules/medreport/forms/pre-release/**": "WA2",
     "src/modules/medreport/api/handlers/forms-analyse.ts": "WA2",
 
     "src/modules/medreport/core/validation/opinion-language.ts": "WB",
@@ -242,7 +243,24 @@
     {"path": "docs/bh2-ownership.json", "workstream": "WF", "branch": "ws/bh2-copy", "reason": "WF: scripts/medreport/guide-terms-check.mjs taken off \"new\" once the file exists."},
     {"path": "src/modules/medreport/docgen/view-model.ts", "workstream": "WF", "branch": "ws/bh2-copy", "reason": "B3-21: two additive render-time fields (completion, instructingParty.isFormReferrer), not stored."},
     {"path": "src/modules/medreport/core/provenance.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC design 6/7: new WC file (provenance stamps, proposals, factoryBoxOf); mapped to WC in paths at the merge."},
-    {"path": "src/modules/medreport/core/validation/approver-decision.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: new WC file (APPROVER_DECISION validator); mapped to WC in paths at the merge."}
+    {"path": "src/modules/medreport/core/validation/approver-decision.ts", "workstream": "WC", "branch": "ws/bh2-review", "reason": "WC: new WC file (APPROVER_DECISION validator); mapped to WC in paths at the merge."},
+    {"path": "docs/bh2-release.md", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-02 (shim 2 first, rollback) and R1T-WA1-01 (check-issued --baseline-ref) – run/r1-fix-WA1.md §2."},
+    {"path": "scripts/admin/check-issued.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: UNBOUND -> NOT_COMPARED and MAP_CHANGED for a pre-release receipt (UNBOUND was RG-1's vacuous outcome)."},
+    {"path": "scripts/medreport/bh2-integration.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: a pre-release report no longer reads the printed words at run time; its gap stays open."},
+    {"path": "scripts/medreport/corpus-diff.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-07: replay gate compares by code + evidence across boxes, voice owner = Report.approver, rows keyed to approved entries. No allowlist entry added."},
+    {"path": "scripts/medreport/sign-render-binding.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01 / R1T-WA2-02: a no-hash receipt is production's approval; merged to WA2's version (production's frozen engine, byte for byte)."},
+    {"path": "src/modules/medreport/api/handlers/validate.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-03 validation budget 413 and R1T-WA1-04 body read as draft on /validate."},
+    {"path": "src/modules/medreport/core/issue-state-trust.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: the legacy-reading /sign test pinned legacyRuleOutsBeyondServer, removed with the run-time reading."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/evaluate.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive harness inputs render.legacyReceipt, check.render.contains/notContains, store.bodyStatus (ISSUE-legacy-final-*, ROLE-forge-sign-status)."},
+    {"path": "src/modules/medreport/core/validation/citations.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-L1: UNCITED_PARAGRAPH remedy worded by who wrote the text."},
+    {"path": "src/modules/medreport/core/validation/validation.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: B0-7 / R-safety-8 pinned the run-time reading on a report without reportModel (the RG-1 regression); now frozen conditions."},
+    {"path": "src/modules/medreport/ui/components/review/review-model.test.ts", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-01: B0-7 gap test on a frozen condition; the pre-release report stays open."},
+    {"path": "src/modules/medreport/ui/screens/review/review-screen.tsx", "workstream": "WA1", "branch": "ws/bh2-fix1-wa1", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA1-L1: one line, passes the actor to reviewItems."},
+    {"path": "src/modules/medreport/forms/pre-release/**", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: production's forms engine frozen at c883ce5 (never edit) and its entry point; folder mapped to WA2 at this merge."},
+    {"path": "src/modules/medreport/api/handlers/render.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: pre-release receipts dispatched to renderPreReleaseFinal – at the merge placed inside finalFormCopy (WA1's note) so /render and check-issued issue the same document."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/pure-paths.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive: fill.issuedWith \"pre-release\" (FILL-prerelease-*)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/fixtures.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Additive: ParaSpec.control (content control in fictional layouts, FILL-control-*); existing layouts give the same bytes."},
+    {"path": "scripts/medreport/sign-render-binding.test.ts", "workstream": "WA2", "branch": "ws/bh2-fix1-wa2", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WA2-02: AC-ISSUE-6 re-baselined – a pre-release receipt issues production's document (DoC-1 C1 re-baseline)."}
   ],
   "seams": [
     {

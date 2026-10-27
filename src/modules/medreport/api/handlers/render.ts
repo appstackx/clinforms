@@ -40,13 +40,14 @@ import "server-only";
  * state's answers, the receipt's signer and time) hashes to the one checked at approval. Otherwise 409
  * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's.
  *
- * bh2 fix round 1 (R1T-WA1-01, RG-1): a receipt from before the release (minted by production – neither key:
- * sign/receipt.ts isPreReleaseReceipt) approved the document PRODUCTION issued. Its FINAL copy of a referrer's form is
- * filled with the answers production wrote (core/forms productionFormAnswers: no condition reading, no person's
- * decision, unanswered boxes as printed) – never this release's issue state, which would leave out answers production
- * printed. It is filled by this release's forms engine, though, so it is NOT guaranteed byte-identical to production's
- * copy: scripts/admin/check-issued.ts re-issues every such approval with this build and with production's own code and
- * reports each one that differs as CHANGED, before a deploy (Khuram decides on each).
+ * bh2 fix round 1 (R1T-WA1-01, RG-1; R1T-WA2-02): a receipt from before the release (minted by production – neither key:
+ * sign/receipt.ts isPreReleaseReceipt = forms/render-form.ts issuedByPreReleaseEngine) approved the document PRODUCTION
+ * issued. Its FINAL copy of a referrer's form is issued by production's own forms engine, frozen in forms/pre-release
+ * (renderPreReleaseFinal): production's answers (no condition reading, no person's decision, unanswered boxes as
+ * printed) and production's fill, so it is the document production issued – never this release's issue state, which
+ * would leave out answers production printed. The dispatch is in finalFormCopy below, so scripts/admin/check-issued.ts
+ * re-issues exactly what /render issues; it still compares every such approval with production's own code before a
+ * deploy and reports any difference as CHANGED (Khuram decides on each).
  * Release rule (README): no forms-engine change is deployed while approved trial reports exist without first running
  * scripts/admin/check-issued.ts (decrypt, re-render, compare).
  *
@@ -72,7 +73,7 @@ import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
 import { addDocxDemoNotice, stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
-import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers, type FormRenderOutput } from "../../forms/render-form";
+import { fillWarningsHeader, formFileBaseName, issuedByPreReleaseEngine, renderFormFile, renderPreReleaseFinal, withSourceMarkers, type FormRenderOutput } from "../../forms/render-form";
 import type { DecodedFormFile } from "../../forms/file";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import type { MedreportDeps } from "../deps";
@@ -433,9 +434,9 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
 /**
  * The FINAL copy of a referrer's form for a VERIFIED receipt, as POST /render issues it (a receipt that binds the issued
  * document is first compared with it – the handler) – and exactly what scripts/admin/check-issued.ts re-issues, so the
- * pre-deploy check compares what /render would issue. bh2 fix round 1 (R1T-WA1-01): an approval production made is
- * filled with the answers production wrote (sign/receipt.ts finalCopyAnswers). Merge note: the forms engine's frozen
- * pre-release engine (R1T-WA2-02, forms/pre-release) belongs HERE, so both callers get it.
+ * pre-deploy check compares what /render would issue. bh2 fix round 1 (R1T-WA1-01, R1T-WA2-02): an approval production
+ * made is issued by production's frozen forms engine (forms/pre-release renderPreReleaseFinal: production's answers and
+ * fill); any other is filled with the issue state's answers (sign/receipt.ts finalCopyAnswers).
  */
 export async function finalFormCopy(input: {
   report: Report;
@@ -446,6 +447,19 @@ export async function finalFormCopy(input: {
   continuationLabel?: string;
   demoNotice?: string;
 }): Promise<FormRenderOutput> {
+  // R1T-WA2-02 (merge:r1, as both fix reports ask): approved before the release – production's own frozen forms engine
+  // issues it (production's answers and fill), here so /render and check-issued issue the same document.
+  if (issuedByPreReleaseEngine(input.receipt)) {
+    return renderPreReleaseFinal({
+      report: input.report,
+      form: input.form,
+      file: input.file,
+      receipt: input.receipt,
+      format: input.format,
+      ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+      ...(input.demoNotice ? { demoNotice: input.demoNotice } : {}),
+    });
+  }
   return renderFormFile({
     form: input.form,
     file: input.file,

@@ -27,6 +27,11 @@ import "server-only";
  * merge-code guard still refuses every FINAL copy, as on production (review 26/10). `states` passes WA1's issue state
  * through to the fill (forms/docx-fill.ts DocxFillOptions).
  *
+ * bh2 fix round 1 (R1T-WA2-02): a report approved BEFORE this release (a receipt without the release's issued-document
+ * hashes) is issued by production's own forms engine, frozen in forms/pre-release/ – renderPreReleaseFinal(), with
+ * issuedByPreReleaseEngine() to tell the receipts apart – so its FINAL copy is the document production issued, not this
+ * engine's fill of it (forms/pre-release/issue.ts).
+ *
  * Owner: WA2 (forms engine) – docs/bh2-ownership.json.
  */
 import { CONTENT_TYPES, HEADERS } from "../api/contract";
@@ -44,6 +49,8 @@ import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "./file";
 import { mergeTokensInOutput } from "./merge-scan";
 import { findMergeTokens, listMergeTokensInWords } from "../core/merge-fields";
 import { fillPdfReport } from "./pdf-fill";
+
+export { PRE_RELEASE_ENGINE, issuedByPreReleaseEngine, renderPreReleaseFinal, type PreReleaseFinalInput } from "./pre-release/issue";
 
 export type FormOutputFormat = "original" | "pdf";
 
