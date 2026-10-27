@@ -273,7 +273,11 @@
     {"path": "scripts/medreport/usage-recording.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline, identical to WB's change."},
     {"path": "scripts/medreport/wc-provenance-api.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WC-08: factory copies leave opinion answers empty; after the takeover Tom adopts instead of 'own words'; a redraft of an opinion box carries no answer."},
     {"path": "src/server/store/tenant-store.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create)."},
-    {"path": "src/server/store/store-signin.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create)."}
+    {"path": "src/server/store/store-signin.test.ts", "workstream": "WC", "branch": "ws/bh2-fix1-wc", "reason": "merge:r1 (orchestrator grant, 27/10/2026): Fixture re-baseline (R1T-WC-06 approver on create)."},
+    {"path": "src/modules/medreport/core/text/sentences.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-01 (SEC-1): linear splitter (differential fuzz vs e89f93f: 0 differences in 381,156 comparisons)."},
+    {"path": "src/modules/medreport/core/validation/__corpus__/harness/fixtures.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): 2 added lines registering the new fictional fixture cf-wd-progress."},
+    {"path": "src/modules/medreport/core/issue-state.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-L1: a numbered session row's box is not asked when its session is missing (release-model reports only)."},
+    {"path": "src/modules/medreport/core/forms/answers.ts", "workstream": "WD", "branch": "ws/bh2-fix1-wd", "reason": "merge:r1 (orchestrator grant, 27/10/2026): R1T-WD-L1: a not-asked session-row box's printed default is cleared; at the merge combined with WA1's removal of the run-time condition branch."}
   ],
   "seams": [
     {

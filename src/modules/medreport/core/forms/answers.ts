@@ -433,7 +433,10 @@ export function buildFormAnswers(
         answers[field.id] = state.rows ? { text: state.text, rows: state.rows } : state.value === undefined ? { text: state.text } : { text: state.text, value: state.value };
         break;
       case "not_applicable":
-        if (state.reason === "session_not_attended") answers[field.id] = { text: "", blank: true };
+        // A session date or time the record does not have: its line is empty. Another box of that session's row (its
+        // duration, R1T-WD-L1) prints nothing in its place – its printed default ("30 minutes") is cleared too.
+        // (merge:r1: WA1's R1T-WA1-01 removed the run-time condition branch here – frozen conditions only.)
+        if (state.reason === "session_not_attended") answers[field.id] = field.fillSource.kind === "registration" ? { text: "", blank: true } : notAsked(field);
         else answers[field.id] = notAsked(field);
         break;
       case "blank":

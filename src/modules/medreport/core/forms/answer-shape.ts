@@ -65,11 +65,24 @@ export type TimePoint = "assessment" | "latest" | "episode";
 const EARLIER_LABEL = /\b(?:initial|first|pre[- ]?injury|before|prior|previous(?:ly)?|since|history|historic|so far|to date|baseline|at (?:the )?(?:start|outset|assessment|referral)|on referral|at onset|onset|originally)\b/i;
 /** A question about the whole episode (what was done, how many) rather than one time point. */
 const EPISODE_LABEL = /\b(?:sessions?|appointments?|attend(?:ed|ance)|treatment (?:given|provided)|treatments?|number of|dates?|discharged? on|DNA)\b/i;
+/**
+ * bh2 fix round 1 (R1T-WD-04): facts of the whole episode that a later note does not change – the body area treated,
+ * when the question asks for the area itself ("Area treated 1", "Area affected 2", "Site of injury", "Body part"; not
+ * "Area treated 1 – improvement the patient reports (%)", which asks for the position now), and the modalities used over
+ * the episode ("Modalities given – Hydrotherapy", or a tick whose guidance says the modality was used). A question that
+ * says "now", "current" or "at discharge" still asks for the latest position.
+ */
+const EPISODE_AREA =
+  /\b(?:(?:affected|injured|injury|treated|problem|presenting|main) (?:area|region|site|body part|part of the body)|(?:area|region|site|part)s? (?:affected|injured|treated|of (?:the )?(?:injury|complaint|problem))|body (?:part|region|area)|site of (?:the )?(?:injury|pain|symptoms))s?(?:\s*\(?\d{1,2}\)?)?\s*[:?.]?\s*$/i;
+const EPISODE_MODALITY =
+  /\b(?:(?:treatment )?modalit(?:y|ies)\s+(?:were\s+|was\s+)?(?:used|given|delivered|applied|received)|(?:this|the|that)\s+(?:modality|technique|intervention|treatment)\s+was\s+(?:used|given|provided|delivered|applied))\b/i;
+const NOW_WORDS = /\b(?:now|current(?:ly)?|at discharge|latest|present(?:ly)?|today)\b/i;
 
 /**
  * The time point a box reports (bh2 WD design 8): "assessment" on an initial assessment form; on any other form
  * "latest" for a compact or structured answer unless its question names an earlier time point ("assessment") or the
- * whole episode ("episode"); text answers report the episode (they are checked by their wording, not held back).
+ * whole episode ("episode": what was done, how many – and, since fix round 1, the body area and the modalities used,
+ * EPISODE_AREA, EPISODE_MODALITY); text answers report the episode (they are checked by their wording, not held back).
  */
 export function timePointOf(field: Pick<FormField, "label" | "guidance" | "answerType" | "fillSource" | "anchor">, kind: FormTimeKind | null): TimePoint {
   if (kind === "initial") return "assessment";
@@ -79,6 +92,8 @@ export function timePointOf(field: Pick<FormField, "label" | "guidance" | "answe
   const structured = field.answerType !== "short_text" && field.answerType !== "long_text";
   if (!compact && !structured) return "episode";
   if (EPISODE_LABEL.test(field.label) && !/\b(?:now|current(?:ly)?|at discharge|latest|present(?:ly)?)\b/i.test(words)) return "episode";
+  // A printed label is short; a longer one is not read for these (each rule reads it once).
+  if (words.length <= 600 && (EPISODE_AREA.test(field.label.trim()) || EPISODE_MODALITY.test(words)) && !NOW_WORDS.test(words)) return "episode";
   return "latest";
 }
 

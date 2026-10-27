@@ -303,3 +303,57 @@ export function dosePart(input: ValidatorInput): DraftFitPart {
     },
   };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Attendance framing (bh2 fix round 1, R1T-WD-L3)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** "7 of 7 appointments were attended", "attended 7 of 7 sessions": the same number twice. */
+const N_OF_N = /\b(?:attended\s+)?(\d{1,3})\s+(?:out\s+)?of\s+(?:the\s+)?(\d{1,3})\s+(?:booked\s+|planned\s+|scheduled\s+)?(?:appointments?|sessions?|visits?|treatments?)\b/gi;
+/** "with 1 did not attend" – the attendance record's abbreviation written out into a sentence that has no verb for it. */
+const WITH_N_DNA = /\bwith\s+(\d{1,3}|one|two|three|four|five|six)\s+(?:did not attend|DNA)\b/i;
+
+/**
+ * A drafted attendance line that misreads the attendance record (R1T-WD-L3): "7 of 7 appointments were attended" reads
+ * as if those were all the appointments (the record's own wording avoids it: "7 appointments attended to date, none
+ * missed (1 cancelled with notice)"), and "…, with 1 did not attend on 22/09/2026" is not a sentence. Advice only – the
+ * figures are the record's; the person rewords it or keeps it.
+ */
+export function attendanceFramingPart(input: ValidatorInput): DraftFitPart {
+  const fact = (input.computedFacts ?? []).find((f) => f.id === "FACT-attendance");
+  const record = fact ? ` – the attendance record gives “${fact.value}”` : "";
+  return {
+    paragraph(p, section) {
+      if (section.answer && section.answer.kind !== "text") return [];
+      const flags: ReportFlag[] = [];
+      for (const m of Array.from(p.text.matchAll(N_OF_N))) {
+        if (m[1] !== m[2]) continue;
+        flags.push(
+          makeFlag({
+            code: "DRAFT_FIT",
+            severity: "warning",
+            sectionKey: section.key,
+            paragraphId: p.id,
+            evidence: `attendance ${m[1]} of ${m[2]}`,
+            message: `“${m[0]}” reads as if those were all the appointments${record}: say “${m[1]} appointments were attended and none was missed”, or keep it.`,
+          }),
+        );
+        break;
+      }
+      const dna = WITH_N_DNA.exec(p.text);
+      if (dna) {
+        flags.push(
+          makeFlag({
+            code: "DRAFT_FIT",
+            severity: "warning",
+            sectionKey: section.key,
+            paragraphId: p.id,
+            evidence: "attendance wording",
+            message: `“${dna[0]}” is not a whole sentence: say “${dna[1]} ${/^(?:1|one)$/i.test(dna[1]) ? "appointment was" : "appointments were"} missed (did not attend)” with the date, or reword it.`,
+          }),
+        );
+      }
+      return flags;
+    },
+  };
+}

@@ -28,6 +28,15 @@
  *    and checked as drafted text: holding back meta-wording never lets an opinion beside it pass.
  *    Ledger hook "meta-wording".
  *
+ * 3. Comments about the record (bh2 fix round 1, R1T-WD-L2 – KL-WD-01 hit on Blue Heart's forms with the sample notes):
+ *    in a drafted ANSWER (not a gap, whose job is to say what the notes do not record), a sentence about the record
+ *    rather than the patient is held back the same way – "The record does not hold a separate set of further
+ *    observations …", "The notes do not give the dose.", "The frequency of use was not stated." Narrow on purpose: the
+ *    subject is the record, the notes or a note, or a detail of the record (its frequency, dose, duration, date, time,
+ *    reason …) that was "not stated / recorded / specified / documented / noted / mentioned". A clinical negative ("No
+ *    red flags were reported.", "Swelling was not present.", "No neurological deficit was noted.") is the patient's
+ *    finding, never a comment, and is never held back.
+ *
  * Pure; browser and server.
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
@@ -138,6 +147,24 @@ const SELF_CORRECTION: readonly RegExp[] = [
   /\bI (?:mean|meant),/,
 ];
 
+/** A comment about the record in an answer (see the header, part 3). */
+const RECORD_COMMENTARY: readonly RegExp[] = [
+  // "The record does not hold …", "The notes do not give the dose", "Her note did not mention …", "The record holds no …"
+  /\b(?:the|this|that|her|his|their|my|each|any|a|later|earlier|clinical|cited)\s+(?:clinical\s+)?(?:record|records|notes?|file|documentation|entries|entry)\s+(?:(?:does|do|did)\s+not|doesn't|don't|didn't|holds?\s+no|gives?\s+no|contains?\s+no|has\s+no|have\s+no|makes?\s+no|records?\s+no)\b/i,
+  // "The frequency of use was not stated.", "The dose was not recorded", "No date was specified"
+  /\b(?:the\s+)?(?:frequency|dose|dosage|duration|amount|date|time|timing|reason|cause|number|length|strength|quantity|details?|specifics?)(?:\s+of\s+[a-z]+(?:\s+[a-z]+)?)?\s+(?:was|were|is|are|has\s+not\s+been|have\s+not\s+been)\s+(?:not\s+)?(?:stated|recorded|specified|documented|noted|mentioned|given\s+in\s+the\s+notes?)\b/i,
+];
+
+/** The first comment about the record in `text` (part 3): [start, end), or null. */
+function recordCommentaryMatch(text: string): { start: number; end: number } | null {
+  for (const re of RECORD_COMMENTARY) {
+    const m = re.exec(text);
+    // The detail form needs its negation ("was not stated"), "has not been recorded" carries its own.
+    if (m && (re !== RECORD_COMMENTARY[1] || /\bnot\b/i.test(m[0]))) return { start: m.index, end: m.index + m[0].length };
+  }
+  return null;
+}
+
 /** A sentence that says something about what came before it ("that was …", "this is from …", "it should be …"). */
 const POINTS_BACK_AT_EARLIER = /\b(?:that|this|it|these|those)\s+(?:was|is|were|are|should|belongs?|came|comes|refers?|applies|applied)\b/i;
 
@@ -159,10 +186,14 @@ function quotedSpans(text: string): Array<[number, number]> {
  * The first meta match in `text`: [start, end) of the matched words and its kind – the prompt's own `term` (a tag, a
  * label), or a `correction` (the drafting correcting itself) – or null. A self-correction in quoted speech is not one.
  */
-export function metaMatch(text: string): { start: number; end: number; kind: "term" | "correction" } | null {
+export function metaMatch(text: string, opts: MetaOptions = {}): { start: number; end: number; kind: "term" | "correction" | "commentary" } | null {
   for (const re of PROMPT_TERMS) {
     const m = re.exec(text);
     if (m) return { start: m.index, end: m.index + m[0].length, kind: "term" };
+  }
+  if (opts.recordCommentary) {
+    const c = recordCommentaryMatch(text);
+    if (c) return { ...c, kind: "commentary" };
   }
   const quotes = quotedSpans(text);
   const quoted = (i: number) => quotes.some(([a, b]) => i > a && i < b);
@@ -177,9 +208,17 @@ export function metaMatch(text: string): { start: number; end: number; kind: "te
   return null;
 }
 
+/**
+ * What counts as meta-wording: the prompt's own terms and self-corrections always; with `recordCommentary` (a drafted
+ * answer, never a gap) also a comment about the record (part 3).
+ */
+export interface MetaOptions {
+  recordCommentary?: boolean;
+}
+
 /** Whether `text` holds drafting meta-wording – in any of its sentences. */
-export function hasMetaWording(text: string): boolean {
-  return metaMatch(text) !== null || splitSentences(text, "notes").some((p) => metaMatch(p.text) !== null);
+export function hasMetaWording(text: string, opts: MetaOptions = {}): boolean {
+  return metaMatch(text, opts) !== null || splitSentences(text, "notes").some((p) => metaMatch(p.text, opts) !== null);
 }
 
 /** The bracketed aside "( … )" or "[ … ]" around [start, end), if the piece has one. */
@@ -206,8 +245,8 @@ function remainder(piece: string, start: number, end: number): string | null {
  * The smallest removable part of one sentence-piece holding meta-wording: a bracketed aside, a leading clause up to its
  * first comma or a trailing clause after its last comma – when what is left is still a sentence – else the whole piece.
  */
-function metaPart(piece: string): { kept: string | null; held: string } {
-  const m = metaMatch(piece);
+function metaPart(piece: string, opts: MetaOptions): { kept: string | null; held: string } {
+  const m = metaMatch(piece, opts);
   if (!m) return { kept: piece, held: "" };
   // Only the prompt's own term goes as an aside on its own. A correction in brackets ("limited (or rather, full and
   // pain-free) at discharge") corrects the words before it: the whole sentence is held back (bh2 WD harden N2).
@@ -247,15 +286,15 @@ export interface MetaHoldBack {
  * Hold back drafting meta-wording (see the header). Unchanged – `heldBack` and `retracted` empty – when there is none,
  * or while the "meta-wording" hook is disabled.
  */
-export function holdBackMeta(text: string): MetaHoldBack {
-  if (!hookEnabled(META_WORDING_HOOK) || !hasMetaWording(text)) return { text, heldBack: [], retracted: [] };
+export function holdBackMeta(text: string, opts: MetaOptions = {}): MetaHoldBack {
+  if (!hookEnabled(META_WORDING_HOOK) || !hasMetaWording(text, opts)) return { text, heldBack: [], retracted: [] };
   const pieces = splitSentences(text, "notes");
   const kept: string[] = pieces.map((p) => p.text);
   const asides = new Map<number, string>();
   const held = new Set<number>();
   const retracting = new Set<number>();
   pieces.forEach((p, i) => {
-    const m = metaMatch(p.text);
+    const m = metaMatch(p.text, opts);
     if (m === null) return;
     // A retraction: a sentence that opens by correcting what came before, or any self-correction that points back at
     // it ("I have double-checked and that was the first visit." – bh2 WD harden N2).
@@ -270,7 +309,7 @@ export function holdBackMeta(text: string): MetaHoldBack {
       return;
     }
     if (held.has(i)) return;
-    const part = metaPart(p.text);
+    const part = metaPart(p.text, opts);
     if (part.kept !== null && part.kept !== p.text) {
       kept[i] = part.kept;
       asides.set(i, part.held);

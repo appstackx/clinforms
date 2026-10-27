@@ -116,14 +116,38 @@ export function figuresByKind(sentence: string): { dates: string[]; values: stri
   return { dates: all.filter((f) => DATE_FIGURE.test(f)), values: all.filter((f) => !DATE_FIGURE.test(f)).sort() };
 }
 
-/** Whether every item of `a` is in `b` (multisets). */
-function within(a: readonly string[], b: readonly string[]): boolean {
-  const pool = [...b];
-  for (const x of a) {
-    const i = pool.indexOf(x);
-    if (i < 0) return false;
-    pool.splice(i, 1);
-  }
+/** A multiset of strings, as counts. */
+function countsOf(items: readonly string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const x of items) out.set(x, (out.get(x) ?? 0) + 1);
+  return out;
+}
+
+/** Whether every item of `a` is in `b` (multisets, as counts). Linear in the items of `a`. */
+function within(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+  return Array.from(a.entries()).every(([x, n]) => (b.get(x) ?? 0) >= n);
+}
+
+/** Whether two sets share an item. Linear in the smaller one. */
+function intersects(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  return Array.from(small).some((x) => large.has(x));
+}
+
+/** The figures of a sentence as the repeat rules compare them: its dates (a set) and its other figures (counts). */
+interface FigureFacts {
+  readonly dates: ReadonlySet<string>;
+  readonly values: ReadonlyMap<string, number>;
+}
+
+function figureFactsOf(sentence: string): FigureFacts {
+  const { dates, values } = figuresByKind(sentence);
+  return { dates: new Set(dates), values: countsOf(values) };
+}
+
+function sameFigureFacts(x: FigureFacts, y: FigureFacts): boolean {
+  if (!within(x.values, y.values) && !within(y.values, x.values)) return false;
+  if (x.dates.size > 0 && y.dates.size > 0 && !intersects(x.dates, y.dates)) return false;
   return true;
 }
 
@@ -132,11 +156,7 @@ function within(a: readonly string[], b: readonly string[]): boolean {
  * one all in the other, and – when both are dated – a date in common.
  */
 export function sameFigures(a: string, b: string): boolean {
-  const x = figuresByKind(a);
-  const y = figuresByKind(b);
-  if (!within(x.values, y.values) && !within(y.values, x.values)) return false;
-  if (x.dates.length > 0 && y.dates.length > 0 && !x.dates.some((d) => y.dates.indexOf(d) >= 0)) return false;
-  return true;
+  return sameFigureFacts(figureFactsOf(a), figureFactsOf(b));
 }
 
 /**
@@ -180,7 +200,11 @@ const LOOSE_TIME = new Set(["previous", "original", "recent", "since", "anymore"
 function markersOf(sentence: string): { contrast: Map<string, Set<string>>; time: Set<string> } {
   const contrast = new Map<string, Set<string>>();
   const time = new Set<string>();
-  const add = (kind: string, w: string) => contrast.set(kind, new Set([...Array.from(contrast.get(kind) ?? []), w]));
+  const add = (kind: string, w: string) => {
+    const words = contrast.get(kind);
+    if (words) words.add(w);
+    else contrast.set(kind, new Set([w]));
+  };
   for (const w of alphaWords(sentence)) {
     const kind = CONTRAST_KINDS[w];
     if (kind) add(kind, w);
@@ -224,16 +248,17 @@ function polarityOf(sentence: string, names: ReadonlySet<string>): { negated: Se
     const tokens = clause.toLowerCase().match(/[a-z]+(?:['’][a-z]+)?/g) ?? [];
     const content = tokens.map((t) => Array.from(contentWords(t, names))[0] ?? null);
     content.forEach((c) => c && bump(total, c));
+    // nextTaken[j]: the first position at or after j that a negation takes – a content word that is not filler (bh2
+    // R1T-WD-01: one table per clause, so a run of negations costs linear time, never a scan from each one).
+    const nextTaken = new Int32Array(tokens.length + 1);
+    nextTaken[tokens.length] = tokens.length;
+    for (let j = tokens.length - 1; j >= 0; j--) nextTaken[j] = !NEGATION_FILLER.has(tokens[j]) && content[j] ? j : nextTaken[j + 1];
     tokens.forEach((t, i) => {
       if (!NEGATION_WORDS.has(t.replace("’", "'"))) return;
-      let taken = 0;
-      for (let j = i + 1; j < tokens.length && taken < 2; j++) {
-        if (NEGATION_FILLER.has(tokens[j])) continue;
-        const c = content[j];
-        if (!c) continue;
+      for (let j = nextTaken[i + 1], taken = 0; j < tokens.length && taken < 2; j = nextTaken[j + 1], taken++) {
+        const c = content[j]!;
         negated.add(c);
         bump(inNegation, c);
-        taken++;
       }
     });
   }
@@ -255,13 +280,52 @@ export function negatedWords(sentence: string, names: ReadonlySet<string> = new 
  * longer sentence that adds its own negatives ("…, with no restrictions, and no headaches") does not.
  */
 export function polarityConflict(a: string, b: string, names: ReadonlySet<string> = new Set()): boolean {
-  const x = polarityOf(a, names);
-  const y = polarityOf(b, names);
-  const denies = (p: typeof x, q: typeof x) => Array.from(p.negated).some((w) => !p.asserted.has(w) && q.asserted.has(w) && !q.negated.has(w));
+  return polarityConflictOf(polarityOf(a, names), polarityOf(b, names));
+}
+
+interface Polarity {
+  readonly negated: ReadonlySet<string>;
+  readonly asserted: ReadonlySet<string>;
+}
+
+function polarityConflictOf(x: Polarity, y: Polarity): boolean {
+  const denies = (p: Polarity, q: Polarity) => Array.from(p.negated).some((w) => !p.asserted.has(w) && q.asserted.has(w) && !q.negated.has(w));
   return denies(x, y) || denies(y, x);
 }
 
 const subset = (a: ReadonlySet<string>, b: ReadonlySet<string>) => Array.from(a).every((w) => b.has(w));
+
+/**
+ * What the repeat rules read from one sentence, worked out once per sentence (bh2 R1T-WD-01, SEC-1: the rules used to
+ * re-read every sentence, and re-split every earlier paragraph, for each pair compared – 13 s for 96 KB).
+ */
+export interface SentenceFacts {
+  readonly text: string;
+  /** How many alphabetic words it has (alphaWords). */
+  readonly words: number;
+  readonly content: ReadonlySet<string>;
+  readonly figures: FigureFacts;
+  readonly contrast: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Its time points (time words and dates), and the same without the loose time words (LOOSE_TIME). */
+  readonly time: ReadonlySet<string>;
+  readonly firmTime: ReadonlySet<string>;
+  readonly polarity: Polarity;
+}
+
+/** The facts of a sentence (see SentenceFacts). Linear in its length. */
+export function sentenceFacts(sentence: string, names: ReadonlySet<string> = new Set()): SentenceFacts {
+  const markers = markersOf(sentence);
+  return {
+    text: sentence,
+    words: alphaWords(sentence).length,
+    content: contentWords(sentence, names),
+    figures: figureFactsOf(sentence),
+    contrast: markers.contrast,
+    time: markers.time,
+    firmTime: new Set(Array.from(markers.time).filter((t) => !LOOSE_TIME.has(t))),
+    polarity: polarityOf(sentence, names),
+  };
+}
 
 /**
  * Whether two sentences report the same finding, their other words aside (bh2 WD harden N1). Always: neither denies
@@ -275,17 +339,18 @@ const subset = (a: ReadonlySet<string>, b: ReadonlySet<string>) => Array.from(a)
  * sentence that says "at discharge", "still" or "left" where its twin does not says something its twin does not.
  */
 export function sameFinding(a: string, b: string, mode: "advice" | "removal" = "advice", names: ReadonlySet<string> = new Set()): boolean {
-  if (polarityConflict(a, b, names)) return false;
-  const x = markersOf(a);
-  const y = markersOf(b);
+  return sameFindingOf(sentenceFacts(a, names), sentenceFacts(b, names), mode);
+}
+
+/** sameFinding on the facts of the two sentences. */
+export function sameFindingOf(x: SentenceFacts, y: SentenceFacts, mode: "advice" | "removal" = "advice"): boolean {
+  if (polarityConflictOf(x.polarity, y.polarity)) return false;
   const kinds = new Set([...Array.from(x.contrast.keys()), ...Array.from(y.contrast.keys())]);
   if (mode === "removal") {
-    if (!subset(negatedWords(a, names), negatedWords(b, names))) return false;
+    if (!subset(x.polarity.negated, y.polarity.negated)) return false;
     return sameSet(x.time, y.time) && Array.from(kinds).every((k) => sameSet(x.contrast.get(k), y.contrast.get(k)));
   }
-  const tx = Array.from(x.time).filter((t) => !LOOSE_TIME.has(t));
-  const ty = Array.from(y.time).filter((t) => !LOOSE_TIME.has(t));
-  if (tx.length > 0 && ty.length > 0 && !tx.some((t) => ty.includes(t))) return false;
+  if (x.firmTime.size > 0 && y.firmTime.size > 0 && !intersects(x.firmTime, y.firmTime)) return false;
   return Array.from(kinds).every((k) => {
     const p = x.contrast.get(k);
     const q = y.contrast.get(k);
@@ -295,18 +360,27 @@ export function sameFinding(a: string, b: string, mode: "advice" | "removal" = "
 
 /** Whether two sentences say the same thing (see the header). */
 export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>): boolean {
-  const [short, long] = alphaWords(a).length <= alphaWords(b).length ? [a, b] : [b, a];
-  if (alphaWords(short).length < 5) return false;
-  if (!sameFigures(a, b)) return false;
-  if (!sameFinding(a, b, "advice", names)) return false;
-  const ws = contentWords(short, names);
-  const wl = contentWords(long, names);
+  return sentencesRepeatOf(sentenceFacts(a, names), sentenceFacts(b, names));
+}
+
+/**
+ * sentencesRepeat on the facts of the two sentences. Symmetric; the cheapest tests come first (all must hold). Linear
+ * in the facts of the two sentences.
+ */
+export function sentencesRepeatOf(x: SentenceFacts, y: SentenceFacts): boolean {
+  const [short, long] = x.words <= y.words ? [x, y] : [y, x];
+  if (short.words < 5) return false;
+  const ws = short.content;
+  const wl = long.content;
   if (ws.size < 3 || wl.size < 3) return false;
+  const [few, many] = ws.size <= wl.size ? [ws, wl] : [wl, ws];
   let shared = 0;
-  ws.forEach((w) => {
-    if (wl.has(w)) shared++;
+  few.forEach((w) => {
+    if (many.has(w)) shared++;
   });
-  return shared / Math.min(ws.size, wl.size) >= 0.8;
+  if (shared / few.size < 0.8) return false;
+  if (!sameFigureFacts(x.figures, y.figures)) return false;
+  return sameFindingOf(x, y, "advice");
 }
 
 /**
@@ -317,9 +391,10 @@ export function sentencesRepeat(a: string, b: string, names: ReadonlySet<string>
  * removed. The figures and dates are checked by the one-click engine (the twin must say every one of them).
  */
 export function removableRepeat(removed: string, twin: string, names: ReadonlySet<string>): boolean {
-  if (!sentencesRepeat(removed, twin, names) || !sameFinding(removed, twin, "removal", names)) return false;
-  const inTwin = contentWords(twin, names);
-  return Array.from(contentWords(removed, names)).every((w) => inTwin.has(w));
+  const x = sentenceFacts(removed, names);
+  const y = sentenceFacts(twin, names);
+  if (!sentencesRepeatOf(x, y) || !sameFindingOf(x, y, "removal")) return false;
+  return Array.from(x.content).every((w) => y.content.has(w));
 }
 
 const TIME_WORDS =
@@ -362,43 +437,85 @@ function labelSubject(label: string): Set<string> {
  * "Sleep quality on discharge"). In doubt the pair is not compared: a repeat is only advice.
  */
 export function timePointPair(a: string, b: string): boolean {
-  if (a.trim().toLowerCase() === b.trim().toLowerCase()) return false;
-  const x = withoutTimePoint(a);
-  const y = withoutTimePoint(b);
-  if (x !== "" && x === y) return true;
-  const ta = timeWordsOf(a);
-  const tb = timeWordsOf(b);
-  if (ta.size === 0 || tb.size === 0) return false;
-  if (ta.size === tb.size && Array.from(ta).every((w) => tb.has(w))) return false;
-  const sa = labelSubject(a);
-  const sb = labelSubject(b);
-  if (sa.size === 0 && sb.size === 0) return true;
-  const shared = Array.from(sa).filter((w) => sb.has(w)).length;
-  const union = new Set([...Array.from(sa), ...Array.from(sb)]).size;
+  return timePointPairOf(labelFacts(a), labelFacts(b));
+}
+
+/** What the pair rules read from a box's label, worked out once per box (bh2 R1T-WD-01). */
+interface LabelFacts {
+  /** The label trimmed, in lower case. */
+  readonly lower: string;
+  /** withoutTimePoint, timeWordsOf and labelSubject of the label, and its numbered row. */
+  readonly without: string;
+  readonly time: ReadonlySet<string>;
+  readonly subject: ReadonlySet<string>;
+  readonly row: { group: string; n: number; column: string } | null;
+}
+
+function labelFacts(label: string): LabelFacts {
+  return { lower: label.trim().toLowerCase(), without: withoutTimePoint(label), time: timeWordsOf(label), subject: labelSubject(label), row: numberedRow(label) };
+}
+
+/** timePointPair on the facts of the two labels. */
+function timePointPairOf(a: LabelFacts, b: LabelFacts): boolean {
+  if (a.lower === b.lower) return false;
+  if (a.without !== "" && a.without === b.without) return true;
+  if (a.time.size === 0 || b.time.size === 0) return false;
+  if (a.time.size === b.time.size && Array.from(a.time).every((w) => b.time.has(w))) return false;
+  if (a.subject.size === 0 && b.subject.size === 0) return true;
+  const [few, many] = a.subject.size <= b.subject.size ? [a.subject, b.subject] : [b.subject, a.subject];
+  const shared = Array.from(few).filter((w) => many.has(w)).length;
+  const union = a.subject.size + b.subject.size - shared;
   return union > 0 && shared / union >= 0.5;
 }
 
-/** "Activity 2 – frequency" → {stem "activity#– frequency", n 2, column "– frequency"}; null when not a numbered row. */
+const isDigitChar = (ch: string) => ch >= "0" && ch <= "9";
+/** A line terminator, which "." in a regular expression does not match. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * "Activity 2 – frequency" → {stem "activity#– frequency", n 2, column "– frequency"}; null when not a numbered row.
+ * The last run of digits is the row number (what `/^(.*?)(\d+)(\D*)$/` matched), found by one scan from the end: the
+ * regular expression backtracked quadratically on a long label with many digit runs (bh2 R1T-WD-01).
+ */
 function numberedRow(title: string): { group: string; n: number; column: string } | null {
-  const m = /^(.*?)(\d+)(\D*)$/.exec(title.trim());
-  if (!m || m[1].trim() === "") return null;
-  return { group: `${m[1].trim().toLowerCase()}#${m[3].trim().toLowerCase()}`, n: Number(m[2]), column: m[3].trim().toLowerCase() };
+  const t = title.trim();
+  let end = t.length;
+  while (end > 0 && !isDigitChar(t[end - 1])) end--;
+  if (end === 0) return null;
+  let start = end;
+  while (start > 0 && isDigitChar(t[start - 1])) start--;
+  const prefix = t.slice(0, start);
+  if (LINE_TERMINATOR.test(prefix) || prefix.trim() === "") return null;
+  const column = t.slice(end).trim().toLowerCase();
+  return { group: `${prefix.trim().toLowerCase()}#${column}`, n: Number(t.slice(start, end)), column };
 }
 
 /** Columns of numbered rows that are compared only as name cells (or never). */
-function sameNumberedColumn(a: string, b: string): boolean {
-  const x = numberedRow(a);
-  const y = numberedRow(b);
+function sameNumberedColumnOf(a: LabelFacts, b: LabelFacts): boolean {
+  const x = a.row;
+  const y = b.row;
   return Boolean(x && y && x.group === y.group && x.n !== y.n);
 }
 
+/** The words of a numbered-row name cell that rowRepeats compares. */
+function rowWords(text: string): Set<string> {
+  return new Set(alphaWords(text).filter((w) => w.length > 2 && !STOPWORDS.has(w)));
+}
+
 /** Two numbered-row name cells that mostly say the same item: one's words all in the other's, or most of them shared. */
-function rowRepeats(a: string, b: string): boolean {
-  const wa = new Set(alphaWords(a).filter((w) => w.length > 2 && !STOPWORDS.has(w)));
-  const wb = new Set(alphaWords(b).filter((w) => w.length > 2 && !STOPWORDS.has(w)));
+function rowRepeats(wa: ReadonlySet<string>, wb: ReadonlySet<string>): boolean {
   if (wa.size === 0 || wb.size === 0) return false;
-  const shared = Array.from(wa).filter((w) => wb.has(w)).length;
+  const [few, many] = wa.size <= wb.size ? [wa, wb] : [wb, wa];
+  const shared = Array.from(few).filter((w) => many.has(w)).length;
   return shared === Math.min(wa.size, wb.size) || shared / Math.max(wa.size, wb.size) >= 0.6;
+}
+
+/** A name cell compared as identical: its canonical text, lower case, without trailing stops and white space. */
+function rowKey(text: string): string {
+  const k = sentenceKey(text).toLowerCase();
+  let end = k.length;
+  while (end > 0 && (k[end - 1] === "." || /\s/.test(k[end - 1]))) end--;
+  return k.slice(0, end);
 }
 
 /** A sentence of a drafted answer that repeats one of an earlier box. */
@@ -423,33 +540,136 @@ function printedDrafts(sections: readonly ReportSection[], form: Pick<FormDefini
   const out: Printed[] = [];
   for (const s of sections) {
     if (s.answer && s.answer.kind !== "text") continue; // a yes/no, date or choice prints its value, not this text
+    let compact: boolean | undefined;
     for (const p of s.paragraphs) {
       if (p.origin !== "ai" || !p.text.trim()) continue;
-      out.push({ section: s, paragraph: p, compact: compactPlace(fields.get(s.fieldId ?? s.key)) !== null });
+      if (compact === undefined) compact = compactPlace(fields.get(s.fieldId ?? s.key)) !== null;
+      out.push({ section: s, paragraph: p, compact });
     }
   }
   return out;
 }
 
 /**
+ * The most work repeatedSentences does on one report (bh2 R1T-WD-01, SEC-1: a 96 KB box took 13 s, 160 KB 71 s), in
+ * units of one character compared (about 0.01 µs): each pair of sentences compared costs the length of both; splitting
+ * a paragraph costs SPLIT_COST_PER_CHAR and reading a sentence's facts FACTS_COST_PER_CHAR per character (measured
+ * against a comparison), and so does reading a box's label (once per box); each earlier paragraph looked at for a later
+ * one costs VISIT_COST, and comparing two labels LABEL_ITEM_COST per word compared. Each paragraph is split once, each
+ * sentence and each label read once. The whole budget is about
+ * 0.1 s of work. The recorded drafts on the 17 Blue Heart forms with the 3 sample patients spend at most about 0.5
+ * million units (7 ms). When the budget runs out, the sentences not yet compared get no repeat advice: the warning
+ * is advisory, so nothing that blocks is lost.
+ */
+export const REPEAT_WORK_BUDGET = 12_000_000;
+const SPLIT_COST_PER_CHAR = 16;
+const FACTS_COST_PER_CHAR = 64;
+/** An earlier paragraph looked at for a later one, and the set work of comparing two labels per item (measured). */
+const VISIT_COST = 8;
+const LABEL_ITEM_COST = 8;
+
+/**
  * Every drafted sentence that repeats a sentence of an EARLIER box (document order), with the box it repeats. Paired
- * time points, numbered-row columns and compact values are never compared.
+ * time points, numbered-row columns and compact values are never compared. Bounded by REPEAT_WORK_BUDGET (`budget`
+ * overrides it, for tests; `stats` receives the units spent and whether the budget ran out).
  */
 export function repeatedSentences(
   report: { sections: readonly ReportSection[]; bundleSnapshot?: EpisodeBundle },
   form?: Pick<FormDefinition, "fields"> | null,
+  opts: { budget?: number; stats?: { spent: number; truncated: boolean } } = {},
 ): RepeatedSentence[] {
   const names = nameWords(report.bundleSnapshot);
   const drafts = printedDrafts(report.sections, form);
   const out: RepeatedSentence[] = [];
   const order = new Map(report.sections.map((s, i) => [s.key, i] as const));
+  const budget = opts.budget ?? REPEAT_WORK_BUDGET;
+  let left = budget;
+  const stats = opts.stats ?? { spent: 0, truncated: false };
+  const spend = (units: number): boolean => {
+    left -= units;
+    stats.spent = Math.min(budget, budget - left);
+    if (left < 0) stats.truncated = true;
+    return left >= 0;
+  };
+
+  const split = new Map<Printed, SentenceSpan[]>();
+  /** The paragraph's sentences, split once; null when the budget is spent. */
+  const sentencesOf = (d: Printed): SentenceSpan[] | null => {
+    let spans = split.get(d);
+    if (!spans) {
+      if (!spend(SPLIT_COST_PER_CHAR * d.paragraph.text.length)) return null;
+      split.set(d, (spans = splitSentences(d.paragraph.text)));
+    }
+    return spans;
+  };
+  const facts = new Map<SentenceSpan, SentenceFacts>();
+  /** The sentence's facts, read once; null when the budget is spent. */
+  const factsOf = (span: SentenceSpan): SentenceFacts | null => {
+    let f = facts.get(span);
+    if (!f) {
+      if (!spend(FACTS_COST_PER_CHAR * span.text.length)) return null;
+      facts.set(span, (f = sentenceFacts(span.text, names)));
+    }
+    return f;
+  };
+  // Pairs of boxes that are never compared (two time points of one question, two columns of numbered rows): each label
+  // read once, each pair of boxes decided once.
+  const labels = new Map<ReportSection, LabelFacts>();
+  const labelOf = (s: ReportSection): LabelFacts | null => {
+    let f = labels.get(s);
+    if (!f) {
+      if (!spend(FACTS_COST_PER_CHAR * s.title.length)) return null;
+      labels.set(s, (f = labelFacts(s.title)));
+    }
+    return f;
+  };
+  const notCompared = new Map<ReportSection, Map<ReportSection, boolean>>();
+  const pairNotCompared = (e: ReportSection, later: ReportSection): boolean | null => {
+    let row = notCompared.get(later);
+    if (!row) notCompared.set(later, (row = new Map()));
+    const known = row.get(e);
+    if (known !== undefined) return known;
+    const a = labelOf(e);
+    const b = labelOf(later);
+    if (!a || !b) return null;
+    const items = 2 + a.time.size + b.time.size + a.subject.size + b.subject.size + ((a.lower.length + b.lower.length) >> 3);
+    if (!spend(LABEL_ITEM_COST * items)) return null;
+    const skip = timePointPairOf(a, b) || sameNumberedColumnOf(a, b);
+    row.set(e, skip);
+    return skip;
+  };
+
   for (const later of drafts) {
     if (later.compact) continue;
-    for (const sentence of splitSentences(later.paragraph.text)) {
-      for (const e of drafts) {
-        if (e.compact || (order.get(e.section.key) ?? 0) >= (order.get(later.section.key) ?? 0)) continue;
-        if (timePointPair(e.section.title, later.section.title) || sameNumberedColumn(e.section.title, later.section.title)) continue;
-        const twin = splitSentences(e.paragraph.text).find((t) => sentencesRepeat(t.text, sentence.text, names));
+    const laterOrder = order.get(later.section.key) ?? 0;
+    // The earlier paragraphs this one is compared with, in document order (the same for each of its sentences).
+    const earlier: Printed[] = [];
+    for (const e of drafts) {
+      if (!spend(VISIT_COST)) return out;
+      if (e.compact || (order.get(e.section.key) ?? 0) >= laterOrder) continue;
+      const skip = pairNotCompared(e.section, later.section);
+      if (skip === null) return out;
+      if (!skip) earlier.push(e);
+    }
+    if (earlier.length === 0) continue;
+    const laterSentences = sentencesOf(later);
+    if (!laterSentences) return out;
+    for (const sentence of laterSentences) {
+      const mine = factsOf(sentence);
+      if (!mine) return out;
+      for (const e of earlier) {
+        const theirs = sentencesOf(e);
+        if (!theirs) return out;
+        let twin: SentenceSpan | undefined;
+        for (const t of theirs) {
+          if (!spend(t.text.length + sentence.text.length)) return out;
+          const f = factsOf(t);
+          if (!f) return out;
+          if (sentencesRepeatOf(f, mine)) {
+            twin = t;
+            break;
+          }
+        }
         if (!twin) continue;
         out.push({ key: later.section.key, paragraphId: later.paragraph.id, sentence, of: { key: e.section.key, title: e.section.title.trim(), paragraphId: e.paragraph.id, sentence: twin.text } });
         break;
@@ -458,6 +678,13 @@ export function repeatedSentences(
   }
   return out;
 }
+
+/**
+ * The most word comparisons the numbered-row name check makes on one report (each pair of rows costs 1 plus the words of
+ * both cells; about 0.05 s of work): identical names are always found (by key); only the "mostly the same" advice
+ * stops when it runs out (bh2 R1T-WD-01).
+ */
+const ROW_WORK_BUDGET = 1_000_000;
 
 /** A paragraph that repeats, word for word, an earlier paragraph of the same box (a drafted duplicate). */
 export function duplicateParagraphs(sections: readonly ReportSection[]): Array<{ key: string; paragraphId: string; of: string }> {
@@ -491,7 +718,11 @@ export function repeatsPart(input: ValidatorInput): DraftFitPart {
       // 1. Sentences that repeat an earlier box (advisory): one warning per paragraph, naming the boxes.
       const repeats = repeatedSentences(input.report, input.form ?? null);
       const byParagraph = new Map<string, RepeatedSentence[]>();
-      for (const r of repeats) byParagraph.set(r.paragraphId, [...(byParagraph.get(r.paragraphId) ?? []), r]);
+      for (const r of repeats) {
+        const list = byParagraph.get(r.paragraphId);
+        if (list) list.push(r);
+        else byParagraph.set(r.paragraphId, [r]);
+      }
       byParagraph.forEach((list) => {
         const r = list[0];
         const boxes = Array.from(new Set(list.map((x) => labelOf(x.of.title))));
@@ -525,22 +756,37 @@ export function repeatsPart(input: ValidatorInput): DraftFitPart {
       // 3. Numbered rows (B0-16, B1-4): the name cells ("Activity 2" against "Activity 1"). An identical name blocks – it
       //    may be kept with a reason; one that mostly repeats an earlier row is a warning. Frequency, status and date
       //    columns are never compared.
-      const rows = new Map<string, Array<{ s: ReportSection; n: number; text: string }>>();
+      //    Each cell is read once (its key and its words); identical names are found by key, and the similar-name advice
+      //    is bounded like the sentence repeats (bh2 R1T-WD-01).
+      type Row = { s: ReportSection; n: number; text: string; key: string; words: Set<string> };
+      const rows = new Map<string, Row[]>();
       for (const s of sections) {
         const row = numberedRow(s.title);
         if (!row || row.column !== "") continue;
         if (s.answer && s.answer.kind !== "text") continue;
         const p = s.paragraphs.find((x) => x.origin === "ai" && x.text.trim());
         if (!p) continue;
-        rows.set(row.group, [...(rows.get(row.group) ?? []), { s, n: row.n, text: s.paragraphs.map((x) => x.text).join(" ") }]);
+        const text = s.paragraphs.map((x) => x.text).join(" ");
+        const entry: Row = { s, n: row.n, text, key: rowKey(text), words: rowWords(text) };
+        const list = rows.get(row.group);
+        if (list) list.push(entry);
+        else rows.set(row.group, [entry]);
       }
-      const same = (a: string, b: string) => sentenceKey(a).toLowerCase().replace(/[.\s]+$/, "") === sentenceKey(b).toLowerCase().replace(/[.\s]+$/, "");
+      let rowWork = ROW_WORK_BUDGET;
       rows.forEach((list) => {
         list.sort((a, b) => a.n - b.n);
+        const firstByKey = new Map<string, Row>();
         list.forEach((row, i) => {
-          const earlier = list.slice(0, i);
-          const identical = earlier.find((e) => e.text.trim() !== "" && same(e.text, row.text));
-          const similar = identical ? undefined : earlier.find((e) => rowRepeats(e.text, row.text));
+          const identical = firstByKey.get(row.key);
+          let similar: Row | undefined;
+          for (let j = 0; !identical && j < i && rowWork > 0; j++) {
+            rowWork -= 1 + list[j].words.size + row.words.size;
+            if (rowRepeats(list[j].words, row.words)) {
+              similar = list[j];
+              break;
+            }
+          }
+          if (row.text.trim() !== "" && !firstByKey.has(row.key)) firstByKey.set(row.key, row);
           const hit = identical ?? similar;
           if (!hit) return;
           const p = row.s.paragraphs.find((x) => x.origin === "ai" && x.text.trim());
