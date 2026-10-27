@@ -474,6 +474,39 @@ const FIXES_PER_SAVE = 20;
  */
 const STORE_FIX_CHECK_NOTES_JSON = 120_000;
 
+/**
+ * R2-SEC-2 (re-check, fix r2b): the engine's candidate generation on a claimed paragraph costs per flag it reads, more
+ * than linearly in the paragraph and also with the notes it compares the paragraph with (measured per flag: a 680-
+ * character paragraph 15 ms with 5,000 characters of notes, 66 ms with 100,000; a 10,000-character paragraph 0.5 s). So
+ *   - a paragraph a claimed one-click fix changes holds at most STORE_FIX_PARAGRAPH_CHARS characters, before and after
+ *     (the largest paragraph of the bh2 runs holds 684 – VALIDATION_BUDGET; a longer one is edited by hand, 413), and
+ *   - the generators read only the SERVER's flags of the claimed paragraph (never the client-written stored flags), only
+ *     those of the check the claimed kind answers, each distinct flag once, and within ENGINE_WORK_PER_SAVE: per flag
+ *     read, the paragraph's characters plus the notes' characters / ENGINE_NOTES_WEIGHT, summed over the claims (about
+ *     0.4 s of generation). Twenty claims on the largest real paragraphs (684 characters, 5,647 of notes) need about 17,000;
+ *     beyond the budget, 413.
+ */
+const STORE_FIX_PARAGRAPH_CHARS = 4_000;
+const ENGINE_WORK_PER_SAVE = 20_000;
+const ENGINE_NOTES_WEIGHT = 40;
+
+/**
+ * The check each engine fix kind answers (the flag code its generator reads – fixes.ts own generators and
+ * remove-commentary read DRAFT_FIT, WB's attribution fixes OTHER_CLINICIAN_VOICE). A narrowing only: a kind not listed
+ * reads every flag of its paragraph. Kept to ENGINE_FIX_KINDS by scripts/medreport/wc-fix2b-store.test.ts.
+ */
+export const ENGINE_FIX_FLAG_CODE: Readonly<Record<string, ReportFlag["code"]>> = {
+  "repeat-removal": "DRAFT_FIT",
+  "duplicate-paragraph": "DRAFT_FIT",
+  "value-only": "DRAFT_FIT",
+  "dose-not-stated": "DRAFT_FIT",
+  "printed-lead": "DRAFT_FIT",
+  "remove-commentary": "DRAFT_FIT",
+  "attribution-prefix": "OTHER_CLINICIAN_VOICE",
+  "use-note-words": "OTHER_CLINICIAN_VOICE",
+  "name-instead": "OTHER_CLINICIAN_VOICE",
+};
+
 /** One claimed fix the engine must make: the paragraph's text before and after it, as the save replays it. */
 interface ClaimedFix {
   key: string;
@@ -544,25 +577,36 @@ function engineFixViolation(before: Report, claims: readonly ClaimedFix[], m: St
   let fixed: Report = before;
   for (const c of claims) fixed = withText(fixed, c.key, c.paragraphId, c.after);
   if (validationBudgetExcess(before, form) || validationBudgetExcess(fixed, form)) return "fix-check-too-large";
-  if (JSON.stringify(before.bundleSnapshot?.notes ?? []).length > STORE_FIX_CHECK_NOTES_JSON) return "fix-check-too-large";
+  const notesJson = JSON.stringify(before.bundleSnapshot?.notes ?? []).length;
+  if (notesJson > STORE_FIX_CHECK_NOTES_JSON) return "fix-check-too-large";
+  if (claims.some((c) => c.before.length > STORE_FIX_PARAGRAPH_CHARS || c.after.length > STORE_FIX_PARAGRAPH_CHARS)) return "fix-check-too-large";
   try {
     const actor: Actor = { memberId: m.memberId, name: m.name, role: m.role as Actor["role"], canSign: stampMaySign(m), ...(m.hcpc ? { hcpc: m.hcpc } : {}) };
     const owner = before.approver ? { memberId: before.approver.memberId, name: before.approver.name, hcpc: before.approver.hcpc } : null;
     const validate = (r: Report) => validateReport({ ...r, flags: [] }, template, { form, ...(owner ? { voice: { owner } } : {}) });
     const engine = { actor, template, form };
-    // The validators once on the stored copy: the flags the engine works from (with the stored ones), the blocking ones before.
+    // The validators once on the stored copy: the flags the engine works from, the blocking ones before.
     const first = validate(before);
     const matched: FixCandidate[] = [];
-    // Each paragraph's claimed fixes in order, each on the paragraph as the earlier ones left it.
+    // Each paragraph's claimed fixes in order, each on the paragraph as the earlier ones left it. The generators read the
+    // server's flags only (R2-SEC-2 re-check: client-written stored flags multiplied their work), of the claimed kind's
+    // check, each distinct flag once – and a claim's generators run only while the save's work stays within
+    // ENGINE_WORK_PER_SAVE (the work done before a refusal never exceeds it; a forged claim stops the check at once).
     let current: Report = before;
+    let work = 0;
     for (const c of claims) {
+      const code = ENGINE_FIX_FLAG_CODE[c.kind];
       const seen = new Set<string>();
       const flags: ReportFlag[] = [];
-      for (const f of [...first.flags, ...before.flags]) {
-        if (f.sectionKey !== c.key || f.paragraphId !== c.paragraphId || seen.has(f.id)) continue;
-        seen.add(f.id);
+      for (const f of first.flags) {
+        if (f.sectionKey !== c.key || f.paragraphId !== c.paragraphId || (code && f.code !== code)) continue;
+        const sig = `${f.code}|${f.severity}|${f.evidence ?? ""}|${f.message}`;
+        if (seen.has(sig)) continue;
+        seen.add(sig);
         flags.push(f);
       }
+      work += flags.length * (c.before.length + Math.ceil(notesJson / ENGINE_NOTES_WEIGHT));
+      if (work > ENGINE_WORK_PER_SAVE) return "fix-check-too-large";
       if (current.status === "signed") return "drafted-text-rewritten";
       const candidate = fixCandidates({ ...current, flags }, engine).find(
         (x) => x.paragraphId === c.paragraphId && x.sectionKey === c.key && x.before === c.before && x.after === c.after && x.generator.slice(0, 64) === c.kind && fixTextProblems(current, x, engine).length === 0,
@@ -707,6 +751,12 @@ export function decisionViolations(
         out.push("fix-by-other");
       }
       out.push(...originViolations(s, p, b, { create: create && !before, was, wasParagraphs, redrafted: redraft }));
+      // R2-TPN-01 (re-check, fix r2b): a person's paragraph added on an update, or whose words or citations it changes,
+      // carries the member's stamp – the review stamps every paragraph a person writes or changes (reducer
+      // stampDecisions) – and a stamp is never taken off. Unstamped, a staff entry replacing a records box's code-filled
+      // paragraph (or any box's text) would read "Entered by staff" with no one's name, no activity and no check. (An
+      // origin change alone – the approver's adoption – keeps the stored stamp, or its absence on an older report.)
+      if (before && was && !redraft && PERSON_ORIGINS.has(p.origin) && !p.by && (!b || b.text !== p.text || !same(b.sourceIds, p.sourceIds) || Boolean(b.by))) out.push("paragraph-unstamped");
     }
     if (s.answer && !same(s.answer, was?.answer) && s.answerBy && !author(s.answerBy)) out.push("answer-by-other");
     // An answer set or replaced with no one's stamp (check-WC problem 3; harden-WC, check2-WC major B: an empty box filled
@@ -717,6 +767,13 @@ export function decisionViolations(
     // one's name, no activity and no check. Clearing an answer (no value, no stamp) stays the member's to do; a stamp is
     // never taken off an answer that stays (it would turn a person's answer back into "drafted" or "records").
     if (before && was && !redraft && answerSet(s.answer) && !s.answerBy && (!same(s.answer, was.answer) || was.answerBy)) out.push("answer-unstamped");
+    // R2-TPN-01 (re-check, fix r2b): a box's answer keeps the kind it was made with (core/forms/answers.ts answerKindFor:
+    // fixed by the form question; the review's setAnswer never changes it) and is never taken away – a yes/no, date or
+    // tick replaced by a "text" answer, or removed, would print the box's text instead of the answer with no one's
+    // stamp (answerSet reads a text answer as no answer). Only a redraft of an empty waiting box writes a new answer.
+    if (before && was && !redraft && was.answer && (!s.answer || s.answer.kind !== was.answer.kind)) out.push("answer-kind-changed");
+    // A text answer holds no value (toFormAnswer, parseFormAnswerValue: the box's paragraphs are its answer).
+    if (s.answer && s.answer.kind === "text" && s.answer.value !== null && s.answer.value !== undefined && !same(s.answer, was?.answer)) out.push("answer-kind-changed");
     // R1T-WC-03 (SAF-2): drafting never answers an opinion box or the physiotherapist's choice – not on a create, not in
     // a redraft – so an answer there with no one's stamp is refused there too (the review stamps every answer a person sets).
     if ((isOpinionBox(s, ctx) || isPhysioChoiceBox(ctx, s.key)) && answerSet(s.answer) && !same(s.answer, was?.answer) && !s.answerBy && (create || redraft || !before)) out.push("answer-unstamped");
