@@ -37,7 +37,7 @@ import {
 import { ReferrerTypeSchema } from "../../../core/schemas";
 import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
-import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useHostHooks, useStudioMode, type StudioMember } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { formWriteError, getSession, saveFormDurable, useForm } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
@@ -685,6 +685,33 @@ function DetailsEditor({ draft, onChange }: { draft: FormDefinition; onChange(d:
   );
 }
 
+/**
+ * What to do next when this member may not confirm a judgement map (the box used to end with "Back" only): an owner or
+ * administrator who is a physiotherapist adds their own signing details; staff (the only other role it reaches – a
+ * clinician may always confirm) ask a clinician.
+ */
+function WhoConfirmsNext({ role }: { role: StudioMember["role"] }) {
+  const manager = role === "owner" || role === "admin";
+  return (
+    <span className="mt-2 block" data-who-confirms-next>
+      {manager ? (
+        <>
+          If you are a physiotherapist, add your HCPC number and tick “May sign” on your own row in{" "}
+          <Link href="/app/settings/members" className="font-medium underline">
+            Clinic settings → Members
+          </Link>
+          , then come back and confirm. Otherwise, ask a clinician in your clinic to open this form and confirm it.
+        </>
+      ) : (
+        <>
+          Ask a clinician in your clinic to open this form and confirm it. Staff members prepare forms but do not confirm
+          clinical judgements.
+        </>
+      )}
+    </span>
+  );
+}
+
 function ConfirmDialog({
   open,
   onOpenChange,
@@ -744,6 +771,7 @@ function ConfirmDialog({
         ) : whoConfirms ? (
           <Notice tone="warning" title="Who confirms this mapping">
             {whoConfirms}
+            {mode === "tenant" ? <WhoConfirmsNext role={member?.role} /> : null}
           </Notice>
         ) : (
           <form
