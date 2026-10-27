@@ -21,15 +21,16 @@
  *   B2-26). An answer cancels "left blank"; a change to a controlling answer since the decision (controllerSnapshot)
  *   cancels "applies anyway" and a person's "not applicable". Rule outcomes – a condition, a session not attended, a
  *   record line that is empty by design – are worked out each time and never stored.
- * - Conditions are read once, when the report is created, and frozen on the section (core/conditions.ts). A report
- *   from before this release (no reportModel, no frozen condition) keeps the earlier reading of its printed questions,
- *   as it was approved.
+ * - Conditions are read once, when the report is created, and frozen on the section (core/conditions.ts). A box with no
+ *   frozen condition is an ordinary box: a report from before this release (no reportModel, no frozen condition) issues
+ *   every box as production did, which never read a condition (bh2 fix round 1, R1T-WA1-01 – the earlier run-time
+ *   reading of the printed questions is not applied to any report).
  * - The server decides which conditions a box has, never the report (harden-WA1, check2 N1): with the form map at hand,
  *   a report of this release reads the conditions the attested map's questions carry (core/conditions.ts
  *   mapConditions – what report creation froze on an honest report), whatever its sections hold; a built-in template's
  *   report has none (creation never freezes one there). Only a form report read without its map (a browser view
- *   without the map) reads the copy on its sections. /sign also refuses a report from before this release whose earlier
- *   reading rules out a box that the map's reading keeps (legacyRuleOutsBeyondServer).
+ *   without the map) reads the copy on its sections. A report presented as one from before this release (reportModel
+ *   and the frozen conditions removed) only gets more checks: every box is then an ordinary box.
  * - "Approved" (sign-off values, every blank box printed blank) comes only from a verified receipt passed in by the
  *   caller – never from the report's own status.
  *
@@ -224,7 +225,7 @@ export interface BoxIssue {
   state: BoxState;
   /** The box's condition as evaluated now (null: an ordinary box). */
   condition: Condition | null;
-  /** Ruled out by a condition frozen at creation (this release), not by the earlier run-time reading. */
+  /** The box's condition was frozen at creation – since bh2 fix round 1 (R1T-WA1-01) the only kind of condition there is. */
   frozenCondition: boolean;
   /** The stored decision and whether it counts. */
   disposition: SectionDisposition | null;
@@ -276,7 +277,8 @@ function boxIssue(content: IssueContent, field: FormField | null, section: Repor
   const answered = isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign });
   const verdict = dispositionVerdict(content, section, field, answered);
   const decided = verdict === "valid" ? section.disposition : null;
-  // A report this release made reads only the conditions frozen when it was created (no run-time fallback, design 8).
+  // Only the conditions frozen when the report was created count (no run-time reading of the printed words, on any
+  // report – R1T-WA1-01).
   const condition = conditionOf(content.sections, section.key, { release });
   const issue = { ...base, condition, frozenCondition: Boolean(condition?.frozen), dispositionVerdict: verdict };
 
@@ -323,32 +325,6 @@ export function issueState(content: IssueContent | Report, form: IssueForm | nul
   const out: IssueState = {};
   for (const box of issueDetails(content, form)) out[box.key] = box.state;
   return out;
-}
-
-/**
- * harden-WA1 (check2 N1, server trust): the boxes a report from before this release rules out by the earlier run-time
- * reading of its printed questions that the server's own reading does NOT rule out – with the form map, this release's
- * reading of the attested map; on a built-in template's report, the template's own questions (`templateSections`;
- * none of them is conditional). /sign refuses such a report, so a client can never rule a box out by presenting a
- * report as one from before the release (Report.reportModel and the frozen conditions removed) or by rewriting a
- * printed question. [] for a report of this release (its conditions are the server's already).
- */
-export function legacyRuleOutsBeyondServer(report: IssueContent | Report, form: IssueForm | null, templateSections?: ReadonlyArray<{ key: string; title: string }>): string[] {
-  const content = issueContentOf(report) as IssueContent;
-  if (isReleaseModel(content)) return [];
-  const asReported = issueDetails(content, form);
-  let server: BoxIssue[];
-  if (form) {
-    // This release's reading of the map, as a draft migrating on load would get it (design 8).
-    const conditions = mapConditions(form.fields);
-    server = issueDetails({ ...content, reportModel: REPORT_MODEL, sections: content.sections.map((s) => withCondition(s, conditions.get(s.key))) }, form);
-  } else {
-    // The template's own printed questions, at run time (the reading the report itself claims).
-    const titles = new Map((templateSections ?? []).map((t) => [t.key, t.title]));
-    server = issueDetails({ ...content, sections: content.sections.map((s) => (titles.has(s.key) ? { ...s, title: titles.get(s.key) as string } : s)) }, null);
-  }
-  const ruledOut = new Set(server.filter((b) => b.state.kind === "not_applicable").map((b) => b.key));
-  return asReported.filter((b) => b.state.kind === "not_applicable" && b.state.reason === "condition" && !ruledOut.has(b.key)).map((b) => b.key);
 }
 
 /** One box's issue details (null when neither the form nor the report has it). */
@@ -415,8 +391,8 @@ export function countOutcomes(state: IssueState): IssueOutcomeCounts {
 export function clearsItsPlaceholder(box: BoxIssue): boolean {
   const s = box.state;
   if (s.kind === "answer" || s.kind === "signoff") return true;
-  // A box ruled out by a FROZEN condition, a person's decision or a session not attended prints nothing: the fill removes
-  // what is printed in its place. (A report from before this release keeps the earlier rule: the code stays and blocks.)
+  // A box ruled out by a frozen condition (the only kind there is – R1T-WA1-01), a person's decision or a session not
+  // attended prints nothing: the fill removes what is printed in its place.
   if (s.kind === "not_applicable") return s.reason !== "condition" || box.frozenCondition;
   return s.kind === "blank" && s.reason === "record_empty";
 }

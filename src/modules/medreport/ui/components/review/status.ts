@@ -218,12 +218,9 @@ export function questionStatus(
   if (!section) return "blank";
   if (section.kind === "declaration" && section.fieldId) return "signoff";
   const box = boxOf(q, conditionSections);
-  if (box?.state.kind === "not_applicable") {
-    // Not asked: nothing is printed. A box ruled out by the earlier run-time reading (a report from before the release,
-    // its sections passed) reads as it did then.
-    if (box.state.reason === "condition" && !box.frozenCondition) return conditionSections ? (approved ? "left_blank" : "blank") : statusOfAsked(q, flags, gaps, byPerson, approved);
-    return "not_applicable";
-  }
+  // Not asked: nothing is printed. (Only a frozen condition rules a box out – bh2 fix round 1, R1T-WA1-01: the earlier
+  // run-time reading of a pre-release report's printed questions, and its status, are gone.)
+  if (box?.state.kind === "not_applicable") return "not_applicable";
   if (box?.state.kind === "blank" && box.state.reason === "record_empty") return "record_empty";
   return statusOfAsked(q, flags, gaps, byPerson, approved);
 }

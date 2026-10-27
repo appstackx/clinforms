@@ -8,13 +8,18 @@
  *             subject's text in the body sent to /sign (a stale or edited body must be refused).
  * - render:   /sign, then POST /render FINAL. PASS = a final copy; BLOCK = no final copy; IDENTICAL = after changing
  *             only keys outside the receipt (input.render.mutate), the FINAL is refused (409) or its document text
- *             is identical.
+ *             is identical. (bh2 fix round 1, WA1 – W0 exception) input.render.legacyReceipt: the report as production
+ *             made it (no reportModel, approver or frozen condition) with a receipt as production minted it (no
+ *             issued-document or acknowledgement hash); check.render {contains[], notContains[]} on the FINAL text.
+ * - sign (bh2 fix round 1, WA1 – W0 exception): input.store.bodyStatus "signed" sends the body to /sign saying it is
+ *             approved already (status is outside the hashed content – the server must never trust it).
  * - store:    PUT /store/reports as input.store.putAs with input.store.forge applied (REFUSED_403 = refused).
  * - reducer:  input.steps by their actors (reducer.ts), then validate (judge).
  * - fill, lint, assemble, split, scope, probe: pure-paths.ts.
  * Every result says what it saw, so a failing case reads as a bug report.
  */
-import type { Report, ReportFlag } from "../../../types";
+import type { Report, ReportFlag, SignReceipt } from "../../../types";
+import { createReceipt } from "../../../../auth/sign-receipt";
 import { validateReport } from "../../index";
 import { buildCase, ownerOf, rolesOf, type Built } from "./build";
 import type { ValidatorEngine } from "./engine";
@@ -188,7 +193,7 @@ function rewrittenReport(report: Report, r: StoreRewrite): Report {
 }
 
 async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
-  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same" } & StoreRewrite;
+  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; thenBody?: "edited" | "stale" | "same"; bodyStatus?: "signed" } & StoreRewrite;
   const forged = Boolean(store.rewrite || store.dropConditions || store.dropReportModel);
   let report = forged ? rewrittenReport(built.report, store) : built.report;
   let refusedFirst = "";
@@ -207,6 +212,7 @@ async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOu
       if (newer.status !== 200) return { path: "sign", ok: false, detail: `could not store the newer revision (${newer.status} ${newer.code ?? ""})` };
     }
   }
+  if (store.bodyStatus === "signed") report = { ...report, status: "signed" };
   const res = await postSign(h, { report, template: built.template, form: built.form, signer: built.signer, mode: signMode(c), fileBytes: built.fileBytes });
   const got = `${res.status}${res.code ? ` ${res.code}` : ""}`;
   const flags = ((res.body as { flags?: ReportFlag[] } | null)?.flags ?? []).filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }));
@@ -272,26 +278,64 @@ export function mutateOutsideReceipt(report: Report, kinds: readonly string[]): 
   return r;
 }
 
+/**
+ * bh2 fix round 1 (R1T-WA1-01): a report as production (e132057) made it – no reportModel, no approver, no frozen
+ * condition, no person's decision (production wrote none of them).
+ */
+function productionMade(report: Report): Report {
+  const out = { ...report, sections: report.sections.map(({ condition: _c, disposition: _d, ...s }) => s) } as Report;
+  delete (out as { reportModel?: number }).reportModel;
+  delete (out as { approver?: unknown }).approver;
+  return out;
+}
+
+/** The receipt production minted for an approval: the same signer, time, map and session – and no hash of what it issued. */
+async function productionReceipt(report: Report, release: SignReceipt): Promise<SignReceipt> {
+  return createReceipt({
+    report,
+    signer: release.signer,
+    statementAccepted: true,
+    attestations: [...release.attestations],
+    ...(release.formMapSha256 ? { formMapSha256: release.formMapSha256 } : {}),
+    ...(release.approvedVia ? { approvedVia: release.approvedVia } : {}),
+    now: new Date(release.signedAt),
+  });
+}
+
+function renderTextProblems(c: RunCase, bytes: Uint8Array | null): string[] {
+  const check = (c.check?.render ?? {}) as { contains?: unknown; notContains?: unknown };
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+  const text = bytes ? documentText(bytes).replace(/\s+/g, " ") : "";
+  return [...list(check.contains).filter((t) => !text.includes(t)).map((t) => `the FINAL copy does not print “${t}”`), ...list(check.notContains).filter((t) => text.includes(t)).map((t) => `the FINAL copy prints “${t}”`)];
+}
+
 async function runRender(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
   const mode = signMode(c);
-  const signed = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode, fileBytes: built.fileBytes });
+  const legacy = c.input.render?.legacyReceipt === true;
+  const base = legacy ? productionMade(built.report) : built.report;
+  const signed = await postSign(h, { report: base, template: built.template, form: built.form, signer: built.signer, mode, fileBytes: built.fileBytes });
   if (!signed.receipt) {
     const blocked = `/sign refused (${signed.status} ${signed.code ?? ""}) – no final copy`;
     // A case about what happens AFTER approval needs the approval first.
     return { path: "render", ok: c.expect === "BLOCK" && c.input.render?.contentEdit !== true, detail: blocked };
   }
-  let approved: Report = { ...built.report, status: "signed", receipt: signed.receipt };
+  const receipt = legacy ? await productionReceipt(base, signed.receipt) : signed.receipt;
+  let approved: Report = { ...base, status: "signed", receipt };
   // A body whose content changed after approval never makes a final copy.
-  if (c.input.render?.contentEdit === true) approved = { ...withEditedSubject(built), status: "signed", receipt: signed.receipt };
-  const first = await postRenderFinal(h, { report: approved, receipt: signed.receipt, form: built.form, fileBytes: built.fileBytes, member: built.signer, mode });
+  if (c.input.render?.contentEdit === true) approved = { ...withEditedSubject({ ...built, report: base }), status: "signed", receipt };
+  const first = await postRenderFinal(h, { report: approved, receipt, form: built.form, fileBytes: built.fileBytes, member: built.signer, mode });
   const kind = first.headers.get("x-medreport-render");
-  if (c.expect === "PASS") return { path: "render", ok: first.status === 200 && kind === "final", detail: `FINAL: ${first.status} ${first.code ?? ""} ${kind ?? ""}`.trim() };
-  if (c.expect === "BLOCK") return { path: "render", ok: first.status !== 200 || kind !== "final", detail: `FINAL: ${first.status} ${first.code ?? ""} ${kind ?? ""}`.trim() };
+  const tag = legacy ? " (a receipt production minted)" : "";
+  if (c.expect === "PASS") {
+    const problems = first.status === 200 && kind === "final" ? renderTextProblems(c, first.bytes) : [];
+    return { path: "render", ok: first.status === 200 && kind === "final" && problems.length === 0, detail: `FINAL${tag}: ${first.status} ${first.code ?? ""} ${kind ?? ""}${problems.length ? ` – ${problems.join("; ")}` : ""}`.trim() };
+  }
+  if (c.expect === "BLOCK") return { path: "render", ok: first.status !== 200 || kind !== "final", detail: `FINAL${tag}: ${first.status} ${first.code ?? ""} ${kind ?? ""}`.trim() };
   if (c.expect !== "IDENTICAL") return { path: "render", ok: first.status < 500, detail: `FINAL: ${first.status}` };
   if (first.status !== 200 || !first.bytes) return { path: "render", ok: false, detail: `the unmutated FINAL failed: ${first.status} ${first.code ?? ""}` };
   const kinds = ((c.input.render?.mutate as string[] | undefined) ?? ["flags-ack-na", "activity-answer-set", "status-draft", "updatedAt"]) as string[];
   const forged = mutateOutsideReceipt(approved, kinds);
-  const second = await postRenderFinal(h, { report: forged, receipt: signed.receipt, form: built.form, fileBytes: built.fileBytes, member: built.signer, mode });
+  const second = await postRenderFinal(h, { report: forged, receipt, form: built.form, fileBytes: built.fileBytes, member: built.signer, mode });
   // Refused (409, or 422 when the forged body does not even parse): no final copy with different text.
   if (second.status === 409 || second.status === 422) return { path: "render", ok: true, detail: `mutated (${kinds.join(", ")}): refused ${second.status} ${second.code ?? ""}` };
   if (second.status !== 200 || !second.bytes) return { path: "render", ok: false, detail: `mutated: ${second.status} ${second.code ?? ""}` };

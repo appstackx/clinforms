@@ -11,11 +11,10 @@ import "server-only";
  *    newer revision someone else saved). Skipped only where the deployment has no clinic store at all: deps.tenantStore
  *    absent, or – on a local or test server only, never on production or a preview (VERCEL_ENV) – a store it has no
  *    data keys to open. The public demo stores nothing on the server.
- *    legacyReadingCheck (harden-WA1, check2 N1): a report from before this release (no reportModel, no frozen
- *    condition) is read by the earlier run-time reading of its printed questions – which a client controls (it can
- *    remove reportModel and the frozen conditions, or rewrite a question). The approval is refused – 409 ISSUE_REFUSED,
- *    with the boxes – when that reading rules out a box that the server's own reading keeps (core/issue-state.ts
- *    legacyRuleOutsBeyondServer: this release's reading of the attested map; a built-in template's own questions).
+ *    (bh2 fix round 1, R1T-WA1-01/05: the legacy-reading refusal is gone with the earlier run-time reading itself – no
+ *    report is read by its printed questions any more, so a report from before this release has nothing to refuse, and
+ *    a report presented as one only gets more checks. Its remedy, "mark the box as applying", named a control no
+ *    report from before this release could use.)
  * 2. validationCheck: the validators re-run on the report (core/validation validateReport, with the form map – the
  *    issue state decides which boxes issue nothing); 409 SIGNOFF_BLOCKED (problem.flags) if blocking items remain.
  * 3. issuedDocumentCheck (after them): a dry-run FINAL fill of the referrer's own file with the issue state's answers
@@ -36,8 +35,7 @@ import "server-only";
 import { readReportFingerprint } from "../../../../auth/sign-receipt";
 import { StoredReportSchema } from "../../../../core/stored-schemas";
 import { ReportSchema } from "../../../../core/schemas";
-import { legacyRuleOutsBeyondServer } from "../../../../core/issue-state";
-import { validateReport, type ValidateReportResult } from "../../../../core/validation";
+import { validateReport, validationBudgetExcess, VALIDATION_BUDGET, type ValidateReportResult } from "../../../../core/validation";
 import type { Clinician, FormDefinition, Report, ReportTemplate } from "../../../../core/types";
 import { assertFormFileMatches, decodeFormFile, type DecodedFormFile } from "../../../../forms/file";
 import { SAMPLE_FORM_FILES, type SampleFormFileId } from "../../../../forms/samples/generated/manifest";
@@ -71,6 +69,52 @@ export function validationCheck(input: {
     };
   }
   return { result, response: null };
+}
+
+/** What each budget limit counts, for the 413's message. */
+const BUDGET_WORDS: Record<keyof typeof VALIDATION_BUDGET, string> = {
+  sections: "boxes",
+  paragraphs: "paragraphs",
+  paragraphChars: "characters in one paragraph",
+  textChars: "characters of answer text",
+  tombstones: "deleted drafted paragraphs",
+  tombstoneChars: "characters in one deleted drafted paragraph",
+  tombstoneTextChars: "characters of deleted drafted paragraphs",
+  flags: "checks",
+  gaps: "gaps",
+  noteChars: "characters of clinical notes",
+  reportChars: "characters in all",
+  formFields: "questions in the form map",
+  formChars: "characters in the form map",
+};
+
+/**
+ * bh2 fix round 1 (R1T-WA1-03): 413 PAYLOAD_TOO_LARGE for a report (and form map) over the validators' budget
+ * (core/validation VALIDATION_BUDGET), before any validator runs – POST /validate, /sign and /render call it straight
+ * after parsing the body. null when the body is within it.
+ */
+export function validationBudgetRefusal(report: unknown, form?: unknown): Response | null {
+  const excess = validationBudgetExcess(report, form);
+  if (!excess) return null;
+  logEvent("validation_budget_refused", { what: excess.what, limit: excess.limit, actual: excess.actual });
+  return problem(413, "The report is too large to check", {
+    code: "PAYLOAD_TOO_LARGE",
+    detail: `This report holds more ${BUDGET_WORDS[excess.what]} than any report ClinForms checks (${excess.actual.toLocaleString("en-GB")}; the most is ${excess.limit.toLocaleString("en-GB")}). Nothing was checked or approved. Shorten it, or split the answer over the boxes it belongs to.`,
+  });
+}
+
+/**
+ * bh2 fix round 1 (R1T-WA1-04, SAF-5): the report an approval is checked as. A body's `status` and `receipt` are the
+ * client's word – they are outside the hashed content (core/fingerprint.ts), so they never decide what is checked: the
+ * validators read every body as a report not yet approved (status "draft", no receipt), and a body saying "signed" can
+ * no longer switch off a check that skips approved reports (APPROVER_DECISION: an approved report holds no proposal).
+ * What is hashed, signed and issued is unchanged.
+ */
+export function asNotYetApproved<R extends Report>(report: R): R {
+  if (report.status === "draft" && report.receipt === undefined) return report;
+  const { receipt: _receipt, ...rest } = report;
+  void _receipt;
+  return { ...rest, status: "draft" } as R;
 }
 
 /** The hashed content of a report as read, and as this build knows it (a stored copy may hold a later release's keys). */
@@ -149,22 +193,6 @@ export const staleReportCheck = async (ctx: SignCheckContext): Promise<Response 
   return problem(409, "This report has changed since you opened it", {
     code: "STALE_REPORT",
     detail: "The clinic's copy of this report differs from the one you are approving – a change is not saved yet, or someone else saved a newer version. Reload the report, check it, and approve it again.",
-  });
-};
-
-/**
- * Refuse (409 ISSUE_REFUSED, with the boxes) a report from before this release whose earlier reading of its printed
- * questions rules out a box the server's own reading keeps (see the file comment). A report of this release passes: its
- * conditions are read from the attested map already (core/issue-state.ts).
- */
-export const legacyReadingCheck = async (ctx: SignCheckContext): Promise<Response | null> => {
-  const keys = legacyRuleOutsBeyondServer(ctx.report, ctx.form, ctx.form ? undefined : ctx.template.sections);
-  if (keys.length === 0) return null;
-  logEvent("sign_refused_legacy_reading", { report: ctx.report.id, boxes: keys.length });
-  return problem(409, "The completed form could not be issued as approved", {
-    code: "ISSUE_REFUSED",
-    detail: `${keys.length === 1 ? "One box this report leaves out is" : `${keys.length} boxes this report leaves out are`} asked on the form as the Studio reads it now (the report was started before the current version). Nothing was approved. Mark ${keys.length === 1 ? "the box" : "each box"} as applying and answer it, or start a new report of this form.`,
-    issues: keys.map((k) => ({ path: `form.fields.${k}`, message: `${k}: asked on the form, but left out by this report.` })),
   });
 };
 

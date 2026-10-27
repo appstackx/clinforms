@@ -149,9 +149,15 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     assert.ok(audit.filter((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED").every((e) => e.action === "report.issue_refused"));
   });
 
-  it("a receipt from before the release (no bound hashes) renders exactly the release's document (AC-ISSUE-6)", async () => {
+  // bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – an expectation changed): a receipt with neither hash
+  // was minted by production (every approval this release makes binds the acknowledgements at least), so what it approved
+  // is the document PRODUCTION issued – every box printed what it held. /render FINAL fills it with production's answers
+  // (core/forms productionFormAnswers), never this release's issue state: the box the release rules out IS printed.
+  it("a receipt from before the release (no bound hashes) issues the answers production wrote – the box the release rules out is printed (R1T-WA1-01)", async () => {
     const { deps } = createHttpHarness();
-    const b = await built(NA_CASE);
+    // Every printed default answered (production printed defaults left in unanswered boxes; this release's FINAL refuses
+    // to issue a printed default as an answer – ISSUE-legacy-final-05).
+    const b = await built({ ...NA_CASE, answers: { ...NA_CASE.answers, "F-37": "A little", "F-38": true }, boxes: { ...NA_CASE.boxes, "F-26": [{ text: "45 minutes", origin: "clinician", by: "sarah" }] } });
     const signed = await demoSign(deps, b);
     const receipt = signed.receipt as SignReceipt;
     const bound = await demoRender(deps, b, { ...b.report, status: "signed", receipt }, receipt);
@@ -160,7 +166,10 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     const old = await demoRender(deps, b, { ...b.report, status: "signed", receipt: legacy }, legacy);
     assert.equal(old.status, 200, JSON.stringify(old.json));
     assert.equal(old.headers.get("x-medreport-render"), "final");
-    assert.equal(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(bound.bytes as Uint8Array));
+    const text = (bytes: Uint8Array) => (openZipSafely(bytes).file("word/document.xml")?.asText() ?? "").replace(/<[^>]+>/g, "");
+    assert.equal(text(bound.bytes as Uint8Array).includes("More physiotherapy is advised."), false, "the release's own approval leaves the ruled-out box out");
+    assert.equal(text(old.bytes as Uint8Array).includes("More physiotherapy is advised."), true, "production's approval prints it, as production did");
+    assert.notEqual(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(bound.bytes as Uint8Array));
   });
 });
 

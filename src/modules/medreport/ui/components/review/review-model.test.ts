@@ -634,24 +634,24 @@ describe("fix round 1 (B0-22): one count of answered and left-blank questions", 
 });
 
 describe("fix round 1 (B0-7): a conditional question's gaps follow the answer before it", () => {
+  // bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – the case is moved off the run-time reading): the
+  // review settles a conditional question's gaps from the condition FROZEN when the report was created (WA1 design 3;
+  // gaps.ts settleConditionalGaps). A report from before the release has none – the printed words are read on no report
+  // at run time – so there the gap stays open, as on production.
   it("“No” settles the gaps of “IF YES, PLEASE DETAIL” as not applicable (audited); “Yes” reopens them", () => {
     const { report: release } = drafted();
-    // bh2-rc1: a report from before the release – the review reads its printed questions at run time. A report this
-    // release made reads only the conditions frozen when it was created (WA1 design 3; gaps.ts settleConditionalGaps),
-    // and its questions cannot be renamed (WC: the store pins each box's title).
-    const sections = release.sections.map((s) => {
-      const legacy = { ...s };
-      delete legacy.condition;
-      return legacy;
-    });
-    const base = { ...release, sections } as Report;
-    delete (base as { reportModel?: number }).reportModel;
-    // F-06 printed as "IF YES, PLEASE DETAIL" under F-04 (yes / no / modified duties).
+    const gapF06 = { id: "gap-F-06-t-1", sectionKey: "F-06", issue: "No detail is recorded.", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" as const };
+    // F-06 "IF YES, PLEASE DETAIL" under F-04 (yes / no / modified duties), its condition frozen at creation.
+    const frozen = { controllers: ["F-04"], wants: "yes", text: "IF YES", parser: "wa1-c3" } as unknown as NonNullable<Report["sections"][number]["condition"]>;
     const report: Report = {
-      ...base,
-      sections: base.sections.map((s) => (s.key === "F-06" ? { ...s, title: "IF YES, PLEASE DETAIL" } : s)),
-      gaps: [...base.gaps.filter((g) => g.sectionKey !== "F-06"), { id: "gap-F-06-t-1", sectionKey: "F-06", issue: "No detail is recorded.", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" }],
+      ...release,
+      sections: release.sections.map((s) => (s.key === "F-06" ? { ...s, title: "IF YES, PLEASE DETAIL", condition: frozen } : s)),
+      gaps: [...release.gaps.filter((g) => g.sectionKey !== "F-06"), gapF06],
     };
+    // The same report from before the release (no reportModel, no frozen condition): nothing is settled by the words.
+    const legacy = { ...report, sections: report.sections.map(({ condition: _c, ...s }) => s) } as Report;
+    delete (legacy as { reportModel?: number }).reportModel;
+    assert.equal(reviewReducer(legacy, { type: "setAnswer", key: "F-04", value: "No", actor: SARAH }).gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "no run-time reading");
     const no = reviewReducer(report, { type: "setAnswer", key: "F-04", value: "No", actor: SARAH });
     const gap = no.gaps.find((g) => g.id === "gap-F-06-t-1");
     assert.equal(gap?.resolution?.kind, "resolved");
@@ -659,7 +659,8 @@ describe("fix round 1 (B0-7): a conditional question's gaps follow the answer be
     assert.equal(gap?.resolution?.notApplicable, true);
     assert.ok(no.activity.some((a) => a.detail.startsWith("F-06: resolved gap “No detail is recorded.” – Not applicable")));
     const q = flattenQuestions(buildQuestionGroups(no, testForm(), formToTemplate(testForm()))).find((x) => x.key === "F-06")!;
-    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "blank");
+    // A box its frozen condition rules out reads "not applicable" (bh2 WA1: the issue state's status).
+    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "not_applicable");
     const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: SARAH });
     assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
   });

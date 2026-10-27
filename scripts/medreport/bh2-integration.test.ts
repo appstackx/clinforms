@@ -234,8 +234,11 @@ describe("WC's gap settling through WA1's frozen conditions", () => {
     assert.equal(settleConditionalGaps(reportOf(false, 2), "Sarah Reid").gaps[0].resolution, undefined, "no frozen condition: open");
   });
 
-  it("a report from before the release reads the printed words, as it did", () => {
-    assert.ok(settleConditionalGaps(reportOf(false), "Sarah Reid").gaps[0].resolution?.notApplicable);
+  // bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – an expectation changed): the printed words are read on
+  // no report at run time (that reading never reached production): a report from before the release has no condition,
+  // so its gap stays open – the box is an ordinary question, as on production.
+  it("a report from before the release has no condition: its gap stays open (no run-time reading of the printed words)", () => {
+    assert.equal(settleConditionalGaps(reportOf(false), "Sarah Reid").gaps[0].resolution, undefined);
   });
 });
 

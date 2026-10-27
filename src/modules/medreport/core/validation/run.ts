@@ -198,6 +198,117 @@ export function reportFactsDate(report: Pick<Report, "createdAt">): string {
   return Number.isNaN(d.getTime()) ? todayIso() : todayIso(d);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * The work one request may ask of the validators (bh2 fix round 1, R1T-WA1-03)
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * The most a report sent to POST /validate, /sign or /render may hold – the integration half of SEC-1 and SAF-1 (defence
+ * in depth behind the linear tokenizer and residue checks, WD / WC): the server refuses a body over it before any
+ * validator runs (413), so no request can make the validators work on text no real report holds. It bounds the size of
+ * the work, not its cost per character – that is the algorithms' (on bh2-rc1's validators adversarial repeated text at
+ * these limits still takes seconds; bh2 fix round 1 report r1-fix-WA1.md). Sized well above the largest real
+ * report: the 192 reports of the bh2 V1 harness and replay (17 forms × 3 sample patients, A and B runs) hold at most 72
+ * sections, 44 paragraphs, 684 characters in one paragraph, 12,513 characters of paragraph text, 2 tombstones (1,169
+ * bytes), 103 flags, 48 gaps, 5,647 characters of notes and 73,323 characters in all; the largest of Dell's 17 maps has 72
+ * questions.
+ */
+export const VALIDATION_BUDGET = {
+  /** Boxes in the report. */
+  sections: 400,
+  /** Paragraphs in all boxes together. */
+  paragraphs: 1_000,
+  /** Characters in one paragraph (its text, its original drafted text and its acknowledgement reason, each). */
+  paragraphChars: 10_000,
+  /** Characters of paragraph text in all boxes together (text, original text and reasons). */
+  textChars: 100_000,
+  /** Deleted drafted paragraphs kept for the residue check, in all boxes together. */
+  tombstones: 100,
+  /** Characters in one tombstone. */
+  tombstoneChars: 10_000,
+  /** Characters in all tombstones together. */
+  tombstoneTextChars: 50_000,
+  /** Flags and gaps the report carries. */
+  flags: 2_000,
+  gaps: 1_000,
+  /** Characters of the clinical notes in the report's bundle. */
+  noteChars: 300_000,
+  /** Characters in every string of the report together (bundle, activity and all). */
+  reportChars: 1_500_000,
+  /** Questions of the form map sent with it, and the characters of all its strings together. */
+  formFields: 1_000,
+  formChars: 500_000,
+} as const;
+
+/** What a body holds beyond VALIDATION_BUDGET: the first limit exceeded (for the 413's message). */
+export interface ValidationBudgetExcess {
+  /** The budget key (VALIDATION_BUDGET). */
+  what: keyof typeof VALIDATION_BUDGET;
+  limit: number;
+  actual: number;
+}
+
+/** Every string's length in a parsed JSON value, summed (iterative – any nesting depth), stopping once over `cap`. */
+function stringChars(value: unknown, cap: number): number {
+  let total = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0 && total <= cap) {
+    const v = stack.pop();
+    if (typeof v === "string") total += v.length;
+    else if (Array.isArray(v)) for (const x of v) stack.push(x);
+    else if (v && typeof v === "object") for (const x of Object.values(v as Record<string, unknown>)) stack.push(x);
+  }
+  return total;
+}
+
+const lengthOf = (v: unknown) => (typeof v === "string" ? v.length : 0);
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+/**
+ * The first limit of VALIDATION_BUDGET that `report` (and the form map sent with it) exceeds, or null. Linear in the
+ * size of the body; reads the parsed body only (no validator runs). Pure.
+ */
+export function validationBudgetExcess(report: unknown, form?: unknown): ValidationBudgetExcess | null {
+  const B = VALIDATION_BUDGET;
+  const over = (what: keyof typeof VALIDATION_BUDGET, actual: number): ValidationBudgetExcess | null => (actual > B[what] ? { what, limit: B[what], actual } : null);
+  const r = (report && typeof report === "object" ? report : {}) as Record<string, unknown>;
+  const sections = listOf(r.sections);
+  let excess = over("sections", sections.length);
+  if (excess) return excess;
+  let paragraphs = 0;
+  let text = 0;
+  let tombstones = 0;
+  let tombstoneText = 0;
+  for (const raw of sections) {
+    const section = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    for (const p of listOf(section.paragraphs)) {
+      paragraphs += 1;
+      const para = (p && typeof p === "object" ? p : {}) as Record<string, unknown>;
+      for (const key of ["text", "originalText", "ackReason"]) {
+        const n = lengthOf(para[key]);
+        if ((excess = over("paragraphChars", n))) return excess;
+        text += n;
+      }
+    }
+    for (const t of listOf(section.tombstones)) {
+      tombstones += 1;
+      const n = lengthOf((t && typeof t === "object" ? (t as Record<string, unknown>) : {}).text);
+      if ((excess = over("tombstoneChars", n))) return excess;
+      tombstoneText += n;
+    }
+    if ((excess = over("paragraphs", paragraphs) ?? over("textChars", text) ?? over("tombstones", tombstones) ?? over("tombstoneTextChars", tombstoneText))) return excess;
+  }
+  if ((excess = over("flags", listOf(r.flags).length) ?? over("gaps", listOf(r.gaps).length))) return excess;
+  const bundle = (r.bundleSnapshot && typeof r.bundleSnapshot === "object" ? r.bundleSnapshot : {}) as Record<string, unknown>;
+  if ((excess = over("noteChars", stringChars(bundle.notes, B.noteChars)))) return excess;
+  if ((excess = over("reportChars", stringChars(report, B.reportChars)))) return excess;
+  if (form && typeof form === "object") {
+    if ((excess = over("formFields", listOf((form as Record<string, unknown>).fields).length))) return excess;
+    if ((excess = over("formChars", stringChars(form, B.formChars)))) return excess;
+  }
+  return null;
+}
+
 export interface ValidateReportResult extends CanSignResult {
   flags: ReportFlag[];
   canSign: boolean;
