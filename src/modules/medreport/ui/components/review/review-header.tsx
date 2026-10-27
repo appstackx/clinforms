@@ -187,7 +187,7 @@ export function ReviewHeader({
               {signed ? (prefillFor ? "Approved prefill" : form ? "Approved" : "Signed") : "Draft"}
             </span>
             {report.version && report.version > 1 ? (
-              <span className="inline-flex h-6 items-center rounded-full bg-violet-100 px-2.5 text-xs font-semibold text-violet-900 ring-1 ring-violet-200">
+              <span className="inline-flex h-6 items-center whitespace-nowrap rounded-full bg-violet-100 px-2.5 text-xs font-semibold text-violet-900 ring-1 ring-violet-200">
                 Amended – v{report.version}
               </span>
             ) : null}
