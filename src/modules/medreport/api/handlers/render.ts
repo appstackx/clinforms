@@ -38,10 +38,21 @@ import "server-only";
  * acknowledgementsSha256, minted by /sign's dry run) makes a FINAL copy only when both still hold: the acknowledgements
  * the validators carry over now are the ones the approval relied on, and the Word document filled now (the issue
  * state's answers, the receipt's signer and time) hashes to the one checked at approval. Otherwise 409
- * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's. A receipt
- * from before the release (without those keys) renders exactly as before.
+ * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's.
+ *
+ * bh2 fix round 1 (R1T-WA1-01, RG-1): a receipt from before the release (minted by production – neither key:
+ * sign/receipt.ts isPreReleaseReceipt) approved the document PRODUCTION issued. Its FINAL copy of a referrer's form is
+ * filled with the answers production wrote (core/forms productionFormAnswers: no condition reading, no person's
+ * decision, unanswered boxes as printed) – never this release's issue state, which would leave out answers production
+ * printed. It is filled by this release's forms engine, though, so it is NOT guaranteed byte-identical to production's
+ * copy: scripts/admin/check-issued.ts re-issues every such approval with this build and with production's own code and
+ * reports each one that differs as CHANGED, before a deploy (Khuram decides on each).
  * Release rule (README): no forms-engine change is deployed while approved trial reports exist without first running
  * scripts/admin/check-issued.ts (decrypt, re-render, compare).
+ *
+ * bh2 fix round 1 (R1T-WA1-03, R1T-WA1-04): a body over the validators' budget is refused before they run (413); the
+ * validators read the body as not yet approved (its status and receipt are the client's word: sign/checks/issue.ts
+ * asNotYetApproved) with the voice /sign used – the approver, else the receipt's signer.
  *
  * Owner: forms-engine agent.
  */
@@ -54,19 +65,22 @@ import { demoOutputNotice, isDemoHcpc } from "../../core/demo-clinic";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
 import { validateReport, type ValidateReportResult } from "../../core/validation";
+import { defaultVoiceOwner } from "../../core/validation/attribution-owner";
 import { getBuiltinTemplateDocx, renderDocx } from "../../docgen/docx";
 import { renderPdf } from "../../docgen/pdf";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
 import { addDocxDemoNotice, stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
-import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
+import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers, type FormRenderOutput } from "../../forms/render-form";
+import type { DecodedFormFile } from "../../forms/file";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import type { MedreportDeps } from "../deps";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
 import { formFileForRequest } from "./store-form-file";
-import { acknowledgementsSha256, bindsIssuedDocument, issuedContentSha256, issuedDocument } from "./sign/receipt";
+import { acknowledgementsSha256, bindsIssuedDocument, finalCopyAnswers, issuedContentSha256, issuedDocument } from "./sign/receipt";
+import { asNotYetApproved, validationBudgetRefusal } from "./sign/checks/issue";
 
 interface FinalDecision {
   final: boolean;
@@ -270,8 +284,17 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const { template } = resolved;
   const formDef = resolved.form;
 
+  // bh2 fix round 1 (R1T-WA1-03): no validator runs on a body over the budget.
+  const tooLarge = validationBudgetRefusal(report, form);
+  if (tooLarge) return tooLarge;
   const started = Date.now();
-  const validation = validateReport(report, template, { form: formDef });
+  // bh2 fix round 1 (R1T-WA1-04): the checks read the body as not yet approved – its status and receipt are the client's
+  // word – in the voice /sign checked it in (sign/checks/voice.ts signVoiceOwner: the approver, else the signer, who is
+  // the receipt's signer once it verifies; a draft copy without one: the report's default voice).
+  const asChecked = asNotYetApproved(report);
+  const voiceSigner = receipt?.signer ?? (report.status === "signed" ? report.receipt?.signer : undefined);
+  const owner = report.approver?.name.trim() ? { name: report.approver.name, hcpc: report.approver.hcpc } : (voiceSigner ?? defaultVoiceOwner(asChecked));
+  const validation = validateReport(asChecked, template, { form: formDef, voice: { owner } });
   const decision =
     receipt || parsed.data.requireFinal
       ? await decideFinal(report, receipt, validation, { reviewCopy, form: formDef, templateDocx: Boolean(templateDocxBase64), tenantId: actor.tenantId })
@@ -359,21 +382,27 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
         return issuedCopyChanged("document");
       }
     }
-    let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
-    if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
-    const out =
-      issued && format !== "pdf" && !notice
-        ? issued
-        : await renderFormFile({
-            form: formDef,
-            file,
-            answers,
-            draft: !final,
-            reviewMarkers: reviewCopy,
-            format: format === "pdf" ? "pdf" : "original",
-            continuationLabel: continuationLabelFor(report),
-            ...(notice ? { demoNotice: notice } : {}),
-          });
+    const fileFormat = format === "pdf" ? "pdf" : "original";
+    let out: FormRenderOutput;
+    if (issued && format !== "pdf" && !notice) out = issued;
+    else if (final && receipt) {
+      // R1T-WA1-01: the FINAL copy, one function for /render and check-issued (an approval production made is issued with
+      // the answers production wrote – see the file comment). A review copy is never final (decideFinal).
+      out = await finalFormCopy({ report, form: formDef, file, receipt, format: fileFormat, continuationLabel: continuationLabelFor(report), ...(notice ? { demoNotice: notice } : {}) });
+    } else {
+      let answers = buildFormAnswers(report, formDef, { receipt: null });
+      if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
+      out = await renderFormFile({
+        form: formDef,
+        file,
+        answers,
+        draft: true,
+        reviewMarkers: reviewCopy,
+        format: fileFormat,
+        continuationLabel: continuationLabelFor(report),
+        ...(notice ? { demoNotice: notice } : {}),
+      });
+    }
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
     if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose, demoClinic);
@@ -401,8 +430,35 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   });
 };
 
+/**
+ * The FINAL copy of a referrer's form for a VERIFIED receipt, as POST /render issues it (a receipt that binds the issued
+ * document is first compared with it – the handler) – and exactly what scripts/admin/check-issued.ts re-issues, so the
+ * pre-deploy check compares what /render would issue. bh2 fix round 1 (R1T-WA1-01): an approval production made is
+ * filled with the answers production wrote (sign/receipt.ts finalCopyAnswers). Merge note: the forms engine's frozen
+ * pre-release engine (R1T-WA2-02, forms/pre-release) belongs HERE, so both callers get it.
+ */
+export async function finalFormCopy(input: {
+  report: Report;
+  form: FormDefinition;
+  file: DecodedFormFile;
+  receipt: SignReceipt;
+  format: "original" | "pdf";
+  continuationLabel?: string;
+  demoNotice?: string;
+}): Promise<FormRenderOutput> {
+  return renderFormFile({
+    form: input.form,
+    file: input.file,
+    answers: finalCopyAnswers(input.report, input.form, input.receipt),
+    draft: false,
+    format: input.format,
+    ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+    ...(input.demoNotice ? { demoNotice: input.demoNotice } : {}),
+  });
+}
+
 /** "Claimant: <name> · Reference: <their reference, else the policy number>" for a PDF form's continuation sheet (fix wave 3). */
-function continuationLabelFor(report: Report): string {
+export function continuationLabelFor(report: Report): string {
   const reference = report.instructingParty.reference?.trim() || report.bundleSnapshot.referral.membershipNumber?.trim() || "";
   return [`Claimant: ${report.patientLabel}`, reference ? `Reference: ${reference}` : ""].filter(Boolean).join(" · ");
 }

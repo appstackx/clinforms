@@ -46,6 +46,11 @@ import "server-only";
  * with the receipt's signer and time must succeed (409 ISSUE_REFUSED with the boxes concerned); the receipt binds the
  * issued document's content hash and the acknowledgements the approval relied on (checks/issue.ts, sign/receipt.ts).
  *
+ * bh2 fix round 1 (WA1): a body over the validators' budget is refused before anything else runs (413 PAYLOAD_TOO_LARGE,
+ * checks/issue.ts validationBudgetRefusal – R1T-WA1-03); the body's `status` and `receipt` are the client's word and are
+ * never what the approval is checked as – the report is checked as not yet approved (checks/issue.ts asNotYetApproved),
+ * so a body saying "signed" cannot switch off the approver's adoption of a proposal (R1T-WA1-04, SAF-5).
+ *
  * W0.4 module split (bh2): the checks live in sign/checks/ (roles.ts – who signs and the demo number, owner WC;
  * voice.ts – the signer's own voice, WB; issue.ts – the validators, WA1) and the receipt in sign/receipt.ts (WA1);
  * this file runs them in the order above. W0.6 adds the pipeline's stub checks (SIGNER_CHECKS, BEFORE_VALIDATION,
@@ -61,7 +66,7 @@ import { json, logEvent, parseBody, problem, type MedreportHandler } from "../..
 import { checkAttestedForm, resolveTemplate } from "../../resolve-template";
 import { recordUsage, usageEpisodeFp, usageEpisodeOfReport } from "../../usage";
 import type { SignCheck, SignCheckContext, SignerCheckContext } from "./checks/context";
-import { issuedDocumentCheck, legacyReadingCheck, staleReportCheck, validationCheck } from "./checks/issue";
+import { asNotYetApproved, issuedDocumentCheck, staleReportCheck, validationBudgetRefusal, validationCheck } from "./checks/issue";
 import { approverCheck, demoNumberCheck, resolveSigner } from "./checks/roles";
 import { signerConfirmationsCheck, signVoiceOwner, voiceRefusal } from "./checks/voice";
 import { mintReceipt } from "./receipt";
@@ -71,11 +76,10 @@ import { mintReceipt } from "./receipt";
  * report's approver (WC). Before the validators: is the body the stored revision (WA1 – checks/issue.ts). After them:
  * the signer's confirmations (WB), then what would be issued – the dry-run FINAL fill with the receipt's own signer and
  * time (WA1, checks/issue.ts issuedDocumentCheck, run last below with the approval time and the validators' result).
- * harden-WA1: before the validators also legacyReadingCheck – a report from before the release never rules out a box the
- * server's own reading keeps.
+ * (bh2 fix round 1: harden-WA1's legacyReadingCheck is gone with the run-time reading of printed questions – R1T-WA1-01/05.)
  */
 const SIGNER_CHECKS: ReadonlyArray<SignCheck<SignerCheckContext>> = [approverCheck];
-const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck, legacyReadingCheck];
+const BEFORE_VALIDATION: readonly SignCheck[] = [staleReportCheck];
 const AFTER_VALIDATION: readonly SignCheck[] = [signerConfirmationsCheck];
 
 async function runChecks<C extends SignerCheckContext>(checks: ReadonlyArray<SignCheck<C>>, ctx: C): Promise<Response | null> {
@@ -93,7 +97,12 @@ export const handleSign: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
   const parsed = await parseBody(req, SignRequestSchema, { maxBytes: MAX_FORM_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
-  const { report, typedSignature, statementAccepted, attestations, form } = parsed.data;
+  const { typedSignature, statementAccepted, attestations, form } = parsed.data;
+  // bh2 fix round 1 (R1T-WA1-03): no validator runs on a body over the budget.
+  const tooLarge = validationBudgetRefusal(parsed.data.report, form);
+  if (tooLarge) return tooLarge;
+  // bh2 fix round 1 (R1T-WA1-04): checked as not yet approved, whatever status or receipt the body claims.
+  const report = asNotYetApproved(parsed.data.report);
 
   assertActorTenant(actor, report.tenantId, "report");
   const ref = report.episodeRef;

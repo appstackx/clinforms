@@ -311,7 +311,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const notAskedBecause = useMemo(() => notApplicableReasons(report, form), [report, form]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
-  const items = useMemo(() => reviewItems(report, { template, form }), [report, template, form]);
+  // bh2 fix round 1 (R1T-WA1-L1; ownership exception – WC's file): the items are worded for the person viewing.
+  const items = useMemo(() => reviewItems(report, { template, form, actor }), [report, template, form, actor]);
   // Fix round 1 (B0-8): opinion questions are offered too, unticked – the clinician ticks each one.
   // WC design 4: only the boxes this person may leave blank (opinion boxes: the approving clinician's).
   const blankCandidates = useMemo(

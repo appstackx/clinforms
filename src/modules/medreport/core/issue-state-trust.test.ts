@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { compileCondition, compileConditions, conditionText, evaluateCondition, mapConditions, type ConditionField } from "./conditions";
-import { boxIssueOf, controllerSnapshotOf, dispositionIsStale, issueDetails, isReleaseModel, legacyRuleOutsBeyondServer, migrateDraftToReleaseModel } from "./issue-state";
+import { boxIssueOf, controllerSnapshotOf, dispositionIsStale, issueDetails, isReleaseModel, migrateDraftToReleaseModel } from "./issue-state";
 import { FrozenConditionSchema, ReportSchema } from "./schemas";
 import type { FormDefinition, Report, ReportSection } from "./types";
 import { validateReport } from "./validation";
@@ -89,17 +89,20 @@ describe("check2 N1: the server reads a box's condition from the attested map, n
     assert.equal(validateReport(forged, b.template, {}).canSign, validateReport(b.report, b.template, {}).canSign);
   });
 
-  it("/sign's legacy check: a report shown as one from before the release may not rule out what the server's reading keeps", async () => {
+  // bh2 fix round 1 (R1T-WA1-01, RG-1; integrator grant needed – this replaces harden-WA1's "/sign's legacy check"): no
+  // report is read by its printed questions any more, so a report from before the release – or one presented as one –
+  // has no condition at all: every box is an ordinary box, printed and fully checked, as production checked and issued
+  // it. There is nothing left for /sign to refuse (legacyRuleOutsBeyondServer and legacyReadingCheck are gone).
+  it("a report from before the release (or one presented as one) has no condition: a rewritten question rules nothing out", async () => {
     const b = await built({ report: "form:cf-discharge", answers: { "F-07": true }, box: "F-10", paragraph: { text: "He will make a full recovery within 6 weeks.", cites: ["N-002"] } });
     const strip = (r: Report) => ({ ...r, reportModel: undefined, sections: r.sections.map(({ condition: _c, ...s }) => s) }) as Report;
     const honestLegacy = strip(b.report);
     assert.equal(isReleaseModel(honestLegacy), false);
-    assert.deepEqual(legacyRuleOutsBeyondServer(honestLegacy, b.form), [], "the earlier reading of cf-discharge rules out only what the map does");
+    assert.equal(issueDetails(honestLegacy, b.form).filter((x) => x.state.kind === "not_applicable" && x.state.reason === "condition").length, 0, "no box of a report from before the release is ruled out by a condition");
     const retitled = withSection(honestLegacy, "F-10", (s) => ({ ...s, title: "If not, the prognosis" }));
-    assert.equal(boxIssueOf(retitled, b.form, "F-10")?.state.kind, "not_applicable", "the earlier reading reads the rewritten title");
-    assert.deepEqual(legacyRuleOutsBeyondServer(retitled, b.form), ["F-10"]);
-    assert.deepEqual(legacyRuleOutsBeyondServer(b.report, b.form), [], "a report of this release is the server's reading already");
-    // A built-in template's report: its own printed questions are the server's.
+    assert.equal(boxIssueOf(retitled, b.form, "F-10")?.state.kind, "answer", "the rewritten title is not read");
+    assert.equal(validateReport(retitled, b.template, { form: b.form }).blocking.some((f) => f.sectionKey === "F-10" && f.code === "OPINION_LANGUAGE"), true, "its drafted prognosis is checked");
+    // A built-in template's report: no question of it is read as a condition either.
     const t = await built({ report: "template:solicitor_rta" });
     const first = t.report.sections[0].key;
     const second = t.report.sections[1].key;
@@ -108,8 +111,7 @@ describe("check2 N1: the server reads a box's condition from the attested map, n
       reportModel: undefined,
       sections: t.report.sections.map((s) => (s.key === first ? { ...s, answer: { kind: "yes_no" as const, value: false } } : s.key === second ? { ...s, title: "If yes, describe it" } : s)),
     } as Report;
-    assert.deepEqual(legacyRuleOutsBeyondServer(forgedTitle, null, t.template.sections), [second]);
-    assert.deepEqual(legacyRuleOutsBeyondServer({ ...t.report, reportModel: undefined } as Report, null, t.template.sections), []);
+    assert.notEqual(boxIssueOf(forgedTitle, null, second)?.state.kind, "not_applicable");
   });
 
   it("a migrated draft gets exactly the map's conditions", async () => {

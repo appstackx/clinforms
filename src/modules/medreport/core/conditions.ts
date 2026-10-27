@@ -9,8 +9,7 @@
  * frozen on the section (ReportSection.condition – hashed, kept through drafting): what an approved report issues never
  * depends on a later change to this parser. The issue state (core/issue-state.ts) evaluates the frozen condition
  * against the controlling answers each time (evaluateCondition); nothing about it is ever inferred from flags or the
- * activity log. A report this release made (Report.reportModel 2) reads only its frozen conditions – never the printed
- * words at run time (conditionOf `release`).
+ * activity log. Every report reads only its frozen conditions – never the printed words at run time (conditionOf).
  *
  * Where a condition is read (compileCondition), first found wins:
  * - the question: an "If …" clause at its start (after any lettering such as "(a)" or "5.") or after a clause break
@@ -43,8 +42,12 @@
  * guessed (WA1 design 3). A frozen reading the evaluator does not know (a wants it never writes, a yes/no wants on a
  * choice it cannot read) is unresolved too.
  *
- * Reports from before this release (no frozen condition on the section, no reportModel) keep the earlier reading of the
- * printed question at run time (legacyConditionOf), exactly as they were checked and approved.
+ * A box with no frozen condition is an ordinary question, on every report (bh2 fix round 1, R1T-WA1-01 / RG-1). That
+ * includes every report made before this release (no reportModel, no frozen condition): production (e132057) never read
+ * a condition at all – every box printed what it held – so such a report is checked and issued exactly as production
+ * checked and issued it. The earlier run-time reading of the printed question (legacyConditionOf, fix round 1 – which
+ * never reached production) is no longer applied to any report; it is kept only as the reference the frozen reader is
+ * tested against (core/issue-state.test.ts: every question it read, compileCondition reads too).
  *
  * Ledger seam (core/validation/hooks.ts): "condition-parser" – with it disabled no box is ruled out by a condition.
  *
@@ -77,7 +80,7 @@ type Wants = "yes" | "no" | "other";
 type Frozen = FrozenCondition & { wantsNot?: string; filled?: true };
 
 /* ------------------------------------------------------------------------------------------------
- * The earlier reading (fix round 1) – kept for reports without a frozen condition
+ * The earlier reading (fix round 1) – a reference only: never applied to a report at run time (R1T-WA1-01)
  * ----------------------------------------------------------------------------------------------*/
 
 const LEAD = String.raw`^(?:\(?[a-z0-9]{1,3}[.)]\s*)?`;
@@ -121,7 +124,11 @@ function said(s: Section): string {
   return `“${s.title.trim()}” is “${typeof v === "boolean" ? (v ? "Yes" : "No") : String(v ?? "")}”`;
 }
 
-/** The earlier reading (fix round 1, unchanged): the condition of `key` from its printed question, at run time. */
+/**
+ * The earlier reading (fix round 1, unchanged): the condition of `key` from its printed question. NOT applied to any
+ * report (conditionOf reads frozen conditions only): it never reached production, so applying it to a report made there
+ * would change what that report issues (RG-1). Kept as the reference the frozen reader must cover.
+ */
 export function legacyConditionOf(sections: readonly Section[], key: string): Condition | null {
   const i = sections.findIndex((s) => s.key === key);
   // A choice question answers its own condition ("5. If not, are they fit for modified duties?" prints "Not applicable").
@@ -143,7 +150,7 @@ export function legacyConditionOf(sections: readonly Section[], key: string): Co
   return legacyJudge(controllers, wanted.wants);
 }
 
-/** The earlier reading's evaluation (unchanged, so a report from before the release reads exactly as it was approved). */
+/** The earlier reading's evaluation (unchanged; reference only – see legacyConditionOf). */
 function legacyJudge(controllers: Section[], wants: Wants): Condition {
   if (wants === "other") {
     const c = controllers[0];
@@ -245,18 +252,18 @@ export function evaluateCondition(condition: FrozenCondition, sections: readonly
 }
 
 /**
- * The condition of `key`, or null for an ordinary question: the section's frozen condition, else – only for a report
- * from before this release – the earlier reading of its printed question. `release`: the report was made by this
- * release (core/issue-state.ts isReleaseModel), so a section without a frozen condition is an ordinary question (no
- * run-time fallback). With the "condition-parser" hook disabled (corpus ledger seam) every question is ordinary.
+ * The condition of `key`, or null for an ordinary question: the section's frozen condition, evaluated against the
+ * controlling answers. A section without a frozen condition is an ordinary question on every report – there is no
+ * run-time reading of the printed words (R1T-WA1-01): a report from before this release issues what production issued.
+ * `opts.release` (which release made the report) no longer changes the answer; it is accepted so callers that pass it
+ * keep compiling. With the "condition-parser" hook disabled (corpus ledger seam) every question is ordinary.
  */
 export function conditionOf(sections: readonly Section[], key: string, opts: { release?: boolean } = {}): Condition | null {
+  void opts;
   if (!hookEnabled(CONDITION_PARSER_HOOK)) return null;
   const section = sections.find((s) => s.key === key);
-  if (!section) return null;
-  if (section.condition) return evaluateCondition(section.condition, sections);
-  if (opts.release) return null;
-  return legacyConditionOf(sections, key);
+  if (!section?.condition) return null;
+  return evaluateCondition(section.condition, sections);
 }
 
 /** Whether `key` is a conditional question that does not apply (the answers before it say so). */

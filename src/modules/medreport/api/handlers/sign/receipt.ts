@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import type { Actor } from "../../../auth/actor";
 import { createReceipt, type ReceiptAdditions } from "../../../auth/sign-receipt";
 import { canonicalize } from "../../../core/fingerprint";
-import { buildFormAnswers } from "../../../core/forms";
+import { buildFormAnswers, productionFormAnswers, type FormFillAnswers } from "../../../core/forms";
 import type { Clinician, FormDefinition, Gap, Report, ReportFlag, ReportTemplate, SignReceipt } from "../../../core/types";
 import type { DecodedFormFile } from "../../../forms/file";
 import { renderFormFile, type FormRenderOutput } from "../../../forms/render-form";
@@ -120,6 +120,27 @@ export function issuedContentSha256(docx: Uint8Array): string {
     hash.update(bytes);
   }
   return hash.digest("hex");
+}
+
+/**
+ * bh2 fix round 1 (R1T-WA1-01): a receipt production minted, before this release – it binds neither the issued document
+ * nor the acknowledgements. Every approval this release makes binds the acknowledgements at least (sign/checks/issue.ts
+ * issuedDocumentCheck sets acknowledgementsSha256 on every approval; a portal question set has that hash only), so a
+ * receipt with neither key is one production approved: what it approved is the document production issued. /render
+ * FINAL issues it with production's answers (core/forms productionFormAnswers) and scripts/admin/check-issued.ts compares
+ * it with production's own engine before a deploy.
+ */
+export function isPreReleaseReceipt(receipt: Pick<SignReceipt, "issuedContentSha256" | "acknowledgementsSha256">): boolean {
+  return !receipt.issuedContentSha256 && !receipt.acknowledgementsSha256;
+}
+
+/**
+ * The answers a FINAL copy of a referrer's form is filled with for a VERIFIED receipt (POST /render; check-issued): an
+ * approval production made – the answers production wrote (core/forms productionFormAnswers); any other – the issue
+ * state's (core/forms buildFormAnswers). Never for /sign's dry run, whose approval carries no hashes yet: issuedDocument.
+ */
+export function finalCopyAnswers(report: Report, form: FormDefinition, receipt: SignReceipt): FormFillAnswers {
+  return isPreReleaseReceipt(receipt) ? productionFormAnswers(report, form, { receipt }) : buildFormAnswers(report, form, { receipt });
 }
 
 /** Whether the issued document of this form can be bound to the receipt: a Word form (Dell's are Word or RTF). */

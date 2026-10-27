@@ -164,10 +164,15 @@ export function createReport(input: CreateReportInput): Report {
  * (neighbouring questions of one form section are drafted together), where a long narrative answer
  * drafted from the notes counts double – it is most of a call's output, and two of them already take
  * ~20 s – so every call stays well inside the route's time limit.
+ *
+ * bh2 fix round 1 (R1T-WA1-06, Ascenti P1): only boxes the REPORT holds as draftable are planned – a box the template
+ * calls draftable but report creation filled by code from the record (its section is "from_records": the attended
+ * session dates, core/session-dates.ts) is never drafted. Drafting it put drafted text into a record box, which the
+ * clinic's store refuses (403 drafted-text-added) – and every later save carried it and was refused too.
  */
 export function planDraftGroups(report: Report, template: ReportTemplate): string[][] {
-  const present = new Set(report.sections.map((s) => s.key));
-  const specs = template.sections.filter((s) => isDraftableKind(s.kind) && present.has(s.key));
+  const draftable = new Set(report.sections.filter((s) => isDraftableKind(s.kind)).map((s) => s.key));
+  const specs = template.sections.filter((s) => isDraftableKind(s.kind) && draftable.has(s.key));
   const keys = specs.map((s) => s.key);
   if (isFormReport(report)) {
     const weight = (s: TemplateSection) => (s.kind === "ai_narrative" && s.answerType === "long_text" ? 2 : 1);

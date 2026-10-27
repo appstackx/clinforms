@@ -632,8 +632,13 @@ test("fix round 1: 'told me' / 'My assessment' / 'in my opinion' citing another 
  * Fix round 1 (B0-7): conditional questions
  * ----------------------------------------------------------------------------------------------*/
 
+// bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – expectations changed): only a condition FROZEN when the
+// report was created rules a box out. The run-time reading of the printed questions that this test pinned on a report
+// from before the release (no reportModel) never reached production, so it is applied to no report: such a report's
+// boxes are ordinary – printed and fully checked, as production printed and checked them. The behaviour this test was
+// written for (fix round 1, B0-7) is now that of the frozen reading – asserted below on a report of this release.
 test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back at work…” after “Yes” are not asked – no blocking check, printed blank", async () => {
-  const { conditionOf, conditionWanted } = await import("../conditions");
+  const { compileConditions, conditionFieldsOf, conditionOf, conditionWanted } = await import("../conditions");
   const { buildFormAnswers } = await import("../forms");
   assert.deepEqual(conditionWanted("IF YES, PLEASE DETAIL"), { wants: "yes", anyOfAbove: false });
   assert.deepEqual(conditionWanted("If not back at work, expected return to work date"), { wants: "no", anyOfAbove: false });
@@ -641,23 +646,30 @@ test("fix round 1: “IF YES, PLEASE DETAIL” after “NO” and “If not back
   assert.deepEqual(conditionWanted("If yes to any of the above, note detail"), { wants: "yes", anyOfAbove: true });
   assert.equal(conditionWanted("Has the patient returned to work?"), null);
   const sec = (key: string, title: string, answer?: ReportSection_["answer"], text = "") => ({ key, title, kind: "ai_narrative" as const, status: "drafted" as const, fieldId: key, paragraphs: text ? [{ id: `${key}-p1`, text, sourceIds: ["N-001"], origin: "ai" as const }] : [], ...(answer ? { answer } : {}) });
-  const sections = [
+  const unfrozen = [
     sec("F-27", "Has the patient returned to work?", { kind: "yes_no", value: true }),
     sec("F-28", "If not back at work, expected return to work date", { kind: "date", value: null }),
     sec("F-32", "ANY FURTHER TREATMENT RECOMMENDED?", { kind: "yes_no", value: false }),
     sec("F-33", "IF YES, PLEASE DETAIL", undefined, "Request 3 further sessions."),
   ];
+  const answerType = (key: string) => (key === "F-27" || key === "F-32" ? "yes_no" : key === "F-28" ? "date" : "long_text");
+  const form = { fields: unfrozen.map((s) => ({ id: s.key, label: s.title, guidance: "", answerType: answerType(s.key), anchor: { kind: "docx", target: "table_cell", blockId: "t0.r0.c0" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" })) } as never as import("../types").FormDefinition;
+  // A report from before the release: no frozen condition, so no box is ruled out and the drafted detail is printed.
+  assert.equal(conditionOf(unfrozen, "F-28"), null);
+  assert.equal(conditionOf(unfrozen, "F-33"), null);
+  assert.deepEqual(buildFormAnswers({ sections: unfrozen } as never, form)["F-33"], { text: "Request 3 further sessions." }, "printed, as production printed it");
+  // This release freezes the conditions when the report is created (core/report-factory.ts createFormReport).
+  const frozen = compileConditions(conditionFieldsOf(form.fields));
+  const sections = unfrozen.map((s) => (frozen.get(s.key) ? { ...s, condition: frozen.get(s.key) } : s));
   assert.equal(conditionOf(sections, "F-28")?.applies, false);
   assert.equal(conditionOf(sections, "F-33")?.because, "“ANY FURTHER TREATMENT RECOMMENDED?” is “No”");
   const base = testReport(SOL);
   const report = { ...base, sections: [...base.sections, ...sections] } as unknown as Report;
-  // bh2 WA1 (design 8): sections without a frozen condition are read at run time only on a report from before the release.
-  delete (report as { reportModel?: number }).reportModel;
   const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
-  const flags = run(report, template);
+  // The server reads a form report's conditions from its attested map (core/issue-state.ts serverReading).
+  const flags = validateReport(report, template, { form, computedFacts: computeFacts(report.bundleSnapshot, { asOf: TEST_FACTS_DATE }) }).flags;
   assert.equal(flags.filter((f) => f.sectionKey === "F-28" || f.sectionKey === "F-33").length, 0, "no “required, no answer” and no checks on the drafted text");
-  const form = { fields: sections.map((s) => ({ id: s.key, label: s.title, guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "table_cell", blockId: "t0.r0.c0" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" })) } as never;
-  assert.deepEqual(buildFormAnswers({ sections } as never, form)["F-33"], { leftBlank: true }, "the drafted detail is not printed");
+  assert.deepEqual(buildFormAnswers({ sections } as never, form)["F-33"], { text: "", blank: true, leftBlank: true }, "the drafted detail is not printed");
   // Answered "Yes" after all: it applies again.
   const yes = sections.map((s) => (s.key === "F-32" ? { ...s, answer: { kind: "yes_no" as const, value: true } } : s));
   assert.equal(conditionOf(yes, "F-33")?.applies, true);
@@ -672,7 +684,10 @@ test("safety amendment (R-safety-8): a mail-merge code owned by a question that 
     { key: "F-32", title: "ANY FURTHER TREATMENT RECOMMENDED?", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-32", paragraphs: [], answer: { kind: "yes_no" as const, value: false } },
     { key: "F-33", title: "IF YES, PLEASE DETAIL", kind: "ai_narrative" as const, status: "drafted" as const, fieldId: "F-33", paragraphs: [] },
   ];
-  assert.equal(conditionOf(sections, "F-33")?.applies, false, "the detail question does not apply after “No”");
+  // bh2 fix round 1 (R1T-WA1-01; integrator grant needed): no frozen condition, so the box is an ordinary question on
+  // this report from before the release (no run-time reading of its printed words) – and its code blocks, as on
+  // production. (A box a FROZEN condition rules out clears its own code: the approved DIFF:ISSUE-merge-na-01.)
+  assert.equal(conditionOf(sections, "F-33"), null, "an ordinary question: no run-time reading of “IF YES”");
   const fields = [
     { id: "F-32", label: "ANY FURTHER TREATMENT RECOMMENDED?", guidance: "", answerType: "yes_no", options: ["Yes", "No"], anchor: { kind: "docx", target: "delete_options", blockId: "p0", placeholderText: "Yes / No" }, fillSource: { kind: "clinician_opinion" }, required: true, confidence: "high" },
     { id: "F-33", label: "IF YES, PLEASE DETAIL", guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "replace_placeholder", blockId: "p1", placeholderText: "<<P_TREATMENT>>" }, fillSource: { kind: "notes_narrative" }, required: true, confidence: "high" },
@@ -685,8 +700,9 @@ test("safety amendment (R-safety-8): a mail-merge code owned by a question that 
   delete (report as { reportModel?: number }).reportModel;
   const template = { ...SOL, sections: [...SOL.sections, ...sections.map((s) => ({ key: s.key, title: s.title, kind: s.kind, required: true, guidance: "" }))] } as unknown as ReportTemplate;
   const result = validateReport(report, template, { form });
-  const code = result.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === "F-33");
-  assert.equal(code.length, 1, "the code the not-applicable question owns is still reported");
+  // (An ordinary box now: its own "required, no answer" is reported too – as on production.)
+  const code = result.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && f.sectionKey === "F-33" && (f.evidence ?? "").startsWith("mail-merge field"));
+  assert.equal(code.length, 1, "the code the question owns is still reported");
   assert.equal(code[0].severity, "blocking");
   assert.equal(canAcknowledge(code[0], report), false);
   assert.ok(result.blocking.some((f) => f.id === code[0].id));

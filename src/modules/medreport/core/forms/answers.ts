@@ -395,14 +395,18 @@ export function printsDefault(placeholder: string | undefined): boolean {
  * - sign-off → the values of the (verified) receipt passed in; blank on a DRAFT;
  * - not applicable (ruled out by a frozen condition, a person's decision or a session not attended) → nothing: the
  *   printed placeholder, a merge code, a default, a tick or a "delete as necessary" list in its place is removed (the
- *   forms engine's `blank` + `leftBlank`); a box ruled out by the earlier run-time reading (a report from before this
- *   release) keeps its earlier output, `{leftBlank: true}`;
+ *   forms engine's `blank` + `leftBlank`). Only a frozen condition rules a box out (core/conditions.ts conditionOf): a
+ *   report from before this release has none, so every box of it prints what it holds, as on production (R1T-WA1-01);
  * - nothing in the record (an address line it does not have) → `{text: "", blank: true}`;
  * - no answer → `{leftBlank: true}` once approved (a receipt is passed) or left blank by a person; else `{}` (as
  *   printed, on a DRAFT).
  * A FINAL copy (receipt passed) depends on the issue state and the receipt only. Only a DRAFT copy also takes the
  * report's own status and acknowledged "optional and has no answer" warnings as "left blank" (fix round 1, B0-2), so the
  * review's preview shows a decision before it is approved.
+ *
+ * A FINAL copy of an approval made BEFORE this release (a receipt production minted – no issued-document or
+ * acknowledgement hash: api/handlers/sign/receipt.ts isPreReleaseReceipt) is not built here: /render issues it with the
+ * answers production wrote (productionFormAnswers below), because what was approved is production's document.
  */
 export function buildFormAnswers(
   report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "flags" | "status" | "reportModel" | "approver">>,
@@ -414,7 +418,7 @@ export function buildFormAnswers(
   const approvedDraft = !final && report.status === "signed";
   const answers: FormFillAnswers = {};
   const boxes = new Map(issueDetails(report, form).map((b) => [b.key, b]));
-  // A report from before this release with no section for a field printed it as it is (AC-ISSUE-6: byte-identical).
+  // A report from before this release with no section for a field printed it as it is (as production did).
   const legacyWithout = isReleaseModel(report) ? null : new Set(report.sections.map((s) => s.key));
   for (const field of answerableFields(form)) {
     const box = boxes.get(field.id);
@@ -430,7 +434,6 @@ export function buildFormAnswers(
         break;
       case "not_applicable":
         if (state.reason === "session_not_attended") answers[field.id] = { text: "", blank: true };
-        else if (state.reason === "condition" && !box.frozenCondition) answers[field.id] = { leftBlank: true };
         else answers[field.id] = notAsked(field);
         break;
       case "blank":
@@ -441,6 +444,59 @@ export function buildFormAnswers(
     }
   }
   return answers;
+}
+
+/**
+ * The answers production (e132057, main c883ce5) wrote into the referrer's file – byte for byte its buildFormAnswers – for
+ * a FINAL copy of an approval production made (bh2 fix round 1, R1T-WA1-01 / RG-1). What such a receipt approved is the
+ * document production issued, so none of this release's readings applies to it:
+ * - no condition, no person's decision, no session-not-attended reading: every box prints what it holds;
+ * - an unanswered box prints as the form prints it (`{}` – production never cleared a printed default or tick);
+ * - "left empty on purpose by the record" only for the address lines production knew (not the attended sessions this
+ *   release added);
+ * - sign-off boxes from the receipt.
+ * The forms engine that fills these answers is this release's; where it writes the same answers differently from
+ * production's engine, scripts/admin/check-issued.ts reports the approval as CHANGED before a deploy (Khuram decides).
+ * Pure.
+ */
+export function productionFormAnswers(
+  report: Pick<Report, "sections">,
+  form: Pick<FormDefinition, "fields">,
+  opts: { receipt: Pick<SignReceipt, "signer" | "signedAt"> },
+): FormFillAnswers {
+  const signoff = signoffValuesFromReceipt(opts.receipt);
+  const answers: FormFillAnswers = {};
+  for (const field of answerableFields(form)) {
+    if (field.fillSource.kind === "signoff") {
+      answers[field.id] = signoffAnswer(field.fillSource.part, signoff);
+      continue;
+    }
+    const section = report.sections.find((s) => s.key === field.id);
+    const blankByDesign = productionBlankByDesign(section, field);
+    if (!section || !isSectionAnswered({ paragraphs: section.paragraphs, answer: section.answer, blankFromRecords: blankByDesign })) {
+      answers[field.id] = {};
+      continue;
+    }
+    const text = answerToText(section);
+    if (blankByDesign && text.trim() === "") {
+      answers[field.id] = { text: "", blank: true };
+      continue;
+    }
+    const structured = section.answer && section.answer.kind !== "text" ? section.answer.value : undefined;
+    if (Array.isArray(structured)) {
+      answers[field.id] = { text, rows: structured };
+      continue;
+    }
+    answers[field.id] = structured === undefined ? { text } : { text, value: structured };
+  }
+  return answers;
+}
+
+/** isBlankByDesign as production (e132057) read it: a 2nd or later line of a patient's or the clinic's address only. */
+function productionBlankByDesign(section: Pick<ReportSection, "blankFromRecords"> | null | undefined, field: Pick<FormField, "fillSource">): boolean {
+  if (!section?.blankFromRecords || field.fillSource.kind !== "registration") return false;
+  const { path, part } = field.fillSource;
+  return Boolean(part && part.index >= 2 && (path === "patient.addressLines" || path === "clinic.addressLines"));
 }
 
 /**
