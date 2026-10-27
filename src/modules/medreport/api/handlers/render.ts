@@ -34,6 +34,16 @@ import "server-only";
  * the demo clinic notice), and the final document's audit row says demoClinic. Real clinics and the public demo are
  * unchanged. File names follow the usual rules.
  *
+ * Rollback shim 2 (bh2 fix round 1, R1T-WA1-02 / RG-3): a receipt the Blue Heart release (release/bh-trial-2) minted
+ * binds what that release issued – `issuedContentSha256` (the Word document its /sign filled as a dry run) and/or
+ * `acknowledgementsSha256` (the acknowledgements the approval relied on; a portal question set's receipt has this one
+ * only). The rollback shim keeps those keys, so the MAC verifies here – but this build cannot issue that document: it
+ * does not read the release's frozen conditions, people's decisions, printed leads or blank-opener rule, so a box the
+ * release left out (its card said "nothing is printed here") would print again. A FINAL copy of such an approval is
+ * refused: 409 RECEIPT_INVALID ("approved with a newer version"), never a different document. A DRAFT copy still renders,
+ * and so does every approval this build made. To issue it with this build, the clinic creates an amended version and
+ * approves it again here.
+ *
  * Owner: forms-engine agent.
  */
 import { AUDIT_ACTIONS, actorInDemoClinic, assertActorTenant, auditActor, macPrefix, requireActor, type Actor } from "../../auth/actor";
@@ -66,6 +76,18 @@ interface FinalDecision {
   contentSha256?: string;
 }
 
+/**
+ * Rollback shim 2: what a receipt the release minted binds ("document", "acknowledgements" – both on a Word form's
+ * approval, the acknowledgements alone on a portal question set's or a built-in report's), or null for a receipt this
+ * build minted. The keys are unknown to this build; the shim's read schema keeps them (core/stored-schemas.ts), and the
+ * MAC that just verified covers them, so they are the release's own.
+ */
+export function releaseIssueBinding(receipt: SignReceipt): string | null {
+  const keys = receipt as unknown as Record<string, unknown>;
+  const binds = [typeof keys.issuedContentSha256 === "string" && keys.issuedContentSha256 ? "document" : "", typeof keys.acknowledgementsSha256 === "string" && keys.acknowledgementsSha256 ? "acknowledgements" : ""].filter(Boolean);
+  return binds.length ? binds.join(", ") : null;
+}
+
 async function decideFinal(
   report: Report,
   receipt: SignReceipt | undefined,
@@ -85,6 +107,19 @@ async function decideFinal(
         ? "The report has changed since it was approved. Review the changes and approve it again."
         : "The approval receipt could not be verified for this report. Approve it again.";
     return { final: false, refusal: problem(409, "The approval receipt is not valid for this report", { code: "RECEIPT_INVALID", detail }) };
+  }
+  // Rollback shim 2 (see the file comment): an approval the release made binds a document this build cannot issue.
+  const releaseBinding = releaseIssueBinding(receipt);
+  if (releaseBinding) {
+    logEvent("render_refused_release_receipt", { report: report.id, binds: releaseBinding });
+    return {
+      final: false,
+      refusal: problem(409, "This form was approved with a newer version of ClinForms", {
+        code: "RECEIPT_INVALID",
+        detail:
+          "Its final copy can only be issued by the version that approved it, so no final copy was made here. The report and its approval are kept unchanged. To issue it now, create an amended version and approve it again.",
+      }),
+    };
   }
   if (!validation.canSign) {
     return {
