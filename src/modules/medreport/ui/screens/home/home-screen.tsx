@@ -594,7 +594,7 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
   };
   return (
     <>
-      <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white md:block">
+      <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white md:block">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500">
             <tr>
@@ -613,10 +613,10 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
             {reports.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50/60">
                 <td className="px-4 py-3">
-                  <Link href={paths.report(r.id)} className="font-medium text-slate-900 hover:text-teal-800 hover:underline">
+                  <Link href={paths.report(r.id)} className="block max-w-[14rem] truncate font-medium text-slate-900 hover:text-teal-800 hover:underline">
                     {r.patientLabel}
                   </Link>
-                  <p className="text-xs text-slate-500">{r.bundleSnapshot.source.simulated ? "Simulated TM3" : r.bundleSnapshot.source.label ?? r.episodeRef.connectorId}</p>
+                  <SourceLine report={r} />
                 </td>
                 <td className="px-4 py-3">
                   <FormCell report={r} />
@@ -624,7 +624,7 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
                 <td className="px-4 py-3">
                   <StatusCell report={r} />
                 </td>
-                <td className="px-4 py-3">
+                <td className="min-w-[9rem] px-4 py-3">
                   <FlagCell report={r} prefillFor={r.form ? (prefillFor.get(r.form.formId) ?? null) : null} />
                 </td>
                 {tenant ? <td className="px-4 py-3 text-xs text-slate-700">{r.receipt?.signer.name ?? "–"}</td> : null}
@@ -696,7 +696,7 @@ function ReportsTable({ reports, prefillFor }: { reports: Report[]; prefillFor: 
 function FormCell({ report }: { report: Report }) {
   if (report.form) {
     return (
-      <div className="min-w-0">
+      <div className="min-w-0 max-w-[18rem]">
         <p className="flex flex-wrap items-center gap-1.5 text-slate-900">
           <span className="truncate">{report.form.title}</span>
           <FormKindBadge kind={report.form.kind} />
@@ -706,7 +706,7 @@ function FormCell({ report }: { report: Report }) {
     );
   }
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 max-w-[18rem]">
       <p className="text-slate-900">Built-in report</p>
       <p className="truncate text-xs text-slate-500">
         {report.instructingParty.name} · {report.templateId}
@@ -715,13 +715,25 @@ function FormCell({ report }: { report: Report }) {
   );
 }
 
-/** Status, and which version an amended form is (an amended v2 must not look like the original). */
+/** Where the notes came from, on one line (an uploaded file's name can be long – the full name is in the tooltip). */
+function SourceLine({ report }: { report: Report }) {
+  const source = report.bundleSnapshot.source.simulated ? "Simulated TM3" : (report.bundleSnapshot.source.label ?? report.episodeRef.connectorId);
+  return (
+    <p className="max-w-[14rem] truncate text-xs text-slate-500" title={source}>
+      {source}
+    </p>
+  );
+}
+
+/** Status, and which version an amended form is (an amended v2 must not look like the original). Kept on one line. */
 function StatusCell({ report }: { report: Report }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <ReportStatusBadge status={report.status} />
       {report.version && report.version > 1 ? (
-        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-200">Amended – v{report.version}</span>
+        <span className="whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-900 ring-1 ring-violet-200">
+          Amended – v{report.version}
+        </span>
       ) : null}
     </span>
   );
