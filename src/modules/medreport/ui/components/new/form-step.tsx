@@ -186,17 +186,13 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           </div>
         ) : null}
         {proposed.length ? (
-          <p className="text-xs text-slate-500">
-            Not ready yet:{" "}
-            {proposed.map((f, i) => (
-              <span key={f.id}>
-                {i > 0 ? ", " : ""}
-                <Link href={paths.form(f.id)} className="underline hover:text-slate-800">
-                  {f.title} ({f.referrer.name})
-                </Link>
-              </span>
-            ))}{" "}
-            – confirm the mapping first.
+          <p className="text-xs text-slate-500" data-not-ready-count={proposed.length}>
+            {proposed.length === 1 ? "1 more form in your library is" : `${proposed.length} more forms in your library are`} waiting for
+            their mapping to be checked and confirmed once –{" "}
+            <Link href={paths.forms} className="font-medium underline hover:text-slate-800">
+              confirm them in Referrer forms
+            </Link>
+            .
           </p>
         ) : null}
         <Link href={paths.forms} className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline">
