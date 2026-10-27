@@ -113,8 +113,12 @@ const NOTES_CLAUSE_ABBREVIATIONS: readonly string[] = [
   "sup", "inf", "a.m", "p.m",
 ];
 
+/** White space as `\s` reads it. The ASCII characters are tested by code (the splitter asks for every character). */
 function isSpace(ch: string | undefined): boolean {
-  return ch !== undefined && /\s/.test(ch);
+  if (ch === undefined || ch.length !== 1) return ch !== undefined && /\s/.test(ch);
+  const code = ch.charCodeAt(0);
+  if (code < 128) return code === 32 || (code >= 9 && code <= 13);
+  return /\s/.test(ch);
 }
 function isDigit(ch: string | undefined): boolean {
   return ch !== undefined && ch >= "0" && ch <= "9";
@@ -145,46 +149,67 @@ interface OpenMark {
  * Positions where a sentence may not be cut because they lie inside a matched pair of quotes or brackets
  * on one line: `guard[p] === 1` for open < p <= close. An unmatched opener (or an apostrophe) protects
  * nothing, so one stray quote cannot swallow the rest of a paragraph.
+ *
+ * Linear in the length of the text however the pairs nest or fail to match (bh2 R1T-WD-01, SEC-1): each
+ * matched pair adds its range to a difference array that is summed once at the end, instead of marking the
+ * range position by position; the open marks of each kind are counted, so a closer with no opener never
+ * scans the stack; and the stack is cut in place, never copied.
  */
 function guardedPositions(text: string): Uint8Array {
   const n = text.length;
   const guard = new Uint8Array(n + 1);
-  let stack: OpenMark[] = [];
+  const diff = new Int32Array(n + 2);
+  const stack: OpenMark[] = [];
+  const openCount = new Map<string, number>();
+  const push = (closer: string, at: number) => {
+    stack.push({ closer, at });
+    openCount.set(closer, (openCount.get(closer) ?? 0) + 1);
+  };
+  const hasOpen = (closer: string) => (openCount.get(closer) ?? 0) > 0;
   const closeTop = (closer: string, at: number): boolean => {
+    if (!hasOpen(closer)) return false;
     for (let k = stack.length - 1; k >= 0; k--) {
       if (stack[k].closer !== closer) continue;
-      for (let p = stack[k].at + 1; p <= at; p++) guard[p] = 1;
-      stack = stack.slice(0, k);
+      diff[stack[k].at + 1] += 1;
+      diff[at + 1] -= 1;
+      for (let j = k; j < stack.length; j++) openCount.set(stack[j].closer, (openCount.get(stack[j].closer) ?? 1) - 1);
+      stack.length = k;
       return true;
     }
     return false;
   };
-  const hasOpen = (closer: string) => stack.some((m) => m.closer === closer);
   for (let i = 0; i < n; i++) {
     const ch = text[i];
     const prev = i > 0 ? text[i - 1] : undefined;
     const next = i + 1 < n ? text[i + 1] : undefined;
     const prevOpens = prev === undefined || isSpace(prev) || inSet(OPENERS, prev) || inSet("-\u2013\u2014/", prev);
     if (ch === "\n") {
-      stack = []; // pairs never span a line break
-    } else if (ch === "(") stack.push({ closer: ")", at: i });
-    else if (ch === "[") stack.push({ closer: "]", at: i });
-    else if (ch === "{") stack.push({ closer: "}", at: i });
+      // pairs never span a line break
+      stack.length = 0;
+      openCount.clear();
+    } else if (ch === "(") push(")", i);
+    else if (ch === "[") push("]", i);
+    else if (ch === "{") push("}", i);
     else if (ch === ")" || ch === "]" || ch === "}") closeTop(ch, i);
-    else if (ch === "\u201C") stack.push({ closer: "\u201D", at: i });
+    else if (ch === "\u201C") push("\u201D", i);
     else if (ch === "\u201D") closeTop("\u201D", i);
     else if (ch === "\u2018") {
-      if (next !== undefined && !isSpace(next)) stack.push({ closer: "\u2019", at: i });
+      if (next !== undefined && !isSpace(next)) push("\u2019", i);
     } else if (ch === "\u2019") {
       // "Tom’s" is an apostrophe; a closing quote is followed by a space, punctuation or the end.
       if (hasOpen("\u2019") && !isLetter(next) && !isDigit(next)) closeTop("\u2019", i);
     } else if (ch === '"') {
       if (hasOpen('"')) closeTop('"', i);
-      else if (prevOpens && next !== undefined && !isSpace(next)) stack.push({ closer: '"', at: i });
+      else if (prevOpens && next !== undefined && !isSpace(next)) push('"', i);
     } else if (ch === "'") {
       if (hasOpen("'") && prev !== undefined && !isSpace(prev) && !isLetter(next) && !isDigit(next)) closeTop("'", i);
-      else if (prevOpens && (isLetter(next) || isDigit(next))) stack.push({ closer: "'", at: i });
+      else if (prevOpens && (isLetter(next) || isDigit(next))) push("'", i);
     }
+  }
+  let depth = 0;
+  for (let p = 0; p <= n; p++) {
+    depth += diff[p];
+    if (depth > 0) guard[p] = 1;
   }
   return guard;
 }
@@ -206,6 +231,64 @@ interface ScanState {
   lastLetter: { code: number; lineStart: number; at: number } | null;
   /** Offsets of recognised numeric list markers (the digit), so a span starting there gets the marker. */
   readonly markerAt: Set<number>;
+  /** What is known about the line starting at `line.start` (lineFacts), computed once per line. */
+  line: LineFacts | null;
+}
+
+/**
+ * Facts about one line that the list-marker rules ask for at many stops on it, read once per line so a long line
+ * costs linear time, never quadratic (bh2 R1T-WD-01, SEC-1: one 160 KB line took 71 s).
+ */
+interface LineFacts {
+  /** Offset of the line's first character. */
+  readonly start: number;
+  /** Offset of the line break that ends it (the text's length on the last line). */
+  readonly end: number;
+  /** Offset of the first character that is not a space or a tab (`end` or beyond when there is none). */
+  readonly indentEnd: number;
+  /** The last offset on the line of a "2." / "2)" item marker (white space before and after it), or -1. */
+  readonly lastTwoMarker: number;
+  /** The same for a "b." / "b)" lettered marker, or -1. */
+  readonly lastBMarker: number;
+}
+
+/** The facts about the line that starts at `st.lineStart`, read once per line. */
+function lineFacts(st: ScanState): LineFacts {
+  if (st.line && st.line.start === st.lineStart) return st.line;
+  const { text } = st;
+  const start = st.lineStart;
+  const br = text.indexOf("\n", start);
+  const end = br < 0 ? text.length : br;
+  let indentEnd = start;
+  while (indentEnd < text.length && (text[indentEnd] === " " || text[indentEnd] === "\t")) indentEnd++;
+  // The markers the rules look for later on the line: `(?:^|\s)2[.)]\s` and `(?:^|\s)b[.)]\s`, with the white space
+  // after the marker still on the line.
+  let lastTwoMarker = -1;
+  let lastBMarker = -1;
+  for (let p = start + 1; p + 2 < end; p++) {
+    const ch = text[p];
+    if ((ch === "2" || ch === "b") && (text[p + 1] === "." || text[p + 1] === ")") && isSpace(text[p - 1]) && isSpace(text[p + 2])) {
+      if (ch === "2") lastTwoMarker = p;
+      else lastBMarker = p;
+    }
+  }
+  st.line = { start, end, indentEnd, lastTwoMarker, lastBMarker };
+  return st.line;
+}
+
+/** Whether only spaces or tabs lie between the start of the current line and `pos` (read once per line). */
+function onlyIndentOnLine(st: ScanState, pos: number): boolean {
+  return lineFacts(st).indentEnd >= pos;
+}
+
+/**
+ * Whether the line holds an item marker ("2." or "b.", see LineFacts) after the stop at `stopAt` – what
+ * `/(?:^|\s)2[.)]\s/.test(text.slice(stopAt + 1, lineEnd))` asked. The stop is always followed by a closer or white
+ * space, so a marker counts only with white space before it, at stopAt + 2 or later.
+ */
+function markerLaterOnLine(st: ScanState, stopAt: number, which: "2" | "b"): boolean {
+  const facts = lineFacts(st);
+  return (which === "2" ? facts.lastTwoMarker : facts.lastBMarker) >= stopAt + 2;
 }
 
 /** The token before the stop at `i`, without leading quotes or brackets, and where it starts. */
@@ -222,12 +305,6 @@ function alphaTail(tok: string): string {
   return m ? m[0] : "";
 }
 
-/** Whether only spaces or tabs lie between the line start and `pos`. */
-function onlyIndentBefore(text: string, lineStart: number, pos: number): boolean {
-  for (let k = lineStart; k < pos; k++) if (text[k] !== " " && text[k] !== "\t") return false;
-  return true;
-}
-
 /** Whether `next` (at offset b) starts a new sentence after an ordinary stop. */
 function startsNewSentence(text: string, b: number, policy: SentencePolicy): boolean {
   const next = text[b];
@@ -239,29 +316,33 @@ function startsNewSentence(text: string, b: number, policy: SentencePolicy): boo
 /** A bare number "1"–"99" before a stop is a list marker: at a line start, "1." after a colon with "2." later on the line, or the next number of a list on this line. */
 function isListMarker(st: ScanState, tokStart: number, num: number, stopAt: number): boolean {
   const { text } = st;
-  if (onlyIndentBefore(text, st.lineStart, tokStart)) return true;
+  if (onlyIndentOnLine(st, tokStart)) return true;
   if (st.lastMarker && st.lastMarker.lineStart === st.lineStart && st.lastMarker.num === num - 1) return true;
   if (num !== 1) return false;
   let k = tokStart;
   while (k > st.lineStart && isSpace(text[k - 1])) k--;
   if (k === tokStart || (text[k - 1] !== ":" && text[k - 1] !== ";")) return false;
-  const lineEnd = text.indexOf("\n", stopAt);
-  return /(?:^|\s)2[.)]\s/.test(text.slice(stopAt + 1, lineEnd < 0 ? text.length : lineEnd));
+  return markerLaterOnLine(st, stopAt, "2");
 }
 
 /** A lower-case letter before a stop is a list marker: at a line start, "a." after a colon with "b." later on the line, or the next letter of a list on this line. */
 function isLetterMarker(st: ScanState, tokStart: number, letter: string, stopAt: number): boolean {
-  const { text } = st;
   const code = letter.charCodeAt(0);
   const prev = st.lastLetter;
-  const lineEnd = text.indexOf("\n", stopAt);
-  const restOfLine = text.slice(stopAt + 1, lineEnd < 0 ? text.length : lineEnd);
   const ok =
-    onlyIndentBefore(text, st.lineStart, tokStart) ||
+    onlyIndentOnLine(st, tokStart) ||
     (prev !== null && prev.lineStart === st.lineStart && prev.at >= st.segStart && prev.code + 1 === code) ||
-    (letter === "a" && /[:;]\s*$/.test(text.slice(st.lineStart, tokStart)) && /(?:^|\s)b[.)]\s/.test(restOfLine));
+    (letter === "a" && afterColonOnLine(st, tokStart) && markerLaterOnLine(st, stopAt, "b"));
   if (ok) st.lastLetter = { code, lineStart: st.lineStart, at: tokStart };
   return ok;
+}
+
+/** Whether the last character before `pos` on the current line, white space aside, is ":" or ";" ("Areas: a. Neck"). */
+function afterColonOnLine(st: ScanState, pos: number): boolean {
+  const { text } = st;
+  let k = pos;
+  while (k > st.lineStart && isSpace(text[k - 1])) k--;
+  return k > st.lineStart && (text[k - 1] === ":" || text[k - 1] === ";");
 }
 
 /**
@@ -280,7 +361,7 @@ function periodEndsSentence(st: ScanState, i: number, b: number, policy: Sentenc
     if (INLINE_ABBREVIATIONS.indexOf(lw) >= 0 || INLINE_ABBREVIATIONS.indexOf(bare) >= 0) return false;
     if (BEFORE_NUMBER.indexOf(bare) >= 0) {
       if (isDigit(next) || next === "#") return false;
-      if ((bare === "no" || bare === "nos") && /^of\b/i.test(text.slice(b))) return false;
+      if ((bare === "no" || bare === "nos") && /^of\b/i.test(text.slice(b, b + 3))) return false;
     }
     if (word.length === 1 && tok === word) {
       if (isLower(word)) {
@@ -373,7 +454,7 @@ export function splitSentences(text: string, policy: SentencePolicy = "prose"): 
   if (!text) return [];
   const n = text.length;
   const guard = guardedPositions(text);
-  const st: ScanState = { text, policy, lineStart: 0, segStart: 0, lastMarker: null, lastLetter: null, markerAt: new Set<number>() };
+  const st: ScanState = { text, policy, lineStart: 0, segStart: 0, lastMarker: null, lastLetter: null, markerAt: new Set<number>(), line: null };
   const cuts: number[] = [];
   const cut = (at: number) => {
     cuts.push(at);
@@ -421,7 +502,7 @@ export function splitSentences(text: string, policy: SentencePolicy = "prose"): 
       i = end;
       continue;
     }
-    if (inSet(INLINE_BULLETS, ch) && i > 0 && isSpace(text[i - 1]) && isSpace(text[i + 1]) && !guard[i] && !onlyIndentBefore(text, st.lineStart, i)) {
+    if (inSet(INLINE_BULLETS, ch) && i > 0 && isSpace(text[i - 1]) && isSpace(text[i + 1]) && !guard[i] && !onlyIndentOnLine(st, i)) {
       cut(i);
     }
     i++;
@@ -429,6 +510,12 @@ export function splitSentences(text: string, policy: SentencePolicy = "prose"): 
 
   const spans: SentenceSpan[] = [];
   const bounds = [0, ...cuts, n];
+  // The line each span starts on is carried forward (spans come in order), never searched back for: a long line
+  // with many sentences stays linear (bh2 R1T-WD-01, SEC-1).
+  let lineOf = 0;
+  let scanned = 0;
+  let indentLine = -1;
+  let indentEnd = 0;
   for (let k = 0; k + 1 < bounds.length; k++) {
     let s = bounds[k];
     let e = bounds[k + 1];
@@ -436,10 +523,14 @@ export function splitSentences(text: string, policy: SentencePolicy = "prose"): 
     while (e > s && isSpace(text[e - 1])) e--;
     if (s >= e) continue;
     const slice = text.slice(s, e);
-    let lineStart = s;
-    while (lineStart > 0 && text[lineStart - 1] !== "\n") lineStart--;
+    for (; scanned < s; scanned++) if (text[scanned] === "\n") lineOf = scanned + 1;
+    if (indentLine !== lineOf) {
+      indentLine = lineOf;
+      indentEnd = lineOf;
+      while (indentEnd < n && (text[indentEnd] === " " || text[indentEnd] === "\t")) indentEnd++;
+    }
     const m =
-      (onlyIndentBefore(text, lineStart, s) ? LINE_MARKER.exec(slice) : null) ??
+      (indentEnd >= s ? LINE_MARKER.exec(slice) : null) ??
       INLINE_MARKER.exec(slice) ??
       (st.markerAt.has(s) ? /^\d{1,2}[.)](?=\s)/.exec(slice) : null);
     let bodyStart = s;
@@ -663,10 +754,15 @@ function namesSomeone(text: string): boolean {
   return false;
 }
 
-/** The nearest sentence before `k` that names someone without starting with a pronoun – the subject "He" refers to. */
-function namingKey(spans: readonly SentenceSpan[], k: number): string | null {
-  for (let j = k - 1; j >= 0; j--) if (!pronounLed(spans[j]) && namesSomeone(spans[j].text)) return sentenceKey(spans[j].text);
-  return null;
+/**
+ * For each k, the key of the nearest sentence before `k` that names someone without starting with a pronoun – the
+ * subject "He" refers to (null when there is none). One pass, so a text of many pronoun-led sentences stays linear
+ * (bh2 R1T-WD-01).
+ */
+function namingKeys(spans: readonly SentenceSpan[]): Array<string | null> {
+  const out: Array<string | null> = [null];
+  for (let j = 0; j < spans.length; j++) out.push(!pronounLed(spans[j]) && namesSomeone(spans[j].text) ? sentenceKey(spans[j].text) : out[j]);
+  return out;
 }
 
 /** A stop, then white space, then a comma or other punctuation: where a cut sentence would start (". , and he…"). */
@@ -714,36 +810,54 @@ export function checkSafeEdit(input: {
   const before = splitSentences(input.before, policy);
   const after = splitSentences(input.after, policy);
 
+  // Looked up by offset and by key, never searched for one by one (bh2 R1T-WD-01: linear in both texts).
+  const byStart = new Map<number, SentenceSpan>();
+  const byEnd = new Map<number, SentenceSpan>();
+  for (const x of before) {
+    if (!byStart.has(x.start)) byStart.set(x.start, x);
+    if (!byEnd.has(x.end)) byEnd.set(x.end, x);
+  }
   for (const span of input.removedSpans ?? []) {
     let s = span.start;
     let e = span.end;
     while (s < e && isSpace(input.before[s])) s++;
     while (e > s && isSpace(input.before[e - 1])) e--;
-    const first = before.find((x) => x.start === s);
-    const last = before.find((x) => x.end === e);
+    const first = byStart.get(s);
+    const last = byEnd.get(e);
     if (!first || !last || first.index > last.index) problems.push({ kind: "partial_sentence", span });
   }
 
   const figures = figureChanges(input.before, input.after, { removed: input.removedSpans, added: input.added });
   if (figures.lost.length > 0 || figures.gained.length > 0) problems.push({ kind: "figures_changed", ...figures });
 
-  const beforePieces = startPieces(input.before).map((p) => sentenceKey(pieceText(p)));
+  const beforePieces = new Set(startPieces(input.before).map((p) => sentenceKey(pieceText(p))));
   for (const piece of startPieces(input.after)) {
     const problem = sentenceStartProblem(piece);
-    if (problem && beforePieces.indexOf(sentenceKey(pieceText(piece))) < 0) problems.push({ kind: "bad_start", sentence: pieceText(piece), problem });
+    if (problem && !beforePieces.has(sentenceKey(pieceText(piece)))) problems.push({ kind: "bad_start", sentence: pieceText(piece), problem });
   }
 
-  const beforeKeys = before.map((s) => sentenceKey(s.text));
-  const used = new Set<number>();
+  // The unused sentences of `before` with each key, in order: each pronoun-led sentence of `after` takes the first.
+  const unusedByKey = new Map<string, number[]>();
+  before.forEach((s, idx) => {
+    const key = sentenceKey(s.text);
+    const list = unusedByKey.get(key);
+    if (list) list.push(idx);
+    else unusedByKey.set(key, [idx]);
+  });
+  const taken = new Map<string, number>();
+  const namingBefore = namingKeys(before);
+  const namingAfter = namingKeys(after);
   const namedBefore = before.some((s) => !pronounLed(s) && namesSomeone(s.text));
   for (let k = 0; k < after.length; k++) {
     if (!pronounLed(after[k])) continue;
     const key = sentenceKey(after[k].text);
-    const j = beforeKeys.findIndex((x, idx) => x === key && !used.has(idx));
-    const now = namingKey(after, k);
+    const list = unusedByKey.get(key);
+    const next = taken.get(key) ?? 0;
+    const j = list && next < list.length ? list[next] : -1;
+    const now = namingAfter[k];
     if (j >= 0) {
-      used.add(j);
-      if (namingKey(before, j) !== now) problems.push({ kind: "orphaned_pronoun", sentence: after[k].text });
+      taken.set(key, next + 1);
+      if (namingBefore[j] !== now) problems.push({ kind: "orphaned_pronoun", sentence: after[k].text });
     } else if (now === null && namedBefore) {
       problems.push({ kind: "orphaned_pronoun", sentence: after[k].text });
     }
