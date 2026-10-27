@@ -351,6 +351,91 @@ export interface GlyphSlot {
   segment: Segment;
   /** Offset of the glyph inside a text segment (0 for sym / legacy boxes). */
   offset: number;
+  /**
+   * A TYPED tick box (10/2026): "[ ]", "[]", "[x]", "[X]", "[✓]" typed as text (practice-system templates). `text` is
+   * the box as printed; `parts` the text it occupies – usually one part, more when Word split it over runs.
+   */
+  bracket?: { text: string; parts: Array<{ segment: Segment; offset: number; length: number }> };
+}
+
+/**
+ * A typed tick box: "[" + at most one space + an optional x / X / ✓ / ✔ + at most one space + "]". Anything else in
+ * square brackets ("[Insert prognosis]", "[Case_ID]") stays a fill-in placeholder.
+ */
+const BRACKET_BOX_SOURCE = "\\[[ \\u00A0]?[xX\\u2713\\u2714]?[ \\u00A0]?\\]";
+const BRACKET_BOX_EXACT = new RegExp(`^${BRACKET_BOX_SOURCE}$`);
+
+/** True for a typed tick box exactly ("[ ]", "[x]"…). */
+export function isBracketBox(text: string): boolean {
+  return BRACKET_BOX_EXACT.test(text);
+}
+
+/** Whether a typed tick box is ticked. */
+export function bracketBoxChecked(text: string): boolean {
+  return /[xX\u2713\u2714]/.test(text);
+}
+
+/**
+ * The typed tick boxes of a text, in order (index into `text`, the box as printed). A ticked "[x]" / "[X]" written
+ * inside running text – a word (or "label:") before it and a lower-case word or "," ";" "." ")" straight after, as in
+ * "attended [X] sessions", "Dear [X]," or "Prognosis: [x] months" – is the template's fill-in placeholder, not a
+ * tick box (as before 10/2026), unless the same line also prints an unticked typed box (a checklist such as
+ * "[x] yes [ ] no"). Pure and linear in the text.
+ */
+export function bracketBoxMatches(text: string): Array<{ index: number; text: string }> {
+  if (text.indexOf("[") < 0) return [];
+  const all: Array<{ index: number; text: string }> = [];
+  const re = new RegExp(BRACKET_BOX_SOURCE, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) all.push({ index: m.index, text: m[0] });
+  if (all.length === 0) return all;
+  // The line of each box (boxes are in text order, so one forward walk), and whether that line prints an unticked one.
+  const lineOf: number[] = [];
+  let line = 0;
+  let nextBreak = text.indexOf("\n");
+  for (const b of all) {
+    while (nextBreak >= 0 && nextBreak < b.index) {
+      line += 1;
+      nextBreak = text.indexOf("\n", nextBreak + 1);
+    }
+    lineOf.push(line);
+  }
+  const openLines = new Set<number>();
+  all.forEach((b, i) => {
+    if (!bracketBoxChecked(b.text)) openLines.add(lineOf[i]);
+  });
+  return all.filter((b, i) => {
+    if (!/^\[[xX]\]$/.test(b.text) || openLines.has(lineOf[i])) return true;
+    const before = text.slice(Math.max(0, b.index - 2), b.index);
+    const after = text.slice(b.index + b.text.length, b.index + b.text.length + 2);
+    return !(/[A-Za-z0-9:][ \u00A0]?$/.test(before) && /^(?:[ \u00A0]?[a-z]|[,;.)])/.test(after));
+  });
+}
+
+/** Where each typed tick box of a text starts (bracketBoxMatches). */
+function boxIndexSet(text: string): Set<number> {
+  return new Set(bracketBoxMatches(text).map((b) => b.index));
+}
+
+/** The text with typed tick boxes shown as ☐ / ☒ (for reading the options printed beside them). */
+export function withBracketBoxesAsGlyphs(text: string): string {
+  if (text.indexOf("[") < 0) return text;
+  const boxes = bracketBoxMatches(text);
+  let out = "";
+  let at = 0;
+  for (const b of boxes) {
+    out += text.slice(at, b.index) + (bracketBoxChecked(b.text) ? CHECKED_GLYPH : UNCHECKED_GLYPH);
+    at = b.index + b.text.length;
+  }
+  return out + text.slice(at);
+}
+
+/** A typed tick box written in the form's own style: ticked "[x]" ("[X]" / "[✓]" / spaced like the original), else "[ ]" ("[]" stays "[]"). */
+export function bracketBoxText(original: string, checked: boolean): string {
+  const spaced = /^\[[ \u00A0]/.test(original) && /[xX\u2713\u2714][ \u00A0]\]$/.test(original);
+  if (!checked) return original === "[]" ? "[]" : "[ ]";
+  const mark = /X/.test(original) ? "X" : /\u2713/.test(original) ? "\u2713" : /\u2714/.test(original) ? "\u2714" : "x";
+  return spaced ? `[ ${mark} ]` : `[${mark}]`;
 }
 
 interface SymInfo {
@@ -505,23 +590,51 @@ export function paragraphText(p: XmlElement): string {
   return segmentsText(paragraphSegments(p));
 }
 
-/** The tick boxes of a paragraph in text order (☐/☒ characters, symbol boxes, legacy check boxes). */
+/**
+ * The tick boxes of a paragraph in text order (☐/☒ characters, symbol boxes, legacy check boxes and – 10/2026 – typed
+ * tick boxes "[ ]" / "[x]"). A paragraph without typed boxes gives exactly the slots it always gave.
+ */
 export function glyphSlots(segs: Segment[]): GlyphSlot[] {
-  const slots: GlyphSlot[] = [];
+  const found: Array<{ at: number; slot: GlyphSlot }> = [];
+  let acc = 0;
+  const starts: number[] = [];
   for (const seg of segs) {
+    starts.push(acc);
     if (seg.kind === "sym" || seg.kind === "legacyCheck") {
       if (UNCHECKED_GLYPHS.includes(seg.text) || CHECKED_GLYPHS.includes(seg.text)) {
-        slots.push({ checked: CHECKED_GLYPHS.includes(seg.text), segment: seg, offset: 0 });
+        found.push({ at: acc, slot: { checked: CHECKED_GLYPHS.includes(seg.text), segment: seg, offset: 0 } });
       }
     } else if (seg.kind === "text") {
       for (let i = 0; i < seg.text.length; i++) {
         const ch = seg.text[i];
-        if (UNCHECKED_GLYPHS.includes(ch)) slots.push({ checked: false, segment: seg, offset: i });
-        else if (CHECKED_GLYPHS.includes(ch)) slots.push({ checked: true, segment: seg, offset: i });
+        if (UNCHECKED_GLYPHS.includes(ch)) found.push({ at: acc + i, slot: { checked: false, segment: seg, offset: i } });
+        else if (CHECKED_GLYPHS.includes(ch)) found.push({ at: acc + i, slot: { checked: true, segment: seg, offset: i } });
       }
     }
+    acc += seg.text.length;
   }
-  return slots;
+  const text = segmentsText(segs);
+  // Boxes come in text order, so one pointer walks the segments once (linear – a paragraph of many runs, each a
+  // box, must not cost boxes × runs).
+  let si = 0;
+  for (const box of bracketBoxMatches(text)) {
+    const start = box.index;
+    const end = start + box.text.length;
+    while (si < segs.length && starts[si] + segs[si].text.length <= start) si += 1;
+    const parts: Array<{ segment: Segment; offset: number; length: number }> = [];
+    let ok = true;
+    for (let i = si; i < segs.length && starts[i] < end; i++) {
+      const seg = segs[i];
+      if (seg.text.length === 0) continue;
+      if (seg.kind !== "text") ok = false;
+      const from = Math.max(start, starts[i]);
+      const to = Math.min(end, starts[i] + seg.text.length);
+      parts.push({ segment: seg, offset: from - starts[i], length: to - from });
+    }
+    if (!ok || parts.length === 0) continue;
+    found.push({ at: start, slot: { checked: bracketBoxChecked(box.text), segment: parts[0].segment, offset: parts[0].offset, bracket: { text: box.text, parts } } });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.slot);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -550,7 +663,13 @@ export interface PlaceholderMatch {
 /** Every fill-in placeholder in the text, in order (non-overlapping). */
 export function findPlaceholders(text: string): PlaceholderMatch[] {
   const found: PlaceholderMatch[] = [];
+  let boxes: Set<number> | null = null;
   for (const re of PLACEHOLDER_PATTERNS) {
+    // The earlier patterns' placeholders, in text order. They never overlap, so their ends are in order too, and one
+    // pointer finds the only one a match could overlap (matches come in text order): linear, however many
+    // placeholders a line holds (10/2026 verify – was a scan of every placeholder found so far, per match).
+    const earlier = found.slice().sort((x, y) => x.index - y.index);
+    let j = 0;
     const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
     let m: RegExpExecArray | null;
     while ((m = g.exec(text))) {
@@ -560,7 +679,12 @@ export function findPlaceholders(text: string): PlaceholderMatch[] {
       }
       const start = m.index;
       const end = start + m[0].length;
-      if (!found.some((f) => start < f.index + f.text.length && end > f.index)) found.push({ index: start, text: m[0].replace(/[  ]+$/, "") });
+      // A typed tick box ("[ ]", "[x]") is a tick box, not a fill-in placeholder (10/2026) – but an "[X]" inside running
+      // text stays the template's placeholder (bracketBoxMatches).
+      if (isBracketBox(m[0]) && (boxes ??= boxIndexSet(text)).has(start)) continue;
+      while (j < earlier.length && earlier[j].index + earlier[j].text.length <= start) j += 1;
+      if (j < earlier.length && earlier[j].index < end) continue;
+      found.push({ index: start, text: m[0].replace(/[  ]+$/, "") });
     }
   }
   if (found.length === 0) {

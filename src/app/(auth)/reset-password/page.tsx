@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AuthShell, Notice, TextLink } from "@/components/account/shell";
+import { OWNER_RESET_COPY } from "@/lib/account-copy";
+import { COMPANY } from "@/lib/site";
 import { emailProviderName } from "@/server/email";
 import { NewPasswordForm, RequestResetForm } from "./forms";
 
@@ -21,7 +23,7 @@ export default function ResetPasswordPage({ searchParams }: { searchParams: { to
       {emailOff ? (
         <Notice>
           Ask your clinic&apos;s owner or an administrator to create a password reset link for you (Settings → Members). You will still
-          need your authenticator app to sign in.
+          need your authenticator app to sign in. {OWNER_RESET_COPY.soleOwner(COMPANY.contactEmail)}
         </Notice>
       ) : (
         <RequestResetForm />

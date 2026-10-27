@@ -6,8 +6,10 @@
  * - Dates block: DD/MM/YYYY, "12 March 2026", "March 2027", "15 April", bare years, and durations in
  *   days/weeks/months/years ("within 6 weeks", "6–7 wks", "6/52"). A duration matches only the same
  *   number and unit, so a recalculated "16 weeks" is caught even when "111 days" is cited.
- * - Other numbers warn: scores, measurements, counts (digits or words one to ninety, "twice"),
- *   and spinal levels (C3, L4/5).
+ * - Other numbers – scores, measurements, counts (digits or words one to ninety, "twice"), and spinal levels (C3,
+ *   L4/5) – block in drafted text (origin "ai"; bh2-rc1, DoC I4: every number issued is in a cited source or a person's
+ *   own value – a person checks it against the record, corrects it or confirms it with a reason) and warn in a
+ *   person's text (their own value).
  *
  * Record IDs, reference codes and clock times are ignored. One flag per distinct figure per paragraph.
  *
@@ -50,7 +52,7 @@ export function validateFigures(input: ValidatorInput): ReportFlag[] {
       const dedupe = `${figure.kind}:${figure.key}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
-      const blocking = isDateLikeFigure(figure.kind);
+      const blocking = isDateLikeFigure(figure.kind) || p.origin === "ai";
       const what = describe(figure);
       flags.push(
         makeFlag({

@@ -63,3 +63,12 @@ describe("auth settings provisioning plan", () => {
     ]);
   });
 });
+
+describe("admin:create-clinic never sends email (24/10/2026)", () => {
+  it("passes sendEmail: false and says so; the link is printed once", () => {
+    const source = fs.readFileSync(path.resolve("scripts/admin/create-clinic.ts"), "utf8");
+    assert.match(source, /sendEmail: false/);
+    assert.match(source, /not sent \(this command never sends email\)/);
+    assert.equal((source.match(/created\.inviteLink/g) ?? []).length, 1, "printed in one place");
+  });
+});

@@ -121,7 +121,7 @@ async function printedSignatureForm(heading: string): Promise<Uint8Array> {
  * ----------------------------------------------------------------------------------------------*/
 
 test("form-analysis-4 prompt text: the RED wave 1 outline markers, record paths, parties and answer spaces", () => {
-  assert.equal(FORM_ANALYSIS_PROMPT_VERSION, "form-analysis-4", "never recorded under this label, so the text changed in place");
+  assert.equal(FORM_ANALYSIS_PROMPT_VERSION, "form-analysis-5", "bumped 10/2026: the output schema's anchor targets gained mark_cell and delete_options");
   const p = FORM_ANALYSIS_SYSTEM_PROMPT;
   // Outline markers.
   for (const marker of ["printed=[…]", "character-boxes=<n>", "tick-box group", "table of fields", "printed box with no field", "answer boxes:", "slots=<n>", "lines=<n>", "tick boxes:", "completedBy=<party>"]) {

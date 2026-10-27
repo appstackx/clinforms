@@ -211,7 +211,7 @@ async function answerMissing(app) {
   await app.getByRole("tab", { name: /Flags/ }).click();
   await app.waitForTimeout(500);
   const flags = await app.locator("[role=tabpanel][data-state=active]").first().innerText();
-  const keys = Array.from(new Set(Array.from(flags.matchAll(/Missing field\s+\(blocks approval\)\s*F\W?(\d+)/g)).map((m) => `F-${m[1]}`)));
+  const keys = Array.from(new Set(Array.from(flags.matchAll(/(?:Missing field|Required – no answer yet|Required – needs your opinion|Optional, but must be filled in)\s+\(blocks approval\)\s*F\W?(\d+)/g)).map((m) => `F-${m[1]}`)));
   console.log(`   missing fields: ${keys.join(", ") || "(none found)"}`);
   const answered = [];
   for (const key of keys) {

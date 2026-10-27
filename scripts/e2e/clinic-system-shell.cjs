@@ -28,7 +28,7 @@ const link = (file) => {
 };
 const INVITE_A = link(process.env.INVITE_A_FILE);
 const INVITE_B = link(process.env.INVITE_B_FILE);
-const CLINFORMS_NAV = ["Overview", "Studio", "Clinic", "Members", "Security", "API keys", "Activity"];
+const CLINFORMS_NAV = ["Overview", "Studio", "Clinic", "Members", "Security", "Plan & usage", "API keys", "Activity"];
 
 function base32Decode(input) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

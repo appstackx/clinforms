@@ -5,21 +5,24 @@
  * organization rules (only owners make owners, the last owner stays); we check the same before calling it.
  */
 import { revalidatePath } from "next/cache";
-import { ACCOUNT_ERRORS } from "@/lib/account-copy";
-import { isValidHcpc, normaliseHcpc } from "@/lib/hcpc";
+import { ACCOUNT_ERRORS, type InviteDelivery } from "@/lib/account-copy";
+import { signingNumberFor } from "@/lib/hcpc";
+import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
+import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
-import { INVITATION_TTL_SECONDS } from "@/server/auth/create-auth";
 import { authErrorMessage } from "@/server/auth/errors";
 import { inviteLink, normaliseEmail } from "@/server/auth/platform";
 import { assignableRoles, parseMemberRole } from "@/server/auth/roles";
-import { actionContext, auditAction, requestHeaders, type ActionResult, type AppContext } from "@/server/auth/session";
+import { actionContext, auditAction, requestHeaders, throttle, type ActionResult, type AppContext } from "@/server/auth/session";
 import { getDb } from "@/server/db";
 import { authBool } from "@/server/db/schema";
-import { captureOutbox, emailProviderName, linkToShare } from "@/server/email";
+import { captureOutbox, emailProviderName, inviteDeliveryOf, linkToShare } from "@/server/email";
 import { upsertMemberProfile } from "@/server/repos/member-profile";
 
 const PATH = "/app/settings/members";
+const INVITES_PER_CLINIC_PER_HOUR = 20;
+const INVITES_PER_ADDRESS_PER_DAY = 3;
 
 async function manager(): Promise<AppContext | { ok: false; error: string }> {
   const ctx = await actionContext({ manage: true });
@@ -37,7 +40,16 @@ async function memberOfClinic(ctx: AppContext, memberId: string) {
     .executeTakeFirst();
 }
 
-export type InviteResult = ActionResult<{ email: string; link: string | null; sent: boolean; expiresAt: string }>;
+/**
+ * After an invitation: how the email went, and the link ONLY when it was not emailed (email off, the send failed) – for
+ * the person who invited to pass on (the screen warns not to forward it). The link is never logged or audited.
+ *
+ * Security fix 24/10/2026 (D2): once the invitation was emailed the inviter never sees the link. Sign-up needs no
+ * mailbox proof, so a copy would let the inviter create the invitee's account (with their own password and
+ * authenticator) before the invitee opens the email. If the email does not arrive: invite again (the old link stops
+ * working – cancelPendingInvitationsOnReInvite).
+ */
+export type InviteResult = ActionResult<{ email: string; role: string; link: string | null; delivery: InviteDelivery; expiresAt: string }>;
 
 export async function inviteMember(_prev: InviteResult | null, form: FormData): Promise<InviteResult> {
   const ctx = await manager();
@@ -50,6 +62,14 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
   }
   const role = parseMemberRole(form.get("role"));
   if (!role || !assignableRoles(ctx.membership.role).includes(role)) return { ok: false, error: ACCOUNT_ERRORS.forbidden };
+  // Security fix 24/10/2026: with email on, every invitation sends a ClinForms email – at most 20 an hour per clinic
+  // and 3 a day per address (the server API below bypasses Better Auth's HTTP rate limiter).
+  if (
+    !(await throttle("invite-clinic", ctx.membership.organizationId, INVITES_PER_CLINIC_PER_HOUR, 3600_000)) ||
+    !(await throttle("invite-address", email, INVITES_PER_ADDRESS_PER_DAY, 86_400_000))
+  ) {
+    return { ok: false, error: ACCOUNT_ERRORS.tooManyAttempts };
+  }
   try {
     const { result, outbox } = await captureOutbox(() =>
       getAuth().api.createInvitation({ body: { email, role, organizationId: ctx.membership.organizationId }, headers: requestHeaders() }),
@@ -60,9 +80,10 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
     return {
       ok: true,
       email,
+      role,
       link,
-      sent: captured?.result.status === "sent",
-      expiresAt: new Date(Date.now() + INVITATION_TTL_SECONDS * 1000).toISOString(),
+      delivery: inviteDeliveryOf(captured?.result),
+      expiresAt: new Date(result.expiresAt).toISOString(),
     };
   } catch (err) {
     return { ok: false, error: authErrorMessage(err, "invite_member") };
@@ -145,9 +166,11 @@ export async function saveMemberProfile(_prev: ActionResult | null, form: FormDa
   }
   const jobTitle = String(form.get("jobTitle") ?? "").trim().slice(0, 120) || null;
   const rawHcpc = String(form.get("hcpcNumber") ?? "").trim();
-  const hcpcNumber = rawHcpc ? normaliseHcpc(rawHcpc) : null;
+  // Made-up PH-DEMO-NN numbers in a demo clinic only (its plan, read on the server – never from the form).
+  const demoClinic = await isDemoClinic(getDb(), ctx.membership.tenantId);
+  const hcpcNumber = rawHcpc ? signingNumberFor(rawHcpc, { demoClinic }) : null;
   const canSign = form.get("canSign") === "on";
-  if (hcpcNumber && !isValidHcpc(hcpcNumber)) return { ok: false, error: ACCOUNT_ERRORS.invalidHcpc };
+  if (rawHcpc && !hcpcNumber) return { ok: false, error: ACCOUNT_ERRORS.invalidHcpc };
   if (canSign && !hcpcNumber) return { ok: false, error: ACCOUNT_ERRORS.canSignNeedsHcpc };
   if (canSign && target.role === "staff") return { ok: false, error: ACCOUNT_ERRORS.staffCannotSign };
   await upsertMemberProfile({ db: getDb() }, ctx.membership.organizationId, target.userId, { jobTitle, hcpcNumber, canSign });
@@ -155,7 +178,8 @@ export async function saveMemberProfile(_prev: ActionResult | null, form: FormDa
     action: "member.profile_update",
     targetType: "member",
     targetId: target.id,
-    detail: { canSign, hasHcpc: Boolean(hcpcNumber), hasJobTitle: Boolean(jobTitle) },
+    // A made-up demo number (demo clinics only) is flagged, never the number itself.
+    detail: { canSign, hasHcpc: Boolean(hcpcNumber), hasJobTitle: Boolean(jobTitle), ...(isDemoHcpc(hcpcNumber) ? { demoNumber: true } : {}) },
   });
   revalidatePath(PATH);
   return { ok: true };

@@ -20,7 +20,8 @@
 import { z } from "zod";
 import { MAX_FORM_FILE_BYTES } from "../config.public";
 import { FormDefinitionSchema, FormMimeTypeSchema, ReportSchema, Sha256HexSchema } from "../core/schemas";
-import { ProblemSchema, REPORT_API_BASE } from "./contract";
+import { StoredFormDefinitionSchema, StoredReportSchema } from "../core/stored-schemas";
+import { BundleResponseSchema, ProblemSchema, REPORT_API_BASE } from "./contract";
 
 export const STORE_API_BASE = `${REPORT_API_BASE}/store` as const;
 
@@ -61,6 +62,8 @@ const e = encodeURIComponent;
 export const storeApiPaths = {
   snapshot: () => `${STORE_API_BASE}/snapshot`,
   report: (id: string) => `${STORE_API_BASE}/reports/${e(id)}`,
+  /** POST: the record a stored report was completed from, for a NEW report on another form (25/10/2026). */
+  reportReuse: (id: string) => `${STORE_API_BASE}/reports/${e(id)}/reuse`,
   form: (id: string) => `${STORE_API_BASE}/forms/${e(id)}`,
   files: () => `${STORE_API_BASE}/files`,
   file: (sha256: string) => `${STORE_API_BASE}/files/${e(sha256)}`,
@@ -115,6 +118,7 @@ export const STORE_API_ENDPOINTS: readonly StoreEndpointSpec[] = [
   { name: "storeReportGet", method: "GET", path: "/api/reports/v1/store/reports/[id]", handler: "store-reports.ts", fn: "handleStoreReportGet", summary: "One report with its rev (ETag)" },
   { name: "storeReportPut", method: "PUT", path: "/api/reports/v1/store/reports/[id]", handler: "store-reports.ts", fn: "handleStoreReportPut", summary: "Create (no If-Match) or update (If-Match: rev) a report; 409 REV_CONFLICT with the stored copy" },
   { name: "storeReportDelete", method: "DELETE", path: "/api/reports/v1/store/reports/[id]", handler: "store-reports.ts", fn: "handleStoreReportDelete", summary: "Delete a report" },
+  { name: "storeReportReuse", method: "POST", path: "/api/reports/v1/store/reports/[id]/reuse", handler: "store-report-reuse.ts", fn: "handleStoreReportReuse", summary: "The record a report was completed from, for a new report on another form (no new upload); audited" },
   { name: "storeFormGet", method: "GET", path: "/api/reports/v1/store/forms/[id]", handler: "store-forms.ts", fn: "handleStoreFormGet", summary: "One form map with its rev (ETag)" },
   { name: "storeFormPut", method: "PUT", path: "/api/reports/v1/store/forms/[id]", handler: "store-forms.ts", fn: "handleStoreFormPut", summary: "Create or update a form map; an unattested confirmation is stored as proposed" },
   { name: "storeFormDelete", method: "DELETE", path: "/api/reports/v1/store/forms/[id]", handler: "store-forms.ts", fn: "handleStoreFormDelete", summary: "Delete a form map (and its file when no other map uses it)" },
@@ -175,12 +179,33 @@ export const StoreSnapshotResponseSchema = z.object({
 });
 
 // GET/PUT /store/reports/{id}
+// A PUT body is strict (core/schemas.ts); the stored copy the Studio reads back is read as stored
+// (core/stored-schemas.ts: keys and flag codes a later release wrote are kept, so its receipt still verifies).
 export const StoreReportPutRequestSchema = z.object({ report: ReportSchema });
 export const StoreReportResponseSchema = z.object({
   rev: RevSchema,
   updatedAt: z.string(),
   /** The report as stored (the clinic is always the signed-in member's). */
-  report: ReportSchema,
+  report: StoredReportSchema,
+});
+
+// POST /store/reports/{id}/reuse (25/10/2026): "Complete another form for this patient". The body is ignored
+// (send {}); the record comes from the clinic's own stored copy of the report, never from the browser.
+export const StoreReportReuseSourceSchema = z.object({
+  reportId: z.string().min(1),
+  status: z.enum(["draft", "signed"]),
+  version: z.number().int().min(1),
+  /** The referrer form the earlier report completed (null for a built-in report). */
+  formId: z.string().nullable(),
+  formTitle: z.string().nullable(),
+  referrerName: z.string(),
+  /** Consent recorded on the earlier report was not carried over (record it again on the new report). */
+  consentReset: z.boolean(),
+});
+export const StoreReportReuseResponseSchema = z.object({
+  /** As from a notes upload: the record (with the clinic's current details), figures and data checks of today. */
+  data: BundleResponseSchema,
+  source: StoreReportReuseSourceSchema,
 });
 
 // GET/PUT /store/forms/{id}
@@ -189,7 +214,7 @@ export const StoreFormResponseSchema = z.object({
   rev: RevSchema,
   updatedAt: z.string(),
   /** The map as stored: a confirmation without a valid server attestation for this clinic is stored as proposed. */
-  form: FormDefinitionSchema,
+  form: StoredFormDefinitionSchema,
   /** True when a "confirmed" map was stored as "proposed". */
   downgraded: z.boolean().optional(),
 });
@@ -203,8 +228,8 @@ export const StoreConflictSchema = ProblemSchema.extend({
     .object({
       rev: RevSchema,
       updatedAt: z.string(),
-      report: ReportSchema.optional(),
-      form: FormDefinitionSchema.optional(),
+      report: StoredReportSchema.optional(),
+      form: StoredFormDefinitionSchema.optional(),
     })
     .nullable()
     .optional(),
@@ -277,6 +302,7 @@ export type StoreSettings = z.infer<typeof StoreSettingsSchema>;
 export type StoreSnapshotResponse = z.infer<typeof StoreSnapshotResponseSchema>;
 export type StoreReportPutRequest = z.infer<typeof StoreReportPutRequestSchema>;
 export type StoreReportResponse = z.infer<typeof StoreReportResponseSchema>;
+export type StoreReportReuseResponse = z.infer<typeof StoreReportReuseResponseSchema>;
 export type StoreFormPutRequest = z.infer<typeof StoreFormPutRequestSchema>;
 export type StoreFormResponse = z.infer<typeof StoreFormResponseSchema>;
 export type StoreDeleteResponse = z.infer<typeof StoreDeleteResponseSchema>;

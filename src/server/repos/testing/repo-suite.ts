@@ -376,7 +376,32 @@ export function defineRepoSuite(label: string, factory: () => Promise<SuiteDb>):
       assert.ok((await purgeOldAccessRequests(ctx)) >= 1);
       assert.ok(!(await listAccessRequests(ctx)).some((r) => r.id === request.id));
       const pass = await runRetention(ctx);
-      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "incompleteUploads", "launchTokens", "rateLimits", "reports"]);
+      assert.deepEqual(Object.keys(pass).sort(), ["accessRequests", "incompleteUploads", "launchTokens", "rateLimits", "reports", "usageEvents"]);
+    });
+
+    it("retention keeps what Settings → Clinic says it keeps (24/10/2026): drafts go too; forms, files, profile, members and activity stay", async () => {
+      // The Clinic page (src/lib/account-copy.ts RETENTION_COPY): every report not changed for the period – draft or
+      // approved – is deleted; the forms library, the clinic's details, members and the activity log are kept.
+      const C = "clinic-retention-kept";
+      const DAY = 86_400_000;
+      await upsertClinicProfile(ctx, C, { organizationId: "org_kept", displayName: "Kept Clinic (fictional)", retentionDays: 30 });
+      await upsertMemberProfile(ctx, "org_kept", "u-kept", { hcpcNumber: "PH-DEMO-01", canSign: false });
+      await createReport(ctx, C, { id: "old-draft", status: "draft", templateId: "solicitor", payload: { fictional: true } });
+      await createReport(ctx, C, { id: "old-approved", status: "approved", templateId: "solicitor", payload: { fictional: true } });
+      await createForm(ctx, C, { id: "kept-form", fileSha256: SHA, status: "confirmed", title: "Kept form", kind: "pdf", payload: { fictional: true } });
+      const file = await putFormFile(ctx, C, { bytes: randomBytes(2048), fileName: "blank.pdf", mimeType: "application/pdf" });
+      await appendAudit(ctx, C, { action: "report.create", targetType: "report", targetId: "old-draft" });
+      tick(31 * DAY);
+      await createReport(ctx, C, { id: "new-draft", status: "draft", templateId: "solicitor", payload: { fictional: true } });
+      await purgeExpiredReports(ctx);
+      assert.equal(await getReport(ctx, C, "old-draft"), null, "a draft not changed for 31 days is deleted");
+      assert.equal(await getReport(ctx, C, "old-approved"), null, "an approved report too");
+      assert.ok(await getReport(ctx, C, "new-draft"), "changed within the period: kept");
+      assert.ok(await getForm(ctx, C, "kept-form"), "the form map is kept");
+      assert.ok(await getFormFile(ctx, C, file.sha256), "the uploaded form file is kept");
+      assert.equal((await getClinicProfile(ctx, C))?.retentionDays, 30, "the clinic's details are kept");
+      assert.ok(await getMemberProfile(ctx, "org_kept", "u-kept"), "members' signing details are kept");
+      assert.ok((await listAudit(ctx, C)).some((e) => e.action === "report.create" && e.targetId === "old-draft"), "the activity log is kept");
     });
 
     it("tenants are isolated by construction (and ciphertext cannot be moved between tenants)", async () => {

@@ -356,6 +356,24 @@ export function saveFormDurable(form: FormDefinition): Promise<boolean> {
   return srv().formSettled(form.id);
 }
 
+/**
+ * Fix round 1 (B0-9): delete a form map and wait for the clinic's storage to answer (true once deleted). A refusal
+ * (a confirmed map, for a role that may not change it) puts the form back; formWriteError() says why.
+ */
+export function deleteFormDurable(id: string): Promise<boolean> {
+  if (!server()) {
+    browser.deleteForm(id);
+    return Promise.resolve(true);
+  }
+  srv().deleteForm(id);
+  return srv().formSettled(id);
+}
+
+/** Why the latest save or delete of a form map was refused, in plain words (server mode), or null. */
+export function formWriteError(id: string): string | null {
+  return server() ? srv().formError(id) : null;
+}
+
 const IDLE: StoreSyncState = { pending: 0, failed: false };
 
 /** The save status now (non-hook; e.g. a beforeunload guard). Browser mode: always idle. */
@@ -368,7 +386,10 @@ export function retryStoreSync(): void {
   if (server()) srv().retryFailed();
 }
 
-/** {pending, failed, error} of the server store, kept current. Browser mode: {pending: 0, failed: false}. */
+/**
+ * {pending, failed, paused, error} of the server store, kept current (`paused`: a save waits out the server's rate
+ * limit and is sent again by itself). Browser mode: {pending: 0, failed: false}.
+ */
 export function useStoreSync(): StoreSyncState {
   const [state, setState] = useState<StoreSyncState>(IDLE);
   useEffect(() => {
@@ -377,7 +398,7 @@ export function useStoreSync(): StoreSyncState {
     const update = () =>
       setState((prev) => {
         const next = store.syncState();
-        return prev.pending === next.pending && prev.failed === next.failed && prev.error === next.error ? prev : next;
+        return prev.pending === next.pending && prev.failed === next.failed && prev.paused === next.paused && prev.error === next.error ? prev : next;
       });
     update();
     return store.subscribe(update);

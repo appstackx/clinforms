@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { namedActor } from "../../../core/actor";
 import { computeFacts } from "../../../core/computed-facts";
 import { reportFingerprint } from "../../../core/fingerprint";
 import { formToTemplate } from "../../../core/forms";
@@ -24,11 +25,13 @@ import {
   buildQuestionGroups,
   citationLabel,
   citationsBySource,
+  countStatuses,
   editParagraph,
   flattenQuestions,
   generationSummary,
   markApproved,
   nextClinicianParagraphId,
+  originLabel,
   questionStatus,
   removeParagraph,
   reopenGap,
@@ -36,8 +39,13 @@ import {
   revertParagraph,
   setStructuredAnswer,
   supersedeAcknowledgedGaps,
+  wordFormPdfNote,
 } from "./review-model";
+import { NOTICES } from "../../../config.public";
 import { reviewReducer } from "./use-review-state";
+
+/** Sarah Reid as a review action's actor (W0.6: every action carries one). */
+const SARAH = namedActor("Sarah Reid");
 
 const AT = "2026-10-06T09:00:00.000Z";
 const NOW = new Date("2026-10-07T10:00:00.000Z");
@@ -231,6 +239,32 @@ describe("questionStatus", () => {
     const flags2 = validateReport(resolved, template).flags;
     assert.equal(questionStatus(q6b, flags2, resolved.gaps), "clinician");
   });
+
+  it("once approved, a question without an answer was left blank on approval – it does not need input any more", () => {
+    const { report, form } = drafted();
+    const template = formToTemplate(form);
+    // F-06's gap acknowledged with the question left blank, then approved.
+    const left = resolveGap(report, "gap-F-06-ai", "acknowledged", "Left blank: no prognosis was recorded.", "Sarah Reid", NOW);
+    const flags = validateReport(left, template).flags;
+    const qs = flattenQuestions(buildQuestionGroups(left, form, template));
+    const status = (key: string, approved: boolean, from = qs) => {
+      const q = from.find((x) => x.key === key);
+      assert.ok(q);
+      return questionStatus(q, flags, left.gaps, false, approved);
+    };
+    assert.equal(status("F-06", false), "needs_input");
+    assert.equal(status("F-06", true), "left_blank");
+    // answered questions, sign-off and the referrer's own boxes read the same before and after approval
+    for (const key of ["F-01", "F-03", "F-04", "F-08", "F-09"]) assert.equal(status(key, true), status(key, false), key);
+    // never drafted ("Not drafted yet" under review)
+    const fresh = flattenQuestions(buildQuestionGroups(testReport().report, form, template));
+    assert.equal(status("F-03", false, fresh), "pending");
+    assert.equal(status("F-03", true, fresh), "left_blank");
+    // counted in the summary as left blank, not as needing input
+    const counts = countStatuses(qs.map((q) => questionStatus(q, flags, left.gaps, false, true)));
+    assert.equal(counts.counts.needs_input, 0);
+    assert.ok(counts.counts.left_blank >= 1);
+  });
 });
 
 describe("generationSummary", () => {
@@ -359,10 +393,10 @@ describe("approval", () => {
     assert.doesNotMatch(plainDetail, /server|receipt|fingerprint/i);
 
     // A signed report ignores content edits.
-    assert.equal(reviewReducer(approved, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "changed" }), approved);
-    assert.equal(reviewReducer(approved, { type: "setAnswer", key: "F-04", value: "No", actor: "x" }), approved);
+    assert.equal(reviewReducer(approved, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "changed", actor: SARAH }), approved);
+    assert.equal(reviewReducer(approved, { type: "setAnswer", key: "F-04", value: "No", actor: namedActor("x") }), approved);
     // Activity (downloads, filing) is still recorded.
-    const logged = reviewReducer(approved, { type: "activity", action: "filed", detail: "Saved", actor: "Sarah Reid" });
+    const logged = reviewReducer(approved, { type: "activity", action: "filed", detail: "Saved", actor: SARAH });
     assert.equal(logged.activity.length, approved.activity.length + 1);
     assert.equal(await reportFingerprint(logged), receipt.contentSha256);
   });
@@ -378,6 +412,29 @@ describe("labels and options", () => {
     const by = citationsBySource(report);
     assert.deepEqual(by.get("N-001"), ["F-03"]);
     assert.deepEqual(by.get("REG"), ["F-01", "F-02"]);
+  });
+
+  it("origin pills: a drafted paragraph is a 'Draft' until approval, then says where it came from", () => {
+    assert.equal(originLabel("ai", "file-import"), "Draft");
+    assert.equal(originLabel("ai", "file-import", true), "Drafted from notes");
+    // the other origins read the same before and after approval
+    for (const origin of ["from_records", "edited", "clinician"] as const) {
+      assert.equal(originLabel(origin, "file-import", true), originLabel(origin, "file-import"));
+    }
+  });
+
+  it("an approved Word form offers a PDF copy only where one can be made – no greyed-out button (test run 24/10/2026)", () => {
+    // Every hosted deployment (no converter), and while /health is not known yet: the Word download alone, with a hint.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: false, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: undefined, failed: null }), NOTICES.wordFormPdfHint);
+    assert.equal(NOTICES.wordFormPdfHint, "Need a PDF? Open the completed Word file and save it as a PDF.");
+    // A converter: the PDF copy is offered – until it fails, then the failure says why.
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: null }), null);
+    assert.equal(wordFormPdfNote({ formKind: "docx", pdfFromWord: true, failed: "Not now." }), "Not now.");
+    // PDF forms and portal questions: their own PDF, always.
+    for (const formKind of ["pdf_acroform", "pdf_flat", "questions", undefined] as const) {
+      assert.equal(wordFormPdfNote({ formKind, pdfFromWord: false, failed: null }), null, String(formKind));
+    }
   });
 
   it("offers the printed options for yes/no and single choice", () => {
@@ -446,9 +503,165 @@ describe("supersedeAcknowledgedGaps", () => {
     assert.match(gap?.resolution?.text ?? "", /^Answered on the form by Sarah Reid \(replaces “Left blank for the office to add later”\)\.$/);
     assert.match(next.activity[next.activity.length - 1].detail, /no longer applies/);
     // The reducer does it when the edit is logged, and when a value is typed straight into the empty answer.
-    const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: "Sarah Reid" });
+    const viaReducer = reviewReducer(typed, { type: "logEdit", key: "F-06", actor: SARAH });
     assert.equal(viaReducer.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
-    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: "Sarah Reid" });
+    const typedIn = reviewReducer(acked, { type: "addParagraph", key: "F-06", text: "In my opinion he will keep improving.", actor: SARAH });
     assert.equal(typedIn.gaps.find((g) => g.id === "gap-F-06-ai")?.resolution?.kind, "resolved");
+  });
+});
+
+describe("fix round 1 (B0-1): Name Tom Ellis instead", () => {
+  it("rewrites the flagged paragraph in the third person, marks it edited and audits it; the voice check then passes", async () => {
+    const { nameClinicianFix } = await import("./review-model");
+    const { report: base, form } = drafted();
+    // Sarah Reid signs; F-03 cites Tom Ellis's note in her first person.
+    const report: Report = {
+      ...base,
+      author: { name: "Sarah Reid", hcpc: "PH-DEMO-01" },
+      sections: base.sections.map((s) =>
+        s.key === "F-03" ? { ...s, paragraphs: [{ ...s.paragraphs[0], text: "On 06/05/2026 he told me that his back pain was 2/10 at worst after shifts.", sourceIds: ["N-002"] }] } : s,
+      ),
+    };
+    const template = formToTemplate(form);
+    const checked = { ...report, flags: validateReport(report, template, { form }).flags };
+    const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+    assert.ok(flag);
+    assert.deepEqual(nameClinicianFix(checked, flag), { name: "Tom Ellis", text: "On 06/05/2026 he told Tom Ellis that his back pain was 2/10 at worst after shifts." });
+    const fixed = reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: SARAH });
+    const p = fixed.sections.find((s) => s.key === "F-03")?.paragraphs[0];
+    assert.equal(p?.origin, "edited");
+    assert.equal(p?.originalText, "On 06/05/2026 he told me that his back pain was 2/10 at worst after shifts.");
+    assert.match(fixed.activity[fixed.activity.length - 1].detail, /^F-03: named Tom Ellis, who wrote the cited note, instead of “I” or “my”/);
+    assert.equal(validateReport(fixed, template, { form }).flags.some((f) => f.code === "OTHER_CLINICIAN_VOICE"), false);
+  });
+
+  it("offers no one-click rewrite when the paragraph names the clinician already, and says to rewrite it", async () => {
+    const { nameClinicianFix } = await import("./review-model");
+    const { report: base, form } = drafted();
+    const text = "On 05/08/2026 Tom Ellis, physiotherapist, covered my leave and recorded mobilisations and soft tissue release.";
+    const report: Report = {
+      ...base,
+      author: { name: "Sarah Reid", hcpc: "PH-DEMO-01" },
+      sections: base.sections.map((s) => (s.key === "F-03" ? { ...s, paragraphs: [{ ...s.paragraphs[0], text, sourceIds: ["N-002"] }] } : s)),
+    };
+    const template = formToTemplate(form);
+    const checked = { ...report, flags: validateReport(report, template, { form }).flags };
+    const flag = checked.flags.find((f) => f.code === "OTHER_CLINICIAN_VOICE");
+    assert.ok(flag, "still checked: the cited note is Tom Ellis's");
+    assert.equal(flag.severity, "blocking");
+    assert.equal(nameClinicianFix(checked, flag), null, "“covered Tom Ellis's leave” would be false");
+    assert.doesNotMatch(flag.message, /Name Tom Ellis instead/);
+    assert.match(flag.message, /names Tom Ellis/);
+    // Unchanged by the bulk action.
+    assert.equal(reviewReducer(checked, { type: "nameClinicians", flags: [flag], actor: SARAH }).sections.find((s) => s.key === "F-03")?.paragraphs[0].text, text);
+  });
+});
+
+describe("fix round 1 (B0-26): a staff member's draft says what is left", () => {
+  it("“Ready for a signing clinician” only once nothing blocks approval", async () => {
+    const { staffApprovalNote } = await import("./review-model");
+    assert.equal(staffApprovalNote(5), "5 items to resolve – then a clinician with signing details approves.");
+    assert.equal(staffApprovalNote(1), "1 item to resolve – then a clinician with signing details approves.");
+    assert.match(staffApprovalNote(0), /^Ready for a signing clinician/);
+  });
+});
+
+describe("fix round 1 (B0-21): questions with no section inside a section", () => {
+  it("10Bridge's address lines between two CLAIMANT DETAILS questions stay in CLAIMANT DETAILS (review and mapping page alike)", async () => {
+    const { sectionHeadings } = await import("../../../core/forms");
+    const { report, form } = testReport();
+    const c = "CLAIMANT DETAILS";
+    const fields = form.fields.map((f) => (["F-01", "F-04"].includes(f.id) ? { ...f, section: c } : ["F-02", "F-03"].includes(f.id) ? { ...f, section: undefined } : f));
+    const groups = buildQuestionGroups(report, { fields }, formToTemplate({ ...form, fields }));
+    assert.deepEqual(groups[0].title, c);
+    // (F-05 is printed under F-04, so it stays with it.)
+    assert.deepEqual(groups[0].questions.map((q) => q.key), ["F-01", "F-02", "F-03", "F-04", "F-05"], "no “Form questions” between two CLAIMANT DETAILS headings");
+    assert.deepEqual(sectionHeadings(fields).slice(0, 4), [c, c, c, c]);
+  });
+});
+
+describe("fix round 1 (B0-24): editing an answered box keeps its acknowledged gaps", () => {
+  it("“dose not recorded” acknowledged beside a drafted answer stays acknowledged after an edit; a box left blank and then answered is resolved by the answer", () => {
+    const { report } = drafted();
+    // F-03 has a drafted answer: its gap ("dose / still taking not recorded") is acknowledged with a reason.
+    const withGap: Report = {
+      ...report,
+      gaps: [
+        ...report.gaps,
+        { id: "gap-F-03-t-dose", sectionKey: "F-03", issue: "The dose and whether he is still taking it are not recorded.", suggestedQuestion: "What dose?", relatedNoteIds: [], raisedBy: "ai" },
+      ],
+    };
+    const acked = resolveGap(withGap, "gap-F-03-t-dose", "acknowledged", "Not recorded in the notes – left out.", "Sarah Reid", NOW);
+    assert.equal(acked.gaps.find((g) => g.id === "gap-F-03-t-dose")?.resolution?.leftBlank, false, "the box had an answer");
+    const edited = reviewReducer(reviewReducer(acked, { type: "editParagraph", key: "F-03", paragraphId: "F-03-p1", text: "On 18/03/2026 he reported a lifting injury at work.", actor: SARAH }), { type: "logEdit", key: "F-03", actor: SARAH });
+    const gap = edited.gaps.find((g) => g.id === "gap-F-03-t-dose");
+    assert.equal(gap?.resolution?.kind, "acknowledged");
+    assert.equal(gap?.resolution?.text, "Not recorded in the notes – left out.", "its own reason, not “Answered on the form … (replaces “left blank”)”");
+    assert.ok(!edited.activity.some((a) => /no longer applies/.test(a.detail)));
+
+    // A box acknowledged while empty, then answered: the answer replaces the "left blank" acknowledgement (as before).
+    const emptyGap = report.gaps.find((g) => g.sectionKey === "F-06" && !g.resolution);
+    assert.ok(emptyGap);
+    const blank = resolveGap(report, emptyGap.id, "acknowledged", "No opinion formed – left blank.", "Sarah Reid", NOW);
+    assert.equal(blank.gaps.find((g) => g.id === emptyGap.id)?.resolution?.leftBlank, true);
+    const answered = reviewReducer(blank, { type: "addParagraph", key: "F-06", text: "In my opinion he will recover within 6 weeks.", actor: SARAH });
+    assert.equal(answered.gaps.find((g) => g.id === emptyGap.id)?.resolution?.kind, "resolved");
+  });
+});
+
+describe("fix round 1 (B0-22): one count of answered and left-blank questions", () => {
+  it("a record line that is empty by design is left blank – in the summary as in “Copy answers”", async () => {
+    const { copyEntries } = await import("../../../core/answer-copy");
+    const { report, form: base } = drafted();
+    const lineKey = "F-02";
+    // An address printed over three lines; the record's address has no third line.
+    const form: FormDefinition = {
+      ...base,
+      fields: base.fields.map((f) => (f.id === lineKey ? { ...f, label: "Address – line 3 of 3", answerType: "short_text" as const, fillSource: { kind: "registration" as const, path: "patient.addressLines" as const, part: { index: 3, of: 3 } } } : f)),
+    };
+    const withLine: Report = {
+      ...report,
+      status: "signed",
+      sections: report.sections.map((s) => (s.key === lineKey ? { ...s, paragraphs: [], answer: undefined, blankFromRecords: true, status: "complete" as const } : s)),
+    };
+    const q = flattenQuestions(buildQuestionGroups(withLine, form, formToTemplate(form))).find((x) => x.key === lineKey)!;
+    assert.equal(questionStatus(q, [], [], false, true), "record_empty", "not “Filled from records”");
+    const counts = countStatuses([questionStatus(q, [], [], false, true)]);
+    assert.equal(counts.counts.records, 0);
+    assert.equal(counts.counts.record_empty, 1);
+    assert.equal(copyEntries(withLine, form).find((e) => e.key === lineKey)?.answer, null, "“Copy answers” has no answer there either");
+  });
+});
+
+describe("fix round 1 (B0-7): a conditional question's gaps follow the answer before it", () => {
+  // bh2 fix round 1 (R1T-WA1-01 / RG-1; integrator grant needed – the case is moved off the run-time reading): the
+  // review settles a conditional question's gaps from the condition FROZEN when the report was created (WA1 design 3;
+  // gaps.ts settleConditionalGaps). A report from before the release has none – the printed words are read on no report
+  // at run time – so there the gap stays open, as on production.
+  it("“No” settles the gaps of “IF YES, PLEASE DETAIL” as not applicable (audited); “Yes” reopens them", () => {
+    const { report: release } = drafted();
+    const gapF06 = { id: "gap-F-06-t-1", sectionKey: "F-06", issue: "No detail is recorded.", suggestedQuestion: "Which?", relatedNoteIds: [], raisedBy: "ai" as const };
+    // F-06 "IF YES, PLEASE DETAIL" under F-04 (yes / no / modified duties), its condition frozen at creation.
+    const frozen = { controllers: ["F-04"], wants: "yes", text: "IF YES", parser: "wa1-c3" } as unknown as NonNullable<Report["sections"][number]["condition"]>;
+    const report: Report = {
+      ...release,
+      sections: release.sections.map((s) => (s.key === "F-06" ? { ...s, title: "IF YES, PLEASE DETAIL", condition: frozen } : s)),
+      gaps: [...release.gaps.filter((g) => g.sectionKey !== "F-06"), gapF06],
+    };
+    // The same report from before the release (no reportModel, no frozen condition): nothing is settled by the words.
+    const legacy = { ...report, sections: report.sections.map(({ condition: _c, ...s }) => s) } as Report;
+    delete (legacy as { reportModel?: number }).reportModel;
+    assert.equal(reviewReducer(legacy, { type: "setAnswer", key: "F-04", value: "No", actor: SARAH }).gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "no run-time reading");
+    const no = reviewReducer(report, { type: "setAnswer", key: "F-04", value: "No", actor: SARAH });
+    const gap = no.gaps.find((g) => g.id === "gap-F-06-t-1");
+    assert.equal(gap?.resolution?.kind, "resolved");
+    assert.equal(gap?.resolution?.text, "Not applicable: “B2. Is the claimant fit for work?” is “No”.");
+    assert.equal(gap?.resolution?.notApplicable, true);
+    assert.ok(no.activity.some((a) => a.detail.startsWith("F-06: resolved gap “No detail is recorded.” – Not applicable")));
+    const q = flattenQuestions(buildQuestionGroups(no, testForm(), formToTemplate(testForm()))).find((x) => x.key === "F-06")!;
+    // A box its frozen condition rules out reads "not applicable" (bh2 WA1: the issue state's status).
+    assert.equal(questionStatus({ ...q, section: no.sections.find((s) => s.key === "F-06")! }, [], no.gaps, false, false, no.sections), "not_applicable");
+    const yes = reviewReducer(no, { type: "setAnswer", key: "F-04", value: "Yes", actor: SARAH });
+    assert.equal(yes.gaps.find((g) => g.id === "gap-F-06-t-1")?.resolution, undefined, "open again");
   });
 });

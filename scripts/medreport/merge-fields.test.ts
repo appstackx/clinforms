@@ -333,13 +333,15 @@ test("POST /sign refuses while a merge field is left (409 SIGNOFF_BLOCKED) and a
       new Request(`http://localhost/api/reports/v1${url}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${DEMO_SESSION}` }, body: JSON.stringify(body) }),
       { params: {} },
     );
-  const sign = (form: FormDefinition) => post(handleSign, "/sign", { report: reportFor(form), signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form });
-  const blocked = await sign(await mapOf(mergeDocx(), RULES_LIKE));
+  // bh2 WA1 (design 6): the public demo sends the referrer's file with the approval, for /sign's dry-run FINAL fill.
+  const bytes = mergeDocx();
+  const sign = (form: FormDefinition) => post(handleSign, "/sign", { report: reportFor(form), signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form, fileBase64: b64(bytes) });
+  const blocked = await sign(await mapOf(bytes, RULES_LIKE));
   assert.equal(blocked.status, 409);
   const problem = await blocked.json();
   assert.equal(problem.code, "SIGNOFF_BLOCKED");
   assert.ok(problem.flags.some((x: { message: string }) => /«Referral Ref» in table 1, row 2/.test(x.message)));
-  const ok = await sign(await mapOf(mergeDocx(), FIXED));
+  const ok = await sign(await mapOf(bytes, FIXED));
   assert.equal(ok.status, 200, await ok.clone().text());
 });
 
@@ -358,6 +360,11 @@ test("the final render refuses a completed Word file with a merge field left; a 
 
   const fixed = await mapOf(bytes, FIXED);
   const report = reportFor(fixed);
+  // Integration 25/10/2026: a field a sign-off question replaces («Therapist») is filled on approval, as the checks
+  // count it – the draft's note does not list it, while the draft itself still prints it.
+  const fixedDraft = await renderFormFile({ form: fixed, file, answers: buildFormAnswers(report, fixed), draft: true, format: "original" });
+  assert.ok((await mergeTokensInOutput(fixedDraft.bytes, "docx")).includes("«Therapist»"), "blank on the draft until approval");
+  assert.deepEqual(fixedDraft.warnings.filter((w) => /mail-merge/.test(w)), []);
   const final = await renderFormFile({ form: fixed, file, answers: buildFormAnswers(report, fixed, { receipt: { signer: SARAH, signedAt: AT } }), draft: false, format: "original" });
   assert.deepEqual(await mergeTokensInOutput(final.bytes, "docx"), []);
   const cells = Object.fromEntries(buildDocxOutline(final.bytes).blocks.map((b) => [b.id, b.text]));

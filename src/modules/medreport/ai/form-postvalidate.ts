@@ -54,10 +54,11 @@ import type {
   Party,
   SignoffPart,
 } from "../core/types";
-import { formAnchorPdfFieldNames } from "../core/forms";
+import { docxAnchorBlockIds, formAnchorPdfFieldNames } from "../core/forms";
 import { isNonClinicParty, partyLabel } from "../core/parties";
 import { FormFieldSchema } from "../core/schemas";
 import { pdfSectionAt, type SectionInfo } from "../forms/pdf-sections";
+import { withBracketBoxesAsGlyphs } from "../forms/docx-dom";
 import type { AnalysisFieldOutput } from "./form-analysis-schema";
 import { snapOverlay } from "./form-boxes";
 import { classifyLabel, scoreFormat } from "./form-classify";
@@ -168,7 +169,8 @@ function findLabelBlock(ix: DocxIndex, label: string): OutlineBlock | null {
 }
 
 function glyphOptionsFromText(text: string): string[] {
-  const parts = text.split(/[☐☒☑]/);
+  // Typed tick boxes ("Yes [ ] No [x]") are read as ☐ / ☒ (10/2026).
+  const parts = withBracketBoxesAsGlyphs(text).split(/[☐☒☑]/);
   if (parts.length < 2) return [];
   const after = parts.slice(1).map((p) => p.replace(/^[\s:–-]+|[\s,;/]+$/g, "").trim());
   if (after.every((p) => p !== "")) return after;
@@ -232,7 +234,83 @@ function docxGlyphAnchor(raw: AnalysisFieldOutput, ix: DocxIndex, label: string,
   return { ok: true, anchor: { kind: "docx", target: "after_paragraph", blockId: fallback.id }, conf: "low", notes, repaired: true };
 }
 
+/** A cell (or a paragraph of one) that a "mark the column" question may mark. */
+function markableCell(ix: DocxIndex, id: string): OutlineBlock | null {
+  const block = resolveDocxBlock(ix, id);
+  return block && block.kind === "cell" ? block : null;
+}
+
+const MARK_CHAR = /^\s*([xX✓✔])\s*$/;
+
+/** mark_cell (10/2026): every option's cell must be a real cell; the mark follows a mark printed in one of them. */
+function docxMarkAnchor(raw: AnalysisFieldOutput, ix: DocxIndex, label: string, options: string[]): AnchorOutcome {
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  const cells: Array<{ option: string; blockId: string }> = [];
+  let dropped = 0;
+  raw.optionAnchors.forEach((o, i) => {
+    const id = o.ref.trim();
+    const block = id ? markableCell(ix, id) : null;
+    if (!block || seen.has(id)) {
+      dropped += 1;
+      return;
+    }
+    seen.add(id);
+    cells.push({ option: clean(o.option, 120) || options[i] || `Option ${cells.length + 1}`, blockId: id });
+  });
+  if (cells.length === 0) {
+    return { ok: false, reason: `The cells to mark for ${quoteLabel(label)} were not found in the document, so it was left out. Add it in the mapping editor.` };
+  }
+  if (dropped) notes.push(`Only ${cells.length} of ${cells.length + dropped} cells to mark could be found – check the options.`);
+  const printed = cells.map((c) => MARK_CHAR.exec(resolveDocxBlock(ix, c.blockId)?.text ?? "")?.[1]).find(Boolean);
+  return {
+    ok: true,
+    anchor: { kind: "docx", target: "mark_cell", blockId: cells[0].blockId, optionCells: cells, ...(printed && printed !== "X" && { mark: printed }) },
+    conf: dropped ? "low" : "high",
+    notes,
+    repaired: dropped > 0,
+    options: cells.map((c) => c.option),
+  };
+}
+
+/** delete_options (10/2026): an inline list printed exactly in its block, or each option's own line. */
+function docxDeleteAnchor(raw: AnalysisFieldOutput, ix: DocxIndex, label: string, options: string[]): AnchorOutcome {
+  const ref = raw.anchorRef.trim();
+  const block = ref ? resolveDocxBlock(ix, ref) : null;
+  const list = raw.placeholderText.trim();
+  if (block && list && block.text.indexOf(list) >= 0) {
+    const printed = options.length ? options : list.split(/\s*\/\s*/).map((o) => o.trim()).filter(Boolean);
+    const inList = printed.filter((o) => list.toLowerCase().indexOf(o.toLowerCase()) >= 0);
+    if (inList.length === printed.length && inList.length > 0) {
+      return { ok: true, anchor: { kind: "docx", target: "delete_options", blockId: ref, placeholderText: list }, conf: "high", notes: [], repaired: false, options: inList };
+    }
+  }
+  const lines: Array<{ option: string; blockId: string; text: string }> = [];
+  for (const o of raw.optionAnchors) {
+    const id = o.ref.trim();
+    const b = id ? resolveDocxBlock(ix, id) : null;
+    const text = o.option.trim();
+    if (!b || !text || b.text.indexOf(text) < 0) continue;
+    lines.push({ option: clean(text, 120), blockId: id, text });
+  }
+  if (lines.length > 0) {
+    return { ok: true, anchor: { kind: "docx", target: "delete_options", blockId: lines[0].blockId, optionTexts: lines }, conf: lines.length === raw.optionAnchors.length ? "high" : "low", notes: lines.length === raw.optionAnchors.length ? [] : ["Some printed options were not found – check them."], repaired: lines.length !== raw.optionAnchors.length, options: lines.map((l) => l.option) };
+  }
+  // Not found as printed: the answer is written after the question instead.
+  const fallback = block ?? findLabelBlock(ix, label);
+  if (!fallback) return { ok: false, reason: `The options for ${quoteLabel(label)} were not found as printed, so it was left out. Add it in the mapping editor.` };
+  return {
+    ok: true,
+    anchor: fallback.kind === "cell" ? { kind: "docx", target: "table_cell", blockId: fallback.id } : { kind: "docx", target: "after_paragraph", blockId: fallback.id },
+    conf: "low",
+    notes: ["The printed options were not found, so the answer will be written as text – check it."],
+    repaired: true,
+  };
+}
+
 function docxAnchor(raw: AnalysisFieldOutput, ix: DocxIndex, label: string, options: string[]): AnchorOutcome {
+  if (raw.anchorTarget === "mark_cell") return docxMarkAnchor(raw, ix, label, options);
+  if (raw.anchorTarget === "delete_options") return docxDeleteAnchor(raw, ix, label, options);
   if (raw.anchorTarget === "checkbox_glyph" || (raw.optionAnchors.length > 0 && raw.anchorTarget !== "pdf_field")) {
     return docxGlyphAnchor(raw, ix, label, options);
   }
@@ -506,6 +584,13 @@ function anchorSlots(anchor: FormAnchor, docx: DocxIndex | null): Array<{ key: s
   switch (anchor.kind) {
     case "docx": {
       if (anchor.target === "checkbox_glyph") return (anchor.optionGlyphs ?? []).map((g) => ({ key: `glyph:${g.blockId}#${g.glyphIndex}`, capacity: 1 }));
+      // 10/2026: every cell a question marks is its own; a printed list or option line is kept or deleted once.
+      if (anchor.target === "mark_cell") return (anchor.optionCells ?? []).map((c) => ({ key: `docx:${c.blockId}`, capacity: 1 }));
+      if (anchor.target === "delete_options") {
+        return anchor.placeholderText
+          ? [{ key: `docx:${anchor.blockId}|${anchor.placeholderText}`, capacity: 1 }]
+          : (anchor.optionTexts ?? []).map((o) => ({ key: `delete:${o.blockId}|${o.text}`, capacity: 1 }));
+      }
       const block = docx ? resolveDocxBlock(docx, anchor.blockId) : null;
       const text = block?.text ?? "";
       if (anchor.target === "replace_placeholder") {
@@ -786,6 +871,14 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
     // Answer type vs options.
     const notes: string[] = [...outcome.notes];
     let conf = minConf(raw.confidence, outcome.conf);
+    if (outcome.anchor.kind === "docx" && (outcome.anchor.target === "mark_cell" || outcome.anchor.target === "delete_options")) {
+      // A marked cell or a kept option answers a choice ("tick all that apply" rows of a grid: text naming the options).
+      const n = options.length;
+      const yesNo = n === 2 && /^y(?:es)?\b/i.test(options[0] ?? "") && /^no?\b/i.test(options[1] ?? "");
+      const several = outcome.anchor.target === "mark_cell" && answerType === "short_text";
+      if (!several && answerType !== "yes_no" && answerType !== "single_choice" && answerType !== "checkbox") answerType = yesNo ? "yes_no" : n === 1 ? "checkbox" : "single_choice";
+      if (answerType === "yes_no" && !yesNo) answerType = n === 1 ? "checkbox" : "single_choice";
+    }
     if (outcome.anchor.kind === "docx" && outcome.anchor.target === "checkbox_glyph") {
       const n = outcome.anchor.optionGlyphs?.length ?? 0;
       const yesNo = n === 2 && /^y(?:es)?\b/i.test(options[0] ?? "") && /^no?\b/i.test(options[1] ?? "");
@@ -815,7 +908,8 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
       ...(section && { section }),
       guidance: clean(raw.guidance, 400) || `Answer ${quoteLabel(label)} as asked on the form.`,
       answerType,
-      ...(options.length > 0 && (answerType === "yes_no" || answerType === "single_choice" || answerType === "checkbox") && { options }),
+      ...(options.length > 0 &&
+        (answerType === "yes_no" || answerType === "single_choice" || answerType === "checkbox" || (outcome.anchor.kind === "docx" && outcome.anchor.target === "mark_cell")) && { options }),
       anchor: outcome.anchor,
       fillSource: fill.source,
       required: Boolean(raw.required),
@@ -826,7 +920,7 @@ export function postValidateFields(parsed: ParsedForm, raws: AnalysisFieldOutput
 
     let order = seq;
     if (docxIx && outcome.anchor.kind === "docx") {
-      const ids = outcome.anchor.target === "checkbox_glyph" ? (outcome.anchor.optionGlyphs ?? []).map((g) => g.blockId) : [outcome.anchor.blockId];
+      const ids = docxAnchorBlockIds(outcome.anchor);
       order = Math.min(...ids.map((id) => docxOrder(docxIx, id)));
     } else if (pdfIx && (outcome.anchor.kind === "pdf_field" || outcome.anchor.kind === "pdf_char_fields" || outcome.anchor.kind === "pdf_table")) {
       const orders = formAnchorPdfFieldNames(outcome.anchor).map((n) => pdfIx.order.get(n) ?? seq);

@@ -19,6 +19,7 @@
 import type { BundleResponse } from "../../../api/contract";
 import { formToTemplate, isFormReport, primaryTreatingClinician } from "../../../core/forms";
 import { appendActivity, applyDraftResult, createFormReport, createReport, planDraftGroups } from "../../../core/report-factory";
+import { NOTES_REUSED_ACTION, notesReusedDetail, type ReuseSource } from "../../../core/reuse";
 import type {
   Clinician,
   EpisodeBundle,
@@ -26,10 +27,12 @@ import type {
   GenerationMode,
   InstructingParty,
   Report,
+  ReportApprover,
   ReportTemplate,
 } from "../../../core/types";
 import type { ApiClient } from "../../api-client";
 import { WORDING } from "../../wording";
+import { settleConditionalGaps } from "../review/review-model";
 import { runPool } from "../shared/pool";
 import { errorMessage } from "../shared/format";
 
@@ -68,6 +71,11 @@ export interface GenerateInput {
    */
   author?: Clinician | null;
   /**
+   * bh2 WC design 1: the approving clinician chosen when the report is created (ui/components/new/approver-picker.tsx) –
+   * stored as Report.approver by the same factory for a new report and for one made from an earlier report's notes.
+   */
+  approver?: ReportApprover | null;
+  /**
    * A live drafting passcode the server accepted is set in this tab (ui/passcode-check.ts), so /drafts may
    * draft live. When false and the bundle response lists the demo drafts it holds (`demoDrafts`), questions
    * with no demo draft are not sent to /drafts (they would return NO_DEMO_DRAFT): they are left for the
@@ -84,6 +92,11 @@ export interface GenerateInput {
   concurrency?: number;
   signal?: AbortSignal;
   actor?: string;
+  /**
+   * 25/10/2026: the record is an earlier report's checked notes ("Complete another form for this patient",
+   * core/reuse.ts). The new report – a new id, never an amendment – says so in its activity.
+   */
+  reusedFrom?: Pick<ReuseSource, "formTitle" | "status" | "consentReset">;
   /** Called with the latest report after creation and after every merge (persist it here). */
   onReport?(report: Report): void;
   onProgress?(groups: DraftGroupProgress[]): void;
@@ -145,7 +158,7 @@ export function templateOf(target: GenerateTarget): ReportTemplate {
 }
 
 /** Create the report (no drafting) – code-filled answers only. */
-export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now">): Report {
+export function createTargetReport(input: Pick<GenerateInput, "data" | "target" | "clinician" | "author" | "actor" | "now" | "reusedFrom" | "approver">): Report {
   const now = input.now?.() ?? new Date();
   const common = {
     bundle: input.data.bundle,
@@ -153,8 +166,9 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
     computedFacts: input.data.computedFacts,
     now,
     actor: input.actor,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
-  const created =
+  const made =
     input.target.kind === "form"
       ? createFormReport({
           ...common,
@@ -163,6 +177,9 @@ export function createTargetReport(input: Pick<GenerateInput, "data" | "target" 
           ...(input.author !== undefined ? { author: input.author } : {}),
         })
       : createReport({ ...common, template: input.target.template });
+  const created = input.reusedFrom
+    ? appendActivity(made, { actor: input.actor ?? "System", action: NOTES_REUSED_ACTION, detail: notesReusedDetail(input.reusedFrom) }, now)
+    : made;
   // Remember whether this deployment holds demo answers for this record (review's "Draft them now").
   const demo = input.data.demoDrafts;
   if (!demo) return created;
@@ -223,9 +240,13 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
         sectionKeys: group.keys,
         // The report being drafted: a clinic's audit trail names it (ids only).
         reportId: report.id,
+        // An amended version of an approved report: drafting it never counts as a new report (usage).
+        ...(report.amends ? { amendsReportId: report.amends.reportId } : {}),
         prefer: "auto" as const,
         ...(form && { form }),
         ...(form && report.author ? { author: report.author } : {}),
+        // bh2 W0 follow-up (WD design 2): the approving physio is the drafting voice owner – read by /drafts once WD lands.
+        ...(form && report.approver ? { approver: report.approver } : {}),
       };
       let res;
       let demoRetried = false;
@@ -290,6 +311,13 @@ export async function generateReport(input: GenerateInput): Promise<GenerateResu
     });
     if (failedGroups > 0) {
       emit();
+      input.onReport?.(report);
+    }
+    // Fix round 1 (B0-7): a conditional question the drafted answers rule out ("If not back at work…" after "Yes") has
+    // its gaps settled as not applicable (audited) – as the review does after each answer – so it does not block approval.
+    const settled = settleConditionalGaps(report, "System", now());
+    if (settled !== report) {
+      report = settled;
       input.onReport?.(report);
     }
 

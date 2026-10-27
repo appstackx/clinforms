@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { DemoClinicBanner } from "@/components/account/demo-clinic-banner";
+import { TrialBannerBar } from "@/components/account/trial-banner";
 import { StudioShell } from "@/modules/medreport/ui/components/shared/studio-shell";
 import { getAuth } from "@/server/auth/auth";
 import { currentPath, requestHeaders } from "@/server/auth/session";
@@ -21,6 +23,7 @@ export const metadata: Metadata = {
  * (src/server/auth/studio-access.ts): no session → /login, no two-step verification → /two-factor, no
  * active clinic → /app/select-clinic; Reports package switched off → the 404 page. The Edge middleware only
  * redirects requests without a session cookie.
+ * A demo clinic (made-up data only, set by ClinForms staff) shows the demo banner above the Studio on every page.
  */
 export default async function TenantStudioLayout({ children }: { children: React.ReactNode }) {
   const access = await resolveStudioAccess({ auth: getAuth(), db: getDb(), headers: requestHeaders(), path: currentPath() });
@@ -29,20 +32,32 @@ export default async function TenantStudioLayout({ children }: { children: React
   // A clinic with the Reports package switched off (a clinic-system-only clinic) has no Studio.
   if (!(await hasPackage(context.tenantId, "reports"))) notFound();
   return (
-    <TenantHost
-      clinic={{ tenantId: context.tenantId, name: context.clinicName, draftingEnabled: context.draftingEnabled, clinicians: context.clinicians }}
-      member={{
-        name: context.member.name,
-        userId: context.member.userId,
-        role: context.member.role,
-        email: context.member.email,
-        roleLabel: context.member.roleLabel,
-        hcpc: context.member.hcpc,
-        jobTitle: context.member.jobTitle,
-        canSign: context.member.canSign,
-      }}
-    >
-      <StudioShell>{children}</StudioShell>
-    </TenantHost>
+    <>
+      {/* A demo clinic (made-up data only; clinic_plan.demo_clinic read on the server): the banner, and the header pill. */}
+      <DemoClinicBanner on={context.demoClinic} />
+      <TrialBannerBar access={context.trial} />
+      <TenantHost
+        clinic={{
+          tenantId: context.tenantId,
+          name: context.clinicName,
+          draftingEnabled: context.draftingEnabled,
+          clinicians: context.clinicians,
+          ...(context.signers ? { signers: context.signers } : {}),
+          demoClinic: context.demoClinic,
+        }}
+        member={{
+          name: context.member.name,
+          userId: context.member.userId,
+          role: context.member.role,
+          email: context.member.email,
+          roleLabel: context.member.roleLabel,
+          hcpc: context.member.hcpc,
+          jobTitle: context.member.jobTitle,
+          canSign: context.member.canSign,
+        }}
+      >
+        <StudioShell>{children}</StudioShell>
+      </TenantHost>
+    </>
   );
 }

@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Notice, PageHeader, Panel } from "@/components/account/shell";
 import { CopyButton, SubmitButton } from "@/components/account/form-controls";
 import { roleLabel } from "@/lib/account-copy";
+import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
+import { WORDING } from "@/modules/medreport/core/wording";
+import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
 import { listClinicMembers, listPendingInvitations } from "@/server/auth/membership";
 import { inviteLink } from "@/server/auth/platform";
@@ -19,9 +22,11 @@ export const metadata: Metadata = { title: "Members" };
 export default async function MembersPage() {
   const { session, membership } = await requireAppContext();
   const db = getDb();
-  const [members, invitations] = await Promise.all([
+  const [members, invitations, demoClinic] = await Promise.all([
     listClinicMembers(db, membership.organizationId),
     listPendingInvitations(db, membership.organizationId),
+    // A demo clinic (made-up data only, set by ClinForms staff): made-up PH-DEMO numbers are accepted – say so.
+    isDemoClinic(db, membership.tenantId),
   ]);
   const manager = isManager(membership.role);
   const roles = assignableRoles(membership.role);
@@ -39,7 +44,7 @@ export default async function MembersPage() {
               <Notice>Email is not set up yet: after inviting, copy the link shown and pass it on yourself.</Notice>
             </div>
           ) : null}
-          <InviteForm roles={roles} emailOff={emailOff} />
+          <InviteForm roles={roles} />
         </Panel>
       ) : null}
 
@@ -86,6 +91,12 @@ export default async function MembersPage() {
                       {[m.jobTitle, m.hcpcNumber ? `HCPC ${m.hcpcNumber}` : null, m.canSign ? "May sign" : null].filter(Boolean).join(" · ") ||
                         "No signing details yet"}
                     </p>
+                    {!demoClinic && isDemoHcpc(m.hcpcNumber) ? (
+                      // A real clinic (it was a demo clinic before): this member cannot approve until the number is replaced.
+                      <p className="mt-1 text-xs font-medium text-amber-800" data-demo-number-warning="">
+                        {WORDING.demoClinic.memberHasDemoNumber}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{roleLabel(m.role ?? "")}</span>
@@ -105,6 +116,7 @@ export default async function MembersPage() {
                         hcpcNumber={m.hcpcNumber ?? ""}
                         canSign={m.canSign}
                         staff={m.role === "staff"}
+                        {...(demoClinic ? { demoHint: WORDING.demoClinic.hcpcHint } : {})}
                       />
                       {!isSelf ? <ResetLinkForm memberId={m.memberId} emailOff={emailOff} /> : null}
                       {!isSelf ? (
