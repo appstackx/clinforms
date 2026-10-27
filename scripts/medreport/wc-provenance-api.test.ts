@@ -143,11 +143,12 @@ test("/sign: a clinician who is not the approver is refused (409 APPROVER_MISMAT
   assert.equal(refused.status, 409);
   assert.equal(refused.code, "APPROVER_MISMATCH");
   let taken = reviewReducer(built.report, { type: "takeOverApprover", actor: TOM });
-  // Sarah's own words are no longer the approver's: each waits for Tom (here: he records them as his own words).
+  // Sarah's own words are no longer the approver's: each waits for Tom (here: he adopts them – bh2 fix round 1, R1T-WC-08:
+  // "These are my own words" is for his own rewrites only, never a colleague's text).
   const waiting = taken.sections.flatMap((s) => s.paragraphs.filter((p) => p.origin === "edited" && p.by?.memberId === SARAH.memberId).map((p) => ({ key: s.key, id: p.id })));
   assert.ok(waiting.length > 0, "the previous approver's text waits for the new approver");
   assert.equal((await postSign(h, { report: taken, template: built.template, form: built.form, signer: "tom", mode: "tenant" })).status, 409, "not before Tom decides on it");
-  for (const w of waiting) taken = reviewReducer(taken, { type: "markOwnWords", key: w.key, paragraphId: w.id, actor: TOM });
+  for (const w of waiting) taken = reviewReducer(taken, { type: "adopt", key: w.key, actor: TOM });
   const signed = await postSign(h, { report: taken, template: built.template, form: built.form, signer: "tom", mode: "tenant" });
   assert.equal(signed.status, 200, JSON.stringify(signed.body));
   assert.equal(signed.receipt?.approverTakeover?.from.memberId, SARAH.memberId);
@@ -305,6 +306,9 @@ test("check-WC 3 (S6): a create holding the approver's own-words record, adoptio
   const fresh: Report = { ...b.v, sections: b.v.sections.map((sec) => {
     const n = { ...sec, paragraphs: sec.paragraphs.filter((p) => p.origin === "ai" || p.origin === "from_records") };
     delete n.answerBy;
+    // bh2 fix round 1 (R1T-WC-03): the factory (and drafting) never answers an opinion box or the physiotherapist's choice.
+    const unfilledRecord = n.kind === "from_records" && !n.paragraphs.some((p) => p.origin === "from_records");
+    if ((n.kind === "clinician_opinion" || unfilledRecord) && n.answer && n.answer.kind !== "text") n.answer = { ...n.answer, value: null };
     return n;
   }) };
   assert.equal((await putStoredReport(h, { ...fresh, id: "rpt_new" }, "pat", null)).status, 201);
@@ -458,6 +462,10 @@ function factoryCopy(r: Report): Report {
       const n = { ...s, paragraphs: s.paragraphs.filter((p) => p.origin === "ai" || p.origin === "from_records") };
       delete n.answerBy;
       delete n.adoptedBy;
+      // bh2 fix round 1 (R1T-WC-03): the factory (and drafting) never answers an opinion box or the physiotherapist's choice.
+      // (A records box the factory did not fill – a staff entry, the physiotherapist's choice – is empty too.)
+      const unfilledRecord = n.kind === "from_records" && !n.paragraphs.some((p) => p.origin === "from_records");
+      if ((n.kind === "clinician_opinion" || unfilledRecord) && n.answer && n.answer.kind !== "text") n.answer = { ...n.answer, value: null };
       return n;
     }),
     flags: [],
@@ -557,7 +565,8 @@ test("harden-WC major B: an answer set with no stamp, and a question removed or 
   const drafted = reviewReducer(fresh.v, {
     type: "applyDraft",
     result: {
-      sections: [{ key: pendingKey, title: target.title, kind: target.kind, status: "drafted", fieldId: pendingKey, paragraphs: [{ id: `${pendingKey}-p1`, text: CITED, sourceIds: ["N-001"], origin: "ai", originalText: CITED }], ...(target.answer ? { answer: { kind: target.answer.kind, value: target.answer.kind === "date" ? "2026-03-12" : null } } : {}) }],
+      // bh2 fix round 1 (R1T-WC-03): drafting never answers an opinion box – a redraft of one carries no answer.
+      sections: [{ key: pendingKey, title: target.title, kind: target.kind, status: "drafted", fieldId: pendingKey, paragraphs: [{ id: `${pendingKey}-p1`, text: CITED, sourceIds: ["N-001"], origin: "ai", originalText: CITED }], ...(target.answer ? { answer: { kind: target.answer.kind, value: target.answer.kind === "date" && target.kind !== "clinician_opinion" ? "2026-03-12" : null } } : {}) }],
       gaps: [{ id: `gap-${pendingKey}-d1`, sectionKey: pendingKey, issue: "No clinician recorded an opinion.", suggestedQuestion: "?", relatedNoteIds: [], raisedBy: "ai" }],
       flags: [],
       generation: { mode: "demo_prewritten", model: "demo", promptVersion: "test", at: fresh.v.updatedAt, sectionKeys: [pendingKey] },

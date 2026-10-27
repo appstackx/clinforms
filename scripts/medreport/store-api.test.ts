@@ -37,6 +37,7 @@ import { FILE_CHUNK_BYTES } from "../../src/server/repos/form-files";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
 import { demoBearer } from "./test-actors";
 import { completedSampleReport } from "./form-sample-answers";
+import { asApproversReport, asFactoryCopy, signingMember } from "./release-store-fixture";
 
 const A = "clinic-a";
 const B = "clinic-b";
@@ -45,8 +46,9 @@ const SARAH: Clinician = { name: "Sarah Reid", hcpc: "PH-DEMO-01", role: "Senior
 function setup() {
   const store = createMemoryTenantStore();
   const deps = storeDeps(store, {
-    a: member(A),
-    b: member(B),
+    // bh2 fix round 1 (WC, R1T-WC-06): the members who create reports may approve them (a create names its approver).
+    a: signingMember(A),
+    b: signingMember(B),
     nofactor: member(A, { twoFactorVerified: false }),
     staff: member(A, { userId: "user-staff-a", authSessionId: "sess-staff-a", role: "staff" }),
     owner: member(A, { userId: "user-owner-a", authSessionId: "sess-owner-a", role: "owner" }),
@@ -63,7 +65,9 @@ const json = (body: unknown, headers: Record<string, string> = {}): RequestInit 
 
 function reportFor(tenantId: string, id = "rpt_store_test"): Report {
   const form = { ...HARROW_PIKE_RAW, tenantId };
-  return { ...completedSampleReport("megan-hart", form, { id }), tenantId };
+  // bh2 fix round 1 (WC): as the Studio stores it – the clinic's signing member as its approving clinician.
+  const r = { ...completedSampleReport("megan-hart", form, { id }), tenantId };
+  return tenantId === "demo" ? asApproversReport(r, { ...signingMember("demo"), userId: "demo" }) : asApproversReport(r, signingMember(tenantId));
 }
 
 function formFor(tenantId: string): FormDefinition {
@@ -220,7 +224,7 @@ test("tenant isolation: another clinic can neither see nor change a clinic's rec
   const refiledForm = await b(storeApiPaths.form(formFor(A).id), json({ form: formFor(A) }));
   assert.equal(refiledForm.status, 403);
   // B creating the same id for itself makes B's own copy; A's is untouched.
-  const own = await b(storeApiPaths.report(report.id), json({ report: { ...report, tenantId: B, patientLabel: "B's copy" } }));
+  const own = await b(storeApiPaths.report(report.id), json({ report: { ...reportFor(B, report.id), patientLabel: "B's copy" } }));
   assert.equal(own.status, 201);
   assert.equal(StoreReportResponseSchema.parse(await own.json()).report.tenantId, B);
   const a = StoreReportResponseSchema.parse(await (await as("a")(storeApiPaths.report(report.id))).json());
@@ -503,7 +507,7 @@ test("fix wave 2: an approved report cannot be deleted (and re-created as a draf
   assert.equal(kept.report.status, "signed");
   assert.ok(kept.report.receipt);
   // A draft is deleted by any member; an approved report by the owner (audited).
-  assert.equal((await as("staff")(storeApiPaths.report("rpt_draft_x"), json({ report: { ...draft, id: "rpt_draft_x" } }))).status, 201);
+  assert.equal((await as("staff")(storeApiPaths.report("rpt_draft_x"), json({ report: { ...asFactoryCopy(draft), id: "rpt_draft_x" } }))).status, 201);
   assert.deepEqual(await (await as("staff")(storeApiPaths.report("rpt_draft_x"), { method: "DELETE" })).json(), { deleted: true });
   assert.deepEqual(await (await as("owner")(storeApiPaths.report(draft.id), { method: "DELETE" })).json(), { deleted: true });
   const deletes = store.auditLog.filter((e) => e.action === "report.delete");
@@ -540,7 +544,7 @@ test("fix wave 2: store writes are limited per member and per clinic (429 with R
   const store = createMemoryTenantStore();
   const counts = new Map<string, number>();
   const deps = {
-    ...storeDeps(store, { a: member(A) }),
+    ...storeDeps(store, { a: signingMember(A) }),
     sharedState: {
       async hit(key: string, _windowMs: number, amount = 1) {
         counts.set(key, (counts.get(key) ?? 0) + amount);

@@ -59,6 +59,7 @@ import { getUsageMonths, listUsageReportRows } from "../../src/server/repos/usag
 import { ukPeriodOf } from "../../src/server/repos/usage-period";
 import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
+import { approverRef, asApproversReport, asFactoryCopy } from "./release-store-fixture";
 import { completedSampleReport } from "./form-sample-answers";
 import { PRACTICE_PRINTOUT_TEXT } from "./notes-fixtures";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
@@ -109,7 +110,8 @@ const FIELD = FORM.fields.find((f) => f.fillSource.kind === "notes_narrative" ||
 
 /** A stored report of clinic A completed from the uploaded notes. */
 function sourceReport(id: string, extra: Partial<Report> = {}): Report {
-  const r = completedSampleReport("megan-hart", FORM, { id });
+  // bh2 fix round 1 (WC, R1T-WC-06): stored as the Studio stores it – with its approving clinician (Sam).
+  const r = asApproversReport(completedSampleReport("megan-hart", FORM, { id }), CLIN);
   return {
     ...r,
     tenantId: A,
@@ -358,7 +360,7 @@ describe("POST /store/reports/{id}/reuse – the handler", () => {
       bundleSnapshot: confirmed.bundle,
     });
     assert.ok(!reportA.activity.some((x) => x.action === CONSENT_RECORDED_ACTION));
-    await putReport(f, reportA);
+    await putReport(f, asFactoryCopy(reportA));
     const before = store.auditLog.length;
     const res = await reuse(f, reportA.id);
     assert.equal(res.status, 200, await res.clone().text());
@@ -550,7 +552,7 @@ describe("usage: a report from reused notes counts as a report of its own – ne
 
       // "Complete another form for this patient": the record from the server, a new report on FORM2.
       const reused = StoreReportReuseResponseSchema.parse(await (await reuse(f, earlier.id)).json());
-      const second = createTargetReport({ data: reused.data, target: { kind: "form", form: FORM2 }, reusedFrom: reused.source });
+      const second = createTargetReport({ data: reused.data, target: { kind: "form", form: FORM2 }, reusedFrom: reused.source, approver: approverRef(CLIN) });
       assert.notEqual(second.id, earlier.id);
       assert.equal(second.amends, undefined);
       await putReport(f, second);
@@ -563,7 +565,7 @@ describe("usage: a report from reused notes counts as a report of its own – ne
 
       // The same form as the earlier report, chosen again from the same notes: a new report too (as a fresh upload).
       const again = StoreReportReuseResponseSchema.parse(await (await reuse(f, earlier.id)).json());
-      const third = createTargetReport({ data: again.data, target: { kind: "form", form: FORM }, reusedFrom: again.source });
+      const third = createTargetReport({ data: again.data, target: { kind: "form", form: FORM }, reusedFrom: again.source, approver: approverRef(CLIN) });
       await putReport(f, third);
       await draft(third, FORM);
       m = await month();

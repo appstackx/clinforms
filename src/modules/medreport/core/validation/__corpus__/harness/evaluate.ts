@@ -26,6 +26,8 @@ import type { ValidatorEngine } from "./engine";
 import { checkFixRules, offeredFixes, type OfferedFix } from "./fixes";
 import { actorOf, person } from "./fixtures";
 import { createHttpHarness, getStoredReport, postRenderFinal, postSign, putStoredReport, type HttpHarness } from "./http";
+import { CORPUS_TENANT } from "./fixtures";
+import { applyFixProposal, offeredFixes as engineOfferedFixes } from "../../../../ui/components/review/fixes";
 import { createAmendedVersion } from "../../../../ui/components/review/review-model";
 import { judge, onSubject, describeFlags, matches, INCIDENTAL_CODES, type FlagMatcher, type Judgement } from "./judge";
 import { runPurePath } from "./pure-paths";
@@ -179,6 +181,24 @@ function withEditedSubject(built: Built): Report {
   };
 }
 
+/** The subject paragraph edited by `by` as the review records it: "edited", the drafted wording kept, their stamp. */
+function withPersonEditedSubject(built: Built, by: PersonKey): Report {
+  const box = built.box;
+  return {
+    ...built.report,
+    sections: built.report.sections.map((s) =>
+      s.key === box
+        ? {
+            ...s,
+            paragraphs: s.paragraphs.map((p, i) =>
+              i === 0 ? { ...p, text: `${p.text} He was seen again at the clinic.`, ...(p.origin === "ai" ? { origin: "edited" as const, originalText: p.originalText ?? p.text } : {}), by: actorOf(by) } : p,
+            ),
+          }
+        : s,
+    ),
+  };
+}
+
 /**
  * harden-WA1 (check2 N1): what a member's store write may rewrite in the report it stores – a box's frozen condition or
  * printed question (input.store.rewrite: box → {condition (null: removed), title}), every frozen condition
@@ -215,8 +235,10 @@ async function runSign(c: RunCase, built: Built, h: HttpHarness): Promise<PathOu
     } else if (seeded.status !== 201 && seeded.status !== 200) return { path: "sign", ok: false, detail: `could not store the report first (${seeded.status} ${seeded.code ?? ""})` };
     if (store.thenBody === "edited") report = withEditedSubject(built);
     if (store.thenBody === "stale") {
-      // Someone saves a newer revision; the approver's tab still sends the old one.
-      const newer = await putStoredReport(h, withEditedSubject(built), store.seedAs, (seeded.body as { rev?: number }).rev ?? 1);
+      // Someone saves a newer revision; the approver's tab still sends the old one. (R1T-WC-04: the newer revision is a
+      // person's edit as the review writes it – origin "edited", their stamp – never drafted text rewritten in place,
+      // which the store refuses.)
+      const newer = await putStoredReport(h, withPersonEditedSubject(built, store.seedAs), store.seedAs, (seeded.body as { rev?: number }).rev ?? 1);
       if (newer.status !== 200) return { path: "sign", ok: false, detail: `could not store the newer revision (${newer.status} ${newer.code ?? ""})` };
     }
   }
@@ -367,6 +389,18 @@ type Forge =
   | "drafted-text-added"
   | "edited-verbatim-added"
   | "condition-changed"
+  // WC fix round 1 (R1T-WC-01/03/04/05/06/07, additive):
+  | "tombstone-untied"
+  | "tombstone-tied"
+  | "opinion-tick-unstamped"
+  | "redraft-tick"
+  | "redraft-no-tick"
+  | "ai-rewrite"
+  | "ai-fix-engine"
+  | "gap-na-settle"
+  | "no-approver"
+  | "demo-stamp-colleague"
+  | "member-stamp-colleague"
   | "none";
 
 /** The subject box's structured answer set to another value (as a forging client would), stamped as `by` or as nobody. */
@@ -427,9 +461,114 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
       const controller = report.sections.slice(0, Math.max(at, 0)).reverse().find((s) => s.answer && s.answer.kind !== "text")?.key ?? report.sections[0]?.key ?? key;
       return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, condition: { controllers: [controller], wants: "yes", parser: "forged" } } : s)) };
     }
+    case "tombstone-untied":
+      // R1T-WC-01: a tombstone no drafted paragraph of the stored box was deleted for (any text the client likes).
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, tombstones: [...(s.tombstones ?? []), { paragraphId: `${key}-never-drafted`, text: "Lift lift lift lift lift lift lift lift.", sourceIds: ["N-001"], by: actorOf(putAs), at }] } : s)) };
+    case "tombstone-tied": {
+      // The review's own delete of the box's first drafted paragraph: gone from the box, kept as its tombstone.
+      const s0 = report.sections.find((s) => s.key === key);
+      const gone = s0?.paragraphs.find((p) => p.origin === "ai");
+      if (!s0 || !gone) return report;
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: s.paragraphs.filter((p) => p.id !== gone.id), tombstones: [...(s.tombstones ?? []), { paragraphId: gone.id, text: gone.originalText ?? gone.text, sourceIds: gone.sourceIds, by: actorOf(putAs), at }] } : s)) };
+    }
+    case "opinion-tick-unstamped":
+      // R1T-WC-03: the subject box's structured answer set with nobody's stamp (as a forging client would on a create).
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? forgedAnswer(s, null) : s)) };
+    case "redraft-tick":
+    case "redraft-no-tick": {
+      // R1T-WC-03 (SAF-2): a "drafting result" for the waiting subject box – a new generation entry naming it, a drafted
+      // paragraph, and (redraft-tick) an answer nobody's stamp vouches for. Drafting never answers an opinion box.
+      const generation = [...(report.generation ?? []), { mode: "live" as const, sectionKeys: [key], at, promptVersion: "forms-corpus" }];
+      return {
+        ...report,
+        generation,
+        sections: report.sections.map((s) => {
+          if (s.key !== key) return s;
+          const next = { ...s, status: "drafted" as const, paragraphs: [{ id: `${key}-corpus-p1`, text: "Tom Ellis recorded lumbar movement full and pain-free.", sourceIds: ["N-002"], origin: "ai" as const, originalText: "Tom Ellis recorded lumbar movement full and pain-free." }] };
+          if (forge === "redraft-tick") return forgedAnswer(next, null);
+          return next;
+        }),
+      };
+    }
+    case "ai-rewrite":
+      // R1T-WC-04 (SAF-3): the subject box's drafted paragraph rewritten in place – still "ai", no stamp, no fix record.
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: s.paragraphs.map((p, i) => (i === 0 && p.origin === "ai" ? { ...p, text: p.text.replace(/\bno\s+/i, "") === p.text ? `${p.text.replace(/[.\s]+$/, "")} and red flags were found.` : p.text.replace(/\bno\s+/i, "") } : p)) } : s)) };
+    case "gap-na-settle":
+      // R1T-WC-05 (SAF-4): the subject box's open questions settled as "not applicable", by nobody (as the code's own settle).
+      return { ...report, gaps: report.gaps.map((g) => (g.sectionKey === key && !g.resolution ? { ...g, resolution: { kind: "resolved" as const, text: "Not applicable: the answer before it rules it out.", at, notApplicable: true } } : g)) };
+    case "no-approver": {
+      // R1T-WC-06 (SEC-3): the report without its approving clinician.
+      const r = { ...report };
+      delete (r as { approver?: unknown }).approver;
+      return r;
+    }
+    case "demo-stamp-colleague":
+    case "member-stamp-colleague": {
+      // R1T-WC-07 (SEC-4): an import from the public demo whose first paragraph is stamped as the demo's user under a
+      // colleague's name, role and number (demo-stamp-colleague) – or as a member of the clinic (member-stamp-colleague).
+      const colleague = actorOf(approver);
+      const stampAs = forge === "demo-stamp-colleague" ? { ...colleague, memberId: "demo" } : colleague;
+      return {
+        ...report,
+        tenantId: "demo",
+        sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: s.paragraphs.map((q, i) => (i === 0 ? ({ ...q, origin: "edited" as const, originalText: q.originalText ?? `${q.text} (drafted)`, by: stampAs } as typeof q) : q)) } : s)),
+      };
+    }
     default:
       return report;
   }
+}
+
+/**
+ * R1T-WC-04: the subject box's first drafted paragraph changed by a one-click fix the engine offers – to `putAs`, else
+ * (a client applying what the review offers someone else) to the approver – applied as `putAs` (as the review applies it).
+ */
+function withEngineFix(built: Built, report: Report, putAs: PersonKey): Report {
+  for (const offeredTo of [putAs, built.approver ?? "sarah"] as PersonKey[]) {
+    const fixes = engineOfferedFixes(report, { actor: actorOf(offeredTo) as never, template: built.template, form: built.form });
+    const fix = fixes.find((f) => f.sectionKey === built.box && f.after.trim() !== "" && f.after !== f.before);
+    if (fix) return applyFixProposal(report, fix, actorOf(putAs) as never);
+  }
+  return report;
+}
+
+/**
+ * WC fix round 1: the report as `who` would create it – the report factory's boxes and drafted text, and only what `who`
+ * wrote, chose or decided (anyone else's paragraphs, answers, acknowledgements and decisions left out): a member's
+ * create never carries a colleague's decisions.
+ */
+function asCreatedBy(report: Report, who: PersonKey): Report {
+  const me = actorOf(who).memberId;
+  const mine = (by: { memberId?: string } | null | undefined) => Boolean(by && by.memberId === me);
+  const sections = report.sections.map((s) => {
+    const n = { ...s, paragraphs: s.paragraphs.filter((p) => p.origin === "ai" || p.origin === "from_records" || mine(p.by)).map((p) => {
+      const q = { ...p };
+      if (q.ownWords && !mine(q.ownWords.by)) delete q.ownWords;
+      if (q.ackReason && !mine(q.by)) delete q.ackReason;
+      return q;
+    }) };
+    if (n.answerBy && !mine(n.answerBy)) {
+      delete n.answerBy;
+      if (n.answer && n.answer.kind !== "text") n.answer = { ...n.answer, value: null };
+    }
+    delete n.adoptedBy;
+    delete n.accepted;
+    if (n.disposition && !mine(n.disposition.by)) delete n.disposition;
+    return n;
+  });
+  const gaps = report.gaps.map((g) => {
+    if (!g.resolution || mine(g.resolution.by)) return g;
+    const open = { ...g };
+    delete open.resolution;
+    return open;
+  });
+  const flags = report.flags.map((f) => {
+    if (!f.acknowledged || mine(f.acknowledged.by)) return f;
+    const open = { ...f };
+    delete open.acknowledged;
+    return open;
+  });
+  return { ...report, sections, gaps, flags };
 }
 
 /** An approved report amended and the amendment approved: the stored v1 must read as superseded (B2-25, B3-3). */
@@ -452,9 +591,26 @@ async function runAmend(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
 
 async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
   if ((c.input.store as { amend?: boolean } | undefined)?.amend) return runAmend(c, built, h);
-  const store = (c.input.store ?? {}) as { seedAs?: PersonKey; putAs?: PersonKey; forge?: Forge; signFirst?: boolean };
+  const store = (c.input.store ?? {}) as {
+    seedAs?: PersonKey;
+    putAs?: PersonKey;
+    forge?: Forge;
+    signFirst?: boolean;
+    /** WC fix round 1: the clinic's store holds the form map the report was started from (as the Studio keeps it). */
+    storeForm?: boolean;
+    /** WC fix round 1: the forged report is PUT as a CREATE (no stored copy first). */
+    createOnly?: boolean;
+    /** WC fix round 1: these boxes wait for drafting in the stored copy (status "pending", nothing in them, no questions). */
+    seedPending?: string[];
+    /** WC fix round 1: the seed is the report as `seedAs` creates it (asCreatedBy: nobody else's decisions in it). */
+    seedAsCreator?: boolean;
+  };
   const seedAs = store.seedAs ?? built.approver ?? "sarah";
   const putAs = store.putAs ?? built.actor;
+  if (store.storeForm && built.form) {
+    const form = built.form;
+    await h.store.createForm(CORPUS_TENANT, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: null, payload: form });
+  }
   // bh2-rc1: the report as the review holds it – with the validators' flags – so a forged acknowledgement has a flag
   // to acknowledge (the forge was a no-op on a report with no flags).
   let base: Report = { ...built.report, flags: validateReport(built.report, built.template, { computedFacts: built.computedFacts, form: built.form, ...(ownerOf(built) ? { voice: { owner: ownerOf(built) as never } } : {}) }).flags };
@@ -463,15 +619,47 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
     if (!signed.receipt) return { path: "store", ok: false, detail: `could not approve first (${signed.status} ${signed.code ?? ""})` };
     base = { ...base, status: "signed", receipt: signed.receipt, flags: (signed.body as { flags?: ReportFlag[] }).flags ?? base.flags };
   }
-  const seeded = await putStoredReport(h, base, seedAs, null);
-  if (seeded.status !== 201) return { path: "store", ok: false, detail: `seed PUT by ${seedAs}: ${seeded.status} ${seeded.code ?? ""}` };
-  const rev = (seeded.body as { rev?: number }).rev ?? 1;
-  const forged = forgeReport(base, store.forge ?? "none", built.approver ?? "sarah", built.box, putAs);
-  const res = await putStoredReport(h, forged, putAs, rev);
+  if (store.seedPending?.length) {
+    const pending = new Set(store.seedPending);
+    base = {
+      ...base,
+      sections: base.sections.map((s) => {
+        if (!pending.has(s.key)) return s;
+        const next = { ...s, status: "pending" as const, paragraphs: [] as typeof s.paragraphs, ...(s.answer ? { answer: { ...s.answer, value: null } } : {}) };
+        delete (next as { answerBy?: unknown }).answerBy;
+        delete (next as { adoptedBy?: unknown }).adoptedBy;
+        return next;
+      }),
+      gaps: base.gaps.filter((g) => !pending.has(g.sectionKey)),
+      flags: base.flags.filter((f) => !f.sectionKey || !pending.has(f.sectionKey)),
+    };
+  }
+  if (store.createOnly) base = asCreatedBy(base, putAs);
+  else if (store.seedAsCreator) base = asCreatedBy(base, seedAs);
+  let forged = forgeReport(base, store.forge ?? "none", built.approver ?? "sarah", built.box, putAs);
+  if (store.forge === "ai-fix-engine") forged = withEngineFix(built, base, putAs);
+  let res;
+  if (store.createOnly) {
+    res = await putStoredReport(h, forged, putAs, null);
+  } else {
+    const seeded = await putStoredReport(h, base, seedAs, null);
+    if (seeded.status !== 201) return { path: "store", ok: false, detail: `seed PUT by ${seedAs}: ${seeded.status} ${seeded.code ?? ""}` };
+    const rev = (seeded.body as { rev?: number }).rev ?? 1;
+    if (store.forge === "ai-fix-engine" && forged === base) return { path: "store", ok: false, detail: `the engine offers ${person(putAs).name} no fix on ${built.box}` };
+    res = await putStoredReport(h, forged, putAs, rev);
+  }
+  // WC fix round 1 (R1T-WC-07): what the stored copy's subject paragraph is stamped with (check.storedStampName).
+  const wantStamp = c.check?.storedStampName as string | undefined;
+  if (wantStamp !== undefined && (res.status === 200 || res.status === 201)) {
+    const storedReport = (res.body as { report?: Report } | null)?.report;
+    const by = storedReport?.sections.find((s) => s.key === built.box)?.paragraphs[0]?.by;
+    if (by?.name !== wantStamp) return { path: "store", ok: false, detail: `stored, but the paragraph is stamped “${by?.name ?? "nobody"}”, not “${wantStamp}”` };
+  }
+  const expectStatus = store.createOnly ? 201 : 200;
   const detail = `PUT by ${person(putAs).name} (${store.forge ?? "none"}): ${res.status} ${res.code ?? ""}`.trim();
   if (c.expect === "REFUSED_403") return { path: "store", ok: res.status === 403, detail };
   if (c.expect === "REFUSED_409") return { path: "store", ok: res.status === 409, detail };
-  if (c.expect === "PASS") return { path: "store", ok: res.status === 200, detail };
+  if (c.expect === "PASS") return { path: "store", ok: res.status === expectStatus, detail };
   return { path: "store", ok: res.status < 500, detail };
 }
 

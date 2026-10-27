@@ -8,12 +8,13 @@
 import { conditionOf } from "../../../core/conditions";
 import { isReleaseModel } from "../../../core/issue-state";
 import { nowIso } from "../../../core/dates";
-import { isSectionAnswered } from "../../../core/forms";
+import { answerKindFor, isSectionAnswered } from "../../../core/forms";
 import { actsAsApprover, hasApproverWords, isClinicianBox, isClinicianGap as clinicianGapOf, type BoxContext } from "../../../core/provenance";
 import { appendActivity } from "../../../core/report-factory";
-import type { Actor, Gap, Report, ReportSection } from "../../../core/types";
+import type { Actor, FormField, Gap, Report, ReportSection } from "../../../core/types";
 import { defineHook, hookEnabled } from "../../../core/validation/hooks";
 import { answeredByPerson } from "./provenance";
+import { storedAnswerValue } from "./reducer";
 
 /** Ledger hook "staff-answer-settles": a person's answer settles its box's gaps – a clinician gap only the approver's. */
 export const ANSWER_SETTLES_HOOK = defineHook("staff-answer-settles");
@@ -83,8 +84,8 @@ export function gapResolutionOptions(report: Pick<Report, "sections" | "activity
  * WC design 4: why `actor` may not settle this gap – "Only Sarah Reid, the approving clinician, can settle this." – or
  * null when they may.
  */
-export function approverOnlyHint(report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "approver">>, gap: Pick<Gap, "id" | "sectionKey" | "kind">, actor: Actor | null): string | null {
-  if (!actor || !isClinicianGap(report, gap) || actsAsApprover(actor, { approver: report.approver })) return null;
+export function approverOnlyHint(report: Pick<Report, "sections"> & Partial<Pick<Report, "gaps" | "approver">>, gap: Pick<Gap, "id" | "sectionKey" | "kind">, actor: Actor | null, ctx?: BoxContext): string | null {
+  if (!actor || !isClinicianGap(report, gap, ctx) || actsAsApprover(actor, { approver: report.approver })) return null;
   return report.approver ? `Only ${report.approver.name}, the approving clinician, can settle this.` : "Only a clinician who may approve can settle this.";
 }
 
@@ -109,6 +110,34 @@ export function resolutionOptionsFor(input: { own: boolean; opinion: boolean; ga
     };
   }
   return { canResolve: true, prefill: "", minLength: MIN_GAP_REASON, hint: null };
+}
+
+/**
+ * R1T-WC-11 (invariant I8): a held-back choice's one-click suggestion (Gap.suggestedAnswer – the option as printed, as
+ * drafting gave it) in the shape the box stores – a tick box: true (its "Yes" / "Ticked", or its one printed option) or
+ * false; a yes/no: true or false; a choice: the printed option exactly as printed – or undefined when the box could not
+ * store it. Undefined is never offered: a one-click "Tick" always leaves the box answered with one of its own options.
+ * A box with no form field (a built-in report's section) takes the suggestion as it is.
+ */
+export function storedSuggestion(field: Pick<FormField, "answerType" | "options"> | null | undefined, suggested: string | null | undefined): string | boolean | undefined {
+  const s = (suggested ?? "").trim();
+  if (!s) return undefined;
+  if (!field) return s;
+  const kind = answerKindFor(field.answerType);
+  const options = (field.options ?? []).map((o) => o.trim()).filter(Boolean);
+  const printed = options.find((o) => o.toLowerCase() === s.toLowerCase());
+  if (kind === "checkbox") {
+    if (printed && options.length === 1) return true;
+    const v = storedAnswerValue("checkbox", s);
+    return typeof v === "boolean" ? v : undefined;
+  }
+  if (kind === "yes_no") {
+    const v = storedAnswerValue("yes_no", s);
+    return typeof v === "boolean" ? v : undefined;
+  }
+  if (kind === "choice") return printed;
+  if (kind === "rows") return undefined;
+  return s;
 }
 
 /** Resolve or acknowledge a gap with the clinician's text. */
@@ -246,7 +275,9 @@ export function settleConditionalGaps(report: Report, actor: string, now?: Date)
     // bh2-rc1 (WA1 x WC): a report of this release reads only its frozen conditions (WA1 design 3) – never the earlier
     // run-time reading of the printed words, which could settle the question of a box the server's reading keeps.
     const condition = conditionOf(next.sections, section.key, { release: isReleaseModel(next) });
-    if (condition?.applies === false) {
+    // R1T-WC-05 / R1T-WC-12: a box the approver chose to print anyway ("This applies") is asked, so its questions stay open.
+    const printedAnyway = section.disposition?.kind === "applies_anyway";
+    if (condition?.applies === false && !printedAnyway) {
       const open = own.filter((g) => !g.resolution);
       if (open.length === 0) continue;
       const text = `Not applicable: ${condition.because}.`;

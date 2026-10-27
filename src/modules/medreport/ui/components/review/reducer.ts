@@ -20,18 +20,23 @@ import {
   isPersonParagraph,
   mayApprove,
   paragraphResidue,
+  othersUncitedParagraph,
   pendingProposal,
   personOrigin,
   residueSentences,
+  ruledOutByRule,
   sameMember,
   sentenceSha,
+  uncitedOthersText,
   voidDecisionsNotBy,
   VOIDED_ADOPTION_SHA,
   type BoxContext,
+  type RuleContext,
 } from "../../../core/provenance";
 import { controllerSnapshotOf, isReleaseModel } from "../../../core/issue-state";
 import { appendActivity } from "../../../core/report-factory";
 import { splitSentences } from "../../../core/text/sentences";
+import { DRAFT_TOMBSTONE_MAX_CHARS } from "../../../core/schemas";
 import type { Actor, Paragraph, PhraseAcceptance, Report, ReportFlag, ReportSection, SectionDisposition, SectionDispositionKind, SignReceipt } from "../../../core/types";
 
 /* ------------------------------------------------------------------------------------------------
@@ -146,6 +151,27 @@ export function addClinicianParagraph(report: Report, key: string, text = "", no
 const MAX_TOMBSTONES = 500;
 
 /**
+ * A deleted drafted paragraph's wording as tombstone texts of at most DRAFT_TOMBSTONE_MAX_CHARS characters each
+ * (R1T-WC-01): cut after a space where there is one in the last fifth of a piece, else at the limit. Every piece is part
+ * of the drafted wording, in order; together they are all of it.
+ */
+export function tombstonePieces(text: string): string[] {
+  if (text.length <= DRAFT_TOMBSTONE_MAX_CHARS) return [text];
+  const out: string[] = [];
+  let at = 0;
+  while (at < text.length) {
+    let end = Math.min(text.length, at + DRAFT_TOMBSTONE_MAX_CHARS);
+    if (end < text.length) {
+      const space = text.lastIndexOf(" ", end - 1);
+      if (space > at + Math.floor(DRAFT_TOMBSTONE_MAX_CHARS * 0.8)) end = space + 1;
+    }
+    out.push(text.slice(at, end));
+    at = end;
+  }
+  return out;
+}
+
+/**
  * Remove a paragraph (not from-records text). WC design 6: a DRAFTED paragraph (origin "ai", or edited drafted text)
  * removed by a person (`opts.by`) is kept as a tombstone of its drafted wording, never printed, so a delete-then-add
  * or a paste back still reads as drafted text (core/provenance.ts draftedSentences).
@@ -167,8 +193,11 @@ export function removeParagraph(report: Report, key: string, paragraphId: string
     const gone = removed as Paragraph | null;
     const drafted = gone && (gone.origin === "ai" || (gone.origin === "edited" && gone.originalText !== undefined));
     if (!gone || !drafted || !opts.by) return { ...s, paragraphs };
-    const tombstone = { paragraphId: gone.id, text: gone.originalText ?? gone.text, sourceIds: gone.sourceIds, by: opts.by, at };
-    return { ...s, paragraphs, tombstones: [...(s.tombstones ?? []), tombstone].slice(-MAX_TOMBSTONES) };
+    // R1T-WC-01: a tombstone holds at most DRAFT_TOMBSTONE_MAX_CHARS characters; a longer drafted paragraph is kept as
+    // consecutive pieces of it (each still part of its drafted wording, as the store checks).
+    const by = opts.by;
+    const tombstones = tombstonePieces(gone.originalText ?? gone.text).map((text) => ({ paragraphId: gone.id, text, sourceIds: gone.sourceIds, by, at }));
+    return { ...s, paragraphs, tombstones: [...(s.tombstones ?? []), ...tombstones].slice(-MAX_TOMBSTONES) };
   });
   return changed ? touch(report, sections, now) : report;
 }
@@ -193,9 +222,14 @@ export function setStructuredAnswer(
 ): Report {
   const section = report.sections.find((s) => s.key === key);
   if (!section?.answer || section.answer.kind === "text") return report;
+  const kind = section.answer.kind;
+  // R1T-WC-11: a value in the shape the box stores – a tick box and a yes/no hold true or false, never the words "Yes"
+  // or "No" (a one-click suggestion is the option as printed); words that are neither are not stored.
+  const stored = storedAnswerValue(kind, value);
+  if (stored === undefined) return report;
+  value = stored;
   const before = section.answer.value;
   if (before === value) return report;
-  const kind = section.answer.kind;
   // WC design 7: who set it is stamped on the box (Section.answerBy) – the labels read the stamp, never the log.
   const by = stampOf(actor);
   const sections = mapSection(report, key, (s) => {
@@ -210,6 +244,25 @@ export function setStructuredAnswer(
     action: "answer_set",
     detail: `${key}: answer to “${section.title}” set to ${answerDisplay(value, kind)} (was ${answerDisplay(before, kind)}).`,
   }, now);
+}
+
+const YES_WORDS = /^(?:yes|y|true|ticked|tick|checked|x|✓|✔|☑|☒)$/i;
+const NO_WORDS = /^(?:no|n|false|not ticked|unticked|unchecked)$/i;
+
+/**
+ * R1T-WC-11: `value` as a box of this answer kind stores it – a tick box or a yes/no: true or false (the words "Yes",
+ * "Ticked", "No" … read as such; any other word is not storable there: undefined); every other kind as given. The one-click
+ * suggestion a drafted choice was held back with is the option as printed ("Yes", "Restriction"), so it goes through here
+ * before it is stored (and, with the box's own options, storedSuggestion in gaps.ts decides whether it is offered at all).
+ */
+export function storedAnswerValue(kind: string, value: string | boolean | null): string | boolean | null | undefined {
+  if (value === null || typeof value === "boolean") return value;
+  if (kind !== "checkbox" && kind !== "yes_no") return value;
+  const v = value.trim();
+  if (v === "") return null;
+  if (YES_WORDS.test(v)) return true;
+  if (NO_WORDS.test(v)) return false;
+  return undefined;
 }
 
 /** The stamp for a person: their Actor, or – where only a name is known – that name as a clinician of unknown id. */
@@ -311,11 +364,16 @@ function withSection(report: Report, key: string, fn: (s: ReportSection) => Repo
 export function adoptBox(report: Report, key: string, actor: Actor, ctx: BoxContext = {}, now?: Date): Report {
   const section = sectionOf(report, key);
   if (!section || !report.approver || !actsAsApprover(actor, report)) return report;
-  const proposal = pendingProposal(report, section, ctx);
+  // R1T-WC-08: also someone else's uncited text in a box that is not a clinician box – adopted the same way (it keeps
+  // their name: "Entered by Pat Morgan (staff) – adopted by Sarah Reid"), never relabelled as the approver's own words.
+  const clinicianProposal = pendingProposal(report, section, ctx);
+  const proposal = clinicianProposal ?? uncitedOthersText(report, section, ctx);
   if (!proposal) return report;
+  const approverRef = report.approver;
   const at = nowIso(now);
   const paragraphs = section.paragraphs.map((p): Paragraph => {
-    if (!isPersonParagraph(p) || (p.by && sameMember(p.by, report.approver))) return p;
+    if (!isPersonParagraph(p) || (p.by && sameMember(p.by, approverRef))) return p;
+    if (!clinicianProposal && !othersUncitedParagraph(section, p, approverRef)) return p;
     if (paragraphResidue(section, p).length > 0) return p;
     return { ...p, origin: "clinician" };
   });
@@ -338,6 +396,17 @@ export function ownWordsBlockers(section: ReportSection, paragraph: Paragraph): 
 }
 
 /**
+ * R1T-WC-08: "These are my own words" is for the approver's own rewrites only – a paragraph they wrote or changed
+ * (stamped by them), never someone else's text (staff's entry, a colleague's edit: that is adopted, keeping its author's
+ * name) and never "staff" text. A report from an earlier build (no approver, no stamps) keeps that build's rule.
+ */
+export function mayMarkOwnWords(report: Pick<Report, "approver">, p: Pick<Paragraph, "origin" | "by">, actor: Pick<Actor, "memberId">): boolean {
+  if (p.origin !== "edited" && p.origin !== "clinician") return false;
+  if (!report.approver) return !p.by || sameMember(p.by, actor);
+  return Boolean(p.by && sameMember(p.by, actor));
+}
+
+/**
  * "These are my own words" (WC design 6): the approver records a paragraph they rewrote as their own words – origin
  * "clinician", Paragraph.ownWords {by, at} (hashed), audited. Refused while drafted residue remains (a drafted
  * sentence kept, pasted back or changed by a word or a mark: ownWordsBlockers – "Split it out" moves it into its own
@@ -347,7 +416,7 @@ export function markOwnWords(report: Report, key: string, paragraphId: string, a
   const section = sectionOf(report, key);
   const p = section?.paragraphs.find((x) => x.id === paragraphId);
   if (!section || !p || !actsAsApprover(actor, report) || !p.text.trim()) return report;
-  if (p.origin !== "edited" && p.origin !== "clinician" && p.origin !== "staff") return report;
+  if (!mayMarkOwnWords(report, p, actor)) return report;
   if (ownWordsBlockers(section, p).length > 0) return report;
   const at = nowIso(now);
   const next: Paragraph = { ...p, origin: "clinician", by: actor, ownWords: { by: actor, at } };
@@ -359,6 +428,33 @@ export function markOwnWords(report: Report, key: string, paragraphId: string, a
 }
 
 /**
+ * R1T-WC-L1: what "Split it out" would do with a person's paragraph – the approver's own sentences (`rest`) and the
+ * drafted ones kept in it (`drafted`, in their order), and whether the paragraph began with a drafted sentence – or null
+ * when it would change nothing (no drafted sentence in it, or nothing but drafted sentences: revert it instead). The
+ * review offers "Split it out" only when this is not null.
+ */
+export function splitOutPlan(section: ReportSection, p: Paragraph): { rest: string; drafted: string; draftedFirst: boolean; kept: string[] } | null {
+  if (p.origin === "ai" || p.origin === "from_records") return null;
+  const kept = ownWordsBlockers(section, p);
+  if (kept.length === 0) return null;
+  const sentences = splitSentences(p.text, "prose");
+  const isKept = (t: string) => kept.indexOf(t) >= 0;
+  const rest = sentences
+    .filter((sp) => !isKept(sp.text))
+    .map((sp) => sp.text)
+    .join(" ")
+    .trim();
+  if (!rest) return null;
+  const drafted = sentences
+    .filter((sp) => isKept(sp.text))
+    .map((sp) => sp.text)
+    .join(" ")
+    .trim();
+  if (!drafted) return null;
+  return { rest, drafted, draftedFirst: sentences.length > 0 && isKept(sentences[0].text), kept };
+}
+
+/**
  * "Split it out" (WC design 6): the drafted sentences kept in a person's paragraph move into a paragraph of their own,
  * as drafted text (origin "ai", checked as such), so the rest can be recorded as the approver's own words. Nothing
  * happens when the whole paragraph is drafted residue (revert it instead) or none of it is.
@@ -367,15 +463,9 @@ export function splitOutResidue(report: Report, key: string, paragraphId: string
   const section = sectionOf(report, key);
   const p = section?.paragraphs.find((x) => x.id === paragraphId);
   if (!section || !p || !actsAsApprover(actor, report) || p.origin === "ai" || p.origin === "from_records") return report;
-  const kept = ownWordsBlockers(section, p);
-  if (kept.length === 0) return report;
-  const rest = splitSentences(p.text, "prose")
-    .filter((sp) => kept.indexOf(sp.text) < 0)
-    .map((sp) => sp.text)
-    .join(" ")
-    .trim();
-  if (!rest) return report;
-  const drafted = kept.join(" ");
+  const split = splitOutPlan(section, p);
+  if (!split) return report;
+  const { rest, drafted, draftedFirst, kept } = split;
   const ids = new Set(section.paragraphs.map((x) => x.id));
   let n = 1;
   while (ids.has(`${p.id}-d${n}`)) n += 1;
@@ -384,10 +474,12 @@ export function splitOutResidue(report: Report, key: string, paragraphId: string
   const own: Paragraph = { ...p, text: rest, by: actor };
   delete own.ackReason;
   delete own.ownWords;
+  // R1T-WC-L1: the two paragraphs keep the order the sentences had – the drafted one first when the paragraph began with it.
+  const pair = draftedFirst ? [residue, own] : [own, residue];
   return appendActivity(
     {
       ...report,
-      sections: mapSection(report, key, (s) => ({ ...s, paragraphs: s.paragraphs.flatMap((x) => (x.id === paragraphId ? [own, residue] : [x])) })),
+      sections: mapSection(report, key, (s) => ({ ...s, paragraphs: s.paragraphs.flatMap((x) => (x.id === paragraphId ? pair : [x])) })),
       updatedAt: at,
     },
     { actor: actor.name, action: "edited", detail: `${key}: moved the drafted sentence${kept.length === 1 ? "" : "s"} kept in a paragraph of “${section.title}” into a drafted paragraph of ${kept.length === 1 ? "its" : "their"} own.` },
@@ -512,13 +604,13 @@ export function setDisposition(report: Report, key: string, kind: SectionDisposi
  * what they wrote becomes a proposal the new approver adopts or rewrites; their settled clinician gaps open again. The
  * validators then run with the new owner.
  */
-export function takeOverApprover(report: Report, actor: Actor, now?: Date): Report {
+export function takeOverApprover(report: Report, actor: Actor, now?: Date, ctx: RuleContext = {}): Report {
   if (report.status === "signed" || !mayApprove(actor)) return report;
   const to = approverRefOf(actor);
   if (!to || (report.approver && sameMember(report.approver, to))) return report;
   const at = nowIso(now);
   const from = report.approver ?? null;
-  const { sections, gaps, flags } = voidDecisionsNotBy(report, (by) => Boolean(by && sameMember(by, to)));
+  const { sections, gaps, flags } = voidDecisionsNotBy(report, (by) => Boolean(by && sameMember(by, to)), ctx);
   const takeovers = from ? [...(report.approverTakeovers ?? []), { from, to, at }].slice(-50) : report.approverTakeovers;
   const next: Report = { ...report, sections, gaps, flags, approver: to, updatedAt: at, ...(takeovers ? { approverTakeovers: takeovers } : {}) };
   return appendActivity(
@@ -667,13 +759,20 @@ export function stampDecisions(before: Report, after: Report, actor: Actor): Rep
  * against its policy (core/validation/acknowledge.ts), "my own words", an adoption or an acceptance stamped by anyone
  * but the approver, an approver-only decision about a box, and a change of approver other than a takeover.
  */
-export function enforceDecisionRoles(before: Report, after: Report, actor: Actor, canAck: (flag: ReportFlag, report: Report, actor: Actor) => boolean): Report {
+export function enforceDecisionRoles(before: Report, after: Report, actor: Actor, canAck: (flag: ReportFlag, report: Report, actor: Actor) => boolean, ctx: RuleContext = {}): Report {
   // A takeover in this step makes the actor the approver (the approver change itself is checked below).
   const approver = actsAsApprover(actor, before) || (Boolean(after.approver) && sameMember(after.approver, actor));
+  const gapsBefore = new Map(before.gaps.map((g) => [g.id, g]));
+  let ruledOut: ReadonlySet<string> | null = null;
+  const outNow = (key: string) => (ruledOut ??= ruledOutByRule(after, ctx)).has(key);
   const gaps = after.gaps.map((g) => {
-    const b = before.gaps.find((x) => x.id === g.id);
+    const b = gapsBefore.get(g.id);
     if (sameJson(resolutionCore(g.resolution), resolutionCore(b?.resolution))) return g;
-    if (approver || g.resolution?.notApplicable || !isClinicianGap(after, g)) return g;
+    if (approver || !isClinicianGap(after, g, ctx)) return g;
+    // R1T-WC-05: "not applicable" is the rule's only where a rule rules the box out (the store checks the same), and a
+    // "not applicable" the answers no longer support is reopened by them, whoever changed them.
+    if (g.resolution?.notApplicable && outNow(g.sectionKey)) return g;
+    if (!g.resolution && b?.resolution?.notApplicable && !outNow(g.sectionKey)) return g;
     // Someone else's resolution of a clinician gap is not theirs to make.
     if (!b) return g;
     return b;
@@ -705,7 +804,7 @@ export function enforceDecisionRoles(before: Report, after: Report, actor: Actor
         else delete next.accepted;
       }
       const d = s.disposition;
-      if (!sameJson(d, was?.disposition) && (d?.kind === "applies_anyway" || was?.disposition?.kind === "applies_anyway" || isClinicianBox(before, s))) {
+      if (!sameJson(d, was?.disposition) && (d?.kind === "applies_anyway" || was?.disposition?.kind === "applies_anyway" || isClinicianBox(before, s, ctx))) {
         next = { ...next };
         if (was?.disposition) next.disposition = was.disposition;
         else delete next.disposition;
@@ -714,11 +813,17 @@ export function enforceDecisionRoles(before: Report, after: Report, actor: Actor
     const paragraphs = next.paragraphs.map((p) => {
       const b = was?.paragraphs.find((x) => x.id === p.id);
       let q = p;
-      if (!approver && p.ownWords && !sameJson(p.ownWords, b?.ownWords)) {
+      // R1T-WC-08: an own-words record over someone else's words is undone whoever made it (the approver adopts those).
+      const othersWords = Boolean(p.ownWords && !sameJson(p.ownWords, b?.ownWords) && b && !mayMarkOwnWords(before, b, actor));
+      if ((!approver || othersWords) && p.ownWords && !sameJson(p.ownWords, b?.ownWords)) {
         q = { ...q };
         if (b?.ownWords) q.ownWords = b.ownWords;
         else delete q.ownWords;
         if (q.origin === "clinician" && b?.origin !== "clinician") q.origin = b?.origin ?? "edited";
+        if (othersWords && b && p.text === b.text) {
+          if (b.by) q.by = b.by;
+          else delete q.by;
+        }
       }
       if (reverted.has(p.id) && p.ackReason !== b?.ackReason) {
         q = { ...q };

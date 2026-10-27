@@ -59,7 +59,10 @@ export function answerSource(section: Pick<ReportSection, "kind" | "paragraphs" 
   const answerBy = structuredAnswerBy(section);
   if (answerBy) return isStaffStamp(answerBy) ? "staff" : "clinician";
   const texts = section.paragraphs.filter((p) => p.text.trim());
-  if (texts.every((p) => p.origin === "from_records")) return section.kind === "from_records" || texts.length > 0 ? "records" : "clinician";
+  // R1T-WC-10: a structured answer no person's stamp vouches for, with no text left beside it, keeps its own provenance
+  // – filled by code in a records box, else drafted (the review stamps every answer a person sets) – never "clinician".
+  if (texts.length === 0) return section.kind === "from_records" ? "records" : "drafted";
+  if (texts.every((p) => p.origin === "from_records")) return "records";
   if (texts.some((p) => p.origin === "ai" || (p.origin === "edited" && p.originalText !== undefined))) return "drafted";
   const own = personParagraphs(section);
   if (own.length > 0 && own.every((p) => isStaffStamp(p.by, p.origin))) return "staff";

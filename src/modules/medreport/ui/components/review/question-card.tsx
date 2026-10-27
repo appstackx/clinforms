@@ -22,7 +22,7 @@ import { answerKindFor, isSectionAnswered, leftBlankEffect, parseFormAnswerValue
 import { showsReferrerReferenceNotice } from "../../../core/form-record-rules";
 import { ANSWER_TYPE_LABELS, PARAGRAPH_BASIS_LABELS, RECORD_SOURCE_LABELS, SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { nameClinicianInstead } from "../../../core/voice";
-import type { ConnectorId, EpisodeBundle, Gap, Paragraph, ReportFlag, ReportSection, SignReceipt } from "../../../core/types";
+import type { ConnectorId, EpisodeBundle, FormDefinition, Gap, Paragraph, Report, ReportFlag, ReportSection, ReportTemplate, SignReceipt } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, cn } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
@@ -35,20 +35,24 @@ import { rowsOf } from "./table-answer-model";
 import {
   QUESTION_STATUS_META,
   answerOptions,
+  mayMarkOwnWords,
   nextClinicianParagraphId,
   originLabel,
   ownWordsBlockers,
   paragraphProvenanceLine,
   resolutionOptionsFor,
+  splitOutPlan,
+  storedSuggestion,
   structuredAnswerBy,
   supersededAbsenceSentences,
   type QuestionStatus,
   type ReviewQuestion,
 } from "./review-model";
+import { OneClickOffers, type ReviewOneClicks } from "./one-click-offers";
 import { CopyAnswerButton } from "./copy-answers";
 import { AutoTextarea, CitationChip, OriginPill, Pill, StatusDot } from "./review-ui";
 import type { Actor } from "../../../core/actor";
-import { enteredByName, sameMember } from "../../../core/provenance";
+import { enteredByName, othersUncitedParagraph, sameMember } from "../../../core/provenance";
 import type { ReviewAction } from "./use-review-state";
 
 export interface QuestionCardProps {
@@ -104,6 +108,22 @@ export interface QuestionCardProps {
   onlyWhoFor?: (flag: ReportFlag) => string | null;
   /** The approving clinician's name (for the card's wording), or null. */
   approverName?: string | null;
+  /** The report's approving clinician (Report.approver), or null. */
+  approver?: Report["approver"] | null;
+  /**
+   * R1T-WC-12: why the box is not asked, as a kind – a rule ("condition", "session_not_attended") or a person's decision
+   * ("person") – so the approver is offered "This applies – print my answer" or "It applies after all"; null when asked.
+   */
+  notAskedKind?: "condition" | "session_not_attended" | "person" | null;
+  /**
+   * R1T-WC-L2 (orchestrator decision 26/10): the one-click corrections on this box's flags (one-click-offers.tsx – the
+   * same set the Flags tab offers), with the report they apply to. Only a box with offers gets them, so the other cards
+   * stay memoised.
+   */
+  oneClicks?: ReviewOneClicks;
+  report?: Report;
+  template?: ReportTemplate;
+  form?: FormDefinition | null;
 }
 
 /* Paragraphs ------------------------------------------------------------------------------------ */
@@ -131,7 +151,21 @@ function ParagraphEditor({
   section,
   mayDecide = true,
   onlyWhoFor,
+  supporting = false,
+  oneClicks,
+  report,
+  template,
+  form,
+  approverRef,
 }: {
+  /** R1T-WC-L5: supporting text of a structured answer (never printed) – its own accessible name. */
+  supporting?: boolean;
+  oneClicks?: ReviewOneClicks;
+  report?: Report;
+  template?: ReportTemplate;
+  form?: FormDefinition | null;
+  /** The report's approving clinician (WC-08: Adopt someone else's uncited words). */
+  approverRef?: Report["approver"] | null;
   staffEntry?: boolean;
   /** The box (stamps, adoption and the drafted wording "These are my own words" is checked against). */
   section?: ReportSection | null;
@@ -167,14 +201,21 @@ function ParagraphEditor({
     onFocused();
   }, [autoFocus, onFocused]);
 
-  const label = total > 1 ? `Answer to “${questionLabel}”, paragraph ${index + 1} of ${total}` : `Answer to “${questionLabel}”`;
+  // R1T-WC-L5: supporting text is never printed – never named as the answer itself (a screen reader types into the right box).
+  const what = supporting ? `Supporting text for “${questionLabel}” (not printed)` : `Answer to “${questionLabel}”`;
+  const label = total > 1 ? `${what}, paragraph ${index + 1} of ${total}` : what;
   // WC design 7: who wrote it, from its stamps; an older paragraph with none keeps the earlier wording.
   const byOther = Boolean(paragraph.by && isPersonOrigin(paragraph.origin) && !sameMember(paragraph.by, actor));
   const provenance =
     section && (paragraph.ownWords || section.adoptedBy || (paragraph.by && !byOther)) ? paragraphProvenanceLine(paragraph, section, actor) : null;
   // WC design 6: "These are my own words" – the approver's, on a paragraph they edited; refused while drafted wording is in it.
-  const ownWordsOffer = !readOnly && mayDecide && section && paragraph.origin === "edited" && paragraph.text.trim() && !paragraph.ownWords;
+  // R1T-WC-08: only on the approver's own rewrite – someone else's words are adopted (they keep their author's name).
+  const ownWordsOffer = !readOnly && mayDecide && section && paragraph.origin === "edited" && paragraph.text.trim() && !paragraph.ownWords && mayMarkOwnWords({ approver: approverRef ?? undefined }, paragraph, actor);
   const blockers = ownWordsOffer && section ? ownWordsBlockers(section, paragraph) : [];
+  // R1T-WC-L1: "Split it out" only when it changes something (some of the paragraph is the approver's own).
+  const splittable = Boolean(ownWordsOffer && section && blockers.length > 0 && splitOutPlan(section, paragraph));
+  // R1T-WC-08: someone else's uncited words in a box that is not a clinician box – the approver adopts them.
+  const adoptOthers = !readOnly && mayDecide && Boolean(section && approverRef && othersUncitedParagraph(section, paragraph, approverRef ?? null));
 
   return (
     <div className="space-y-1.5">
@@ -272,14 +313,17 @@ function ParagraphEditor({
           <p className="min-w-0 flex-1 basis-56">
             Drafted wording is still in this paragraph, so it cannot be recorded as your own words: <q>{blockers[0]}</q>
             {blockers.length > 1 ? ` (+${blockers.length - 1} more)` : ""}
+            {!splittable ? " Every sentence of it is drafted wording – put the draft back, or write your own." : ""}
           </p>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "splitOutResidue", key: sectionKey, paragraphId: paragraph.id, actor })}
-            className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-sky-900 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
-          >
-            <Scissors className="h-3 w-3" aria-hidden /> Split it out
-          </button>
+          {splittable && (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "splitOutResidue", key: sectionKey, paragraphId: paragraph.id, actor })}
+              className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-sky-900 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488]"
+            >
+              <Scissors className="h-3 w-3" aria-hidden /> Split it out
+            </button>
+          )}
         </div>
       )}
       {flags.length > 0 && (
@@ -297,6 +341,10 @@ function ParagraphEditor({
                 canAck={canAcknowledge(f)}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
                 {...(named && { fix: { label: `Name ${f.evidence} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
+                {...(adoptOthers && f.code === "UNCITED_PARAGRAPH" ? { onAdopt: () => dispatch({ type: "adopt", key: sectionKey, actor }) } : {})}
+                {...(oneClicks && report && !readOnly
+                  ? { extra: <OneClickOffers report={report} flag={f} actor={actor} dispatch={dispatch} offers={oneClicks} template={template} form={form ?? null} readOnly={readOnly} skipGenerators={named ? ["name-instead"] : []} /> }
+                  : {})}
               />
             );
           })}
@@ -455,6 +503,7 @@ function TypedValueEditor({
 function QuestionCardImpl(props: QuestionCardProps) {
   const { q, status, flags, gaps, bundle, connectorId, readOnly, receipt, actor, dispatch, onOpenSource, canAcknowledge } = props;
   const mayDecide = props.mayDecide ?? true;
+  const approverRef = props.approver ?? props.report?.approver ?? null;
   const approverOnlyFor = props.approverOnlyFor ?? (() => null);
   const notApplicableBecause = props.notApplicableBecause ?? null;
   const tenant = useStudioMode() === "tenant";
@@ -578,10 +627,20 @@ function QuestionCardImpl(props: QuestionCardProps) {
           section={section}
           mayDecide={mayDecide}
           onlyWhoFor={props.onlyWhoFor}
+          supporting={opts.supporting}
+          oneClicks={props.oneClicks}
+          report={props.report}
+          template={props.template}
+          form={props.form}
+          approverRef={props.report?.approver ?? approverRef}
         />
       ))}
-      {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && (
-        <p className="text-[12px] text-slate-600">Left empty on the form: the record&apos;s address has no line for it. Type here only if something should go on this line.</p>
+      {!readOnly && section?.blankFromRecords && visibleParagraphs.length === 0 && !opts.supporting && !notApplicableBecause && (
+        // R1T-WC-L4: the reason for the record part involved – never an address line for a session row (a session that
+        // did not happen says so in its "Not applicable" notice instead).
+        <p className="text-[12px] text-slate-600">
+          {blankRecordReason(field)} Type here only if something should go on this line.
+        </p>
       )}
       {!readOnly && !recordsLocked && visibleParagraphs.length === 0 && !opts.supporting && (
         <AutoTextarea
@@ -680,10 +739,12 @@ function QuestionCardImpl(props: QuestionCardProps) {
     const isChoice = structuredKind === "yes_no" || structuredKind === "choice" || structuredKind === "checkbox";
     // WC design 7 / B2-20: who chose the answer is its stamp (Section.answerBy) – never "changed" when nothing was there.
     const chosenBy = structuredAnswerBy(section);
-    const proposedBy = isRecords && !chosenBy ? null : chosenBy ? "person" : paragraphs.some((p) => p.origin === "ai" || p.origin === "edited") && value !== null ? "ai" : value !== null ? "clinician" : null;
+    // R1T-WC-10: an answer no person's stamp vouches for keeps its own provenance – drafted – never "Clinician".
+    const ownWords = paragraphs.some((p) => p.origin === "clinician" && p.text.trim() && (!p.by || sameMember(p.by, approverRef ?? undefined)));
+    const proposedBy = isRecords && !chosenBy ? null : chosenBy ? "person" : value === null ? null : ownWords ? "clinician" : "ai";
     body = (
       <div className="space-y-3">
-        {isOpinion && value === null && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} />}
+        {isOpinion && value === null && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} opinion />}
         {recordsLocked ? (
           <LockedRecordsAnswer
             text={paragraphs[0]?.text ?? String(value ?? "")}
@@ -735,7 +796,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
   } else {
     body = (
       <div className="space-y-3">
-        {isOpinion && !answered && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} />}
+        {isOpinion && !answered && !readOnly && !notApplicableBecause && gaps.some((g) => !g.resolution) && <NeedsClinician gaps={gaps} approverName={props.approverName ?? null} opinion />}
         {referrerNotice ? (
           <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-[13px] text-amber-950">
             <p>
@@ -835,9 +896,44 @@ function QuestionCardImpl(props: QuestionCardProps) {
       </div>
       {notApplicableBecause && (
         // Fix round 1 (B0-7): a conditional question the answer before it rules out.
-        <p className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600">
-          Not applicable: {notApplicableBecause} – nothing is printed here, and its checks do not block approval.
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600" data-testid="not-applicable">
+          <p className="min-w-0 flex-1 basis-56">Not applicable: {notApplicableBecause} – nothing is printed here, and its checks do not block approval.</p>
+          {/* R1T-WC-12: the approving clinician decides that a ruled-out question applies (audited; the store refuses it from anyone else). */}
+          {!readOnly && mayDecide && section && props.notAskedKind === "condition" && (
+            <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => dispatch({ type: "setDisposition", key: q.key, kind: "applies_anyway", reason: APPLIES_REASON, actor })}>
+              This applies – print my answer
+            </Button>
+          )}
+          {!readOnly && mayDecide && section && props.notAskedKind === "person" && (
+            <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => dispatch({ type: "setDisposition", key: q.key, kind: null, actor })}>
+              It applies after all
+            </Button>
+          )}
+        </div>
+      )}
+      {!notApplicableBecause && section?.disposition?.kind === "applies_anyway" && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-2 text-[13px] text-slate-600" data-testid="applies-anyway">
+          <p className="min-w-0 flex-1 basis-56">
+            Printed although the answer before it rules it out – decided by {section.disposition.by.name}. Every check runs on it.
+          </p>
+          {!readOnly && mayDecide && (
+            <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => dispatch({ type: "setDisposition", key: q.key, kind: null, actor })}>
+              Undo – it does not apply
+            </Button>
+          )}
+        </div>
+      )}
+      {!notApplicableBecause && !readOnly && mayDecide && section?.condition && section.disposition?.kind !== "applies_anyway" && (
+        // R1T-WC-12: a conditional question the approving clinician knows does not apply here.
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "markNotApplicable", key: q.key, on: true, reason: NOT_APPLICABLE_REASON, actor })}
+            className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
+          >
+            Not applicable
+          </button>
+        </div>
       )}
       {props.proposal && !readOnly && (
         // WC design 5: someone other than the approver entered this – a proposal until the approver adopts it.
@@ -884,7 +980,13 @@ function QuestionCardImpl(props: QuestionCardProps) {
               resolutionFor={(g) => resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name, approverOnly: approverOnlyFor(g) })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
-              onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
+              onTickSuggested={(g) => {
+                // R1T-WC-11: the suggestion as the box stores it (true / false, or the printed option) – never a word it cannot hold.
+                const value = storedSuggestion(field, g.suggestedAnswer);
+                if (value !== undefined) dispatch({ type: "setAnswer", key: g.sectionKey, value, actor });
+              }}
+              tickable={(g) => storedSuggestion(field, g.suggestedAnswer) !== undefined}
+              opinionBox={isOpinion}
               onOpenSource={onOpenSource}
             />
           )}
@@ -899,6 +1001,7 @@ function QuestionCardImpl(props: QuestionCardProps) {
               resolution={resolutionOptionsFor({ own: props.answeredByPerson, opinion: section?.kind === "clinician_opinion", gap: g, actor: actor.name, approverOnly: approverOnlyFor(g) })}
               onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
               onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
+              opinionBox={isOpinion}
               onOpenSource={onOpenSource}
             />
           ))}
@@ -914,6 +1017,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
                 onlyWho={props.onlyWhoFor?.(f) ?? null}
                 onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
                 {...(f.code === "APPROVER_DECISION" && mayDecide ? { onAdopt: () => dispatch({ type: "adopt", key: q.key, actor }) } : {})}
+                {...(props.oneClicks && props.report && !readOnly
+                  ? { extra: <OneClickOffers report={props.report} flag={f} actor={actor} dispatch={dispatch} offers={props.oneClicks} template={props.template} form={props.form ?? null} readOnly={readOnly} /> }
+                  : {})}
               />
             ))}
         </div>
@@ -926,7 +1032,9 @@ function QuestionCardImpl(props: QuestionCardProps) {
  * "Needs clinician input" (WC design 7, B3-10, B2-23): worded from the gap's kind (Gap.kind), never from guesses about
  * its wording – and only while one of the box's gaps is open.
  */
-export function needsClinicianText(gap: Pick<Gap, "kind" | "id"> | undefined): string {
+export function needsClinicianText(gap: Pick<Gap, "kind" | "id"> | undefined, opts: { opinion?: boolean } = {}): string {
+  // R1T-WC-L3: on an opinion box a held-back answer is held back because it is an opinion – whatever the notes say.
+  if (opts.opinion && gap?.kind === "choice_held_back") return "The drafted answer was held back: it is the clinician's opinion, which only the approving clinician gives.";
   switch (gap?.kind) {
     case "no_opinion_recorded":
       return "No clinician recorded an opinion on this in the notes, so it has been left blank rather than guessed.";
@@ -941,7 +1049,7 @@ export function needsClinicianText(gap: Pick<Gap, "kind" | "id"> | undefined): s
   }
 }
 
-function NeedsClinician({ gaps, approverName }: { gaps: Gap[]; approverName: string | null }) {
+function NeedsClinician({ gaps, approverName, opinion = false }: { gaps: Gap[]; approverName: string | null; opinion?: boolean }) {
   const open = gaps.find((g) => !g.resolution);
   return (
     <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-[13px] text-amber-950">
@@ -949,7 +1057,7 @@ function NeedsClinician({ gaps, approverName }: { gaps: Gap[]; approverName: str
         <UserRound className="h-4 w-4 text-amber-700" aria-hidden /> Needs clinician input
       </p>
       <p className="mt-0.5 leading-relaxed">
-        {needsClinicianText(open)} {approverName ? `Only the approving clinician (${approverName}) can answer it.` : "Only the treating clinician can answer it."}
+        {needsClinicianText(open, { opinion })} {approverName ? `Only the approving clinician (${approverName}) can answer it.` : "Only the treating clinician can answer it."}
       </p>
       {open?.suggestedQuestion && (
         <p className="mt-1">
@@ -1013,6 +1121,33 @@ function LockedRecordsAnswer({
       </div>
     </div>
   );
+}
+
+/**
+ * R1T-WC-L2 (orchestrator decision 26/10): the one-click corrections on one box – exactly the review's offers
+ * (one-click-offers.tsx reviewOneClicks, the Flags tab's set) whose box is this one – or undefined when it has none (so
+ * the card stays memoised). The card hands them to each of its flags as the Flags tab does (offersForFlag).
+ */
+export function oneClicksForBox(all: ReviewOneClicks, key: string): ReviewOneClicks | undefined {
+  const fixes = all.fixes.filter((p) => p.sectionKey === key);
+  const actions = all.actions.filter((a) => a.key === key);
+  return fixes.length || actions.length ? { fixes, actions } : undefined;
+}
+
+/** R1T-WC-12: the reasons the audit trail records for the approver's two decisions about a conditional question. */
+const APPLIES_REASON = "The approving clinician decided this question applies here.";
+const NOT_APPLICABLE_REASON = "The approving clinician decided this question does not apply here.";
+
+/**
+ * R1T-WC-L4: why a line filled from the record is left empty, for the record part involved: a session row ("no attended
+ * session in the notes matches this line" – when it is not already said as not applicable), an address line, or the
+ * record in general.
+ */
+export function blankRecordReason(field: Pick<import("../../../core/types").FormField, "fillSource"> | null | undefined): string {
+  const path = field?.fillSource.kind === "registration" ? field.fillSource.path : "";
+  if (path.startsWith("episode.")) return "Left empty on the form: no attended session in the notes matches this line.";
+  if (/address|postcode/i.test(path)) return "Left empty on the form: the record's address has no line for it.";
+  return "Left empty on the form: the record has nothing for this line.";
 }
 
 export const QuestionCard = memo(QuestionCardImpl);

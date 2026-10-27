@@ -24,12 +24,14 @@ import { createServerStore } from "../../src/modules/medreport/ui/store/server-s
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch, type FetchLog } from "./store-harness";
+import { FIXTURE_SIGNER, asApproversReport, signingMember } from "./release-store-fixture";
 
 const A = "clinic-a";
 
 function backend() {
   const store = createMemoryTenantStore();
-  const deps = storeDeps(store, { a: member(A), a2: member(A, { userId: "user-2", authSessionId: "sess-2" }) });
+  // bh2 fix round 1 (WC, R1T-WC-06): members who create reports may approve them (a create names its approver).
+  const deps = storeDeps(store, { a: signingMember(A), a2: signingMember(A, { userId: "user-2", authSessionId: "sess-2" }) });
   return { store, deps };
 }
 
@@ -48,7 +50,7 @@ function tab(deps: ReturnType<typeof backend>["deps"], who: string | null = "a")
 }
 
 function report(id = "rpt_client", patientLabel = "Megan Hart"): Report {
-  return { ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A, patientLabel };
+  return asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A, patientLabel }, signingMember(A));
 }
 
 function fakePdf(size: number): Uint8Array<ArrayBuffer> {
@@ -117,6 +119,7 @@ test("generateReport with 3 parallel draft groups: every save reaches the server
     data: { bundle, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }) },
     target: { kind: "form", form: { ...HARROW_PIKE_RAW, tenantId: A } },
     concurrency: 3,
+    approver: { memberId: "user-clinic-a", name: FIXTURE_SIGNER.name, hcpc: FIXTURE_SIGNER.hcpc },
     onReport: (r) => {
       saves += 1;
       assert.equal(t.client.saveReport(r), true);
@@ -368,15 +371,16 @@ function scopedTab(jar: { who: string | null }, deps: ReturnType<typeof storeDep
 function twoClinics() {
   const store = createMemoryTenantStore();
   const deps = storeDeps(store, {
-    alice: member("clinic-x", { userId: "user-alice", authSessionId: "sess-alice" }),
-    bob: member("clinic-y", { userId: "user-bob", authSessionId: "sess-bob" }),
-    carol: member("clinic-x", { userId: "user-carol", authSessionId: "sess-carol" }),
+    alice: signingMember("clinic-x", { userId: "user-alice", authSessionId: "sess-alice" }),
+    bob: signingMember("clinic-y", { userId: "user-bob", authSessionId: "sess-bob" }),
+    carol: signingMember("clinic-x", { userId: "user-carol", authSessionId: "sess-carol" }),
   });
   return { store, deps };
 }
 
 function xReport(id: string, patientLabel: string): Report {
-  return { ...report(id, patientLabel), tenantId: "clinic-x", bundleSnapshot: { ...report(id, patientLabel).bundleSnapshot, tenantId: "clinic-x" } };
+  const alice = signingMember("clinic-x", { userId: "user-alice", authSessionId: "sess-alice" });
+  return asApproversReport({ ...report(id, patientLabel), tenantId: "clinic-x", bundleSnapshot: { ...report(id, patientLabel).bundleSnapshot, tenantId: "clinic-x" } }, alice);
 }
 
 test("fix wave 2: a new sign-in in the same tab never sees the previous clinic's records", async () => {
@@ -460,7 +464,7 @@ test("fix wave 2: the Studio's host scope reaches the server store through ui/st
 
 test("fix round 1 (B0-9): staff editing or removing a confirmed form – the server's 403 is reported, the clinic's copy comes back, nothing looks saved", async () => {
   const store = createMemoryTenantStore();
-  const deps = storeDeps(store, { a: member(A), pat: member(A, { userId: "user-pat", authSessionId: "sess-pat", role: "staff" }) });
+  const deps = storeDeps(store, { a: signingMember(A), pat: member(A, { userId: "user-pat", authSessionId: "sess-pat", role: "staff" }) });
   const seed = tab(deps);
   const confirmed = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Sarah Reid", "2026-10-01T09:00:00.000Z");
   seed.client.saveForm(confirmed);

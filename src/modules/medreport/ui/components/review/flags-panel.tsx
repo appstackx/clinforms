@@ -14,7 +14,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { todayIso } from "../../../core/dates";
 import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
-import { actsAsApprover } from "../../../core/provenance";
+import { actsAsApprover, othersUncitedParagraph, sectionByKey } from "../../../core/provenance";
 import type { EpisodeBundle, FormDefinition, Gap, Report, ReportFlag, ReportTemplate } from "../../../core/types";
 import { acknowledgeRefusal } from "../../../core/validation";
 import { Button, Input } from "../../primitives";
@@ -22,7 +22,7 @@ import { FieldLabel } from "../shared/ui-bits";
 import { LEAVE_BLANK_REASON, type BlankCandidate, type BoxItem, type ReviewItem, type ReviewItems } from "./box-items";
 import { BoxIssue, FlagItem, GapItem } from "./issues";
 import { OneClickOffers, type ReviewOneClicks } from "./one-click-offers";
-import { MIN_GAP_REASON, approverOnlyLine, canRecordConsent, gapResolutionOptions, nameClinicianFix } from "./review-model";
+import { MIN_GAP_REASON, approverOnlyLine, canRecordConsent, gapResolutionOptions, nameClinicianFix, storedSuggestion } from "./review-model";
 import type { Actor } from "../../../core/actor";
 import type { ReviewAction } from "./use-review-state";
 
@@ -90,12 +90,28 @@ export function FlagsPanel({
   const jumpProps = (key: string | undefined) =>
     key ? { onJump: () => onJump(key), jumpLabel: `Go to ${key.startsWith("F-") ? key : questionLabel(key)}` } : {};
 
+  // R1T-WC-11 / L3: a box's form field (what its one-click "Tick" may store) and whether it is an opinion box.
+  const fieldOf = (key: string) => form?.fields.find((f) => f.id === key) ?? null;
+  const opinionBoxOf = (key: string) => sectionByKey(report.sections, key)?.kind === "clinician_opinion";
+  const tick = (g: Gap) => {
+    const value = storedSuggestion(fieldOf(g.sectionKey), g.suggestedAnswer);
+    if (value !== undefined) dispatch({ type: "setAnswer", key: g.sectionKey, value, actor });
+  };
+  const tickable = (g: Gap) => storedSuggestion(fieldOf(g.sectionKey), g.suggestedAnswer) !== undefined;
+  // R1T-WC-08: someone else's uncited words in a box that is not a clinician box – the approver adopts them (never "my own words").
+  const adoptableUncited = (f: ReportFlag) => {
+    if (!approver || f.code !== "UNCITED_PARAGRAPH" || !f.sectionKey || !f.paragraphId) return false;
+    const section = sectionByKey(report.sections, f.sectionKey);
+    const p = section?.paragraphs.find((x) => x.id === f.paragraphId);
+    return Boolean(section && p && othersUncitedParagraph(section, p, report.approver ?? null));
+  };
   const gapItem = (g: Gap) => (
     <GapItem
       key={g.id}
       gap={g}
       bundle={bundle}
       readOnly={readOnly}
+      opinionBox={opinionBoxOf(g.sectionKey)}
       resolution={gapResolutionOptions(report, g, actor)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
@@ -115,7 +131,7 @@ export function FlagsPanel({
           canAck={canAcknowledge(f)}
           onAcknowledge={(flagId, reason) => dispatch({ type: "acknowledgeFlag", flagId, reason, actor })}
           onlyWho={onlyWho(f)}
-          {...(f.code === "APPROVER_DECISION" && approver && f.sectionKey ? { onAdopt: () => dispatch({ type: "adopt", key: f.sectionKey ?? "", actor }) } : {})}
+          {...((f.code === "APPROVER_DECISION" && approver && f.sectionKey) || adoptableUncited(f) ? { onAdopt: () => dispatch({ type: "adopt", key: f.sectionKey ?? "", actor }) } : {})}
           {...jumpProps(f.sectionKey)}
           {...(named && { fix: { label: `Name ${named.name} instead`, onFix: () => dispatch({ type: "nameClinicians", flags: [f], actor }) } })}
           {...(oneClicks && !readOnly
@@ -137,7 +153,9 @@ export function FlagsPanel({
       resolutionFor={(g) => gapResolutionOptions(report, g, actor)}
       onResolve={(gapId, kind, text) => dispatch({ type: "resolveGap", gapId, kind, text, actor })}
       onReopen={(gapId) => dispatch({ type: "reopenGap", gapId, actor })}
-      onTickSuggested={(g) => g.suggestedAnswer && dispatch({ type: "setAnswer", key: g.sectionKey, value: g.suggestedAnswer, actor })}
+      onTickSuggested={tick}
+      tickable={tickable}
+      opinionBox={opinionBoxOf(box.key)}
       onOpenSource={onOpenSource}
       {...jumpProps(box.key)}
     />

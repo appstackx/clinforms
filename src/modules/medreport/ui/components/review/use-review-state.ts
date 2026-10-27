@@ -16,7 +16,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { appendActivity, applyDraftResult, type DraftResultLike } from "../../../core/report-factory";
 import { SYSTEM_ACTOR_NAME, type Actor } from "../../../core/actor";
 import type { FixProposal } from "../../../core/fix-types";
-import { actsAsApprover } from "../../../core/provenance";
+import { actsAsApprover, type RuleContext } from "../../../core/provenance";
 import type { FormAnswerRow, FormDefinition, Report, ReportFlag, ReportTemplate, SectionDispositionKind, SignReceipt } from "../../../core/types";
 import { canAcknowledge, validateReport } from "../../../core/validation";
 import { noteLinkToRemove, removeNoteLink } from "../../../core/validation/attribution-fixes";
@@ -133,8 +133,13 @@ const SETTLING: ReadonlySet<string> = new Set(["editParagraph", "addParagraph", 
 
 const ackAllowed = (flag: ReportFlag, report: Report, actor: Actor) => canAcknowledge(flag, report, actor);
 
-export function reviewReducer(report: Report, action: ReviewAction): Report {
-  let next = applyReviewAction(report, action);
+/**
+ * The review's reducer. `ctx` (R1T-WC-05/09): the report's form map and boxes as the factory makes them – which boxes
+ * are clinician boxes (a printed grade scale, a relabelled box) and which a rule rules out are read from them, as the
+ * store reads them, so the review never offers or keeps what the store refuses. useReviewState passes its form.
+ */
+export function reviewReducer(report: Report, action: ReviewAction, ctx: RuleContext = {}): Report {
+  let next = applyReviewAction(report, action, ctx);
   if (next === report || locked(report)) return next;
   if (!("actor" in action)) {
     // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after a draft.
@@ -143,22 +148,27 @@ export function reviewReducer(report: Report, action: ReviewAction): Report {
   if (NO_PROVENANCE.has(action.type)) return next;
   const actor = action.actor;
   const key = "key" in action && typeof action.key === "string" ? action.key : null;
-  if (DECISIONS.has(action.type)) return confirmByApprover(report, maintainAdoptions(report, enforceDecisionRoles(report, next, actor, ackAllowed), actor), actor);
+  if (DECISIONS.has(action.type)) {
+    // R1T-WC-12: "This applies" and "Not applicable" change which questions are asked – their gaps follow.
+    const decided = action.type === "setDisposition" || action.type === "markNotApplicable" ? settleConditionalGaps(next, actor.name || SYSTEM_ACTOR_NAME) : next;
+    return confirmByApprover(report, maintainAdoptions(report, enforceDecisionRoles(report, decided, actor, ackAllowed, ctx), actor), actor, ctx);
+  }
   // bh2 WC design 6: the origin of a person's text – only the approver's own new words are "clinician" – and
   // (design 2) who did what, stamped on every change.
   next = stampDecisions(report, withPersonOrigins(report, next, actor), actor);
   // Fix round 1 (B0-8): a person's answer settles its own box's gaps (and an answer removed reopens them) – a
   // clinician gap only when the answer is the approver's (WC design 4; it replaced the NEW-1 stop-gap).
-  if (key && actor.name && SETTLING.has(action.type)) next = settleGapsByAnswer(report, next, key, actor.name, undefined, { by: actor });
-  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer.
-  if (action.type === "setAnswer") next = settleConditionalGaps(next, actor.name || SYSTEM_ACTOR_NAME);
+  if (key && actor.name && SETTLING.has(action.type)) next = settleGapsByAnswer(report, next, key, actor.name, undefined, { by: actor, ctx });
+  // Fix round 1 (B0-7): a conditional question that no longer applies (or applies again) after an answer – any answer,
+  // a text box's too (R1T-WC-05: a "not applicable" the answers no longer support is reopened in the same step).
+  if (SETTLING.has(action.type)) next = settleConditionalGaps(next, actor.name || SYSTEM_ACTOR_NAME);
   // A decision this person may not take is undone, and so is a change that would take away what the approver
   // confirmed in a clinician box without leaving a proposal; the approver's adoption follows the box's content (stale
   // after anyone else's change), and the approver's own entry confirms the box.
-  next = enforceDecisionRoles(report, next, actor, ackAllowed);
-  next = keepApproverEntries(report, next, actor);
+  next = enforceDecisionRoles(report, next, actor, ackAllowed, ctx);
+  next = keepApproverEntries(report, next, actor, ctx);
   next = maintainAdoptions(report, next, actor);
-  next = confirmByApprover(report, next, actor);
+  next = confirmByApprover(report, next, actor, ctx);
   return next;
 }
 
@@ -180,7 +190,7 @@ function approverOnly(report: Report, actor: Actor, decide: () => Report): Repor
   return actsAsApprover(actor, report) ? decide() : report;
 }
 
-function applyReviewAction(report: Report, action: ReviewAction): Report {
+function applyReviewAction(report: Report, action: ReviewAction, ctx: RuleContext = {}): Report {
   if (action.type === "replace") return action.report;
   if (action.type === "activity") return appendActivity(report, { action: action.action, detail: action.detail, actor: action.actor.name });
   if (action.type === "systemActivity") return appendActivity(report, { action: action.action, detail: action.detail, actor: SYSTEM_ACTOR_NAME });
@@ -228,7 +238,7 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
     case "resolveGap": {
       const gap = report.gaps.find((g) => g.id === action.gapId);
       // WC design 4: a clinician gap is resolved or acknowledged by the approver only.
-      if (!gap || (isClinicianGap(report, gap) && !actsAsApprover(action.actor, report))) return report;
+      if (!gap || (isClinicianGap(report, gap, ctx) && !actsAsApprover(action.actor, report))) return report;
       // An optional box's gap acknowledged = left blank: its "no answer" warning is acknowledged with it.
       return action.kind === "acknowledged"
         ? acknowledgeGapLeavingBlank(report, action.gapId, action.text, action.actor.name)
@@ -240,7 +250,7 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       const flag = report.flags.find((f) => f.id === action.flagId);
       if (!flag || !canAcknowledge(flag, report, action.actor)) return report;
       // WC design 5: the approver's "acknowledgement" of a proposal is adopting it – one audited click.
-      if (flag.code === "APPROVER_DECISION") return flag.sectionKey ? adoptBox(report, flag.sectionKey, action.actor) : report;
+      if (flag.code === "APPROVER_DECISION") return flag.sectionKey ? adoptBox(report, flag.sectionKey, action.actor, ctx) : report;
       return acknowledgeFlag(report, action.flagId, action.reason, action.actor.name, undefined, { by: action.actor });
     }
     case "leaveOptionalBlank":
@@ -248,7 +258,7 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
     case "recordConsent":
       return recordConsent(report, action.givenOn, action.actor.name);
     case "adopt":
-      return adoptBox(report, action.key, action.actor);
+      return adoptBox(report, action.key, action.actor, ctx);
     case "markOwnWords":
       return action.paragraphId ? markOwnWords(report, action.key, action.paragraphId, action.actor) : report;
     case "splitOutResidue":
@@ -266,11 +276,11 @@ function applyReviewAction(report: Report, action: ReviewAction): Report {
       return ids ? removeNoteLink(report, action.key, action.paragraphId, ids, action.actor) : report;
     }
     case "takeOverApprover":
-      return takeOverApprover(report, action.actor);
+      return takeOverApprover(report, action.actor, undefined, ctx);
     case "markNotApplicable":
-      return setDisposition(report, action.key, action.on ? "not_applicable" : null, action.actor, { reason: action.reason });
+      return setDisposition(report, action.key, action.on ? "not_applicable" : null, action.actor, { reason: action.reason, ctx });
     case "setDisposition":
-      return setDisposition(report, action.key, action.kind, action.actor, { reason: action.reason });
+      return setDisposition(report, action.key, action.kind, action.actor, { reason: action.reason, ctx });
     case "setFlags":
       return { ...report, flags: action.flags };
     case "applyDraft":
@@ -326,17 +336,22 @@ export function useReviewState(
   template: ReportTemplate | null,
   form: FormDefinition | null = null,
 ): ReviewState {
-  const [report, rawDispatch] = useReducer(reviewReducer, initial);
+  const templateRef = useRef(template);
+  templateRef.current = template;
+  const formRef = useRef(form);
+  formRef.current = form;
+  // R1T-WC-05/09: the reducer reads the boxes as the form map makes them (useReducer calls this one, stable, function).
+  const reducer = useCallback(
+    (r: Report, a: ReviewAction) => reviewReducer(r, a, { fields: formRef.current?.fields ?? null, form: formRef.current, boxes: templateRef.current?.sections ?? null }),
+    [],
+  );
+  const [report, rawDispatch] = useReducer(reducer, initial);
   const [validating, setValidating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<string | null>(initial.updatedAt);
   const reportRef = useRef(report);
   reportRef.current = report;
   const lastSaved = useRef<Report>(initial);
-  const templateRef = useRef(template);
-  templateRef.current = template;
-  const formRef = useRef(form);
-  formRef.current = form;
 
   // Fix wave 2: in a clinic's Studio, only a change someone made is saved – opening a report (and the validators
   // refreshing its flags) never stores a new revision, an audit row "Report saved" or a reset retention clock.

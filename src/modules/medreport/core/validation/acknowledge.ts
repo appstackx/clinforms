@@ -34,6 +34,22 @@ export function strictestPolicy(a: AckPolicy, b: AckPolicy): AckPolicy {
   return RANK[a] >= RANK[b] ? a : b;
 }
 
+/**
+ * R1T-WC-02: the paragraph a flag is about and its box, by paragraph id – indexed once per sections array (immutable),
+ * never searched again for every flag (a body of thousands of flags and paragraphs stays linear).
+ */
+const paragraphIndex = new WeakMap<object, Map<string, { section: Report["sections"][number]; paragraph: Report["sections"][number]["paragraphs"][number] }>>();
+function paragraphOf(report: Pick<Report, "sections">, id: string) {
+  const sections = report.sections ?? [];
+  let idx = paragraphIndex.get(sections);
+  if (!idx) {
+    idx = new Map();
+    for (const section of sections) for (const paragraph of section.paragraphs) if (!idx.has(paragraph.id)) idx.set(paragraph.id, { section, paragraph });
+    paragraphIndex.set(sections, idx);
+  }
+  return idx.get(id) ?? null;
+}
+
 /** The policy the flag itself warrants (its code, severity and the text it is about). */
 function derivedPolicy(flag: ReportFlag, report?: Pick<Report, "sections">): AckPolicy {
   if (flag.code === "APPROVER_DECISION") return "approver";
@@ -45,9 +61,10 @@ function derivedPolicy(flag: ReportFlag, report?: Pick<Report, "sections">): Ack
     case "OPINION_LANGUAGE":
     case "OTHER_CLINICIAN_VOICE": {
       if (!report || !flag.paragraphId) return "never";
-      for (const s of report.sections ?? []) {
-        const p = s.paragraphs.find((x) => x.id === flag.paragraphId);
-        if (!p) continue;
+      const at = paragraphOf(report, flag.paragraphId);
+      if (at) {
+        const s = at.section;
+        const p = at.paragraph;
         if (p.origin === "ai" || p.origin === "from_records") return "never";
         if (!hookEnabled(EDITED_ACK_HOOK)) return "never";
         // Drafted residue keeps drafted-text strictness: nobody acknowledges a drafted opinion.
@@ -71,11 +88,7 @@ function derivedPolicy(flag: ReportFlag, report?: Pick<Report, "sections">): Ack
 /** The paragraph a flag is about is drafted text (origin "ai"), on this report. */
 function onDraftedText(flag: ReportFlag, report?: Pick<Report, "sections">): boolean {
   if (!report || !flag.paragraphId) return false;
-  for (const s of report.sections ?? []) {
-    const p = s.paragraphs.find((x) => x.id === flag.paragraphId);
-    if (p) return p.origin === "ai";
-  }
-  return false;
+  return paragraphOf(report, flag.paragraphId)?.paragraph.origin === "ai";
 }
 
 /**
@@ -90,7 +103,19 @@ export function ackPolicyOf(flag: FlagWithAckPolicy, report?: Pick<Report, "sect
   const derived = derivedPolicy(flag, report);
   if (!flag.ackPolicy) return derived;
   if (flag.code === "OTHER_CLINICIAN_VOICE" && flag.ackPolicy === "approver" && derived === "never" && hookEnabled(EDITED_ACK_HOOK) && onDraftedText(flag, report)) return "approver";
+  if (sameItemTwice(flag)) return "member";
   return strictestPolicy(flag.ackPolicy, derived);
+}
+
+/**
+ * R1T-WC-L6: the one blocking draft-fit check whose own validator says it may be kept with a reason
+ * (draft-fit/repeats.ts: a numbered row naming the same item as an earlier row – "Ibuprofen" on two medicine rows at two
+ * doses is faithful). Its message says "keep it with a reason", so that is what the policy allows – by any member, as
+ * the validator set it. It is a layout check, not an opinion, attribution or figure check: those flags on the same
+ * drafted text keep their own policies, and only this flag is cleared.
+ */
+function sameItemTwice(flag: FlagWithAckPolicy): boolean {
+  return flag.code === "DRAFT_FIT" && flag.severity === "blocking" && flag.ackPolicy === "member" && /^repeat F?[\w-]+$/.test(flag.evidence ?? "");
 }
 
 /**

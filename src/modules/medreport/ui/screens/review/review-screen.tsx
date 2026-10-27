@@ -36,7 +36,7 @@ import type { Clinician, FormDefinition, Gap, Report, ReportFlag, ReportTemplate
 import { acknowledgeRefusal, canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
 import { actsAsApprover, isClinicianGap, mayApprove, pendingProposal } from "../../../core/provenance";
 import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
-import { notApplicableReasons } from "../../../core/issue-state";
+import { issueDetails, notApplicableReasons } from "../../../core/issue-state";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
 import { useDemoClinic, useHostHooks, useStudioMode } from "../../host-hooks";
@@ -67,7 +67,7 @@ import { CopyAnswersPanel, useAnswersCopy } from "../../components/review/copy-a
 import { FlagsPanel } from "../../components/review/flags-panel";
 import { NO_ONE_CLICKS, reviewOneClicks } from "../../components/review/one-click-offers";
 import { PreviewPanel, type FormFileState } from "../../components/review/preview-panel";
-import { QuestionCard } from "../../components/review/question-card";
+import { QuestionCard, oneClicksForBox } from "../../components/review/question-card";
 import { SourcesPanel } from "../../components/review/sources-panel";
 import { ProgressSummary, QuestionJump, QuestionNav } from "../../components/review/question-nav";
 import { ApprovedBanner, ReviewHeader } from "../../components/review/review-header";
@@ -309,6 +309,12 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
   // bh2 WA1: why each box that is not asked is not asked – worked out once per report, not once per card.
   const notAskedBecause = useMemo(() => notApplicableReasons(report, form), [report, form]);
+  // R1T-WC-12: which rule or decision rules each box out, for the approver's "This applies" / "It applies after all".
+  const notAskedKinds = useMemo(() => {
+    const out = new Map<string, "condition" | "session_not_attended" | "person">();
+    for (const b of issueDetails(report, form)) if (b.state.kind === "not_applicable") out.set(b.key, b.state.reason);
+    return out;
+  }, [report, form]);
   // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
   // bh2 fix round 1 (R1T-WA1-L1; ownership exception – WC's file): the items are worded for the person viewing.
@@ -354,11 +360,17 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const proposals = useMemo(() => {
     const out = new Map<string, string>();
     for (const s of report.sections) {
-      const p = pendingProposal(report, s, { fields: form?.fields ?? null });
+      const p = pendingProposal(report, s, { fields: form?.fields ?? null, boxes: template?.sections ?? null });
       if (p) out.set(s.key, `${p.summary} – the approving physio must adopt it`);
     }
     return out;
-  }, [report, form]);
+  }, [report, form, template]);
+  // R1T-WC-L2: the one-click corrections per box, for the cards (the Flags tab gets the whole set).
+  const oneClicksByBox = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof oneClicksForBox>>();
+    for (const key of [...oneClicks.fixes.map((p) => p.sectionKey), ...oneClicks.actions.map((a) => a.key)]) if (!out.has(key)) out.set(key, oneClicksForBox(oneClicks, key));
+    return out;
+  }, [oneClicks]);
   // WC design 1: a member who may approve, and is not the approver, may take over.
   const mayTakeOver = !signed && Boolean(report.approver) && !mayDecide && mayApprove(actor);
   const leaveBlank = useCallback(
@@ -838,6 +850,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
                   notApplicableBecause={notAskedBecause.get(q.key) ?? null}
+                  notAskedKind={notAskedKinds.get(q.key) ?? null}
+                  approver={report.approver ?? null}
+                  {...(oneClicksByBox.get(q.key) && !signed ? { oneClicks: oneClicksByBox.get(q.key), report, template: template ?? undefined, form } : {})}
                   mayDecide={mayDecide}
                   proposal={proposals.get(q.key) ?? null}
                   approverOnlyFor={approverOnlyFor}
