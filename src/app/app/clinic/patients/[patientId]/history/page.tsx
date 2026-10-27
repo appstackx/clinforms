@@ -3,6 +3,7 @@ import { EmptyState, SectionHeader, TableBox, TD, TH } from "@/components/pms/re
 import { describeRecordsDetail } from "@/modules/pms/records/copy";
 import { activityTime, loadActivityLookups, presentActivity } from "@/server/admin/activity";
 import { requireClinicActor } from "@/server/pms/actor";
+import { redactClinicalDetail } from "@/server/pms/records/history-service";
 import { patientOr404 } from "@/server/pms/records/record";
 import { listPatientHistory } from "@/server/repos/pms/records/history";
 
@@ -18,7 +19,8 @@ export default async function PatientHistoryPage({ params }: { params: { patient
   const actor = await requireClinicActor({ permission: "patients.view" });
   const patient = await patientOr404(actor, params.patientId);
   const ctx = actor.repo();
-  const entries = await listPatientHistory(ctx, actor.tenantId, patient.id, { limit: 300 });
+  // Reception sees what happened and when; the details of rows about clinical records need clinical.view.
+  const entries = redactClinicalDetail(await listPatientHistory(ctx, actor.tenantId, patient.id, { limit: 300 }), actor.can("clinical.view"));
   const lookups = await loadActivityLookups(ctx.db, { tenantId: actor.tenantId, organizationId: actor.organizationId, role: actor.role, userId: actor.userId }, entries);
   const rows = presentActivity(entries, lookups);
   return (

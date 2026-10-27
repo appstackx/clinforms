@@ -1,54 +1,39 @@
 "use server";
-/** Outcome measures: record one (scored on the server), or mark one as entered in error (kept, left out of charts). */
+/**
+ * Outcome measures: record one (scored on the server), or mark one as entered in error (kept, left out of charts).
+ * The records service (src/server/pms/records/outcomes-service.ts) checks the clinical permission again first.
+ */
 import { revalidatePath } from "next/cache";
-import { OutcomeMeasureIdSchema, answersFromForm, scoreOutcome } from "@/modules/pms/records/outcomes";
+import { OutcomeMeasureIdSchema, answersFromForm } from "@/modules/pms/records/outcomes";
 import type { RecordsActionState } from "@/modules/pms/records/types";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
+import { actionState } from "@/server/pms/records/action-state";
 import { optional, text } from "@/server/pms/records/forms";
-import { NOT_FOUND_MESSAGE, actionError, patientForAction, patientPath } from "@/server/pms/records/record";
-import { getCase } from "@/server/repos/pms/cases";
-import { getOutcome, markOutcomeInError, recordOutcome } from "@/server/repos/pms/records/outcomes";
+import { markOutcomeInErrorFor, recordOutcomeFor } from "@/server/pms/records/outcomes-service";
+import { patientPath } from "@/server/pms/records/record";
 
 export async function recordMeasure(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
   const actor = await clinicActionActor({ permission: "clinical.edit" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
-  const patient = await patientForAction(actor, form.get("patientId"));
-  if (!patient) return { ok: false, error: NOT_FOUND_MESSAGE };
+  const patientId = text(form, "patientId");
   const measure = OutcomeMeasureIdSchema.safeParse(text(form, "measure"));
   if (!measure.success) return { ok: false, error: "Choose a measure." };
-  const takenOn = text(form, "takenOn");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(takenOn)) return { ok: false, error: "Enter the date.", fieldErrors: { takenOn: "Enter the date." } };
-  const caseId = optional(form, "caseId");
-  if (caseId) {
-    const c = await getCase(actor.repo(), actor.tenantId, caseId);
-    if (!c || c.patientId !== patient.id) return { ok: false, error: NOT_FOUND_MESSAGE };
-  }
-  const answers = answersFromForm(measure.data, (name) => text(form, name));
-  const scored = scoreOutcome(measure.data, answers);
-  if (!scored.ok) return { ok: false, error: scored.error };
-  try {
-    await recordOutcome(actor.repo(), actor.tenantId, { patientId: patient.id, caseId, measure: measure.data, takenOn, answers }, actor.actor);
-  } catch (err) {
-    return actionError(err, "record_outcome");
-  }
-  revalidatePath(patientPath(patient.id, "outcomes"));
-  return { ok: true, message: "The measure is recorded." };
+  const result = await recordOutcomeFor(actor, patientId, {
+    measure: measure.data,
+    takenOn: text(form, "takenOn"),
+    answers: answersFromForm(measure.data, (name) => text(form, name)),
+    caseId: optional(form, "caseId"),
+    noteId: optional(form, "noteId"),
+  });
+  if (result.ok) revalidatePath(patientPath(patientId, "outcomes"));
+  return actionState(result, (v) => ({ ok: true, id: v.id, message: "The measure is recorded." }));
 }
 
 export async function markMeasureInError(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
   const actor = await clinicActionActor({ permission: "clinical.edit" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
-  const patient = await patientForAction(actor, form.get("patientId"));
-  if (!patient) return { ok: false, error: NOT_FOUND_MESSAGE };
-  const outcome = await getOutcome(actor.repo(), actor.tenantId, text(form, "outcomeId"));
-  if (!outcome || outcome.patientId !== patient.id) return { ok: false, error: NOT_FOUND_MESSAGE };
-  const reason = text(form, "reason").trim();
-  if (!reason) return { ok: false, error: "Give the reason.", fieldErrors: { reason: "Give the reason." } };
-  try {
-    await markOutcomeInError(actor.repo(), actor.tenantId, outcome.id, reason, actor.actor);
-  } catch (err) {
-    return actionError(err, "outcome_error");
-  }
-  revalidatePath(patientPath(patient.id, "outcomes"));
-  return { ok: true, message: "Marked as entered in error." };
+  const patientId = text(form, "patientId");
+  const result = await markOutcomeInErrorFor(actor, patientId, text(form, "outcomeId"), text(form, "reason"));
+  if (result.ok) revalidatePath(patientPath(patientId, "outcomes"));
+  return actionState(result, () => ({ ok: true, message: "Marked as entered in error." }));
 }
