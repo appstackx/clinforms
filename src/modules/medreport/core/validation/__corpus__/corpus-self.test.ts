@@ -3,8 +3,12 @@
  * - the lock: the TypeScript and the plain-JavaScript hash agree on every case; a tampered case is detected;
  * - the guard (scripts/medreport/corpus-guard.mjs) on a throwaway git repository: a changed or removed case, a removed
  *   or changed lock entry, a passing case moved to pending, a removed ledger hook and an unapproved allowlist entry
- *   each fail; adding a new locked case passes;
+ *   each fail; adding a new locked case passes; a recorded retirement passes, and un-retiring, changing a retirement,
+ *   a retirement without its decision or superseding case, a retired id reused or a retired row put in pending fail;
  * - the runner: a failing case that is not pending is an unexpected failure; a pending case that holds is reported;
+ *   a retired row is reported but never counted; a retirement whose superseding case fails is reported;
+ * - retired.json (harness/retired.ts and corpus-lib.mjs agree): a retired id is never reused, never pending, and is
+ *   superseded only by existing, live hand-written cases;
  * - the format: a PASS case without a BLOCK twin is refused;
  * - the mutations: the anti-strip carriers around a neutral sentence never block on their own (so a mutation that
  *   still blocks proves the guard, not the carrier);
@@ -22,6 +26,7 @@ import path from "node:path";
 import { parseCorpusFiles } from "./harness/corpus";
 import { caseLockHash, checkLock, type LockFile } from "./harness/lock";
 import { runCorpus } from "./harness/run";
+import { checkRetired, type RetiredFile } from "./harness/retired";
 import { ledgerSeamItems, type LedgerFile } from "./harness/ledger";
 import { STRIP_CARRIERS } from "./harness/mutations";
 import { sharedNgrams } from "./harness/ngram";
@@ -122,6 +127,56 @@ describe("corpus self-test: guard (throwaway repository)", () => {
       write("allowlist.json", JSON.stringify({ entries: { [first]: { decision: "fine" } } }));
       assert.match(run().stderr, /no recorded approval by Khuram/);
       reset();
+      // a recorded retirement (the case line and its lock entry stay) passes …
+      const second = (JSON.parse(caseLines[1]) as { id: string }).id;
+      const retirement = (over: Record<string, unknown> = {}) => ({
+        kind: "case",
+        lockHash: lock.entries[first],
+        retiredOn: "2026-10-26",
+        decidedBy: "the self-test",
+        decision: "Retired for the self-test: superseded by the second case.",
+        reason: "It cannot hold as written (the self-test says so).",
+        supersededBy: [second],
+        ...over,
+      });
+      write("retired.json", JSON.stringify({ entries: { [first]: retirement() } }));
+      const retiredOk = run();
+      assert.equal(retiredOk.status, 0, retiredOk.stderr);
+      // … but not without its decision, its superseding case, a superseding case that exists, or a pin that matches
+      for (const [over, re] of [
+        [{ decision: "" }, /needs decision/],
+        [{ supersededBy: [] }, /needs supersededBy/],
+        [{ supersededBy: ["OPN-selftest-nowhere"] }, /superseding case OPN-selftest-nowhere does not exist/],
+        [{ lockHash: "0".repeat(64) }, /never reused/],
+      ] as Array<[Record<string, unknown>, RegExp]>) {
+        write("retired.json", JSON.stringify({ entries: { [first]: retirement(over) } }));
+        assert.match(run().stderr, re, JSON.stringify(over));
+      }
+      // … nor a retired row that is pending
+      write("retired.json", JSON.stringify({ entries: { [first]: retirement() } }));
+      write("pending.json", JSON.stringify({ cases: { [first]: { owner: "WB", reason: "retired and pending for the self-test" } } }));
+      assert.match(run().stderr, /a retired row is never pending/);
+      reset();
+      // retired.json is append-only: once committed, a retirement is never removed or changed …
+      write("retired.json", JSON.stringify({ entries: { [first]: retirement() } }));
+      sh("add", ".");
+      sh("commit", "-qm", "retire");
+      sh("tag", "-f", "base");
+      assert.equal(run().status, 0, run().stderr);
+      write("retired.json", JSON.stringify({ entries: {} }));
+      assert.match(run().stderr, /was un-retired/);
+      reset();
+      write("retired.json", JSON.stringify({ entries: { [first]: retirement({ reason: "Another reason, written later on." }) } }));
+      assert.match(run().stderr, /entry changed – retired.json is append-only/);
+      reset();
+      // … and its id is never reused: the retired case replaced by another under the same id (new lock entry) fails
+      const reused = caseLines[0].replace(/"expect":"[A-Z_]+"/, '"expect":"FLAG"').replace(/,"ack":"[a-z]+"/, "");
+      write("cases/opn.jsonl", `${[reused, ...caseLines.slice(1)].join("\n")}\n`);
+      write("safety-corpus.lock.json", JSON.stringify({ ...lock, entries: { ...lock.entries, [first]: hashOf(reused) } }));
+      const reusedRun = run().stderr;
+      assert.match(reusedRun, /never reused/);
+      assert.match(reusedRun, new RegExp(`case ${first} changed`));
+      reset();
       // adding a new, locked case passes (and a new pending entry for it is allowed)
       const added = caseLines[1].replace(/"id":"[^"]+"/, '"id":"OPN-selftest-added"');
       write("cases/opn.jsonl", `${caseLines.join("\n")}\n${added}\n`);
@@ -149,6 +204,66 @@ describe("corpus self-test: runner and format", () => {
     if (failRow && !failRow.ok) assert.ok(r1.unexpectedFailures.some((r) => r.id === failing));
     const r2 = await runCorpus({ files, pending: { cases: { [holding]: { owner: "WB", reason: "pretend pending for the self-test" } } }, ledger, oneClicks: false, ledgerItems: false, filter: (id) => id === holding });
     assert.deepEqual(r2.stalePending.map((r) => r.id), [holding]);
+  });
+  it("a retired row runs and is reported but never counted; a retirement whose superseding case fails is reported", async () => {
+    const retiredFile = JSON.parse(read("retired.json")) as RetiredFile;
+    const id = "COM-colleague-01";
+    const entry = retiredFile.entries[id];
+    assert.ok(entry, `${id} is retired`);
+    const only = (x: string) => x === id || x === "COM-selftest-fails" || entry.supersededBy.includes(x);
+    const none: RetiredFile = { entries: {} };
+    const asIs = await runCorpus({ files, pending: { cases: {} }, ledger, retired: none, oneClicks: false, ledgerItems: false, filter: only });
+    assert.ok(asIs.unexpectedFailures.some((r) => r.id === id), "not retired: an unexpected failure");
+    const retiredRun = await runCorpus({ files, pending: { cases: {} }, ledger, retired: { entries: { [id]: entry } }, oneClicks: false, ledgerItems: false, filter: only });
+    assert.deepEqual(retiredRun.loadErrors, []);
+    assert.equal(retiredRun.unexpectedFailures.some((r) => r.id === id), false, "retired: not a failure");
+    assert.deepEqual(retiredRun.retiredRows.map((r) => r.id), [id]);
+    assert.equal(retiredRun.counts.retired, 1);
+    assert.deepEqual(retiredRun.retiredUncovered, []);
+    // The same retirement superseded by a case that fails (a copy of the retired case under a new id) is not covered.
+    const copy = files.find((f) => f.name === "cases/com.jsonl")!.text.split("\n").find((l) => l.includes(`"id":"${id}"`))!.replace(`"id":"${id}"`, '"id":"COM-selftest-fails"');
+    const withCopy = [...files, { name: "cases/zz-selftest.jsonl", text: `${copy}\n` }];
+    const uncovered = await runCorpus({ files: withCopy, pending: { cases: {} }, ledger, retired: { entries: { [id]: { ...entry, supersededBy: ["COM-selftest-fails"] } } }, oneClicks: false, ledgerItems: false, filter: only });
+    assert.match(uncovered.retiredUncovered.join("\n"), /superseding case COM-selftest-fails does not hold/);
+  });
+  it("a retired id is never reused, never pending, and superseded only by existing, live hand-written cases (TypeScript and JavaScript agree)", async () => {
+    const lib = (await import(path.join(REPO, "scripts/medreport/corpus-lib.mjs"))) as {
+      checkRetiredFile(retired: unknown, cases: Map<string, unknown>, pending: unknown): string[];
+    };
+    const retiredFile = JSON.parse(read("retired.json")) as RetiredFile;
+    const loaded = parseCorpusFiles(files).cases;
+    const jsCases = (ls: typeof loaded) => new Map(ls.map((c) => [c.case.id, c.raw as unknown]));
+    const both = async (r: RetiredFile, ls = loaded, pend: PendingFile = { cases: {} }) => {
+      const ts = await checkRetired(r, ls, pend);
+      assert.deepEqual(lib.checkRetiredFile(r, jsCases(ls), pend.cases), ts);
+      return ts.join("\n");
+    };
+    assert.equal(await both(retiredFile), "");
+    const id = "COM-colleague-01";
+    const entry = retiredFile.entries[id];
+    // Reused: another case under the retired id (here: the retired case with its input changed).
+    const reused = loaded.map((c) => (c.case.id === id ? { ...c, raw: { ...c.raw, input: { ...(c.raw.input as object), box: "treatment_provided" } } } : c));
+    assert.match(await both(retiredFile, reused), new RegExp(`retired ${id}: the case with this id is not the one retired.*never reused`));
+    // A generated row's parent changed.
+    const gen = "OPN-twin-priya~origin-staff";
+    const parentChanged = loaded.map((c) => (c.case.id === "OPN-twin-priya" ? { ...c, raw: { ...c.raw, expect: "FLAG" } } : c));
+    assert.match(await both(retiredFile, parentChanged), new RegExp(`retired ${gen}: its case OPN-twin-priya is not the one.*never reused`));
+    // Never pending.
+    assert.match(await both(retiredFile, loaded, { cases: { [id]: { owner: "WB", reason: "retired and pending (self-test)" } } }), /a retired row is never pending/);
+    // Superseded by something that does not exist, by a retired case, by a generated row, by itself.
+    for (const [sup, re] of [
+      ["COM-selftest-nowhere", /does not exist/],
+      ["COM-colleague-02", /is retired itself/],
+      ["COM-colleague-09~strip-prefix", /must be a hand-written case/],
+      [id, /cannot be superseded by .* itself/],
+    ] as Array<[string, RegExp]>) {
+      assert.match(await both({ entries: { ...retiredFile.entries, [id]: { ...entry, supersededBy: [sup] } } }), re, sup);
+    }
+    // A decision record is required.
+    assert.match(await both({ entries: { [id]: { ...entry, decidedBy: "", decision: "ok" } } }), /needs decidedBy[\s\S]*needs decision/);
+    // A PASS case whose negativeTwin is retired.
+    const twinRetired: RetiredFile = { entries: { ...retiredFile.entries, "REP-remove-block-02": { ...retiredFile.entries["REP-remove-pass-02"], lockHash: undefined } } };
+    assert.match(await both(twinRetired), /REP-remove-block-02: the case with this id is not the one retired[\s\S]*its negativeTwin REP-remove-block-02 is retired/);
   });
   it("a PASS case without a BLOCK twin is refused", () => {
     const line = JSON.stringify({ id: "OPN-selftest-pass", group: "OPN", title: "t", source: ["x"], owner: "WB", paths: ["validate"], input: {}, expect: "PASS" });
@@ -207,7 +322,9 @@ describe("corpus self-test: coverage and fixtures", () => {
     const ids = new Set<string>();
     // A whole id only: "plan WD-4" does not pin D-4, nor "B1-16" pin B1-1.
     const TOKEN = /(?:^|[^A-Za-z0-9])(R-(?:safety|security|regression)-\d+|B\d-\d+|N-ATTR-\d+|C-ATTR-\d+|C-REV-\d+|C-FILL-\d+|C-\d+|NEW-\d+|N-\d+|Q-\d+|D-\d+|E\d+|F\d+)(?![0-9])/g;
-    for (const c of parseCorpusFiles(files).cases) for (const s of c.case.source) for (const m of Array.from(s.matchAll(TOKEN))) ids.add(m[1]);
+    // A retired case (retired.json) pins nothing any more: its superseding cases carry its sources.
+    const retiredCases = new Set(Object.entries((JSON.parse(read("retired.json")) as RetiredFile).entries).filter(([, e]) => e.kind === "case").map(([id]) => id));
+    for (const c of parseCorpusFiles(files).cases.filter((x) => !retiredCases.has(x.case.id))) for (const s of c.case.source) for (const m of Array.from(s.matchAll(TOKEN))) ids.add(m[1]);
     const missing = [...req.reviewFindings, ...req.triageHighMedium, ...req.newFindings].filter((id) => !ids.has(id) && !req.notPinnable[id]);
     assert.deepEqual(missing, []);
     for (const [id, why] of Object.entries(req.notPinnable)) assert.ok(why.length > 20, `${id}: a reason`);

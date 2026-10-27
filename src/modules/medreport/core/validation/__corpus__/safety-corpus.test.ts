@@ -8,6 +8,9 @@
  * 3. Every case, generated mutation, one-click variant and ledger item holds – or is listed in pending.json with the
  *    workstream that owns it. A pending item that now holds is reported (CORPUS_STRICT_PENDING=1 fails on it: the
  *    integrator removes it).
+ * 4. Retired rows (retired.json, harness/retired.ts): each has its decision record and pins the row it retires (a
+ *    retired id is never reused), is never pending, and every superseding case holds. A retired row still runs and is
+ *    reported; it counts neither as a failure nor as a hold.
  *
  * CORPUS_REPORT=<file> writes every result as JSON; CORPUS_ONLY=<regex> runs a subset (local use).
  * Fictional data only.
@@ -19,6 +22,7 @@ import path from "node:path";
 import { parseCorpusFiles } from "./harness/corpus";
 import { checkLock, type LockFile } from "./harness/lock";
 import { runCorpus, type RunReport } from "./harness/run";
+import { checkRetired, type RetiredFile } from "./harness/retired";
 import type { LedgerFile } from "./harness/ledger";
 import { OWNERS, type PendingFile } from "./harness/types";
 
@@ -39,6 +43,7 @@ const files = corpusFiles();
 const pending = JSON.parse(read("pending.json")) as PendingFile;
 const ledger = JSON.parse(read("ledger.json")) as LedgerFile;
 const lock = JSON.parse(read("safety-corpus.lock.json")) as LockFile;
+const retired = JSON.parse(read("retired.json")) as RetiredFile;
 const only = process.env.CORPUS_ONLY ? new RegExp(process.env.CORPUS_ONLY) : null;
 
 describe("safety corpus: format", () => {
@@ -46,6 +51,9 @@ describe("safety corpus: format", () => {
     const loaded = parseCorpusFiles(files);
     assert.deepEqual(loaded.errors, []);
     assert.ok(loaded.cases.length > 0);
+  });
+  it("retired rows have their decision record, pin what they retire, are not pending and name existing superseding cases", async () => {
+    assert.deepEqual(await checkRetired(retired, parseCorpusFiles(files).cases, pending), []);
   });
   it("pending entries have an owner workstream and a reason", () => {
     for (const [id, e] of Object.entries(pending.cases ?? {})) {
@@ -69,11 +77,11 @@ describe("safety corpus: lock", () => {
 describe("safety corpus: cases", () => {
   let report: RunReport;
   it("runs every case, mutation, one-click variant and ledger item", { timeout: 15 * 60_000 }, async () => {
-    report = await runCorpus({ files, pending, ledger, ...(only ? { filter: (id: string) => only.test(id) } : {}) });
+    report = await runCorpus({ files, pending, ledger, retired, ...(only ? { filter: (id: string) => only.test(id) } : {}) });
     if (process.env.CORPUS_REPORT) fs.writeFileSync(process.env.CORPUS_REPORT, JSON.stringify(report, null, 1));
     const c = report.counts;
     console.log(
-      `safety corpus: ${c.cases} cases, ${c.mutations} mutations, ${c.oneClicks} one-click variants, ${c.ledger} ledger items – ${c.pass} hold, ${c.fail} fail (${c.pending} pending)`,
+      `safety corpus: ${c.cases} cases, ${c.mutations} mutations, ${c.oneClicks} one-click variants, ${c.ledger} ledger items – ${c.pass} hold, ${c.fail} fail (${c.pending} pending); ${c.retired} retired`,
     );
     assert.deepEqual(report.loadErrors, []);
   });
@@ -85,6 +93,12 @@ describe("safety corpus: cases", () => {
   it("pending names only what runs", () => {
     assert.ok(report, "the corpus ran");
     assert.deepEqual(only ? [] : report.unknownPending, []);
+  });
+  it("every retirement is covered: its superseding cases hold (retired rows are reported, never counted)", () => {
+    assert.ok(report, "the corpus ran");
+    for (const r of report.retiredRows) console.log(`retired ${r.id} [${r.owner}] ${r.ok ? "(would hold)" : "(would fail)"} ${r.detail.slice(0, 160)}`);
+    if (report.retiredNotRun.length) console.log(`retired rows that no longer run: ${report.retiredNotRun.join(", ")}`);
+    assert.deepEqual(report.retiredUncovered, []);
   });
   it("pending items that now hold are reported (CORPUS_STRICT_PENDING=1 fails)", () => {
     assert.ok(report, "the corpus ran");

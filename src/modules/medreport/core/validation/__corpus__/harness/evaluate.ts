@@ -127,12 +127,20 @@ async function runFixOutcome(c: RunCase, built: Built, engine: ValidatorEngine, 
   return { path: "validate", ok: text === want.text, detail: `${detail}; after “${fix.label}”: ${JSON.stringify(text)}` };
 }
 
-/** NOT_OFFERED: none of check.notOffered (fix kinds) is offered to check.to (actor keys; default every member). */
+/**
+ * NOT_OFFERED: none of check.notOffered (fix kinds) is offered to check.to (actor keys; default every member). With
+ * check.flag (W0 decisions 26/10), that flag must still be on the subject – the problem stays visible although no
+ * one-click removes it (e.g. a box whose only sentence is a comment about the notes).
+ */
 async function runNotOffered(c: RunCase, built: Built, engine: ValidatorEngine): Promise<PathOutcome> {
   const kinds = (c.check?.notOffered ?? []) as string[];
   const to = ((c.check?.to as PersonKey[] | undefined) ?? ["sarah", "tom", "pat", "chris"]) as PersonKey[];
   const res = validateBuilt(built, engine);
   const report = { ...built.report, flags: res.flags };
+  const want = c.check?.flag as FlagMatcher | undefined;
+  if (want && !res.flags.some((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }) && matches(f, want))) {
+    return { path: "validate", ok: false, detail: `expected the flag ${JSON.stringify(want)} to stay – subject: ${describeFlags(res.flags.filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId })))}` };
+  }
   const offered: string[] = [];
   for (const actor of to) {
     for (const f of await offeredFixes(report, { actor, voiceOwner: built.approver, form: built.form, template: built.template })) {
@@ -144,7 +152,7 @@ async function runNotOffered(c: RunCase, built: Built, engine: ValidatorEngine):
   const forbidden = res.flags.filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }) && forbid.some((m) => matches(f, m)));
   if (forbidden.length) return { path: "validate", ok: false, detail: `flagged: ${describeFlags(forbidden)}` };
   return offered.length === 0
-    ? { path: "validate", ok: true, detail: `not offered: ${kinds.join(", ") || "(none asked)"}${forbid.length ? "; no forbidden flag" : ""}` }
+    ? { path: "validate", ok: true, detail: `not offered: ${kinds.join(", ") || "(none asked)"}${forbid.length ? "; no forbidden flag" : ""}${want ? `; still flagged: ${describeFlags(res.flags.filter((f) => onSubject(f, { box: built.box, paragraphId: built.paragraphId }) && matches(f, want)))}` : ""}` }
     : { path: "validate", ok: false, detail: `offered: ${offered.join("; ")}` };
 }
 

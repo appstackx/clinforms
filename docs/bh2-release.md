@@ -37,6 +37,14 @@ the note link".
   - Reuse-notes ships in this release, through the same report factory.
   - Allowlist: only `DIFF:OPN-ok-f1` and `DIFF:ISSUE-na-noprint-01` (both in `allowlist.json`). No other entry without
     his approval.
+- **W0 decisions (26/10/2026 21:20, the release orchestrator under Khuram's delegation; branch `ws/bh2-w0-decisions`):**
+  - Four more allowlist entries, each recorded with `approvedVia` (Khuram confirms them before the deploy):
+    `DIFF:ISSUE-merge-na-01` (a merge code in a box its frozen condition rules out is cleared – nothing is issued),
+    `DIFF:ISSUE-na-person-02` and `DIFF:ROLE-mark-na~actor-approver` (the approving physio marks a box not applicable –
+    their decision, audited, prints nothing), `DIFF:ROLE-ownanswer-settles` (an opinion written by the approver).
+  - Nine locked corpus rows that cannot hold as written are retired, not edited or deleted (`retired.json`, each with
+    its superseding cases): COM-colleague-01..05, LINT-pass-headingless (a duplicate of LINT-l10-fail-01),
+    REP-remove-pass-02, ISSUE-na-voice-01~fix-name-instead-1, OPN-twin-priya~origin-staff (known limit KL-WI-01).
 - **Ship rule (26/10 16:00):** ship when all 17 forms × 3 sample patients × 2 runs test clean and no remaining gap
   would show on Dell's forms or the test patients. Detector recall gaps for unusual wordings go on the KNOWN-LIMITS
   list (fixed during the trial; the physio still reviews and signs every line). Structural / server-trust problems,
@@ -48,7 +56,8 @@ the note link".
 1. The full chain is green: `npm run typecheck && npm run lint && npm run test:medreport && npm run test:db &&
    npm run test:auth && npm run test:site && npm run test:gateway && npm run build` (only the 3 LibreOffice skips).
 2. The safety corpus: `node scripts/medreport/corpus-guard.mjs bh2-base2`, the lock check, and at the final release
-   `CORPUS_STRICT_PENDING=1 npm run test:medreport` (pending.json empty, allowlist = Khuram's entries only).
+   `CORPUS_STRICT_PENDING=1 npm run test:medreport` (pending.json empty, allowlist = Khuram's entries only, every
+   retirement in `retired.json` covered by holding superseding cases).
 3. The rollback shim still reads what this release writes: copy `scripts/medreport/forward-compat-fixture.ts` and
    `schema-forward-compat.test.ts` into a throwaway worktree of `origin/main` and run the test there (15/15 at
    bh2-rc1). Every new stored key or open-enum member goes into the fixture; a new member of an enum production keeps

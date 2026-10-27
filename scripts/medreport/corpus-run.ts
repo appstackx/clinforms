@@ -9,7 +9,8 @@
  *     --suggest-pending    print a pending.json `cases` object for every failing id (the integrator reviews it; only
  *                          the integrator edits pending.json)
  *
- * Fictional data only; prints case ids, owners and what each path saw.
+ * Fictional data only; prints case ids, owners and what each path saw. Rows retired in retired.json print as "retd"
+ * (they run, but count neither as a failure nor as a hold; the runner checks their superseding cases hold).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -44,23 +45,25 @@ async function main(): Promise<void> {
     files: readCorpusFiles(),
     pending: readJson("pending.json"),
     ledger: readJson("ledger.json"),
+    retired: readJson("retired.json"),
     ...(re ? { filter: (id: string) => re.test(id) } : {}),
   });
   const pending = readJson<{ cases: Record<string, { owner: string }> }>("pending.json").cases;
   const failingOnly = process.argv.includes("--failing");
   for (const r of report.rows) {
     if (failingOnly && r.ok) continue;
-    const mark = r.ok ? (pending[r.id] ? "STALE" : "ok   ") : pending[r.id] ? "pend " : "FAIL ";
+    const mark = r.retired ? "retd " : r.ok ? (pending[r.id] ? "STALE" : "ok   ") : pending[r.id] ? "pend " : "FAIL ";
     console.log(`${mark} ${r.id.padEnd(44)} [${r.owner}] ${r.detail}`);
   }
   const c = report.counts;
-  console.log(`\n${c.cases} cases, ${c.mutations} mutations, ${c.oneClicks} one-click variants, ${c.ledger} ledger items: ${c.pass} hold, ${c.fail} fail (${c.pending} pending, ${report.unexpectedFailures.length} unexpected), ${report.stalePending.length} stale pending`);
+  console.log(`\n${c.cases} cases, ${c.mutations} mutations, ${c.oneClicks} one-click variants, ${c.ledger} ledger items: ${c.pass} hold, ${c.fail} fail (${c.pending} pending, ${report.unexpectedFailures.length} unexpected), ${report.stalePending.length} stale pending; ${c.retired} retired`);
   if (report.loadErrors.length) console.log(`load errors:\n${report.loadErrors.join("\n")}`);
+  if (report.retiredUncovered.length) console.log(`retirements not covered:\n${report.retiredUncovered.join("\n")}`);
   const json = arg("--json");
   if (json) fs.writeFileSync(json, JSON.stringify(report, null, 1));
   if (process.argv.includes("--suggest-pending")) {
     const out: Record<string, { owner: string; reason: string }> = {};
-    for (const r of report.rows.filter((x) => !x.ok)) out[r.id] = { owner: r.owner, reason: r.detail.replace(/\s+/g, " ").slice(0, 300) };
+    for (const r of report.rows.filter((x) => !x.ok && !x.retired)) out[r.id] = { owner: r.owner, reason: r.detail.replace(/\s+/g, " ").slice(0, 300) };
     console.log(JSON.stringify(out, null, 1));
   }
 }
