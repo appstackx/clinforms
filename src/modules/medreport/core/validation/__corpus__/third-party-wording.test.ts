@@ -18,12 +18,28 @@ import { sharedNgrams, stringLeaves } from "./harness/ngram";
 const DIR = path.dirname(new URL(import.meta.url).pathname);
 const MAPS = process.env.CLINFORMS_THIRD_PARTY_MAPS;
 
+/**
+ * merge:r1 (orchestrator decision 27/10/2026): a locked case whose text was found to share a run with a referrer map
+ * cannot be deleted (the corpus is append-only), so it is retired for exactly that reason (retired.json, kind "case",
+ * reason starting "shares a 4-word run with a referrer map") and superseded by a case in ClinForms' own words. Only those
+ * rows are left out here – they are listed, never silently dropped; every other committed text is still checked.
+ */
+const WORDING_RETIRED = new Set(
+  Object.entries((JSON.parse(fs.readFileSync(path.join(DIR, "retired.json"), "utf8")) as { entries?: Record<string, { kind?: string; reason?: string }> }).entries ?? {})
+    .filter(([, e]) => e.kind === "case" && (e.reason ?? "").startsWith("shares a 4-word run with a referrer map"))
+    .map(([id]) => id),
+);
+
 function corpusTexts(): Array<{ where: string; text: string }> {
   const out: Array<{ where: string; text: string }> = [];
   for (const f of fs.readdirSync(path.join(DIR, "cases")).filter((x) => x.endsWith(".jsonl"))) {
     for (const line of fs.readFileSync(path.join(DIR, "cases", f), "utf8").split("\n")) {
       if (!line.trim()) continue;
       const c = JSON.parse(line) as { id: string };
+      if (WORDING_RETIRED.has(c.id)) {
+        console.log(`third-party wording check: ${c.id} not checked – retired for sharing a run with a referrer map (retired.json)`);
+        continue;
+      }
       for (const t of stringLeaves(c)) out.push({ where: `cases/${f} ${c.id}`, text: t });
     }
   }

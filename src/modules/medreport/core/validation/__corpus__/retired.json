@@ -158,12 +158,34 @@
    "parent": "ATT-wd1-pronoun-01",
    "parentLockHash": "b4c516d3534536cd1f837c038f480afed53b6c3aa4bb183698645c2d24e95075",
    "retiredOn": "2026-10-27",
-   "decidedBy": "PROPOSED by the merge:r1 integrator – NOT YET DECIDED (needs the orchestrator, under Khuram's delegation; the merge:r1 brief granted retirement only for ATT-staff-01, ATT-signer-02, ATT-licence-01 ~fix)",
+   "decidedBy": "orchestrator decision 27/10 under Khuram's delegation",
    "decision": "Retire. Supersede with ATT-wd1-pronoun-02 (allowFixes ['attribution-prefix'], the one-click leaves exactly WD's own PASS twin text) and ATT-wd1-named-01 (that text passes). ATT-wd1-pronoun-01 itself and its mutations keep running and still block, never acknowledgeable.",
-   "reason": "A one-click variant that only appears with WD and WB merged: WD's case (written on e89f93f) pins forms-9's slip 'His assessment …' as BLOCK with no allowFixes; WB's R1T-WB-10 (Khuram's E7/E8 decision: pronoun leads named, offered to the approver) now offers 'Name Tom Ellis', which yields 'Tom Ellis's assessment on 06/05/2026 was …' – character for character WD's own PASS twin ATT-wd1-named-01. The variant reports a faithful correction as unsafe; the case is locked and cannot gain allowFixes. Same class as the three WB rows retired at merge:r1.",
+   "reason": "A one-click variant that only appears with WD and WB merged: WD's case (written on e89f93f) pins forms-9's slip 'His assessment …' as BLOCK with no allowFixes; WB's R1T-WB-10 (Khuram's E7/E8 decision: pronoun leads named, offered to the approver) now offers 'Name Tom Ellis', which yields 'Tom Ellis's assessment on 06/05/2026 was …' – character for character WD's own PASS twin ATT-wd1-named-01. The variant reports a faithful correction as unsafe; the case is locked and cannot gain allowFixes. Same class as the three WB rows retired at merge:r1. Approved by the orchestrator (27/10): Khuram's E7/E8 decision requires the per-clause 'Name <clinician>' one-click, and its output equals WD's PASS twin ATT-wd1-named-01.",
    "supersededBy": [
     "ATT-wd1-pronoun-02",
     "ATT-wd1-named-01"
+   ]
+  },
+  "ISSUE-sessiondates-missed-03": {
+   "kind": "case",
+   "lockHash": "e31d94a689e94c2ab518221a372fbaacc8acd18f3a0b8ee08ba1cc675c1f4e4d",
+   "retiredOn": "2026-10-27",
+   "decidedBy": "orchestrator decision 27/10 under Khuram's delegation",
+   "decision": "Retire (merge:r1). Supersede with ISSUE-sessiondates-missed-05: the same input and expectation, worded in ClinForms' own neutral words.",
+   "reason": "shares a 4-word run with a referrer map (its title; env-gated third-party wording check over the cleaned and original maps). The line stays in git history; the behaviour is pinned by the superseding case.",
+   "supersededBy": [
+    "ISSUE-sessiondates-missed-05"
+   ]
+  },
+  "ISSUE-sessiondates-missed-04": {
+   "kind": "case",
+   "lockHash": "3c6a94fb8192b27e9d2e74b40ce3483d5f9a2ad0134dbdfc09da8a5b63153800",
+   "retiredOn": "2026-10-27",
+   "decidedBy": "orchestrator decision 27/10 under Khuram's delegation",
+   "decision": "Retire (merge:r1). Supersede with ISSUE-sessiondates-missed-06: the same input and expectation, worded in ClinForms' own neutral words.",
+   "reason": "shares a 4-word run with a referrer map (its title; env-gated third-party wording check over the cleaned and original maps). The line stays in git history; the behaviour is pinned by the superseding case.",
+   "supersededBy": [
+    "ISSUE-sessiondates-missed-06"
    ]
   }
  }
