@@ -24,7 +24,7 @@ import { createServerStore } from "../../src/modules/medreport/ui/store/server-s
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch, type FetchLog } from "./store-harness";
-import { FIXTURE_SIGNER, asApproversReport, signingMember } from "./release-store-fixture";
+import { FIXTURE_SIGNER, asApproversReport, signingMember, storeClinicForm, withMapHash } from "./release-store-fixture";
 
 const A = "clinic-a";
 
@@ -50,7 +50,8 @@ function tab(deps: ReturnType<typeof backend>["deps"], who: string | null = "a")
 }
 
 function report(id = "rpt_client", patientLabel = "Megan Hart"): Report {
-  return asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A, patientLabel }, signingMember(A));
+  // bh2 fix round 2 (WC, R2-SAF-2): naming the very map it is started from, as the Studio starts one.
+  return withMapHash(asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A, patientLabel }, signingMember(A)), { ...HARROW_PIKE_RAW, tenantId: A });
 }
 
 function fakePdf(size: number): Uint8Array<ArrayBuffer> {
@@ -66,6 +67,7 @@ test("hydration: the snapshot and every form map; reports on demand; reads stay 
   const seed = tab(deps);
   const form = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Practice manager", "2026-10-01T09:00:00.000Z");
   assert.equal(seed.client.saveForm(form), true);
+  assert.equal(await seed.client.flush(), true); // R2-SAF-2: the map is stored before a report is started from it
   assert.equal(seed.client.saveReport(report()), true);
   assert.equal(await seed.client.flush(), true);
 
@@ -89,6 +91,7 @@ test("hydration: the snapshot and every form map; reports on demand; reads stay 
 
 test("generateReport with 3 parallel draft groups: every save reaches the server in order, coalesced, no clashes", async () => {
   const { deps, store } = backend();
+  void storeClinicForm(store, A, { ...HARROW_PIKE_RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const t = tab(deps);
   await t.client.hydrate();
   const bundle = getDemoBundle("megan-hart");
@@ -117,7 +120,8 @@ test("generateReport with 3 parallel draft groups: every save reaches the server
   const result = await generateReport({
     client,
     data: { bundle, computedFacts: computeFacts(bundle, { asOf: "2026-10-06" }) },
-    target: { kind: "form", form: { ...HARROW_PIKE_RAW, tenantId: A } },
+    // bh2 fix round 2 (WC, R2-SAF-2): a report is started from a confirmed, attested map the clinic holds.
+    target: { kind: "form", form: withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Practice manager", "2026-10-01T09:00:00.000Z") },
     concurrency: 3,
     approver: { memberId: "user-clinic-a", name: FIXTURE_SIGNER.name, hcpc: FIXTURE_SIGNER.hcpc },
     onReport: (r) => {
@@ -141,7 +145,8 @@ test("generateReport with 3 parallel draft groups: every save reaches the server
 });
 
 test("two tabs: a stale save gets 409, the stored copy is loaded into the cache and the durable save says false", async () => {
-  const { deps } = backend();
+  const { deps, store } = backend();
+  void storeClinicForm(store, A, { ...HARROW_PIKE_RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const one = tab(deps);
   const two = tab(deps, "a2");
   assert.equal(await (async () => {
@@ -196,6 +201,7 @@ test("durable saves; the server's normalised copy (unattested confirmation → p
 
 test("deletes reach the server; another tab's snapshot drops them", async () => {
   const { deps, store } = backend();
+  void storeClinicForm(store, A, { ...HARROW_PIKE_RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const t = tab(deps);
   t.client.saveReport(report("rpt_del"));
   await t.client.flush();
@@ -211,7 +217,8 @@ test("deletes reach the server; another tab's snapshot drops them", async () => 
 });
 
 test("a snapshot taken before this tab's newest save does not drop or roll back that record", async () => {
-  const { deps } = backend();
+  const { deps, store } = backend();
+  void storeClinicForm(store, A, { ...HARROW_PIKE_RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const served = storeFetch(deps, { member: "a" });
   let gate: Promise<void> | null = null;
   const racing: typeof fetch = async (input, init) => {
@@ -327,6 +334,8 @@ test("ui/store.ts in server mode: same exports, no localStorage or IndexedDB, du
     assert.equal(s.getStoreMode(), "server");
     await s.ensureSampleForms();
     assert.deepEqual(s.listForms(), [], "no fictional samples are added to a clinic");
+    // R2-SAF-2: the map is stored before a report is started from it (the Studio confirms it durably first).
+    assert.equal(await s.saveFormDurable(withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Practice manager", "2026-10-01T09:00:00.000Z")), true);
     assert.equal(await s.saveReportDurable(report("rpt_facade")), true);
     assert.equal((await store.getReport(A, "rpt_facade"))?.rev, 1);
     const form = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId: A }, "Practice manager", "2026-10-01T09:00:00.000Z");
@@ -384,7 +393,9 @@ function xReport(id: string, patientLabel: string): Report {
 }
 
 test("fix wave 2: a new sign-in in the same tab never sees the previous clinic's records", async () => {
-  const { deps } = twoClinics();
+  const { deps, store } = twoClinics();
+  void storeClinicForm(store, "clinic-x", { ...HARROW_PIKE_RAW, tenantId: "clinic-x" }); // R2-SAF-2: the clinic holds the map its reports are started from
+  void storeClinicForm(store, "clinic-y", { ...HARROW_PIKE_RAW, tenantId: "clinic-y" }); // R2-SAF-2: the clinic holds the map its reports are started from
   const jar = { who: "alice" as string | null };
   const client = scopedTab(jar, deps);
   client.setScope({ tenantId: "clinic-x", userId: "user-alice" });

@@ -401,7 +401,42 @@ type Forge =
   | "no-approver"
   | "demo-stamp-colleague"
   | "member-stamp-colleague"
+  // WC fix round 2 (R2-SAF-1/2, R2-TPN-01, R2-SEC-2, additive):
+  | "pending-reset"
+  | "redraft-flip"
+  | "redraft-drop-gap"
+  | "no-map-relabel"
+  | "no-map-gap-na"
+  | "builtin-version-relabel"
+  | "answer-stamp-dropped"
+  | "fix-claims-forged"
+  | "fix-kind-unknown"
   | "none";
+
+/** WC fix round 2: an unrecorded opinion, as a box relabelled "from the records" would print it. */
+const UNRECORDED_OPINION = "He will make a full recovery within six weeks and is fit for normal duties now.";
+
+/** WC fix round 2 (R2-SAF-2): the subject box relabelled "from the records", holding an unrecorded opinion (no question). */
+function relabelledWithOpinion(report: Report, key: string): Report {
+  return {
+    ...report,
+    sections: report.sections.map((s) => {
+      if (s.key !== key) return s;
+      const n = { ...s, kind: "from_records" as const, status: "complete" as const, paragraphs: [{ id: `${key}-r1`, text: UNRECORDED_OPINION, sourceIds: ["REG"], origin: "from_records" as const }] };
+      delete (n as { answer?: unknown }).answer;
+      return n;
+    }),
+    gaps: report.gaps.filter((g) => g.sectionKey !== key),
+  };
+}
+
+/** WC fix round 2 (R2-SAF-2): the report's form reference without the attested map hash (ReportFormRefSchema: optional). */
+function withoutMapHash(report: Report): Report {
+  if (!report.form) return report;
+  const form = { ...report.form };
+  delete (form as { mapSha256?: unknown }).mapSha256;
+  return { ...report, form };
+}
 
 /** The subject box's structured answer set to another value (as a forging client would), stamped as `by` or as nobody. */
 function forgedAnswer(s: Report["sections"][number], by: ReturnType<typeof actorOf> | null): Report["sections"][number] {
@@ -514,6 +549,70 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
         sections: report.sections.map((s) => (s.key === key ? { ...s, paragraphs: s.paragraphs.map((q, i) => (i === 0 ? ({ ...q, origin: "edited" as const, originalText: q.originalText ?? `${q.text} (drafted)`, by: stampAs } as typeof q) : q)) } : s)),
       };
     }
+    case "pending-reset":
+      // R2-SAF-1: the subject box put back to "waiting for drafting" (only the report factory makes a box pending).
+      return { ...report, sections: report.sections.map((s) => (s.key === key ? { ...s, status: "pending" as const } : s)) };
+    case "redraft-flip":
+    case "redraft-drop-gap": {
+      // R2-SAF-1: a "drafting result" for the subject box – a new generation entry naming it – that rewrites its drafted
+      // finding in place (negation dropped, a finding added; same paragraph ids, still "ai"), or drops its open questions.
+      const generation = [...(report.generation ?? []), { mode: "live" as const, sectionKeys: [key], at, promptVersion: "forms-corpus" }];
+      const flip = (t: string) => (t.replace(/\bno\s+/i, "") === t ? `${t.replace(/[.\s]+$/, "")} and red flags were found.` : t.replace(/\bno\s+/i, ""));
+      return {
+        ...report,
+        generation,
+        sections: report.sections.map((s) => {
+          if (s.key !== key) return s;
+          if (forge === "redraft-drop-gap") return { ...s, status: "needs_input" as const, paragraphs: [] };
+          return { ...s, status: "drafted" as const, paragraphs: s.paragraphs.map((p) => (p.origin === "ai" ? { ...p, text: flip(p.text), originalText: flip(p.text) } : p)) };
+        }),
+        ...(forge === "redraft-drop-gap" ? { gaps: report.gaps.filter((g) => g.sectionKey !== key || g.resolution) } : {}),
+      };
+    }
+    case "no-map-relabel":
+      // R2-SAF-2: a create with no attested map hash, its opinion box relabelled "from the records" with an unrecorded opinion.
+      return relabelledWithOpinion(withoutMapHash(report), key);
+    case "no-map-gap-na": {
+      // R2-SAF-2: a create with no attested map hash, the box's frozen condition inverted and its open question settled N/A.
+      const r = withoutMapHash(report);
+      const invert = (w: string | undefined) => (w === "no" ? "yes" : "no");
+      return {
+        ...r,
+        sections: r.sections.map((s) => (s.key === key && s.condition ? { ...s, condition: { ...s.condition, wants: invert(s.condition.wants) } } : s)),
+        gaps: r.gaps.map((g) => (g.sectionKey === key && !g.resolution ? { ...g, resolution: { kind: "resolved" as const, text: "Not applicable: the answer before it rules it out.", at, notApplicable: true } } : g)),
+      };
+    }
+    case "builtin-version-relabel":
+      // R2-SAF-2 (built-in sibling): a create naming another template version, its opinion box relabelled as above.
+      return relabelledWithOpinion({ ...report, templateVersion: `${report.templateVersion}-x` }, key);
+    case "answer-stamp-dropped":
+      // R2-TPN-01: the subject box's answer kept, the stamp of the person who set it taken off (it would read as drafted).
+      return {
+        ...report,
+        sections: report.sections.map((s) => {
+          if (s.key !== key) return s;
+          const n = { ...s };
+          delete (n as { answerBy?: unknown }).answerBy;
+          return n;
+        }),
+      };
+    case "fix-claims-forged":
+    case "fix-kind-unknown":
+      // R2-SEC-2: every drafted paragraph of the subject box changed in place with one self-stamped "fix" entry the engine
+      // never offers (fix-claims-forged: a known kind, value-only; fix-kind-unknown: a kind no generator makes).
+      return {
+        ...report,
+        sections: report.sections.map((s) =>
+          s.key !== key
+            ? s
+            : {
+                ...s,
+                paragraphs: s.paragraphs.map((p) =>
+                  p.origin !== "ai" ? p : { ...p, text: `${p.text} Noted.`, fixes: [...(p.fixes ?? []), { kind: forge === "fix-kind-unknown" ? "remove-sentence" : "value-only", by: actorOf(putAs) as never, at, edits: [{ start: p.text.length, end: p.text.length, text: " Noted." }] }] },
+                ),
+              },
+        ),
+      };
     default:
       return report;
   }
@@ -573,6 +672,9 @@ function asCreatedBy(report: Report, who: PersonKey): Report {
 
 /** An approved report amended and the amendment approved: the stored v1 must read as superseded (B2-25, B3-3). */
 async function runAmend(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
+  // WC fix round 2 (R2-SAF-2): the clinic holds the form map its reports are started from, as the Studio keeps it – the
+  // store checks a create against it (a create it cannot check is refused).
+  if (built.form) await storeFormMap(h, built.form);
   const s1 = await postSign(h, { report: built.report, template: built.template, form: built.form, signer: built.signer, mode: "tenant", fileBytes: built.fileBytes });
   if (!s1.receipt) return { path: "store", ok: false, detail: `could not approve v1 (${s1.status} ${s1.code ?? ""})` };
   const v1: Report = { ...built.report, status: "signed", receipt: s1.receipt };
@@ -587,6 +689,12 @@ async function runAmend(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
   const stored = (got.body as { report?: Report } | null)?.report;
   const superseded = Boolean(stored && stored.activity.some((a) => /supersed/i.test(`${a.action} ${a.detail}`)));
   return { path: "store", ok: superseded, detail: superseded ? "the stored v1 reads as superseded by v2" : "after v2 was approved and stored, the stored v1 does not say it was superseded" };
+}
+
+/** The clinic's stored copy of a form map (as the Studio saves it before any report is started from it). */
+async function storeFormMap(h: HttpHarness, form: NonNullable<Built["form"]>): Promise<void> {
+  if (await h.store.getForm(CORPUS_TENANT, form.id)) return;
+  await h.store.createForm(CORPUS_TENANT, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: null, payload: form });
 }
 
 async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathOutcome> {
@@ -604,13 +712,18 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
     seedPending?: string[];
     /** WC fix round 1: the seed is the report as `seedAs` creates it (asCreatedBy: nobody else's decisions in it). */
     seedAsCreator?: boolean;
+    /** WC fix round 2: these boxes' answers are stored with no one's stamp (as drafting or the records leave them). */
+    seedDrafted?: string[];
+    /** WC fix round 2: the subject box's open questions are settled ("Mark resolved") by `seedAs` in the seed. */
+    seedResolved?: boolean;
+    /** WC fix round 2 (R2-SAF-1): a second PUT by `putAs` on the stored copy the first one left, with this forge. */
+    thenForge?: Forge;
   };
   const seedAs = store.seedAs ?? built.approver ?? "sarah";
   const putAs = store.putAs ?? built.actor;
-  if (store.storeForm && built.form) {
-    const form = built.form;
-    await h.store.createForm(CORPUS_TENANT, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: null, payload: form });
-  }
+  // WC fix round 2 (R2-SAF-2): always, for a form report (storeForm is kept for the cases that name it) – the Studio keeps
+  // the map a report is started from, and the store refuses a create it cannot check against the clinic's map.
+  if (built.form) await storeFormMap(h, built.form);
   // bh2-rc1: the report as the review holds it – with the validators' flags – so a forged acknowledgement has a flag
   // to acknowledge (the forge was a no-op on a report with no flags).
   let base: Report = { ...built.report, flags: validateReport(built.report, built.template, { computedFacts: built.computedFacts, form: built.form, ...(ownerOf(built) ? { voice: { owner: ownerOf(built) as never } } : {}) }).flags };
@@ -634,6 +747,14 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
       flags: base.flags.filter((f) => !f.sectionKey || !pending.has(f.sectionKey)),
     };
   }
+  if (store.seedDrafted?.length) {
+    const drafted = new Set(store.seedDrafted);
+    base = { ...base, sections: base.sections.map((s) => (drafted.has(s.key) ? (({ answerBy: _by, ...rest }) => rest)(s) : s)) };
+  }
+  if (store.seedResolved) {
+    const by = actorOf(seedAs);
+    base = { ...base, gaps: base.gaps.map((g) => (g.sectionKey === built.box && !g.resolution ? { ...g, resolution: { kind: "resolved" as const, text: "Checked with the patient.", at: base.updatedAt, by: by as never } } : g)) };
+  }
   if (store.createOnly) base = asCreatedBy(base, putAs);
   else if (store.seedAsCreator) base = asCreatedBy(base, seedAs);
   let forged = forgeReport(base, store.forge ?? "none", built.approver ?? "sarah", built.box, putAs);
@@ -647,6 +768,12 @@ async function runStore(c: RunCase, built: Built, h: HttpHarness): Promise<PathO
     const rev = (seeded.body as { rev?: number }).rev ?? 1;
     if (store.forge === "ai-fix-engine" && forged === base) return { path: "store", ok: false, detail: `the engine offers ${person(putAs).name} no fix on ${built.box}` };
     res = await putStoredReport(h, forged, putAs, rev);
+    // WC fix round 2 (R2-SAF-1): a second step on what the first stored (the first step's refusal is the outcome).
+    if (store.thenForge && res.status === 200) {
+      const stored = (res.body as { report?: Report; rev?: number } | null)?.report;
+      const nextRev = (res.body as { rev?: number } | null)?.rev ?? rev + 1;
+      if (stored) res = await putStoredReport(h, forgeReport(stored, store.thenForge, built.approver ?? "sarah", built.box, putAs), putAs, nextRev);
+    }
   }
   // WC fix round 1 (R1T-WC-07): what the stored copy's subject paragraph is stamped with (check.storedStampName).
   const wantStamp = c.check?.storedStampName as string | undefined;

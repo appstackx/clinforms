@@ -59,7 +59,7 @@ import { getUsageMonths, listUsageReportRows } from "../../src/server/repos/usag
 import { ukPeriodOf } from "../../src/server/repos/usage-period";
 import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
-import { approverRef, asApproversReport, asFactoryCopy } from "./release-store-fixture";
+import { approverRef, asApproversReport, asFactoryCopy, storeClinicForm } from "./release-store-fixture";
 import { completedSampleReport } from "./form-sample-answers";
 import { PRACTICE_PRINTOUT_TEXT } from "./notes-fixtures";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
@@ -125,6 +125,8 @@ const connectors = createConnectorRegistry([createTm3SimConnector(), createFileI
 
 function setup(opts: { profile?: ClinicProfile | null; usage?: MedreportDeps["usage"]; actors?: Record<string, AuthContext> } = {}) {
   const store: MemoryTenantStore = createMemoryTenantStore();
+  void storeClinicForm(store, A, FORM); // R2-SAF-2: the clinic holds the map its reports are started from
+  void storeClinicForm(store, A, FORM2);
   const profile = opts.profile === undefined ? PROFILE : opts.profile;
   const deps: MedreportDeps = {
     ...storeDeps(store, opts.actors ?? { a: CLIN, b: member(B), nofactor: member(A, { twoFactorVerified: false }), staff: member(A, { userId: "user-staff-a", role: "staff" }) }),
