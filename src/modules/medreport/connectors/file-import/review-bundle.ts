@@ -18,7 +18,8 @@ import "server-only";
  * - Outcome scores keep their date (or their entry's date) and are linked to the entry's note on that date.
  * - What the import format has no field for is added afterwards: a medico-legal company or "other" as the
  *   instructing party, the insurer's membership and authorisation numbers, who referred the patient and the
- *   GP practice (never sent to the drafting service).
+ *   GP practice (never sent to the drafting service), and each note's own type words from its heading ("Review",
+ *   "Re-assessment" – Note.heading, shown in the records-reviewed list; general-notes.ts headingTypeWords).
  *
  * Owner: integration agent.
  */
@@ -33,6 +34,7 @@ import {
   type NotesReview,
   type NotesReviewEntry,
 } from "./review-contract";
+import { headingTypeWords } from "./general-notes";
 import { STRUCTURE_LINE_CHARS, collapseSpaces, trimNewlines } from "./text-runs";
 
 export interface ReviewBundleCounts extends ImportStats {
@@ -195,6 +197,8 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
 
   const used = included.filter((e) => e.date);
   const noteIdOf = new Map<string, string>();
+  /** A note's own type words ("Review"), by its import id: the bundle's Note.heading (R1T-WF-L1). */
+  const headingOf = new Map<string, string>();
   const notes: ImportDocument["notes"] = [];
   const appointments: ImportDocument["appointments"] = [];
   const author = (e: NotesReviewEntry) => ({ name: e.clinicianName.trim(), hcpc: e.clinicianHcpc.trim() || NOT_RECORDED, role: null });
@@ -209,6 +213,8 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
     if (makeNote) {
       const text = splitNoteText(hasText ? e.body : e.heading);
       noteIdOf.set(e.key, noteId);
+      const words = headingTypeWords(e.heading, e.type);
+      if (words) headingOf.set(noteId, words);
       notes.push({
         id: noteId,
         note_date: e.date,
@@ -310,7 +316,12 @@ export function bundleFromReview(review: NotesReview, opts: { tenantId: TenantId
       if (reg.referredBy.trim()) referral.referredBy = reg.referredBy.trim();
       const registration: EpisodeBundle["registration"] = { ...b.registration };
       if (reg.gpPractice.trim()) registration.gpPractice = reg.gpPractice.trim();
-      return { ...b, referral, registration };
+      // The import format has no field for a note's own type words: the mapper keeps the import id as externalId.
+      const notes = b.notes.map((n) => {
+        const heading = n.externalId ? headingOf.get(n.externalId) : undefined;
+        return heading ? { ...n, heading } : n;
+      });
+      return { ...b, referral, registration, notes };
     },
   });
   if (!result.ok) return { ok: false, issues: result.issues };

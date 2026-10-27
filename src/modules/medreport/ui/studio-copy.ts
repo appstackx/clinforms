@@ -69,6 +69,13 @@ export const TENANT_COPY = {
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
+    /**
+     * bh2 fix round 1 (R1T-WF-L1): the clinic's records answered 429 (too many changes in a short time – the write
+     * allowance). The change is kept and sent again by itself at the server's Retry-After; it is not a lost connection.
+     */
+    savePaused: "Saving paused for a moment – it will try again automatically",
+    savePausedHint:
+      "Many changes were saved to your clinic's records in a short time, so saving waits a few seconds. Your changes are kept and sent by themselves – keep this page open until it says Saved.",
     staffCannotApprove: "Ready for a signing clinician: staff prepare forms, and a clinician with signing details approves them.",
     /** Fix round 1 (B0-26): a staff member's draft with items still open ("5 items to resolve – then …"). */
     staffThenApproves: "then a clinician with signing details approves.",

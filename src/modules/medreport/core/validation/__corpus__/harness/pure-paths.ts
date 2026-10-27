@@ -15,7 +15,13 @@
  * split    – core/text/sentences.ts splitSentences(text, policy) (W0.5); check.split {count, whole[]}.
  * scope    – core/scope.ts removeSentencesWithTerms(text, terms); check.scope {contains[], notContains[], figures}.
  * probe    – input.probe.name: condition | own-voice | section-text | copy-equals-issued | map-note-visible |
- *            schema-keeps-release-fields | rtf-picture | status-label.
+ *            schema-keeps-release-fields | rtf-picture | status-label | records-reviewed-label | save-paused.
+ *            bh2 fix round 1 (R1T-WF-L1, additive): records-reviewed-label imports input.probe.notes (pasted fictional
+ *            notes) through the general notes reader and the confirm step (optionally with staff's type change,
+ *            input.probe.typeChanges {entryKey: type}) and checks the records-reviewed list's descriptions
+ *            (check.probe {contains[], notContains[]}); save-paused runs the Studio's server store against the real
+ *            store handlers while the member's write allowance is used up (429 + Retry-After) and checks the save is
+ *            paused (never stopped) and the header says so (check.probe {text, notText[]}), then saved once allowed.
  */
 import { assembleDraft } from "../../../../ai/assemble";
 import { conditionOf, notApplicable } from "../../../conditions";
@@ -571,6 +577,8 @@ async function runProbe(c: RunCase): Promise<PathOutcome> {
     const media = Object.keys(openZipSafely(out.docx).files).filter((n) => n.startsWith("word/media/"));
     return { path: "probe", ok: media.length > 0, detail: media.length ? `the picture is kept (${media.join(", ")})` : "the converted file has no picture" };
   }
+  if (name === "records-reviewed-label") return probeRecordsReviewed(c, input, check, built);
+  if (name === "save-paused") return probeSavePaused(input, check, built);
   if (name === "schema-keeps-release-fields") {
     // The plan's "model" is stored as Report.reportModel (W0.3: "model" is a banned key in the clinic's case export).
     const r = { ...built.report, approver: { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" }, reportModel: 2 } as Report & Loose;
@@ -583,6 +591,135 @@ async function runProbe(c: RunCase): Promise<PathOutcome> {
     return { path: "probe", ok, detail };
   }
   return { path: "probe", ok: false, detail: `unknown probe ${name}` };
+}
+
+/**
+ * R1T-WF-L1 (bh2 fix round 1): a note headed "Review" (stored as a follow-up) is listed by its own heading in the
+ * records-reviewed list (Appendix A of a report or summary PDF), not as a "Follow-up". The notes go through the real
+ * import: general notes reader → staff's review (type changes) → confirm (bundleFromReview) → buildViewModel.
+ */
+async function probeRecordsReviewed(c: RunCase, input: Loose, check: Loose, built: Awaited<ReturnType<typeof buildCase>>): Promise<PathOutcome> {
+  const notes = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "connectors", "file-import", "general-notes"].join("/"))) as typeof import("../../../../connectors/file-import/general-notes");
+  const confirm = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "connectors", "file-import", "review-bundle"].join("/"))) as typeof import("../../../../connectors/file-import/review-bundle");
+  const docgen = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "docgen", "view-model"].join("/"))) as typeof import("../../../../docgen/view-model");
+  const read = notes.readGeneralNotes({ format: "text", blocks: notes.textToBlocks(String(input.notes ?? "")), now: new Date(CORPUS_AT) });
+  if (!read.ok) return { path: "probe", ok: false, detail: `the notes were not read: ${read.message}` };
+  const changes = (input.typeChanges ?? {}) as Record<string, Report["bundleSnapshot"]["notes"][number]["type"]>;
+  const review = { ...read.review, entries: read.review.entries.map((e) => (changes[e.key] ? { ...e, type: changes[e.key] } : e)) };
+  const bundle = confirm.bundleFromReview(review, { tenantId: built.report.tenantId, now: new Date(CORPUS_AT) });
+  if (!bundle.ok) return { path: "probe", ok: false, detail: `the review was not confirmed: ${JSON.stringify(bundle.issues).slice(0, 300)}` };
+  const vm = docgen.buildViewModel({ ...built.report, bundleSnapshot: bundle.bundle }, bundle.bundle, built.template, { now: new Date(CORPUS_AT) });
+  const rows = vm.recordsReviewed.map((r) => `${r.date} ${r.description}`);
+  const problems = [
+    ...strings(check.contains).filter((s) => !rows.some((r) => r.includes(s))).map((s) => `no row “${s}”`),
+    ...strings(check.notContains).filter((s) => rows.some((r) => r.includes(s))).map((s) => `lists “${s}”`),
+  ];
+  return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ")} ${c.id}: ${JSON.stringify(rows)}`.trim() };
+}
+
+/**
+ * R1T-WF-L1 (bh2 fix round 1): a save the clinic's records answer with their rate limit (429 RATE_LIMITED,
+ * store_write_limited, with Retry-After) is paused and sent again by itself – it is never stopped after the queue's
+ * attempts, and the review header says "Saving paused for a moment", not "Could not save – check your connection".
+ * The Studio's own server store (ui/store) against the real PUT /store/reports handler; the member's allowance is
+ * reported used up by the shared counters until the probe lets it go.
+ */
+async function probeSavePaused(input: Loose, check: Loose, built: Awaited<ReturnType<typeof buildCase>>): Promise<PathOutcome> {
+  const { createHttpHarness } = await import("./http");
+  const { bindHandler } = await import("../../../../api/http");
+  const { handleStoreReportGet, handleStoreReportPut } = await import("../../../../api/handlers/store-reports");
+  const { createServerApi } = await import("../../../../ui/store/server-api");
+  const { createServerStore } = await import("../../../../ui/store/server-store");
+  let header: Loose = {};
+  try {
+    header = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "ui", "components", "review", "review-header"].join("/"))) as Loose;
+  } catch {
+    // no header module on this tree
+  }
+  const saveStatus = header.saveStatus as ((state: string, opts: { tenant: boolean; paused: boolean }) => { tone: string; text: string }) | undefined;
+  if (typeof saveStatus !== "function") return { path: "probe", ok: false, detail: "the review header has no saveStatus (this tree says “check your connection” for every failed save)" };
+
+  const h = createHttpHarness();
+  let limited = false;
+  const windows = new Map<string, number>();
+  const RESET_IN_MS = Number(input.retryAfterSeconds ?? 42) * 1000;
+  const counter = (key: string, amount: number) => {
+    const count = (windows.get(key) ?? 0) + amount;
+    windows.set(key, count);
+    // The member's per-minute write allowance is used up while `limited` (e.g. several people on one sign-in).
+    const used = limited && key.startsWith("store:writes:member:") ? 10_000 : count;
+    return { count: used, resetAt: new Date(Date.now() + RESET_IN_MS).toISOString() };
+  };
+  const deps = {
+    ...h.deps,
+    sharedState: {
+      hit: async (key: string, _windowMs: number, amount = 1) => counter(key, amount),
+      peek: async (key: string) => counter(key, 0),
+      reset: async (key: string) => void windows.delete(key),
+      claimOnce: async () => true,
+    },
+  } as typeof h.deps;
+  const log: number[] = [];
+  const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    const u = new URL(String(url), "http://localhost");
+    const id = decodeURIComponent(u.pathname.split("/").pop() ?? "");
+    const headers = new Headers(init?.headers);
+    headers.set("x-corpus-member", "sarah");
+    headers.set("origin", "http://localhost");
+    const req = new Request(u.href, { method: init?.method ?? "GET", headers, body: init?.body ?? undefined });
+    const handler = (init?.method ?? "GET") === "PUT" ? handleStoreReportPut : handleStoreReportGet;
+    const res = await bindHandler(handler, () => deps)(req, { params: { id } });
+    if ((init?.method ?? "GET") === "PUT") log.push(res.status);
+    return res;
+  }) as typeof fetch;
+  const timers: Array<{ run: () => void; ms: number }> = [];
+  const client = createServerStore({
+    api: createServerApi(fetchImpl),
+    browserEvents: false,
+    notify: () => undefined,
+    queue: { maxAttempts: 2, backoffMs: () => 1, schedule: (run, ms) => (timers.push({ run, ms }), () => undefined) },
+  });
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const settleNow = async () => {
+    for (let i = 0; i < 50; i++) await tick();
+  };
+  const report: Report = { ...built.report, status: "draft" };
+  client.saveReport(report);
+  if (!(await client.flush())) return { path: "probe", ok: false, detail: `the first save failed: ${JSON.stringify(log)}` };
+
+  limited = true;
+  const edited: Report = { ...report, patientLabel: `${report.patientLabel} (edited)`, updatedAt: new Date(Date.parse(report.updatedAt) + 60_000).toISOString() };
+  client.saveReport(edited);
+  let settled: boolean | null = null;
+  void client.reportSettled(edited.id).then((ok) => (settled = ok));
+  await settleNow();
+  const problems: string[] = [];
+  const attempts = Number(input.attempts ?? 6);
+  for (let i = 0; i < attempts; i++) {
+    const t = timers.shift();
+    if (!t) {
+      problems.push(`attempt ${i + 1}: no retry scheduled (the save stopped)`);
+      break;
+    }
+    // The handler rounds the window's end up to whole seconds (Retry-After), so allow up to 2 s more.
+    if (t.ms < RESET_IN_MS || t.ms > RESET_IN_MS + 2000) problems.push(`retry ${i + 1} after ${t.ms} ms, not the server's Retry-After (${RESET_IN_MS} ms)`);
+    t.run();
+    await settleNow();
+  }
+  const sync = client.syncState();
+  if (!log.includes(429)) problems.push(`no 429 from the store (${JSON.stringify(log)})`);
+  if (sync.paused !== true) problems.push("the store does not say the save is paused");
+  if (settled !== null) problems.push(`the save settled (${settled}) while still rate-limited – it gave up`);
+  const shown = saveStatus("saving", { tenant: true, paused: sync.paused === true });
+  if (check.text !== undefined && shown.text !== check.text) problems.push(`the header says “${shown.text}”`);
+  for (const s of strings(check.notText)) if (shown.text.includes(s)) problems.push(`the header says “${shown.text}”`);
+
+  limited = false;
+  timers.shift()?.run();
+  await settleNow();
+  if (settled !== true) problems.push(`not saved once allowed again (${settled})`);
+  if (client.syncState().paused) problems.push("still paused after the save");
+  return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ") || "paused, then saved"} – PUT ${JSON.stringify(log)}; header “${shown.text}”` };
 }
 
 function _engineValidate(built: Awaited<ReturnType<typeof buildCase>>) {

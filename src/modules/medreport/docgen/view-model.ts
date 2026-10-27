@@ -437,6 +437,17 @@ function viewParagraphs(section: ReportSection, noteDates: Map<string, string>, 
   return out;
 }
 
+/**
+ * What a note is called in the records-reviewed list: its own heading's type words when the import kept them
+ * (Note.heading – "Review", "Re-assessment"), else its type's label. bh2 fix round 1 (R1T-WF-L1): a note headed
+ * "Review" is stored as a follow-up, and was listed as "Follow-up".
+ */
+export function noteKindLabel(note: Pick<EpisodeBundle["notes"][number], "type" | "heading">): string {
+  const own = note.heading?.trim().replace(/\s+/g, " ");
+  if (own) return own.charAt(0).toUpperCase() + own.slice(1);
+  return NOTE_TYPE_LABELS[note.type] ?? note.type;
+}
+
 function recordsReviewedRows(
   report: Report,
   bundle: EpisodeBundle,
@@ -461,7 +472,7 @@ function recordsReviewedRows(
     .map((n) =>
       row(
         formatUkDate(n.date),
-        `Clinical note – ${NOTE_TYPE_LABELS[n.type] ?? n.type}`,
+        `Clinical note – ${noteKindLabel(n)}`,
         `${n.author.name} (HCPC ${n.author.hcpc})`,
         cited.has(n.id),
       ),

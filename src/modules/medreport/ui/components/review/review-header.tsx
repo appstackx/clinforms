@@ -7,6 +7,8 @@
  * approved-banner.tsx (re-exported here).
  * A clinic's Studio (25/10/2026), draft or approved: "Complete another form for this patient" – a new report on another
  * referrer form from this report's checked notes, without uploading them again (core/reuse.ts).
+ * bh2 fix round 1 (R1T-WF-L1): a save waiting out the clinic's write allowance (429) says "Saving paused for a moment",
+ * not "check your connection" (saveStatus; the store's sync state says it is paused).
  *
  * bh2 W0 follow-up (seam "approved-summary-counts", bh2-base2): ApprovedBanner moved, unchanged, to approved-banner.tsx
  * (WA1: the approved summary's counts come from the issue state), so this file – the header's layout and copy – is WF's.
@@ -16,6 +18,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   CheckCircle2,
+  Clock,
   Download,
   FilePlus2,
   FileText,
@@ -34,6 +37,7 @@ import type { Report, ReportTemplate } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from "../../primitives";
 import { useStudioPaths } from "../../routes";
+import { useStoreSync } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
 import type { GenerationSummary } from "./review-model";
 import { Pill } from "./review-ui";
@@ -78,6 +82,19 @@ export function GenerationBadge({ summary }: { summary: GenerationSummary | null
       </TooltipContent>
     </Tooltip>
   );
+}
+
+/**
+ * What the save status says. bh2 fix round 1 (R1T-WF-L1): a save the clinic's records answered with their rate limit
+ * (429, store_write_limited) is PAUSED – the write queue sends it again by itself at the server's Retry-After – so it
+ * says so instead of "Could not save – check your connection", which is for a save that failed.
+ */
+export type SaveStatusTone = "saving" | "paused" | "failed" | "saved";
+
+export function saveStatus(saveState: SaveState, opts: { tenant: boolean; paused: boolean }): { tone: SaveStatusTone; text: string } {
+  if (saveState === "saving") return opts.tenant && opts.paused ? { tone: "paused", text: TENANT_COPY.review.savePaused } : { tone: "saving", text: "Saving…" };
+  if (saveState === "failed") return { tone: "failed", text: opts.tenant ? TENANT_COPY.review.saveFailed : "Could not save in this browser (storage full or blocked)" };
+  return { tone: "saved", text: opts.tenant ? TENANT_COPY.review.saved : "Saved in this browser" };
 }
 
 /** The most of a reference the header shows; a longer one (a typed answer) ends in "…", in full on hover. */
@@ -140,6 +157,8 @@ export function ReviewHeader({
 }) {
   const paths = useStudioPaths();
   const tenant = useStudioMode() === "tenant";
+  const sync = useStoreSync();
+  const status = saveStatus(saveState, { tenant, paused: sync.paused === true });
   const signed = report.status === "signed";
   const form = report.form;
   const approveLabel = form ? "Approve…" : "Sign…";
@@ -202,15 +221,19 @@ export function ReviewHeader({
           <div className="flex flex-wrap items-center gap-2">
             <GenerationBadge summary={generation} />
             <span className="inline-flex h-6 items-center gap-1 text-[11px] text-slate-500" role="status" aria-live="polite">
-              {saveState === "saving" ? (
+              {status.tone === "saving" ? (
                 <>
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Saving…
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> {status.text}
                 </>
-              ) : saveState === "failed" ? (
-                <span className="text-red-700">{tenant ? TENANT_COPY.review.saveFailed : "Could not save in this browser (storage full or blocked)"}</span>
+              ) : status.tone === "paused" ? (
+                <span className="inline-flex items-center gap-1 text-amber-800" title={TENANT_COPY.review.savePausedHint} data-save-paused>
+                  <Clock className="h-3 w-3" aria-hidden /> {status.text}
+                </span>
+              ) : status.tone === "failed" ? (
+                <span className="text-red-700">{status.text}</span>
               ) : (
                 <>
-                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> {tenant ? TENANT_COPY.review.saved : "Saved in this browser"}
+                  <CheckCircle2 className="h-3 w-3 text-teal-600" aria-hidden /> {status.text}
                   {savedAt ? ` · ${formatUkDateTime(savedAt).slice(11)}` : ""}
                 </>
               )}

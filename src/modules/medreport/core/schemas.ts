@@ -509,6 +509,9 @@ export const IncidentSchema = z.object({
  * Clinical record
  * ----------------------------------------------------------------------------------------------*/
 
+/** Longest Note.heading (the type words of a note's heading, e.g. "Review"). */
+export const NOTE_HEADING_MAX = 60;
+
 /** A SOAP clinical note. `id` is the citable "N-001"… ID assigned by the mapper in date/time order. */
 export const NoteSchema = z.object({
   id: NoteIdSchema,
@@ -516,6 +519,13 @@ export const NoteSchema = z.object({
   date: IsoDateSchema,
   time: TimeSchema.optional(),
   type: NoteTypeSchema,
+  /**
+   * Additive (bh2 fix round 1, R1T-WF-L1): the words the note's own heading names its kind of appointment with, as
+   * written ("Review", "Re-assessment", "Follow Up"), when the notes import read words that name `type` (staff did not
+   * change the type in the review). Display only: the records-reviewed list shows them, so a note headed "Review" is
+   * not listed as a "Follow-up". Never sent for drafting; older records have none (the type's label is shown).
+   */
+  heading: z.string().min(1).max(NOTE_HEADING_MAX).optional(),
   author: ClinicianSchema,
   subjective: z.string(),
   objective: z.string(),
