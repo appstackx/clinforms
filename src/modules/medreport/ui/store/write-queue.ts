@@ -6,8 +6,12 @@
  *   in-flight request settles – so writes of one record always reach the server in order, with the revision
  *   the previous write returned (generateReport's parallel draft groups save the same report many times).
  * - Outcomes (from `send`): ok · conflict / gone (the stored copy was reloaded by the sender: the pending payload
- *   is dropped) · rejected (this payload is refused; a newer pending one is still sent) · retry (network, 5xx,
- *   429: exponential back-off, then "failed" after maxAttempts) · blocked (401/403: kept, waits for sign-in).
+ *   is dropped) · rejected (this payload is refused; a newer pending one is still sent) · retry (network, 5xx:
+ *   exponential back-off, then "failed" after maxAttempts) · blocked (401/403: kept, waits for sign-in).
+ * - A rate limit (429 with the server's Retry-After, `retryAfterMs` – bh2 fix round 1, R1T-WF-L1) PAUSES the slot: the
+ *   next attempt waits for the server's window, and a rate-limited attempt never counts towards maxAttempts, so the
+ *   change is sent again by itself (the server's own message says "The Studio will try again in N s"). state().paused
+ *   says so while any slot waits (the Studio says "Saving paused for a moment", not "check your connection").
  * - Failed and blocked slots keep their latest payload and are sent again by retryFailed() (the store calls it
  *   on focus, when the browser comes back online, and on the next save of that record).
  * - settled(key) / settledAll() resolve when the slot is idle (true = its last write succeeded) or has failed
@@ -18,13 +22,17 @@
 
 export type SendOutcome =
   | { kind: "ok" }
-  | { kind: "conflict" | "gone" | "rejected" | "retry" | "blocked"; message: string };
+  | { kind: "conflict" | "gone" | "rejected" | "blocked"; message: string }
+  /** `retryAfterMs`: the server's rate limit (429 Retry-After) – wait this long, paused, without counting the attempt. */
+  | { kind: "retry"; message: string; retryAfterMs?: number };
 
 export interface WriteQueueState {
   /** Records with a write waiting or in flight. */
   pending: number;
   /** Some record could not be saved (failed after retries, refused, waiting for sign-in, or reloaded after a clash). */
   failed: boolean;
+  /** A record's save is paused by the server's rate limit and will be sent again by itself (R1T-WF-L1). */
+  paused?: true;
   /** The latest problem, in plain English. */
   error?: string;
 }
@@ -50,6 +58,8 @@ interface Slot<P> {
   attempts: number;
   /** Stopped after maxAttempts or a 401/403: waits for retryFailed() or a new payload. */
   stopped: boolean;
+  /** Waiting out the server's rate limit (a retry is scheduled at its Retry-After); cleared when it is sent. */
+  paused: boolean;
   /** The last settled write's result (null before the first). */
   lastOk: boolean | null;
   /** A problem that stays visible until the record's next successful write. */
@@ -74,7 +84,7 @@ export class WriteQueue<P> {
   private slot(key: string): Slot<P> {
     let slot = this.slots.get(key);
     if (!slot) {
-      slot = { payload: null, inflight: false, cancelTimer: null, attempts: 0, stopped: false, lastOk: null, error: null, waiters: [] };
+      slot = { payload: null, inflight: false, cancelTimer: null, attempts: 0, stopped: false, paused: false, lastOk: null, error: null, waiters: [] };
       this.slots.set(key, slot);
     }
     return slot;
@@ -107,15 +117,17 @@ export class WriteQueue<P> {
   state(): WriteQueueState {
     let pending = 0;
     let failed = false;
+    let paused = false;
     let error: string | undefined;
     Array.from(this.slots.values()).forEach((slot) => {
       if (slot.inflight || slot.payload !== null) pending += 1;
+      if (slot.paused && slot.payload !== null) paused = true;
       if (slot.stopped || slot.error !== null) {
         failed = true;
         if (slot.error) error = slot.error;
       }
     });
-    return { pending, failed, ...(error ? { error } : {}) };
+    return { pending, failed, ...(paused ? { paused: true as const } : {}), ...(error ? { error } : {}) };
   }
 
   /** Resolves when `key` is idle (true = its last write succeeded) or stopped (false). */
@@ -216,6 +228,7 @@ export class WriteQueue<P> {
     const payload = slot.payload;
     slot.payload = null;
     slot.inflight = true;
+    slot.paused = false;
     let outcome: Promise<SendOutcome>;
     try {
       outcome = this.opts.send(key, payload, { keepalive });
@@ -230,6 +243,7 @@ export class WriteQueue<P> {
   private after(key: string, slot: Slot<P>, sent: P, result: SendOutcome): void {
     if (this.slots.get(key) !== slot) return; // cleared meanwhile
     slot.inflight = false;
+    slot.paused = false;
     switch (result.kind) {
       case "ok":
         slot.attempts = 0;
@@ -252,8 +266,17 @@ export class WriteQueue<P> {
       case "retry":
       case "blocked": {
         if (slot.payload === null) slot.payload = sent; // a newer pending payload supersedes the one that failed
-        slot.attempts += 1;
         slot.error = result.message;
+        const retryAfterMs = result.kind === "retry" ? result.retryAfterMs : undefined;
+        if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs)) {
+          // The server's rate limit: wait for its window (never stop – the change is sent again by itself). A newer
+          // edit waits too (enqueue does not cut the wait short); flush() still sends at once (page hide).
+          slot.paused = true;
+          const schedule = this.opts.schedule ?? defaultSchedule;
+          slot.cancelTimer = schedule(() => this.pump(key, false), Math.max(0, retryAfterMs));
+          break;
+        }
+        slot.attempts += 1;
         const max = this.opts.maxAttempts ?? 5;
         if (result.kind === "blocked" || slot.attempts >= max) {
           slot.stopped = true;

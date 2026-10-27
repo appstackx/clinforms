@@ -24,6 +24,9 @@
  * controllerSnapshot records a text controller's text as {kind: "text", value} (an existing FormAnswer kind). Every
  * one-click fix kind the release records (Paragraph.fixes[].kind, RELEASE_MEMBERS.fixKinds) and every report activity
  * code it writes (RELEASE_MEMBERS.activityActions, core/activity-actions.ts) are in the builders.
+ *
+ * bh2 fix round 1 (R1T-WF-L1): the notes import keeps a note's own type words from its heading ("Review") as
+ * bundleSnapshot.notes[].heading – shown in the records-reviewed list, never used for checks or drafting.
  */
 import { createHmac } from "node:crypto";
 import { z } from "zod";
@@ -70,6 +73,7 @@ export const RELEASE_KEYS = {
     "flags[].ackPolicy",
     "activity[].reportId",
     "approverTakeovers",
+    "bundleSnapshot.notes[].heading",
   ],
   receipt: ["issuedContentSha256", "acknowledgementsSha256", "approverTakeover", "signerConfirmations"],
   form: [
@@ -212,6 +216,8 @@ export function releaseReport(base: Report, mapSha256: string): Report {
   const entry: Loose = { at: RELEASE_AT, actor: APPROVER.name, action: "disposition_set", detail: "F-01: applies anyway.", reportId: "rpt_previous_version" };
   const actions = RELEASE_MEMBERS.activityActions.map((action) => ({ at: RELEASE_AT, actor: APPROVER.name, action, detail: `${first.key}: ${action}.` }));
   report.activity = [...report.activity, entry as Report["activity"][number], ...(actions as Report["activity"])];
+  // bh2 fix round 1 (R1T-WF-L1): a note's own type words from its heading, as the notes import keeps them.
+  Object.assign(report.bundleSnapshot.notes[0], { heading: "Review" });
   return report;
 }
 

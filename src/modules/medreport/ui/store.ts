@@ -386,7 +386,10 @@ export function retryStoreSync(): void {
   if (server()) srv().retryFailed();
 }
 
-/** {pending, failed, error} of the server store, kept current. Browser mode: {pending: 0, failed: false}. */
+/**
+ * {pending, failed, paused, error} of the server store, kept current (`paused`: a save waits out the server's rate
+ * limit and is sent again by itself). Browser mode: {pending: 0, failed: false}.
+ */
 export function useStoreSync(): StoreSyncState {
   const [state, setState] = useState<StoreSyncState>(IDLE);
   useEffect(() => {
@@ -395,7 +398,7 @@ export function useStoreSync(): StoreSyncState {
     const update = () =>
       setState((prev) => {
         const next = store.syncState();
-        return prev.pending === next.pending && prev.failed === next.failed && prev.error === next.error ? prev : next;
+        return prev.pending === next.pending && prev.failed === next.failed && prev.paused === next.paused && prev.error === next.error ? prev : next;
       });
     update();
     return store.subscribe(update);

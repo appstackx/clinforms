@@ -34,12 +34,36 @@ const KEEPALIVE_MAX_BODY = 60_000;
 
 export type FailureKind = "conflict" | "not_found" | "rejected" | "retry" | "blocked";
 
+/**
+ * bh2 fix round 1 (R1T-WF-L1): a 429 (the clinic's or the member's write allowance – store_write_limited) carries the
+ * server's Retry-After as `retryAfterMs`, so the write queue waits that long and tries again (paused, not failed).
+ */
 export type PutOutcome<T> =
   | { ok: true; rev: number; record: T; downgraded?: boolean }
   | { ok: false; kind: "conflict"; current: { rev: number; record: T } | null; message: string }
-  | { ok: false; kind: Exclude<FailureKind, "conflict">; status: number; message: string };
+  | { ok: false; kind: Exclude<FailureKind, "conflict">; status: number; message: string; retryAfterMs?: number };
 
-export type DeleteOutcome = { ok: true } | { ok: false; kind: FailureKind; status: number; message: string };
+export type DeleteOutcome = { ok: true } | { ok: false; kind: FailureKind; status: number; message: string; retryAfterMs?: number };
+
+/** Longest Retry-After the queue waits before trying again (a daily allowance is tried again every 15 minutes). */
+export const MAX_RETRY_AFTER_MS = 15 * 60_000;
+
+/**
+ * A 429's Retry-After in ms (delta-seconds or an HTTP date; at least 1 s, at most MAX_RETRY_AFTER_MS), else null –
+ * only a rate limit pauses the queue; other statuses keep their own back-off.
+ */
+export function rateLimitRetryAfterMs(status: number, header: string | null, nowMs: number = Date.now()): number | null {
+  if (status !== 429) return null;
+  const raw = (header ?? "").trim();
+  let ms: number | null = null;
+  if (/^\d{1,9}$/.test(raw)) ms = Number(raw) * 1000;
+  else if (raw) {
+    const at = Date.parse(raw);
+    if (Number.isFinite(at)) ms = at - nowMs;
+  }
+  // A 429 without a usable Retry-After still pauses (the server's own windows are a minute long).
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(1000, ms ?? 60_000));
+}
 
 export class StoreRequestError extends Error {
   readonly status: number;
@@ -188,7 +212,8 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
     if (baseRev !== null && res.status === 403 && typeof code === "string" && DECISION_REFUSED_CODES.includes(code)) return { ok: false, kind: "conflict", current: null, message: detail ?? MESSAGES.rejected };
     const kind = classifyStatus(res.status, code);
     if (kind === "conflict") return { ok: false, kind, current: readCurrent(raw), message: detail ?? MESSAGES.conflict };
-    return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status) };
+    const retryAfterMs = rateLimitRetryAfterMs(res.status, res.headers.get("retry-after"));
+    return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status), ...(retryAfterMs !== null ? { retryAfterMs } : {}) };
   }
 
   async function del(url: string, keepalive: boolean): Promise<DeleteOutcome> {
@@ -197,7 +222,8 @@ export function createServerApi(fetchImpl: typeof fetch = (input, init) => fetch
     if (res.ok || res.status === 404) return { ok: true };
     const { detail, code } = await problemOf(res);
     const kind = classifyStatus(res.status, code);
-    return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status) };
+    const retryAfterMs = rateLimitRetryAfterMs(res.status, res.headers.get("retry-after"));
+    return { ok: false, kind, status: res.status, message: detail ?? defaultMessage(kind, res.status), ...(retryAfterMs !== null ? { retryAfterMs } : {}) };
   }
 
   async function uploadOnce(file: StoredFormFile, signal?: AbortSignal): Promise<"stored" | "corrupt" | "failed"> {

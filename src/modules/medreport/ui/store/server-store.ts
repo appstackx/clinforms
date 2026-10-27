@@ -31,6 +31,11 @@ export interface StoreSyncState {
   pending: number;
   /** Something could not be saved or loaded. */
   failed: boolean;
+  /**
+   * A change is waiting out the server's rate limit (429, Retry-After) and will be sent again by itself – "Saving
+   * paused for a moment", never "check your connection" (bh2 fix round 1, R1T-WF-L1).
+   */
+  paused?: true;
   /** The latest problem, in plain English. */
   error?: string;
 }
@@ -191,6 +196,12 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     };
   }
 
+  /** A refused or failed write as the queue's outcome; a rate limit's Retry-After travels with a retry (R1T-WF-L1). */
+  function failure(kind: Exclude<SendOutcome["kind"], "ok">, res: { message: string; retryAfterMs?: number }): SendOutcome {
+    if (kind === "retry") return res.retryAfterMs !== undefined ? { kind, message: res.message, retryAfterMs: res.retryAfterMs } : { kind, message: res.message };
+    return { kind, message: res.message };
+  }
+
   async function send(op: Op, keepalive: boolean): Promise<SendOutcome> {
     const outcome = await sendOnce(op, keepalive);
     if (outcome.kind === "ok") writtenAt.set(keyOf(op), Date.now());
@@ -253,7 +264,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
           reports.delete(id);
           notify();
         }
-        return { kind: res.kind, message: res.message };
+        return failure(res.kind, res);
       }
       case "delete-report": {
         const res = await api.deleteReport(op.id, { keepalive });
@@ -263,7 +274,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
           broadcast("report", op.id, null);
           return { kind: "ok" };
         }
-        return { kind: res.kind === "conflict" || res.kind === "not_found" ? "gone" : res.kind, message: res.message };
+        return failure(res.kind === "conflict" || res.kind === "not_found" ? "gone" : res.kind, res);
       }
       case "put-form": {
         const id = op.form.id;
@@ -306,7 +317,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
           // here as if saved – the clinic's copy comes back.
           await restoreForm(id);
         }
-        return { kind: res.kind, message: res.message };
+        return failure(res.kind, res);
       }
       case "delete-form": {
         const res = await api.deleteForm(op.id, { keepalive });
@@ -318,7 +329,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
         }
         // Fix round 1 (B0-9): refused (a confirmed map, for a staff member): the form is put back in the library.
         if (res.kind === "rejected" || res.kind === "blocked") await restoreForm(op.id);
-        return { kind: res.kind === "conflict" || res.kind === "not_found" ? "gone" : res.kind, message: res.message };
+        return failure(res.kind === "conflict" || res.kind === "not_found" ? "gone" : res.kind, res);
       }
       case "put-settings": {
         const res = await api.putSettings(op.links, { keepalive });
@@ -327,7 +338,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
           return { kind: "ok" };
         }
         if (res.kind === "conflict" || res.kind === "not_found") return { kind: "rejected", message: res.message };
-        return { kind: res.kind, message: res.message };
+        return failure(res.kind, res);
       }
     }
   }
@@ -655,7 +666,7 @@ export function createServerStore(options: ServerStoreOptions = {}) {
     syncState(): StoreSyncState {
       const q = queue.state();
       const error = q.error ?? loadError ?? undefined;
-      return { pending: q.pending, failed: q.failed || loadError !== null, ...(error ? { error } : {}) };
+      return { pending: q.pending, failed: q.failed || loadError !== null, ...(q.paused ? { paused: true as const } : {}), ...(error ? { error } : {}) };
     },
     subscribe(fn: () => void): () => void {
       subscribers.add(fn);
