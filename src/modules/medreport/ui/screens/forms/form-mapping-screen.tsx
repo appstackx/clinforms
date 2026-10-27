@@ -63,6 +63,7 @@ import {
   judgementConfirmProblem,
   listedInOrder,
   mappingGroups,
+  mappingConfirmStatus,
   mappingLint,
   mayAcceptJudgement,
   mayConfirmForms,
@@ -169,15 +170,23 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   // check-WE minor 9: a map that accepts a clinical judgement as worded is confirmed by a clinician (or a member who may
   // sign) – said here, before the click, instead of the server's refusal.
   const judgementProblem = judgementConfirmProblem(lint, mayAccept);
-  const problems = useMemo(
+  // Fix round 1 (R1T-WE-L1): what the member can fix here; who confirms (their role, or a judgement map) is said apart.
+  const fixable = useMemo(
     () => [
       ...checkFormDefinition(draft),
       ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
       ...lint.blocking,
-      ...(judgementProblem ? [judgementProblem] : []),
     ],
-    [draft, tenant, lint, judgementProblem],
+    [draft, tenant, lint],
   );
+  const confirmStatus = mappingConfirmStatus({
+    fixable,
+    judgementObstacle: judgementProblem,
+    mayConfirm,
+    dirty,
+    confirmed: saved.status === "confirmed",
+    confirmRole: TENANT_COPY.forms.confirmRole,
+  });
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
   const toCheck = draft.fields.filter((f) => f.confidence !== "high").length;
@@ -556,16 +565,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 lg:px-8">
             <p className="text-xs text-slate-600" aria-live="polite">
-              {problems.length
-                ? `${plural(problems.length, "problem")} to fix before confirming`
-                : dirty
-                  ? "Unsaved changes"
-                  : saved.status === "confirmed"
-                    ? "No changes"
-                    : mayConfirm
-                      ? "Ready to confirm"
-                      : "Ready for an owner, administrator or clinician to confirm"}
-              {!mayConfirm ? <span className="block text-[11px] text-slate-500">{TENANT_COPY.forms.confirmRole}</span> : null}
+              {confirmStatus.status}
+              {confirmStatus.roleNote ? <span className="block text-[11px] text-slate-500">{confirmStatus.roleNote}</span> : null}
             </p>
             <div className="flex flex-wrap gap-2">
               {saved.status === "confirmed" ? (
@@ -594,7 +595,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </div>
       ) : null}
 
-      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} problems={problems} draft={draft} onConfirm={confirm} />
+      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} problems={fixable} whoConfirms={judgementProblem} draft={draft} onConfirm={confirm} />
     </StudioShell>
   );
 }
@@ -688,12 +689,15 @@ function ConfirmDialog({
   open,
   onOpenChange,
   problems,
+  whoConfirms,
   draft,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   problems: string[];
+  /** Fix round 1 (R1T-WE-L1): who confirms this map instead of this member (a judgement map) – not a problem to fix. */
+  whoConfirms: string | null;
   draft: FormDefinition;
   onConfirm(by: string): Promise<string | null>;
 }) {
@@ -737,6 +741,10 @@ function ConfirmDialog({
               {problems.length > 8 ? <li>…and {problems.length - 8} more</li> : null}
             </ul>
           </Notice>
+        ) : whoConfirms ? (
+          <Notice tone="warning" title="Who confirms this mapping">
+            {whoConfirms}
+          </Notice>
         ) : (
           <form
             id="confirm-mapping"
@@ -775,7 +783,7 @@ function ConfirmDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Back
           </Button>
-          {problems.length ? null : (
+          {problems.length || whoConfirms ? null : (
             <Button type="submit" form="confirm-mapping" disabled={!name.trim() || !checked || busy}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden />}
               {busy ? "Confirming…" : "Confirm mapping"}

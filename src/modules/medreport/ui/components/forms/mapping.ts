@@ -564,3 +564,40 @@ export function judgementConfirmProblem(lint: Pick<MappingLint, "acceptedJudgeme
   const ids = lint.acceptedJudgements;
   return `This mapping accepts a clinical judgement as worded on ${ids.length === 1 ? "question" : "questions"} ${ids.slice(0, 6).join(", ")}${ids.length > 6 ? ` and ${ids.length - 6} more` : ""}: a clinician (or a member who may sign) confirms it.`;
 }
+
+/** What the mapping page's footer says before confirming (mappingConfirmStatus). */
+export interface MappingConfirmStatus {
+  /** The status line. */
+  status: string;
+  /** Who confirms the mapping, under the status line – null when the status line already says it, or nobody else is needed. */
+  roleNote: string | null;
+}
+
+/**
+ * Fix round 1 (R1T-WE-L1, TPN-L4): the mapping page's footer. Problems the member can fix on the page (the form checks,
+ * the referrer, an unaccepted clinical judgement) are counted. Who may confirm is never counted as a problem to fix: a
+ * member whose role does not confirm forms (staff), or a map that accepts a clinical judgement as worded and a member who
+ * may not accept one (judgementConfirmProblem), is told only who confirms it – staff saw "1 problem to fix before
+ * confirming" when the only obstacle was their role.
+ */
+export function mappingConfirmStatus(input: {
+  /** Problems the member can fix on this page (not who confirms). */
+  fixable: readonly string[];
+  /** judgementConfirmProblem: who confirms a map that accepts a clinical judgement as worded, when this member may not. */
+  judgementObstacle: string | null;
+  mayConfirm: boolean;
+  dirty: boolean;
+  confirmed: boolean;
+  /** Who confirms forms (the Studio copy), shown to a member who may not. */
+  confirmRole: string;
+}): MappingConfirmStatus {
+  const n = input.fixable.length;
+  const who = input.judgementObstacle ?? (input.mayConfirm ? null : input.confirmRole);
+  if (n) return { status: `${n} ${n === 1 ? "problem" : "problems"} to fix before confirming`, roleNote: who };
+  if (input.dirty) return { status: "Unsaved changes", roleNote: who };
+  if (input.confirmed) return { status: "No changes", roleNote: who };
+  // Only who confirms stands in the way: say so, with no count.
+  if (input.judgementObstacle) return { status: input.judgementObstacle, roleNote: null };
+  if (!input.mayConfirm) return { status: "Ready for an owner, administrator or clinician to confirm", roleNote: input.confirmRole };
+  return { status: "Ready to confirm", roleNote: null };
+}
