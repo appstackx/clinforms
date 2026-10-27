@@ -289,5 +289,7 @@ Open – for Khuram:
 2. **Two "demo clinic" flags:** main's `clinic_plan.demo_clinic` (banner, notices, PH-DEMO approvals) and the
    foundation's `pms_settings.is_demo` (set by `pms:seed-demo`). The seed should probably set main's flag
    (`setDemoClinic` in `src/server/admin/clinic-plan.ts`) and `is_demo` be dropped or derived – needs a decision.
-3. Trials: main's trial gate (a trial-ended clinic can't create anything new) is not applied to clinic-system writes
-   yet – decide whether it should be.
+3. **Two "trial" notions:** main's `clinic_plan` trial (a trial-ended clinic can't create anything new) and the
+   foundation's entitlement status `trial` (`src/modules/pms/core/entitlements.ts`). No clinic-system code reads
+   main's trial yet – decide whether a trial-ended clinic is also blocked in the clinic system, and whether the
+   entitlement `trial` status stays.
