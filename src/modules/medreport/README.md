@@ -1685,3 +1685,19 @@ keys were dropped, so fingerprints, receipt MACs and map attestations no longer 
   (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
   `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new
   shim on `main`, deployed, first).
+
+### Rollback shim 2: no FINAL copy for an approval the release made (10/2026, branch `fix/schema-forward-compat-2`)
+
+Review finding RG-3 (bh2 fix round 1, R1T-WA1-02): after a rollback to the shim, `/render` FINAL verified a receipt the
+release minted (the MAC covers the keys the shim keeps) and issued the report with this build's engine – which does not
+read the release's frozen conditions, people's decisions, printed leads or blank-opener rule – so a box the release left
+out ("nothing is printed here") printed again, and cleared ticks and default session lengths came back.
+- `api/handlers/render.ts` `releaseIssueBinding`: a receipt carrying `issuedContentSha256` and/or
+  `acknowledgementsSha256` (a portal question set's receipt has the acknowledgement hash only) gets **no FINAL copy**:
+  409 `RECEIPT_INVALID` "This form was approved with a newer version of ClinForms" (logged
+  `render_refused_release_receipt`). A DRAFT copy still renders; every approval this build made issues as before. To
+  issue such a report here, the clinic creates an amended version and approves it again.
+- Tests: `schema-forward-compat.test.ts` – the forward-compatibility issuance test ("shim 2: …", beside the read tests),
+  and the rollback scenarios now expect the refusal.
+- Deploy: shim 2 is deployed on its own BEFORE the release (it becomes the rollback point); release runbook
+  `docs/bh2-release.md` §4–5.
