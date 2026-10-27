@@ -467,11 +467,20 @@ export function othersUncitedParagraph(section: Pick<ReportSection, "paragraphs"
   return paragraphResidue(section, p).length === 0;
 }
 
-/** A structured answer that says something (not blank, not an empty table). */
+/**
+ * A structured answer that says something – anything but a clear: null or "" (the review clears with these, reducer
+ * setStructuredAnswer), or an empty table (rows []). R2-TPN-01 (final check, fix r2c): an empty list on a yes/no, tick
+ * box, choice, date or number box is NOT a clear – it used to read as one here (no stamp needed) while
+ * isSectionAnswered counted it answered (no MISSING_PLACEHOLDER), so an unstamped `value: []` blanked a records or
+ * drafted answer and was signed. Now every value isSectionAnswered counts as answered is set here (it needs a stamp),
+ * the store refuses a list on those kinds and blank words outright (store-reports.ts answerValueMalformed), and
+ * isSectionAnswered counts them unanswered.
+ */
 export function answerSet(answer: ReportSection["answer"]): boolean {
   if (!answer || answer.kind === "text") return false;
   const v = answer.value;
-  return v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+  if (v === null || v === "") return false;
+  return !(answer.kind === "rows" && Array.isArray(v) && v.length === 0);
 }
 
 /**

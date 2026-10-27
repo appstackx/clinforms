@@ -418,6 +418,12 @@ type Forge =
   | "records-paragraph-stamped"
   | "flags-amplified-seed"
   | "fix-flags-amplified"
+  // WC fix r2c (R2-TPN-01 and R2-SEC-2 final-check residuals, additive):
+  | "answer-empty-list"
+  | "answer-empty-list-stamped"
+  | "answer-blank-words"
+  | "answer-cleared"
+  | "fix-edits-long"
   | "none";
 
 /** WC fix round 2: an unrecorded opinion, as a box relabelled "from the records" would print it. */
@@ -674,6 +680,39 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
           s.key !== key
             ? s
             : { ...s, paragraphs: s.paragraphs.map((p) => (p.id !== target.id ? p : { ...p, text: `Tom Ellis recorded that ${p.text}`, fixes: [...(p.fixes ?? []), { kind: "attribution-prefix", by: actorOf(putAs) as never, at, edits: [{ start: 0, end: 0, text: "Tom Ellis recorded that " }] }] })) },
+        ),
+      };
+    }
+    case "answer-empty-list":
+    case "answer-empty-list-stamped":
+    case "answer-blank-words":
+    case "answer-cleared":
+      // WC fix r2c (R2-TPN-01 residual): the subject box's structured answer set to an empty list (no stamp, or stamped as
+      // the member who saves it), to blank words (stamped), or – the twin – cleared as the review clears it (null, no stamp).
+      return {
+        ...report,
+        sections: report.sections.map((s) => {
+          if (s.key !== key || !s.answer || s.answer.kind === "text") return s;
+          const n = { ...s };
+          delete (n as { answerBy?: unknown }).answerBy;
+          const value = forge === "answer-blank-words" ? "  " : forge === "answer-cleared" ? null : [];
+          n.answer = { kind: s.answer.kind, value } as typeof s.answer;
+          if (forge === "answer-empty-list-stamped" || forge === "answer-blank-words") n.answerBy = actorOf(putAs) as never;
+          return n;
+        }),
+      };
+    case "fix-edits-long": {
+      // WC fix r2c (R2-SEC-2 residual): the member's one claimed fix of a known kind (own stamp) on the subject box's first
+      // drafted paragraph, whose edits list carries 5,000 identity edits before the real one (the engine records one edit).
+      const target = report.sections.find((s) => s.key === key)?.paragraphs.find((p) => p.origin === "ai");
+      if (!target || target.text.length < 2) return report;
+      const identity = Array.from({ length: 5_000 }, () => ({ start: 1, end: 2, text: target.text[1] }));
+      return {
+        ...report,
+        sections: report.sections.map((s) =>
+          s.key !== key
+            ? s
+            : { ...s, paragraphs: s.paragraphs.map((p) => (p.id !== target.id ? p : { ...p, text: `${p.text} Noted.`, fixes: [...(p.fixes ?? []), { kind: "value-only", by: actorOf(putAs) as never, at, edits: [...identity, { start: p.text.length, end: p.text.length, text: " Noted." }] }] })) },
         ),
       };
     }
