@@ -1,7 +1,9 @@
 # Blue Heart release (bh2) – what changed, decisions, release rule, deploy and rollback
 
 Branch `release/bh-trial-2`, tag **`bh2-rc1`** (release candidate 1: the seven workstreams merged and integrated).
-Internal document – fictional data only, no secrets, no vendor names customer-facing. The full plan (with the
+Internal document – fictional data only, no secrets, no vendor names customer-facing. (bh2 fix round 1, WA1 – an
+ownership exception, the integrator's document: §3.4 check-issued for approvals made before the release, §4.1 shim 2
+first, §5 rollback to shim 2.) The full plan (with the
 production data steps P0–P3.7 and the verification protocol) is the approved bh-quality plan; this file is the
 release's own summary and runbook. Production is `main` (Vercel production branch). **Nothing here is run against
 production without Khuram's go at that step.**
@@ -53,16 +55,29 @@ the note link".
    `schema-forward-compat.test.ts` into a throwaway worktree of `origin/main` and run the test there (15/15 at
    bh2-rc1). Every new stored key or open-enum member goes into the fixture; a new member of an enum production keeps
    closed needs a new shim on `main`, deployed, first.
-4. If any approved trial report exists: `npm run -s admin:check-issued -- --slug <clinic>` (read-only; `--env
-   production` only with Khuram's go). Any `CHANGED` or `ERROR` stops the deploy (module README "What is issued, and
-   the release rule").
+4. If any approved trial report exists: `npm run -s admin:check-issued -- --slug <clinic> --baseline-ref <production
+   commit>` (read-only; `--env production` only with Khuram's go; the production commit is the one `main` runs –
+   `c883ce5` until shim 2 is deployed, then shim 2's commit; the default is `origin/main`, refused once it holds this
+   release). bh2 fix round 1 (R1T-WA1-01): an approval made BEFORE the release (a receipt production minted) is no
+   longer `UNBOUND`: its FINAL copy is issued by this build and by production's own code and compared – `SAME`, or
+   `CHANGED` with what differs (Word text lines, "layout only (same text)", the boxes whose answers differ by id, or
+   "this build refuses the final copy"). Any `CHANGED`, `NOT_COMPARED` (no baseline) or `ERROR` stops the deploy until
+   **Khuram has decided on each CHANGED report** (accept the new copy, or have the clinic re-approve it as an amended
+   version). appstackx-test holds such approvals: run it there before the deploy.
 5. The guide matches the screens: `CLINFORMS_WELCOME_DIR=<main checkout>/demo-assets/outputs/blue-heart/welcome node
    --import ./scripts/medreport/test-setup.mjs --import tsx scripts/medreport/guide-terms-check.mjs --pack`.
 
 ## 4. Deploy runbook (Khuram's go at each step)
 
-1. **The shim first** (already on `main` as c883ce5 = e132057 + the forward-compatibility shim): deployed on its own,
-   it is the rollback point for this release. Confirm it is the current production deployment before step 3.
+1. **The shims first.** (a) The forward-compatibility shim is already on `main` and live (c883ce5 = e132057 + the
+   shim, deployment `dq4nlrb96`). (b) **Shim 2** (bh2 fix round 1, R1T-WA1-02 / RG-3; branch
+   `fix/schema-forward-compat-2`, from `origin/main`): production's `/render` FINAL refuses (409 `RECEIPT_INVALID`,
+   "approved with a newer version") any receipt that carries the release's `issuedContentSha256` or
+   `acknowledgementsSha256` – the portal question set's receipt has the acknowledgement hash only – instead of re-issuing
+   it with production's engine (which would print boxes the release left out). Merge it into `main` on its own (full
+   chain, push = deploy), wait for Ready, smoke-check, and confirm it is the current production deployment before
+   step 3: **the shim-2 deployment is the release's rollback point** (Hobby rolls back one step only – deploy nothing
+   in between). Then run the check in §3.4 with `--baseline-ref` = shim 2's merge commit.
 2. **Verify the candidate** on the local mirror (plan: P2 rehearsal, V1 → fix rounds → V2 + 3-lens review). Tag
    `bh2-final` only when DoC-1 holds.
 3. **The release as a separate deployment:** `git merge --no-ff release/bh-trial-2` into `main` (no squash), full
@@ -74,8 +89,15 @@ the note link".
 
 ## 5. Rollback
 
-1. **Code:** promote the shim deployment (the previous production deployment – Hobby rolls back one step only, so do
-   not deploy anything in between). The shim reads every report, receipt and map the release wrote (section 3.3).
+1. **Code:** promote the **shim-2** deployment (§4.1(b) – the previous production deployment; Hobby rolls back one
+   step only, so do not deploy anything in between). It reads every report, receipt and map the release wrote
+   (section 3.3), and it **never issues a FINAL copy of an approval the release made**: such a download is refused (409
+   `RECEIPT_INVALID`, "approved with a newer version of ClinForms"); a draft copy still renders, and every approval
+   made before the release issues as before. To issue a release-approved report while rolled back, the clinic creates
+   an amended version and approves it again on the rolled-back build. (Without shim 2 – the older shim, `dq4nlrb96` –
+   production re-issues release-approved reports with its own engine: ruled-out text, cleared ticks and default session
+   lengths print again (RG-3). **Open alternative, if shim 2 is not wanted:** Khuram accepts in writing that FINAL
+   copies of release-approved reports are unavailable – or differ – after a rollback; record that decision here.)
 2. **Maps:** restore the v1 maps with `admin:load-forms --replace-proposed --restore-maps` and the maps-v1 file set
    (P3.7). Only proposed, unedited maps are replaced; a map-level L1/L12 finding refuses the restore.
 3. **Last resort:** D1 Time Travel on `clinforms-prod` to a point before the data step (it rewinds every clinic –
