@@ -411,6 +411,13 @@ type Forge =
   | "answer-stamp-dropped"
   | "fix-claims-forged"
   | "fix-kind-unknown"
+  // WC fix r2b (R2-TPN-01 re-check, R2-SEC-2 re-check, additive):
+  | "answer-kind-text"
+  | "answer-removed"
+  | "records-paragraph-unstamped"
+  | "records-paragraph-stamped"
+  | "flags-amplified-seed"
+  | "fix-flags-amplified"
   | "none";
 
 /** WC fix round 2: an unrecorded opinion, as a box relabelled "from the records" would print it. */
@@ -613,6 +620,63 @@ function forgeReport(report: Report, forge: Forge, approver: PersonKey, box: str
               },
         ),
       };
+    case "answer-kind-text":
+    case "answer-removed":
+      // R2-TPN-01 re-check: the subject box's structured answer replaced by a "text" answer holding another value, or
+      // taken away – with no one's stamp – so the box would print its text instead of the answer.
+      return {
+        ...report,
+        sections: report.sections.map((s) => {
+          if (s.key !== key || !s.answer || s.answer.kind === "text") return s;
+          const n = { ...s };
+          delete (n as { answerBy?: unknown }).answerBy;
+          if (forge === "answer-removed") delete (n as { answer?: unknown }).answer;
+          else n.answer = { kind: "text", value: s.answer.kind === "yes_no" || s.answer.kind === "checkbox" ? (s.answer.value === true ? "No" : "Yes") : "01/01/1970" };
+          return n;
+        }),
+      };
+    case "records-paragraph-unstamped":
+    case "records-paragraph-stamped": {
+      // R2-TPN-01 re-check: the code-filled paragraph of a records box replaced by a staff entry – with no one's stamp, or
+      // (the twin) stamped as the member who saves it.
+      const stamp = forge === "records-paragraph-stamped" ? actorOf(putAs) : null;
+      return {
+        ...report,
+        sections: report.sections.map((s) => {
+          if (s.key !== key) return s;
+          const p = { id: `${key}-staff-1`, text: "01/01/1970", sourceIds: [] as string[], origin: "staff" as const, ...(stamp ? { by: stamp as never } : {}) };
+          const n = { ...s, paragraphs: [p] };
+          if (s.answer && s.answer.kind !== "text") {
+            // The structured answer is cleared (as the review clears it): the staff entry is then what the box prints.
+            n.answer = { kind: s.answer.kind, value: null } as typeof s.answer;
+            delete (n as { answerBy?: unknown }).answerBy;
+          }
+          return n;
+        }),
+      };
+    }
+    case "flags-amplified-seed": {
+      // R2-SEC-2 re-check, step 1: many client-written flags pointed at the subject box's first drafted paragraph, stored
+      // (the engine used to generate candidates once per stored flag).
+      const target = report.sections.find((s) => s.key === key)?.paragraphs.find((p) => p.origin === "ai");
+      if (!target) return report;
+      const flags = Array.from({ length: 200 }, (_, i) => ({ id: `amplified-${i}`, code: "OTHER_CLINICIAN_VOICE", severity: "warning", sectionKey: key, paragraphId: target.id, message: `forged ${i}`, evidence: `unattributed Tom Ellis ${i}` }) as ReportFlag);
+      return { ...report, flags: [...report.flags, ...flags] };
+    }
+    case "fix-flags-amplified": {
+      // R2-SEC-2 re-check, step 2: the member's one claimed fix of a known kind (own stamp, replaying edits) on that
+      // paragraph – a fix the engine does not make there.
+      const target = report.sections.find((s) => s.key === key)?.paragraphs.find((p) => p.origin === "ai");
+      if (!target) return report;
+      return {
+        ...report,
+        sections: report.sections.map((s) =>
+          s.key !== key
+            ? s
+            : { ...s, paragraphs: s.paragraphs.map((p) => (p.id !== target.id ? p : { ...p, text: `Tom Ellis recorded that ${p.text}`, fixes: [...(p.fixes ?? []), { kind: "attribution-prefix", by: actorOf(putAs) as never, at, edits: [{ start: 0, end: 0, text: "Tom Ellis recorded that " }] }] })) },
+        ),
+      };
+    }
     default:
       return report;
   }
