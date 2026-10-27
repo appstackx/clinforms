@@ -470,7 +470,9 @@ export function NewReportScreen({
                       : WORDING.drafting.noDemoAnswersSuffix
                     : ""}
                 </Notice>
-              ) : (
+              ) : gen.storageWarning ? null : (
+                // bh2 fix round 1 (R1T-WA1-06; ownership exception – WC's file): never "Ready" while a save was refused or
+                // failed – the warning below says the report is not saved yet (Ascenti P1: "Ready" over 403 refusals).
                 <Notice tone="success" title="Ready for clinician review">
                   {gen.codeFilled ? `${plural(gen.codeFilled, "answer")} filled by code from the record. ` : ""}Opening the form for review…
                 </Notice>

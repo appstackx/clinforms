@@ -24,6 +24,7 @@ import { issueDetails } from "../../../core/issue-state";
 import { findMergeTokens, practiceCodeInWords, unresolvedMergeFields } from "../../../core/merge-fields";
 import type { Actor, FormAnswer, FormDefinition, FormField, Gap, Report, ReportFlag, ReportSection, ReportTemplate } from "../../../core/types";
 import { canSign, validateReport } from "../../../core/validation";
+import { actsAsApprover } from "../../../core/provenance";
 import { mayLeaveBlankInBulk } from "./gaps";
 import { MIN_GAP_REASON, acknowledgeFlag, answeredByPerson, resolveGap } from "./review-model";
 
@@ -178,7 +179,7 @@ export function reviewItems(report: Report, ctx: BoxContext): ReviewItems {
 
   boxes.forEach((box) => {
     const at = sections.get(box.key);
-    if (at) Object.assign(box, describeBox(box, at.s, fields.get(box.key), report));
+    if (at) Object.assign(box, describeBox(box, at.s, fields.get(box.key), report, ctx.actor));
   });
 
   order.sort((a, b) => a.rank - b.rank || a.seq - b.seq);
@@ -201,10 +202,32 @@ function answerVerb(field: FormField | undefined): { verb: string; opinion: stri
   return { verb: "Write the answer", opinion: "write your own opinion" };
 }
 
-/** The heading and the one instruction of a question's item, in plain words. */
-function describeBox(box: BoxItem, section: ReportSection, field: FormField | undefined, report: Report): Pick<BoxItem, "heading" | "instruction"> {
+/**
+ * A clinician's box seen by someone who is not its approving clinician (bh2 fix round 1, R1T-WA1-L1): staff, or a
+ * clinician who is not the approver. Only the approver answers it or settles its gaps; anyone else's entry there is a
+ * proposal the approver adopts (core/provenance.ts). No viewer named (`actor` absent), or a report with no approver
+ * (an earlier build's): the wording addresses the reader as before.
+ */
+function approverOnlyBox(section: ReportSection, field: FormField | undefined, report: Report, actor: Actor | null | undefined): string | null {
+  if (!actor || !report.approver || actsAsApprover(actor, report)) return null;
+  const clinicianBox = field ? field.fillSource.kind === "clinician_opinion" : section.kind === "clinician_opinion";
+  return clinicianBox ? report.approver.name : null;
+}
+
+/** The heading and the one instruction of a question's item, in plain words – for the person viewing (`actor`). */
+function describeBox(box: BoxItem, section: ReportSection, field: FormField | undefined, report: Report, actor?: Actor | null): Pick<BoxItem, "heading" | "instruction"> {
   const req = box.required ? "Required" : "Optional";
   const { verb, opinion } = answerVerb(field);
+  // R1T-WA1-L1: staff are never told "Only you can answer this" on a box only the approving clinician settles.
+  const approverName = approverOnlyBox(section, field, report, actor);
+  if (approverName) {
+    return box.answered
+      ? { heading: `${req} – the approving clinician settles it`, instruction: `Only ${approverName}, the approving clinician, can settle this. What you enter here is a proposal for them to adopt.` }
+      : {
+          heading: `${req} – needs the approving clinician's opinion`,
+          instruction: `Only ${approverName}, the approving clinician, can answer this${box.required ? "" : " or leave it blank"}. You can enter a proposal for them to adopt.`,
+        };
+  }
   if (box.answered) {
     return answeredByPerson(report, box.key)
       ? { heading: `${req} – confirm your answer`, instruction: "Check your answer, then click Mark resolved." }
