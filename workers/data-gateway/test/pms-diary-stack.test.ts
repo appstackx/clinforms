@@ -1,5 +1,6 @@
 /**
- * The diary's repository suite on D1 through the gateway (src/server/repos/pms/diary/testing/diary-suite.ts):
+ * The diary's repository suite (src/server/repos/pms/diary/testing/diary-suite.ts) and its server layer
+ * (src/server/pms/diary/testing/service-suite.ts – what the actions and routes call) on D1 through the gateway:
  *   1. in-process: the app's D1 dialect → signed HTTP → the gateway handler → the node:sqlite D1 stand-in;
  *   2. real local D1 (workerd via wrangler, migrations applied by `wrangler d1 migrations apply` – so the clash
  *      triggers' bodies go through wrangler's own statement splitting), skipped when wrangler is not installed.
@@ -9,6 +10,7 @@ import fs from "node:fs";
 import { Kysely } from "kysely";
 import { D1HttpDialect } from "../../../src/server/db/dialects/d1-http";
 import type { Database } from "../../../src/server/db/schema";
+import { defineDiaryServiceSuite } from "../../../src/server/pms/diary/testing/service-suite";
 import { defineDiaryRepoSuite } from "../../../src/server/repos/pms/diary/testing/diary-suite";
 import { handleRequest } from "../src/index";
 import { FakeD1 } from "./fake-d1";
@@ -16,7 +18,7 @@ import { available, gatewayDb, startLocalD1 } from "./local-d1";
 
 const SECRET = "diary-stack-secret-".padEnd(48, "d");
 
-defineDiaryRepoSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)", async () => {
+async function standIn() {
   const d1 = new FakeD1();
   const db = new Kysely<Database>({
     dialect: new D1HttpDialect({
@@ -32,19 +34,28 @@ defineDiaryRepoSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stan
       d1.close();
     },
   };
-});
+}
+
+async function localD1() {
+  const { proxy, dir } = await startLocalD1();
+  const db = gatewayDb(proxy.env.DB);
+  return {
+    db,
+    close: async () => {
+      await db.destroy();
+      await proxy.dispose();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+const STAND_IN = "D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)";
+const LOCAL = "D1 via the gateway (local workerd D1, wrangler-applied migrations)";
+
+defineDiaryRepoSuite(STAND_IN, standIn);
+defineDiaryServiceSuite(STAND_IN, standIn);
 
 if (available) {
-  defineDiaryRepoSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", async () => {
-    const { proxy, dir } = await startLocalD1();
-    const db = gatewayDb(proxy.env.DB);
-    return {
-      db,
-      close: async () => {
-        await db.destroy();
-        await proxy.dispose();
-        fs.rmSync(dir, { recursive: true, force: true });
-      },
-    };
-  });
+  defineDiaryRepoSuite(LOCAL, localD1);
+  defineDiaryServiceSuite(LOCAL, localD1);
 }

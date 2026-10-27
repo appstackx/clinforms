@@ -8,7 +8,8 @@ import { fieldErrors } from "../../../modules/pms/core/schemas";
 import { CLASH_LABELS, DIARY_COPY, WARNING_LABELS } from "../../../modules/pms/diary/copy";
 import type { DiaryClash } from "../../../modules/pms/diary/rules";
 import { formatDayShort, formatLondonTime, londonDate } from "../../../modules/pms/diary/time";
-import type { DiaryActionResult, DiarySaveResult, DiaryWarning } from "../../../modules/pms/diary/types";
+import type { PmsSaveResult } from "../../../modules/pms/core/types";
+import type { DiaryActionResult, DiaryRead, DiarySaveResult, DiaryWarning } from "../../../modules/pms/diary/types";
 import { logAuthEvent } from "../../email/log";
 import { RepoInputError } from "../../repos/context";
 
@@ -39,10 +40,17 @@ export function invalid(error: z.ZodError): DiaryActionResult {
 
 /** A move / status / details outcome as the action's answer. */
 export function fromSaveResult(result: DiarySaveResult, okMessage: string): DiaryActionResult {
-  if (result.ok) return { ok: true, message: okMessage, warnings: warningMessages(result.warnings), itemId: result.item.id };
+  if (result.ok) return { ok: true, message: okMessage, warnings: warningMessages(result.warnings), itemId: result.item.id, rev: result.item.rev };
   if (result.reason === "conflict") return { ok: false, error: DIARY_COPY.conflict, conflict: true };
   if (result.reason === "not_found") return { ok: false, error: DIARY_COPY.notFound, conflict: true };
   return { ok: false, error: "That time is not free.", clashes: clashMessages(result.clashes) };
+}
+
+/** A revisioned save of a rota entry or a waiting-list entry as the action's answer. */
+export function fromPmsSave(result: PmsSaveResult, okMessage: string, itemId: string): DiaryActionResult {
+  if (result.ok) return { ok: true, message: okMessage, warnings: [], itemId, rev: result.rev };
+  if (result.reason === "conflict") return { ok: false, error: DIARY_COPY.changedElsewhere, conflict: true };
+  return { ok: false, error: DIARY_COPY.recordGone, conflict: true };
 }
 
 /** Runs the work; a refused input becomes its message, anything else a plain "try again" (logged by name only). */
@@ -54,4 +62,10 @@ export async function diaryAction(name: string, work: () => Promise<DiaryActionR
     logAuthEvent("pms.diary.action_failed", { action: name, error: err instanceof Error ? err.name : "error" });
     return { ok: false, error: "Something went wrong. Please try again." };
   }
+}
+
+/** A diary read as a route handler's JSON answer: { data } or { error: { code, message } } with 403 / 404. */
+export function readResponse<T>(result: DiaryRead<T>): Response {
+  if (result.ok) return Response.json({ data: result.data });
+  return Response.json({ error: { code: result.status === 403 ? "FORBIDDEN" : "NOT_FOUND", message: result.error } }, { status: result.status });
 }

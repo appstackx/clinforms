@@ -1,29 +1,40 @@
 /**
  * The appointment dialog's data: one diary item with its notes decrypted, the patient identified (name, number,
- * date of birth, mobile – what reception checks on the phone), the case and authorisation, the series. Server only.
+ * date of birth, mobile – what reception checks on the phone – only for roles that may see patients), the case
+ * and authorisation, the series. diary.view; an item at a site outside the member's scope is "not found".
+ * Server only.
  */
 import "server-only";
+import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import { formatUkDate } from "../../../modules/pms/core/text";
 import { canMove, isLateCancellation, nextStatuses } from "../../../modules/pms/diary/rules";
 import { formatLondonTime, minutesBetween } from "../../../modules/pms/diary/time";
+import { DIARY_COPY } from "../../../modules/pms/diary/copy";
+import type { DiaryRead } from "../../../modules/pms/diary/types";
 import type { AppointmentDetailsView } from "../../../modules/pms/diary/view";
-import { nowIso, type RepoContext } from "../../repos/context";
+import { nowIso } from "../../repos/context";
 import { listAuthorisations, listCasesForPatient } from "../../repos/pms/cases";
 import { getAppointment } from "../../repos/pms/diary/appointments";
 import { getPractitioner, getRoom, getService, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
+import { inScope, type DiaryCaller } from "./caller";
 
-export async function loadAppointmentDetails(ctx: RepoContext, tenantId: string, id: string, options: { withPatient: boolean }): Promise<AppointmentDetailsView | null> {
+export async function loadAppointmentDetails(caller: DiaryCaller, id: string): Promise<DiaryRead<AppointmentDetailsView>> {
+  if (!caller.can("diary.view")) return { ok: false, status: 403, error: DIARY_COPY.notAllowed };
+  const notFound = { ok: false as const, status: 404 as const, error: DIARY_COPY.notFound };
+  if (!PMS_ID_PATTERN.test(id)) return notFound;
+  const { ctx, tenantId } = caller;
+  const options = { withPatient: caller.can("patients.view") };
   const a = await getAppointment(ctx, tenantId, id);
-  if (!a) return null;
+  if (!a || !inScope(caller, a.siteId)) return notFound;
   const [site, practitioner, room, service, patient, cases, auths, later] = await Promise.all([
     getSite(ctx, tenantId, a.siteId),
     a.practitionerId ? getPractitioner(ctx, tenantId, a.practitionerId) : null,
     a.roomId ? getRoom(ctx, tenantId, a.roomId) : null,
     a.serviceId ? getService(ctx, tenantId, a.serviceId) : null,
     a.patientId && options.withPatient ? getPatient(ctx, tenantId, a.patientId) : null,
-    a.patientId ? listCasesForPatient(ctx, tenantId, a.patientId) : [],
-    a.patientId ? listAuthorisations(ctx, tenantId, { patientId: a.patientId }) : [],
+    a.patientId && options.withPatient ? listCasesForPatient(ctx, tenantId, a.patientId) : [],
+    a.patientId && options.withPatient ? listAuthorisations(ctx, tenantId, { patientId: a.patientId }) : [],
     a.seriesId
       ? ctx.db
           .selectFrom("pms_appointments")
@@ -37,7 +48,7 @@ export async function loadAppointmentDetails(ctx: RepoContext, tenantId: string,
   ]);
   const kase = a.caseId ? (cases.find((c) => c.id === a.caseId) ?? null) : null;
   const auth = a.authorisationId ? (auths.find((x) => x.id === a.authorisationId) ?? null) : null;
-  return {
+  const view: AppointmentDetailsView = {
     id: a.id,
     rev: a.rev,
     kind: a.kind,
@@ -87,4 +98,5 @@ export async function loadAppointmentDetails(ctx: RepoContext, tenantId: string,
     canMove: canMove(a.status),
     lateIfCancelledNow: isLateCancellation(a.startsAt, nowIso(ctx)),
   };
+  return { ok: true, data: view };
 }
