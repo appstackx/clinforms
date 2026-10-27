@@ -8,11 +8,15 @@
  * - a choice (yes / no, one of several, a tick box) whose answer matches none of the printed options;
  * - (10/2026 verify) a Yes / No answer where the form prints no "Yes" / "No" (or "Y" / "N") option – on tick boxes
  *   too – which would otherwise tick or mark nothing and go out blank;
- * - (10/2026 verify) an unanswered blank inside a printed item that a "delete as necessary" answer keeps.
+ * - (10/2026 verify) an unanswered blank inside a printed item that a "delete as necessary" answer keeps;
+ * - (bh2 WA1 design 5, Q-1 / C-FILL-1) on ANY anchor – a tick box, a cell, a content control, a PDF field – a structured
+ *   choice or yes / no answer that selects none of the printed options (forms/choice-marks.ts choiceAnswerMatches, the
+ *   engine's own matching): the form would be issued with nothing chosen, or with words that are not an option.
  *
  * Unanswered questions are placeholders.ts's. Pure.
  */
 import { answerToText, isSectionAnswered, matchOption, namedOptions, yesNoOption } from "../forms";
+import { choiceAnswerMatches } from "../../forms/choice-marks";
 import type { FormField, ReportFlag } from "../types";
 import { makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
@@ -63,12 +67,39 @@ function keptItemBlanks(input: ValidatorInput): ReportFlag[] {
   return flags;
 }
 
+/**
+ * bh2 WA1 design 5 (Q-1, C-FILL-1): a structured choice or yes / no answer that selects none of the field's printed
+ * options – on any anchor. The mark-the-column and "delete as necessary" answers keep their own wording below.
+ */
+function unmatchedChoice(input: ValidatorInput, field: FormField): ReportFlag | null {
+  const section = input.report.sections.find((s) => s.key === field.id);
+  const answer = section?.answer;
+  if (!section || !answer || (answer.kind !== "choice" && answer.kind !== "yes_no" && answer.kind !== "checkbox")) return null;
+  if (answer.value === null || answer.value === undefined || answer.value === "") return null;
+  if (choiceAnswerMatches(field, answer)) return null;
+  const value = typeof answer.value === "boolean" ? (answer.value ? "Yes" : "No") : String(answer.value);
+  const printed = (field.options ?? []).map((o) => `“${o}”`).join(", ");
+  return makeFlag({
+    code: "MISSING_PLACEHOLDER",
+    severity: "blocking",
+    sectionKey: section.key,
+    evidence: value,
+    message: `The answer to “${section.title}” (“${value}”) is not one of the printed options${printed ? ` (${printed})` : ""}, so the form would be issued without it. Choose one of them.`,
+  });
+}
+
 export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
   const form = input.form;
   if (!form) return [];
   const flags: ReportFlag[] = keptItemBlanks(input);
   for (const field of form.fields) {
-    if (field.anchor.kind !== "docx") continue;
+    // Mark-the-column and "delete as necessary" answers are checked (and worded) below; every other anchor here.
+    const own = field.anchor.kind === "docx" && (field.anchor.target === "mark_cell" || field.anchor.target === "delete_options");
+    const unmatched = own ? null : unmatchedChoice(input, field);
+    if (field.anchor.kind !== "docx") {
+      if (unmatched) flags.push(unmatched);
+      continue;
+    }
     const target = field.anchor.target;
     // Tick boxes (10/2026 verify): only a Yes / No answer that no printed box stands for is checked here.
     if (target === "checkbox_glyph") {
@@ -85,10 +116,13 @@ export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
             message: `The answer to “${section.title}” is “${value ? "Yes" : "No"}”, but no tick box on the form stands for it (${boxes.map((o) => `“${o}”`).join(", ")}), so none would be ticked. Choose one of the printed options.`,
           }),
         );
-      }
+      } else if (unmatched) flags.push(unmatched);
       continue;
     }
-    if (target !== "mark_cell" && target !== "delete_options") continue;
+    if (target !== "mark_cell" && target !== "delete_options") {
+      if (unmatched) flags.push(unmatched);
+      continue;
+    }
     const section = input.report.sections.find((s) => s.key === field.id);
     if (!section || !isSectionAnswered(section)) continue;
     const options = printedOptions(field);
@@ -97,13 +131,19 @@ export function validateChoiceMarks(input: ValidatorInput): ReportFlag[] {
     if (field.answerType === "short_text" || field.answerType === "long_text") {
       const named = namedOptions(options, text);
       if (!named.unmatched) continue;
+      // Fix round 1 (B0-18): a few leftover words are named ("Elbow"); a sentence is quoted as written – never the
+      // leftover words with the options and punctuation taken out, which read like a garbled draft.
+      const fewWords = named.unmatched.length <= 40 && named.unmatched.split(/\s+/).length <= 4;
+      const asWritten = text.length > 80 ? `${text.slice(0, 80).replace(/\s+\S*$/, "")}…` : text;
       flags.push(
         makeFlag({
           code: "MISSING_PLACEHOLDER",
           severity: "blocking",
           sectionKey: section.key,
-          evidence: named.unmatched,
-          message: `The answer to “${section.title}” names “${named.unmatched}”, which is not printed on the form, so nothing would be marked. Name only the printed options (${printed}), or “None”.`,
+          evidence: fewWords ? named.unmatched : asWritten,
+          message: fewWords
+            ? `The answer to “${section.title}” names “${named.unmatched}”, which is not printed on the form, so nothing would be marked. Name only the printed options (${printed}), or “None”.`
+            : `The answer to “${section.title}” (“${asWritten}”) is a sentence, not the printed options, so nothing would be marked. Name only the printed options (${printed}), or “None”.`,
         }),
       );
       continue;

@@ -5,6 +5,10 @@
  * own form when the library holds a confirmed one; every confirmed form is offered; forms still to be
  * confirmed are shown but cannot be used yet. Secondary: "No form from the referrer? Use a built-in
  * report".
+ * Another form for the same patient (25/10/2026, `completedFormId`): the form the earlier report completed is marked
+ * "Already completed for this patient" and never preselected – staff choose the other form. When the library holds
+ * no other confirmed form (review fix: a clinic with one form), the step says so and points to Referrer forms or a
+ * built-in report instead of asking for a form that is not there.
  *
  * Owner: studio-a agent.
  */
@@ -16,10 +20,11 @@ import { INSTRUCTING_PARTY_LABELS, REFERRER_TYPE_LABELS } from "../../../core/la
 import type { FormDefinition, InstructingParty, ReportTemplate } from "../../../core/types";
 import { api } from "../../api-client";
 import { useStudioPaths } from "../../routes";
+import { TENANT_COPY } from "../../studio-copy";
 import { Skeleton, cn } from "../../primitives";
 import { errorMessage, plural } from "../shared/format";
 import { breakdownText, FormKindBadge, Notice, questionBreakdown } from "../shared/ui-bits";
-import { getRememberedFormId, matchReasonLabel, matchReferrerForm, type FormMatch } from "./referrer-match";
+import { formChoiceNote, getRememberedFormId, matchReasonLabel, matchReferrerForm, type FormMatch, type ReportKind } from "./referrer-match";
 
 export type TargetChoice = { kind: "form"; formId: string } | { kind: "template"; templateId: string } | null;
 
@@ -33,15 +38,19 @@ export interface FormStepProps {
   onTemplates(templates: ReportTemplate[]): void;
   /** Preferred form from the URL (?form=…). */
   preferredFormId?: string;
+  /** Fix round 1 (B0-20): what the notes cover (an initial assessment, or a discharge) – the form remembered for that. */
+  kind?: ReportKind | null;
+  /** The form the earlier report completed from the same notes (another form for this patient): never preselected. */
+  completedFormId?: string | null;
 }
 
-export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId }: FormStepProps) {
+export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplates, preferredFormId, kind = null, completedFormId = null }: FormStepProps) {
   const paths = useStudioPaths();
   const confirmed = useMemo(() => forms.filter((f) => f.status === "confirmed"), [forms]);
   const proposed = useMemo(() => forms.filter((f) => f.status !== "confirmed"), [forms]);
   const match: FormMatch | null = useMemo(
-    () => (formsReady ? matchReferrerForm(party, confirmed, getRememberedFormId(party.name)) : null),
-    [formsReady, party, confirmed],
+    () => (formsReady ? matchReferrerForm(party, confirmed, getRememberedFormId(party.name, kind), kind) : null),
+    [formsReady, party, confirmed, kind],
   );
   const [showBuiltIn, setShowBuiltIn] = useState(choice?.kind === "template");
   const [templates, setTemplates] = useState<ReportTemplate[] | null>(null);
@@ -52,8 +61,8 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
     if (!formsReady || choice) return;
     const preferred = preferredFormId ? confirmed.find((f) => f.id === preferredFormId) : undefined;
     const pick = preferred ?? match?.form;
-    if (pick) onChoice({ kind: "form", formId: pick.id });
-  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice]);
+    if (pick && pick.id !== completedFormId) onChoice({ kind: "form", formId: pick.id });
+  }, [formsReady, choice, preferredFormId, confirmed, match, onChoice, completedFormId]);
 
   // Built-in templates, loaded when that option is opened.
   useEffect(() => {
@@ -87,6 +96,8 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
   }
 
   const ordered = match ? [match.form, ...confirmed.filter((f) => f.id !== match.form.id)] : confirmed;
+  // Another form for the same patient, but the only confirmed form is the one already completed.
+  const noOtherForm = Boolean(completedFormId) && confirmed.some((f) => f.id === completedFormId) && confirmed.every((f) => f.id === completedFormId);
 
   return (
     <div className="space-y-5">
@@ -101,11 +112,11 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          {match && (choice?.kind !== "form" || choice.formId === match.form.id)
-            ? `“${match.form.title}” is selected: ${matchReasonLabel(match.reason).toLowerCase()}.`
-            : match && choice?.kind === "form"
-              ? `“${confirmed.find((f) => f.id === choice.formId)?.title ?? "Another form"}” is selected – not ${party.name}'s own form (theirs is “${match.form.title}”).`
-              : "No form in the library is linked to this referrer yet. Choose the form they sent – it will be remembered for them."}
+          {completedFormId && !choice && noOtherForm
+            ? TENANT_COPY.reuse.noOtherHint
+            : completedFormId && !choice && confirmed.length > 0
+              ? TENANT_COPY.reuse.chooseOther
+              : formChoiceNote({ party, match, selected: choice?.kind === "form" ? (confirmed.find((f) => f.id === choice.formId) ?? null) : null, kind })}
         </p>
       </div>
 
@@ -149,6 +160,11 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
                     {match?.form.id === form.id ? (
                       <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800">{matchReasonLabel(match.reason)}</span>
                     ) : null}
+                    {completedFormId === form.id ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700" data-completed-form>
+                        {TENANT_COPY.reuse.completedPill}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-xs text-slate-600">
                     {breakdownText(questionBreakdown(form))}
@@ -158,6 +174,17 @@ export function FormStep({ party, forms, formsReady, choice, onChoice, onTemplat
             })}
           </div>
         )}
+        {noOtherForm ? (
+          <div data-no-other-form>
+            <Notice tone="info" title={TENANT_COPY.reuse.noOtherTitle}>
+              {TENANT_COPY.reuse.noOtherBody}{" "}
+              <Link href={paths.forms} className="font-medium underline">
+                {TENANT_COPY.reuse.noOtherLink}
+              </Link>{" "}
+              {TENANT_COPY.reuse.noOtherAfter}
+            </Notice>
+          </div>
+        ) : null}
         {proposed.length ? (
           <p className="text-xs text-slate-500">
             Not ready yet:{" "}

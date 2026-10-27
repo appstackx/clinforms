@@ -1,0 +1,766 @@
+/**
+ * Safety corpus: the paths that run one product function on a fictional input.
+ *
+ * fill     – the docx fill of a fictional form with FINAL semantics (answers from the built report as approved, or
+ *            input.fill.answers); check.fill: {refused, contains[], notContains[], xmlMatch[], xmlNotMatch[], maxMs}.
+ *            BLOCK = the FINAL fill is refused (4xx). input.fill.hostile builds a hostile-size Word file instead.
+ *            input.fill.issuedWith "pre-release" (bh2 fix round 1, R1T-WA2-02): the FINAL copy of a receipt from before
+ *            the release – forms/render-form.ts renderPreReleaseFinal (production's frozen answers and fill; no
+ *            input.fill.answers).
+ * lint     – core/form-map-lint.ts lintFormMap(form) (WE); check.lint {rule, field}: FLAG = that rule reports an
+ *            error, PASS = no error. Missing module = the case fails (pending WE).
+ * assemble – ai/assemble.ts assembleDraft with input.assemble.output (a hand-written DraftOutput); check.assemble
+ *            {box, printed[], notPrinted[], surfaced[], noGap[], noSuggestedAnswer, noAnswer}. BLOCK = what assembly
+ *            prints, put back into the report, still blocks when validated.
+ * split    – core/text/sentences.ts splitSentences(text, policy) (W0.5); check.split {count, whole[]}.
+ * scope    – core/scope.ts removeSentencesWithTerms(text, terms); check.scope {contains[], notContains[], figures}.
+ * probe    – input.probe.name: condition | own-voice | section-text | copy-equals-issued | map-note-visible |
+ *            schema-keeps-release-fields | rtf-picture | status-label | records-reviewed-label | save-paused.
+ *            bh2 fix round 1 (R1T-WF-L1, additive): records-reviewed-label imports input.probe.notes (pasted fictional
+ *            notes) through the general notes reader and the confirm step (optionally with staff's type change,
+ *            input.probe.typeChanges {entryKey: type}) and checks the records-reviewed list's descriptions
+ *            (check.probe {contains[], notContains[]}); save-paused runs the Studio's server store against the real
+ *            store handlers while the member's write allowance is used up (429 + Retry-After) and checks the save is
+ *            paused (never stopped) and the header says so (check.probe {text, notText[]}), then saved once allowed.
+ */
+import { assembleDraft } from "../../../../ai/assemble";
+import { conditionOf, notApplicable } from "../../../conditions";
+import { copyEntries } from "../../../answer-copy";
+import { buildFormAnswers } from "../../../forms";
+import { removeSentencesWithTerms } from "../../../scope";
+import { ReportSchema } from "../../../schemas";
+import { rewriteInFirstPerson } from "../../../voice";
+import { convertRtfToDocx } from "../../../rtf";
+import { answeredByPerson, questionStatus } from "../../../../ui/components/review/review-model";
+import { CANDIDATE_ENGINE } from "./engine";
+import type { FormDefinition, FormField, Report } from "../../../types";
+import { DOCX_MIME, sha256Hex as fileSha256 } from "../../../../forms/file";
+import { renderFormFile, renderPreReleaseFinal } from "../../../../forms/render-form";
+import { openZipSafely } from "../../../../forms/zip-guard";
+import { buildCase, buildForm, CORPUS_AT, ownerOf, rolesOf } from "./build";
+import type { ValidatorEngine } from "./engine";
+import { buildDocx, clinicianOf, person, type BlockSpec } from "./fixtures";
+import type { CasePath, RunCase } from "./types";
+import type { PathOutcome } from "./evaluate";
+import { judge } from "./judge";
+
+type Loose = Record<string, unknown>;
+
+function strings(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(String) : [];
+}
+
+function xmlText(xml: string): string {
+  return xml
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+/** Each table row's cell texts (fixtures have no nested tables). */
+function tableRows(xml: string): string[][] {
+  return (xml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []).map((tr) => (tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) ?? []).map(xmlText));
+}
+
+/** Checks on the cells of the row whose first cell reads `label` (rows may be removed by the fill, so never by index). */
+function rowProblems(xml: string, checks: unknown): string[] {
+  const out: string[] = [];
+  const rows = tableRows(xml);
+  for (const r of (Array.isArray(checks) ? checks : []) as Array<{ label: string; cell: number; contains?: string[]; notContains?: string[]; equals?: string; absent?: boolean }>) {
+    const row = rows.find((cells) => cells[0] === r.label);
+    if (r.absent) {
+      if (row) out.push(`row “${r.label}” is still printed`);
+      continue;
+    }
+    if (!row) {
+      out.push(`no row “${r.label}”`);
+      continue;
+    }
+    const text = row[r.cell] ?? "";
+    for (const s of r.contains ?? []) if (!text.includes(s)) out.push(`“${r.label}” cell ${r.cell} lacks “${s}” (has ${JSON.stringify(text)})`);
+    for (const s of r.notContains ?? []) if (text.includes(s)) out.push(`“${r.label}” cell ${r.cell} still prints “${s}” (${JSON.stringify(text)})`);
+    if (r.equals !== undefined && text !== r.equals) out.push(`“${r.label}” cell ${r.cell} is ${JSON.stringify(text)}, expected ${JSON.stringify(r.equals)}`);
+  }
+  return out;
+}
+
+/** Checks on the XML of the paragraph that prints `text`. */
+function paraProblems(xml: string, checks: unknown): string[] {
+  const out: string[] = [];
+  const paras = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) ?? [];
+  for (const c of (Array.isArray(checks) ? checks : []) as Array<{ text: string; match?: string[]; notMatch?: string[] }>) {
+    const p = paras.find((x) => xmlText(x).includes(c.text));
+    if (!p) {
+      out.push(`no paragraph prints “${c.text}”`);
+      continue;
+    }
+    for (const re of c.match ?? []) if (!new RegExp(re).test(p)) out.push(`the paragraph with “${c.text}” does not match /${re}/`);
+    for (const re of c.notMatch ?? []) if (new RegExp(re).test(p)) out.push(`the paragraph with “${c.text}” matches /${re}/`);
+  }
+  return out;
+}
+
+function docParts(bytes: Uint8Array): { xml: string; text: string } {
+  const zip = openZipSafely(bytes);
+  const xml = zip.file("word/document.xml")?.asText() ?? "";
+  const text = xml
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+  return { xml, text };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * fill
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * A Word file that makes the fill do work proportional to lines × cells (the R-security-2 / R-security-3 shapes), and
+ * its map: `questions` questions in one cell followed by `lines` empty lines, and `cells` more cells in the same row
+ * holding `besideLines` empty lines each. kind "placeholders": replace_placeholder questions with clearPlaceholder;
+ * kind "typography": after_paragraph questions on a form whose file name marks it converted from RTF; kind "runs" (WA2,
+ * review 26/10): one line of `runs` one-character runs holding `questions` blanks "……", each question mapped to them –
+ * refused or filled within maxMs, with no re-check (runHostile); kind "instructions" (WA2 harden 26/10, check2-WA2
+ * N-1): `lines` lines each holding a form author's note "(delete this text)" beside one run of `tabs` tabs, then one
+ * answered question – the work of leaving the notes off; kind "long" (WA2 harden 26/10, check2-WA2 N-2): an ordinary
+ * long questionnaire – `lines` printed lines, `questions` questions answered after their line with `paras`
+ * paragraphs each, and a table of `rows` rows answered cell by cell.
+ */
+function hostileForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array; answers?: ReturnType<typeof buildFormAnswers> } {
+  if (spec.kind === "runs") return hostileRunsForm(spec);
+  if (spec.kind === "instructions") return hostileInstructionsForm(spec);
+  if (spec.kind === "long") return longForm(spec);
+  const lines = Number(spec.lines ?? 2000);
+  const cells = Number(spec.cells ?? 0);
+  const besideLines = Number(spec.besideLines ?? Math.min(lines, 200));
+  const questions = Number(spec.questions ?? 40);
+  const kind = String(spec.kind ?? "placeholders");
+  const own: string[] = [];
+  for (let i = 0; i < questions; i++) own.push(kind === "placeholders" ? `Q${i}: [answer ${i}]` : `Question ${i}`);
+  for (let i = 0; i < lines; i++) own.push("");
+  const row = [{ paras: own }, ...Array.from({ length: cells }, () => ({ paras: Array.from({ length: besideLines }, () => "") }))];
+  const layout: BlockSpec[] = [{ p: "Hostile size check (fictional)" }, { table: [row] }];
+  const bytes = buildDocx(layout);
+  const fields: FormField[] = own.slice(0, questions).map((_, i) => ({
+    id: `F-${String(i + 1).padStart(2, "0")}`,
+    label: `Question ${i}`,
+    guidance: "",
+    answerType: "short_text",
+    anchor:
+      kind === "placeholders"
+        ? { kind: "docx", target: "replace_placeholder", blockId: "t0.r0.c0", placeholderText: `[answer ${i}]`, clearPlaceholder: true }
+        : { kind: "docx", target: "after_paragraph", blockId: `t0.r0.c0.p${i}` },
+    fillSource: { kind: "notes_narrative" },
+    required: false,
+    confidence: "high",
+  }));
+  const form: FormDefinition = {
+    id: "frm_hostile",
+    tenantId: "demo",
+    referrer: { name: "Hostile Size Ltd (fictional)", type: "other" },
+    title: "Hostile size check",
+    file: { fileName: kind === "typography" ? "hostile.rtf" : "hostile.docx", mimeType: DOCX_MIME, sha256: fileSha256(bytes), sizeBytes: bytes.byteLength },
+    kind: "docx",
+    fields,
+    status: "proposed",
+    analysis: { mode: "rules", promptVersion: "corpus", at: CORPUS_AT, warnings: [] },
+    createdAt: CORPUS_AT,
+    updatedAt: CORPUS_AT,
+  };
+  return { form, bytes };
+}
+
+/** kind "runs": one line of many runs with blanks among them (the size of a line, not the number of lines). */
+function hostileRunsForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+  const runs = Number(spec.runs ?? 200000);
+  const questions = Number(spec.questions ?? 20);
+  const every = Math.max(1, Math.floor(runs / questions));
+  const bytes = buildDocx([{ p: { runs: Array.from({ length: runs }, (_, i) => ({ text: i % every === 0 ? "……" : "x" })) } }]);
+  const fields: FormField[] = Array.from({ length: questions }, (_, i) => ({
+    id: `F-${String(i + 1).padStart(2, "0")}`,
+    label: `Question ${i}`,
+    guidance: "",
+    answerType: "short_text",
+    anchor: { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "……" },
+    fillSource: { kind: "notes_narrative" },
+    required: false,
+    confidence: "high",
+  }));
+  const form: FormDefinition = {
+    id: "frm_hostile",
+    tenantId: "demo",
+    referrer: { name: "Hostile Size Ltd (fictional)", type: "other" },
+    title: "Hostile size check",
+    file: { fileName: "hostile.docx", mimeType: DOCX_MIME, sha256: fileSha256(bytes), sizeBytes: bytes.byteLength },
+    kind: "docx",
+    fields,
+    status: "proposed",
+    analysis: { mode: "rules", promptVersion: "corpus", at: CORPUS_AT, warnings: [] },
+    createdAt: CORPUS_AT,
+    updatedAt: CORPUS_AT,
+  };
+  return { form, bytes };
+}
+
+const W_MAIN = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+/**
+ * A Word file from a body's raw XML (shapes the layout builder cannot write: a run of thousands of tabs) – the layout
+ * builder's package with its document part replaced (core/ never imports a zip library itself).
+ */
+function rawDocx(body: string): Uint8Array {
+  const zip = openZipSafely(buildDocx([]));
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W_MAIN}"><w:body>${body}<w:sectPr/></w:body></w:document>`);
+  return zip.generate({ type: "uint8array" });
+}
+
+function hostileFormOf(bytes: Uint8Array, fields: FormField[]): FormDefinition {
+  return {
+    id: "frm_hostile",
+    tenantId: "demo",
+    referrer: { name: "Hostile Size Ltd (fictional)", type: "other" },
+    title: "Hostile size check",
+    file: { fileName: "hostile.docx", mimeType: DOCX_MIME, sha256: fileSha256(bytes), sizeBytes: bytes.byteLength },
+    kind: "docx",
+    fields,
+    status: "proposed",
+    analysis: { mode: "rules", promptVersion: "corpus", at: CORPUS_AT, warnings: [] },
+    createdAt: CORPUS_AT,
+    updatedAt: CORPUS_AT,
+  };
+}
+
+/** kind "instructions": `lines` lines of a note beside a run of `tabs` tabs, then "Name ______" (answered). */
+function hostileInstructionsForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array } {
+  const lines = Number(spec.lines ?? 1);
+  const tabs = Number(spec.tabs ?? 40000);
+  const note = `<w:p><w:r><w:t xml:space="preserve">Sample line (delete this text)</w:t></w:r><w:r>${"<w:tab/>".repeat(tabs)}</w:r></w:p>`;
+  const bytes = rawDocx(`${note.repeat(lines)}<w:p><w:r><w:t xml:space="preserve">Name ______</w:t></w:r></w:p>`);
+  const fields: FormField[] = [
+    { id: "F-01", label: "Name", guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "replace_placeholder", blockId: `p${lines}`, placeholderText: "______" }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" },
+  ];
+  return { form: hostileFormOf(bytes, fields), bytes };
+}
+
+/** kind "long": an ordinary long questionnaire (fictional) – its answers are the case's, not "x". */
+function longForm(spec: Loose): { form: FormDefinition; bytes: Uint8Array; answers: ReturnType<typeof buildFormAnswers> } {
+  const lines = Number(spec.lines ?? 2000);
+  const questions = Number(spec.questions ?? 300);
+  const paras = Number(spec.paras ?? 3);
+  const rows = Number(spec.rows ?? 0);
+  const every = Math.max(1, Math.floor(lines / Math.max(1, questions)));
+  const run = (t: string) => `<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const table = rows > 0 ? `<w:tbl>${Array.from({ length: rows }, (_, r) => `<w:tr><w:tc><w:p>${run(`Item ${r + 1}`)}</w:p></w:tc><w:tc><w:p/></w:tc></w:tr>`).join("")}</w:tbl>` : "";
+  const body: string[] = [];
+  const fields: FormField[] = [];
+  const answers: ReturnType<typeof buildFormAnswers> = {};
+  const sentence = "The fictional patient reports steady progress with the home programme and has returned to light duties.";
+  for (let i = 0; i < lines; i++) {
+    if (i % every === 0 && fields.length < questions) {
+      const id = `F-${String(fields.length + 1).padStart(3, "0")}`;
+      body.push(`<w:p>${run(`Question ${fields.length + 1} of the fictional form:`)}</w:p>`);
+      fields.push({ id, label: `Question ${fields.length + 1}`, guidance: "", answerType: "long_text", anchor: { kind: "docx", target: "after_paragraph", blockId: `p${i}` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+      answers[id] = { text: Array.from({ length: paras }, () => sentence).join("\n\n") };
+    } else body.push(`<w:p>${run(`Printed line ${i + 1} of the fictional form.`)}</w:p>`);
+  }
+  for (let r = 0; r < rows; r++) {
+    const id = `T-${String(r + 1).padStart(3, "0")}`;
+    fields.push({ id, label: `Item ${r + 1}`, guidance: "", answerType: "short_text", anchor: { kind: "docx", target: "table_cell", blockId: `t0.r${r}.c1` }, fillSource: { kind: "notes_narrative" }, required: false, confidence: "high" });
+    answers[id] = { text: "Fictional short answer" };
+  }
+  // The table comes first, so the body's paragraphs keep the ids p0…p(lines-1).
+  const bytes = rawDocx(`${table}${body.join("")}`);
+  return { form: hostileFormOf(bytes, fields), bytes, answers };
+}
+
+/** One timed FINAL fill of a hostile file (ms, or a 4xx refusal). */
+async function timedHostileFill(spec: Loose): Promise<{ ms: number; refusal: string | null }> {
+  const { form, bytes, answers: own } = hostileForm(spec);
+  const answers: ReturnType<typeof buildFormAnswers> = own ?? {};
+  if (!own && spec.answered !== false) for (const f of form.fields) answers[f.id] = spec.blank ? { leftBlank: true } : { text: "x" };
+  const started = Date.now();
+  try {
+    await renderFormFile({ form, file: { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength }, answers, draft: false, format: "original" });
+    return { ms: Date.now() - started, refusal: null };
+  } catch (err) {
+    const e = err as { status?: number; init?: { code?: string } };
+    if (typeof e.status === "number" && e.status < 500) return { ms: Date.now() - started, refusal: `${e.status} ${e.init?.code ?? ""}` };
+    throw err;
+  }
+}
+
+/**
+ * A hostile size holds when the fill finishes within `maxMs` or is refused (422). On a loaded machine (the whole
+ * test:medreport suite runs in parallel) an over-budget time is re-checked: the same file and one at a tenth of the
+ * size are sampled again, interleaved (small, big, small) so both see the same load, and the fastest run of each is
+ * compared. Work that grows no faster than about linearly (ratio ≤ 25 for 10× the input; quadratic is ×100) still
+ * holds – the gate is on the algorithm, not on how busy the machine is. A single small sample taken after the big
+ * one is not enough: on 26/10 one landed on an idle moment and gave ×31 for linear work.
+ */
+async function runHostile(c: RunCase): Promise<PathOutcome> {
+  const spec = (c.input.fill?.hostile ?? {}) as Loose;
+  const maxMs = Number((c.check?.fill as Loose | undefined)?.maxMs ?? 3000);
+  const big = await timedHostileFill(spec);
+  // WA2 harden 26/10: BLOCK – the size must be refused (422), however fast; mustFill (kind "long", an ordinary form) –
+  // it must be filled within maxMs, never refused.
+  if (c.expect === "BLOCK") return big.refusal ? { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` } : { path: "fill", ok: false, detail: `the FINAL copy was made in ${big.ms} ms, not refused` };
+  if (spec.mustFill === true && big.refusal) return { path: "fill", ok: false, detail: `an ordinary form was refused (${big.refusal}) after ${big.ms} ms` };
+  if (big.refusal) return { path: "fill", ok: true, detail: `refused (${big.refusal}) after ${big.ms} ms` };
+  if (big.ms <= maxMs) return { path: "fill", ok: true, detail: `filled in ${big.ms} ms (budget ${maxMs} ms)` };
+  // kinds "runs", "instructions" and "long": refused or filled within the budget – no linear excuse.
+  if (spec.kind === "runs" || spec.kind === "instructions" || spec.kind === "long") return { path: "fill", ok: false, detail: `filled in ${big.ms} ms, over the ${maxMs} ms budget, and not refused` };
+  const smallSpec = { ...spec, lines: Math.max(1, Math.round(Number(spec.lines ?? 2000) / 10)), besideLines: Math.max(1, Math.round(Number(spec.besideLines ?? 200) / 10)) };
+  const small1 = await timedHostileFill(smallSpec);
+  const big2 = await timedHostileFill(spec);
+  if (big2.refusal) return { path: "fill", ok: true, detail: `refused (${big2.refusal}) after ${big2.ms} ms` };
+  const small2 = await timedHostileFill(smallSpec);
+  const bigMs = Math.min(big.ms, big2.ms);
+  const smallMs = Math.min(small1.ms, small2.ms);
+  if (bigMs <= maxMs) return { path: "fill", ok: true, detail: `filled in ${bigMs} ms on a re-run (budget ${maxMs} ms; first run ${big.ms} ms on a busy machine)` };
+  const ratio = bigMs / Math.max(1, smallMs);
+  const runs = `big ${big.ms}/${big2.ms} ms, a tenth ${small1.ms}/${small2.ms} ms`;
+  return ratio <= 25
+    ? { path: "fill", ok: true, detail: `over ${maxMs} ms on a busy machine but grows linearly: ×${ratio.toFixed(1)} for 10× the input (${runs})` }
+    : { path: "fill", ok: false, detail: `over the ${maxMs} ms budget and grows ×${ratio.toFixed(1)} for 10× the input (${runs})` };
+}
+
+async function runFill(c: RunCase): Promise<PathOutcome> {
+  const fill = (c.input.fill ?? {}) as Loose;
+  const check = (c.check?.fill ?? {}) as Loose;
+  if (fill.hostile) return runHostile(c);
+  const built = await buildCase(c.input);
+  if (!built.form || !built.fileBytes) return { path: "fill", ok: false, detail: "fill needs a form report (input.report form:…)" };
+  const form: FormDefinition = built.form;
+  const bytes: Uint8Array = built.fileBytes;
+  const roles = rolesOf(c.input);
+  const answers = buildFormAnswers(built.report, form, fill.draft === true ? {} : { receipt: { signer: clinicianOf(roles.signer), signedAt: CORPUS_AT } });
+  for (const [k, v] of Object.entries((fill.answers ?? {}) as Record<string, unknown>)) answers[k] = v as (typeof answers)[string];
+  const started = Date.now();
+  let out: Awaited<ReturnType<typeof renderFormFile>> | null = null;
+  let refusal: string | null = null;
+  try {
+    const file = { bytes, mimeType: DOCX_MIME, sha256: form.file.sha256, sizeBytes: bytes.byteLength } as const;
+    out =
+      fill.issuedWith === "pre-release"
+        ? await renderPreReleaseFinal({ report: built.report, form, file, receipt: { signer: clinicianOf(roles.signer), signedAt: CORPUS_AT }, format: "original" })
+        : await renderFormFile({ form, file, answers, draft: fill.draft === true, format: "original" });
+  } catch (err) {
+    const e = err as { status?: number; init?: { code?: string; detail?: string } };
+    if (typeof e.status === "number" && e.status < 500) refusal = `${e.status} ${e.init?.code ?? ""} ${String(e.init?.detail ?? "").slice(0, 120)}`;
+    else throw err;
+  }
+  const ms = Date.now() - started;
+  const problems: string[] = [];
+  if (typeof check.maxMs === "number" && ms > check.maxMs && !refusal) problems.push(`took ${ms} ms (limit ${check.maxMs} ms)`);
+  if (c.expect === "BLOCK") {
+    if (!refusal) problems.push("the FINAL copy was made");
+    return { path: "fill", ok: problems.length === 0, detail: problems.length ? problems.join("; ") : `refused: ${refusal}` };
+  }
+  if (refusal) {
+    if (check.refusedOk === true) return { path: "fill", ok: problems.length === 0, detail: `refused (allowed): ${refusal}; ${ms} ms` };
+    return { path: "fill", ok: false, detail: `the FINAL fill was refused: ${refusal}` };
+  }
+  const { xml, text } = docParts(out!.bytes);
+  for (const s of strings(check.contains)) if (!text.includes(s)) problems.push(`missing “${s}”`);
+  for (const s of strings(check.notContains)) if (text.includes(s)) problems.push(`still prints “${s}”`);
+  for (const s of strings(check.xmlMatch)) if (!new RegExp(s).test(xml)) problems.push(`document.xml does not match /${s}/`);
+  for (const s of strings(check.xmlNotMatch)) if (new RegExp(s).test(xml)) problems.push(`document.xml matches /${s}/`);
+  problems.push(...rowProblems(xml, check.rows), ...paraProblems(xml, check.paras));
+  if (c.expect === "FLAG" && (out!.warnings ?? []).length === 0) problems.push("no fill warning");
+  return { path: "fill", ok: problems.length === 0, detail: problems.length ? problems.join("; ") : `filled in ${ms} ms${out!.warnings.length ? `; warnings: ${out!.warnings.join(" | ").slice(0, 160)}` : ""}` };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * lint
+ * ----------------------------------------------------------------------------------------------*/
+
+const LINT_MODULE = "../../../form-map-lint";
+
+async function runLint(c: RunCase): Promise<PathOutcome> {
+  let mod: Loose;
+  try {
+    mod = (await import(/* @vite-ignore */ LINT_MODULE)) as Loose;
+  } catch {
+    return { path: "lint", ok: false, detail: "core/form-map-lint.ts (lintFormMap) is not on this tree" };
+  }
+  const lint = mod.lintFormMap as ((form: FormDefinition, opts?: Loose) => Array<{ rule: string; fieldId?: string; severity?: string }>) | undefined;
+  if (typeof lint !== "function") return { path: "lint", ok: false, detail: "core/form-map-lint.ts has no lintFormMap" };
+  const input = (c.input.lint ?? {}) as Loose;
+  const { form } = await buildForm(String(input.form ?? "cf-discharge"), "clinic-corpus");
+  const patched: FormDefinition = {
+    ...form,
+    fields: form.fields.map((f) => {
+      const patch = (input.fields as Record<string, Partial<FormField>> | undefined)?.[f.id];
+      return patch ? ({ ...f, ...patch } as FormField) : f;
+    }),
+    ...(input.analysisWarnings ? { analysis: { ...form.analysis, warnings: strings(input.analysisWarnings) } } : {}),
+    ...(input.noSourcePin ? { file: { ...form.file } } : {}),
+  };
+  const issues = lint(patched, (input.options ?? {}) as Loose);
+  const errors = issues.filter((i) => (i.severity ?? "error") === "error");
+  const want = (c.check?.lint ?? {}) as { rule?: string; field?: string };
+  const hits = errors.filter((i) => (!want.rule || i.rule === want.rule) && (!want.field || i.fieldId === want.field));
+  const detail = `errors: ${errors.map((i) => `${i.rule}${i.fieldId ? `@${i.fieldId}` : ""}`).join(", ") || "none"}`;
+  if (c.expect === "FLAG" || c.expect === "BLOCK") return { path: "lint", ok: hits.length > 0, detail };
+  const relevant = want.field ? errors.filter((i) => i.fieldId === want.field) : errors;
+  return { path: "lint", ok: relevant.length === 0, detail };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * assemble
+ * ----------------------------------------------------------------------------------------------*/
+
+async function runAssemble(c: RunCase, engine: ValidatorEngine): Promise<PathOutcome> {
+  const built = await buildCase(c.input);
+  const a = (c.input.assemble ?? {}) as Loose;
+  const output = a.output as { sections: unknown[]; gaps: unknown[] };
+  const keys = strings(a.keys).length ? strings(a.keys) : Array.from(new Set((output.sections as Array<{ sectionKey: string }>).map((s) => s.sectionKey)));
+  const roles = rolesOf(c.input);
+  const author = roles.author && person(roles.author).hcpc ? clinicianOf(roles.author) : undefined;
+  const res = assembleDraft({
+    template: built.template,
+    bundle: built.report.bundleSnapshot,
+    instructingParty: built.report.instructingParty,
+    sectionKeys: keys,
+    computedFacts: built.computedFacts,
+    output: output as Parameters<typeof assembleDraft>[0]["output"],
+    meta: { mode: "demo_prewritten", sectionKeys: keys, at: CORPUS_AT, promptVersion: "corpus" },
+    ...(built.form ? { form: built.form } : {}),
+    idSeed: "corpus",
+    ...(author ? { author } : {}),
+    // The release's assembly takes the approver as voice owner (WD); older code ignores it.
+    ...({ approver: roles.approver ? { name: person(roles.approver).name, hcpc: person(roles.approver).hcpc } : null } as object),
+  });
+  const check = (c.check?.assemble ?? {}) as Loose;
+  const box = String(check.box ?? keys[0]);
+  const section = res.sections.find((s) => s.key === box);
+  if (c.expect === "BLOCK") {
+    // What assembly prints must still block when validated (a pre-strip never makes unsafe text pass).
+    const assembled: Report = { ...built.report, sections: built.report.sections.map((s) => res.sections.find((x) => x.key === s.key) ?? s) };
+    const v = engine.validate(assembled, built.template, { computedFacts: built.computedFacts, form: built.form, owner: ownerOf(built) });
+    const j = judge({ expect: "BLOCK", ack: c.ack, blockBy: c.blockBy, check: c.check, engine, report: { ...assembled, flags: v.flags }, flags: v.flags, blocking: v.blocking, subject: { box, paragraphId: null }, approver: built.approver });
+    const printed = (section?.paragraphs ?? []).map((p) => p.text).join(" ");
+    return { path: "assemble", ok: j.ok, detail: `assembled ${JSON.stringify(printed.slice(0, 120))} ⇒ ${j.detail}` };
+  }
+  const printed = (section?.paragraphs ?? []).map((p) => p.text).join("\n");
+  const gaps = res.gaps.filter((g) => g.sectionKey === box);
+  const surfacedText = [...gaps.map((g) => `${g.issue}\n${g.suggestedQuestion}`), ...res.flags.filter((f) => f.sectionKey === box).map((f) => `${f.message}\n${f.evidence ?? ""}`)].join("\n");
+  const problems: string[] = [];
+  for (const s of strings(check.printed)) if (!printed.includes(s)) problems.push(`not printed: “${s}”`);
+  for (const s of strings(check.notPrinted)) if (printed.includes(s)) problems.push(`printed: “${s}”`);
+  for (const s of strings(check.surfaced)) if (!surfacedText.includes(s) && !printed.includes(s)) problems.push(`dropped without trace: “${s}”`);
+  for (const re of strings(check.noGap)) if (gaps.some((g) => new RegExp(re, "i").test(`${g.issue} ${g.suggestedQuestion}`))) problems.push(`a gap says /${re}/`);
+  if (check.noSuggestedAnswer === true && gaps.some((g) => g.suggestedAnswer)) problems.push(`one-click answer offered: “${gaps.find((g) => g.suggestedAnswer)?.suggestedAnswer}”`);
+  if (check.noAnswer === true && section?.answer && section.answer.value !== null && section.answer.value !== undefined) problems.push(`code set the answer: ${JSON.stringify(section.answer.value)}`);
+  if (c.expect === "FLAG" && strings(check.surfaced).length === 0 && gaps.length === 0) problems.push("nothing held back");
+  const detail = `printed: ${JSON.stringify(printed.slice(0, 160))}; gaps: ${gaps.map((g) => JSON.stringify(g.issue.slice(0, 80)) + (g.suggestedAnswer ? ` [tick ${g.suggestedAnswer}]` : "")).join(", ") || "none"}`;
+  return { path: "assemble", ok: problems.length === 0, detail: problems.length ? `${problems.join("; ")} – ${detail}` : detail };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * split / scope
+ * ----------------------------------------------------------------------------------------------*/
+
+const SENTENCES_MODULE = "../../../text/sentences";
+
+async function runSplit(c: RunCase): Promise<PathOutcome> {
+  let mod: Loose;
+  try {
+    mod = (await import(/* @vite-ignore */ SENTENCES_MODULE)) as Loose;
+  } catch {
+    return { path: "split", ok: false, detail: "core/text/sentences.ts (splitSentences) is not on this tree" };
+  }
+  const split = mod.splitSentences as ((text: string, policy?: string) => Array<string | { text: string }>) | undefined;
+  if (typeof split !== "function") return { path: "split", ok: false, detail: "core/text/sentences.ts has no splitSentences" };
+  const input = (c.input.split ?? {}) as Loose;
+  const sentences = split(String(input.text ?? ""), String(input.policy ?? "prose")).map((s) => (typeof s === "string" ? s : s.text).trim());
+  const check = (c.check?.split ?? {}) as Loose;
+  const problems: string[] = [];
+  if (typeof check.count === "number" && sentences.length !== check.count) problems.push(`${sentences.length} sentences, expected ${check.count}`);
+  for (const w of strings(check.whole)) if (!sentences.some((s) => s.includes(w))) problems.push(`“${w}” is split`);
+  return { path: "split", ok: problems.length === 0, detail: `${problems.join("; ")} ${JSON.stringify(sentences)}`.trim() };
+}
+
+function runScope(c: RunCase): PathOutcome {
+  const input = (c.input.scope ?? {}) as Loose;
+  const text = String(input.text ?? "");
+  const out = removeSentencesWithTerms(text, strings(input.terms));
+  const check = (c.check?.scope ?? {}) as Loose;
+  const problems: string[] = [];
+  for (const s of strings(check.contains)) if (!out.includes(s)) problems.push(`lost “${s}”`);
+  for (const s of strings(check.notContains)) if (out.includes(s)) problems.push(`kept “${s}”`);
+  for (const re of strings(check.notMatch)) if (new RegExp(re).test(out)) problems.push(`matches /${re}/`);
+  return { path: "scope", ok: problems.length === 0, detail: `${problems.join("; ")} → ${JSON.stringify(out)}`.trim() };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * probe
+ * ----------------------------------------------------------------------------------------------*/
+
+async function runProbe(c: RunCase): Promise<PathOutcome> {
+  const input = (c.input.probe ?? {}) as Loose;
+  const name = String(input.name ?? "");
+  const check = (c.check?.probe ?? {}) as Loose;
+  if (name === "own-voice") {
+    const out = rewriteInFirstPerson(String(input.text ?? ""), String(input.owner ?? "Sarah Reid"));
+    const problems = [
+      ...strings(check.contains).filter((s) => !out.includes(s)).map((s) => `lost “${s}”`),
+      ...strings(check.notContains).filter((s) => out.includes(s)).map((s) => `wrote “${s}”`),
+    ];
+    return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ")} → ${JSON.stringify(out)}`.trim() };
+  }
+  const built = await buildCase(c.input);
+  if (name === "condition") {
+    const key = String(input.box ?? built.box ?? "");
+    const issue = await issueStateOf(built.report, built.form, key);
+    const applies = issue ?? (notApplicable(built.report.sections, key) ? false : true);
+    const cond = conditionOf(built.report.sections, key);
+    const want = check.applies as boolean;
+    return { path: "probe", ok: applies === want, detail: `${key} ${applies ? "applies" : "does not apply"} (expected ${want ? "applies" : "does not apply"})${cond ? ` – depends on ${cond.controllers.map((s) => s.key).join(", ")}` : " – read as an ordinary question"}` };
+  }
+  if (name === "section-text") {
+    const key = String(input.box ?? "");
+    const text = (built.report.sections.find((s) => s.key === key)?.paragraphs ?? []).map((p) => p.text).join(" ");
+    const problems = strings(check.notContains).filter((s) => text.includes(s)).map((s) => `prints “${s}”`);
+    return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ")} ${JSON.stringify(text.slice(0, 200))}`.trim() };
+  }
+  if (name === "copy-equals-issued") {
+    if (!built.form) return { path: "probe", ok: false, detail: "needs a form report" };
+    const signed: Report = { ...built.report, status: "signed" };
+    const issued = buildFormAnswers(signed, built.form, { receipt: { signer: clinicianOf(built.signer), signedAt: CORPUS_AT } });
+    const copied = copyEntries(signed, built.form);
+    const problems: string[] = [];
+    for (const e of copied) {
+      if (e.signoff) continue;
+      const a = issued[e.key];
+      const prints = Boolean(a && !a.leftBlank && !a.blank && (a.text ?? "").trim() !== "");
+      const copies = e.answer !== null && e.answer.trim() !== "";
+      if (prints !== copies) problems.push(`${e.key}: ${copies ? "copied" : "not copied"} but ${prints ? "printed" : "not printed"}`);
+    }
+    return { path: "probe", ok: problems.length === 0, detail: problems.join("; ") || "Copy answers = issued" };
+  }
+  if (name === "map-note-visible") {
+    let mod: Loose = {};
+    try {
+      mod = (await import(/* @vite-ignore */ "../../../../ui/components/forms/mapping")) as Loose;
+    } catch {
+      // no mapping module: nothing hides notes
+    }
+    const shows = mod.showsMapNote as ((field: Loose, opts: Loose) => boolean) | undefined;
+    if (typeof shows !== "function") return { path: "probe", ok: true, detail: "no note filter on this tree: every analysis note is shown" };
+    const visible = shows({ note: String(input.note ?? "") }, { tenant: true });
+    return { path: "probe", ok: visible === true, detail: `tenant mode shows the note: ${visible}` };
+  }
+  if (name === "status-label") {
+    // Who answered, as the review labels it (B2-20, C-REV-3): never "drafted" for a person's answer, never "clinician"
+    // for staff.
+    const key = String(input.box ?? built.box ?? "");
+    const section = built.report.sections.find((s) => s.key === key);
+    const field = built.form?.fields.find((f) => f.id === key);
+    const v = _engineValidate(built);
+    const status = questionStatus({ section, field } as Parameters<typeof questionStatus>[0], v.flags, built.report.gaps, answeredByPerson(built.report, key), false, built.report.sections);
+    const bad = strings(check.notStatus).includes(status);
+    return { path: "probe", ok: !bad, detail: `${key} is labelled “${status}”${bad ? " – wrong for who answered it" : ""}` };
+  }
+  if (name === "rtf-picture") {
+    // A converted letter template keeps its logo (B0-14, B3-9): a 1×1 PNG in an RTF \\pict group.
+    const png = "89504e470d0a1a0a0000000d4948445200000001000000010806000000" + "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082";
+    const rtf = `{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}\\f0 Corpus Physio (fictional) {\\pict\\pngblip\\picw1\\pich1\\picwgoal240\\pichgoal240 ${png}}\\par Patient name\\par}`;
+    const out = convertRtfToDocx(new TextEncoder().encode(rtf), { maxBytes: 5 * 1024 * 1024 });
+    const media = Object.keys(openZipSafely(out.docx).files).filter((n) => n.startsWith("word/media/"));
+    return { path: "probe", ok: media.length > 0, detail: media.length ? `the picture is kept (${media.join(", ")})` : "the converted file has no picture" };
+  }
+  if (name === "records-reviewed-label") return probeRecordsReviewed(c, input, check, built);
+  if (name === "save-paused") return probeSavePaused(input, check, built);
+  if (name === "schema-keeps-release-fields") {
+    // The plan's "model" is stored as Report.reportModel (W0.3: "model" is a banned key in the clinic's case export).
+    const r = { ...built.report, approver: { memberId: "mem_sarah", name: "Sarah Reid", hcpc: "PH-DEMO-01" }, reportModel: 2 } as Report & Loose;
+    const parsed = ReportSchema.safeParse(r) as { success: boolean; data?: Loose };
+    const kept = parsed.success && parsed.data && "approver" in parsed.data && parsed.data.reportModel === 2;
+    // …and the release's factory writes them (W0.6): the corpus report is made by createReport / createFormReport.
+    const made = (built.report as Report & Loose).reportModel === 2 && (built.report as Report & Loose).approver !== undefined;
+    const ok = Boolean(kept) && made;
+    const detail = !kept ? "ReportSchema drops the release fields (approver, reportModel)" : !made ? "the report factory does not set reportModel 2 and the approver" : "release fields kept by ReportSchema and set by the factory";
+    return { path: "probe", ok, detail };
+  }
+  return { path: "probe", ok: false, detail: `unknown probe ${name}` };
+}
+
+/**
+ * R1T-WF-L1 (bh2 fix round 1): a note headed "Review" (stored as a follow-up) is listed by its own heading in the
+ * records-reviewed list (Appendix A of a report or summary PDF), not as a "Follow-up". The notes go through the real
+ * import: general notes reader → staff's review (type changes) → confirm (bundleFromReview) → buildViewModel.
+ */
+async function probeRecordsReviewed(c: RunCase, input: Loose, check: Loose, built: Awaited<ReturnType<typeof buildCase>>): Promise<PathOutcome> {
+  const notes = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "connectors", "file-import", "general-notes"].join("/"))) as typeof import("../../../../connectors/file-import/general-notes");
+  const confirm = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "connectors", "file-import", "review-bundle"].join("/"))) as typeof import("../../../../connectors/file-import/review-bundle");
+  const docgen = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "docgen", "view-model"].join("/"))) as typeof import("../../../../docgen/view-model");
+  const read = notes.readGeneralNotes({ format: "text", blocks: notes.textToBlocks(String(input.notes ?? "")), now: new Date(CORPUS_AT) });
+  if (!read.ok) return { path: "probe", ok: false, detail: `the notes were not read: ${read.message}` };
+  const changes = (input.typeChanges ?? {}) as Record<string, Report["bundleSnapshot"]["notes"][number]["type"]>;
+  const review = { ...read.review, entries: read.review.entries.map((e) => (changes[e.key] ? { ...e, type: changes[e.key] } : e)) };
+  const bundle = confirm.bundleFromReview(review, { tenantId: built.report.tenantId, now: new Date(CORPUS_AT) });
+  if (!bundle.ok) return { path: "probe", ok: false, detail: `the review was not confirmed: ${JSON.stringify(bundle.issues).slice(0, 300)}` };
+  const vm = docgen.buildViewModel({ ...built.report, bundleSnapshot: bundle.bundle }, bundle.bundle, built.template, { now: new Date(CORPUS_AT) });
+  const rows = vm.recordsReviewed.map((r) => `${r.date} ${r.description}`);
+  const problems = [
+    ...strings(check.contains).filter((s) => !rows.some((r) => r.includes(s))).map((s) => `no row “${s}”`),
+    ...strings(check.notContains).filter((s) => rows.some((r) => r.includes(s))).map((s) => `lists “${s}”`),
+  ];
+  return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ")} ${c.id}: ${JSON.stringify(rows)}`.trim() };
+}
+
+/**
+ * R1T-WF-L1 (bh2 fix round 1): a save the clinic's records answer with their rate limit (429 RATE_LIMITED,
+ * store_write_limited, with Retry-After) is paused and sent again by itself – it is never stopped after the queue's
+ * attempts, and the review header says "Saving paused for a moment", not "Could not save – check your connection".
+ * The Studio's own server store (ui/store) against the real PUT /store/reports handler; the member's allowance is
+ * reported used up by the shared counters until the probe lets it go.
+ */
+async function probeSavePaused(input: Loose, check: Loose, built: Awaited<ReturnType<typeof buildCase>>): Promise<PathOutcome> {
+  const { createHttpHarness } = await import("./http");
+  const { bindHandler } = await import("../../../../api/http");
+  const { handleStoreReportGet, handleStoreReportPut } = await import("../../../../api/handlers/store-reports");
+  const { createServerApi } = await import("../../../../ui/store/server-api");
+  const { createServerStore } = await import("../../../../ui/store/server-store");
+  let header: Loose = {};
+  try {
+    header = (await import(/* @vite-ignore */ ["..", "..", "..", "..", "ui", "components", "review", "review-header"].join("/"))) as Loose;
+  } catch {
+    // no header module on this tree
+  }
+  const saveStatus = header.saveStatus as ((state: string, opts: { tenant: boolean; paused: boolean }) => { tone: string; text: string }) | undefined;
+  if (typeof saveStatus !== "function") return { path: "probe", ok: false, detail: "the review header has no saveStatus (this tree says “check your connection” for every failed save)" };
+
+  const h = createHttpHarness();
+  let limited = false;
+  const windows = new Map<string, number>();
+  const RESET_IN_MS = Number(input.retryAfterSeconds ?? 42) * 1000;
+  const counter = (key: string, amount: number) => {
+    const count = (windows.get(key) ?? 0) + amount;
+    windows.set(key, count);
+    // The member's per-minute write allowance is used up while `limited` (e.g. several people on one sign-in).
+    const used = limited && key.startsWith("store:writes:member:") ? 10_000 : count;
+    return { count: used, resetAt: new Date(Date.now() + RESET_IN_MS).toISOString() };
+  };
+  const deps = {
+    ...h.deps,
+    sharedState: {
+      hit: async (key: string, _windowMs: number, amount = 1) => counter(key, amount),
+      peek: async (key: string) => counter(key, 0),
+      reset: async (key: string) => void windows.delete(key),
+      claimOnce: async () => true,
+    },
+  } as typeof h.deps;
+  const log: number[] = [];
+  const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    const u = new URL(String(url), "http://localhost");
+    const id = decodeURIComponent(u.pathname.split("/").pop() ?? "");
+    const headers = new Headers(init?.headers);
+    headers.set("x-corpus-member", "sarah");
+    headers.set("origin", "http://localhost");
+    const req = new Request(u.href, { method: init?.method ?? "GET", headers, body: init?.body ?? undefined });
+    const handler = (init?.method ?? "GET") === "PUT" ? handleStoreReportPut : handleStoreReportGet;
+    const res = await bindHandler(handler, () => deps)(req, { params: { id } });
+    if ((init?.method ?? "GET") === "PUT") log.push(res.status);
+    return res;
+  }) as typeof fetch;
+  const timers: Array<{ run: () => void; ms: number }> = [];
+  const client = createServerStore({
+    api: createServerApi(fetchImpl),
+    browserEvents: false,
+    notify: () => undefined,
+    queue: { maxAttempts: 2, backoffMs: () => 1, schedule: (run, ms) => (timers.push({ run, ms }), () => undefined) },
+  });
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const settleNow = async () => {
+    for (let i = 0; i < 50; i++) await tick();
+  };
+  const report: Report = { ...built.report, status: "draft" };
+  client.saveReport(report);
+  if (!(await client.flush())) return { path: "probe", ok: false, detail: `the first save failed: ${JSON.stringify(log)}` };
+
+  limited = true;
+  const edited: Report = { ...report, patientLabel: `${report.patientLabel} (edited)`, updatedAt: new Date(Date.parse(report.updatedAt) + 60_000).toISOString() };
+  client.saveReport(edited);
+  let settled: boolean | null = null;
+  void client.reportSettled(edited.id).then((ok) => (settled = ok));
+  await settleNow();
+  const problems: string[] = [];
+  const attempts = Number(input.attempts ?? 6);
+  for (let i = 0; i < attempts; i++) {
+    const t = timers.shift();
+    if (!t) {
+      problems.push(`attempt ${i + 1}: no retry scheduled (the save stopped)`);
+      break;
+    }
+    // The handler rounds the window's end up to whole seconds (Retry-After), so allow up to 2 s more.
+    if (t.ms < RESET_IN_MS || t.ms > RESET_IN_MS + 2000) problems.push(`retry ${i + 1} after ${t.ms} ms, not the server's Retry-After (${RESET_IN_MS} ms)`);
+    t.run();
+    await settleNow();
+  }
+  const sync = client.syncState();
+  if (!log.includes(429)) problems.push(`no 429 from the store (${JSON.stringify(log)})`);
+  if (sync.paused !== true) problems.push("the store does not say the save is paused");
+  if (settled !== null) problems.push(`the save settled (${settled}) while still rate-limited – it gave up`);
+  const shown = saveStatus("saving", { tenant: true, paused: sync.paused === true });
+  if (check.text !== undefined && shown.text !== check.text) problems.push(`the header says “${shown.text}”`);
+  for (const s of strings(check.notText)) if (shown.text.includes(s)) problems.push(`the header says “${shown.text}”`);
+
+  limited = false;
+  timers.shift()?.run();
+  await settleNow();
+  if (settled !== true) problems.push(`not saved once allowed again (${settled})`);
+  if (client.syncState().paused) problems.push("still paused after the save");
+  return { path: "probe", ok: problems.length === 0, detail: `${problems.join("; ") || "paused, then saved"} – PUT ${JSON.stringify(log)}; header “${shown.text}”` };
+}
+
+function _engineValidate(built: Awaited<ReturnType<typeof buildCase>>) {
+  return CANDIDATE_ENGINE.validate(built.report, built.template, { computedFacts: built.computedFacts, form: built.form, owner: ownerOf(built) });
+}
+
+/** core/issue-state.ts (WA1), loaded by a computed path so a tree without it still type-checks and loads. */
+const ISSUE_STATE_MODULE = ["..", "..", "..", "issue-state"].join("/");
+
+/** The release's issue state for one box, when the tree has core/issue-state.ts (WA1): true = applies. */
+async function issueStateOf(report: Report, form: FormDefinition | null, key: string): Promise<boolean | null> {
+  let mod: Loose;
+  try {
+    mod = (await import(/* @vite-ignore */ ISSUE_STATE_MODULE)) as Loose;
+  } catch {
+    return null;
+  }
+  const fn = mod.issueState as ((content: Report, form: FormDefinition | null, approval: unknown) => Record<string, { kind?: string; reason?: string }> | { fields?: Record<string, { kind?: string; reason?: string }> }) | undefined;
+  if (typeof fn !== "function") return null;
+  const res = fn(report, form, null) as Loose;
+  const fields = ((res.fields ?? res) as Record<string, { kind?: string; reason?: string }>) ?? {};
+  const st = fields[key];
+  if (!st) return null;
+  return !(st.kind === "not_applicable" && (st.reason === "condition" || st.reason === undefined));
+}
+
+export async function runPurePath(path: CasePath, c: RunCase, engine: ValidatorEngine): Promise<PathOutcome> {
+  switch (path) {
+    case "fill":
+      return runFill(c);
+    case "lint":
+      return runLint(c);
+    case "assemble":
+      return runAssemble(c, engine);
+    case "split":
+      return runSplit(c);
+    case "scope":
+      return runScope(c);
+    case "probe":
+      return runProbe(c);
+    default:
+      return { path, ok: false, detail: `not a pure path: ${path}` };
+  }
+}

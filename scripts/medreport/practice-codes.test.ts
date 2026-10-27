@@ -82,7 +82,8 @@ test("dictionary: TM3-style codes, the detector, and what each code means", () =
 });
 
 test("RTF: clinic-system codes are kept in the body (split runs joined); other merge fields and headers as before; earlier fixtures convert to the same bytes", () => {
-  assert.equal(RTF_CONVERTER_VERSION, "rtf-docx-2");
+  // (rtf-docx-3, fix round 1: pictures carried over – a file without PNG or JPEG pictures converts as with rtf-docx-2.)
+  assert.equal(RTF_CONVERTER_VERSION, "rtf-docx-3");
   const r = convertRtfToDocx(rtf(FIXTURE), { maxBytes: MAX });
   const blocks = new Map(buildDocxOutline(r.docx).blocks.map((b) => [b.id, b.text]));
   assert.equal(blocks.get("p4"), "Claimant: <<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>>", "the code split over two runs is one code");
@@ -97,9 +98,11 @@ test("RTF: clinic-system codes are kept in the body (split runs joined); other m
   for (const n of r.notes) for (const re of WORDING_BANNED) assert.doesNotMatch(n, re);
   assert.equal(sha(convertRtfToDocx(rtf(FIXTURE), { maxBytes: MAX }).docx), sha(r.docx), "deterministic");
 
-  // The fixtures without clinic-system codes: byte for byte what main (rtf-docx-1) wrote.
+  // The fixtures without clinic-system codes: byte for byte what main (rtf-docx-1) wrote – except (rtf-docx-3, fix round
+  // 1, B0-14) the one whose header holds a PNG logo: it now carries the picture (word/media/image1.png); main's bytes
+  // were 540cc0f217be49a2d14c58b95d7c9f6a36a3aa436b778beba9677338542444f0, without it.
   const MAIN: Record<string, string> = {
-    "initial-assessment-report.rtf": "540cc0f217be49a2d14c58b95d7c9f6a36a3aa436b778beba9677338542444f0",
+    "initial-assessment-report.rtf": "3beeabb75e83e5697c5f51da2b42186e55770d7e21729e1e3653aa2c2d8e0912",
     "progress-report-textedit.rtf": "2ec9ea0abbcb7100c8b8e5f811a4046d251dc1fee40b0592b8c44c9e70212287",
     "mail-merge-report.rtf": "dc456f8a33130ccd30262700443466bc6657c593f97dc1300e22215db176a046",
     "tick-box-discharge.rtf": "c95ab91828d5a190791074a6c8cab12e9c15bde7b5a544bb7a6093f827545437",
@@ -229,8 +232,10 @@ test("Megan Hart (fictional) on the form: record values in place, empty address 
   const template = formToTemplate(form);
   const before = validateReport(report, template, { form });
   const blocking = before.flags.filter((f) => f.code === "MISSING_PLACEHOLDER" && /mail-merge field/.test(f.message));
-  assert.ok(blocking.some((f) => /<<P_HOSP_NUM>>/.test(f.message)));
-  assert.ok(blocking.some((f) => /<<P_CONTACT_PREF>>/.test(f.message)));
+  // Fix 10/2026: the code is in the evidence (flag IDs unchanged); the message says what it is in plain words.
+  assert.ok(blocking.some((f) => /<<P_HOSP_NUM>>/.test(f.evidence ?? "") && /your clinic system's placeholder for the patient's hospital number, in /.test(f.message)));
+  assert.ok(blocking.some((f) => /<<P_CONTACT_PREF>>/.test(f.evidence ?? "") && /your clinic system's placeholder “P_CONTACT_PREF”, in /.test(f.message)));
+  for (const f of blocking) assert.doesNotMatch(f.message, /<<[A-Z]/, `no raw clinic-system code shown: ${f.message}`);
   assert.equal(before.canSign, false);
 
   // Staff enter what the record does not hold (and the clinical answer); the gaps are answered.
@@ -249,18 +254,21 @@ test("Megan Hart (fictional) on the form: record values in place, empty address 
   const warnings: string[] = [];
   const out = fillDocx(docx, form, answers, { draft: false, onWarning: (w) => warnings.push(w) });
   assert.deepEqual(await mergeTokensInOutput(out, "docx"), [], "no merge code in the completed file");
-  const filled = new Map(buildDocxOutline(out).blocks.map((b) => [b.id, b.text]));
+  const blocks = buildDocxOutline(out).blocks;
+  const filled = new Map(blocks.map((b) => [b.id, b.text]));
   assert.equal(filled.get("p4"), "Claimant: Ms Megan Hart");
   assert.equal(filled.get("p5"), "14 Willow Bank (fictional)");
   assert.equal(filled.get("p7"), "Milton Keynes");
-  assert.equal(filled.get("p8"), "", "an address line the record does not have is empty");
-  assert.equal(filled.get("p9"), "");
-  assert.equal(filled.get("p10"), "MK3 9ZZ");
-  assert.match(filled.get("p12") ?? "", /^Date of Birth: \d\d\/\d\d\/\d{4}$/);
-  assert.equal(filled.get("p13"), "Date of Accident: 12/03/2026");
-  assert.equal(filled.get("p16"), "Home address on one line: 14 Willow Bank (fictional), Bletchley, Milton Keynes, MK3 9ZZ");
+  // Fix round 1 (B0-32): the address lines the record does not have are not left as empty lines – the postcode follows
+  // the last line of the address (the two emptied paragraphs are removed, so the later block IDs move up by two).
+  assert.equal(filled.get("p8"), "MK3 9ZZ", "an address line the record does not have leaves no empty line");
+  const body = blocks.filter((b) => b.kind === "paragraph").map((b) => b.text);
+  assert.equal(body[body.indexOf("Milton Keynes") + 1], "MK3 9ZZ");
+  assert.match(filled.get("p10") ?? "", /^Date of Birth: \d\d\/\d\d\/\d{4}$/);
+  assert.equal(filled.get("p11"), "Date of Accident: 12/03/2026");
+  assert.equal(filled.get("p14"), "Home address on one line: 14 Willow Bank (fictional), Bletchley, Milton Keynes, MK3 9ZZ");
   assert.equal(filled.get("t0.r0.c1"), "Megan Hart");
-  assert.equal(filled.get("p26"), "Date of report: 24/10/2026");
+  assert.equal(filled.get("p24"), "Date of report: 24/10/2026");
   assert.deepEqual(warnings.filter((w) => /not found|could not/.test(w)), []);
 });
 

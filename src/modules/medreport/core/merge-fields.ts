@@ -19,8 +19,10 @@
  *
  * Browser-safe and pure.
  */
-import { docxAnchorBlockIds, formAnchorPdfFieldNames, isBlankByDesign, isSectionAnswered } from "./forms";
-import type { FormDefinition, FormField, FormMergeField, Report } from "./types";
+import { docxAnchorBlockIds, formAnchorPdfFieldNames } from "./forms";
+import { clearsItsPlaceholder, issueDetails, type BoxIssue, type IssueContent } from "./issue-state";
+import { findPracticeCodes, practiceCodeWords } from "./practice-merge-codes";
+import type { FormDefinition, FormMergeField } from "./types";
 
 const TOKEN = "«[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}»|<<[A-Za-z][A-Za-z0-9 _.\\-/]{0,39}>>|\\bMERGEFIELD\\b";
 
@@ -46,17 +48,43 @@ export function listMergeTokens(tokens: readonly string[], max = 3): string {
   return `${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
 }
 
+/**
+ * A clinic-system code in plain words (fix 10/2026, Blue Heart test run): what the code dictionary says it holds, in
+ * the same words as the staff screens (practiceCodeWords) – <<P_GROUPREF>> → "your clinic system's placeholder for the
+ * referrer's reference for this case" – so a clinician never reads the raw code. A code the dictionary does not know
+ * keeps its name, in quotes, so staff can find it on the form. Null for anything else («Patient Name» and MERGEFIELD
+ * read as printed).
+ */
+export function practiceCodeInWords(token: string): string | null {
+  const found = findPracticeCodes(token);
+  if (found.length !== 1 || found[0].text !== token) return null;
+  const words = practiceCodeWords(found[0].code);
+  return words ? `your clinic system's placeholder for ${words}` : `your clinic system's placeholder “${found[0].code}”`;
+}
+
+/** listMergeTokens() with clinic-system codes in plain words (the same text when there are none). */
+export function listMergeTokensInWords(tokens: readonly string[], max = 3): string {
+  return listMergeTokens(tokens.map((t) => practiceCodeInWords(t) ?? t), max);
+}
+
 export interface UnresolvedMergeField extends FormMergeField {
   /** How many times this text is left there. */
   count: number;
-  /** A question whose answer box is in the same place (for "Go to"), when there is one. */
+  /**
+   * The question whose answer replaces it (fix round 1), else one whose answer box is in the same place (for "Go to"),
+   * when there is one.
+   */
   fieldId?: string;
 }
 
-function answeredOrSignoff(field: FormField, report: Pick<Report, "sections">): boolean {
-  if (field.fillSource.kind === "signoff") return true; // written from the approval receipt
-  const section = report.sections.find((s) => s.key === field.id);
-  return Boolean(section && isSectionAnswered({ paragraphs: section.paragraphs ?? [], answer: section.answer, blankFromRecords: isBlankByDesign(section, field) }));
+/**
+ * bh2 WA1 design 5: whether a box's fill removes what is printed in its place – its issue state
+ * (core/issue-state.ts): answered, filled at approval (sign-off), ruled out by a frozen condition or a person, a session
+ * not attended, or empty by design. A box with no answer, left blank on purpose, or ruled out only by the earlier
+ * run-time reading leaves its code there.
+ */
+function clears(box: BoxIssue | undefined): boolean {
+  return Boolean(box && clearsItsPlaceholder(box));
 }
 
 function inBlock(anchorBlockId: string, blockId: string): boolean {
@@ -65,14 +93,15 @@ function inBlock(anchorBlockId: string, blockId: string): boolean {
 
 /**
  * The form's recorded mail-merge fields that the completed form would still contain: a Word body field
- * is cleared only by as many answered questions replacing exactly that text in that place (sign-off
- * questions count – they are written at approval); a fillable PDF field's printed value by an answered
- * question in that field; a `fixed` one (page header or footer, a Word field code, text printed on a PDF
- * page) never.
+ * is cleared only by as many questions replacing exactly that text in that place whose box clears it (answered,
+ * sign-off – written at approval –, not asked, or empty by design: see clears() above); a fillable PDF field's printed
+ * value by such a question in that field; a `fixed` one (page header or footer, a Word field code, text printed on a
+ * PDF page) never. `report` is the whole report (its approver decides whether an "applies anyway" counts).
  */
-export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "fields">, report: Pick<Report, "sections">): UnresolvedMergeField[] {
+export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "fields">, report: IssueContent): UnresolvedMergeField[] {
   const entries = form.analysis.mergeFields ?? [];
   if (entries.length === 0) return [];
+  const boxes = new Map(issueDetails(report, form).map((b) => [b.key, b]));
   const groups = new Map<string, UnresolvedMergeField>();
   for (const e of entries) {
     const key = `${e.blockId ?? ""}|${e.fieldName ?? ""}|${e.fixed ? "fixed" : ""}|${e.where}|${e.text}`;
@@ -86,19 +115,25 @@ export function unresolvedMergeFields(form: Pick<FormDefinition, "analysis" | "f
     let near: string | undefined;
     if (!g.fixed && g.blockId) {
       const blockId = g.blockId;
+      // Fix round 1 (B0-10): the question whose answer replaces the code owns it ("Reference <<P_GROUPREF>>" on a line
+      // that starts "Claimant <<P_TITLE>>" is F-04's, not the line's first question); else the first one there.
+      let owner: string | undefined;
       for (const f of form.fields) {
         if (f.anchor.kind !== "docx") continue;
         const blocks = docxAnchorBlockIds(f.anchor);
         if (!blocks.some((b) => inBlock(b, blockId))) continue;
         near ??= f.id;
         // (A question that writes AFTER the printed text – writeAfter, 10/2026 – leaves the code there.)
-        if (f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0 && answeredOrSignoff(f, report)) cleared += 1;
+        const replaces = f.anchor.target === "replace_placeholder" && !f.anchor.writeAfter && (f.anchor.placeholderText ?? "").indexOf(g.text) >= 0;
+        if (replaces) owner ??= f.id;
+        if (replaces && clears(boxes.get(f.id))) cleared += 1;
       }
+      near = owner ?? near;
     } else if (!g.fixed && g.fieldName) {
       for (const f of form.fields) {
         if (!formAnchorPdfFieldNames(f.anchor).includes(g.fieldName)) continue;
         near ??= f.id;
-        if (answeredOrSignoff(f, report)) cleared += 1;
+        if (clears(boxes.get(f.id))) cleared += 1;
       }
     }
     const left = g.count - cleared;

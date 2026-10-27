@@ -20,6 +20,21 @@ import { ReportSchema, SignReceiptSchema } from "../core/schemas";
 import { StoredSignReceiptSchema } from "../core/stored-schemas";
 import type { Clinician, Report, SignReceipt } from "../core/types";
 
+/**
+ * bh2 W0 follow-up (seam "receipt-mac", bh2-base2): the release's receipt keys the /sign checks work out – WA1's issued
+ * document and acknowledgement hashes, WC's takeover, WB's sign-time confirmations. MAC-covered like every key; only
+ * these four are taken, and only when set (a receipt without them is exactly as before).
+ */
+export type ReceiptAdditions = Partial<Pick<SignReceipt, "issuedContentSha256" | "acknowledgementsSha256" | "approverTakeover" | "signerConfirmations">>;
+
+const RECEIPT_ADDITION_KEYS = ["issuedContentSha256", "acknowledgementsSha256", "approverTakeover", "signerConfirmations"] as const satisfies ReadonlyArray<keyof ReceiptAdditions>;
+
+function additionsOf(additions: ReceiptAdditions | undefined): ReceiptAdditions {
+  const out: Record<string, unknown> = {};
+  for (const key of RECEIPT_ADDITION_KEYS) if (additions?.[key] !== undefined) out[key] = additions[key];
+  return out as ReceiptAdditions;
+}
+
 export interface CreateReceiptInput {
   report: Report;
   signer: Clinician;
@@ -29,6 +44,8 @@ export interface CreateReceiptInput {
   formMapSha256?: string;
   /** The authenticated session the approval came through. */
   approvedVia?: SignReceipt["approvedVia"];
+  /** bh2: what the /sign checks add (see ReceiptAdditions). */
+  additions?: ReceiptAdditions;
   now?: Date;
   /** Override the secret (tests). Default: getSecret("MEDREPORT_SIGNING_SECRET"). */
   secret?: string;
@@ -53,6 +70,7 @@ export async function createReceipt(input: CreateReceiptInput): Promise<SignRece
     attestations: input.attestations,
     ...(input.formMapSha256 ? { formMapSha256: input.formMapSha256 } : {}),
     ...(input.approvedVia ? { approvedVia: input.approvedVia } : {}),
+    ...additionsOf(input.additions),
   };
   return { ...unsigned, mac: computeMac(unsigned, input.secret ?? signingKey("receipt")) };
 }

@@ -51,7 +51,7 @@ import { canonicalize, reportFingerprint } from "../../src/modules/medreport/cor
 import { FORM_ATTESTATIONS, formTemplateId, formToTemplate, resolveRegistrationValue } from "../../src/modules/medreport/core/forms";
 import { FLAG_CODE_LABELS, UNKNOWN_MEMBER_LABELS, flagCodeLabel, isKnownRegistrationPath, registrationPathLabel } from "../../src/modules/medreport/core/labels";
 import { createFormReport, createReport } from "../../src/modules/medreport/core/report-factory";
-import { FormDefinitionSchema, InstructingPartySchema, ReportSchema, SignReceiptSchema } from "../../src/modules/medreport/core/schemas";
+import { FormDefinitionSchema, InstructingPartySchema, ParagraphOriginSchema, ReportSchema, SignReceiptSchema } from "../../src/modules/medreport/core/schemas";
 import {
   FORWARD_OPEN_ENUMS,
   StoredFormDefinitionSchema,
@@ -89,6 +89,30 @@ const SIGNED_AT = new Date("2026-10-28T11:00:00.000Z");
 const CLINIC = "clinic-a";
 const OPEN = new Set<z.ZodType>(FORWARD_OPEN_ENUMS);
 
+/*
+ * The same tests run on both lines: production (e132057 + this shim, main) and release/bh-trial-2, which knows the
+ * W0.3 keys and members itself. "A member this build does not know" is therefore worked out from this build's own
+ * write schemas and labels, and each strictness check also uses a LATER_* member that neither line knows (bh2-base).
+ */
+const LATER_PATH = "episode.laterReleasePath";
+const LATER_CODE = "LATER_RELEASE_CHECK";
+const LATER_ORIGIN = "later_release_origin";
+const reportKnows = (key: string) => key in ReportSchema.shape;
+const receiptKnows = (key: string) => key in SignReceiptSchema.shape;
+const firstUnknown = (members: readonly string[], known: (m: string) => boolean, later: string) => members.find((m) => !known(m)) ?? later;
+
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** The same approved report and map twice: as this build writes them, and as the release writes them. */
 async function approvedPair(tenantId: string) {
   const baseForm = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId }, "Practice manager", "2026-10-01T09:00:00.000Z");
@@ -99,7 +123,7 @@ async function approvedPair(tenantId: string) {
   const signed = (report: Report, receipt: SignReceipt): Report => ({ ...report, status: "signed", receipt });
   return {
     base: { form: baseForm, report: signed(baseDraft, await receiptFor(baseDraft, input(baseForm))) },
-    release: { form: relForm, report: signed(relDraft, await releaseReceipt(relDraft, input(relForm))) },
+    release: { form: relForm, report: signed(relDraft, await releaseReceipt(relDraft, input(relForm), { form: relForm, fileBase64: await harrowFileBase64() })) },
   };
 }
 
@@ -209,17 +233,24 @@ test("the stored read schemas keep every key and member the release writes: fing
 
   // Without the shim (R-regression-9): the strict schemas refuse the release's report and map outright, and even
   // with the new members taken out they drop the new keys – so neither the fingerprint nor the MAC would verify.
+  // (On the release line, which knows the W0.3 record paths and receipt keys, the strict map parse and the receipt MAC
+  // hold for those – the members and keys neither line knows still fail as on production.)
   assert.equal(ReportSchema.safeParse(release.report).success, false);
-  assert.equal(FormDefinitionSchema.safeParse(release.form).success, false);
+  assert.equal(FormDefinitionSchema.safeParse(release.form).success, RELEASE_MEMBERS.registrationPaths.every((p) => isKnownRegistrationPath(p)));
+  const laterForm = structuredClone(release.form);
+  (laterForm.fields.find((fl) => fl.fillSource.kind === "registration") as Record<string, unknown>).fillSource = { kind: "registration", path: LATER_PATH };
+  assert.equal(FormDefinitionSchema.safeParse(laterForm).success, false, "a record path neither line knows");
+  assert.equal(StoredFormDefinitionSchema.safeParse(laterForm).success, true, "…is read as stored");
   const knownMembers = structuredClone(release.report);
   for (const s of knownMembers.sections) for (const p of s.paragraphs) p.origin = "clinician";
   knownMembers.flags = [];
   assert.notEqual(await reportFingerprint(ReportSchema.parse(knownMembers)), await reportFingerprint(knownMembers));
   const { mac, ...strictReceipt } = SignReceiptSchema.parse(receipt);
-  assert.notEqual(macOf(strictReceipt), mac);
+  if (RELEASE_KEYS.receipt.every(receiptKnows)) assert.equal(macOf(strictReceipt), mac);
+  else assert.notEqual(macOf(strictReceipt), mac);
 });
 
-test("clinic Studio after a rollback: the store serves the release's report and map whole, the Studio reads them whole; its FINAL copy is refused (shim 2), a draft still renders", async () => {
+test("clinic Studio after a rollback: the store serves the release's report and map whole, the Studio reads them whole, and FINAL is identical", async () => {
   const { store, f } = clinicStore();
   const { base, release } = await approvedPair(CLINIC);
   // As the release stored them.
@@ -245,71 +276,21 @@ test("clinic Studio after a rollback: the store serves the release's report and 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ report: r, receipt: r.receipt, form, fileBase64, requireFinal: true }),
     });
-  // Rollback shim 2 (bh2 R1T-WA1-02 / RG-3): the release's receipt binds a document this build cannot issue (its frozen
-  // conditions, decisions and printed leads are not read here) – refused, never a different document.
   const final = await bodyOf(await render(read.report, readForm.form));
-  assert.equal(final.status, 409, final.text());
-  assert.equal((final.json() as { code?: string }).code, "RECEIPT_INVALID");
-  // A draft copy of it still renders (watermarked), from exactly what the Studio read.
-  const draft = await bodyOf(
-    await f("/api/reports/v1/render?format=original", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ report: read.report, receipt: read.report.receipt, form: readForm.form, fileBase64 }),
-    }),
-  );
-  assert.equal(draft.status, 200, draft.text());
-  assert.equal(draft.headers.get("x-medreport-render"), "draft");
+  assert.equal(final.status, 200, final.text());
+  assert.equal(final.headers.get("x-medreport-render"), "final");
+  assert.equal(final.headers.get("x-medreport-content-sha256"), release.report.receipt!.contentSha256);
 
-  // The same report approved by this build issues its FINAL copy as before.
+  // The release's keys change nothing this build prints: the same report without them, approved by this build.
+  // bh2 fix round 1 (WB, R1T-WB-03): this build's copy with its own words stamped, as the review stamps them (on a clinic's
+  // report with no approver, unstamped "clinician" text is a person's), and approved again as this build approves it.
+  const { receipt: _baseReceipt, ...baseDraftAgain } = base.report;
+  base.report = { ...withOwnWordsStamped(structuredClone({ ...baseDraftAgain, status: "draft" }) as Report), status: "signed" };
+  base.report.receipt = await receiptFor({ ...base.report, status: "draft" }, { signer: SARAH, attestations: FORM_ATTESTATIONS, formMapSha256: formMapSha256(base.form), now: SIGNED_AT });
   const baseFinal = await bodyOf(await render(base.report, base.form));
   assert.equal(baseFinal.headers.get("x-medreport-render"), "final", baseFinal.text());
-  assert.equal(baseFinal.headers.get("x-medreport-content-sha256"), base.report.receipt!.contentSha256);
-  assert.ok(Object.keys(wordParts(baseFinal.bytes)).includes("word/document.xml"));
-});
-
-/**
- * Rollback shim 2 (bh2 fix round 1, R1T-WA1-02 / RG-3) – the forward-compatibility ISSUANCE test, beside the read
- * tests: an approval the release made, then this build's /render FINAL. Keyed on BOTH issue hashes – a portal question
- * set's receipt carries the acknowledgement hash only, so a key on issuedContentSha256 alone would miss it.
- */
-test("shim 2: a receipt the release minted (issued-document and/or acknowledgement hash) gets no FINAL copy here – 409; this build's own receipts issue as before", async () => {
-  const { base, release } = await approvedPair("demo");
-  const fileBase64 = await harrowFileBase64();
-  const { mac: _mac, ...unsigned } = release.report.receipt! as SignReceipt & Record<string, unknown>;
-  void _mac;
-  const minted = (keys: Record<string, unknown>): SignReceipt => {
-    const { issuedContentSha256: _i, acknowledgementsSha256: _a, approverTakeover: _t, ...rest } = unsigned as Record<string, unknown>;
-    void _i;
-    void _a;
-    void _t;
-    const signed = { ...rest, ...keys } as Omit<SignReceipt, "mac">;
-    return { ...signed, mac: macOf(signed) } as SignReceipt;
-  };
-  const cases: Array<[string, SignReceipt]> = [
-    ["as the release's /sign mints it (document, acknowledgements, takeover)", release.report.receipt!],
-    ["a portal question set's (acknowledgements only)", minted({ acknowledgementsSha256: "f".repeat(64) })],
-    ["the issued document only", minted({ issuedContentSha256: "e".repeat(64) })],
-  ];
-  for (const [label, receipt] of cases) {
-    assert.equal(verifyReceiptMac(receipt), true, `${label}: the MAC verifies (the shim keeps the keys)`);
-    const report = { ...release.report, receipt };
-    const final = await bodyOf(await postDemo(handleRender, "/render?format=original", { report, receipt, form: release.form, fileBase64, requireFinal: true }));
-    assert.equal(final.status, 409, `${label}: ${final.text()}`);
-    const problemBody = final.json() as { code?: string; detail?: string };
-    assert.equal(problemBody.code, "RECEIPT_INVALID", label);
-    assert.match(problemBody.detail ?? "", /amended version/, label);
-    // Not asked for FINAL: the draft copy renders as before (no final header, no file token).
-    const draft = await bodyOf(await postDemo(handleRender, "/render?format=original", { report, receipt, form: release.form, fileBase64 }));
-    assert.equal(draft.status, 200, `${label}: ${draft.text()}`);
-    assert.equal(draft.headers.get("x-medreport-render"), "draft", label);
-    assert.equal(draft.headers.get("x-medreport-file-token"), null, label);
-  }
-  // A receipt with neither hash – every approval this build made – issues its FINAL copy, unchanged.
-  const own = await bodyOf(await postDemo(handleRender, "/render?format=original", { report: base.report, receipt: base.report.receipt, form: base.form, fileBase64, requireFinal: true }));
-  assert.equal(own.status, 200, own.text());
-  assert.equal(own.headers.get("x-medreport-render"), "final");
-  assert.notEqual(own.headers.get("x-medreport-file-token"), null);
+  assert.equal(final.headers.get("content-type"), baseFinal.headers.get("content-type"));
+  assert.deepEqual(wordParts(final.bytes), wordParts(baseFinal.bytes), "FINAL documents are identical, part for part, byte for byte");
 });
 
 test("public demo after a rollback: this browser's stored release report and map are listed and read whole", async () => {
@@ -344,23 +325,32 @@ test("public demo after a rollback: this browser's stored release report and map
  * ----------------------------------------------------------------------------------------------*/
 
 test("writes stay strict: the store and /sign refuse members this build does not know, and keys it does not know are not signed or stored", async () => {
-  const { f } = clinicStore();
+  const { f, store } = clinicStore();
   const { release } = await approvedPair(CLINIC);
   const draft: Report = { ...release.report, status: "draft" };
   delete draft.receipt;
   const put = (url: string, body: unknown) => f(url, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
   assert.equal((await put(`/api/reports/v1/store/reports/${draft.id}`, { report: draft })).status, 422, "a new flag code / origin");
-  assert.equal((await put(`/api/reports/v1/store/forms/${release.form.id}`, { form: release.form })).status, 422, "a new record path");
+  const laterForm = structuredClone(release.form);
+  (laterForm.fields.find((fl) => fl.fillSource.kind === "registration") as Record<string, unknown>).fillSource = { kind: "registration", path: LATER_PATH };
+  assert.equal((await put(`/api/reports/v1/store/forms/${release.form.id}`, { form: laterForm })).status, 422, "a new record path");
 
   // Members this build knows, keys it does not: stored as this build writes reports – without them.
   const known = structuredClone(draft);
   for (const s of known.sections) for (const p of s.paragraphs) p.origin = "clinician";
   known.flags = [];
-  const created = await bodyOf(await put(`/api/reports/v1/store/reports/${known.id}`, { report: known }));
-  assert.equal(created.status, 201, created.text());
+  // bh2 WC (check-WC problem 3, integrator grant): a create is checked like an update – every decision must be the
+  // signed-in member's – and the release's draft holds several members' decisions, so it is stored as the release
+  // stored it and PUT back unchanged (an update of that revision: what this build stores is what the PUT keeps).
+  const seeded = await store.createReport(CLINIC, reportRow(known));
+  assert.ok(seeded.ok);
+  const created = await bodyOf(await f(`/api/reports/v1/store/reports/${known.id}`, { method: "PUT", headers: { "content-type": "application/json", "if-match": `"${seeded.ok ? seeded.rev : 0}"` }, body: JSON.stringify({ report: known }) }));
+  assert.equal(created.status, 200, created.text());
   const stored = (await (await f(`/api/reports/v1/store/reports/${known.id}`)).json()).report as Record<string, unknown>;
-  assert.equal("approver" in stored, false);
+  assert.equal("approver" in stored, reportKnows("approver"));
+  // (bh2-base2: the release defines sections[].condition itself – markedNotApplicable is a key neither line knows.)
+  assert.equal(stored.sections && (stored.sections as Array<Record<string, unknown>>).some((s) => "markedNotApplicable" in s), false, "a key neither line knows");
   assert.deepEqual(stored, ReportSchema.parse(known));
 
   // /sign: the report is strict (refused with a release member); the form map is read as stored.
@@ -416,23 +406,38 @@ test("records this build writes read exactly as before, and whatever verified be
 });
 
 test("members this build does not know get a generic label and are never acted on; what it cannot fill is still refused", async () => {
-  assert.equal(flagCodeLabel("DRAFT_FIT"), UNKNOWN_MEMBER_LABELS.flagCode);
+  const knownCode = (c: string) => Object.prototype.hasOwnProperty.call(FLAG_CODE_LABELS, c);
+  assert.equal(flagCodeLabel(firstUnknown(RELEASE_MEMBERS.flagCodes, knownCode, LATER_CODE)), UNKNOWN_MEMBER_LABELS.flagCode);
+  assert.equal(flagCodeLabel(LATER_CODE), UNKNOWN_MEMBER_LABELS.flagCode);
   assert.equal(flagCodeLabel("OPEN_GAP"), FLAG_CODE_LABELS.OPEN_GAP);
   assert.equal(flagCodeLabel("constructor"), UNKNOWN_MEMBER_LABELS.flagCode);
-  assert.equal(originLabel("staff" as never, "tm3-sim"), UNKNOWN_MEMBER_LABELS.paragraphOrigin);
+  const knownOrigin = (o: string) => (ParagraphOriginSchema.options as readonly string[]).includes(o);
+  assert.equal(originLabel(firstUnknown(RELEASE_MEMBERS.paragraphOrigins, knownOrigin, LATER_ORIGIN) as never, "tm3-sim"), UNKNOWN_MEMBER_LABELS.paragraphOrigin);
+  assert.equal(originLabel(LATER_ORIGIN as never, "tm3-sim"), UNKNOWN_MEMBER_LABELS.paragraphOrigin);
   assert.equal(originLabel("ai", "tm3-sim").length > 0, true);
-  assert.equal(isKnownRegistrationPath("episode.attendedDate"), false);
-  assert.equal(registrationPathLabel("episode.attendedDate"), UNKNOWN_MEMBER_LABELS.registrationPath);
+  const unknownPath = firstUnknown(RELEASE_MEMBERS.registrationPaths, isKnownRegistrationPath, LATER_PATH);
+  assert.equal(isKnownRegistrationPath(unknownPath), false);
+  assert.equal(registrationPathLabel(unknownPath), UNKNOWN_MEMBER_LABELS.registrationPath);
   assert.equal(registrationPathLabel("patient.dob"), "Date of birth");
 
   // A record path this build does not know is not held here: left blank for staff with a gap, never guessed.
   const bundle = getDemoBundle("megan-hart");
   const ctx = { bundle, instructingParty: InstructingPartySchema.parse(bundle.referral), computedFacts: computeFacts(bundle), reportDate: "2026-10-28" };
-  for (const p of RELEASE_MEMBERS.registrationPaths) assert.equal(resolveRegistrationValue(p as RegistrationPath, ctx), null, p);
+  for (const p of [...RELEASE_MEMBERS.registrationPaths.filter((x) => !isKnownRegistrationPath(x)), LATER_PATH]) {
+    assert.equal(resolveRegistrationValue(p as RegistrationPath, ctx), null, p);
+  }
   const { release } = await approvedPair("demo");
-  const fresh = createFormReport({ form: release.form, bundle, instructingParty: ctx.instructingParty, computedFacts: ctx.computedFacts, now: SIGNED_AT });
-  const moved = release.form.fields.filter((fl) => fl.fillSource.kind === "registration" && !isKnownRegistrationPath(fl.fillSource.path));
-  assert.equal(moved.length, 5);
+  // The release's map, plus one record path neither line knows (read as stored).
+  const readForm = StoredFormDefinitionSchema.parse(release.form) as FormDefinition;
+  const releasePaths = RELEASE_MEMBERS.registrationPaths as readonly string[];
+  const unknownReleaseFields = readForm.fields.filter((fl) => fl.fillSource.kind === "registration" && !isKnownRegistrationPath(fl.fillSource.path)).length;
+  // Production does not know the release's 4 paths (5 fields); the release line does.
+  assert.equal(unknownReleaseFields, releasePaths.every((p) => isKnownRegistrationPath(p)) ? 0 : 5);
+  const later = readForm.fields.find((fl) => fl.fillSource.kind === "registration" && !releasePaths.includes(fl.fillSource.path))!;
+  (later as Record<string, unknown>).fillSource = { kind: "registration", path: LATER_PATH };
+  const fresh = createFormReport({ form: readForm, bundle, instructingParty: ctx.instructingParty, computedFacts: ctx.computedFacts, now: SIGNED_AT });
+  const moved = readForm.fields.filter((fl) => fl.fillSource.kind === "registration" && !isKnownRegistrationPath(fl.fillSource.path));
+  assert.equal(moved.length, unknownReleaseFields + 1);
   for (const fl of moved) {
     assert.equal(fresh.sections.find((s) => s.key === fl.id)?.status, "needs_input", fl.id);
     assert.ok(fresh.gaps.some((g) => g.sectionKey === fl.id && !g.resolution), fl.id);
@@ -487,6 +492,16 @@ test("guard: every key and member the release writes (RELEASE_KEYS / RELEASE_MEM
   for (const p of RELEASE_MEMBERS.registrationPaths) assert.ok(paths.has(p), p);
   const gapKinds = new Set(report.gaps.map((g) => (g as Record<string, unknown>).kind));
   for (const k of RELEASE_MEMBERS.gapKinds) assert.ok(gapKinds.has(k), k);
+  // bh2-base2: the members of the release's new keys (who may acknowledge a flag; what the approver confirmed at /sign).
+  const policies = new Set(report.flags.map((fl) => (fl as Record<string, unknown>).ackPolicy));
+  for (const a of RELEASE_MEMBERS.ackPolicies) assert.ok(policies.has(a), a);
+  const confirmations = valuesAt(records.receipt[1], "signerConfirmations").flatMap((list) => (list as Array<Record<string, unknown>>).map((c) => c.kind));
+  for (const k of RELEASE_MEMBERS.signerConfirmationKinds) assert.ok(confirmations.includes(k), k);
+  // bh2-rc1: the one-click fix kinds (Paragraph.fixes – a new key) and the report activity codes (an open string).
+  const fixKinds = new Set(valuesAt(report, "sections[].paragraphs[].fixes[].kind"));
+  for (const k of RELEASE_MEMBERS.fixKinds) assert.ok(fixKinds.has(k), k);
+  const actions = new Set(report.activity.map((a) => a.action as string));
+  for (const a of RELEASE_MEMBERS.activityActions) assert.ok(actions.has(a), a);
   // The release's attendance lines: up to 30.
   assert.ok(form.fields.some((fl) => fl.fillSource.kind === "registration" && fl.fillSource.part?.of === 30));
 });
@@ -501,16 +516,19 @@ test("guard: a key a later release adds anywhere is kept – one planted in ever
   ];
   for (const [name, record, schema] of cases) {
     const planted = structuredClone(record);
-    const nodes = objectNodes(planted);
+    // A record keyed by form field ids (the release's analysis.printedLeads) holds data keys, not schema keys: a later
+    // release adds nothing there but field ids, so it is not planted in (bh2-base).
+    const nodes = objectNodes(planted).filter(({ path: p }) => !/\.printedLeads$/.test(p));
     // A string: valid even inside a record of strings (a table answer's row).
     for (const { node } of nodes) node[PLANTED] = "kept";
     const parsed = schema.safeParse(planted);
     assert.ok(parsed.success, `${name}: ${parsed.success ? "" : JSON.stringify(parsed.error.issues.slice(0, 3))}`);
     const lost = objectNodes(parsed.data)
+      .filter(({ path: p }) => !/\.printedLeads$/.test(p))
       .filter(({ node }) => node[PLANTED] !== "kept")
       .map(({ path: p }) => p);
     assert.deepEqual(lost, [], `${name}: these objects dropped a key they do not know`);
-    assert.equal(objectNodes(parsed.data).length, nodes.length);
+    assert.equal(objectNodes(parsed.data).filter(({ path: p }) => !/\.printedLeads$/.test(p)).length, nodes.length);
   }
 });
 
@@ -568,17 +586,12 @@ test("read paths: the store's 409 copy, /validate, /forms/fill-preview, the writ
   assert.equal(preview.status, 200, preview.text());
   assert.equal(preview.headers.get("x-medreport-render"), "draft");
 
-  // The release's receipt (MAC over its own keys) verifies here, but rollback shim 2 issues no FINAL copy for it, so
-  // there is nothing to file back for it (bh2 R1T-WA1-02); the write-back of this build's own approval is unchanged.
+  // The write-back: the release's receipt (MAC over its own keys) files the FINAL the server issued for it.
   const final = await bodyOf(
     await postDemo(handleRender, "/render?format=original", { report: release.report, receipt: release.report.receipt, form: release.form, fileBase64, requireFinal: true }),
   );
-  assert.equal(final.status, 409, final.text());
-  assert.equal((final.json() as { code?: string }).code, "RECEIPT_INVALID");
-  const { base } = await approvedPair("demo");
-  const baseFinal = await bodyOf(await postDemo(handleRender, "/render?format=original", { report: base.report, receipt: base.report.receipt, form: base.form, fileBase64, requireFinal: true }));
-  assert.equal(baseFinal.headers.get("x-medreport-render"), "final", baseFinal.text());
-  const filed = await bodyOf(await postGlue(handleDocuments, "/connectors/tm3-sim/documents", writeBack(base.report, base.report.receipt!, baseFinal), { id: "tm3-sim" }));
+  assert.equal(final.headers.get("x-medreport-render"), "final", final.text());
+  const filed = await bodyOf(await postGlue(handleDocuments, "/connectors/tm3-sim/documents", writeBack(release.report, release.report.receipt!, final), { id: "tm3-sim" }));
   assert.equal(filed.status, 201, filed.text());
 
   // The release's map behind drafting and the payload preview: its attestation verifies, so neither refuses it.
@@ -634,7 +647,7 @@ test("the Studio approves the report as /sign signs it: keys a later release wro
         form: release.form,
         template: formToTemplate(release.form),
         file: { status: "none" },
-        actor: SARAH.name,
+        actor: { memberId: "mem_sarah", name: SARAH.name, role: "clinician", canSign: true, hcpc: "PH-DEMO-01" },
         hooks: {},
         dispatch: () => undefined,
         commit: (next) => {
@@ -657,7 +670,9 @@ test("the Studio approves the report as /sign signs it: keys a later release wro
   assert.deepEqual(signBodies[0].report, ReportSchema.parse(draft), "sent as this build knows it");
   assert.equal(committed.length, 1);
   const approved = committed[0];
-  assert.equal("approver" in approved, false, "the kept approval is the signed shape");
+  assert.equal("approver" in approved, reportKnows("approver"), "the kept approval is the signed shape");
+  // (bh2-base2: the release defines sections[].condition itself – markedNotApplicable is a key neither line knows.)
+  assert.equal(approved.sections.some((s) => "markedNotApplicable" in s), false, "a key neither line knows is not kept");
   assert.equal(approved.status, "signed");
   assert.equal(await reportFingerprint(approved), approved.receipt!.contentSha256, "the kept copy is exactly what the receipt covers");
 });

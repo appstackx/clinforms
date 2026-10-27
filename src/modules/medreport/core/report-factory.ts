@@ -7,7 +7,9 @@
  * Baseline implementation by the foundation.
  */
 import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
+import { RELEASE_ACTIVITY_ACTIONS } from "./activity-actions";
 import { bundleClinic } from "./clinic";
+import { compileConditions, conditionFieldsOf } from "./conditions";
 import { ageOn, compareIsoDateTime, formatUkDate, nowIso, todayIso } from "./dates";
 import {
   answerKindFor,
@@ -17,6 +19,7 @@ import {
   isFormReport,
   referrerNamesMatch,
   resolveComputedFactValue,
+  recordSourceOf,
   resolveRegistrationValue,
   sectionKindForFillSource,
   toFormAnswer,
@@ -25,8 +28,10 @@ import {
 import { fixedValueGap, mayCopyReferralPartyReference, resolveFixedValue, withheldInsurerIdentifier } from "./form-record-rules";
 import { buildAppointmentsTableSection } from "./form-tables";
 import { createId } from "./ids";
+import { REPORT_MODEL } from "./schemas";
+import { sessionDatesByCode } from "./session-dates";
 import { WORDING } from "./wording";
-import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS } from "./labels";
+import { APPOINTMENT_STATUS_LABELS, INSTRUCTING_PARTY_LABELS, INSTRUMENT_LABELS, type RecordSource } from "./labels";
 import type {
   ActivityEntry,
   Clinician,
@@ -40,6 +45,7 @@ import type {
   InstructingParty,
   Paragraph,
   Report,
+  ReportApprover,
   ReportFlag,
   ReportSection,
   ReportTemplate,
@@ -68,6 +74,10 @@ export const KNOWN_ACTIVITY_ACTIONS = [
   // Amendments after issue
   "amendment_started",
   "superseded",
+  // Another form for the same patient, from an earlier report's checked notes (25/10/2026, core/reuse.ts)
+  "notes_reused",
+  // The release's review decisions, one-click fixes and held-back text (bh2-base2: named once in core/activity-actions.ts).
+  ...RELEASE_ACTIVITY_ACTIONS,
 ] as const;
 export type KnownActivityAction = (typeof KNOWN_ACTIVITY_ACTIONS)[number];
 
@@ -82,6 +92,8 @@ export interface CreateReportInput {
   id?: string;
   now?: Date;
   actor?: string;
+  /** W0.6: the approving physio chosen when the report is created (WC's picker) – stored as Report.approver (hashed). */
+  approver?: ReportApprover | null;
 }
 
 /** Anything shaped like a POST /drafts response. */
@@ -138,6 +150,9 @@ export function createReport(input: CreateReportInput): Report {
     ],
     createdAt: at,
     updatedAt: at,
+    // W0.6: this release's report model (people's decisions are stored, never inferred – WA1), and the approver.
+    reportModel: REPORT_MODEL,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
 }
 
@@ -149,10 +164,15 @@ export function createReport(input: CreateReportInput): Report {
  * (neighbouring questions of one form section are drafted together), where a long narrative answer
  * drafted from the notes counts double – it is most of a call's output, and two of them already take
  * ~20 s – so every call stays well inside the route's time limit.
+ *
+ * bh2 fix round 1 (R1T-WA1-06, Ascenti P1): only boxes the REPORT holds as draftable are planned – a box the template
+ * calls draftable but report creation filled by code from the record (its section is "from_records": the attended
+ * session dates, core/session-dates.ts) is never drafted. Drafting it put drafted text into a record box, which the
+ * clinic's store refuses (403 drafted-text-added) – and every later save carried it and was refused too.
  */
 export function planDraftGroups(report: Report, template: ReportTemplate): string[][] {
-  const present = new Set(report.sections.map((s) => s.key));
-  const specs = template.sections.filter((s) => isDraftableKind(s.kind) && present.has(s.key));
+  const draftable = new Set(report.sections.filter((s) => isDraftableKind(s.kind)).map((s) => s.key));
+  const specs = template.sections.filter((s) => isDraftableKind(s.kind) && draftable.has(s.key));
   const keys = specs.map((s) => s.key);
   if (isFormReport(report)) {
     const weight = (s: TemplateSection) => (s.kind === "ai_narrative" && s.answerType === "long_text" ? 2 : 1);
@@ -197,6 +217,12 @@ export function applyDraftResult(report: Report, draft: DraftResultLike, opts: {
     if (!drafted) return s;
     const merged: ReportSection = { ...drafted, title: s.title, kind: s.kind };
     if (s.fieldId) merged.fieldId = s.fieldId;
+    // bh2 WA1 design 3 (B2-4): the condition frozen at creation, and a person's decision about the box, are the box's –
+    // never the draft's. A decision a later answer makes stale is set aside by the issue state (core/issue-state.ts).
+    if (s.condition) merged.condition = s.condition;
+    else delete merged.condition;
+    if (s.disposition) merged.disposition = s.disposition;
+    else delete merged.disposition;
     const answer = drafted.answer ?? s.answer;
     if (answer) merged.answer = answer;
     return merged;
@@ -249,6 +275,8 @@ export interface CreateFormReportInput {
   id?: string;
   now?: Date;
   actor?: string;
+  /** W0.6: the approving physio chosen when the report is created (WC's picker) – stored as Report.approver (hashed). */
+  approver?: ReportApprover | null;
 }
 
 /**
@@ -296,7 +324,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
     if (src.kind === "registration" || src.kind === "computed_fact" || src.kind === "fixed") {
       const resolved: ResolvedFormValue | null =
         src.kind === "registration"
-          ? resolveRegistrationValue(src.path, ctx, field.answerType, src.part)
+          ? resolveRegistrationValue(src.path, ctx, field.answerType, src.part, src.sessions)
           : src.kind === "computed_fact"
             ? resolveComputedFactValue(src.factId, src.format, ctx, field.answerType)
             : resolveFixedValue(field, src.value);
@@ -352,6 +380,14 @@ export function createFormReport(input: CreateFormReportInput): Report {
       continue;
     }
 
+    // bh2 W0 follow-up (seam "session-dates-call-site"): session dates the record holds are filled by code, never
+    // drafted – core/session-dates.ts (WE; B2-19, maps without explicit episode.attended* fields). The stub answers nothing.
+    const byCode = sessionDatesByCode({ field, form, bundle, computedFacts: input.computedFacts });
+    if (byCode) {
+      sections.push({ ...base, kind: "from_records", status: "complete", paragraphs: [recordParagraph(field.id, 0, byCode.text, byCode.sourceIds)], ...(byCode.answer && { answer: byCode.answer }) });
+      continue;
+    }
+
     // notes_narrative / clinician_opinion → drafted by POST /drafts.
     sections.push({
       ...base,
@@ -360,6 +396,15 @@ export function createFormReport(input: CreateFormReportInput): Report {
       ...(structured && { answer: { kind: answerKindFor(field.answerType), value: null } }),
     });
   }
+
+  // bh2 WA1 design 3: each box's condition is read ONCE, now, from the form's questions, and frozen on its section
+  // (hashed). What the report issues never depends on a later reading of the printed words (core/conditions.ts).
+  // The same questions the server reads them from again (core/conditions.ts conditionFieldsOf, mapConditions).
+  const conditions = compileConditions(conditionFieldsOf(form.fields));
+  const withConditions = sections.map((s) => {
+    const condition = conditions.get(s.key);
+    return condition ? { ...s, condition } : s;
+  });
 
   return {
     id: input.id ?? createId("rpt"),
@@ -374,7 +419,7 @@ export function createFormReport(input: CreateFormReportInput): Report {
     },
     instructingParty: input.instructingParty,
     bundleSnapshot: bundle,
-    sections,
+    sections: withConditions,
     gaps,
     flags: [],
     status: "draft",
@@ -391,6 +436,9 @@ export function createFormReport(input: CreateFormReportInput): Report {
     updatedAt: at,
     form: formRefOf(form),
     ...(authorOf(input) ? { author: authorOf(input) as Clinician } : {}),
+    // W0.6: this release's report model (people's decisions are stored, never inferred – WA1), and the approver.
+    reportModel: REPORT_MODEL,
+    ...(input.approver ? { approver: input.approver } : {}),
   };
 }
 
@@ -420,6 +468,10 @@ function otherReferrerGap(field: FormField, value: string | null, referralFrom: 
 }
 
 function missingValueGap(field: FormField, what: string, unmatched?: string): Gap {
+  // Fix round 1 (B0-19): a detail staff type on each report, a physiotherapist's choice or the clinic's own details is
+  // said as such – never "the record does not hold it (the patient's registration details)".
+  const source = recordSourceOf(field);
+  if (source && !unmatched) return recordSourceGap(field, source);
   // Fix wave 2: no internal source code ("FACT-attendance", "patient.postcode") in text a clinician reads – the
   // registration record or the appointment figures, in words.
   const where = what.startsWith("FACT-") ? "the appointment figures" : "the patient's registration details";
@@ -436,6 +488,17 @@ function missingValueGap(field: FormField, what: string, unmatched?: string): Ga
     relatedNoteIds: [],
     raisedBy: "system",
   };
+}
+
+function recordSourceGap(field: FormField, source: RecordSource): Gap {
+  const label = field.label;
+  const words: Record<RecordSource, { issue: string; ask: string }> = {
+    staff_entry: { issue: `“${label}” is entered by staff on each report.`, ask: `What should be entered for “${label}”? Type it from your records.` },
+    physio_choice: { issue: `“${label}” is chosen by the physiotherapist on each report.`, ask: `Which answer to “${label}” applies to this patient?` },
+    clinic: { issue: `Your Clinic details do not hold “${label}” yet.`, ask: `Add it in Clinic settings, or type it here for this patient's site.` },
+  };
+  const suffix: Record<RecordSource, string> = { staff_entry: "staff", physio_choice: "physio", clinic: "clinic" };
+  return { id: `gap-${field.id}-${suffix[source]}`, sectionKey: field.id, issue: words[source].issue, suggestedQuestion: words[source].ask, relatedNoteIds: [], raisedBy: "system" };
 }
 
 /* ------------------------------------------------------------------------------------------------

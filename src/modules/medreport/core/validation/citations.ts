@@ -9,11 +9,17 @@
  *   opinion (basis clinician_opinion_recorded, or any paragraph in a clinician_opinion section) that
  *   does not cite the note in which the opinion was recorded. "clinician" and "from_records"
  *   paragraphs are exempt.
+ *   bh2 fix round 1 (R1T-WA1-L1; ownership exception – the integrator's file): its remedy names only what the people
+ *   concerned can do. "Mark it as your own wording" is the approving clinician's action over their own text
+ *   (ui/components/review/reducer.ts markOwnWords), so it is offered only on text no one else entered: on a paragraph
+ *   another member entered (staff, or a clinician who is not the approver – the paragraph's `by` stamp) the message says
+ *   that the approving clinician, named, rewrites it in their own words. The flag is the same for every viewer (the
+ *   validators never know who is looking), so it never says "you" to someone who cannot act on it.
  *
  * Owner: ai agent.
  */
 import { isNoteId } from "../ids";
-import type { ReportFlag } from "../types";
+import type { Paragraph, Report, ReportFlag } from "../types";
 import { CHECKED_ORIGINS, getValidationContext, hasText, makeFlag } from "./context";
 import type { ValidatorInput } from "./index";
 
@@ -48,10 +54,7 @@ export function validateCitations(input: ValidatorInput): ReportFlag[] {
           severity: "blocking",
           sectionKey: section.key,
           paragraphId: p.id,
-          message:
-            p.origin === "ai"
-              ? "This drafted paragraph cites no source in the record. Add the note or fact it comes from, or rewrite it as your own text."
-              : "This edited paragraph cites no source in the record. Add the note or fact it comes from, or mark it as your own wording.",
+          message: p.origin === "ai" ? "This drafted paragraph cites no source in the record. Add the note or fact it comes from, or rewrite it as your own text." : uncitedEditMessage(p, input.report),
         }),
       );
       continue;
@@ -84,4 +87,16 @@ export function validateCitations(input: ValidatorInput): ReportFlag[] {
   }
 
   return flags;
+}
+
+/**
+ * UNCITED_PARAGRAPH's words for a person's text (R1T-WA1-L1): "mark it as your own wording" only where the writer is the
+ * approving clinician (or the report has no approver, or no one is stamped); another member's text names who settles it.
+ */
+function uncitedEditMessage(p: Pick<Paragraph, "by">, report: Pick<Report, "approver">): string {
+  const approver = report.approver;
+  const by = p.by;
+  const someoneElse = Boolean(approver && by && (by.memberId !== approver.memberId || by.role === "staff"));
+  if (!someoneElse || !approver || !by) return "This edited paragraph cites no source in the record. Add the note or fact it comes from, or mark it as your own wording.";
+  return `This paragraph, entered by ${by.name}, cites no source in the record. Add the note or fact it comes from – or ${approver.name}, the approving clinician, can write the answer in their own words.`;
 }

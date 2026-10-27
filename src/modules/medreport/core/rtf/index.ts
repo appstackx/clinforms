@@ -44,8 +44,10 @@ export type { RtfStats } from "./model";
  * "rtf-docx-2" (10/2026): a clinic system's own letter codes (<<P_SURNAME>>, <<DATE>>) are kept in the body instead
  * of becoming answer spaces – only files with such codes convert to different bytes; every other RTF file gives the
  * same .docx bytes as "rtf-docx-1".
+ * "rtf-docx-3" (fix round 1, B0-14): PNG and JPEG pictures – a provider's logo, also in a picture frame or a text box –
+ * are carried over as pictures; only files with such pictures convert to different bytes.
  */
-export const RTF_CONVERTER_VERSION = "rtf-docx-2" as const;
+export const RTF_CONVERTER_VERSION = "rtf-docx-3" as const;
 export const RTF_MIME_TYPES = ["application/rtf", "text/rtf"] as const;
 
 export interface RtfConversionResult {

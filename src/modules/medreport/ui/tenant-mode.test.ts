@@ -13,6 +13,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import { BANNED_TERM_PATTERNS } from "../core/wording";
+import { namedActor } from "../core/actor";
+import type { EpisodeBundle, FormDefinition, Gap, Report } from "../core/types";
 import { HostHooksProvider, type HostHooks } from "./host-hooks";
 import { StudioShell } from "./components/shared/studio-shell";
 import { SourceStep } from "./components/new/source-step";
@@ -290,6 +292,163 @@ describe("Review pieces", () => {
   });
 });
 
+describe("approved reports (test run 24/10/2026)", () => {
+  /** Megan Hart on the Harrow & Pike Word form, B1 drafted from her first note. */
+  async function draftedReport() {
+    const { createTargetReport } = await import("./components/new/generate");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { getDemoBundle } = await import("../../../../scripts/medreport/dev-bundles");
+    const bundle = getDemoBundle("megan-hart");
+    const report = createTargetReport({ data: { bundle, computedFacts: [] }, target: { kind: "form", form: HARROW_PIKE_FORM } });
+    const key = HARROW_PIKE_FORM.fields.find((f) => f.label === "B1. Mechanism of injury")?.id ?? "";
+    const paragraph = { id: `${key}-p1`, text: "She reported a rear-end collision.", sourceIds: [bundle.notes[0].id], origin: "ai" as const };
+    const sections = report.sections.map((s) => (s.key === key ? { ...s, status: "drafted" as const, paragraphs: [paragraph] } : s));
+    return { report: { ...report, sections }, form: HARROW_PIKE_FORM, key, bundle };
+  }
+
+  /** Megan Hart on the Northfield Assurance PDF form, as created (nothing drafted yet). */
+  async function northfieldReport() {
+    const { createTargetReport } = await import("./components/new/generate");
+    const { NORTHFIELD_FORM } = await import("../forms/samples/maps/northfield");
+    const { getDemoBundle } = await import("../../../../scripts/medreport/dev-bundles");
+    const bundle = getDemoBundle("megan-hart");
+    const report = createTargetReport({ data: { bundle, computedFacts: [] }, target: { kind: "form", form: NORTHFIELD_FORM } });
+    const keyOf = (label: string) => NORTHFIELD_FORM.fields.find((f) => f.label === label)?.id ?? "";
+    return { report, form: NORTHFIELD_FORM, bundle, keyOf };
+  }
+
+  /** The review card of one question, as the review screen renders it (`readOnly` once approved). */
+  async function questionCard(input: { report: Report; form: FormDefinition; bundle: EpisodeBundle; key: string; status: string; readOnly: boolean; gaps?: Gap[] }) {
+    const { QuestionCard } = await import("./components/review/question-card");
+    const { buildQuestionGroups, flattenQuestions } = await import("./components/review/review-model");
+    const { formToTemplate } = await import("../core/forms");
+    const q = flattenQuestions(buildQuestionGroups(input.report, input.form, formToTemplate(input.form))).find((x) => x.key === input.key);
+    assert.ok(q);
+    return createElement(QuestionCard, {
+      q,
+      status: input.status as never,
+      flags: [],
+      gaps: input.gaps ?? [],
+      bundle: input.bundle,
+      connectorId: "file-import",
+      referrerName: input.form.referrer.name,
+      readOnly: input.readOnly,
+      answerEdited: false,
+      answeredByPerson: false,
+      receipt: undefined,
+      activeSourceId: null,
+      drafting: false,
+      actor: namedActor("Alex Morgan"),
+      dispatch: () => {},
+      onOpenSource: () => {},
+      canAcknowledge: () => false,
+    });
+  }
+
+  it("QuestionCard: a drafted paragraph is a 'Draft' under review, 'Drafted from notes' once approved", async () => {
+    const { report, form, key, bundle } = await draftedReport();
+    const card = (readOnly: boolean) => questionCard({ report, form, bundle, key, status: "drafted", readOnly });
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(await card(false), hooks)), /\bDraft\b/);
+      const approved = text(render(await card(true), hooks));
+      assert.match(approved, /She reported a rear-end collision\. Drafted from notes/);
+      assert.doesNotMatch(approved, /\bDraft\b/);
+    }
+  });
+
+  it("QuestionCard: a tick box drafted from the notes is 'proposed – check it' under review, 'drafted from the notes' once approved", async () => {
+    // Northfield F-11 "Treatment completed – claimant discharged" (like the 10Bridge treatment tick boxes): the review of finding 6.
+    const { report, form, bundle, keyOf } = await northfieldReport();
+    const key = keyOf("Treatment completed – claimant discharged");
+    const paragraph = { id: `${key}-p1`, text: "She was discharged to self-management.", sourceIds: [bundle.notes[bundle.notes.length - 1].id], origin: "ai" as const };
+    const sections = report.sections.map((s) => (s.key === key ? { ...s, status: "drafted" as const, answer: { kind: "checkbox" as const, value: true }, paragraphs: [paragraph] } : s));
+    const card = (readOnly: boolean) => questionCard({ report: { ...report, sections }, form, bundle, key, status: "drafted", readOnly });
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(await card(false), hooks)), /Answer proposed from the notes – check it/);
+      const approved = text(render(await card(true), hooks));
+      assert.match(approved, /Answer drafted from the notes/);
+      assert.doesNotMatch(approved, /check it|proposed|\bDraft\b/);
+    }
+  });
+
+  it("QuestionCard and summary: a question left blank is 'Left blank on approval', not 'Needs clinician input' or 'Not drafted yet'", async () => {
+    const { ProgressSummary } = await import("./components/review/question-nav");
+    const { buildQuestionGroups, countStatuses, flattenQuestions, questionStatus } = await import("./components/review/review-model");
+    const { formToTemplate } = await import("../core/forms");
+    const { report, form, bundle, keyOf } = await northfieldReport();
+    // 4. Fit for work: no opinion recorded, its gap acknowledged and the question left blank. 1. Diagnosis: never drafted.
+    const fit = keyOf("4. Is the claimant fit for work?");
+    const diagnosis = keyOf("1. Diagnosis / working diagnosis");
+    const gap: Gap = {
+      id: `gap-${fit}`,
+      sectionKey: fit,
+      issue: "No clinician recorded an opinion on fitness for work.",
+      suggestedQuestion: "Is she fit for work?",
+      relatedNoteIds: [],
+      raisedBy: "ai",
+      resolution: { kind: "acknowledged", text: "Left blank: not assessed at discharge.", at: "2026-10-24T18:10:00.000Z" },
+    };
+    const sections = report.sections.map((s) => (s.key === fit ? { ...s, status: "needs_input" as const } : s));
+    const left = { ...report, sections, gaps: [gap] };
+    const qs = flattenQuestions(buildQuestionGroups(left, form, formToTemplate(form)));
+    const statusOf = (key: string, approved: boolean) => questionStatus(qs.find((q) => q.key === key) ?? qs[0], [], left.gaps, false, approved);
+    assert.equal(statusOf(fit, false), "needs_input");
+    for (const hooks of [TENANT, {}]) {
+      assert.match(text(render(await questionCard({ report: left, form, bundle, key: fit, status: statusOf(fit, false), readOnly: false, gaps: [gap] }), hooks)), /Needs clinician input/);
+      const approvedFit = text(render(await questionCard({ report: left, form, bundle, key: fit, status: statusOf(fit, true), readOnly: true, gaps: [gap] }), hooks));
+      assert.match(approvedFit, /Left blank on approval/);
+      assert.doesNotMatch(approvedFit, /Needs clinician input|Needs input/);
+      const approvedDiagnosis = text(render(await questionCard({ report: left, form, bundle, key: diagnosis, status: statusOf(diagnosis, true), readOnly: true }), hooks));
+      assert.match(approvedDiagnosis, /Left blank on approval.*Left blank on the form\./);
+      assert.doesNotMatch(approvedDiagnosis, /Not drafted yet|Draft from the notes/);
+    }
+    // The summary beside the approved report: "Left blank", and nothing needs input.
+    const summary = text(render(createElement(ProgressSummary, { counts: countStatuses(qs.map((q) => statusOf(q.key, true))) })));
+    assert.match(summary, /Left blank \d+/);
+    assert.match(summary, /Needs input 0/);
+  });
+
+  it("ApprovedBanner: a Word form shows its Word download alone where no PDF copy can be made – no greyed-out button", async () => {
+    const { ApprovedBanner } = await import("./components/review/review-header");
+    const { NOTICES } = await import("../config.public");
+    const { report } = await draftedReport();
+    const receipt = { signer: { name: "Alex Morgan", hcpc: "PH-DEMO-01" }, signedAt: "2026-10-24T18:15:00.000Z", contentSha256: "a".repeat(64) };
+    const signed = { ...report, status: "signed", receipt } as never;
+    const banner = (props: Record<string, unknown>) =>
+      createElement(ApprovedBanner, {
+        report: signed,
+        isWordForm: true,
+        isPdfForm: false,
+        downloading: null,
+        pdfUnavailable: null,
+        filing: false,
+        filed: [],
+        canFile: false,
+        clinicRecordUrl: null,
+        fileMissing: false,
+        onDownload: () => {},
+        onSave: () => {},
+        ...props,
+      });
+    for (const hooks of [TENANT, {}]) {
+      // (the demo's report comes from the Simulated TM3, so it can be filed back there)
+      const html = render(banner({ pdfUnavailable: NOTICES.wordFormPdfHint, canFile: hooks !== TENANT, onAmend: () => {} }), hooks);
+      assert.match(text(html), /Completed form \(Word\)/);
+      assert.match(text(html), /Completed form \(Word\).*Need a PDF\?.*Create amended version/, "the hint sits with the Word download, before the links");
+      assert.doesNotMatch(text(html), /Completed form \(PDF\)/);
+      assert.match(text(html), /Need a PDF\? Open the completed Word file and save it as a PDF\./);
+      assert.doesNotMatch(html, /<button[^>]*\sdisabled=""/, "no greyed-out button");
+      // where this deployment makes PDF copies, both downloads
+      const both = text(render(banner({}), hooks));
+      assert.match(both, /Completed form \(Word\).*Completed form \(PDF\)/);
+      // a PDF form: its PDF only
+      const pdf = text(render(banner({ isWordForm: false, isPdfForm: true }), hooks));
+      assert.match(pdf, /Completed form \(PDF\)/);
+      assert.doesNotMatch(pdf, /Completed form \(Word\)/);
+    }
+  });
+});
+
 describe("TENANT_COPY", () => {
   it("is production copy: no demo wording, no technology or vendor terms", () => {
     const strings = tenantCopyStrings();
@@ -374,5 +533,159 @@ describe("demo clinic (HostHooks.clinic.demoClinic – read by the host on the s
       assert.doesNotMatch(shell(hooks as HostHooks, pathname), /data-demo-clinic-pill/, pathname);
     }
     assertTenantClean(shell(TENANT, "/app/studio"));
+  });
+});
+
+describe("25/10/2026: complete another form for this patient (a clinic's Studio only)", () => {
+  const formRef = { formId: "frm_1", title: "Progress report", referrer: { name: "Northfield Rehab", type: "insurer" }, fileSha256: "a".repeat(64), kind: "docx" };
+  const report = (status: "draft" | "signed") =>
+    ({
+      id: "rpt_reuse_1",
+      tenantId: "riverside-physio",
+      patientLabel: "Alex Brown",
+      status,
+      form: formRef,
+      instructingParty: { name: "Northfield Rehab", type: "insurer" },
+      bundleSnapshot: { source: { simulated: false, label: "Notes upload" } },
+      episodeRef: { connectorId: "file-import", patientId: "p", episodeId: "e" },
+      sections: [],
+      gaps: [],
+      flags: [],
+      updatedAt: "2026-10-09T10:00:00.000Z",
+      ...(status === "signed" ? { receipt: { signer: { name: "Sam Patel", hcpc: "PH123456" } } } : {}),
+    }) as unknown as import("../core/types").Report;
+
+  it("the reports list: every row offers 'Another form' (to the wizard with this report's notes); the public demo does not", async () => {
+    const { TenantHome } = await import("./screens/home/home-screen");
+    const html = render(createElement(TenantHome, { reports: [report("draft")], ready: true, confirmedForms: 1, formsReady: true, prefillFor: new Map() }), TENANT, "/app/studio");
+    assert.match(html, /<a aria-label="Complete another form for this patient: Alex Brown"[^>]*href="\/app\/studio\/new\?from=rpt_reuse_1"/);
+    assert.match(text(html), new RegExp(TENANT_COPY.reuse.rowAction));
+    assertTenantClean(html);
+    assert.doesNotMatch(render(createElement(HomeScreen), {}), /new\?from=/);
+  });
+
+  it("the report's header, draft or approved: 'Complete another form for this patient' with the plain hint; not in the demo", async () => {
+    const { ReviewHeader } = await import("./components/review/review-header");
+    const props = (status: "draft" | "signed") => ({
+      report: report(status),
+      template: null,
+      generation: null,
+      saveState: "saved" as const,
+      savedAt: null,
+      blockingLines: [],
+      blockingCount: 0,
+      canApprove: true,
+      approveUnavailable: null,
+      onApprove: () => undefined,
+      onShowFlags: () => undefined,
+      onDraftCopy: () => undefined,
+      draftCopyUnavailable: false,
+      downloading: null,
+    });
+    for (const status of ["draft", "signed"] as const) {
+      const html = render(createElement(ReviewHeader, props(status)), TENANT, "/app/studio/rpt_reuse_1");
+      assert.match(html, /href="\/app\/studio\/new\?from=rpt_reuse_1"/, status);
+      assert.match(text(html), new RegExp(`${TENANT_COPY.reuse.action} ${TENANT_COPY.reuse.actionHint.replace(/[.–]/g, ".")}`), status);
+      assertTenantClean(html);
+    }
+    const demo = render(createElement(ReviewHeader, props("draft")), {}, "/reports/rpt_reuse_1");
+    assert.doesNotMatch(demo, /new\?from=|data-reuse-notes/, "the public demo keeps its browser-only flow");
+  });
+
+  it("the wizard opened with ?from=: the notes are fetched from the earlier report – no upload step meanwhile; the upload hint otherwise", () => {
+    const loading = render(createElement(NewReportScreen, { reuseReportId: "rpt_reuse_1" }), TENANT, "/app/studio/new");
+    assert.match(text(loading), new RegExp(TENANT_COPY.reuse.loading));
+    assert.doesNotMatch(text(loading), /Drop the patient's notes here/);
+    assertTenantClean(loading);
+    const fresh = text(render(createElement(NewReportScreen, {}), TENANT, "/app/studio/new"));
+    assert.match(fresh, /Drop the patient's notes here/);
+    assert.match(fresh, /Already uploaded this patient's notes for another form\?/);
+    // The public demo ignores the parameter (its reports live in the browser).
+    const demo = text(render(createElement(NewReportScreen, { reuseReportId: "rpt_reuse_1" })));
+    assert.doesNotMatch(demo, new RegExp(TENANT_COPY.reuse.loading));
+  });
+
+  it("choosing the form: the earlier report's form is marked 'Already completed for this patient' and the other form is asked for", async () => {
+    const { FormStep } = await import("./components/new/form-step");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { NORTHFIELD_FORM } = await import("../forms/samples/maps/northfield");
+    // Plain referrer names (the bundled samples' names end "(fictional)", which a clinic's own forms never do).
+    const forms = [HARROW_PIKE_FORM, NORTHFIELD_FORM].map((f, i) => ({ ...f, status: "confirmed" as const, referrer: { ...f.referrer, name: i ? "Northfield Insurance" : "Harrow Solicitors" } }));
+    const step = (completedFormId: string | null) =>
+      render(
+        createElement(FormStep, {
+          party: { name: "Unlinked Referrer", type: "insurer", reference: "", contactName: "", address: "" },
+          forms,
+          formsReady: true,
+          choice: null,
+          onChoice: () => undefined,
+          onTemplates: () => undefined,
+          completedFormId,
+        }),
+        TENANT,
+        "/app/studio/new",
+      );
+    const html = step(HARROW_PIKE_FORM.id);
+    assert.equal((html.match(/data-completed-form/g) ?? []).length, 1);
+    assert.match(text(html), new RegExp(`${HARROW_PIKE_FORM.title}.*${TENANT_COPY.reuse.completedPill}`));
+    assert.match(text(html), new RegExp(TENANT_COPY.reuse.chooseOther));
+    assertTenantClean(html);
+    assert.doesNotMatch(step(null), /data-completed-form/);
+    // Another confirmed form exists: no "nothing else is ready" notice.
+    assert.doesNotMatch(html, /data-no-other-form/);
+    assert.doesNotMatch(text(html), new RegExp(TENANT_COPY.reuse.noOtherTitle));
+  });
+
+  // Review fix R-correctness-5: a clinic whose library holds one confirmed form – the one already completed.
+  it("choosing the form when the only confirmed form is the one already completed: says so and points to Referrer forms or a built-in report", async () => {
+    const { FormStep } = await import("./components/new/form-step");
+    const { HARROW_PIKE_FORM } = await import("../forms/samples/maps/harrow-pike");
+    const { NORTHFIELD_FORM } = await import("../forms/samples/maps/northfield");
+    const only = { ...NORTHFIELD_FORM, status: "confirmed" as const, referrer: { ...NORTHFIELD_FORM.referrer, name: "Northfield Insurance" } };
+    // A form still to be confirmed does not count as another form ready to use.
+    const proposed = { ...HARROW_PIKE_FORM, status: "proposed" as const, referrer: { ...HARROW_PIKE_FORM.referrer, name: "Harrow Solicitors" } };
+    const html = render(
+      createElement(FormStep, {
+        party: { name: "Unlinked Referrer", type: "insurer", reference: "", contactName: "", address: "" },
+        forms: [only, proposed],
+        formsReady: true,
+        choice: null,
+        onChoice: () => undefined,
+        onTemplates: () => undefined,
+        completedFormId: NORTHFIELD_FORM.id,
+      }),
+      TENANT,
+      "/app/studio/new",
+    );
+    const t = text(html);
+    assert.equal((html.match(/role="radio"/g) ?? []).length, 1, "the one confirmed form is still listed (it may be completed again)");
+    assert.equal((html.match(/data-completed-form/g) ?? []).length, 1);
+    assert.doesNotMatch(t, new RegExp(TENANT_COPY.reuse.chooseOther), "never asks for a form that is not there");
+    assert.match(t, new RegExp(TENANT_COPY.reuse.noOtherHint));
+    assert.equal((html.match(/data-no-other-form/g) ?? []).length, 1);
+    assert.match(t, new RegExp(TENANT_COPY.reuse.noOtherTitle));
+    assert.match(t, new RegExp(`${TENANT_COPY.reuse.noOtherBody} ${TENANT_COPY.reuse.noOtherLink} ${TENANT_COPY.reuse.noOtherAfter.replace(/[.–]/g, ".")}`));
+    assert.match(html, /<div data-no-other-form="true">[\s\S]*?<a [^>]*href="\/app\/studio\/forms"/, "links to Referrer forms");
+    assert.match(t, /No form from the referrer\? Use a built-in report/, "the built-in report is still offered");
+    assertTenantClean(html);
+  });
+
+  // Review fix R-correctness-2: Next keeps a page mounted when only its search parameters change, so the screen is
+  // keyed by ?from= – "Complete a form" in the top bar (no from) then starts the wizard afresh.
+  it("the wizard page is keyed by ?from=: going to plain 'Complete a form' remounts it without the earlier report's notes", async () => {
+    const { default: TenantNewReportPage } = await import("../../../app/app/studio/new/page");
+    const reuse = TenantNewReportPage({ searchParams: { from: "rpt_reuse_1" } });
+    const other = TenantNewReportPage({ searchParams: { from: "rpt_reuse_2" } });
+    const plain = TenantNewReportPage({ searchParams: {} });
+    const withForm = TenantNewReportPage({ searchParams: { form: "frm_1" } });
+    assert.equal(reuse.props.reuseReportId, "rpt_reuse_1");
+    assert.equal(plain.props.reuseReportId, undefined);
+    assert.notEqual(reuse.key, plain.key, "from=… → none: a new screen (no reused notes, upload step)");
+    assert.notEqual(reuse.key, other.key, "another earlier report: a new screen");
+    assert.equal(plain.key, withForm.key, "the fresh wizard is unchanged");
+    // What a remount gives: the upload step, no banner.
+    const fresh = text(render(createElement(NewReportScreen, plain.props), TENANT, "/app/studio/new"));
+    assert.match(fresh, /Drop the patient's notes here/);
+    assert.doesNotMatch(fresh, new RegExp(TENANT_COPY.reuse.loading));
   });
 });

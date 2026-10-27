@@ -20,10 +20,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileWarning, MousePointerClick } from "lucide-react";
 import { formAnchorPdfFieldNames } from "../../../core/forms";
+import { INSTRUCTION_PREVIEW_TITLE } from "../../../core/template-instructions";
 import type { FormAnchor, FormMimeType, PdfFieldType } from "../../../core/types";
 import { cn } from "../../primitives";
-import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { indexDocxDom, type DocxIndex } from "./docx-index";
+import { INSTRUCTION_CLASS, markTemplateInstructions, type PreviewInstructions } from "./docx-instructions";
 import { Spinner } from "./ui-bits";
 
 export interface PreviewFile {
@@ -53,6 +55,11 @@ export interface OriginalFormPreviewProps {
   /** Click a cell / paragraph / PDF field to choose where an answer goes. */
   pickMode?: boolean;
   onPick?(pick: PreviewPick): void;
+  /**
+   * Word (10/2026): the form author's instructions for whoever completes the form, struck through in the preview, once
+   * per rendered file (forms/docx-fill.ts leaves them off the completed form).
+   */
+  onInstructions?(found: PreviewInstructions): void;
   /** Accessible name of the preview region. */
   label?: string;
   className?: string;
@@ -66,6 +73,8 @@ const HL_CSS = `
 .mr-hl{outline:3px solid #0D9488!important;outline-offset:1px;background-color:rgba(13,148,136,.14)!important;}
 .mr-picking [data-mr-block]{cursor:crosshair;}
 .mr-picking [data-mr-block]:hover{outline:2px dashed #0D9488;outline-offset:-2px;background-color:rgba(13,148,136,.08);}
+.mr-preview .${INSTRUCTION_CLASS}{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6;}
+${docxPageCss(".mr-preview")}
 `;
 
 function ensureStyles(): void {
@@ -146,12 +155,14 @@ function scrollWithin(container: HTMLElement, el: HTMLElement): void {
   container.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 }
 
-function DocxPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewProps & { file: PreviewFile }) {
+function DocxPreview({ file, highlight, pickMode, onPick, onInstructions }: OriginalFormPreviewProps & { file: PreviewFile }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const indexRef = useRef<DocxIndex | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [renderId, setRenderId] = useState(0);
+  const onInstructionsRef = useRef(onInstructions);
+  onInstructionsRef.current = onInstructions;
 
   useEffect(() => {
     ensureStyles();
@@ -164,6 +175,7 @@ function DocxPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewP
       .then(() => {
         if (cancelled) return;
         indexRef.current = indexDocxDom(content);
+        onInstructionsRef.current?.(markTemplateInstructions(content, INSTRUCTION_PREVIEW_TITLE));
         setState("ready");
         setRenderId((n) => n + 1);
       })
@@ -184,7 +196,8 @@ function DocxPreview({ file, highlight, pickMode, onPick }: OriginalFormPreviewP
       const page = content.querySelector<HTMLElement>("section.docx");
       if (!page) return;
       content.style.zoom = "1";
-      const needed = page.offsetWidth + 32;
+      // (Content wider than the page – a logo, a table pulled into the margin – is shown too: fix round 1, B0-30.)
+      const needed = Math.max(page.offsetWidth, page.scrollWidth) + 32;
       const zoom = Math.min(1, Math.max(0.3, (viewport.clientWidth - 4) / needed));
       content.style.zoom = String(zoom);
     };

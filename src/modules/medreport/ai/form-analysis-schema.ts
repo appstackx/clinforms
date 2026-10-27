@@ -16,6 +16,7 @@ import {
   OutcomeInstrumentSchema,
   PartySchema,
   ReferrerTypeSchema,
+  MAPPING_ONLY_PATHS,
   MERGE_CODE_ONLY_PATHS,
   RegistrationPathSchema,
   SignoffPartSchema,
@@ -28,7 +29,7 @@ import type { Party, RegistrationPath } from "../core/types";
  * output schema is unchanged.
  */
 export const ANALYSIS_REGISTRATION_PATHS = RegistrationPathSchema.options.filter(
-  (p) => !(MERGE_CODE_ONLY_PATHS as readonly string[]).includes(p),
+  (p) => !(MERGE_CODE_ONLY_PATHS as readonly string[]).includes(p) && !(MAPPING_ONLY_PATHS as readonly string[]).includes(p),
   // The type stays every path (the outputs flow into code that takes any RegistrationPath); only the values differ.
 ) as unknown as readonly [RegistrationPath, ...RegistrationPath[]];
 

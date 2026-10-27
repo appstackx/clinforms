@@ -112,8 +112,28 @@ const ACCIDENT_DATE_LABEL = /\b(?:accident|injury|incident|onset|occurrence|coll
 const OTHER_DATE_LABEL =
   /\b(?:birth|DOB|assess\w*|attend\w*|seen|appointment|admi(?:ssion|tted)|discharge\w*|treatment|referr\w*|instruct\w*|request\w*|surgery|operation|examin\w*|consultation|session|first|initial|last|next|review|follow[- ]?up|start\w*|return\w*)\b/i;
 
-function recordNote(code: string, entry: PracticeCode): string {
-  return `From the clinic system's merge code ${code} (${entry.meaning}): filled from the record.`;
+/**
+ * Plan WE design 3 (B0-19, B2-22, D-9): where a value comes from, in the same words in notes and guidance – and the
+ * words the map lint (core/form-map-lint.ts L3) checks: a clinic detail comes "From your Clinic details", a detail
+ * the record does not hold is "Entered by staff on each report", and only the patient's record is "filled from the
+ * record". Every new upload of a clinic-system template gets these words.
+ */
+export const SOURCE_WORDS = {
+  clinic: "From your Clinic details",
+  staff: "Entered by staff on each report",
+  record: "Filled from the record",
+} as const;
+
+/** The source words for a registration path. */
+export function sourceWordsFor(path: RegistrationPath): string {
+  if (path === "staff.entry") return SOURCE_WORDS.staff;
+  return path.startsWith("clinic.") ? SOURCE_WORDS.clinic : SOURCE_WORDS.record;
+}
+
+function recordNote(code: string, entry: PracticeCode, path: RegistrationPath): string {
+  return path.startsWith("clinic.")
+    ? `${SOURCE_WORDS.clinic}: the clinic system's merge code ${code} (${entry.meaning}).`
+    : `From the clinic system's merge code ${code} (${entry.meaning}): filled from the record.`;
 }
 
 function staffNote(code: string, entry: PracticeCode | null): string {
@@ -139,7 +159,7 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
     return {
       ...base,
       label: printed || entry?.label || `Merge code ${c.text}`,
-      guidance: guidanceFor(entry ? `Entered by staff: ${entry.meaning}.` : `Entered by staff: the detail the clinic system puts in ${c.text}.`),
+      guidance: guidanceFor(entry ? `${SOURCE_WORDS.staff}: ${entry.meaning}.` : `${SOURCE_WORDS.staff}: the detail the clinic system puts in ${c.text}.`),
       answerType: "short_text",
       fillSource: STAFF_ENTRY,
       confidence: "low",
@@ -154,7 +174,7 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
       return {
         ...base,
         label: printed || entry.label,
-        guidance: guidanceFor(`Entered by staff: ${entry.meaning}.`),
+        guidance: guidanceFor(`${SOURCE_WORDS.staff}: ${entry.meaning}.`),
         answerType: "short_text",
         fillSource: STAFF_ENTRY,
         confidence: "low",
@@ -165,11 +185,11 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
     return {
       ...base,
       label: printed || entry.label,
-      guidance: guidanceFor(`Filled from the record (${entry.meaning}).`),
+      guidance: guidanceFor(`${sourceWordsFor(choice.path)} (${entry.meaning}).`),
       answerType: choice.answerType,
       fillSource: { kind: "registration", path: choice.path },
       confidence: "medium",
-      note: `${recordNote(c.text, entry)} The form's label ${quote(label)} says what it holds here – check it.`,
+      note: `${recordNote(c.text, entry, choice.path)} The form's label ${quote(label)} says what it holds here – check it.`,
       fromRecords: true,
     };
   }
@@ -195,11 +215,11 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
       return {
         ...base,
         label: printed || entry.label,
-        guidance: guidanceFor(`Filled from the record: ${entry.meaning}.`),
+        guidance: guidanceFor(`${sourceWordsFor(b.path)}: ${entry.meaning}.`),
         answerType: b.answerType,
         fillSource: { kind: "registration", path: b.path },
         confidence: "low",
-        note: `${recordNote(c.text, entry)} The form's label ${quote(near)} names another date than the report's – check it, and choose where it comes from in the mapping (for example the first appointment or the discharge date).`,
+        note: `${recordNote(c.text, entry, b.path)} The form's label ${quote(near)} names another date than the report's – check it, and choose where it comes from in the mapping (for example the first appointment or the discharge date).`,
         fromRecords: true,
       };
     }
@@ -209,15 +229,15 @@ function codeProposal(unit: Unit, c: Unit["codes"][number], label: string, many:
   return {
     ...base,
     label: printed || entry.label,
-    guidance: guidanceFor(`Filled from the record: ${entry.meaning}.`),
+    guidance: guidanceFor(`${sourceWordsFor(b.path)}: ${entry.meaning}.`),
     answerType: b.answerType,
     fillSource: { kind: "registration", path: b.path },
     confidence: doubtful ? "low" : location ? "medium" : "high",
     note: doubtful
-      ? `${recordNote(c.text, entry)} The form's label ${quote(label)} suggests something else is meant here – check where it comes from.`
+      ? `${recordNote(c.text, entry, b.path)} The form's label ${quote(label)} suggests something else is meant here – check where it comes from.`
       : location
-        ? `${recordNote(c.text, entry)} It is the clinic's name from its settings: if the patient is seen at another of your sites, enter that site's name.`
-        : recordNote(c.text, entry),
+        ? `${recordNote(c.text, entry, b.path)} It is the clinic's name from its settings: if the patient is seen at another of your sites, enter that site's name.`
+        : recordNote(c.text, entry, b.path),
     fromRecords: true,
   };
 }
@@ -284,6 +304,12 @@ function addressProposals(units: Unit[], byId: Map<string, OutlineBlock>): Propo
     });
     const postcodeFill: FillSource = { kind: "registration", path: first.family === "patient" ? "patient.postcode" : "clinic.postcode" };
     const codesText = (codes: Unit["codes"]) => codes.map((c) => c.text).join(", ");
+    /** WE design 3: a clinic's address comes from its Clinic details; the patient's from the record. */
+    const fromWords = first.family === "clinic" ? SOURCE_WORDS.clinic : SOURCE_WORDS.record;
+    const codesNote = (codes: Unit["codes"], tail = "") =>
+      first.family === "clinic"
+        ? `${SOURCE_WORDS.clinic}: the clinic system's merge code${codes.length === 1 ? "" : "s"} ${codesText(codes)}${tail ? ` (${tail})` : ""}.`
+        : `From the clinic system's merge code${codes.length === 1 ? "" : "s"} ${codesText(codes)}: filled from the record${tail ? ` (${tail})` : ""}.`;
     const settings = first.family === "clinic" ? " (the clinic's address from its settings – if the patient is seen at another of your sites, enter that site's address)" : "";
 
     if (run.length === 1) {
@@ -298,11 +324,11 @@ function addressProposals(units: Unit[], byId: Map<string, OutlineBlock>): Propo
         at: s.start,
         order: s.unit.order,
         label: printed || (lineCodes.length === 0 ? `${Who} postcode` : `${Who} address`),
-        guidance: `${printed ? `Printed as ${quote(printed)}. ` : ""}Filled from the record: the ${who} ${lineCodes.length === 0 ? "postcode" : s.postcode ? "address with its postcode, on one line" : "address on one line"}${settings}.`,
+        guidance: `${printed ? `Printed as ${quote(printed)}. ` : ""}${fromWords}: the ${who} ${lineCodes.length === 0 ? "postcode" : s.postcode ? "address with its postcode, on one line" : "address on one line"}${settings}.`,
         answerType: "short_text",
         fillSource: fill,
         confidence: first.family === "clinic" ? "medium" : "high",
-        note: `From the clinic system's merge codes ${codesText(s.codes)}: filled from the record.`,
+        note: codesNote(s.codes),
         fromRecords: true,
       });
       continue;
@@ -320,11 +346,11 @@ function addressProposals(units: Unit[], byId: Map<string, OutlineBlock>): Propo
           at: pc.index,
           order: s.unit.order,
           label: `${Who} postcode`,
-          guidance: `Filled from the record: the ${who} postcode${settings}.`,
+          guidance: `${fromWords}: the ${who} postcode${settings}.`,
           answerType: "short_text",
           fillSource: postcodeFill,
           confidence: first.family === "clinic" ? "medium" : "high",
-          note: `From the clinic system's merge code ${pc.text}: filled from the record.`,
+          note: codesNote([pc]),
           fromRecords: true,
         });
       }
@@ -338,11 +364,11 @@ function addressProposals(units: Unit[], byId: Map<string, OutlineBlock>): Propo
         at: ls.start,
         order: ls.s.unit.order,
         label: `${printed || `${Who} address`} – line ${k + 1} of ${lineSpans.length}`,
-        guidance: `${printed ? `Printed as ${quote(printed)}. ` : ""}Filled from the record: line ${k + 1} of the ${who} address as printed over ${lineSpans.length} lines${settings}. A line the address does not have is left empty.`,
+        guidance: `${printed ? `Printed as ${quote(printed)}. ` : ""}${fromWords}: line ${k + 1} of the ${who} address as printed over ${lineSpans.length} lines${settings}. A line the address does not have is left empty.`,
         answerType: "short_text",
         fillSource: lineFill(k + 1, lineSpans.length),
         confidence: first.family === "clinic" ? "medium" : "high",
-        note: `From the clinic system's merge code${ls.codes.length === 1 ? "" : "s"} ${codesText(ls.codes)}: filled from the record (line ${k + 1} of ${lineSpans.length}).`,
+        note: codesNote(ls.codes, `line ${k + 1} of ${lineSpans.length}`),
         fromRecords: true,
       });
     });
@@ -426,7 +452,7 @@ export function bindPracticeMergeCodes(parsed: ParsedForm, fields: FormField[]):
     kept.push({
       ...f,
       confidence: "low",
-      note: clean([f.note, "This line also holds clinic-system merge codes, which are filled from the record – check this question is not a second answer for one of them."].filter(Boolean).join(" "), 500),
+      note: clean([f.note, "This line also holds clinic-system merge codes, each answered by its own question – check this question is not a second answer for one of them."].filter(Boolean).join(" "), 500),
     });
   }
 

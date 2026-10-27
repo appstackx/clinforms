@@ -601,3 +601,70 @@ test("a blank printed inside a “delete as necessary” item: filled when kept,
   assert.deepEqual(validateChoiceMarks(input({ "F-01": { kind: "checkbox", value: false }, "F-02": { kind: "text" } })), [], "a deleted item's blank needs no answer");
   assert.deepEqual(validateChoiceMarks(input({ "F-01": { kind: "checkbox", value: true }, "F-02": { kind: "text", text: "15" } })), []);
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-2): an optional box left blank prints nothing that reads as an answer
+ * ----------------------------------------------------------------------------------------------*/
+
+// Dell-like layouts (fictional text): a pre-printed "x" against a modality, a pre-ticked box, an inline
+// "Restricted / Unable to perform" after an activity, a "30 minutes" default duration, a fill line and an empty cell.
+const DEFAULTS = docx(
+  [
+    tbl(
+      tr(cell("Physical Agents (inc Electrotherapy) and other interventions"), cell("x")),
+      tr(cell("Activity"), cell("None"), cell("Restricted / Unable to perform")),
+      tr(cell("Session 7"), cell(""), cell("30 minutes")),
+      tr(cell("Hydrotherapy ☒"), cell("")),
+    ),
+    p(r("Further comments: ________")),
+  ].join(""),
+);
+const DEFAULTS_FORM = form([
+  field("F-01", "Physical Agents", { kind: "docx", target: "mark_cell", blockId: "t0.r0.c1", optionCells: [{ option: "Physical Agents", blockId: "t0.r0.c1" }], mark: "x" }, { answerType: "checkbox", options: ["Physical Agents"], required: false }),
+  field("F-02", "Restrictions – status", { kind: "docx", target: "delete_options", blockId: "t0.r1.c2", placeholderText: "Restricted / Unable to perform" }, { answerType: "single_choice", options: ["Restricted", "Unable to perform"], required: false }),
+  field("F-03", "Session 7 – date", { kind: "docx", target: "table_cell", blockId: "t0.r2.c1" }, { answerType: "date", required: false }),
+  field("F-04", "Session 7 – duration", { kind: "docx", target: "replace_placeholder", blockId: "t0.r2.c2", placeholderText: "30 minutes" }, { required: false }),
+  field("F-05", "Hydrotherapy", { kind: "docx", target: "checkbox_glyph", blockId: "t0.r3.c0", optionGlyphs: [{ option: "Hydrotherapy", blockId: "t0.r3.c0", glyphIndex: 0 }] }, { answerType: "checkbox", options: ["Hydrotherapy"], required: false }),
+  field("F-06", "Further comments", { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "________" }, { answerType: "long_text", required: false }),
+]);
+
+test("fix round 1: a box left blank clears a printed mark and tick, removes a printed option list and default value; blank lines stay", () => {
+  const leftBlank = Object.fromEntries(DEFAULTS_FORM.fields.map((f) => [f.id, { leftBlank: true }]));
+  const warnings: string[] = [];
+  const t = texts(fillDocx(DEFAULTS, DEFAULTS_FORM, leftBlank, { draft: false, onWarning: (w) => warnings.push(w) }));
+  assert.equal(t["t0.r0.c1"], "", "the pre-printed x no longer claims electrotherapy was used");
+  assert.equal(t["t0.r1.c2"], "", "“Restricted / Unable to perform” no longer prints after “None”");
+  assert.equal(t["t0.r2.c2"], "", "a session that never happened has no “30 minutes”");
+  assert.equal(t["t0.r3.c0"], "Hydrotherapy ☐", "a pre-ticked box is cleared");
+  assert.equal(t["t0.r2.c1"], "");
+  assert.equal(t.p0, "Further comments: ________", "a fill line is left as printed");
+  assert.deepEqual(warnings, []);
+  // Unanswered and undecided (a draft): everything stays as printed, as before.
+  assert.deepEqual(texts(fillDocx(DEFAULTS, DEFAULTS_FORM, {}, { draft: false })), texts(DEFAULTS));
+});
+
+test("fix round 1: a form with no printed defaults is byte-identical whether its blank boxes are left blank or unanswered", () => {
+  const plain = docx(
+    [
+      tbl(tr(cell("Taping"), cell("")), tr(cell("Session 7"), cell("")), tr(cell("Hydrotherapy ☐"), cell(""))),
+      p(r("Further comments: ________")),
+    ].join(""),
+  );
+  const f = form([
+    field("F-01", "Taping", { kind: "docx", target: "mark_cell", blockId: "t0.r0.c1", optionCells: [{ option: "Taping", blockId: "t0.r0.c1" }], mark: "x" }, { answerType: "checkbox", options: ["Taping"], required: false }),
+    field("F-02", "Session 7 – date", { kind: "docx", target: "table_cell", blockId: "t0.r1.c1" }, { answerType: "date", required: false }),
+    field("F-03", "Hydrotherapy", { kind: "docx", target: "checkbox_glyph", blockId: "t0.r2.c0", optionGlyphs: [{ option: "Hydrotherapy", blockId: "t0.r2.c0", glyphIndex: 0 }] }, { answerType: "checkbox", options: ["Hydrotherapy"], required: false }),
+    field("F-04", "Further comments", { kind: "docx", target: "replace_placeholder", blockId: "p0", placeholderText: "________" }, { answerType: "long_text", required: false }),
+  ]);
+  const leftBlank = Object.fromEntries(f.fields.map((x) => [x.id, { leftBlank: true }]));
+  assert.ok(Buffer.from(fillDocx(plain, f, leftBlank, { draft: false })).equals(Buffer.from(fillDocx(plain, f, {}, { draft: false }))));
+});
+
+test("fix round 1 (B0-18): a drafted sentence in a body-area grid is quoted as written, not as its leftover words", () => {
+  const input = (report: Report) => ({ report, form: GRID_FORM }) as unknown as ValidatorInput;
+  const sentence = "On 08/09/2026 Tom Ellis, physiotherapist, recorded that Mrs Whitlock's low back pain was across the lower back, worse on the left.";
+  const [flag] = validateChoiceMarks(input(reportWith({ "F-04": { text: sentence, kind: "text" } })));
+  assert.match(flag.message, /^The answer to “F-04” \(“On 08\/09\/2026 Tom Ellis, physiotherapist, recorded that Mrs Whitlock's low back…”\) is a sentence, not the printed options/);
+  assert.match(flag.message, /Name only the printed options \(“Neck”, “Back”, “Shoulder”\), or “None”\.$/);
+  assert.doesNotMatch(flag.message, /08 09 2026/, "never the answer with its punctuation stripped");
+});

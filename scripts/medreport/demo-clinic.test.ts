@@ -42,6 +42,7 @@ import { FORM_ATTESTATIONS } from "@/modules/medreport/core/forms";
 import { EXAMPLE_PORTAL_QUESTIONS, createQuestionSet, parsePortalQuestions } from "@/modules/medreport/core/question-set";
 import { createFormReport, createReport } from "@/modules/medreport/core/report-factory";
 import type { FormDefinition, Report, SignReceipt } from "@/modules/medreport/core/types";
+import { requiredConfirmations } from "@/modules/medreport/core/validation/attribution-confirmations";
 import { WORDING } from "@/modules/medreport/core/wording";
 import { loadPdfjs, pdfjsDocumentParams } from "@/modules/medreport/forms/pdfjs";
 import { HARROW_PIKE_FORM } from "@/modules/medreport/forms/samples/maps/harrow-pike";
@@ -165,9 +166,22 @@ const attested = (form: FormDefinition, tenantId?: string): FormDefinition =>
   withAttestedConfirmation({ ...form, ...(tenantId ? { tenantId } : {}) }, "Practice manager", "2026-10-01T09:00:00.000Z");
 const northfieldOf = (tenantId: string) => attested(NORTHFIELD_FORM, tenantId);
 
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** Megan Hart's completed form (fictional) as clinic `tenantId`'s own report. */
 function reportOf(tenantId: string, id: string, form: FormDefinition = northfieldOf(tenantId)): Report {
   const r = completedSampleReport("megan-hart", form, { id });
+  withOwnWordsStamped(r);
   return { ...r, tenantId, bundleSnapshot: { ...r.bundleSnapshot, tenantId } };
 }
 
@@ -177,6 +191,9 @@ const signBody = (report: Report, form: FormDefinition, signer: { name: string; 
   typedSignature: signer.name,
   statementAccepted: true,
   attestations: [...FORM_ATTESTATIONS],
+  // bh2 fix round 1 (WB, R1T-WB-01/02): the sign-off's role confirmation the approve dialog asks for ("I treated this
+  // patient" – Northfield's "Therapist name" is completed with the signer's name over notes another clinician wrote).
+  confirmations: requiredConfirmations(report, form, signer),
   form,
 });
 

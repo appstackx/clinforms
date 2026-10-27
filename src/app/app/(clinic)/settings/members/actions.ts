@@ -11,7 +11,6 @@ import { isDemoHcpc } from "@/modules/medreport/core/demo-clinic";
 import { isDemoClinic } from "@/server/admin/clinic-plan";
 import { getAuth } from "@/server/auth/auth";
 import { appOrigin, authSecret, baseUrlSetting } from "@/server/auth/config";
-import { INVITATION_TTL_SECONDS } from "@/server/auth/create-auth";
 import { authErrorMessage } from "@/server/auth/errors";
 import { inviteLink, normaliseEmail } from "@/server/auth/platform";
 import { assignableRoles, parseMemberRole } from "@/server/auth/roles";
@@ -84,7 +83,7 @@ export async function inviteMember(_prev: InviteResult | null, form: FormData): 
       role,
       link,
       delivery: inviteDeliveryOf(captured?.result),
-      expiresAt: new Date(Date.now() + INVITATION_TTL_SECONDS * 1000).toISOString(),
+      expiresAt: new Date(result.expiresAt).toISOString(),
     };
   } catch (err) {
     return { ok: false, error: authErrorMessage(err, "invite_member") };

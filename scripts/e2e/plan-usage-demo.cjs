@@ -391,11 +391,14 @@ async function api(page, method, url, body) {
 }
 
 /**
- * A question the drafting left without an answer ("Missing field" – it blocks approval): answered in the clinician's
+ * A question the drafting left without an answer ("Required – no answer yet", formerly "Missing field" – it blocks approval): answered in the clinician's
  * own words (made-up), as a clinic would. Returns the questions answered.
  */
 async function fillMissing(app) {
-  const keys = await app.$$eval("[id^='q-']", (els) => els.filter((e) => /Missing field/.test(e.textContent || "")).map((e) => e.id.slice(2)));
+  // release/bh-trial-2: the review's one item per question (0125dda, 4c52d65) – the same headings as tenant-full-flow.cjs.
+  const keys = await app.$$eval("[id^='q-']", (els) =>
+    els.filter((e) => /Missing field|Required – no answer yet|Required – needs your opinion|Optional, but must be filled in/.test(e.textContent || "")).map((e) => e.id.slice(2)),
+  );
   const done = [];
   for (const key of keys) {
     const card = app.locator(`[id='q-${key}']`);

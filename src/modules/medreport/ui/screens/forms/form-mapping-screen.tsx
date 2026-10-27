@@ -10,15 +10,23 @@
  * A clinic's Studio (tenant mode) reports form_confirmed through HostHooks.track (counts and enumerated
  * values only) and prefills "confirmed by" with the signed-in member.
  *
- * Owner: studio-a agent.
+ * bh2 WE (designs 2 and 4): the questions are grouped by the same outline as the review (formOutline); the map lint's
+ * findings show as checks (and L5 blocks confirming, as the server does); guidance shows as stored, and – for a map from
+ * before this release – as it reads on reports now; every note is shown (in tenant mode too).
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, EyeOff, FilePlus2, Loader2, Pencil, Plus, Save, ShieldCheck } from "lucide-react";
 import { formatUkDate, formatUkDateTime, nowIso } from "../../../core/dates";
 import { answerableFields, checkFormDefinition } from "../../../core/forms";
+import { currentGuidance } from "../../../core/forms/guidance";
+import { LINT_RULE_TITLES } from "../../../core/form-map-lint";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import { isQuestionSet, withQuestionSetFile } from "../../../core/question-set";
 import { isConvertedFromRtf, isRtfConversionNote, rtfNoteText } from "../../../core/rtf/notes";
+import { instructionsMappingNote } from "../../../core/template-instructions";
 import {
   ANSWER_TYPE_LABELS,
   FORM_FIELD_CONFIDENCE_LABELS,
@@ -31,7 +39,7 @@ import type { FormDefinition, FormField } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
 import { useHostHooks, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
-import { getSession, saveForm, saveFormDurable, useForm } from "../../store";
+import { formWriteError, getSession, saveFormDurable, useForm } from "../../store";
 import { TENANT_COPY } from "../../studio-copy";
 import { formEventProps } from "../../studio-events";
 import { WORDING } from "../../wording";
@@ -49,11 +57,25 @@ import {
   cn,
 } from "../../primitives";
 import { FieldEditor } from "../../components/forms/field-editor";
-import { anchorFromPick, newField, plainAnchorDescription, sameMapping } from "../../components/forms/mapping";
+import {
+  anchorFromPick,
+  firstQuestionToCheck,
+  judgementConfirmProblem,
+  listedInOrder,
+  mappingGroups,
+  mappingConfirmStatus,
+  mappingLint,
+  mayAcceptJudgement,
+  mayConfirmForms,
+  newField,
+  plainAnchorDescription,
+  sameMapping,
+} from "../../components/forms/mapping";
 import { QuestionSetPreview } from "../../components/forms/question-set-preview";
 import { downloadStoredFile, useFormFile } from "../../components/forms/use-form-file";
 import { formatMs, plural } from "../../components/shared/format";
 import { DemoNoticeBar } from "../../components/shared/demo-notice";
+import { type PreviewInstructions } from "../../components/shared/docx-instructions";
 import { OriginalFormPreview, type PreviewPick } from "../../components/shared/original-form-preview";
 import { StudioShell } from "../../components/shared/studio-shell";
 import {
@@ -122,12 +144,19 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const analysisLabels = useAnalysisModeLabels();
   const [draft, setDraft] = useState<FormDefinition>(saved);
   const [editing, setEditing] = useState(saved.status !== "confirmed");
-  const [selected, setSelected] = useState<string | null>(saved.fields.find((f) => f.confidence !== "high")?.id ?? saved.fields[0]?.id ?? null);
+  const [selected, setSelected] = useState<string | null>(firstQuestionToCheck(saved.fields));
   const [picking, setPicking] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  // Fix round 1 (B0-9): the server's refusal of a save, shown instead of "Changes saved".
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Fix round 1 (B0-9, B0-25): staff check proposed maps; an owner, administrator or clinician confirms and changes them.
+  const mayConfirm = mayConfirmForms(hooks.member);
+  // 10/2026: the form author's instructions for whoever completes it, as found in the preview (left off the completed form).
+  const [instructions, setInstructions] = useState<PreviewInstructions>({ found: [], rows: false });
   // A portal question set has no file: its questions are shown instead, and nothing is picked in a file.
   const questionSet = isQuestionSet(saved);
   const { file, loading, error } = useFormFile(questionSet ? null : saved);
@@ -135,13 +164,29 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
   const dirty = !sameMapping(draft, saved) || draft.status !== saved.status;
   // A clinic's map names its referrer before it is confirmed (fix wave 2: never "completed for every patient
   // Referrer to be confirmed refers").
-  const problems = useMemo(
+  // bh2 WE design 2: the map lint – checks on the page; an unaccepted L5 blocks confirming (as /forms/confirm does).
+  const lint = useMemo(() => mappingLint(draft), [draft]);
+  const mayAccept = mayAcceptJudgement(hooks.member);
+  // check-WE minor 9: a map that accepts a clinical judgement as worded is confirmed by a clinician (or a member who may
+  // sign) – said here, before the click, instead of the server's refusal.
+  const judgementProblem = judgementConfirmProblem(lint, mayAccept);
+  // Fix round 1 (R1T-WE-L1): what the member can fix here; who confirms (their role, or a judgement map) is said apart.
+  const fixable = useMemo(
     () => [
       ...checkFormDefinition(draft),
       ...(tenant && (!draft.referrer.name.trim() || draft.referrer.name.trim() === REFERRER_TO_BE_CONFIRMED) ? [TENANT_COPY.forms.referrerNeeded] : []),
+      ...lint.blocking,
     ],
-    [draft, tenant],
+    [draft, tenant, lint],
   );
+  const confirmStatus = mappingConfirmStatus({
+    fixable,
+    judgementObstacle: judgementProblem,
+    mayConfirm,
+    dirty,
+    confirmed: saved.status === "confirmed",
+    confirmRole: TENANT_COPY.forms.confirmRole,
+  });
   const counts = fillSourceCounts(draft);
   const breakdown = questionBreakdown(draft);
   const toCheck = draft.fields.filter((f) => f.confidence !== "high").length;
@@ -189,9 +234,17 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     // A question set's placeholder file is the hash of its questions (core/question-set.ts): keep it current.
     const next: FormDefinition = await withQuestionSetFile({ ...draft, status: "proposed", updatedAt: nowIso() });
     delete next.confirmed;
-    if (saveForm(next)) {
+    // Fix round 1 (B0-9): "Changes saved" only once the clinic's storage holds them – never on a refusal.
+    setSaving(true);
+    setSaveError(null);
+    setSavedNotice(null);
+    const ok = await saveFormDurable(next);
+    setSaving(false);
+    if (ok) {
       setSavedNotice("Changes saved. Confirm the mapping before using this form for patients.");
       setDraft(next);
+    } else {
+      setSaveError(formWriteError(next.id) ?? "The changes could not be saved. Please try again.");
     }
   };
   /**
@@ -217,16 +270,12 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
     }
   };
 
-  const visible = draft.fields.filter((f) =>
+  // Fix round 1 (B0-29): numbered questions in a table's columns by their number ("date 1, 2, 3…", not "1, 7, 2, 8").
+  const visible = listedInOrder(draft.fields).filter((f) =>
     filter === "all" ? true : filter === "check" ? f.confidence !== "high" : f.fillSource.kind === filter,
   );
-  const groups: Array<{ section: string; fields: FormField[] }> = [];
-  for (const f of visible) {
-    const section = f.section?.trim() || "Other questions";
-    const last = groups[groups.length - 1];
-    if (last && last.section === section) last.fields.push(f);
-    else groups.push({ section, fields: [f] });
-  }
+  // bh2 WE design 4: the same groups as the review (core/forms/headings.ts formOutline), in this page's list order.
+  const groups = mappingGroups(draft.fields, visible);
 
   const a = draft.analysis;
   // A form converted from RTF when it was added: its conversion notes get their own note (not the analysis list).
@@ -256,10 +305,12 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           </Button>
           {saved.status === "confirmed" && !editing ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
-                Edit mapping
-              </Button>
+              {mayConfirm ? (
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  <Pencil className="mr-1.5 h-4 w-4" aria-hidden />
+                  Edit mapping
+                </Button>
+              ) : null}
               <Button asChild size="sm">
                 <Link href={paths.newReportWithForm(saved.id)}>
                   <FilePlus2 className="mr-1.5 h-4 w-4" aria-hidden />
@@ -271,11 +322,16 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </>
       }
     >
-      {savedNotice ? (
+      {saveError ? (
+        <Notice tone="error" title="Not saved">
+          {saveError}
+        </Notice>
+      ) : savedNotice ? (
         <Notice tone="success" title={savedNotice} />
       ) : saved.status === "confirmed" && saved.confirmed && !editing ? (
         <Notice tone="success" icon={ShieldCheck} title={`Confirmed by ${saved.confirmed.by} on ${formatUkDate(saved.confirmed.at.slice(0, 10))}`}>
-          This mapping is used every time this form is completed for a patient. Editing it sends it back for confirmation.
+          This mapping is used every time this form is completed for a patient.{" "}
+          {mayConfirm ? "Editing it sends it back for confirmation." : TENANT_COPY.forms.confirmedLocked}
         </Notice>
       ) : (
         <Notice tone="warning" title="Proposed mapping – check it once, then confirm">
@@ -320,10 +376,28 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           {rtfNotes.length ? (
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {rtfNotes.map((w) => (
-                <li key={w}>{rtfNoteText(w)}</li>
+                <li key={w}>{humaniseMergeCodes(rtfNoteText(w))}</li>
               ))}
             </ul>
           ) : null}
+        </Notice>
+      ) : null}
+
+      {instructions.found.length && !questionSet ? (
+        <Notice tone="info" title="Left off the completed form">
+          {instructionsMappingNote(instructions.found, instructions.rows)}
+        </Notice>
+      ) : null}
+
+      {lint.mapLevel.length ? (
+        <Notice tone="warning" title="Checks on this map">
+          <ul className="list-disc space-y-0.5 pl-4">
+            {lint.mapLevel.map((i) => (
+              <li key={`${i.rule}-${i.message}`}>
+                {LINT_RULE_TITLES[i.rule]}: {i.message}
+              </li>
+            ))}
+          </ul>
         </Notice>
       ) : null}
 
@@ -331,7 +405,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <Notice tone="warning" title="Notes from the analysis">
           <ul className="list-disc space-y-0.5 pl-4">
             {analysisNotes.map((w) => (
-              <li key={w}>{w}</li>
+              <li key={w}>{humaniseMergeCodes(w)}</li>
             ))}
           </ul>
         </Notice>
@@ -364,6 +438,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
               highlight={selectedField ? { anchor: selectedField.anchor, label: selectedField.label } : null}
               pickMode={picking && editing}
               onPick={onPick}
+              onInstructions={setInstructions}
               className={questionSet ? "hidden" : "h-[70vh] lg:h-[calc(100vh-154px)]"}
               label={`${draft.title} – original layout`}
             />
@@ -394,11 +469,14 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
           ) : null}
 
           {groups.map((group, gi) => (
-            <section key={`${group.section}-${gi}`} aria-label={group.section} className="space-y-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.section}</h2>
+            <section key={`${group.key}-${gi}`} aria-label={group.title || "Questions on the form"} className="space-y-2">
+              {/* A form that prints no headings: one group, no title (the same on the review). */}
+              {group.title ? <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.title}</h2> : null}
               <ul className="space-y-2">
                 {group.fields.map((field) => {
                   const active = field.id === selected;
+                  const checks = lint.byField.get(field.id) ?? [];
+                  const open = checks.filter((c) => c.severity === "error");
                   return (
                     <li key={field.id} className="space-y-2">
                       <button
@@ -418,7 +496,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                           <span className="mt-0.5 shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">{field.id}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium leading-snug text-slate-900">
-                              {field.label}
+                              {humaniseMergeCodes(field.label)}
                               {field.required ? (
                                 <span className="ml-1 text-red-600" title="Required by the referrer">
                                   *
@@ -426,7 +504,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                               ) : null}
                             </p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              <FillSourceChip kind={field.fillSource.kind} />
+                              <FillSourceChip kind={field.fillSource.kind} field={field} />
                               <span className="text-[11px] text-slate-500">{ANSWER_TYPE_LABELS[field.answerType]}</span>
                               {field.confidence !== "high" ? (
                                 <span
@@ -440,6 +518,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                               ) : null}
                             </div>
                             {!active && !questionSet ? <p className="mt-1 truncate text-[11px] text-slate-500">{plainAnchorDescription(field)}</p> : null}
+                            {open.length ? (
+                              <p className="mt-1 text-[11px] font-medium text-amber-800">Check: {Array.from(new Set(open.map((c) => LINT_RULE_TITLES[c.rule]))).join(" · ")}</p>
+                            ) : null}
                           </div>
                         </div>
                       </button>
@@ -449,6 +530,9 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                             key={field.id}
                             field={field}
                             formKind={draft.kind}
+                            guidanceVersion={draft.analysis.guidanceVersion}
+                            lint={checks}
+                            mayAcceptJudgement={mayAccept}
                             onChange={updateField}
                             onRemove={() => removeField(field.id)}
                             picking={picking}
@@ -458,7 +542,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                             }}
                           />
                         ) : (
-                          <ReadOnlyField field={field} questionSet={questionSet} />
+                          <ReadOnlyField field={field} questionSet={questionSet} guidanceVersion={draft.analysis.guidanceVersion} />
                         )
                       ) : null}
                     </li>
@@ -481,13 +565,8 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6 lg:px-8">
             <p className="text-xs text-slate-600" aria-live="polite">
-              {problems.length
-                ? `${plural(problems.length, "problem")} to fix before confirming`
-                : dirty
-                  ? "Unsaved changes"
-                  : saved.status === "confirmed"
-                    ? "No changes"
-                    : "Ready to confirm"}
+              {confirmStatus.status}
+              {confirmStatus.roleNote ? <span className="block text-[11px] text-slate-500">{confirmStatus.roleNote}</span> : null}
             </p>
             <div className="flex flex-wrap gap-2">
               {saved.status === "confirmed" ? (
@@ -503,11 +582,11 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
                   Cancel
                 </Button>
               ) : null}
-              <Button variant="outline" size="sm" disabled={!dirty} onClick={() => void saveAsProposed()}>
-                <Save className="mr-1.5 h-4 w-4" aria-hidden />
-                Save changes
+              <Button variant="outline" size="sm" disabled={!dirty || saving} onClick={() => void saveAsProposed()}>
+                {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <Save className="mr-1.5 h-4 w-4" aria-hidden />}
+                {saving ? "Saving…" : "Save changes"}
               </Button>
-              <Button size="sm" onClick={() => setConfirmOpen(true)}>
+              <Button size="sm" disabled={!mayConfirm} title={mayConfirm ? undefined : TENANT_COPY.forms.confirmRole} onClick={() => setConfirmOpen(true)}>
                 <ShieldCheck className="mr-1.5 h-4 w-4" aria-hidden />
                 Confirm mapping
               </Button>
@@ -516,7 +595,7 @@ function MappingEditor({ saved }: { saved: FormDefinition }) {
         </div>
       ) : null}
 
-      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} problems={problems} draft={draft} onConfirm={confirm} />
+      <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} problems={fixable} whoConfirms={judgementProblem} draft={draft} onConfirm={confirm} />
     </StudioShell>
   );
 }
@@ -547,13 +626,14 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick():
   );
 }
 
-function ReadOnlyField({ field, questionSet }: { field: FormField; questionSet?: boolean }) {
+function ReadOnlyField({ field, questionSet, guidanceVersion }: { field: FormField; questionSet?: boolean; guidanceVersion?: number }) {
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-      {field.guidance ? <p className="text-slate-700">{field.guidance}</p> : null}
+      {/* WE design 4: a map from before this release shows its guidance as it reads now; a v2 map exactly as stored. */}
+      {field.guidance ? <p className="text-slate-700">{humaniseMergeCodes(currentGuidance(field.guidance, field, { guidanceVersion }))}</p> : null}
       {field.options?.length ? <p className="text-xs text-slate-600">Options: {field.options.join(" · ")}</p> : null}
       <p className="text-xs text-slate-600">{questionSet ? WORDING.questionSet.noFile : `Goes in: ${plainAnchorDescription(field)}`}</p>
-      {field.note ? <p className="text-xs text-slate-500">Note: {field.note}</p> : null}
+      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
     </div>
   );
 }
@@ -609,12 +689,15 @@ function ConfirmDialog({
   open,
   onOpenChange,
   problems,
+  whoConfirms,
   draft,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   problems: string[];
+  /** Fix round 1 (R1T-WE-L1): who confirms this map instead of this member (a judgement map) – not a problem to fix. */
+  whoConfirms: string | null;
   draft: FormDefinition;
   onConfirm(by: string): Promise<string | null>;
 }) {
@@ -658,6 +741,10 @@ function ConfirmDialog({
               {problems.length > 8 ? <li>…and {problems.length - 8} more</li> : null}
             </ul>
           </Notice>
+        ) : whoConfirms ? (
+          <Notice tone="warning" title="Who confirms this mapping">
+            {whoConfirms}
+          </Notice>
         ) : (
           <form
             id="confirm-mapping"
@@ -696,7 +783,7 @@ function ConfirmDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Back
           </Button>
-          {problems.length ? null : (
+          {problems.length || whoConfirms ? null : (
             <Button type="submit" form="confirm-mapping" disabled={!name.trim() || !checked || busy}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden />}
               {busy ? "Confirming…" : "Confirm mapping"}

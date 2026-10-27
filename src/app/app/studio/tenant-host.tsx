@@ -37,16 +37,16 @@ export function tenantHooks(clinic: StudioClinic, member: StudioMember, options:
 }
 
 export function TenantHost({ clinic, member, children }: { clinic: StudioClinic; member: StudioMember; children: ReactNode }) {
-  const { tenantId, name, draftingEnabled, clinicians, demoClinic } = clinic;
+  const { tenantId, name, draftingEnabled, clinicians, signers, demoClinic } = clinic;
   const { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign } = member;
   const hooks = useMemo(
     () =>
       tenantHooks(
-        { tenantId, name, draftingEnabled, ...(clinicians ? { clinicians } : {}), ...(demoClinic ? { demoClinic: true } : {}) },
+        { tenantId, name, draftingEnabled, ...(clinicians ? { clinicians } : {}), ...(signers ? { signers } : {}), ...(demoClinic ? { demoClinic: true } : {}) },
         { name: memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign },
         { onSignOut: () => signOutAndReload() },
       ),
-    [tenantId, name, draftingEnabled, clinicians, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign],
+    [tenantId, name, draftingEnabled, clinicians, signers, demoClinic, memberName, userId, role, email, roleLabel, hcpc, jobTitle, canSign],
   );
   return <HostHooksProvider hooks={hooks}>{children}</HostHooksProvider>;
 }

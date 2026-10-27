@@ -308,6 +308,11 @@ export const AUDIT_ACTIONS = {
   draftLive: "report.draft_live",
   sign: "report.sign",
   renderFinal: "report.render_final",
+  /**
+   * bh2-rc1 (WA1 design 7 x WF): /render refused a FINAL copy whose issued content or acknowledgements no longer
+   * match the receipt (409 ISSUED_COPY_CHANGED) – labelled on the clinic activity page (src/lib/activity-copy-release.ts).
+   */
+  issueRefused: "report.issue_refused",
   fileBack: "report.file_back",
   /** For the server store's endpoints (report deletion / export). */
   reportDelete: "report.delete",
@@ -315,6 +320,12 @@ export const AUDIT_ACTIONS = {
   launchIssue: "launch.issue",
   /** Wave 3: a patient's notes were turned into the record a form is completed from (counts and format only). */
   notesImported: "notes.imported",
+  /**
+   * 25/10/2026: a stored report's record (the patient's notes as staff confirmed them) was read to start a NEW report
+   * on another form – target: the earlier report; counts only (POST /store/reports/{id}/reuse). Written on every read
+   * (a reload reads again); the new report, once made, has its own "report.create".
+   */
+  notesReused: "notes.reused",
 } as const;
 
 /** The first characters of a receipt MAC: enough to match audit rows to receipts, useless to forge one. */

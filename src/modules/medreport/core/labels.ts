@@ -1,5 +1,7 @@
 /**
  * Display labels for contract enums (UK English). Pure; shared by the UI and docgen.
+ * Owner: WD – docs/bh2-ownership.json (bh2 WD: the drafted-wording label is neutral, R-regression-7; flagEvidenceShown,
+ * B2-15).
  */
 import type {
   AnswerType,
@@ -96,6 +98,19 @@ export const FILL_SOURCE_LABELS: Record<FillSourceKind, string> = {
   appointments_table: "From the appointment record – one row per attended session, filled by code",
 };
 
+/**
+ * Fix round 1 (B0-19): where a "record value" really comes from, in the staff's own words – a detail staff type on each
+ * report, a choice the physiotherapist makes on each report, or the clinic's own details – instead of "the patient
+ * record" (core/forms.ts recordSourceOf).
+ */
+export type RecordSource = "staff_entry" | "physio_choice" | "clinic";
+
+export const RECORD_SOURCE_LABELS: Record<RecordSource, { short: string; long: string }> = {
+  staff_entry: { short: "Entered by staff", long: "Entered by staff on each report – type it from your records" },
+  physio_choice: { short: "Chosen by the physiotherapist", long: "Chosen by the physiotherapist on each report" },
+  clinic: { short: "From your Clinic details", long: "From your Clinic details – change it here for this patient's site" },
+};
+
 export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "patient.fullName": "Patient full name",
   "patient.firstName": "Patient first name",
@@ -120,6 +135,10 @@ export const REGISTRATION_PATH_LABELS: Record<RegistrationPath, string> = {
   "clinic.addressLines": "Clinic address without the postcode, one part per line",
   "clinic.postcode": "Clinic postcode",
   "staff.entry": "Not held in the record – entered by staff for each report",
+  "episode.firstSeenTime": "First attended appointment – time",
+  "episode.attendedDate": "An attended appointment (1st, 2nd…) – date",
+  "episode.attendedTime": "An attended appointment (1st, 2nd…) – time",
+  "episode.attendedDates": "Attended appointment dates, as a list",
   "report.date": "Date of report",
   "clinician.name": "Treating clinician",
   "clinician.hcpc": "Treating clinician HCPC number",
@@ -180,6 +199,7 @@ export const PARAGRAPH_ORIGIN_LABELS: Record<ParagraphOrigin, string> = {
   edited: "Edited",
   clinician: "Clinician",
   from_records: "From records",
+  staff: "Entered by staff",
 };
 
 export const PARAGRAPH_BASIS_LABELS: Record<ParagraphBasis, string> = {
@@ -195,10 +215,16 @@ export const FLAG_CODE_LABELS: Record<ReportFlagCode, string> = {
   FIGURE_NOT_IN_SOURCE: "Date or figure not in the cited source",
   TERM_NOT_IN_SOURCE: "Clinical term not as the record writes it",
   OPINION_LANGUAGE: "Opinion language not in the cited note",
+  OTHER_CLINICIAN_VOICE: "Another clinician's note written as yours",
   SCOPE_TERM: "Out-of-scope information",
   MISSING_PLACEHOLDER: "Missing field",
   OPEN_GAP: "Open gap",
   DATA_CHECK: "Data check",
+  // bh2 WD (R-regression-7): built-in reports are not forms – the check is about the drafted wording.
+  DRAFT_FIT: "Check the drafted wording",
+  // bh2 W0 follow-up (bh2-base2): raised by WA1 and WC once they land.
+  NOT_APPLICABLE_ANSWERED: "Answer in a question that does not apply",
+  APPROVER_DECISION: "Needs the approving clinician's decision",
 };
 
 export const DATA_CHECK_LABELS: Record<DataCheckCode, string> = {
@@ -224,6 +250,20 @@ export const UNKNOWN_MEMBER_LABELS = {
 } as const;
 
 const has = (labels: object, key: string) => Object.prototype.hasOwnProperty.call(labels, key);
+
+/**
+ * The "Found: …" words a flag shows, or null when its evidence is an internal code rather than words from the answer
+ * (fix round 3 B2-15, kept by bh2 WD): DRAFT_FIT's "shorten", "repeat F-28", "later note 2026-08-19", "date 16/09/2026"…,
+ * a not-applicable code, ISO dates, and the codes the review already hides. (A data check shows its label instead.)
+ */
+export function flagEvidenceShown(flag: { code: string; evidence?: string }): string | null {
+  const e = (flag.evidence ?? "").trim();
+  if (!e) return null;
+  if (flag.code === "DRAFT_FIT" || flag.code === "NOT_APPLICABLE_ANSWERED" || flag.code === "APPROVER_DECISION") return null;
+  if (/^(?:empty section|optional field blank|validator .*|mail-merge field .*|not applicable|condition does not hold|sessions \d+)$/i.test(e)) return null;
+  if (/\b\d{4}-\d{2}-\d{2}\b/.test(e)) return null;
+  return e;
+}
 
 export function flagCodeLabel(code: string): string {
   return has(FLAG_CODE_LABELS, code) ? FLAG_CODE_LABELS[code as ReportFlagCode] : UNKNOWN_MEMBER_LABELS.flagCode;

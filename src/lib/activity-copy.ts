@@ -8,6 +8,8 @@
  * readable name made from its code (activityLabel), so new actions never break the page.
  */
 import { WORDING } from "../modules/medreport/core/wording";
+// bh2 W0 follow-up (seam "activity-labels"): the release's report audit actions are WF's (activity-copy-release.ts).
+import { RELEASE_REPORT_AUDIT_ACTIONS, RELEASE_REPORT_AUDIT_LABELS, describeReleaseReportAuditDetail } from "./activity-copy-release";
 
 export interface ActivityGroup {
   label: string;
@@ -48,6 +50,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "clinic.package_set",
       "clinic.package_removed",
       "clinic.forms_loaded",
+      "clinic.forms_replaced",
       "clinic.demo_on",
       "clinic.demo_off",
       "api_key.create",
@@ -57,12 +60,13 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
   },
   {
     label: "Forms",
-    actions: ["file.upload", "form.create", "form.update", "form.analyse_live", "form.confirm", "form.store_confirmed", "form.delete", "settings.update"],
+    actions: ["file.upload", "form.create", "form.replace", "form.update", "form.analyse_live", "form.confirm", "form.lint_accepted", "form.store_confirmed", "form.delete", "settings.update"],
   },
   {
     label: "Reports",
     actions: [
       "notes.imported",
+      "notes.reused",
       "report.create",
       "report.update",
       "report.draft_live",
@@ -73,6 +77,7 @@ export const ACTIVITY_GROUPS: readonly ActivityGroup[] = [
       "report.export",
       "report.delete",
       "launch.issue",
+      ...RELEASE_REPORT_AUDIT_ACTIONS,
     ],
   },
 ];
@@ -104,6 +109,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "clinic.package_set": "Package set by ClinForms",
   "clinic.package_removed": "Package removed by ClinForms",
   "clinic.forms_loaded": "Forms added to the library by ClinForms",
+  "clinic.forms_replaced": "Forms updated in the library by ClinForms",
   "clinic.demo_on": "Made a demo clinic by ClinForms",
   "clinic.demo_off": "Demo clinic switched off by ClinForms",
   "api_key.create": "API key created",
@@ -112,13 +118,19 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   // The Studio and the Report API (src/modules/medreport: auth/actor.ts AUDIT_ACTIONS and the /store handlers).
   "file.upload": "Form file uploaded",
   "form.create": "Form added to the library",
+  "form.replace": "Form replaced by an updated version from ClinForms",
   "form.update": "Form mapping saved",
   "form.analyse_live": "Form questions read from the file",
   "form.confirm": "Form mapping confirmed",
+  // bh2 WE design 2: a clinician accepted a clinical-judgement question as the map words it (map lint L5, /forms/confirm).
+  "form.lint_accepted": "Form question accepted as worded by a clinician",
   "form.store_confirmed": "Confirmed form mapping saved",
   "form.delete": "Form removed from the library",
   "settings.update": "Referrer form links updated",
   "notes.imported": "Patient notes imported",
+  // Review fix 25/10/2026: written each time the wizard reads an earlier report's notes (a reload counts again), so it
+  // says the notes were opened – a new report shows as its own "Report started" row.
+  "notes.reused": "Patient notes opened from an earlier report",
   "report.create": "Report started",
   "report.update": "Report saved",
   "report.draft_live": "Answers drafted from the notes",
@@ -144,6 +156,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   "platform.owner_reset_link": "Owner password reset link created",
   "platform.demo_on": "Demo clinic switched on",
   "platform.demo_off": "Demo clinic switched off",
+  ...RELEASE_REPORT_AUDIT_LABELS,
 };
 
 const NOUNS: Readonly<Record<string, string>> = {
@@ -255,6 +268,15 @@ export function describeActivityDetail(action: string, detail: Record<string, un
       const parts = [counts.join(", "), from ?? null, detail.layout === "general" ? "checked before use" : null].filter(Boolean);
       return parts.length ? parts.join(" · ") : null;
     }
+    case "notes.reused": {
+      // 25/10/2026: the earlier report's checked notes were opened for another form (the row links to that report).
+      const n = (key: string, one: string, many: string) => (typeof detail[key] === "number" ? `${detail[key]} ${detail[key] === 1 ? one : many}` : null);
+      const counts = [n("notes", "note", "notes"), n("appointments", "appointment", "appointments"), n("outcomeScores", "outcome score", "outcome scores")].filter(Boolean);
+      const from = detail.sourceStatus === "signed" ? "from an approved report" : detail.sourceStatus === "draft" ? "from a draft report" : null;
+      const consent = detail.consentReset === true ? "consent to be recorded again" : null;
+      const parts = [counts.join(", "), from, consent].filter(Boolean);
+      return parts.length ? parts.join(" · ") : null;
+    }
     case "report.render_final": {
       const format = detail.format === "pdf" ? "PDF" : detail.format === "original" ? "In the referrer's own format" : detail.format === "docx" ? "Word" : null;
       return [format, detail.demoClinic === true ? WORDING.demoClinic.finalWithNotice : null].filter(Boolean).join(" · ") || null;
@@ -278,6 +300,19 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     }
     case "clinic.forms_loaded":
       return typeof detail.forms === "number" ? `${detail.forms} ${detail.forms === 1 ? "form" : "forms"} to check and confirm` : null;
+    case "clinic.forms_replaced": {
+      const n = (key: string) => (typeof detail[key] === "number" ? (detail[key] as number) : 0);
+      const changed = n("replaced") + n("forms");
+      return changed > 0 ? `${changed} ${changed === 1 ? "form" : "forms"} to check and confirm` : null;
+    }
+    case "form.replace":
+      return typeof detail.fields === "number" ? `${detail.fields} ${detail.fields === 1 ? "question" : "questions"} to check and confirm` : null;
+    case "form.lint_accepted": {
+      const which = typeof detail.fieldId === "string" ? `Question ${detail.fieldId}` : null;
+      const what = typeof detail.judgement === "string" ? `asks for a clinical judgement (${detail.judgement})` : null;
+      const why = typeof detail.reason === "string" && detail.reason.trim() ? `because: “${detail.reason.trim().slice(0, 200)}”` : null;
+      return [which, what, why].filter(Boolean).join(" ") || null;
+    }
     case "clinic.trial_started":
       return typeof detail.endsAt === "string" ? `Ends ${ukDateTime(detail.endsAt)}` : null;
     case "clinic.trial_extended":
@@ -318,7 +353,7 @@ export function describeActivityDetail(action: string, detail: Record<string, un
     case "platform.usage_export":
       return typeof detail.rows === "number" ? `${detail.rows} ${detail.rows === 1 ? "clinic" : "clinics"}` : null;
     default:
-      return null;
+      return describeReleaseReportAuditDetail(action, detail);
   }
 }
 

@@ -34,15 +34,26 @@ import "server-only";
  * the demo clinic notice), and the final document's audit row says demoClinic. Real clinics and the public demo are
  * unchanged. File names follow the usual rules.
  *
- * Rollback shim 2 (bh2 fix round 1, R1T-WA1-02 / RG-3): a receipt the Blue Heart release (release/bh-trial-2) minted
- * binds what that release issued – `issuedContentSha256` (the Word document its /sign filled as a dry run) and/or
- * `acknowledgementsSha256` (the acknowledgements the approval relied on; a portal question set's receipt has this one
- * only). The rollback shim keeps those keys, so the MAC verifies here – but this build cannot issue that document: it
- * does not read the release's frozen conditions, people's decisions, printed leads or blank-opener rule, so a box the
- * release left out (its card said "nothing is printed here") would print again. A FINAL copy of such an approval is
- * refused: 409 RECEIPT_INVALID ("approved with a newer version"), never a different document. A DRAFT copy still renders,
- * and so does every approval this build made. To issue it with this build, the clinic creates an amended version and
- * approves it again here.
+ * bh2 WA1 design 7 (R-security-1, E5): a receipt that binds what was issued (SignReceipt.issuedContentSha256 /
+ * acknowledgementsSha256, minted by /sign's dry run) makes a FINAL copy only when both still hold: the acknowledgements
+ * the validators carry over now are the ones the approval relied on, and the Word document filled now (the issue
+ * state's answers, the receipt's signer and time) hashes to the one checked at approval. Otherwise 409
+ * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's.
+ *
+ * bh2 fix round 1 (R1T-WA1-01, RG-1; R1T-WA2-02): a receipt from before the release (minted by production – neither key:
+ * sign/receipt.ts isPreReleaseReceipt = forms/render-form.ts issuedByPreReleaseEngine) approved the document PRODUCTION
+ * issued. Its FINAL copy of a referrer's form is issued by production's own forms engine, frozen in forms/pre-release
+ * (renderPreReleaseFinal): production's answers (no condition reading, no person's decision, unanswered boxes as
+ * printed) and production's fill, so it is the document production issued – never this release's issue state, which
+ * would leave out answers production printed. The dispatch is in finalFormCopy below, so scripts/admin/check-issued.ts
+ * re-issues exactly what /render issues; it still compares every such approval with production's own code before a
+ * deploy and reports any difference as CHANGED (Khuram decides on each).
+ * Release rule (README): no forms-engine change is deployed while approved trial reports exist without first running
+ * scripts/admin/check-issued.ts (decrypt, re-render, compare).
+ *
+ * bh2 fix round 1 (R1T-WA1-03, R1T-WA1-04): a body over the validators' budget is refused before they run (413); the
+ * validators read the body as not yet approved (its status and receipt are the client's word: sign/checks/issue.ts
+ * asNotYetApproved) with the voice /sign used – the approver, else the receipt's signer.
  *
  * Owner: forms-engine agent.
  */
@@ -55,18 +66,22 @@ import { demoOutputNotice, isDemoHcpc } from "../../core/demo-clinic";
 import { buildFormAnswers } from "../../core/forms";
 import type { FormDefinition, Report, ReportTemplate, SignReceipt } from "../../core/types";
 import { validateReport, type ValidateReportResult } from "../../core/validation";
+import { defaultVoiceOwner } from "../../core/validation/attribution-owner";
 import { getBuiltinTemplateDocx, renderDocx } from "../../docgen/docx";
 import { renderPdf } from "../../docgen/pdf";
 import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
 import { addDocxDemoNotice, stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
-import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
+import { fillWarningsHeader, formFileBaseName, issuedByPreReleaseEngine, renderFormFile, renderPreReleaseFinal, withSourceMarkers, type FormRenderOutput } from "../../forms/render-form";
+import type { DecodedFormFile } from "../../forms/file";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import type { MedreportDeps } from "../deps";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
 import { resolveTemplate } from "../resolve-template";
 import { formFileForRequest } from "./store-form-file";
+import { acknowledgementsSha256, bindsIssuedDocument, finalCopyAnswers, issuedContentSha256, issuedDocument } from "./sign/receipt";
+import { asNotYetApproved, validationBudgetRefusal } from "./sign/checks/issue";
 
 interface FinalDecision {
   final: boolean;
@@ -74,18 +89,8 @@ interface FinalDecision {
   refusal: Response | null;
   /** When final: the content hash the verified receipt records (what was approved). */
   contentSha256?: string;
-}
-
-/**
- * Rollback shim 2: what a receipt the release minted binds ("document", "acknowledgements" – both on a Word form's
- * approval, the acknowledgements alone on a portal question set's or a built-in report's), or null for a receipt this
- * build minted. The keys are unknown to this build; the shim's read schema keeps them (core/stored-schemas.ts), and the
- * MAC that just verified covers them, so they are the release's own.
- */
-export function releaseIssueBinding(receipt: SignReceipt): string | null {
-  const keys = receipt as unknown as Record<string, unknown>;
-  const binds = [typeof keys.issuedContentSha256 === "string" && keys.issuedContentSha256 ? "document" : "", typeof keys.acknowledgementsSha256 === "string" && keys.acknowledgementsSha256 ? "acknowledgements" : ""].filter(Boolean);
-  return binds.length ? binds.join(", ") : null;
+  /** bh2 WA1: the receipt-bound acknowledgements changed (the refusal is ISSUED_COPY_CHANGED, always sent and audited). */
+  issuedChanged?: "acknowledgements";
 }
 
 async function decideFinal(
@@ -107,19 +112,6 @@ async function decideFinal(
         ? "The report has changed since it was approved. Review the changes and approve it again."
         : "The approval receipt could not be verified for this report. Approve it again.";
     return { final: false, refusal: problem(409, "The approval receipt is not valid for this report", { code: "RECEIPT_INVALID", detail }) };
-  }
-  // Rollback shim 2 (see the file comment): an approval the release made binds a document this build cannot issue.
-  const releaseBinding = releaseIssueBinding(receipt);
-  if (releaseBinding) {
-    logEvent("render_refused_release_receipt", { report: report.id, binds: releaseBinding });
-    return {
-      final: false,
-      refusal: problem(409, "This form was approved with a newer version of ClinForms", {
-        code: "RECEIPT_INVALID",
-        detail:
-          "Its final copy can only be issued by the version that approved it, so no final copy was made here. The report and its approval are kept unchanged. To issue it now, create an amended version and approve it again.",
-      }),
-    };
   }
   if (!validation.canSign) {
     return {
@@ -162,7 +154,35 @@ async function decideFinal(
       refusal: problem(422, "A review copy is never final", { code: "VALIDATION_FAILED", issues: [{ path: "reviewCopy", message: "Leave reviewCopy off for the final copy." }] }),
     };
   }
+  // bh2 WA1 design 7: the acknowledgements carried over now must be the ones the approval relied on (receipt-bound).
+  if (receipt.acknowledgementsSha256 && acknowledgementsSha256(validation.flags, report.gaps ?? []) !== receipt.acknowledgementsSha256) {
+    return { final: false, refusal: issuedCopyChanged("acknowledgements"), issuedChanged: "acknowledgements" };
+  }
   return { final: true, refusal: null, contentSha256: verified.contentSha256 };
+}
+
+/** 409 ISSUED_COPY_CHANGED: what would be issued now is not what was approved (bh2 WA1 design 7). */
+function issuedCopyChanged(what: "acknowledgements" | "document"): Response {
+  return problem(409, "The completed form differs from the one approved", {
+    code: "ISSUED_COPY_CHANGED",
+    detail:
+      what === "acknowledgements"
+        ? "The checks acknowledged on this report are not the ones it was approved with, so a final copy cannot be issued. Reload the approved report, or create an amended version and approve it again."
+        : "Filling the form now would not give the document that was approved, so a final copy cannot be issued. Ask ClinForms support to check this approval; create an amended version to issue it again.",
+  });
+}
+
+/** A refused final copy goes into the clinic's audit trail too (ids only). */
+async function auditIssuedChanged(deps: MedreportDeps, actor: Actor, report: Report, receipt: SignReceipt | undefined, what: "acknowledgements" | "document"): Promise<void> {
+  logEvent("render_refused_issued_changed", { report: report.id, what });
+  // bh2-rc1: its own audit action – written as report.render_final it read "Final document produced" on the clinic's
+  // activity page although nothing was produced (WF labels report.issue_refused: "Final document refused – …").
+  await auditActor(deps, actor, {
+    action: AUDIT_ACTIONS.issueRefused,
+    targetType: "report",
+    targetId: report.id,
+    detail: { refused: "ISSUED_COPY_CHANGED", what, receiptMac: macPrefix(receipt?.mac) },
+  });
 }
 
 function decodeTemplateDocx(base64: string): Uint8Array | Response {
@@ -265,12 +285,25 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   const { template } = resolved;
   const formDef = resolved.form;
 
+  // bh2 fix round 1 (R1T-WA1-03): no validator runs on a body over the budget.
+  const tooLarge = validationBudgetRefusal(report, form);
+  if (tooLarge) return tooLarge;
   const started = Date.now();
-  const validation = validateReport(report, template, { form: formDef });
+  // bh2 fix round 1 (R1T-WA1-04): the checks read the body as not yet approved – its status and receipt are the client's
+  // word – in the voice /sign checked it in (sign/checks/voice.ts signVoiceOwner: the approver, else the signer, who is
+  // the receipt's signer once it verifies; a draft copy without one: the report's default voice).
+  const asChecked = asNotYetApproved(report);
+  const voiceSigner = receipt?.signer ?? (report.status === "signed" ? report.receipt?.signer : undefined);
+  const owner = report.approver?.name.trim() ? { name: report.approver.name, hcpc: report.approver.hcpc } : (voiceSigner ?? defaultVoiceOwner(asChecked));
+  const validation = validateReport(asChecked, template, { form: formDef, voice: { owner } });
   const decision =
     receipt || parsed.data.requireFinal
       ? await decideFinal(report, receipt, validation, { reviewCopy, form: formDef, templateDocx: Boolean(templateDocxBase64), tenantId: actor.tenantId })
       : { final: false, refusal: null };
+  if ("issuedChanged" in decision && decision.issuedChanged) {
+    await auditIssuedChanged(deps, actor, report, receipt, decision.issuedChanged);
+    return decision.refusal as Response;
+  }
   if (parsed.data.requireFinal && !decision.final && decision.refusal) return decision.refusal;
   const final = decision.final;
   // A demo clinic's outputs all carry the demonstration notice (undefined everywhere else; read on the server).
@@ -340,18 +373,37 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     const expectedSha256 = report.form?.fileSha256 ?? formDef.file.sha256;
     const file = await formFileForRequest(deps, { fileBase64, sha256: expectedSha256, tenantId: actor.via === "demo" ? null : actor.tenantId });
     assertFormFileMatches(file, expectedSha256);
-    let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
-    if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
-    const out = await renderFormFile({
-      form: formDef,
-      file,
-      answers,
-      draft: !final,
-      reviewMarkers: reviewCopy,
-      format: format === "pdf" ? "pdf" : "original",
-      continuationLabel: continuationLabelFor(report),
-      ...(notice ? { demoNotice: notice } : {}),
-    });
+    // bh2 WA1 design 7: a receipt that binds the issued document – fill it again exactly as /sign's dry run did (the
+    // issue state's answers, the receipt's signer and time, no clinic notice) and compare before anything is issued.
+    let issued: Awaited<ReturnType<typeof issuedDocument>> | null = null;
+    if (final && receipt?.issuedContentSha256 && bindsIssuedDocument(formDef)) {
+      issued = await issuedDocument({ report, form: formDef, file, approval: receipt });
+      if (issuedContentSha256(issued.bytes) !== receipt.issuedContentSha256) {
+        await auditIssuedChanged(deps, actor, report, receipt, "document");
+        return issuedCopyChanged("document");
+      }
+    }
+    const fileFormat = format === "pdf" ? "pdf" : "original";
+    let out: FormRenderOutput;
+    if (issued && format !== "pdf" && !notice) out = issued;
+    else if (final && receipt) {
+      // R1T-WA1-01: the FINAL copy, one function for /render and check-issued (an approval production made is issued with
+      // the answers production wrote – see the file comment). A review copy is never final (decideFinal).
+      out = await finalFormCopy({ report, form: formDef, file, receipt, format: fileFormat, continuationLabel: continuationLabelFor(report), ...(notice ? { demoNotice: notice } : {}) });
+    } else {
+      let answers = buildFormAnswers(report, formDef, { receipt: null });
+      if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
+      out = await renderFormFile({
+        form: formDef,
+        file,
+        answers,
+        draft: true,
+        reviewMarkers: reviewCopy,
+        format: fileFormat,
+        continuationLabel: continuationLabelFor(report),
+        ...(notice ? { demoNotice: notice } : {}),
+      });
+    }
     const base = formFileBaseName(report, formDef, { signed: final, dateIso });
     logEvent("render", { template: template.id, format, kind: formDef.kind, final, bytes: out.bytes.byteLength, warnings: out.warnings.length, ms: Date.now() - started });
     if (final) await auditFinal(deps, actor, report, receipt, format, formDef, purpose, demoClinic);
@@ -379,8 +431,48 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
   });
 };
 
+/**
+ * The FINAL copy of a referrer's form for a VERIFIED receipt, as POST /render issues it (a receipt that binds the issued
+ * document is first compared with it – the handler) – and exactly what scripts/admin/check-issued.ts re-issues, so the
+ * pre-deploy check compares what /render would issue. bh2 fix round 1 (R1T-WA1-01, R1T-WA2-02): an approval production
+ * made is issued by production's frozen forms engine (forms/pre-release renderPreReleaseFinal: production's answers and
+ * fill); any other is filled with the issue state's answers (sign/receipt.ts finalCopyAnswers).
+ */
+export async function finalFormCopy(input: {
+  report: Report;
+  form: FormDefinition;
+  file: DecodedFormFile;
+  receipt: SignReceipt;
+  format: "original" | "pdf";
+  continuationLabel?: string;
+  demoNotice?: string;
+}): Promise<FormRenderOutput> {
+  // R1T-WA2-02 (merge:r1, as both fix reports ask): approved before the release – production's own frozen forms engine
+  // issues it (production's answers and fill), here so /render and check-issued issue the same document.
+  if (issuedByPreReleaseEngine(input.receipt)) {
+    return renderPreReleaseFinal({
+      report: input.report,
+      form: input.form,
+      file: input.file,
+      receipt: input.receipt,
+      format: input.format,
+      ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+      ...(input.demoNotice ? { demoNotice: input.demoNotice } : {}),
+    });
+  }
+  return renderFormFile({
+    form: input.form,
+    file: input.file,
+    answers: finalCopyAnswers(input.report, input.form, input.receipt),
+    draft: false,
+    format: input.format,
+    ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+    ...(input.demoNotice ? { demoNotice: input.demoNotice } : {}),
+  });
+}
+
 /** "Claimant: <name> · Reference: <their reference, else the policy number>" for a PDF form's continuation sheet (fix wave 3). */
-function continuationLabelFor(report: Report): string {
+export function continuationLabelFor(report: Report): string {
   const reference = report.instructingParty.reference?.trim() || report.bundleSnapshot.referral.membershipNumber?.trim() || "";
   return [`Claimant: ${report.patientLabel}`, reference ? `Reference: ${reference}` : ""].filter(Boolean).join(" · ");
 }

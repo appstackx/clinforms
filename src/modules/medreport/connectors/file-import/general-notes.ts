@@ -47,6 +47,7 @@ import "server-only";
  * Owner: integration agent.
  */
 import { isValidIsoDate } from "../../core/dates";
+import { NOTE_HEADING_MAX } from "../../core/schemas";
 import type { AppointmentStatus, InstructingPartyType, NoteType, OutcomeInstrument } from "../../core/types";
 import { parseCsvRecords } from "./parser";
 import {
@@ -1222,6 +1223,11 @@ function signatureClinician(body: string[]): ClinicianRef | null {
 interface HeadingRead {
   clinician: ClinicianRef | null;
   type: NoteType | null;
+  /**
+   * The words `type` was read from, as written ("Review", "Follow Up" – a duration and a bracketed status taken off);
+   * "" when the type came from no type words (R1T-WF-L1: headingTypeWords).
+   */
+  typeWords: string;
   status: AppointmentStatus | null;
   reason: string;
   time: string | null;
@@ -1236,7 +1242,7 @@ const HEADING_TAIL = spaceOr("|•·-–—");
 
 /** The text after a heading's date and time. */
 function readHeadingRest(rest: string): HeadingRead {
-  const out: HeadingRead = { clinician: null, type: null, status: null, reason: "", time: null, hcpc: "", admin: false, leftover: "" };
+  const out: HeadingRead = { clinician: null, type: null, typeWords: "", status: null, reason: "", time: null, hcpc: "", admin: false, leftover: "" };
   let text = trimEndWhere(trimStartWhere(rest, HEADING_EDGE), HEADING_TAIL);
   if (!text) return out;
   // "Key: value" pairs inside the heading ("Time: 09:00 Practitioner: Sarah Reid").
@@ -1304,7 +1310,7 @@ function readHeadingRest(rest: string): HeadingRead {
     core = core.replace(DURATION, "").trim();
     if (!core) continue;
     if (TYPE_SEGMENT.test(core)) {
-      out.type ??= noteTypeFrom(core);
+      setType(out, core);
       continue;
     }
     if (ADMIN_SEGMENT.test(core)) {
@@ -1327,9 +1333,41 @@ function readHeadingRest(rest: string): HeadingRead {
   if (leftoverStart >= 0) {
     out.leftover = text.slice(leftoverStart).trim();
     // A type written at the start of the heading's text still names the note ("Initial assessment. Patient…").
-    out.type ??= noteTypeFrom((out.leftover.slice(0, 200).split(/[.:;]/)[0] ?? "").replace(DURATION, ""));
+    setType(out, (out.leftover.slice(0, 200).split(/[.:;]/)[0] ?? "").replace(DURATION, ""));
   }
   return out;
+}
+
+/**
+ * `out.type ??= noteTypeFrom(text)` – and when that sets the type from words that are a type on their own ("Review",
+ * "Follow Up", not "Follow-up – patient reports…"), they are kept as written in `out.typeWords`.
+ */
+function setType(out: HeadingRead, text: string): void {
+  if (out.type) return;
+  out.type = noteTypeFrom(text);
+  const words = collapseSpaces(text.replace(DURATION, "")).trim();
+  if (out.type && TYPE_SEGMENT.test(words)) out.typeWords = words;
+}
+
+/**
+ * The words a note's heading names its kind of appointment with, as written – "Review", "Re-assessment", "Follow Up"
+ * (a duration and a bracketed status taken off) – read from an entry's heading lines (NotesReviewEntry.heading) the
+ * way the reader read its type: the dated heading line, then the "Type: …" lines under it. Only when they still name
+ * `type` (staff did not change the type in the review), else null. The record keeps them as Note.heading, so the
+ * records-reviewed list names a note headed "Review" as a review, not a "Follow-up" (bh2 fix round 1, R1T-WF-L1).
+ */
+export function headingTypeWords(heading: string, type: NoteType): string | null {
+  const lines = heading.split("\n").slice(0, 12).map((l) => l.trim());
+  // The dated heading line first, as the reader read it (a line it could not have read gives no words at all).
+  if (!lines[0] || lines[0].length > STRUCTURE_LINE_CHARS) return null;
+  const dated = matchHeading(lines[0]);
+  if (!dated) return null;
+  const read = readHeadingRest(dated.rest);
+  // Then the "Key: value" lines under it (Type: …), which name the type only when the heading line did not.
+  for (const line of lines.slice(1)) if (line && line.length <= STRUCTURE_LINE_CHARS) splitDetail(line).forEach((hit) => applyDetail(read, hit));
+  const words = read.typeWords;
+  if (!words || read.type !== type || noteTypeFrom(words) !== type || words.length > NOTE_HEADING_MAX) return null;
+  return words;
 }
 
 function applyDetail(out: HeadingRead, hit: LabelHit): void {
@@ -1348,7 +1386,7 @@ function applyDetail(out: HeadingRead, hit: LabelHit): void {
       out.time ??= parseTimeToken(v.slice(0, 40).split(/\s*[-–]\s*|\s+to\s+/)[0] ?? "");
       break;
     case "type":
-      out.type ??= noteTypeFrom(v.slice(0, 200));
+      setType(out, v.slice(0, 200));
       if (ADMIN_SEGMENT.test(v.replace(DURATION, "").trim())) out.admin = true;
       break;
     case "status": {
@@ -1542,7 +1580,7 @@ export function readGeneralNotes(input: GeneralNotesInput): GeneralNotesResult {
       if (t && t.length <= 160) {
         const hits = splitDetail(t);
         if (hits.length) {
-          const read: HeadingRead = { clinician: current.clinician, type: current.type, status: current.status, reason: current.reason, time: current.time, hcpc: current.hcpc, admin: Boolean(current.admin), leftover: "" };
+          const read: HeadingRead = { clinician: current.clinician, type: current.type, typeWords: "", status: current.status, reason: current.reason, time: current.time, hcpc: current.hcpc, admin: Boolean(current.admin), leftover: "" };
           hits.forEach((h) => applyDetail(read, h));
           Object.assign(current, { clinician: read.clinician, type: read.type, status: read.status, reason: read.reason, time: read.time, hcpc: read.hcpc });
           if (read.admin) current.admin = true;

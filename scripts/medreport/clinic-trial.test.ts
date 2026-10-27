@@ -31,6 +31,7 @@ import { BANNED_TERM_PATTERNS, WORDING } from "../../src/modules/medreport/core/
 import type { FormDefinition, Report } from "../../src/modules/medreport/core/types";
 import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "../../src/modules/medreport/forms/samples/maps/harrow-pike";
 import { completedSampleReport } from "./form-sample-answers";
+import { asApproversReport, signingMember, storeClinicForm, withMapHash } from "./release-store-fixture";
 import { ORIGIN, member, storeDeps, storeFetch } from "./store-harness";
 
 const A = "clinic-a";
@@ -51,8 +52,10 @@ function profile(trial?: ClinicProfile["trial"], draftingLimits?: ClinicProfile[
 function setup(initial: ClinicProfile | null) {
   let current = initial;
   const store = createMemoryTenantStore();
+  void storeClinicForm(store, A, { ...HARROW_PIKE_RAW, tenantId: A }); // R2-SAF-2: the clinic holds the map its reports are started from
   const deps: MedreportDeps = {
-    ...storeDeps(store, { a: member(A, { role: "owner" }) }),
+    // bh2 fix round 1 (WC, R1T-WC-06): the owner who creates reports may approve them (a create names its approver).
+    ...storeDeps(store, { a: signingMember(A, { role: "owner" }) }),
     clinicProfile: async (tenantId) => (tenantId === A ? current : null),
     verifyPartnerKey: async (key) => (key === "cfk_clinic-a_test" ? { id: "pk_1", tenantId: A } : null),
   };
@@ -67,7 +70,7 @@ function setup(initial: ClinicProfile | null) {
 }
 
 function reportFor(id: string): Report {
-  return { ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A };
+  return withMapHash(asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id }), tenantId: A }, signingMember(A, { role: "owner" })), { ...HARROW_PIKE_RAW, tenantId: A });
 }
 
 function formFor(id: string): FormDefinition {

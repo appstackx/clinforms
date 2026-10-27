@@ -119,6 +119,12 @@ export interface Wording {
   origin: {
     /** Pill for a drafted paragraph (ParagraphOrigin "ai"). */
     drafted: string;
+    /** The same pill once the report is approved: where the text came from, not that it is still a draft. */
+    draftedApproved: string;
+    /** Under a tick box, choice or yes/no answer drafted from the notes, while it is reviewed. */
+    answerDrafted: string;
+    /** The same pill once the report is approved (nothing left to check). */
+    answerDraftedApproved: string;
     revertToDraft: string;
   };
 
@@ -290,6 +296,8 @@ export interface AccessWording {
   /** Fix wave 2: answers drafted in another clinician's voice ("I recorded…"). */
   otherVoiceTitle: string;
   otherVoiceDetail(author: string, signer: string, keys: string[]): string;
+  /** Fix round 1 (B0-1): a report with no author whose drafted answers say "I" about notes the signer did not write. */
+  notesVoiceDetail(clinicians: string[], keys: string[]): string;
   /** Fix wave 2: too many changes to the clinic's records in a short time. */
   storeLimitTitle: string;
   storeLimitDetail(seconds: number): string;
@@ -303,6 +311,9 @@ export interface AccessWording {
   /** 10/2026: the clinic's trial has ended – nothing new can be created; existing records stay available. */
   trialEndedTitle: string;
   trialEnded(what: string, contactEmail?: string): string;
+  /** 25/10/2026: "Complete another form for this patient" – the earlier report (or its record) is not there any more. */
+  reuseGoneTitle: string;
+  reuseGoneDetail: string;
 }
 
 /** The access wording is the same under every disclosure setting: it never names a technology. */
@@ -352,6 +363,9 @@ const ACCESS: AccessWording = {
   otherVoiceDetail: (author, signer, keys) =>
     `${keys.length === 1 ? "One answer speaks" : `${keys.length} answers speak`} as ${author} ("I …"): ${keys.join(", ")}. ` +
     `You are approving as ${signer}. Edit ${keys.length === 1 ? "it" : "them"} so ${keys.length === 1 ? "it does" : "they do"} not speak as ${author}, or ask ${author} to approve.`,
+  notesVoiceDetail: (clinicians, keys) =>
+    `${keys.length === 1 ? "One answer says" : `${keys.length} answers say`} “I” or “my” about notes written by ${clinicians.join(" and ")}: ${keys.join(", ")}. ` +
+    `On your signed form ${keys.length === 1 ? "it" : "they"} would read as your own. Name the clinician who wrote the note instead, or rewrite ${keys.length === 1 ? "it" : "them"} in your own words.`,
   storeLimitTitle: "Too many changes at once",
   storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
   storeDailyLimitDetail:
@@ -363,6 +377,9 @@ const ACCESS: AccessWording = {
   trialEndedTitle: "Your trial has ended",
   trialEnded: (what, contactEmail) =>
     `Your clinic's trial has ended, so ${what} is not available. Existing reports and forms can still be opened and downloaded. To carry on, contact us${contactEmail ? ` at ${contactEmail}` : ""}.`,
+  reuseGoneTitle: "The patient's notes are no longer here",
+  reuseGoneDetail:
+    "This report is not in your clinic's records – it may have been deleted, or removed at the end of your clinic's retention period – so its notes cannot be used again. Upload the patient's notes to complete another form.",
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -375,6 +392,8 @@ export interface AnswersCopyWording {
   toComplete: string;
   /** Shown, once approved, for an (optional) question the clinician left blank. */
   leftBlank: string;
+  /** bh2 WA1: shown for a question that does not apply (its condition rules it out, or a person decided so). */
+  notApplicable: string;
   /** Shown for a sign-off answer before approval. */
   onApproval: string;
   panelTitle: string;
@@ -421,6 +440,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   draftMarker: "Draft – not yet approved",
   toComplete: "[to complete]",
   leftBlank: "[left blank]",
+  notApplicable: "[not applicable]",
   onApproval: "[completed on approval]",
   panelTitle: "Copy answers",
   panelTitlePortal: "Answers for the portal",
@@ -597,6 +617,9 @@ const NEUTRAL: Wording = {
   },
   origin: {
     drafted: "Draft",
+    draftedApproved: "Drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer drafted from the notes",
     revertToDraft: "Revert to the draft",
   },
   labels: {
@@ -803,6 +826,9 @@ const AI_ASSISTED: Wording = {
   },
   origin: {
     drafted: "AI draft",
+    draftedApproved: "AI-drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer AI-drafted from the notes",
     revertToDraft: "Revert to AI draft",
   },
   labels: {

@@ -277,7 +277,8 @@ export function inferAnswerType(label: string): AnswerType {
   if (classified.answerType) return classified.answerType;
   const l = norm(label);
   if (/^date\b|\bdate\s*\??:?$|\bdate of\b|\bdates? (?:of|when)\b/.test(l)) return "date";
-  if (/^(?:number|no\.?|total) of\b|^how many\b/.test(l)) return "number";
+  // Fix round 1 (B0-34): also "Expected number of further sessions", "Estimated number of…", "… – how many?".
+  if (/^(?:(?:expected|estimated|anticipated|planned|predicted|likely|approximate|total)\s+)?(?:number|no\.?|total) of\b|\bhow many\b/.test(l)) return "number";
   return "long_text";
 }
 

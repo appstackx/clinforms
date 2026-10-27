@@ -97,7 +97,8 @@ npm run admin:create-clinic -- --env production --yes \
   --name "Riverside Physiotherapy" --slug riverside-physio --owner-email owner@riverside.example [--retention-days 365]
 ```
 Prints the clinic id and the owner's invitation link (**once**). **The script never sends email** (it runs on a laptop,
-whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days). To
+whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days, at the same UK clock time it was
+created – every invitation does, so an expiry never reads an hour off across a clock change). To
 have the invitation emailed, create the clinic on the platform page instead (§ "Platform page"). The id (slug) can never
 change – choose it carefully.
 For preview, add `--app-url <origin of the deployment or local server using the preview database>`.
@@ -288,6 +289,24 @@ npm run admin:load-forms -- … --confirm --yes                                 
   Heart set is in the gitignored `demo-assets/blue-heart-templates/`).
 - Logic and tests: `src/server/admin/load-forms.ts`, `src/server/admin/testing/load-forms-suite.ts` (node:sqlite, PGlite,
   D1 stand-in and real local D1). **Not run against preview or production yet.**
+- **Corrected maps or conversions for forms loaded earlier (10/2026): `--replace-proposed`** (preview first, then
+  `--confirm --yes` on production). Per file it prints **REPLACE** (the clinic's form for this template – same stored
+  bytes, or the same original file name for the same referrer – is replaced by a fresh proposal from this file and
+  map), **LOAD** (no form for it yet), **SKIP** (already exactly this file and map: a re-run changes nothing) or
+  **REFUSED** with the reason. A form is only ever replaced while it is still a proposal ClinForms loaded and nobody
+  has touched: never confirmed (status, payload or activity log), revision 1 with no Studio activity, no stored report
+  (draft or approved) and no activity row naming it (approvals, drafting and final documents name their form and
+  outlive a deleted report), not linked to a referrer. A form of the same file name for another referrer is refused
+  (never two forms per template). Old forms out, new form in, in one atomic batch (`replaceForms`) that re-checks every
+  rule in its SQL (revision and status, reports, referrer links, the activity log since the preview, the new file
+  stored): a form the clinic – or a second run at the same time – changed, used or removed meanwhile is REFUSED
+  ("changed while it was being replaced"), never duplicated; the old file goes when no form uses it any more. Audited
+  in that same batch: `form.replace` (ids and counts) and `file.upload`; one `clinic.forms_replaced` per run. One file
+  per template: a second file with the same bytes or the same name (case and accents aside), or matching a form an
+  earlier file already matched, is REFUSED – the preview shows exactly what `--confirm` does. A file without a map
+  (`--read-missing`) never replaces a form made from a map (SKIP). At most 10 forms are replaced by one file (D1's
+  100 parameters per statement). The whole run is refused when a form in the library cannot be read with this
+  database's data keys. Touches the forms library only – never the clinic, members, invitations, trial or plan.
 
 ### List clinics
 `npm run admin:list-clinics -- --env production`

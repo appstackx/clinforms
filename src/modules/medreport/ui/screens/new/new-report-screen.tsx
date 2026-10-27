@@ -14,6 +14,10 @@
  *    in groups (3 at a time) with honest per-group progress; the report opens for review.
  * Tenant mode (a clinic's own Studio): the notes upload is the source, production wording, and the
  * finished draft is reported to the host's analytics (draft_completed, counts only).
+ * Another form for the same patient (25/10/2026, tenant mode, `reuseReportId` = the `from` query parameter): the
+ * record comes from that earlier report – read by the server from the clinic's own copy (POST
+ * /store/reports/{id}/reuse) – so step 1 is skipped: the usual data check (step 2), then the referrer form (the
+ * earlier report's form is marked, never preselected). The result is a NEW report (new id, never an amendment).
  *
  * Owner: studio-a agent.
  */
@@ -22,6 +26,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, FileCheck2, RotateCcw } from "lucide-react";
 import type { BundleResponse } from "../../../api/contract";
+import type { StoreReportReuseResponse } from "../../../api/store-contract";
 import type { Clinician, FormDefinition, ReportTemplate } from "../../../core/types";
 import { ApiError, api } from "../../api-client";
 import { useHostHooks, useStudioMode, type StudioMember } from "../../host-hooks";
@@ -39,7 +44,9 @@ import { DataStep, importedSummary } from "../../components/new/data-step";
 import { DraftProgress } from "../../components/new/draft-progress";
 import { FormStep, type TargetChoice } from "../../components/new/form-step";
 import { generateReport, instructingPartyOf, type DraftGroupProgress, type GenerateTarget } from "../../components/new/generate";
-import { rememberFormForReferrer } from "../../components/new/referrer-match";
+import { ApproverPicker, approverOf, approverOptions, defaultApproverId, demoApprover } from "../../components/new/approver-picker";
+import { primaryTreatingClinician } from "../../../core/forms";
+import { notesReportKind, rememberFormForReferrer } from "../../components/new/referrer-match";
 import { SourceStep, type SourceResult } from "../../components/new/source-step";
 
 type Step = 1 | 2 | 3 | 4;
@@ -50,6 +57,12 @@ const STEPS: Array<{ n: Step; label: string }> = [
   { n: 3, label: "Referrer form" },
   { n: 4, label: "Complete" },
 ];
+
+type ReuseState =
+  | { status: "none" }
+  | { status: "loading" }
+  | { status: "done"; source: StoreReportReuseResponse["source"] }
+  | { status: "error"; title: string; message: string; offerUpload: boolean };
 
 type LaunchState =
   | { status: "none" }
@@ -85,7 +98,16 @@ interface GenerationState {
   storageWarning?: boolean;
 }
 
-export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: string; initialFormId?: string }) {
+export function NewReportScreen({
+  launchToken,
+  initialFormId,
+  reuseReportId,
+}: {
+  launchToken?: string;
+  initialFormId?: string;
+  /** A clinic's Studio: start from this earlier report's checked notes (another form for the same patient). */
+  reuseReportId?: string;
+}) {
   const router = useRouter();
   const hooks = useHostHooks();
   const paths = useStudioPaths();
@@ -94,12 +116,18 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
   const { forms, ready: formsReady } = useForms();
   const [step, setStep] = useState<Step>(1);
   const [launch, setLaunch] = useState<LaunchState>(launchToken ? { status: "verifying" } : { status: "none" });
+  const reuseWanted = tenant && Boolean(reuseReportId) && !launchToken;
+  const [reuse, setReuse] = useState<ReuseState>(reuseWanted ? { status: "loading" } : { status: "none" });
+  const reuseStarted = useRef(false);
   const [data, setData] = useState<BundleResponse | null>(null);
   const [sourceLabel, setSourceLabel] = useState("");
   const [clinician, setClinician] = useState<Clinician | undefined>();
   const [choice, setChoice] = useState<TargetChoice>(null);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
   const [gen, setGen] = useState<GenerationState>({ running: false, groups: [] });
+  // bh2 WC design 1: the approving clinician, chosen when the report is created (a clinic's Studio).
+  const approverChoices = useMemo(() => (tenant ? approverOptions(hooks.clinic, hooks.member) : []), [tenant, hooks.clinic, hooks.member]);
+  const [approverId, setApproverId] = useState<string | null>(() => defaultApproverId(approverChoices, hooks.member));
   const abortRef = useRef<AbortController | null>(null);
   const launchStarted = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -133,6 +161,33 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
     })();
   }, [launchToken]);
 
+  // Another form for the same patient: the earlier report's record, from the clinic's own store (no upload).
+  useEffect(() => {
+    if (!reuseWanted || !reuseReportId || reuseStarted.current) return;
+    reuseStarted.current = true;
+    (async () => {
+      try {
+        const res = await api.reuseReportRecord(reuseReportId);
+        setData(res.data);
+        setSourceLabel(res.data.bundle.source.label ?? "");
+        setClinician(undefined);
+        setChoice(null);
+        setReuse({ status: "done", source: res.source });
+        setStep(2);
+      } catch (err) {
+        // A refusal the server explains (the report is gone, the trial has ended …) keeps its own title and words.
+        const explained = err instanceof ApiError && err.status >= 400 && err.status < 500 && Boolean(err.problem.detail);
+        setReuse({
+          status: "error",
+          title: explained && err instanceof ApiError ? err.problem.title : TENANT_COPY.reuse.failedTitle,
+          message: explained && err instanceof ApiError ? (err.problem.detail ?? "") : errorMessage(err),
+          // "Upload the notes below instead" – unless the server already said what to do.
+          offerUpload: !(err instanceof ApiError && (err.code === "NOT_FOUND" || err.code === "TRIAL_ENDED")),
+        });
+      }
+    })();
+  }, [reuseWanted, reuseReportId]);
+
   useEffect(() => () => abortRef.current?.abort(), []);
 
   // Move focus to the step heading on step change (screen readers, keyboard users).
@@ -150,19 +205,27 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
     setSourceLabel(result.sourceLabel);
     setClinician(undefined);
     setChoice(null);
+    setReuse({ status: "none" });
     setStep(2);
   }, []);
 
+  const reused = reuse.status === "done" ? reuse.source : null;
+
   const party = useMemo(() => (data ? instructingPartyOf(data.bundle) : null), [data]);
+  // Fix round 1 (B0-20): an initial assessment or a discharge – the form remembered for this referrer for that kind.
+  const notesKind = useMemo(() => (data ? notesReportKind(data.bundle) : null), [data]);
   const chosenForm: FormDefinition | undefined = choice?.kind === "form" ? forms.find((f) => f.id === choice.formId) : undefined;
   const chosenTemplate = choice?.kind === "template" ? templates.find((t) => t.id === choice.templateId) : undefined;
-  const canGenerate = Boolean(data && (chosenForm?.status === "confirmed" || chosenTemplate));
+  const chosenApprover = approverChoices.find((o) => o.memberId === approverId) ?? null;
+  // A clinic's report has its approving clinician from the start; the public demo's one fictional user approves.
+  const approver = tenant ? (chosenApprover ? approverOf(chosenApprover) : null) : data ? demoApprover(clinician ?? primaryTreatingClinician(data.bundle)) : null;
+  const canGenerate = Boolean(data && (chosenForm?.status === "confirmed" || chosenTemplate) && (!tenant || approver));
 
   const generate = async () => {
     if (!data || !party) return;
     const target: GenerateTarget | null = chosenForm ? { kind: "form", form: chosenForm } : chosenTemplate ? { kind: "template", template: chosenTemplate } : null;
     if (!target) return;
-    if (target.kind === "form") rememberFormForReferrer(party.name, target.form.id);
+    if (target.kind === "form") rememberFormForReferrer(party.name, target.form.id, notesKind);
     const controller = new AbortController();
     abortRef.current = controller;
     setStep(4);
@@ -178,6 +241,10 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         // A clinic's Studio (fix wave 2): drafts speak in the first person of the member who will sign them, or –
         // when this member cannot sign – in the third person, so whichever clinician approves, "I" is theirs.
         ...(tenant && !clinician ? { author: tenantAuthor(hooks.member) } : {}),
+        // Another form for the same patient: the new report (a new id, never an amendment) says where its notes came from.
+        ...(reused ? { reusedFrom: reused } : {}),
+        // WC design 1: Report.approver, through the same factory for a new report and a reused one.
+        ...(approver ? { approver } : {}),
         livePossible: livePossible(),
         confirmLive,
         concurrency: 3,
@@ -217,6 +284,17 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
     setChoice(null);
     setGen({ running: false, groups: [] });
     setLaunch({ status: "none" });
+    if (reuse.status !== "none") {
+      setReuse({ status: "none" });
+      // A reload now opens the upload, not the earlier report's notes again.
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("from");
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      } catch {
+        // ignore
+      }
+    }
     setStep(1);
   };
 
@@ -257,6 +335,30 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         </div>
       ) : null}
 
+      {reused && data && step < 4 ? (
+        <div className="space-y-1 rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900" aria-live="polite" data-reused-notes>
+          <p className="flex flex-wrap items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="font-semibold">
+                {TENANT_COPY.reuse.bannerLead} {data.bundle.registration.fullName} in{" "}
+                {reused.formTitle ? `the report on “${reused.formTitle}”` : "an earlier report"} ({reused.status === "signed" ? "approved" : "draft"}
+                {reused.version > 1 ? `, version ${reused.version}` : ""}):
+              </span>{" "}
+              {importedSummary(data.bundle)}. {TENANT_COPY.reuse.bannerNoUpload}
+            </span>
+          </p>
+          {reused.consentReset ? <p className="pl-7 text-teal-900/90">{TENANT_COPY.reuse.consentReset}</p> : null}
+        </div>
+      ) : null}
+
+      {reuse.status === "error" ? (
+        <Notice tone="error" title={reuse.title}>
+          {reuse.message}
+          {reuse.offerUpload ? ` ${TENANT_COPY.reuse.failedNext}` : ""}
+        </Notice>
+      ) : null}
+
       {launch.status === "error" ? (
         <Notice tone="error" title="Could not open the patient from TM3">
           {launch.message}{" "}
@@ -279,26 +381,34 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
         </h2>
 
         {step === 1 ? (
-          launch.status === "verifying" || launch.status === "loading" ? (
+          launch.status === "verifying" || launch.status === "loading" || reuse.status === "loading" ? (
             <div className="space-y-3">
+              {reuse.status === "loading" ? (
+                <p className="text-sm text-slate-600" role="status">
+                  {TENANT_COPY.reuse.loading}
+                </p>
+              ) : null}
               <Skeleton className="h-24 rounded-2xl" />
               <Skeleton className="h-48 rounded-2xl" />
             </div>
           ) : (
-            <SourceStep onLoaded={onLoaded} />
+            <>
+              <SourceStep onLoaded={onLoaded} />
+              {tenant ? <p className="text-xs text-slate-500">{TENANT_COPY.reuse.uploadHint}</p> : null}
+            </>
           )
         ) : null}
 
         {step === 2 && data ? (
           <>
-            {launch.status !== "done" ? (
+            {launch.status !== "done" && !reused ? (
               <p className="text-sm text-slate-600">
                 <span className="font-medium text-slate-900">Imported from {sourceLabel}:</span> {importedSummary(data.bundle)}
               </p>
             ) : null}
             <DataStep data={data} />
             <NavBar
-              back={{ label: "Choose another patient", onClick: restart }}
+              back={{ label: reused ? TENANT_COPY.reuse.backToUpload : "Choose another patient", onClick: restart }}
               next={{ label: "Choose the referrer form", onClick: () => setStep(3) }}
             />
           </>
@@ -314,7 +424,10 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
               onChoice={setChoice}
               onTemplates={setTemplates}
               preferredFormId={initialFormId}
+              kind={notesKind}
+              completedFormId={reused?.formId ?? null}
             />
+            {tenant ? <ApproverPicker options={approverChoices} value={approverId} onChange={setApproverId} memberIsStaff={hooks.member?.role === "staff"} /> : null}
             <NavBar
               back={{ label: "Back", onClick: () => setStep(2) }}
               next={{
@@ -324,11 +437,13 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
                 icon: FileCheck2,
               }}
               hint={
-                chosenForm
-                  ? `${data.bundle.registration.fullName} · ${chosenForm.title} (${chosenForm.referrer.name})`
-                  : chosenTemplate
-                    ? `${data.bundle.registration.fullName} · built-in ${chosenTemplate.name}`
-                    : "Choose a form to continue"
+                tenant && !approver && (chosenForm || chosenTemplate)
+                  ? "Choose the approving clinician to continue"
+                  : chosenForm
+                    ? `${data.bundle.registration.fullName} · ${chosenForm.title} (${chosenForm.referrer.name})`
+                    : chosenTemplate
+                      ? `${data.bundle.registration.fullName} · built-in ${chosenTemplate.name}`
+                      : "Choose a form to continue"
               }
             />
           </>
@@ -355,7 +470,9 @@ export function NewReportScreen({ launchToken, initialFormId }: { launchToken?: 
                       : WORDING.drafting.noDemoAnswersSuffix
                     : ""}
                 </Notice>
-              ) : (
+              ) : gen.storageWarning ? null : (
+                // bh2 fix round 1 (R1T-WA1-06; ownership exception – WC's file): never "Ready" while a save was refused or
+                // failed – the warning below says the report is not saved yet (Ascenti P1: "Ready" over 403 refusals).
                 <Notice tone="success" title="Ready for clinician review">
                   {gen.codeFilled ? `${plural(gen.codeFilled, "answer")} filled by code from the record. ` : ""}Opening the form for review…
                 </Notice>

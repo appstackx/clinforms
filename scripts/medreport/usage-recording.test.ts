@@ -38,6 +38,8 @@ import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch } from "./store-harness";
+import { asApproversReport } from "./release-store-fixture";
+import { storeClinicForm } from "./release-store-fixture"; // bh2 fix round 2 (WC, R2-SAF-2)
 import { demoBearer } from "./test-actors";
 
 const A = "usage-clinic-a";
@@ -52,7 +54,8 @@ const BUNDLE: EpisodeBundle = { ...getDemoBundle("megan-hart"), tenantId: A };
 const USAGE = { input_tokens: 4000, output_tokens: 900, cache_read_input_tokens: 1200, cache_creation_input_tokens: 300 };
 
 function reportOf(id: string, extra: Partial<Report> = {}): Report {
-  const r = completedSampleReport("megan-hart", FORM, { id });
+  // bh2 fix round 1 (WC, R1T-WC-06): stored as the Studio stores it – with its approving clinician (Sam).
+  const r = asApproversReport(completedSampleReport("megan-hart", FORM, { id }), CLIN);
   return { ...r, tenantId: A, bundleSnapshot: { ...r.bundleSnapshot, tenantId: A }, ...extra };
 }
 
@@ -106,6 +109,7 @@ const fakeClient: ClaudeClient = {
 
 function setup(usage: MedreportDeps["usage"], actors: Record<string, AuthContext> = { a: CLIN }) {
   const store = createMemoryTenantStore();
+  void storeClinicForm(store, A, FORM); // R2-SAF-2: the clinic holds the map its reports are started from
   const deps: MedreportDeps = { ...storeDeps(store, actors), clinicProfile: async (t) => (t === A ? PROFILE : null), ...(usage ? { usage } : {}) };
   return { deps, as: storeFetch(deps, { member: "a" }) };
 }
@@ -122,6 +126,11 @@ async function call(
   body: unknown,
   headers: Record<string, string> = { cookie: "member=a" },
 ): Promise<Response> {
+  // bh2 WA1 (design 6): a clinic approves only the revision it holds – store the report first, as the Studio does.
+  const signing = (body as { report?: Report } | null)?.report;
+  if (path === "/sign" && deps.tenantStore && signing && !headers.authorization && !(await deps.tenantStore.getReport(signing.tenantId, signing.id))) {
+    await deps.tenantStore.createReport(signing.tenantId, { id: signing.id, status: signing.status, templateId: signing.templateId, formId: signing.form?.formId ?? null, payload: signing });
+  }
   const req = new Request(`http://localhost/api/reports/v1${path}`, {
     method: "POST",
     headers: { "content-type": CONTENT_TYPES.json, origin: "http://localhost", ...headers },
@@ -392,9 +401,9 @@ describe("usage recorded by the Report API handlers", () => {
       m = await month();
       assert.equal(m.billableReports, 9);
 
-      // An odd report id approved without drafting: it counts (it counted nothing before), once, under a hashed key.
-      await sign(reportOf("rpt odd id"));
-      await sign(reportOf("rpt odd id"));
+      // An odd report id: the clinic's store cannot hold it, so it is never approved (bh2 WA1 design 6: a clinic approves only
+      // what it holds – 409 STALE_REPORT); drafted, it counts once, under a hashed key.
+      for (let i = 0; i < 2; i++) assert.equal((await call(deps, handleSign, "/sign", signBody(reportOf("rpt odd id")))).status, 409);
       await draft({ reportId: "rpt odd id" });
       m = await month();
       assert.equal(m.billableReports, 10);
