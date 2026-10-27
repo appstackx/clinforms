@@ -242,3 +242,52 @@ figures, packages on/off, brand by host). Module screens come with M1–M7.
    failures in your reply to Khuram before fixing anything.
 7. Plan M1 in a short table (screens, files, tests) and wait for Khuram's yes ("plan first, build after he
    approves").
+
+---
+
+## 11. Update 27/10/2026 – `main` merged into `feat/clinic-system` (Khuram's go)
+
+`origin/main` @ `cae0c3f` (250 commits: Blue Heart release, trials, demo clinics, packages and usage, owner reset
+links, medreport/reports UI fixes) was **merged** (`--no-ff`, no rebase) into `feat/clinic-system`, then
+`feat/clinic-system` into `feat/cs-diary` and `feat/cs-records`. `main` was not touched. This supersedes §7.5's
+"35 commits behind" and the §3 heads for these three branches.
+
+| Branch | New head (pushed) |
+|---|---|
+| `feat/clinic-system` | `a13ebef` |
+| `feat/cs-diary` | `83a2d50` (no conflicts) |
+| `feat/cs-records` | `02371fd` (no conflicts) |
+
+The other five `feat/cs-*` branches are still on the old foundation (`8716fbf`); merge `feat/clinic-system` into
+each before working on it.
+
+Migrations: `main` added only `0006–0008` (clinic_plan, plan_usage, demo clinic) – nothing in K2's `0100–0179`.
+
+Conflicts on the foundation merge (9 files), all resolved by keeping both sides:
+`package.json` (both sets of scripts), `(clinic)/layout.tsx` (main's trial + demo banners and the package nav/brand),
+`studio/layout.tsx` (banners and the Reports-off 404), `platform/actions.ts` (main's plan actions and
+`setClinicPackageAction`; the pms `isPackageId` is imported as `isEntitlementPackageId`), `platform/page.tsx`
+(main's panels and the on/off table, **retitled "Packages switched on"** so the page doesn't have two "Packages"
+panels), `platform-console.ts`, `auth/platform.ts`, `activity-copy.ts`, `repos/audit.ts` (main's `auditRow()`;
+`auditInsertQuery()` now built on it). Merge fallout: pms `setDemoClinic()` renamed **`setPmsDemoFlag()`** (main's
+admin source check reserves that name for `clinic_plan.demo_clinic`); the e2e's expected ClinForms nav gained
+"Plan & usage".
+
+Results (exact counts): foundation – test:pms 67/67, typecheck, lint (boundary up to date), test:medreport 1777
+pass/0 fail/3 skipped, test:db 467/0/3, test:auth 134/0, test:site 92/0, test:gateway 265/0/2, build green;
+`clinic-system-shell.cjs` 9/9 on `localhost:3180` (fresh scratch SQLite, server stopped). Diary – test:pms 131/131,
+typecheck, lint, test:db 531/0/3, test:auth 134/0, test:site 92/0, test:gateway 301/0/2, build green; test:medreport
+1776/1 fail/3 – the failure is the timing check in `scripts/medreport/wc-fix2-store.test.ts` (1122 ms vs a 1 s
+limit, under load); that file passed 19/19 twice on rerun. Records – test:pms 111/111, typecheck, lint,
+test:medreport 1777/0/3, test:db 511/0/3, test:auth 134/0, test:site 92/0, test:gateway 287/0/2, build green.
+
+Open – for Khuram:
+1. **Q-K6 is still open, and now it is live on one branch:** main's `clinic_package` (price tier: reports included,
+   extra-report price) and the foundation's `clinic_entitlements` (Reports / clinic system on-off) both say
+   "package" – on the platform page, in audit actions (`platform.package_set` vs `platform.entitlement_set`) and in
+   code (`@/lib/packages` vs `@/modules/pms/core/entitlements`). They work side by side today; choose one word/model.
+2. **Two "demo clinic" flags:** main's `clinic_plan.demo_clinic` (banner, notices, PH-DEMO approvals) and the
+   foundation's `pms_settings.is_demo` (set by `pms:seed-demo`). The seed should probably set main's flag
+   (`setDemoClinic` in `src/server/admin/clinic-plan.ts`) and `is_demo` be dropped or derived – needs a decision.
+3. Trials: main's trial gate (a trial-ended clinic can't create anything new) is not applied to clinic-system writes
+   yet – decide whether it should be.
