@@ -13,6 +13,7 @@ import gemmaJson from "../fixtures/bundles/gemma.json";
 import dischargeJson from "../fixtures/fictional-forms/cf-discharge.json";
 import initialJson from "../fixtures/fictional-forms/cf-initial.json";
 import mergeJson from "../fixtures/fictional-forms/cf-merge.json";
+import wdProgressJson from "../fixtures/fictional-forms/cf-wd-progress.json";
 import { zipStored } from "../../../rtf/zip";
 import type { Clinician, EpisodeBundle, FormDefinition, FormField, Note } from "../../../types";
 import type { NoteOverride, PersonKey } from "./types";
@@ -145,6 +146,7 @@ export const FORMS: Record<string, FictionalFormJson> = {
   "cf-discharge": dischargeJson as unknown as FictionalFormJson,
   "cf-initial": initialJson as unknown as FictionalFormJson,
   "cf-merge": mergeJson as unknown as FictionalFormJson,
+  "cf-wd-progress": wdProgressJson as unknown as FictionalFormJson,
 };
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";

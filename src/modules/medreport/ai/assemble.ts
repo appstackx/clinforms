@@ -28,6 +28,8 @@ import "server-only";
  * - the voice owner (whose "I" the report speaks in) is the report's approver; with none, nobody's (third person) –
  *   never the author the request names (the client defaults it to the clinician who wrote most notes) and never
  *   guessed (WD design 2);
+ * - an opinion box holds only what a clinician recorded: a paragraph that cites only the record's own figures (no
+ *   note) is left out of it, with a notice on the draft (bh2 fix round 1, R1T-WD-05);
  * - the validators run on the drafted sections (flags for those sections only).
  *
  * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
@@ -38,6 +40,7 @@ import { answerKindFor, parseFormAnswerValue } from "../core/forms";
 import { compactPlace, formTimeKind, timePointOf, yesNoInWords } from "../core/forms/answer-shape";
 import { isNoteId } from "../core/ids";
 import { createFormReport, createReport } from "../core/report-factory";
+import { sessionRowNotAttended } from "../core/issue-state";
 import { applyScope } from "../core/scope";
 import type {
   Clinician,
@@ -179,6 +182,8 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   const sourceTexts = buildSourceTexts(applyScope(bundle, template), input.computedFacts, input.instructingParty);
   const sourceIds = new Set(Array.from(sourceTexts.keys()));
   const droppedFlags: ReportFlag[] = [];
+  /** Notices about what assembly left out (shown with the draft; the validators do not raise them again). */
+  const notices: ReportFlag[] = [];
   // Drafted wording a person reads (answers and gaps): the patient's name back in, record IDs as the
   // note's date, note shorthand in plain words ("2x/wk" → "2 times a week", ">15 kg" → "more than
   // 15 kg"), numbers kept, and job titles as the record writes them – for live and recorded output alike.
@@ -200,6 +205,27 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   const latest = latestNoteDate(bundle);
   const noteById = new Map(bundle.notes.map((n) => [n.id, n] as const));
 
+  // The report as created (the drafted sections are validated in it below): which boxes the record fills, and which
+  // session rows it does not have.
+  const base: Report = form
+    ? createFormReport({
+        form,
+        bundle,
+        instructingParty: input.instructingParty,
+        computedFacts: input.computedFacts,
+        id: "rpt_assemble",
+        author: voiceOwner,
+        ...(approver?.memberId ? { approver: { memberId: approver.memberId, name: approver.name, hcpc: approver.hcpc ?? "" } } : {}),
+      })
+    : createReport({
+        template,
+        bundle,
+        instructingParty: input.instructingParty,
+        computedFacts: input.computedFacts,
+        id: "rpt_assemble",
+      });
+  const baseSections = new Map(base.sections.map((s) => [s.key, s] as const));
+
   const sections: ReportSection[] = [];
   const gaps: Gap[] = [];
 
@@ -209,6 +235,8 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
     const field = form?.fields.find((f) => f.id === key);
     const label = shortTitle(spec);
     const outSections = (output.sections ?? []).filter((s) => s.sectionKey === key);
+    // What prints is the text of a text answer; a structured answer's supporting paragraph is shown, never printed.
+    const printsText = !field || answerKindFor(field.answerType) === "text";
     const paragraphs: Paragraph[] = [];
     /** A paragraph held back for its time point (its answer is held back with it). */
     let heldForTimePoint = false;
@@ -246,13 +274,15 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
           );
         }
         // bh2 WD design 3: drafting meta-wording is held back as an audited item – the rest of the paragraph stays.
-        let meta = holdBackMeta(drafted);
+        // A printed answer also holds back comments about the record (R1T-WD-L2); a gap may say what the notes lack, and a
+        // structured answer's supporting paragraph is never printed.
+        let meta = holdBackMeta(drafted, { recordCommentary: printsText });
         let retractedFrom = valid;
         // A paragraph that opens by retracting the one before it ("Actually, that was at the first assessment.") puts
         // that paragraph in doubt too: both are held back together (the same rule as inside one paragraph).
         const previous = paragraphs[paragraphs.length - 1];
         if (previous && opensWithRetraction(drafted)) {
-          const joint = holdBackMeta(`${previous.text} ${drafted}`);
+          const joint = holdBackMeta(`${previous.text} ${drafted}`, { recordCommentary: printsText });
           if (joint.retracted.length > 0) {
             paragraphs.pop();
             meta = joint;
@@ -283,6 +313,22 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
         }
         const text = meta.text;
         if (!text) continue;
+        // bh2 fix round 1 (R1T-WD-05): an opinion box holds only what a clinician recorded. A paragraph that cites only
+        // the record's own figures (the computed attendance, outcome scores, the registration) – no note – is not an
+        // opinion: it is left out of the box, never printed there, and said so on the draft. A sentence that joins a
+        // clinician's note with the attendance (engagement) cites the note and is kept, and checked as drafted text.
+        if (spec.kind === "clinician_opinion" && valid.length > 0 && !valid.some((x) => isNoteId(x))) {
+          notices.push(
+            makeFlag({
+              code: "DRAFT_FIT",
+              severity: "warning",
+              sectionKey: key,
+              evidence: "record figures in an opinion box",
+              message: `A drafted paragraph that gave only the record's own figures (${quoted(text)}) was left out of this box: “${label}” asks for a clinician's opinion, which only a note can give.`,
+            }),
+          );
+          continue;
+        }
         // bh2 WD design 8: on an initial assessment form, a paragraph from a later note is held back (B0-6, B1-6).
         if (timeKind === "initial") {
           const later = laterThanAssessment(valid, bundle);
@@ -405,6 +451,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
           paragraphs,
           citedNotes: citedIds.map((id) => noteById.get(id)).filter((n): n is NonNullable<typeof n> => n !== undefined),
           citedTexts: citedIds.map((id) => sourceTexts.get(id) ?? ""),
+          episodeNotes: bundle.notes,
         });
         const older = decision.enter ? olderThanLatest(paragraphs) : null;
         if (!decision.enter && decision.gap) {
@@ -446,7 +493,12 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
 
     sectionGaps.push(...heldGaps);
     const answered = answer ? answer.value !== null : paragraphs.length > 0;
-    if (!answered && sectionGaps.length === 0) sectionGaps.push(emptySectionGap(key, seed, spec, field));
+    // bh2 fix round 1 (R1T-WD-L1): a box of a session row the record does not have ("Session 8 – duration" when there
+    // was no session 8) is not asked, like that row's date and time: no gap for it, and nothing to answer.
+    // Drafted text held back there is still shown (never dropped without trace).
+    const rowNotInRecord = Boolean(field && form && !answered && sessionRowNotAttended(field, form.fields, baseSections));
+    if (rowNotInRecord) sectionGaps.splice(0, sectionGaps.length, ...sectionGaps.filter((g) => heldGaps.includes(g)));
+    else if (!answered && sectionGaps.length === 0) sectionGaps.push(emptySectionGap(key, seed, spec, field));
 
     gaps.push(...sectionGaps);
     const section: ReportSection = {
@@ -454,7 +506,7 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
       title: spec.title,
       kind: spec.kind,
       paragraphs,
-      status: !answered || sectionGaps.length > 0 ? "needs_input" : "drafted",
+      status: rowNotInRecord && sectionGaps.length === 0 ? "drafted" : !answered || sectionGaps.length > 0 ? "needs_input" : "drafted",
     };
     if (field) section.fieldId = field.id;
     if (answer) section.answer = answer;
@@ -462,23 +514,6 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
   }
 
   // Validate the drafted sections in the context of a full report.
-  const base: Report = form
-    ? createFormReport({
-        form,
-        bundle,
-        instructingParty: input.instructingParty,
-        computedFacts: input.computedFacts,
-        id: "rpt_assemble",
-        author: voiceOwner,
-        ...(approver?.memberId ? { approver: { memberId: approver.memberId, name: approver.name, hcpc: approver.hcpc ?? "" } } : {}),
-      })
-    : createReport({
-        template,
-        bundle,
-        instructingParty: input.instructingParty,
-        computedFacts: input.computedFacts,
-        id: "rpt_assemble",
-      });
   const report: Report = {
     ...base,
     sections: base.sections.map((s) => sections.find((d) => d.key === s.key) ?? s),
@@ -490,5 +525,5 @@ export function assembleDraft(input: AssembleDraftInput): DraftsResponse {
     (f) => f.sectionKey !== undefined && drafted.has(f.sectionKey),
   );
 
-  return DraftsResponseSchema.parse({ sections, gaps, flags, generation: input.meta });
+  return DraftsResponseSchema.parse({ sections, gaps, flags: [...flags, ...notices], generation: input.meta });
 }

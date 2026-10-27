@@ -240,6 +240,33 @@ function sessionNotAttended(field: Pick<FormField, "fillSource"> | null): boolea
   return Boolean(field && field.fillSource.kind === "registration" && SESSION_PATHS.has(field.fillSource.path));
 }
 
+/** The session a numbered session row's label names ("Session 8 – duration" → 8; as core/session-dates.ts reads it). */
+const SESSION_ROW = /\b(?:session|treatment|appointment|visit)s?\s*(?:no\.?|number|#)?\s*(\d{1,2})\b/i;
+
+/**
+ * bh2 fix round 1 (R1T-WD-L1, WD's exception in WA1's file): a drafted box of a numbered session row ("Session 8 –
+ * duration") whose session the record does not have – the same row's date or time box, filled from the appointments
+ * (episode.attendedDate / attendedTime, part index = the row's session), is a session not attended – is not asked
+ * either, the same way as that date and time. Never an opinion box; a person's answer there still prints.
+ */
+export function sessionRowNotAttended(
+  field: Pick<FormField, "id" | "label" | "fillSource">,
+  fields: ReadonlyArray<Pick<FormField, "id" | "label" | "fillSource">>,
+  sections: ReadonlyMap<string, ReportSection>,
+): boolean {
+  if (field.fillSource.kind !== "notes_narrative") return false;
+  const m = SESSION_ROW.exec(field.label);
+  const n = m ? Number(m[1]) : NaN;
+  if (!(n >= 2)) return false;
+  return fields.some((f) => {
+    if (f.id === field.id || f.fillSource.kind !== "registration" || !SESSION_PATHS.has(f.fillSource.path) || f.fillSource.part?.index !== n) return false;
+    const row = SESSION_ROW.exec(f.label);
+    if (!row || Number(row[1]) !== n) return false;
+    const s = sections.get(f.id);
+    return Boolean(s && isBlankByDesign(s, f as FormField) && !s.paragraphs.some((p) => p.text.trim() !== ""));
+  });
+}
+
 /** A person (not drafting, not the record) wrote or set something in this box. */
 function holdsPersonContent(section: ReportSection): boolean {
   if ((section.paragraphs ?? []).some((p) => (p.text ?? "").trim() !== "" && p.origin !== "ai" && p.origin !== "from_records")) return true;
@@ -265,7 +292,7 @@ function blankByAcknowledgement(content: IssueContent, key: string): boolean {
   return gaps.some((g) => g.resolution?.kind === "acknowledged" && g.resolution.leftBlank !== false);
 }
 
-function boxIssue(content: IssueContent, field: FormField | null, section: ReportSection | undefined, release: boolean): BoxIssue {
+function boxIssue(content: IssueContent, field: FormField | null, section: ReportSection | undefined, release: boolean, rowNotAttended = false): BoxIssue {
   const key = field?.id ?? section?.key ?? "";
   const base = { key, condition: null, frozenCondition: false, disposition: section?.disposition ?? null, dispositionVerdict: "none" as DispositionVerdict, personContent: section ? holdsPersonContent(section) : false };
   if (field?.fillSource.kind === "leave_blank") return { ...base, state: { kind: "referrer_use" } };
@@ -286,6 +313,8 @@ function boxIssue(content: IssueContent, field: FormField | null, section: Repor
   if (blankByDesign && !section.paragraphs.some((p) => p.text.trim() !== "")) {
     return { ...issue, state: sessionNotAttended(field) ? { kind: "not_applicable", reason: "session_not_attended" } : { kind: "blank", reason: "record_empty" } };
   }
+  // R1T-WD-L1: the rest of a session row the record does not have (this release's reports).
+  if (rowNotAttended && !answered) return { ...issue, state: { kind: "not_applicable", reason: "session_not_attended" } };
   if (!answered) {
     const leftBlank = decided?.kind === "left_blank" || (field?.required === false && blankByAcknowledgement(content, section.key));
     return { ...issue, state: { kind: "blank", reason: leftBlank ? "left_blank" : "no_answer" } };
@@ -309,7 +338,7 @@ export function issueDetails(report: IssueContent | Report, form: IssueForm | nu
   const content = serverReading(issueContentOf(report) as IssueContent, form, opts);
   const release = opts.sectionsOnly ? (content.reportModel ?? 0) >= REPORT_MODEL : isReleaseModel(content);
   const sections = new Map(content.sections.map((s) => [s.key, s]));
-  if (form) return form.fields.map((field) => boxIssue(content, field, sections.get(field.id), release));
+  if (form) return form.fields.map((field) => boxIssue(content, field, sections.get(field.id), release, release && sessionRowNotAttended(field, form.fields, sections)));
   return content.sections.map((section) => boxIssue(content, null, section, release));
 }
 

@@ -218,6 +218,232 @@ export interface AnswerInput {
   citedNotes: readonly Note[];
   /** The text of every cited source (notes, REG, facts) as the validators see it. */
   citedTexts: readonly string[];
+  /**
+   * Every note of the episode (bh2 fix round 1, R1T-WD-03): a question's printed condition about the start of the
+   * episode ("off work when first seen") is read from the episode's first note, whichever notes the answer cites.
+   */
+  episodeNotes?: readonly Note[];
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A record yes/no that contradicts its question (bh2 fix round 1, R1T-WD-03)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** What a clause says about the patient's work: at work, off work, or nothing. */
+export type WorkState = "at_work" | "off_work";
+
+/** Off work: "off work", "signed off", "not working", "unable to work", "on sick leave". */
+const OFF_WORK = /\b(?:off work|signed off|unable to work|not (?:been )?working|on sick leave|absent from work|has not worked|had not worked)\b/gi;
+/**
+ * At work: back at or to work, returned to work or to duties, working (full or part time, from home, amended duties or
+ * hours, "is working"), at work, in work, full, normal, usual, amended, modified, light or reduced duties or hours.
+ * "Working on his balance exercises" is not work.
+ */
+const AT_WORK = new RegExp(
+  [
+    String.raw`back (?:at|to) work`,
+    String.raw`returned to (?:work|(?:his |her |their )?(?:full|normal|usual|amended|modified|light|lighter|reduced|restricted|alternative)?\s*(?:duties|hours|role|job))`,
+    String.raw`(?:is|was|were|are|been|still|now|currently)\s+(?:at|in)\s+work`,
+    String.raw`(?:is|was|were|are|been|now|still|currently|back|had been|has been)\s+working(?!\s+(?:on|out|through|with|towards|hard|at (?:the|his|her|their) (?:exercises|programme|home exercises)))`,
+    String.raw`working (?:full[- ]time|part[- ]time|from home|at home|normally|as (?:an?|the)\b|amended|modified|light|lighter|reduced|restricted|normal|his usual|her usual|their usual|again)`,
+    String.raw`works (?:full[- ]time|part[- ]time|from home|as (?:an?|the)\b)`,
+    String.raw`(?:full|normal|usual|amended|modified|light|lighter|reduced|restricted|alternative) (?:duties|hours)`,
+    String.raw`phased return`,
+  ]
+    .map((x) => `\\b${x}\\b`)
+    .join("|"),
+  "gi",
+);
+/** Words that turn a work phrase around ("not off work", "not back at work", "has not returned to work"). */
+const WORK_NEGATOR = /\b(?:not|never|no longer|wasn't|isn't|hasn't|hadn't|didn't|doesn't|weren't|aren't|haven't|yet to)\b/i;
+/** A time point at the start of the episode ("at the first assessment", "when first seen", "on referral"). */
+const START_POINT = /\b(?:at the time of (?:the |his |her |their )?(?:initial |first )?assessment|at (?:the |his |her |their )?(?:initial |first )?assessment|when (?:first )?seen|when (?:he|she|they) (?:was|were) first seen|at (?:the )?(?:start|outset)|on referral|at referral|at (?:the )?first appointment)\b/i;
+
+/** The clauses of a text, in order (a work state can change within one sentence: "took 3 days off, then returned …"). */
+function workClauses(text: string): string[] {
+  return splitSentences(text, "notes").flatMap((s) => s.text.split(/;|,\s*(?:and\s+)?(?:then|so|but|now)\s+|\s+(?:and then|then|but|so that|so|and now)\s+|\s+and\s+(?=(?:has|had|is|was|returned|went|now)\b)/i));
+}
+
+/**
+ * The work state a clause asserts – its last work phrase, read with a negation before it in its clause: a negated
+ * off-work phrase is at work ("was not off work"), a negated at-work phrase is off work ("has not returned to work");
+ * "not working" is itself off work.
+ */
+export function workStateOfClause(clause: string): WorkState | null {
+  let last: { at: number; state: WorkState; phrase: string } | null = null;
+  for (const [re, state] of [
+    [OFF_WORK, "off_work"],
+    [AT_WORK, "at_work"],
+  ] as const) {
+    const g = new RegExp(re.source, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = g.exec(clause)) !== null) if (!last || m.index >= last.at) last = { at: m.index, state, phrase: m[0] };
+  }
+  if (!last) return null;
+  if (/\bnot\b/i.test(last.phrase)) return "off_work";
+  const before = clause.slice(0, last.at).split(/\b(?:and|or|with)\b|,/i).pop() ?? "";
+  if (!WORK_NEGATOR.test(before)) return last.state;
+  return last.state === "at_work" ? "off_work" : "at_work";
+}
+
+/** The last work state a text asserts (the latest it gives), or null. */
+export function latestWorkState(text: string): { state: WorkState; clause: string } | null {
+  let last: { state: WorkState; clause: string } | null = null;
+  for (const clause of workClauses(text)) {
+    const state = workStateOfClause(clause);
+    if (state) last = { state, clause: clause.trim() };
+  }
+  return last;
+}
+
+/**
+ * A question whose "Yes" says the patient is at work now, or off work now (null: neither, or a question that asks more
+ * than that – "at work but unable to do all duties", "Was the patient working before the injury?").
+ */
+function workQuestion(question: string): { yesMeans: WorkState } | null {
+  const q = question.toLowerCase();
+  if (/\b(?:but|and|or|unable|fulfil|fulfill|duties|prior|before|since|as a result)\b/.test(q)) return null;
+  if (/\b(?:still|currently|now|at present)\s+off work\b|\boff work (?:now|at present|currently)\b/.test(q)) return { yesMeans: "off_work" };
+  if (/\b(?:returned to work|back (?:at|to) work|gone back to work|at work now|now at work|at work at present|currently (?:at work|working)|working (?:now|at present|currently)|in work now)\b/.test(q)) return { yesMeans: "at_work" };
+  if (/\bis (?:the )?(?:client|patient|claimant|employee|person)\s+(?:now\s+)?at work\b/.test(q)) return { yesMeans: "at_work" };
+  return null;
+}
+
+/** "a. If <condition>, <question>?" – a question that applies only under the condition it prints itself. */
+const SELF_CONDITION = /^\s*(?:\(?[a-z0-9]{1,2}\)?[.)]\s*)?if\s+(.+?),\s*((?:is|are|was|were|has|have|had|does|do|did|can|could|will|would)\b[^?]*\?)\s*$/i;
+/** The subject a condition clause opens with ("the patient …", "he …") – its verb stays ("is at work", "was off work"). */
+const CONDITION_SUBJECT = /^(?:the\s+)?(?:client|patient|claimant|employee|person|injured party|he|she|they)\s+/i;
+
+/**
+ * The phrase a condition clause turns on ("was off work when first seen", "is at work"), without its
+ * subject. The operative clause is the last one ("working before the accident but off work at the assessment": the
+ * second).
+ */
+function conditionPhrase(condition: string): string {
+  const clauses = condition.split(/\s+but\s+|\s+and\s+|,\s*/i).map((c) => c.trim()).filter(Boolean);
+  return (clauses[clauses.length - 1] ?? condition).replace(CONDITION_SUBJECT, "").trim();
+}
+
+/** A cited note's text, its fields in order. */
+function noteText(n: Note): string {
+  return [n.subjective, n.objective, n.assessment, n.plan, n.freeText ?? ""].filter(Boolean).join("\n");
+}
+
+/**
+ * What the drafted support and the cited notes say about a condition: it holds, it does not, or nothing.
+ * - A work condition ("off work when first seen", "at work"): a support clause that names the same time
+ *   point settles it (for a present condition, the latest work state the support gives); else the notes (the episode's,
+ *   else the cited ones) – at the start of the episode, the latest state the first note gives ("took 3 days off work,
+ *   then returned to normal duties" was at work at the assessment); now, the latest state the latest note gives.
+ * - Any other condition: its words in a clause of the support or a cited note, negated or not.
+ */
+function conditionReading(phrase: string, support: string, notes: readonly Note[]): { holds: boolean; clause: string } | null {
+  const wanted = workStateOfClause(phrase);
+  if (wanted) {
+    const atStart = START_POINT.test(phrase);
+    if (atStart) {
+      for (const clause of workClauses(support)) {
+        const state = workStateOfClause(clause);
+        if (state && START_POINT.test(clause)) return { holds: state === wanted, clause: clause.trim() };
+      }
+    } else {
+      const said = latestWorkState(support);
+      if (said) return { holds: said.state === wanted, clause: said.clause };
+    }
+    const byDate = [...notes].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const note = atStart ? byDate[0] : byDate[byDate.length - 1];
+    const said = note ? latestWorkState(noteText(note)) : null;
+    return said ? { holds: said.state === wanted, clause: said.clause } : null;
+  }
+  const words = optionWords(phrase).slice(0, 2);
+  if (words.length === 0) return null;
+  let found: { holds: boolean; clause: string } | null = null;
+  for (const text of [support, ...notes.map(noteText)]) {
+    for (const clause of workClauses(text)) {
+      const tokens = ` ${normalise(clause)} `;
+      const at = tokens.indexOf(` ${words.join(" ")}`);
+      if (at < 0) continue;
+      const negated = NEGATOR.test(tokens.slice(0, at));
+      if (negated) return { holds: false, clause: clause.trim() };
+      found ??= { holds: true, clause: clause.trim() };
+    }
+  }
+  return found;
+}
+
+/** A question about treatment OTHER than the one being reported ("Is the patient receiving any other treatment?"). */
+const OTHER_TREATMENT_QUESTION = /\b(?:any\s+)?other\s+(?:treatments?|therap(?:y|ies)|interventions?|practitioners?|professionals?|healthcare|care)\b|\btreatment elsewhere\b|\b(?:seeing|seen|seen by)\s+(?:any(?:one)?\s+)?(?:other|else)\b/i;
+/** The physiotherapy being reported: its sessions, exercises, plan and the episode of care. */
+const THIS_PHYSIOTHERAPY =
+  /\b(?:physiotherapy|physio|sessions?|appointments?|episode of care|home (?:exercise )?programme|exercises?|rehabilitation|strengthening|mobilisations?|soft tissue|manual therapy|stretch\w*|taping|advice|discharge\w*|this clinic|the clinic|treatment plan|further treatment)\b/i;
+/** Treatment by someone else, or other than physiotherapy ("GP", "osteopath", "injection", "medication", "counselling"). */
+const OTHER_PROVIDER =
+  /\b(?:gp|general practitioner|doctor|consultant|surgeon|orthopaedic|hospital|a&e|osteopath\w*|chiropract\w*|acupunctur\w*|massage therap\w*|sports therap\w*|podiatr\w*|psycholog\w*|counsell\w*|cbt|injection|surgery|operation|scan|mri|x-ray|medication|prescribed|painkillers?|analgesi\w*|naproxen|ibuprofen|paracetamol|codeine|occupational health|pain clinic|chiropody|hydrotherapy|private)\b/i;
+
+/**
+ * A drafted yes/no on a record box whose own supporting text does not support it (R1T-WD-03, the shapes the round-1
+ * runs found on the sample notes): the gap that holds it back, or null when it may be entered.
+ * - A question that prints its own condition ("a. If the patient was off work when first seen, is the patient back at
+ *   work now?"): held back when its support or the notes say the condition does not hold – then the question does not
+ *   apply – or when nothing establishes it (round 1's F-27 shape: "… so he was not off work when first seen" answered
+ *   "No").
+ * - A work-status question ("Is the patient back at work?", "is the patient at work now?", "still off work?")
+ *   whose answer says the opposite of the latest work state its own support gives ("No" over "working from home at
+ *   present").
+ * - "Is the patient receiving any other treatment?" answered "Yes" from the physiotherapy being reported only (its
+ *   sessions, plan or episode), with no other treatment or provider named.
+ * None of these is offered as a one-click: the person checks the notes and answers it.
+ */
+export function recordYesNoProblem(input: Pick<AnswerInput, "field" | "label" | "value" | "paragraphs" | "citedNotes" | "episodeNotes">): Pick<Gap, "issue" | "suggestedQuestion" | "kind"> | null {
+  const { field, label, value } = input;
+  if (field.answerType !== "yes_no" || isClinicianBox(field)) return null;
+  const yes = /^yes$/i.test(value.trim());
+  const no = /^no$/i.test(value.trim());
+  if (!yes && !no) return null;
+  const support = input.paragraphs.map((p) => p.text).join(" ");
+  // Quoted without its closing stop (the gap's own sentence ends after the quotation).
+  const cut = (t: string) => {
+    const q = t.trim().replace(/[.;:,\s]+$/, "");
+    return q.length > 200 ? `${q.slice(0, 199).trimEnd()}…` : q;
+  };
+  const options = field.options?.length ? ` (${field.options.join(" / ")})` : "";
+  const ask = `Which answer should be given to “${label}”${options}? Check the notes and answer it yourself.`;
+  const applies = `Does “${label}” apply to this patient? If it does, which answer should be given${options}? Check the notes.`;
+
+  const self = SELF_CONDITION.exec(field.label.trim());
+  const question = self ? self[2] : field.label;
+  if (self) {
+    const reading = conditionReading(conditionPhrase(self[1]), support, input.episodeNotes?.length ? input.episodeNotes : input.citedNotes);
+    if (!reading || !reading.holds) {
+      return {
+        kind: "condition",
+        issue: reading
+          ? `The drafted answer “${value}” to “${label}” has not been entered: the question applies only if ${self[1].trim()}, and the record says that does not hold – “${cut(reading.clause)}”.`
+          : `The drafted answer “${value}” to “${label}” has not been entered: the question applies only if ${self[1].trim()}, and neither its supporting text nor the cited notes say so.`,
+        suggestedQuestion: applies,
+      };
+    }
+  }
+  const work = workQuestion(question);
+  if (work) {
+    const said = latestWorkState(support);
+    const implied: WorkState = yes ? work.yesMeans : work.yesMeans === "at_work" ? "off_work" : "at_work";
+    if (said && said.state !== implied) {
+      return {
+        kind: "choice_held_back",
+        issue: `The drafted answer “${value}” to “${label}” has not been entered: its own supporting text says the opposite – “${cut(said.clause)}”.`,
+        suggestedQuestion: ask,
+      };
+    }
+  }
+  if (yes && OTHER_TREATMENT_QUESTION.test(question) && THIS_PHYSIOTHERAPY.test(support) && !OTHER_PROVIDER.test(support)) {
+    return {
+      kind: "choice_held_back",
+      issue: `The drafted answer “Yes” to “${label}” has not been entered: its supporting text is about the physiotherapy being reported, not other treatment – “${cut(support)}”.`,
+      suggestedQuestion: ask,
+    };
+  }
+  return null;
 }
 
 /** The band information for a held-back band (information only – never a suggested answer), or "". */
@@ -262,6 +488,10 @@ export function decideStructuredAnswer(input: AnswerInput): AnswerDecision {
       };
     }
   }
+  // bh2 fix round 1 (R1T-WD-03): a record yes/no whose own support contradicts it, or whose printed condition does not
+  // hold, is held back for the person – never entered unflagged.
+  const contradicted = opinion ? null : recordYesNoProblem(input);
+  if (contradicted) return { enter: false, gap: contradicted };
   if (field.answerType !== "single_choice") return opinion ? opinionHeldBack(input, which) : { enter: true };
 
   if (isGradeScale(field)) {
@@ -364,14 +594,32 @@ function missingWording(missing: readonly string[]): string {
   return `they do not use the word${missing.length === 1 ? "" : "s"} ${list.length === 2 ? list.join(" and ") : list.join(", ")}`;
 }
 
-/** "No … recorded", "does not record …": a gap that says nobody recorded the opinion. */
-const NOTHING_RECORDED = /\b(?:no|not|none|nothing|never)\b[^.]*\b(?:record(?:ed|s)?|opinion|stat(?:e|ed|es)|documented)\b|\bdo(?:es)?(?:n't| not) (?:record|state|give|say)\b/i;
+/**
+ * "No … recorded", "does not record / mention / include / list …", "makes no mention of …": a gap that says nobody
+ * recorded the opinion (bh2 fix round 1, R1T-WD-L4: "… does not mention ultrasound therapy as a planned modality").
+ */
+const NOTHING_RECORDED =
+  /\b(?:no|not|none|nothing|never)\b[^.]*\b(?:record(?:ed|s)?|opinion|stat(?:e|ed|es)|documented|mention(?:s|ed)?|include[sd]?|list(?:s|ed)?)\b|\bdo(?:es)?(?:n't| not) (?:record|state|give|say|mention|include|list)\b|\bmakes? no mention\b/i;
+/**
+ * A gap that says a recorded opinion does not fit the printed options (prompt rule 7): "… it fits neither Yes nor No",
+ * "… does not match the printed bands", "a phased / graded / partial return …", "with restrictions".
+ */
+const OPINION_NOT_FITTING =
+  /\b(?:not|neither|nor|none|no)\b[^.]*\b(?:fit|fits|fitting|match|matches|matching|correspond\w*)\b|\b(?:fit|fits|match|matches)\s+(?:neither|none|no)\b|\b(?:qualified|phased|graded|partial(?:ly)?|with restrictions)\b/i;
 
-/** The kind of a gap the drafting raised, from the box it is on and what it says. */
-export function draftedGapKind(field: Pick<FormField, "fillSource" | "guidance" | "options"> | undefined, issue: string, relatedNoteIds: readonly string[]): GapKind {
+/**
+ * The kind of a gap the drafting raised, from the box it is on and what it says. On an opinion box it is "opinion not
+ * fitting options" only when the box offers a choice of two or more printed options (never a single tick box) and the
+ * gap relates notes and says a recorded opinion does not fit them – or does not say that nothing was recorded; otherwise
+ * no opinion was recorded (bh2 fix round 1, R1T-WD-L4: "… does not mention ultrasound therapy as a planned modality" on
+ * a tick box is no opinion recorded, which "Leave optional boxes blank" may offer, and the card says so).
+ */
+export function draftedGapKind(field: Pick<FormField, "fillSource" | "guidance" | "options"> & Partial<Pick<FormField, "answerType">> | undefined, issue: string, relatedNoteIds: readonly string[]): GapKind {
   if (!field) return "record_value";
   if (field.fillSource.kind === "clinician_opinion") {
-    return (field.options?.length ?? 0) > 0 && relatedNoteIds.length > 0 && !NOTHING_RECORDED.test(issue) ? "opinion_not_fitting_options" : "no_opinion_recorded";
+    const choice = (field.options?.length ?? 0) >= 2 && field.answerType !== "checkbox";
+    const fitting = OPINION_NOT_FITTING.test(issue) || !NOTHING_RECORDED.test(issue);
+    return choice && relatedNoteIds.length > 0 && fitting ? "opinion_not_fitting_options" : "no_opinion_recorded";
   }
   const source = recordSourceOf(field as FormField);
   if (source === "staff_entry") return "staff_entry";

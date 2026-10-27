@@ -21,7 +21,7 @@ import type { Paragraph, ReportFlag, ReportSection } from "../types";
 import { getValidationContext, hasText } from "./context";
 import { commentaryPart } from "./draft-fit/commentary";
 import { fragmentsPart } from "./draft-fit/fragments";
-import { datedLeadPart, dosePart, laterNotePart } from "./draft-fit/measure";
+import { attendanceFramingPart, datedLeadPart, dosePart, laterNotePart } from "./draft-fit/measure";
 import { printedLeadPart } from "./draft-fit/printed-lead";
 import { repeatsPart } from "./draft-fit/repeats";
 import { shortenPart } from "./draft-fit/shorten";
@@ -48,6 +48,7 @@ export function validateDraftFit(input: ValidatorInput): ReportFlag[] {
     laterNotePart(input),
     datedLeadPart(input),
     dosePart(input),
+    attendanceFramingPart(input),
     fragmentsPart(input),
     printedLeadPart(input),
     repeatsPart(input),
