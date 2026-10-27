@@ -9,7 +9,7 @@ import "server-only";
  * Shared contract (orchestrator-owned): additive optional members only.
  */
 import type { ConnectorContext, ConnectorRegistry } from "../connectors/types";
-import type { ConnectorId, TenantId } from "../core/types";
+import type { ConnectorId, TenantId, TokenUsage } from "../core/types";
 import type { TenantStore } from "./store-port";
 
 /** A clinic member's role (docs/production-architecture.md §3). */
@@ -51,6 +51,23 @@ export interface ClinicProfile {
   email?: string;
   retentionDays: number;
   draftingEnabled: boolean;
+  /**
+   * The clinic's trial (10/2026, the host's clinic_plan), when it has one; absent = no trial. "pending" = it starts
+   * when an owner first opens the clinic area; "ended" = nothing new can be created (reports, drafts, uploads,
+   * form readings – auth/clinic-access.ts), existing records stay readable and downloadable.
+   */
+  trial?: { state: "pending" | "running" | "ended"; endsAt?: string; daysLeft?: number };
+  /** The clinic's own drafting limits (10/2026, set by ClinForms staff); absent = the deployment's defaults. */
+  draftingLimits?: { perMinute?: number; perDay?: number };
+  /** Where the clinic asks about its account (shown when the trial has ended). */
+  contactEmail?: string;
+  /**
+   * A DEMO clinic (the host's clinic_plan.demo_clinic, migration 0008, set by ClinForms platform staff only): made-up
+   * data only. Every output then carries the demonstration notice (core/demo-clinic.ts demoOutputNotice: POST /render,
+   * POST /forms/fill-preview), and members' made-up PH-DEMO-NN numbers may approve (POST /sign refuses them in any
+   * other clinic: 403 DEMO_NUMBER_NOT_ALLOWED). Absent / false = a real clinic, unchanged.
+   */
+  demoClinic?: boolean;
 }
 
 /** One fixed window of a shared counter (rate_limits). */
@@ -95,6 +112,41 @@ export interface VerifiedPartnerKey {
   tenantId: TenantId;
 }
 
+/**
+ * A usage event of a clinic (25/10/2026 – packages and usage): what the counters of the clinic's month record. Ids,
+ * counts and token totals only – never patient data. The host decides how a report counts (once: at its first live
+ * drafting, or at its first approval when nothing was drafted – src/server/repos/usage.ts).
+ *
+ * `episodeFp` (fix 25/10/2026): the report's usage fingerprint, worked out by the module on the server (api/usage.ts
+ * usageEpisodeFp – clinic, episode, template or form, the patient's name and date of birth; a keyed hash that identifies
+ * nobody). The host counts a report per (report id, fingerprint) and accepts `amendsReportId` only for an approved report
+ * with the same fingerprint. Absent = "" (hosts and tests that predate it).
+ */
+export type UsageEvent =
+  /** A new report was stored for the clinic (POST/PUT create in the clinic's storage). */
+  | { kind: "report_started"; reportId: string; amendsReportId?: string; episodeFp?: string }
+  /**
+   * One live drafting call (POST /drafts in live mode), successful (answers drafted) or not. `reportId` = the report
+   * being drafted (the Studio always sends it); `usage`/`model` when the drafting service answered – a failed call that
+   * still used tokens counts its report too (drafting cost money).
+   */
+  | { kind: "drafting_call"; reportId?: string; amendsReportId?: string; episodeFp?: string; succeeded: boolean; model?: string; usage?: TokenUsage }
+  /**
+   * A referrer form reading (POST /forms/analyse): `read` = a proposed map came back; `liveCalls` = successful live
+   * calls (a long form is read in parallel parts), `failedCalls` = live calls that failed (the reading then fell back
+   * to a stored map or rules, or failed); `usage`/`model` = the tokens of the live calls.
+   */
+  | { kind: "form_read"; read: boolean; liveCalls: number; failedCalls: number; model?: string; usage?: TokenUsage }
+  /** A report was approved (POST /sign issued a receipt). */
+  | { kind: "report_approved"; reportId: string; amendsReportId?: string; episodeFp?: string }
+  /** A portal question set was stored for the clinic for the first time. */
+  | { kind: "question_set_created"; formId: string };
+
+/** The host's usage counters (src/server/usage/recorder.ts). Best effort: the module never lets it fail a request. */
+export interface UsageRecorder {
+  record(tenantId: TenantId, event: UsageEvent): Promise<void>;
+}
+
 export interface MedreportDeps {
   connectors: ConnectorRegistry;
   /**
@@ -124,4 +176,9 @@ export interface MedreportDeps {
    * Absent in the public demo: the store endpoints then answer 501.
    */
   tenantStore?: TenantStore;
+  /**
+   * 25/10/2026: the clinic's usage counters (packages and usage). Called for clinic members only – never for the
+   * public demo – through api/usage.ts recordUsage(), which never fails or blocks the request (errors are logged).
+   */
+  usage?: UsageRecorder;
 }

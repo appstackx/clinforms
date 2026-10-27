@@ -226,3 +226,20 @@ export async function deleteFormFile(ctx: DbContext, tenantId: string, sha256: s
   ]);
   return Number(files.numAffectedRows ?? 0) > 0;
 }
+
+/**
+ * (10/2026) Deletes the file and its chunks only while no form of the tenant refers to it – the check is in the SQL of
+ * the same atomic batch, so a form that starts using the file meanwhile keeps it.
+ */
+export async function deleteFormFileIfUnused(ctx: DbContext, tenantId: string, sha256: string): Promise<boolean> {
+  assertTenantId(tenantId);
+  assertSha256(sha256);
+  const unused = (table: "form_files" | "form_file_chunks") =>
+    ctx.db
+      .deleteFrom(table)
+      .where("tenant_id", "=", tenantId)
+      .where("sha256", "=", sha256)
+      .where((eb) => eb.not(eb.exists(eb.selectFrom("forms as f").select("f.id").where("f.tenant_id", "=", tenantId).where("f.file_sha256", "=", sha256))));
+  const [, files] = await runBatch(ctx.db, [unused("form_file_chunks"), unused("form_files")]);
+  return Number(files.numAffectedRows ?? 0) > 0;
+}

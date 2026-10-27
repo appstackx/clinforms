@@ -305,7 +305,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export const NOTES_REVIEW_COPY = {
   title: "Check the notes before they are used",
   intro:
-    "These notes are not in the documented import layout, so they were read as ordinary clinic notes. Check what was found: correct the dates, clinicians and patient details where needed. The notes' own text is used exactly as written. Nothing is drafted until you confirm.",
+    // Fix round 1 (B0-33): neutral – ordinary clinic notes are the usual case, not a fault (the welcome pack's own notes).
+    "Read as ordinary clinic notes – check the entries below: correct the dates, clinicians and patient details where needed. The notes' own text is used exactly as written. Nothing is drafted until you confirm.",
   summary: (entries: number, clinicians: number, scores: number) =>
     `${plural(entries, "entry", "entries")} · ${plural(clinicians, "clinician")} · ${plural(scores, "outcome score")}`,
   patientHeading: "Patient and referral details",
@@ -324,6 +325,9 @@ export const NOTES_REVIEW_COPY = {
   clinicianNotRecorded: "Not recorded",
   clinicianNameLabel: "Clinician's name",
   clinicianHcpcLabel: "HCPC number (optional)",
+  /** A clinician in the notes shown with another number: a clinic member's, or the one on their other notes. */
+  clinicianMatched: (inNotes: string, shownAs: string, member: boolean) =>
+    `${inNotes} in the notes is shown as ${shownAs}${member ? ", from your clinic's members" : ", as on the other notes"}. If that is someone else, change the clinician on those entries.`,
   scoresHeading: "Outcome scores found",
   scoresNone: "No outcome scores (such as NPRS 7/10 or QuickDASH 52.3) were found.",
   attendanceOn: "Attendance is taken from the status of each entry.",
@@ -378,6 +382,8 @@ export function notesReviewCopyStrings(): string[] {
     NOTES_REVIEW_COPY.attendanceNoTime(1),
     NOTES_REVIEW_COPY.attendanceNoTime(6),
     NOTES_REVIEW_COPY.letterDateButton("09/10/2026"),
+    NOTES_REVIEW_COPY.clinicianMatched("Sarah Reid (PH-DEMO-01)", "Sarah Reid (ZZ0001)", true),
+    NOTES_REVIEW_COPY.clinicianMatched("Sarah Reid (PH-DEMO-01)", "Sarah Reid (PH123456)", false),
     ...NOTES_REVIEW_FIELDS.map(missingFieldText),
     ...Object.values(NOTES_REVIEW_FIELD_LABELS),
   );

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BrandMark, PageHeader, Panel } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
 import { activityLabel, describeActivityDetail } from "@/lib/activity-copy";
@@ -6,10 +7,41 @@ import { activityTime } from "@/server/admin/activity";
 import { requirePlatformAdmin } from "@/server/admin/guards";
 import { PACKAGE_LABELS } from "@/lib/brand";
 import { ACCESS_REQUESTS_SHOWN, listAccessRequestsForPlatform, listClinicPackages, listClinicsOverview, listPlatformActivity } from "@/server/admin/platform-console";
+import { TRIAL_COPY } from "@/lib/account-copy";
 import { getDb } from "@/server/db";
+import { emailProviderName } from "@/server/email";
 import { SignOutForm } from "../session-forms";
 import { setAccessRequestContactedAction, setClinicPackageAction } from "./actions";
-import { CreateClinicForm } from "./forms";
+import { CreateClinicForm, DemoClinicForm, OwnerResetForm, PackageForm, TrialForms } from "./forms";
+import type { ClinicOverview } from "@/server/admin/platform-console";
+import { formatPence, packageLabel, reportsText } from "@/lib/packages";
+import { readClinicPackages, type ClinicPackage } from "@/server/repos/clinic-package";
+import { ukDateOf } from "@/server/repos/usage-period";
+
+const UK_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/** The clinic's trial in a few words (10/2026). */
+function trialText(c: ClinicOverview): string {
+  const a = c.access;
+  if (a.state === "trial") return a.pending ? `${a.daysLeft}-day trial, starts at the owner's first sign-in` : `Trial, ${a.daysLeft} ${a.daysLeft === 1 ? "day" : "days"} left (ends ${UK_DAY.format(new Date(a.endsAt ?? ""))})`;
+  if (a.state === "trial_ended") return `Trial ended ${UK_DAY.format(new Date(a.endedAt))}`;
+  return a.plan === "paid" ? "Full account (trial converted)" : "–";
+}
+
+/** The clinic's package in a few words (25/10/2026). */
+function packageText(p: ClinicPackage | undefined): string {
+  if (!p) return "–";
+  return `${packageLabel(p.package)} · ${formatPence(p.monthlyPricePence)} · ${reportsText(p.reportsIncluded)} · extra ${p.extraReportPence === null ? "not set" : formatPence(p.extraReportPence)}${
+    p.foundingPricePence !== null ? ` · founding ${formatPence(p.foundingPricePence)} to ${p.foundingUntil}` : ""
+  }`;
+}
+
+function limitsText(c: ClinicOverview): string {
+  const m = c.plan?.livePerMinute;
+  const d = c.plan?.livePerDay;
+  if (!m && !d) return "Default";
+  return `${m ? `${m}/min` : "default/min"} · ${d ? `${d.toLocaleString("en-GB")}/day` : "default/day"}`;
+}
 
 /**
  * /app/platform – ClinForms staff only (emails in CLINFORMS_PLATFORM_ADMINS, signed in with two-step verification;
@@ -24,14 +56,19 @@ const TD = "px-3 py-2 align-top text-sm";
 export default async function PlatformPage() {
   const admin = await requirePlatformAdmin();
   const db = getDb();
-  const [requests, clinics, activity] = await Promise.all([
+  const [requests, clinics, activity, packages] = await Promise.all([
     listAccessRequestsForPlatform({ db }),
     listClinicsOverview(db),
     listPlatformActivity({ db }, 20),
+    readClinicPackages({ db }),
   ]);
+  const packageOf = new Map(packages.map((p) => [p.tenantId, p] as const));
   const open = requests.filter((r) => !r.contactedAt).length;
   const live = clinics.filter((c) => !c.offboardedAt);
-  const packages = await listClinicPackages(db, live.map((c) => c.tenantId));
+  const entitlements = await listClinicPackages(db, live.map((c) => c.tenantId));
+  const openClinics = clinics.filter((c) => !c.offboardedAt).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const demoClinics = clinics.filter((c) => !c.offboardedAt && c.plan?.demoClinic === true).map((c) => ({ tenantId: c.tenantId, name: c.name }));
+  const emailOn = emailProviderName() !== "none";
 
   return (
     <>
@@ -63,7 +100,41 @@ export default async function PlatformPage() {
         />
 
         <Panel title="Create a clinic" description="Creates the clinic account and an invitation for its owner. Do this once the data processing agreement is signed." className="mb-6">
-          <CreateClinicForm />
+          <CreateClinicForm emailOn={emailOn} />
+        </Panel>
+
+        <Panel title="Trials and drafting limits" description={TRIAL_COPY.platformDescription} className="mb-6">
+          <TrialForms clinics={openClinics} />
+        </Panel>
+
+        <Panel
+          title="Packages"
+          description="A clinic's package: price, reports included a month and the price of each extra report (all ex VAT). The clinic sees it on its Plan & usage page. A report counts when its answers are first drafted, or when it is approved if nothing needed drafting. Every change is recorded here and in the clinic's own activity."
+          className="mb-6"
+        >
+          <PackageForm clinics={openClinics} today={ukDateOf(new Date())} />
+          <p className="mt-4 text-sm">
+            <Link href="/app/platform/usage" className="font-medium text-teal-700 underline-offset-4 hover:underline">
+              Usage across clinics
+            </Link>{" "}
+            <span className="text-slate-600">– reports, drafting calls, tokens, estimated drafting cost and margin per month.</span>
+          </p>
+        </Panel>
+
+        <Panel
+          title="Demo clinics"
+          description="A demo clinic holds made-up data only and otherwise works like a customer's clinic. Its pages show “Demo clinic – made-up data only”, every preview, document and copied answer carries a demonstration notice, and its members may approve with made-up PH-DEMO numbers (a real clinic refuses them). Only ClinForms staff can switch this, here or with npm run admin:set-demo-clinic. Every change is recorded."
+          className="mb-6"
+        >
+          <DemoClinicForm clinics={openClinics} demoClinics={demoClinics} />
+        </Panel>
+
+        <Panel
+          title="Owner password reset"
+          description="For a clinic owner who cannot reset their password by email and has no other owner or administrator to create a link for them. The link is not emailed: it is shown here once, for you to pass on after confirming who you are speaking to. It is recorded here and in the clinic's own activity. For a lost authenticator app as well, use the two-step reset script (docs/auth.md)."
+          className="mb-6"
+        >
+          <OwnerResetForm clinics={openClinics} />
         </Panel>
 
         <Panel
@@ -133,6 +204,9 @@ export default async function PlatformPage() {
                     <th className={TH}>Members</th>
                     <th className={TH}>Open invitations</th>
                     <th className={TH}>Last activity</th>
+                    <th className={TH}>Trial</th>
+                    <th className={TH}>Package</th>
+                    <th className={TH}>Drafting limits</th>
                     <th className={TH}>Status</th>
                   </tr>
                 </thead>
@@ -148,12 +222,20 @@ export default async function PlatformPage() {
                       </td>
                       <td className={TD}>{c.pendingInvitations}</td>
                       <td className={`${TD} whitespace-nowrap text-slate-600`}>{c.lastActivityAt ? activityTime(c.lastActivityAt) : "–"}</td>
+                      <td className={`${TD} text-slate-700`}>{trialText(c)}</td>
+                      <td className={`${TD} text-slate-700`}>{packageText(packageOf.get(c.tenantId))}</td>
+                      <td className={`${TD} whitespace-nowrap text-slate-700`}>{limitsText(c)}</td>
                       <td className={TD}>
                         {c.offboardedAt ? (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Closed {activityTime(c.offboardedAt)}</span>
                         ) : (
                           <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">Active</span>
                         )}
+                        {!c.offboardedAt && c.plan?.demoClinic ? (
+                          <span className="ml-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900" data-demo-clinic-status={c.tenantId}>
+                            Demo clinic
+                          </span>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -164,7 +246,7 @@ export default async function PlatformPage() {
         </Panel>
 
         <Panel
-          title="Packages"
+          title="Packages switched on"
           description={`What each open clinic can use. ${PACKAGE_LABELS.reports} is on for every clinic unless switched off here; ${PACKAGE_LABELS.clinic} is off until switched on. Switching off hides and blocks that part – nothing is deleted.`}
           className="mb-6"
         >
@@ -183,7 +265,7 @@ export default async function PlatformPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {live.map((c) => {
-                    const p = packages.get(c.tenantId);
+                    const p = entitlements.get(c.tenantId);
                     return (
                       <tr key={c.organizationId}>
                         <td className={`${TD} font-mono text-xs`}>{c.tenantId}</td>

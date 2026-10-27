@@ -15,13 +15,14 @@ import { AlertTriangle, Expand, Loader2, RefreshCw, ShieldCheck } from "lucide-r
 import { CONTENT_TYPES } from "../../../api/contract";
 import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
+import { demoOutputNotice } from "../../../core/demo-clinic";
 import { buildFormAnswers } from "../../../core/forms";
 import { isQuestionSet } from "../../../core/question-set";
 import type { FormDefinition, Report } from "../../../core/types";
 import { ApiError, api, type FileDownload } from "../../api-client";
-import { useStudioMode } from "../../host-hooks";
+import { useDemoClinic, useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
-import { DOCX_PREVIEW_OPTIONS, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
+import { DOCX_PREVIEW_OPTIONS, docxPageCss, loadPdfjsBrowser, renderDocxPreview } from "../../preview-libs";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, cn } from "../../primitives";
 import { DemoNoticeBar } from "../shared/demo-notice";
 import { WORDING } from "../../wording";
@@ -39,6 +40,7 @@ const DOCX_STYLES = `
 .medreport-docx-host .docx-wrapper { background: #e2e8f0; padding: 16px 16px 0; }
 .medreport-docx-host .docx-wrapper > section.docx { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18); margin-bottom: 16px; }
 .medreport-docx-host a { pointer-events: none; cursor: default; }
+${docxPageCss(".medreport-docx-host")}
 `;
 
 /* Renderers ------------------------------------------------------------------------------------- */
@@ -219,6 +221,7 @@ export function PreviewPanel({
   onPreviewed?: (warnings: string[]) => void;
 }) {
   const isForm = Boolean(report.form);
+  const demoClinic = useDemoClinic();
   // Portal questions: no file to fill – the summary PDF is rendered from the answers alone.
   const questionSet = isQuestionSet(report.form);
   const needsFile = isForm && !questionSet;
@@ -336,7 +339,12 @@ export function PreviewPanel({
         {signed ? <ShieldCheck className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
         <span className="flex-1">{signed ? "FINAL – approved by the clinician" : "DRAFT – awaiting clinician approval"}</span>
       </div>
-      {isForm ? <DemoNoticeBar notice={form?.demoNotice} /> : null}
+      {demoClinic ? (
+        // A demo clinic: every output carries a notice (the form's own, else the demo clinic notice).
+        <DemoNoticeBar notice={demoOutputNotice(isForm ? form : null, true)} label={form?.demoNotice && isForm ? "Demonstration form" : WORDING.demoClinic.label} />
+      ) : isForm ? (
+        <DemoNoticeBar notice={form?.demoNotice} />
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
           {questionSet ? WORDING.questionSet.previewNote : isForm ? NOTICES.originalLayout : "Built-in template (house layout)."}

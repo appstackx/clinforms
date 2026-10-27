@@ -28,7 +28,7 @@ const enc = (s: string) => new TextEncoder().encode(s);
 /** An RTF \uN control word (built so that no literal backslash-u escape appears in this source). */
 const U = (n: number) => `${"\\"}u${n}`;
 const doc = (body: string, head = "") => `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fswiss\\fcharset0 Arial;}{\\f1\\fnil\\fcharset2 Wingdings;}{\\f2\\froman\\fcharset2 Symbol;}{\\f3\\fnil\\fcharset2 Wingdings 2;}{\\f4\\froman\\fcharset204 Times New Roman Cyr;}}{\\colortbl;\\red255\\green0\\blue0;\\red217\\green226\\blue243;}${head}\n${body}}`;
-const convert = (rtf: string, opts: Partial<{ maxBytes: number; maxDepth: number; maxBlocks: number; maxInlines: number }> = {}): RtfConversionResult =>
+const convert = (rtf: string, opts: Partial<{ maxBytes: number; maxDepth: number; maxBlocks: number; maxInlines: number; maxTextBytes: number; maxInputBytes: number }> = {}): RtfConversionResult =>
   convertRtfToDocx(enc(rtf), { maxBytes: MAX, ...opts });
 
 function part(docx: Uint8Array, name: string): string {
@@ -428,8 +428,10 @@ test("giant input: linear time, block and size limits, the upload limit for the 
   assert.equal(rtfError(() => convert(`{\\rtf1 \\trowd\\cellx100 ${"\\intbl x\\cell\\row ".repeat(140_000)}}`)).code, "RTF_TOO_COMPLEX");
   assert.ok(Date.now() - started < 4000, `refusals took ${Date.now() - started} ms`);
 
-  // Lots of formatting groups on small text pieces: limited by pieces.
-  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`, { maxInlines: 100_000 })).code, "RTF_TOO_COMPLEX");
+  // Lots of formatting groups on small text pieces: limited by pieces. (2.6 MB: the converter's own size rule –
+  // 10/2026, 2.5 MB besides pictures – would refuse it first, so it is lifted here to reach the piece limit.)
+  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`, { maxInlines: 100_000, maxTextBytes: 3 * 1024 * 1024 })).code, "RTF_TOO_COMPLEX");
+  assert.equal(rtfError(() => convert(`{\\rtf1 ${"{\\b x}{\\i y}".repeat(220_000)}}`)).code, "RTF_TOO_LARGE", "…and by default refused as too large");
 
   // A converted file over the upload limit.
   assert.equal(rtfError(() => convert(doc("Some text\\par".repeat(200)), { maxBytes: 4000 })).code, "RTF_TOO_LARGE");
@@ -470,4 +472,46 @@ test("converted-form helpers: detection by name and type, the Word download name
   assert.equal(wordFileNameFor({ fileName: "Form.pdf", mimeType: "application/pdf" }), "Form.pdf");
   assert.equal(RTF_NOTE_PREFIX, "Converted from RTF: ");
   assert.equal(isRtfConversionNote("This PDF has no fillable fields"), false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Fix round 1 (B0-14): pictures (a provider's logo) are carried over
+ * ----------------------------------------------------------------------------------------------*/
+
+const PNG_1X1 = "89504e470d0a1a0a0000000d4948445200000001000000010806000000" + "1f15c4890000000d49444154789c6360f80f0000010100005c1b2a0d0000000049454e44ae426082";
+const JPEG_FAKE = `ffd8ffe0${"00".repeat(140)}ffd9`;
+
+test("fix round 1: a PNG or JPEG picture – inline, in a picture frame, in a text box – is carried over as a picture; WMF / EMF are noted", () => {
+  const r = convert(
+    doc(
+      [
+        `A{\\*\\shppict{\\pict\\picwgoal1440\\pichgoal720\\pngblip ${PNG_1X1}}}{\\nonshppict{\\pict\\wmetafile8 0100}}`,
+        `B{\\pict\\picw10\\pich20\\jpegblip ${JPEG_FAKE}}`,
+        `C{\\shp{\\*\\shpinst\\shpleft0\\shptop0\\shpright2880\\shpbottom1440{\\sp{\\sn pib}{\\sv {\\pict\\pngblip ${PNG_1X1}}}}}{\\shprslt {\\pict\\wmetafile8 01}}}`,
+        `D{\\shp{\\*\\shpinst{\\sp{\\sn pib}{\\sv {\\pict\\emfblip 0100}}}}}`,
+        `E{\\shp{\\*\\shpinst{\\shptxt {\\*\\shppict{\\pict\\pngblip ${PNG_1X1}}}}}}F\\par`,
+      ].join(""),
+    ),
+  );
+  assert.deepEqual(texts(body(r)), ["ABCDEF"], "the text around them is as before");
+  assert.deepEqual([r.stats.picturesKept, r.stats.pictures, r.stats.shapes], [4, 1, 0], "the EMF picture frame is a picture left out, not a text box");
+  assert.deepEqual(r.notes, ["Converted from RTF: 1 picture (such as a logo) could not be carried over and was left out."]);
+  const zip = new PizZip(r.docx);
+  assert.ok(zip.file("word/media/image1.png") && zip.file("word/media/image2.jpeg") && zip.file("word/media/image3.png") && zip.file("word/media/image4.png"));
+  const xml = body(r);
+  assert.match(xml, /<wp:extent cx="914400" cy="457200"\/>/, "1 inch × half an inch from \\picwgoal / \\pichgoal");
+  assert.match(xml, /<wp:extent cx="95250" cy="190500"\/>/, "10 × 20 pixels at 96 dpi");
+  assert.match(xml, /<wp:extent cx="1828800" cy="914400"\/>/, "a picture frame at the frame's size");
+  assert.match(zip.file("[Content_Types].xml")!.asText(), /<Default Extension="png" ContentType="image\/png"\/><Default Extension="jpeg" ContentType="image\/jpeg"\/>/);
+  assert.match(zip.file("word/_rels/document.xml.rels")!.asText(), /Id="rIdImg1" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="media\/image1\.png"/);
+  wellFormed(xml);
+});
+
+test("fix round 1: a broken or oversized picture is left out and noted; a form without pictures converts to the same bytes", () => {
+  const big = `89504e470d0a1a0a0000000d49484452${"00".repeat(1_000_100)}`;
+  const r = convert(doc(`A{\\pict\\pngblip 89504e47}B{\\pict\\pngblip ${big}}C\\par`), { maxTextBytes: 4 * 1024 * 1024, maxBytes: 8 * 1024 * 1024 });
+  assert.deepEqual([r.stats.picturesKept, r.stats.pictures], [0, 2]);
+  assert.equal(new PizZip(r.docx).file("word/media/image1.png"), null);
+  const plain = doc("No pictures here\\par");
+  assert.doesNotMatch(body(convert(plain)), /wp:|drawing/);
 });

@@ -33,6 +33,7 @@ import { WORDING } from "../../core/wording";
 import { HEADERS, LaunchRequestSchema, type LaunchResponse } from "../contract";
 import type { MedreportDeps } from "../deps";
 import { HttpError, json, logEvent, parseBody, timingSafeEqualString, type MedreportHandler } from "../http";
+import { assertTenantMayCreate } from "../../auth/clinic-access";
 
 function partnerKeyRefused(): HttpError {
   return new HttpError(401, WORDING.server.access.partnerKeyTitle, {
@@ -64,6 +65,7 @@ export const TENANT_LAUNCH_PATH = "/app/studio/new";
 
 export const handleLaunch: MedreportHandler = async (req, _ctx, deps) => {
   const { tenantId, keyId } = await launchTenant(req.headers.get(HEADERS.partnerKey)?.trim(), deps);
+  if (tenantId !== DEMO_TENANT_ID) await assertTenantMayCreate(deps, tenantId, "launch"); // 10/2026: trial ended → 403
 
   const parsed = await parseBody(req, LaunchRequestSchema, { maxBytes: 16_000 });
   if (!parsed.ok) return parsed.response;

@@ -18,6 +18,7 @@ import "server-only";
  * Owner: integration agent.
  */
 import { assertActorConnector, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { readNotesUpload } from "../../connectors/file-import/connector";
 import { MAX_IMPORT_CHARS } from "../../connectors/file-import/format";
 import { callConnector, requireConnector } from "../../connectors/handler-support";
@@ -27,6 +28,7 @@ import { auditNotesImported, bundleResponseFor, takeFileImportSlot } from "./fil
 
 export const handleFileImportRead: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "notes"); // 10/2026: nothing new once a clinic's trial has ended
   const connector = requireConnector(deps, "file-import", { tenantId: actor.tenantId });
   assertActorConnector(actor, connector.id);
   await takeFileImportSlot(req, deps, actor);

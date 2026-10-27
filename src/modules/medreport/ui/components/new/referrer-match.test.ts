@@ -45,3 +45,33 @@ test("a form used once for another purpose does not replace the referrer's own f
   assert.equal(m?.form.id, "hp");
   assert.equal(m?.reason, "similar_name");
 });
+
+test("fix round 1 (B0-20): remembered per referrer and kind of report; the note names each provider, neutrally", async () => {
+  const { formChoiceNote, notesReportKind, reportKindOf } = await import("./referrer-match");
+  const titled = (id: string, provider: string, title: string) => ({ ...form(id, provider), title, status: "confirmed" }) as unknown as FormDefinition;
+  const medcareIa = titled("mc-ia", "Medcare", "Initial Assessment Report");
+  const medcareEots = titled("mc-eots", "Medcare", "Final Discharge Report");
+  const tenBridgeIa = titled("tb-ia", "10Bridge", "Initial Assessment Report");
+  const forms = [medcareIa, medcareEots, tenBridgeIa];
+  assert.equal(reportKindOf("INITIAL ASSESSMENT REPORT"), "initial");
+  assert.equal(reportKindOf("Physiotherapy Assessment Report"), "initial");
+  assert.equal(reportKindOf("FINAL ASSESSMENT REPORT"), "discharge");
+  assert.equal(reportKindOf("Discharge Report"), "discharge");
+  assert.equal(reportKindOf("Treatment Progress Report"), null);
+  assert.equal(notesReportKind({ episodeStatus: "discharged", notes: [] }), "discharge");
+  assert.equal(notesReportKind({ episodeStatus: "open", notes: [{ type: "initial_assessment" }] } as never), "initial");
+
+  const party = { name: "Harbourside Case Management (fictional)" };
+  // The IA form remembered for this referrer is never pre-selected for notes that run to discharge.
+  assert.equal(matchReferrerForm(party, forms, "mc-ia", "discharge"), null);
+  assert.deepEqual(matchReferrerForm(party, forms, "mc-ia", "initial"), { form: medcareIa, reason: "remembered" });
+  assert.deepEqual(matchReferrerForm(party, forms, "mc-ia", null), { form: medcareIa, reason: "remembered" });
+  // The provider is named; another form chosen this time is said plainly, not as a warning.
+  const match = { form: medcareIa, reason: "remembered" as const };
+  assert.equal(formChoiceNote({ party, match, selected: medcareIa, kind: "initial" }), "Last time, Harbourside Case Management (fictional)'s case used Medcare's “Initial Assessment Report”. These notes cover the initial assessment.");
+  assert.equal(
+    formChoiceNote({ party, match, selected: tenBridgeIa, kind: null }),
+    "Last time, Harbourside Case Management (fictional)'s case used Medcare's “Initial Assessment Report”. You have chosen 10Bridge's “Initial Assessment Report” this time.",
+  );
+  assert.doesNotMatch(formChoiceNote({ party, match, selected: medcareEots, kind: "discharge" }), /not .*own form/);
+});

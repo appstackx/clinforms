@@ -81,6 +81,15 @@ const nextConfig = {
   // No `x-powered-by: Next.js` header on responses.
   poweredByHeader: false,
   skipTrailingSlashRedirect: true,
+  experimental: {
+    // pdfkit (under @react-pdf/renderer) opens its default Helvetica with a runtime require that file tracing
+    // cannot see, so without this every PDF render fails on Vercel with "Cannot find module …/Helvetica.cjs".
+    // Keep the list in step with the routes that render PDFs (route.js.nft.json naming pdfkit.node.mjs).
+    outputFileTracingIncludes: {
+      "/api/reports/v1/render": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+      "/api/reports/v1/forms/fill-preview": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+    },
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
