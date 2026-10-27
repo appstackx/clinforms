@@ -839,9 +839,16 @@ export const FrozenConditionSchema = z.looseObject({
  * and add, a one-word or a punctuation change stay drafted text. `text` is the drafted text as first produced (the
  * paragraph's originalText, else its text when it was deleted); `by` and `at` say who deleted it, and when.
  */
+/**
+ * R1T-WC-01 (SAF-1; a W0 file, changed by the WC fix round as a listed exception): the most characters one tombstone
+ * holds. No drafted paragraph is near it; the review keeps a longer one as consecutive pieces (reducer.ts removeParagraph),
+ * and the store accepts a tombstone only as part of a drafted paragraph the change deletes (api/handlers/store-reports.ts).
+ */
+export const DRAFT_TOMBSTONE_MAX_CHARS = 8000;
+
 export const DraftTombstoneSchema = z.object({
   paragraphId: z.string().min(1),
-  text: z.string(),
+  text: z.string().max(DRAFT_TOMBSTONE_MAX_CHARS),
   sourceIds: z.array(z.string()),
   by: ActorSchema,
   at: IsoDateTimeSchema,

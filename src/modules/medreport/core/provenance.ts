@@ -34,9 +34,11 @@
 import { canonicalize } from "./fingerprint";
 import { sentenceKey, splitSentences } from "./text/sentences";
 import { formatUkDate } from "./dates";
-import type { ActivityEntry, Actor, FormField, Gap, Paragraph, Report, ReportApprover, ReportSection } from "./types";
+import type { ActivityEntry, Actor, FormDefinition, FormField, Gap, Paragraph, Report, ReportApprover, ReportSection } from "./types";
 import { defineHook, hookEnabled } from "./validation/hooks";
 import { sectionKindForFillSource } from "./forms/fields";
+import { isGradeScale } from "./forms/answer-shape";
+import { issueDetails } from "./issue-state";
 
 export const DRAFT_RESIDUE_HOOK = defineHook("draft-residue");
 export const CLINICIAN_ORIGIN_HOOK = defineHook("clinician-origin-skip");
@@ -181,14 +183,64 @@ function isOpinionGap(gap: Pick<Gap, "id" | "kind">): boolean {
   return gap.id.endsWith("-physio") || (gap.kind !== undefined && OPINION_GAP_KINDS.has(gap.kind));
 }
 
+/** A form field as the review rules read it (the map's field; answerType and options where the caller has them). */
+export type BoxField = Pick<FormField, "id" | "fillSource" | "guidance" | "label"> & Partial<Pick<FormField, "answerType" | "options" | "required" | "section">>;
+
 export interface BoxContext {
   /** The referrer form's fields (form reports): the boxes as the report factory makes them (factoryBoxOf). */
-  fields?: ReadonlyArray<Pick<FormField, "id" | "fillSource" | "guidance" | "label">> | null;
+  fields?: ReadonlyArray<BoxField> | null;
   /**
    * The boxes as the report factory makes them – the template's sections (formToTemplate(form) for a form report, the
    * built-in template otherwise): key, kind and title. Read before `fields`.
    */
   boxes?: ReadonlyArray<Pick<ReportSection, "key" | "kind" | "title">> | null;
+}
+
+/*
+ * R1T-WC-02 (SEC-2): the lookups the rules make once per box, per gap and per paragraph are indexed once per array (the
+ * report's sections, gaps and a box's paragraphs are immutable – every edit makes new arrays), never searched again for
+ * every element: a body of 20,000 paragraphs or gaps costs linear time, not quadratic.
+ */
+const byIdCache = new WeakMap<object, Map<string, unknown>>();
+function indexBy<T>(list: readonly T[] | null | undefined, keyOf: (x: T) => string): Map<string, T> {
+  if (!list) return new Map();
+  let m = byIdCache.get(list) as Map<string, T> | undefined;
+  if (!m) {
+    m = new Map();
+    for (const x of list) {
+      const k = keyOf(x);
+      if (!m.has(k)) m.set(k, x);
+    }
+    byIdCache.set(list, m as Map<string, unknown>);
+  }
+  return m;
+}
+/** The first section with this key (as Array.find would give it), indexed once per sections array. */
+export function sectionByKey<S extends Pick<ReportSection, "key">>(sections: readonly S[] | null | undefined, key: string): S | undefined {
+  return indexBy(sections, (s) => s.key).get(key);
+}
+/** The first paragraph with this id (as Array.find would give it), indexed once per paragraphs array. */
+export function paragraphById<P extends Pick<Paragraph, "id">>(paragraphs: readonly P[] | null | undefined, id: string): P | undefined {
+  return indexBy(paragraphs, (p) => p.id).get(id);
+}
+const gapsByBoxCache = new WeakMap<object, Map<string, Gap[]>>();
+/** A report's gaps by box, built once per gaps array. */
+function gapsOfBox(gaps: readonly Gap[] | null | undefined, key: string): readonly Gap[] {
+  if (!gaps || gaps.length === 0) return [];
+  let m = gapsByBoxCache.get(gaps);
+  if (!m) {
+    m = new Map();
+    for (const g of gaps) {
+      const list = m.get(g.sectionKey);
+      if (list) list.push(g);
+      else m.set(g.sectionKey, [g]);
+    }
+    gapsByBoxCache.set(gaps, m);
+  }
+  return m.get(key) ?? [];
+}
+function fieldOf(ctx: BoxContext | null | undefined, key: string): BoxField | undefined {
+  return ctx?.fields ? indexBy(ctx.fields, (f) => f.id).get(key) : undefined;
 }
 
 /**
@@ -198,12 +250,47 @@ export interface BoxContext {
  * clinic's own map or the built-in template says.
  */
 export function factoryBoxOf(ctx: BoxContext | null | undefined, key: string): Pick<ReportSection, "key" | "kind" | "title"> | null {
-  const made = ctx?.boxes?.find((b) => b.key === key);
+  const made = ctx?.boxes ? indexBy(ctx.boxes, (b) => b.key).get(key) : undefined;
   if (made) return made;
-  const field = ctx?.fields?.find((f) => f.id === key);
+  const field = fieldOf(ctx, key);
   if (!field) return null;
   const kind = sectionKindForFillSource(field.fillSource);
   return kind ? { key, kind, title: field.label } : null;
+}
+
+/**
+ * The box is an opinion box (the map's fill source clinician_opinion, or – with no map – the section's own kind): drafting
+ * never answers one (ai/form-drafting-answers.ts decideStructuredAnswer holds every drafted opinion back), so drafted
+ * text in it never vouches for its answer (R1T-WC-03).
+ */
+export function isOpinionBox(section: Pick<ReportSection, "key" | "kind">, ctx?: BoxContext | null): boolean {
+  if (section.kind === "clinician_opinion") return true;
+  const field = fieldOf(ctx, section.key);
+  if (field) return field.fillSource.kind === "clinician_opinion";
+  return factoryBoxOf(ctx, section.key)?.kind === "clinician_opinion";
+}
+
+/**
+ * The physiotherapist's own choice on each report (a staff-entry box whose guidance says the physiotherapist chooses it,
+ * core/forms/record-paths.ts recordSourceOf "physio_choice"): neither the records nor drafting ever answer it, so an
+ * answer no one's stamp vouches for is someone's entry (R1T-WC-03), never "from the records".
+ */
+export function isPhysioChoiceBox(ctx: BoxContext | null | undefined, key: string): boolean {
+  const field = fieldOf(ctx, key);
+  return Boolean(field && field.fillSource.kind === "registration" && field.fillSource.path === "staff.entry" && /\bchosen by the (?:physiotherapist|clinician)\b/i.test(field.guidance ?? ""));
+}
+
+/**
+ * R1T-WC-09: a drafted question answered on a printed scale of degree (core/forms/answer-shape.ts isGradeScale – "0 … 10",
+ * "Grade 1 / 2 / 3", "None / Mild / Severe"), which only a clinician grades (B3-15: drafting never ticks one). It is a
+ * clinician box whatever kind of question drafting raised about it ("band" when the notes gave a grade, "record_value"
+ * when they gave none): a staff entry there is a proposal the approver adopts. Read from the form map (`ctx.fields` with
+ * the field's answer type and options); without them, the box's "band" question still makes it one (OPINION_GAP_KINDS).
+ */
+export function isGradeScaleBox(ctx: BoxContext | null | undefined, key: string): boolean {
+  const field = fieldOf(ctx, key);
+  if (!field || field.fillSource.kind !== "notes_narrative" || field.answerType !== "single_choice" || !Array.isArray(field.options)) return false;
+  return isGradeScale({ label: field.label, options: field.options, answerType: field.answerType });
 }
 
 /**
@@ -220,13 +307,15 @@ export function factoryBoxOf(ctx: BoxContext | null | undefined, key: string): P
 export function isClinicianBox(report: Pick<Report, "gaps">, section: Pick<ReportSection, "key" | "kind" | "title">, ctx?: BoxContext): boolean {
   if (clinicianBoxAsHeld(report, section)) return true;
   const made = factoryBoxOf(ctx, section.key);
-  return Boolean(made && (made.kind !== section.kind || made.title !== section.title) && clinicianBoxAsHeld(report, { key: section.key, kind: made.kind, title: made.title }));
+  if (made && (made.kind !== section.kind || made.title !== section.title) && clinicianBoxAsHeld(report, { key: section.key, kind: made.kind, title: made.title })) return true;
+  // R1T-WC-09: a printed grade scale is graded by the clinician only, whatever question drafting raised about it.
+  return section.kind !== "declaration" && isGradeScaleBox(ctx, section.key);
 }
 
 function clinicianBoxAsHeld(report: Pick<Report, "gaps">, section: Pick<ReportSection, "key" | "kind" | "title">): boolean {
   if (section.kind === "declaration") return false;
   if (section.kind === "clinician_opinion") return true;
-  const gaps = (report.gaps ?? []).filter((g) => g.sectionKey === section.key);
+  const gaps = gapsOfBox(report.gaps, section.key);
   if (gaps.some((g) => g.id.endsWith("-physio"))) return true;
   if (OPINION_BOX_WORDING.test(section.title)) return true;
   // A record value is never a clinical decision because of a gap about it.
@@ -240,7 +329,7 @@ function clinicianBoxAsHeld(report: Pick<Report, "gaps">, section: Pick<ReportSe
  * anyone's.
  */
 export function isClinicianGap(report: Pick<Report, "gaps" | "sections"> & Partial<Pick<Report, "approver">>, gap: Pick<Gap, "id" | "sectionKey" | "kind">, ctx?: BoxContext): boolean {
-  const section = report.sections.find((s) => s.key === gap.sectionKey);
+  const section = sectionByKey(report.sections, gap.sectionKey);
   // A report from an earlier build (no approver): that build's rule – an opinion box's gaps and the physiotherapist's choice.
   if (!report.approver) return gap.id.endsWith("-physio") || section?.kind === "clinician_opinion";
   if (isOpinionGap(gap)) return true;
@@ -304,10 +393,19 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
   if (!approver || !isClinicianBox(report, section, ctx)) return null;
   if (adoptionCurrent(section, approver)) return null;
   const by: Array<Pick<Actor, "memberId" | "name" | "role">> = [];
+  // R1T-WC-02: who is already listed, by member id and by name and role (a Set – never a search per paragraph).
+  const listed = new Set<string>();
   let unstamped = false;
   const add = (stamp: Pick<Actor, "memberId" | "name" | "role"> | undefined) => {
     if (!stamp) unstamped = true;
-    else if (!sameMember(stamp, approver) && !by.some((b) => sameMember(b, stamp) || (b.name === stamp.name && b.role === stamp.role))) by.push(stamp);
+    else if (!sameMember(stamp, approver)) {
+      const idKey = stamp.memberId && stamp.memberId !== UNKNOWN_MEMBER ? `id:${stamp.memberId}` : null;
+      const nameKey = `name:${stamp.role}:${stamp.name}`;
+      if ((idKey && listed.has(idKey)) || listed.has(nameKey)) return;
+      if (idKey) listed.add(idKey);
+      listed.add(nameKey);
+      by.push(stamp);
+    }
   };
   for (const p of section.paragraphs) {
     if (!isPersonParagraph(p) || !p.text.trim()) continue;
@@ -319,7 +417,7 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
   if (answerSet(section.answer)) {
     if (section.answerBy) {
       if (!sameMember(section.answerBy, approver)) add(section.answerBy);
-    } else if (!answerDraftedOrFromRecords(report, section)) {
+    } else if (!answerDraftedOrFromRecords(report, section, ctx)) {
       // harden-WC (check2-WC major B): an answer nobody's stamp vouches for, which neither drafting nor the records
       // gave (the review stamps every answer a person sets) – someone's entry, waiting for the approver.
       add(undefined);
@@ -330,6 +428,43 @@ export function pendingProposal(report: Pick<Report, "approver" | "gaps">, secti
   const list = [...by.map((b) => enteredByName(b)), ...(unstamped ? [enteredByName(null)] : [])];
   const names = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : (list[0] ?? "");
   return { by, names, stale, summary: names ? `Entered by ${names}` : `Changed since ${approver.name} last confirmed it` };
+}
+
+/**
+ * R1T-WC-08: what someone other than the approver typed into a box that is not a clinician box and that cites nothing
+ * (a staff answer in a narrative box – UNCITED_PARAGRAPH blocks it and nobody may acknowledge that), or null. The
+ * approver's remedy is the same audited "Adopt" as in a clinician box (adoptBox): their words keep "Entered by Pat
+ * Morgan (staff)", the label adds "– adopted by Sarah Reid", and the approver takes them as their own (origin
+ * "clinician", no citation needed) – never "These are my own words", which is for the approver's own rewrites. A
+ * paragraph that still keeps drafted residue is not offered (it stays drafted text). Only on a report with an approver.
+ */
+export function uncitedOthersText(report: Pick<Report, "approver" | "gaps">, section: ReportSection, ctx?: BoxContext): Proposal | null {
+  const approver = approverOf(report);
+  if (!approver || section.kind === "declaration" || section.kind === "from_records" || isClinicianBox(report, section, ctx)) return null;
+  if (adoptionCurrent(section, approver)) return null;
+  const by: Array<Pick<Actor, "memberId" | "name" | "role">> = [];
+  const listed = new Set<string>();
+  for (const p of section.paragraphs) {
+    if (!othersUncitedParagraph(section, p, approver)) continue;
+    const stamp = p.by ?? { memberId: UNKNOWN_MEMBER, name: "staff", role: "staff" as const };
+    const k = `${stamp.memberId}|${stamp.name}|${stamp.role}`;
+    if (listed.has(k)) continue;
+    listed.add(k);
+    by.push(stamp);
+  }
+  if (by.length === 0) return null;
+  const list = by.map((b) => enteredByName(b));
+  const names = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+  return { by, names, stale: false, summary: `Entered by ${names}` };
+}
+
+/** A person's paragraph someone other than the approver typed, citing nothing, with no drafted residue (uncitedOthersText). */
+export function othersUncitedParagraph(section: Pick<ReportSection, "paragraphs" | "tombstones">, p: Paragraph, approver: ReportApprover | null): boolean {
+  if (!approver || !p.text.trim() || p.sourceIds.length > 0) return false;
+  if (p.origin !== "edited") return false;
+  if (p.origin === "edited" && p.originalText !== undefined) return false;
+  if (p.by && sameMember(p.by, approver)) return false;
+  return paragraphResidue(section, p).length === 0;
 }
 
 /** A structured answer that says something (not blank, not an empty table). */
@@ -347,15 +482,21 @@ export function answerSet(answer: ReportSection["answer"]): boolean {
  * ai/assemble.ts). Anything else unstamped is someone's entry: the review stamps every answer a person sets
  * (Section.answerBy).
  */
-function answerDraftedOrFromRecords(report: Pick<Report, "approver" | "gaps">, section: Pick<ReportSection, "key" | "kind" | "paragraphs">): boolean {
-  if (section.kind === "from_records") return true;
+function answerDraftedOrFromRecords(report: Pick<Report, "approver" | "gaps">, section: Pick<ReportSection, "key" | "kind" | "paragraphs">, ctx?: BoxContext): boolean {
+  const physioChoice = isPhysioChoiceBox(ctx, section.key);
+  if (section.kind === "from_records" && !physioChoice) return true;
   const approver = approverOf(report);
+  // R1T-WC-03 (SAF-2): drafting never answers an opinion box (it holds every drafted opinion back), and nothing but a
+  // person answers the physiotherapist's choice, so neither drafted text nor an open question there vouches for an answer
+  // no one's stamp vouches for – it is someone's entry, a proposal the approver adopts. Only the approver's own words, or
+  // a question of the box they settled, back it.
+  const opinion = physioChoice || isOpinionBox(section, ctx);
   // The clinician's own words in the box (origin "clinician": only the approver writes it – the store refuses it from
   // anyone else) back its answer as they always have.
   const backs = (p: ReportSection["paragraphs"][number]) =>
-    p.origin === "ai" || (p.origin === "edited" && p.originalText !== undefined) || (p.origin === "clinician" && (!p.by || sameMember(p.by, approver)));
+    (!opinion && (p.origin === "ai" || (p.origin === "edited" && p.originalText !== undefined))) || (p.origin === "clinician" && (!p.by || sameMember(p.by, approver)));
   if (section.paragraphs.some((p) => p.text.trim() !== "" && backs(p))) return true;
-  return (report.gaps ?? []).some((g) => g.sectionKey === section.key && (!g.resolution || (Boolean(g.resolution.by) && sameMember(g.resolution.by, approver))));
+  return gapsOfBox(report.gaps, section.key).some((g) => (!opinion && !g.resolution) || (Boolean(g.resolution?.by) && sameMember(g.resolution?.by, approver)));
 }
 
 const sameJson = (a: unknown, b: unknown) => canonicalize(a ?? null) === canonicalize(b ?? null);
@@ -372,18 +513,18 @@ const sameJson = (a: unknown, b: unknown) => canonicalize(a ?? null) === canonic
 export function approverEntryLost(before: Report, after: Report, key: string, ctx?: BoxContext): boolean {
   const approver = approverOf(after);
   if (!approver || !before.approver || !sameMember(before.approver, approver)) return false;
-  const was = before.sections.find((s) => s.key === key);
+  const was = sectionByKey(before.sections, key);
   if (!was || !isClinicianBox(before, was, ctx)) return false;
-  const now = after.sections.find((s) => s.key === key);
+  const now = sectionByKey(after.sections, key);
   const whole =
     adoptionCurrent(was, approver) ||
-    (before.gaps ?? []).some((g) => g.sectionKey === key && g.resolution && !g.resolution.notApplicable && sameMember(g.resolution.by, approver));
+    gapsOfBox(before.gaps, key).some((g) => g.resolution && !g.resolution.notApplicable && sameMember(g.resolution.by, approver));
   let lost = false;
   for (const p of was.paragraphs) {
     if (!p.text.trim()) continue;
     const own = isPersonParagraph(p) && (p.by ? sameMember(p.by, approver) : p.origin === "clinician");
     if (!whole && !own) continue;
-    const q = now?.paragraphs.find((x) => x.id === p.id);
+    const q = now ? paragraphById(now.paragraphs, p.id) : undefined;
     if (!q || q.text !== p.text || !sameJson(q.sourceIds, p.sourceIds)) {
       lost = true;
       break;
@@ -400,7 +541,8 @@ export function approverEntryLost(before: Report, after: Report, key: string, ct
  * approver-only dispositions made by anyone else are removed; "clinician" text anyone else wrote becomes a proposal
  * ("edited", or "staff" in a record box); clinician gaps someone else settled open again. Pure.
  */
-export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: string } | null | undefined) => boolean): Pick<Report, "sections" | "gaps" | "flags"> {
+export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: string } | null | undefined) => boolean, ctx: RuleContext = {}): Pick<Report, "sections" | "gaps" | "flags"> {
+  const ruledOut = ruledOutByRule(report, ctx);
   const sections = report.sections.map((s): ReportSection => {
     const next: ReportSection = { ...s };
     if (next.accepted?.length) {
@@ -409,7 +551,7 @@ export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: stri
       else delete next.accepted;
     }
     if (next.adoptedBy && !keeps(next.adoptedBy.by)) delete next.adoptedBy;
-    if (next.disposition && !keeps(next.disposition.by) && (next.disposition.kind === "applies_anyway" || isClinicianBox(report, s))) delete next.disposition;
+    if (next.disposition && !keeps(next.disposition.by) && (next.disposition.kind === "applies_anyway" || isClinicianBox(report, s, ctx))) delete next.disposition;
     next.paragraphs = s.paragraphs.map((p): Paragraph => {
       const q: Paragraph = { ...p };
       delete q.ackReason;
@@ -421,7 +563,8 @@ export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: stri
   });
   const voided = { ...report, sections };
   const gaps = report.gaps.map((g) => {
-    if (!g.resolution || g.resolution.notApplicable || keeps(g.resolution.by) || !isClinicianGap(voided, g)) return g;
+    // R1T-WC-05: "not applicable" stands only where the box really is ruled out (ruledOutByRule), never on a claim.
+    if (!g.resolution || (g.resolution.notApplicable && ruledOut.has(g.sectionKey)) || keeps(g.resolution.by) || !isClinicianGap(voided, g, ctx)) return g;
     const open = { ...g };
     delete open.resolution;
     return open;
@@ -433,6 +576,38 @@ export function voidDecisionsNotBy(report: Report, keeps: (by: { memberId?: stri
     return open;
   });
   return { sections, gaps, flags };
+}
+
+/** BoxContext plus the form map itself, for the issue state's reading of the boxes (ruledOutByRule). */
+export interface RuleContext extends BoxContext {
+  /** The referrer's form map (form reports), as the issue state reads it (core/issue-state.ts issueDetails). */
+  form?: Pick<FormDefinition, "fields"> | null;
+}
+
+const ruledOutCache = new WeakMap<object, { form: unknown; keys: Set<string> }>();
+
+/**
+ * R1T-WC-05 (SAF-4): the boxes a rule rules out – their condition as the server reads it (core/issue-state.ts: the form
+ * map's reading for a report of this release, the conditions frozen when it was created otherwise) or a session the
+ * patient did not attend – never a person's "not applicable" decision, and never a box the approver chose to print
+ * anyway. Only there may a question about the box be settled as "not applicable" (gaps.ts settleConditionalGaps) by
+ * anyone: everywhere else such a resolution is checked like any other (a clinician gap is the approver's). Worked out once
+ * per report (the report is immutable).
+ */
+export function ruledOutByRule(report: Report, ctx: RuleContext = {}): ReadonlySet<string> {
+  const form = ctx.form ?? null;
+  const hit = ruledOutCache.get(report);
+  if (hit && hit.form === form) return hit.keys;
+  const keys = new Set<string>();
+  try {
+    for (const box of issueDetails(report, form)) {
+      if (box.state.kind === "not_applicable" && (box.state.reason === "condition" || box.state.reason === "session_not_attended")) keys.add(box.key);
+    }
+  } catch {
+    // A report the issue state cannot read rules nothing out: every question stays someone's to settle.
+  }
+  ruledOutCache.set(report, { form, keys });
+  return keys;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -449,6 +624,24 @@ export const SHORT_SENTENCE_TOKENS = 4;
  * drafted residue.
  */
 export const RESIDUE_WINDOW_GROWTH = 1.5;
+/**
+ * R1T-WC-01 (SAF-1): the most words of one drafted sentence a residue window is looked for with. A longer drafted
+ * "sentence" – a paragraph with no full stop, a deleted paragraph thousands of words long – counts as runs of at most
+ * this many words, each read like a sentence of its own (stricter, not looser: a text that keeps most of such a
+ * sentence keeps most of one of its runs). No sentence a draft writes is this long.
+ */
+export const RESIDUE_MAX_SENTENCE_TOKENS = 60;
+/**
+ * R1T-WC-01: the most drafted sentences one box's residue check reads. A box with more (no draft writes that many; a
+ * forged body may) reads every person's paragraph in it as drafted throughout – the strict reading, never a looser one.
+ */
+export const RESIDUE_MAX_DRAFTED_SENTENCES = 2000;
+/**
+ * R1T-WC-01: the word steps one paragraph's residue check may take (each drafted sentence: its words, plus two passes
+ * over the paragraph when it could match at all). Beyond it the paragraph is drafted throughout (the strict reading);
+ * the same body always gives the same answer, on the client and the server. Real boxes use well under 1% of it.
+ */
+export const RESIDUE_WORK_BUDGET = 4_000_000;
 
 interface Token {
   t: string;
@@ -458,7 +651,7 @@ interface Token {
 
 function tokens(text: string): Token[] {
   const out: Token[] = [];
-  const re = /[A-Za-z0-9\u00C0-\u024F]+/g;
+  const re = /[A-Za-z0-9À-ɏ]+/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) out.push({ t: m[0].toLowerCase(), start: m.index, end: m.index + m[0].length });
   return out;
@@ -469,84 +662,193 @@ export interface Span {
   end: number;
 }
 
+/**
+ * A box's drafted sentences, each once (a Set – never a search per sentence, R1T-WC-02), with the one drafted paragraph
+ * that alone gives it (null: an edited paragraph's drafted wording, a tombstone, or two drafted paragraphs give it).
+ * Worked out once per paragraphs array and tombstones array (the report is immutable).
+ */
+interface DraftedSet {
+  tombstones: unknown;
+  sentences: Map<string, string | null>;
+}
+const draftedCache = new WeakMap<object, DraftedSet>();
+
+function draftedSetOf(section: Pick<ReportSection, "paragraphs" | "tombstones">): DraftedSet {
+  const hit = draftedCache.get(section.paragraphs);
+  if (hit && hit.tombstones === section.tombstones) return hit;
+  const sentences = new Map<string, string | null>();
+  const add = (text: string, owner: string | null) => {
+    for (const s of splitSentences(text, "prose")) {
+      if (!sentences.has(s.text)) sentences.set(s.text, owner);
+      else if (sentences.get(s.text) !== owner) sentences.set(s.text, null);
+    }
+  };
+  for (const p of section.paragraphs) {
+    if (p.origin === "ai") add(p.text, p.id);
+    else if (p.origin === "edited" && p.originalText !== undefined) add(p.originalText, null);
+  }
+  for (const t of section.tombstones ?? []) add(t.text, null);
+  const set: DraftedSet = { tombstones: section.tombstones, sentences };
+  draftedCache.set(section.paragraphs, set);
+  return set;
+}
+
 /** The drafted sentences of a box: its drafted paragraphs, the drafted wording of edited ones, and tombstones. */
 export function draftedSentences(section: Pick<ReportSection, "paragraphs" | "tombstones">, opts: { exceptParagraphId?: string } = {}): string[] {
-  const texts: string[] = [];
-  for (const p of section.paragraphs) {
-    if (p.origin === "ai" && p.id !== opts.exceptParagraphId) texts.push(p.text);
-    else if (p.origin === "edited" && p.originalText !== undefined) texts.push(p.originalText);
-  }
-  for (const t of section.tombstones ?? []) texts.push(t.text);
   const out: string[] = [];
-  for (const text of texts) for (const s of splitSentences(text, "prose")) if (out.indexOf(s.text) < 0) out.push(s.text);
+  draftedSetOf(section).sentences.forEach((owner, text) => {
+    if (owner === null || owner !== opts.exceptParagraphId) out.push(text);
+  });
+  return out;
+}
+
+/** A drafted sentence's words as the runs a window is looked for with (RESIDUE_MAX_SENTENCE_TOKENS). */
+function runsOf(words: readonly string[]): string[][] {
+  if (words.length <= RESIDUE_MAX_SENTENCE_TOKENS) return [words.slice()];
+  const k = Math.ceil(words.length / RESIDUE_MAX_SENTENCE_TOKENS);
+  const size = Math.ceil(words.length / k);
+  const out: string[][] = [];
+  for (let i = 0; i < words.length; i += size) out.push(words.slice(i, i + size));
   return out;
 }
 
 /**
- * Where `all` reproduces the drafted words `dt` (m words): the shortest window, from m up to RESIDUE_WINDOW_GROWTH × m
- * words, that holds at least RESIDUE_THRESHOLD of them (each drafted word counted as often as the sentence has it) –
- * its best-scoring position, trimmed to its first and last drafted word – or null. Shortest first, so a kept drafted
- * sentence next to the person's own sentence never reaches into it. Sliding counts: O(words × window lengths).
+ * Where the text (its words as ids, `seq`) reproduces a drafted sentence of m words (`want`: how often each id is in
+ * it): the shortest window, from m up to RESIDUE_WINDOW_GROWTH × m words, that holds at least RESIDUE_THRESHOLD of them
+ * (each drafted word counted as often as the sentence has it) – its best-scoring position, trimmed to its first and
+ * last drafted word – or null. Shortest first, so a kept drafted sentence next to the person's own sentence never
+ * reaches into it.
+ * R1T-WC-01 (SAF-1): linear in the text. What a window holds only grows with it, so the shortest length that holds
+ * enough is found with two pointers in one pass (then the earliest best window of that length in one more) – the same
+ * window the earlier search tried every length from m to 1.5 m for, which was quadratic in the sentence's length.
+ * `have` is all zeros on entry and on return.
  */
-function residueWindow(all: readonly Token[], dt: readonly string[]): { start: number; end: number } | null {
-  const m = dt.length;
-  const want = new Map<string, number>();
-  for (const t of dt) want.set(t, (want.get(t) ?? 0) + 1);
-  const minLen = Math.min(m, all.length);
-  const maxLen = Math.min(all.length, Math.max(minLen, Math.ceil(m * RESIDUE_WINDOW_GROWTH)));
-  for (let len = minLen; len <= maxLen; len++) {
-    const have = new Map<string, number>();
-    let overlap = 0;
-    let best = -1;
-    let bestAt = -1;
-    for (let i = 0; i < all.length; i++) {
-      const t = all[i].t;
-      const c = have.get(t) ?? 0;
-      if (c < (want.get(t) ?? 0)) overlap += 1;
-      have.set(t, c + 1);
-      if (i >= len) {
-        const o = all[i - len].t;
-        const left = (have.get(o) ?? 0) - 1;
-        have.set(o, left);
-        if (left < (want.get(o) ?? 0)) overlap -= 1;
-      }
-      if (i >= len - 1 && overlap > best) {
-        best = overlap;
-        bestAt = i - len + 1;
-      }
+function residueWindow(seq: Int32Array, want: Int32Array, have: Int32Array, m: number): { start: number; end: number } | null {
+  const n = seq.length;
+  const minLen = Math.min(m, n);
+  const maxLen = Math.min(n, Math.max(minLen, Math.ceil(m * RESIDUE_WINDOW_GROWTH)));
+  const enough = (overlap: number) => overlap / m >= RESIDUE_THRESHOLD;
+  // 1. The shortest window anywhere that holds enough (it can only be extended to minLen, never needs to be shorter).
+  let shortest = Infinity;
+  let overlap = 0;
+  let l = 0;
+  let added = 0;
+  while (added < n) {
+    const id = seq[added];
+    if (have[id] < want[id]) overlap += 1;
+    have[id] += 1;
+    added += 1;
+    while (enough(overlap)) {
+      const len = added - l;
+      if (len < shortest) shortest = len;
+      const o = seq[l];
+      have[o] -= 1;
+      if (have[o] < want[o]) overlap -= 1;
+      l += 1;
     }
-    if (bestAt < 0 || best / m < RESIDUE_THRESHOLD) continue;
-    let start = bestAt;
-    let end = bestAt + len - 1;
-    while (start < end && !want.has(all[start].t)) start += 1;
-    while (end > start && !want.has(all[end].t)) end -= 1;
-    return { start, end };
+    if (shortest <= minLen) break;
   }
-  return null;
+  for (let i = l; i < added; i++) have[seq[i]] = 0;
+  if (shortest === Infinity) return null;
+  const len = Math.max(minLen, shortest);
+  if (len > maxLen) return null;
+  // 2. The earliest best-scoring window of that length.
+  overlap = 0;
+  let best = -1;
+  let bestAt = -1;
+  for (let i = 0; i < n; i++) {
+    const id = seq[i];
+    if (have[id] < want[id]) overlap += 1;
+    have[id] += 1;
+    if (i >= len) {
+      const o = seq[i - len];
+      have[o] -= 1;
+      if (have[o] < want[o]) overlap -= 1;
+    }
+    if (i >= len - 1 && overlap > best) {
+      best = overlap;
+      bestAt = i - len + 1;
+    }
+  }
+  for (let i = Math.max(0, n - len); i < n; i++) have[seq[i]] = 0;
+  if (bestAt < 0 || !enough(best)) return null;
+  let start = bestAt;
+  let end = bestAt + len - 1;
+  while (start < end && want[seq[start]] === 0) start += 1;
+  while (end > start && want[seq[end]] === 0) end -= 1;
+  return { start, end };
 }
 
 /**
  * The spans of `text` that reproduce one of `drafted` (sentences) with at least RESIDUE_THRESHOLD of its words, in
  * order; overlapping spans are merged. A drafted sentence of fewer than SHORT_SENTENCE_TOKENS words matches only a
  * whole sentence of `text` with the same words.
+ * R1T-WC-01 (SAF-1): bounded. A drafted sentence the text cannot reproduce (it holds too few of its words at all) costs
+ * only its own words; the rest cost two linear passes (residueWindow). More than RESIDUE_MAX_DRAFTED_SENTENCES, or more
+ * work than RESIDUE_WORK_BUDGET, and the whole text is drafted residue – the strict reading.
  */
 export function residueSpans(text: string, drafted: readonly string[]): Span[] {
   const all = tokens(text);
   if (all.length === 0 || drafted.length === 0) return [];
+  const whole: Span[] = [{ start: 0, end: text.length }];
+  if (drafted.length > RESIDUE_MAX_DRAFTED_SENTENCES) return whole;
+  // The text's words as ids, once.
+  const ids = new Map<string, number>();
+  const seq = new Int32Array(all.length);
+  for (let i = 0; i < all.length; i++) {
+    let id = ids.get(all[i].t);
+    if (id === undefined) {
+      id = ids.size;
+      ids.set(all[i].t, id);
+    }
+    seq[i] = id;
+  }
+  const inText = new Int32Array(ids.size);
+  for (let i = 0; i < seq.length; i++) inText[seq[i]] += 1;
+  const want = new Int32Array(ids.size);
+  const have = new Int32Array(ids.size);
+  const touched: number[] = [];
+  let work = all.length;
+  let sentenceKeys: Map<string, Span[]> | null = null;
   const spans: Span[] = [];
-  const sentences = splitSentences(text, "prose");
   for (const d of drafted) {
-    const dt = tokens(d).map((x) => x.t);
-    if (dt.length === 0) continue;
-    if (dt.length < SHORT_SENTENCE_TOKENS) {
-      const key = dt.join(" ");
-      for (const s of sentences) {
-        if (tokens(s.text).map((x) => x.t).join(" ") === key) spans.push({ start: s.start, end: s.end });
+    const words = tokens(d).map((x) => x.t);
+    work += words.length;
+    if (words.length === 0) continue;
+    if (words.length < SHORT_SENTENCE_TOKENS) {
+      if (!sentenceKeys) {
+        sentenceKeys = new Map();
+        for (const s of splitSentences(text, "prose")) {
+          const key = tokens(s.text).map((x) => x.t).join(" ");
+          const list = sentenceKeys.get(key);
+          if (list) list.push({ start: s.start, end: s.end });
+          else sentenceKeys.set(key, [{ start: s.start, end: s.end }]);
+        }
+        work += all.length;
       }
+      for (const sp of sentenceKeys.get(words.join(" ")) ?? []) spans.push({ ...sp });
       continue;
     }
-    const w = residueWindow(all, dt);
-    if (w) spans.push({ start: all[w.start].start, end: all[w.end].end });
+    for (const run of runsOf(words)) {
+      const m = run.length;
+      // How many of its words the text holds at all: a sentence it cannot reproduce costs no pass over the text.
+      let possible = 0;
+      for (const t of run) {
+        const id = ids.get(t);
+        if (id === undefined) continue;
+        if (want[id] === 0) touched.push(id);
+        want[id] += 1;
+        if (want[id] <= inText[id]) possible += 1;
+      }
+      if (possible / m >= RESIDUE_THRESHOLD) {
+        work += 2 * all.length;
+        if (work > RESIDUE_WORK_BUDGET) return whole;
+        const w = residueWindow(seq, want, have, m);
+        if (w) spans.push({ start: all[w.start].start, end: all[w.end].end });
+      }
+      for (const id of touched) want[id] = 0;
+      touched.length = 0;
+    }
   }
   spans.sort((a, b) => a.start - b.start);
   const merged: Span[] = [];
@@ -556,6 +858,21 @@ export function residueSpans(text: string, drafted: readonly string[]): Span[] {
     else merged.push({ ...s });
   }
   return merged;
+}
+
+/**
+ * R1T-WC-01: a paragraph's residue against its box, worked out once – the acknowledgement policy asks for it once per
+ * opinion or voice flag (validation/acknowledge.ts), and the validators, the store and the review ask again. Keyed on the
+ * paragraph and checked against the box's paragraphs and tombstones (all immutable).
+ */
+const residueCache = new WeakMap<object, { paragraphs: unknown; tombstones: unknown; text: string; spans: Span[] }>();
+
+function residueOfParagraph(section: Pick<ReportSection, "paragraphs" | "tombstones">, paragraph: Paragraph, drafted: readonly string[]): Span[] {
+  const hit = residueCache.get(paragraph);
+  if (hit && hit.paragraphs === section.paragraphs && hit.tombstones === section.tombstones && hit.text === paragraph.text) return hit.spans;
+  const spans = residueSpans(paragraph.text, drafted);
+  residueCache.set(paragraph, { paragraphs: section.paragraphs, tombstones: section.tombstones, text: paragraph.text, spans });
+  return spans;
 }
 
 /**
@@ -578,7 +895,7 @@ export function paragraphResidue(section: Pick<ReportSection, "paragraphs" | "to
   const drafted = draftedSentences(section, { exceptParagraphId: paragraph.id });
   if (drafted.length === 0) return [];
   if (!hookEnabled(DRAFT_RESIDUE_HOOK)) return whole;
-  return residueSpans(paragraph.text, drafted);
+  return residueOfParagraph(section, paragraph, drafted);
 }
 
 /** Whether `evidence` (a flag's offending words) lies in one of `spans` of `text`; not found anywhere: any span counts. */

@@ -29,10 +29,35 @@ function seconds(ms: number): string {
   return s >= 90 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s} s`;
 }
 
+/** Calls of one drafting run start within this much of the run so far (they are queued, or retried, close together). */
+const RUN_GAP_MS = 5000;
+
 /**
- * The generation badge: "Drafted from the notes in 34 s" (wall time from the first call's start to
- * the last call's end) / "Prepared demo draft (DD/MM/YYYY)" / "Sample draft (demo)" – customer-facing
- * wording from core/wording.ts. Null when nothing has been drafted.
+ * R1T-WC-L7: the wall time of the LAST drafting run – from its first call's start to its last call's end – never from
+ * the report's first drafting to "Draft them now" minutes later. A run is the calls whose time spans overlap or follow
+ * each other within RUN_GAP_MS; null when no call says how long it took.
+ */
+export function lastRunWallMs(live: readonly Pick<GenerationMeta, "at" | "durationMs">[]): number | null {
+  const spans = live
+    .map((g) => {
+      const start = Date.parse(g.at);
+      return { start, end: start + (g.durationMs ?? 0), timed: g.durationMs !== undefined };
+    })
+    .filter((x) => !Number.isNaN(x.start))
+    .sort((a, b) => a.start - b.start);
+  if (spans.length === 0) return null;
+  let run = { start: spans[0].start, end: spans[0].end, timed: spans[0].timed };
+  for (const x of spans.slice(1)) {
+    if (x.start <= run.end + RUN_GAP_MS) run = { start: run.start, end: Math.max(run.end, x.end), timed: run.timed || x.timed };
+    else run = { start: x.start, end: x.end, timed: x.timed };
+  }
+  return run.timed ? run.end - run.start : null;
+}
+
+/**
+ * The generation badge: "Drafted from the notes in 34 s" (wall time of the last drafting run, from its first call's
+ * start to its last call's end – lastRunWallMs) / "Prepared demo draft (DD/MM/YYYY)" / "Sample draft (demo)" –
+ * customer-facing wording from core/wording.ts. Null when nothing has been drafted.
  */
 export function generationSummary(generation: readonly GenerationMeta[]): GenerationSummary | null {
   if (generation.length === 0) return null;
@@ -54,12 +79,7 @@ export function generationSummary(generation: readonly GenerationMeta[]): Genera
   const recorded = generation.filter((g) => g.mode === "demo_recorded");
   const others = (n: number) => (n > 0 ? ` (+${n} other group${n === 1 ? "" : "s"})` : "");
   if (live.length > 0) {
-    const starts = live.map((g) => Date.parse(g.at)).filter((n) => !Number.isNaN(n));
-    const ends = live
-      .filter((g) => g.durationMs !== undefined)
-      .map((g) => Date.parse(g.at) + (g.durationMs ?? 0))
-      .filter((n) => !Number.isNaN(n));
-    const wall = starts.length && ends.length ? Math.max(...ends) - Math.min(...starts) : null;
+    const wall = lastRunWallMs(live);
     return {
       label: `${w.live(wall !== null && wall > 0 ? seconds(wall) : null)}${others(generation.length - live.length)}`,
       tone: "live",

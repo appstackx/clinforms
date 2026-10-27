@@ -222,6 +222,13 @@ interface GapActionProps {
   readOnly: boolean;
   /** Fix round 1 (B0-8): tick a held-back drafted choice ("Tick “No Impact”") – the person's own decision. */
   onTickSuggested?: (gap: Gap) => void;
+  /**
+   * R1T-WC-11: whether the suggestion can be stored in the box as one of its own options (gaps.ts storedSuggestion) –
+   * the "Tick" offer is shown only then. Absent: as before (any suggestion).
+   */
+  tickable?: (gap: Gap) => boolean;
+  /** R1T-WC-L3: the gap's box is an opinion box – its held-back answer is explained as an opinion, not by the notes' words. */
+  opinionBox?: boolean;
   onResolve(gapId: string, kind: "resolved" | "acknowledged", text: string): void;
   onReopen(gapId: string): void;
   onOpenSource?: (id: string) => void;
@@ -236,6 +243,8 @@ function GapBody({
   readOnly,
   resolution,
   onTickSuggested,
+  tickable,
+  opinionBox = false,
   onResolve,
   onReopen,
   onOpenSource,
@@ -279,7 +288,7 @@ function GapBody({
           ))}
         </div>
       )}
-      <p className="mt-1 text-[11px] opacity-70">{gapProvenance(gap)}</p>
+      <p className="mt-1 text-[11px] opacity-70">{gapProvenance(gap, { opinion: opinionBox })}</p>
       {done && (
         <p className="mt-1 text-xs">
           {done.kind === "resolved" ? "Resolution" : "Reason"}
@@ -308,7 +317,7 @@ function GapBody({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {!readOnly && !done && (
             <>
-              {gap.suggestedAnswer && onTickSuggested && !resolution.approverOnly && (
+              {gap.suggestedAnswer && onTickSuggested && !resolution.approverOnly && (!tickable || tickable(gap)) && (
                 <button
                   type="button"
                   onClick={() => onTickSuggested(gap)}
@@ -356,7 +365,9 @@ function GapBody({
  * hold this value". System gaps from drafting end "-choice", "-fit", "-cite" or "-sys" (ai/assemble.ts); a staff entry, a
  * physiotherapist's choice or the clinic's details "-staff", "-physio" or "-clinic" (core/report-factory.ts).
  */
-export function gapProvenance(gap: Pick<Gap, "id" | "raisedBy">): string {
+export function gapProvenance(gap: Pick<Gap, "id" | "raisedBy">, opts: { opinion?: boolean } = {}): string {
+  // R1T-WC-L3: an opinion box's held-back answer (a number, a yes/no, a choice) is held back because it is an opinion.
+  if (opts.opinion && (gap.id.endsWith("-choice") || gap.id.endsWith("-fit"))) return "Raised by the system: the answer is the clinician's opinion, which only the approving clinician gives.";
   if (gap.raisedBy !== "system") return "Raised while drafting: the notes do not say this, so nothing was guessed.";
   if (gap.id.endsWith("-referrer")) return "Raised by the system: the value comes from another organisation's referral, so a person confirms it.";
   if (gap.id.endsWith("-choice")) return "Raised by the system: the notes do not use the option's own words, so a person ticks it.";
