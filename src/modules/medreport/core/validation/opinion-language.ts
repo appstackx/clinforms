@@ -62,7 +62,7 @@
 import type { Note, Paragraph, Report, ReportFlag, ReportSection } from "../types";
 import { findAnchor, planFramed, quotedVerbatim, type NoteAnchor } from "./attribution-anchor";
 import { unsupportedNegatives } from "./attribution-negatives";
-import { clinicianNames, draftSentences, droppedFrames, holderAt, quoteOutside, sameName, sha256HexSync, type DraftSentence, type Holder } from "./attribution-text";
+import { canonicalRanges, clinicianNames, draftSentences, droppedFrames, holderAt, quoteOutside, sameName, sha256HexSync, type DraftSentence, type Holder } from "./attribution-text";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { defineHook, hookEnabled } from "./hooks";
 import type { ValidatorInput } from "./registry";
@@ -71,6 +71,8 @@ import { escapeRegExp, normaliseForMatch } from "./text";
 import { sentenceKey } from "../text/sentences";
 import { expandNoteShorthand } from "../voice";
 import { adoptionCurrent, paragraphResidue } from "../provenance";
+import { ackPolicyOf } from "./acknowledge";
+import { DEMO_TENANT_ID } from "../../config.public";
 
 /* Ledger hooks (ledger.json). Each applies only while hookEnabled(id) (the corpus disables them one by one). */
 export const STATUS_RECORDED = defineHook("statusRecorded");
@@ -332,8 +334,10 @@ const EXERCISE_TARGET =
 function exerciseOnBalance(hit: OpinionHit, source: string): boolean {
   if (!/\bbalance\b(?! of probabilit)/.test(source)) return false;
   if (!/^(?:$| (?:and|or|with|using|on|in|exercises?|drills?|work|training|tasks?|activities|board)\b)/.test(hit.after)) return false;
-  if (new RegExp(`\\b${EXERCISE_WORD} $`).test(hit.before)) return true;
-  return new RegExp(`\\b${EXERCISE_WORD} on (?:(?:his|her|their|the) )?${EXERCISE_TARGET} (?:and|or) $`).test(hit.before);
+  // (?<!\\w), not "\\b": a template of module constants only may be folded into a string literal by the production
+  // server build, which mis-escapes "\\b" there (fix round 1, R1T-WB-12); the exercise word starts with a letter.
+  if (new RegExp(`(?<!\\w)${EXERCISE_WORD} $`).test(hit.before)) return true;
+  return new RegExp(`(?<!\\w)${EXERCISE_WORD} on (?:(?:his|her|their|the) )?${EXERCISE_TARGET} (?:and|or) $`).test(hit.before);
 }
 
 /**
@@ -406,7 +410,8 @@ function noteGivesOpinion(_hit: OpinionHit, source: string): boolean {
 
 /* Modal clauses: a need, a plan, an ability, a recommendation or a prediction ------------------- */
 
-const SUBJECT_MODAL =
+/** The modal clause words of the "need, plan or prediction" pattern (its regex literal holds the same alternation – a test pins it). */
+export const SUBJECT_MODAL =
   "(?:needs? to|is required to|are required to|has to|have to|should|shall|must|ought to|will|would|may|might|can|cannot|can't|won't|wouldn't|shouldn't|mustn't|(?:is|are|am) (?:un)?able to|aims? to|(?:is|are) aiming to|plans? to|(?:is|are) planning to|intends? to|hopes? to|wants? to|(?:is|are) going to)";
 
 /** Months that look like "may": "in May", "by May 2027", "May 2026". */
@@ -531,7 +536,11 @@ export const OPINION_PATTERNS: readonly OpinionPattern[] = [
   { label: "advice", re: /\b(?:is|are|be|being|been) (?:strongly )?(?:advised|recommended|suggested)\b|\b(?:i|we) (?:would )?(?:strongly )?(?:recommend|advise|suggest)\b|\brecommend(?:s|ing)\b|\badvis(?:es|ing|able)\b|\b(?:my|our) recommendations?\b|\bbenefit from\b/g },
 
   // Modal clauses (the anti-deny-list: "needs to", "is required to", "has to", "should", "will", "must", "aims to" …)
-  { label: "need, plan or prediction", re: new RegExp(`\\b${SUBJECT_MODAL}(?: (?:not|now|also|still|then|soon|again|probably|possibly|definitely|certainly|always|never|need to|be able to))? [a-z]+(?:-[a-z]+)?`, "g") },
+  // A regex LITERAL (fix round 1, R1T-WB-12 – the root of BC-07): built from a template literal with the one-use
+  // SUBJECT_MODAL, the production server build folded it into a string whose "\\b" became a backspace, so on /validate
+  // and /sign no need, plan or prediction was ever found while the review found it. SUBJECT_MODAL keeps the same
+  // alternation (opinion-language.test / the corpus pin that both agree).
+  { label: "need, plan or prediction", re: /\b(?:needs? to|is required to|are required to|has to|have to|should|shall|must|ought to|will|would|may|might|can|cannot|can't|won't|wouldn't|shouldn't|mustn't|(?:is|are|am) (?:un)?able to|aims? to|(?:is|are) aiming to|plans? to|(?:is|are) planning to|intends? to|hopes? to|wants? to|(?:is|are) going to)(?: (?:not|now|also|still|then|soon|again|probably|possibly|definitely|certainly|always|never|need to|be able to))? [a-z]+(?:-[a-z]+)?/g },
 
   // Certainty and diagnosis labels (strengthened hedging)
   { label: "certainty", re: /\b(?:definite(?:ly)?|certainly|undoubted(?:ly)?|unequivocal(?:ly)?|conclusive(?:ly)?|categorical(?:ly)?|clearly)\b/g },
@@ -681,7 +690,7 @@ function quotedSpans(s: DraftSentence, notes: readonly Note[], holder: string | 
     const at = (m.index ?? 0) + m[0].indexOf(inner);
     // What the sentence says outside the quotation keeps a negation, hedge or frame the quotation leaves out (M3).
     const outside = quoteOutside(s.norm, at, at + inner.length);
-    const verbatim = Boolean(quotedVerbatim(normaliseForMatch(expandNoteShorthand(inner)), notes, holder ?? null, outside));
+    const verbatim = Boolean(quotedVerbatim(canonicalRanges(normaliseForMatch(expandNoteShorthand(inner))), notes, holder ?? null, outside));
     out.push({ start: at, end: at + inner.length, verbatim });
   }
   return out;
@@ -751,11 +760,11 @@ export function judgeParagraphOpinions(input: {
           }
         }
         if (!anchor && raw.pattern.anchorToo) {
-          anchor = findAnchor({ phrase: raw.phrase, sentence: clauseOf(s, raw), notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) }, context: s.norm.slice(0, raw.start), pattern: raw.pattern.re });
+          anchor = findAnchor({ phrase: raw.phrase, sentence: clauseOf(s, raw), notes: holderNotes.map((c) => c.note), holder: hName ?? null, kind: raw.pattern.kind ?? "opinion", ignore: { people: people.map((x) => x.toLowerCase()) }, context: contextOf(s, raw), pattern: raw.pattern.re });
         }
       } else {
         const clause = clauseOf(s, raw);
-        const context = s.norm.slice(0, raw.start);
+        const context = contextOf(s, raw);
         anchor = findAnchor({
           phrase: raw.phrase,
           sentence: clause,
@@ -805,6 +814,18 @@ function noteSentenceFor(note: Note, phrase: string): string {
   const line = fields.split(/(?<=[.!?\n])\s+/).find((x) => x.toLowerCase().includes(last)) ?? fields.split(/\n/)[0] ?? "";
   return line.trim();
 }
+
+/**
+ * What the drafted sentence says before a hit (its frame: "Tom Ellis recorded in the plan that …") – and, fix round 1
+ * (R1T-WB-06), an explanation the sentence reports of it afterwards ("… that the outlook is good, and that he explained
+ * this to Mrs Whitlock"): the outcome is then reported as what the clinician explained, which a plan line records.
+ */
+function contextOf(s: DraftSentence, raw: RawHit): string {
+  const before = s.norm.slice(0, raw.start);
+  const after = s.norm.slice(raw.end);
+  return EXPLAINED_AFTER.test(after) ? `${before} explained` : before;
+}
+const EXPLAINED_AFTER = /^[^.;]*?,? and (?:that )?(?:he|she|they|[a-z]+ [a-z]+) (?:also )?(?:explained|discussed) (?:this|it|that|these)\b/;
 
 /** The drafted clause around a hit (between the sentence's clause boundaries), from its claim when the hit is in it. */
 function clauseOf(s: DraftSentence, raw: RawHit): string {
@@ -863,7 +884,7 @@ export type TextAuthorship = "drafted" | "person" | "approver" | "record";
  */
 export function authorshipOf(
   p: Pick<Paragraph, "origin"> & { by?: { memberId: string } },
-  report: Pick<Report, "approver">,
+  report: Pick<Report, "approver"> & Partial<Pick<Report, "reportModel" | "sections" | "tenantId">>,
   section?: Pick<ReportSection, "answer" | "paragraphs" | "adoptedBy" | "tombstones">,
 ): TextAuthorship {
   const who = paragraphAuthorship(p, report);
@@ -871,7 +892,26 @@ export function authorshipOf(
   return who;
 }
 
-function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: string } }, report: Pick<Report, "approver">): TextAuthorship {
+/**
+ * A report this release made (fix round 1, R1T-WB-03 – SEC-3): Report.reportModel 2, or a section carrying a frozen
+ * condition (only this release freezes them – the same reading as core/issue-state.ts isReleaseModel, so removing
+ * reportModel never turns a release report back into a legacy one). The review stamps every person's paragraph it
+ * writes on such a report (ui/components/review/reducer.ts stampDecisions: Paragraph.by), and the clinic's store checks
+ * every stamp is the writer's own.
+ */
+function releaseReport(report: Partial<Pick<Report, "reportModel" | "sections">>): boolean {
+  return (report.reportModel ?? 0) >= 2 || (report.sections ?? []).some((s) => Boolean((s as { condition?: unknown }).condition));
+}
+
+/**
+ * A clinic's report – one with members of more than one role, so whose words a paragraph is matters (SEC-3). The public
+ * demo's reports (tenant "demo", config.public.ts DEMO_TENANT_ID) have one fictional user, who is everyone.
+ */
+function clinicReport(report: Partial<Pick<Report, "tenantId">>): boolean {
+  return Boolean(report.tenantId) && report.tenantId !== DEMO_TENANT_ID;
+}
+
+function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: string } }, report: Pick<Report, "approver"> & Partial<Pick<Report, "reportModel" | "sections" | "tenantId">>): TextAuthorship {
   switch (p.origin as string) {
     case "ai":
       return "drafted";
@@ -886,6 +926,14 @@ function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: s
       // bh2-rc1 (WB x WC): no approver chosen (a report from before the release): as WC's actsAsApprover, a member who
       // is not staff acts as the approver – their own new words are written "clinician" by the review.
       if (by && !report.approver) return (by as { role?: string }).role && (by as { role?: string }).role !== "staff" ? "approver" : "person";
+      // Fix round 1 (R1T-WB-03, SEC-3 – defence in depth for R1T-WC-06): a clinic's release report with no approving
+      // clinician (SEC-3: a staff create with the approver left out) – "clinician" text nobody's stamp vouches for is not
+      // provably the approver's (the review stamps every person's paragraph), so it is a person's text, checked like
+      // edited text (only the approver – there, the member who approves – may acknowledge). With an approver named, the
+      // store refuses "clinician" text from anyone but the approver (WC design 2, store-reports.ts
+      // clinician-text-approver-only, unconditional since R1T-WC-06), so such text there stays the approver's. A report
+      // from before the release (no reportModel) and the public demo keep the earlier reading.
+      if (!by && !report.approver && releaseReport(report) && clinicReport(report)) return "person";
       return "approver";
     }
     default:
@@ -893,6 +941,21 @@ function paragraphAuthorship(p: Pick<Paragraph, "origin"> & { by?: { memberId: s
       // clinician may acknowledge it – never taken as the approver's own words (check-WB minor 2; design 4).
       return "person";
   }
+}
+
+/** A box the record, staff or the form itself fills (a registration or staff-entry box, a fixed or blank one, a records block). */
+function adminBox(section: ReportSection, input: ValidatorInput): boolean {
+  if (section.kind === "from_records") return true;
+  const kind = input.form?.fields.find((f) => f.id === section.key)?.fillSource.kind;
+  return kind === "registration" || kind === "fixed" || kind === "leave_blank" || kind === "computed_fact" || kind === "appointments_table" || kind === "signoff";
+}
+
+/**
+ * The message for an opinion flag on a person's text that still keeps drafted wording (R1T-WB-L1): it cannot be
+ * acknowledged (acknowledge.ts – nobody acknowledges a drafted opinion), so it says what clears it.
+ */
+export function keptDraftedMessage(lead: string): string {
+  return `${lead} This part keeps the drafted wording, so it cannot be acknowledged: quote the note (or use the note's words), name the clinician whose note it is, or write the opinion in your own words.`;
 }
 
 /** True when a box is about work (so "no restrictions" there is a fitness opinion, not a daily-living restriction). */
@@ -931,13 +994,18 @@ export function validateOpinionLanguage(input: ValidatorInput): ReportFlag[] {
               : `Opinion wording (${label}) "${evidence}" is not in the cited record${holderText}. If this is the approving clinician's own opinion, they acknowledge it with a reason; otherwise reword it.`,
         });
         flag.ackPolicy = who === "drafted" ? "never" : "approver";
+        // R1T-WB-L1: the message follows the policy that applies (acknowledge.ts ackPolicyOf – drafted wording kept in a
+        // person's edit cannot be acknowledged), and then says what clears it.
+        if (who !== "drafted" && ackPolicyOf(flag, input.report) === "never") flag.message = keptDraftedMessage(`Opinion wording (${label}) "${evidence}" is not in the cited record${holderText}.`);
         const reason = who === "person" && p.origin === "edited" ? p.ackReason?.trim() : undefined;
         if (reason) flag.acknowledged = { reason, at: input.report.updatedAt };
         flags.push(flag);
       }
     }
     // Design 12 (C-3): a clinical negative no cited note records – a warning, never blocking (attribution-negatives.ts).
-    flags.push(...unsupportedNegatives(p, section.key, input.bundle.notes));
+    // Not on an administrative box (fix round 1, R1T-WB-L4): a box the record or staff fill ("No solicitor instructed"
+    // in a staff-entry box) holds no clinical finding.
+    if (!adminBox(section, input)) flags.push(...unsupportedNegatives(p, section.key, input.bundle.notes));
   }
   return flags;
 }

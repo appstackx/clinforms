@@ -4,7 +4,12 @@
  *
  * - noteSentences(note): every sentence of a clinician's note (the W0 tokenizer, "notes" policy), its field, its inline
  *   label ("Goal:", "STG:", "Plan:", "Opinion on work:"), normalised with the note's shorthand written out (">15 kg" →
- *   "more than 15 kg", "LBP" → "low back pain") – the form both sides are compared in.
+ *   "more than 15 kg", "LBP" → "low back pain") – the form both sides are compared in. Fix round 1 (R1T-WB-04): a
+ *   printed or pasted line wrap inside a sentence is joined by the prose rule (the next line starts in lower case, the
+ *   line does not end at a stop, the next line is not a list item or a "Label:" line), so "consistent with the⏎
+ *   mechanism" is one sentence again; the join (and a spaced dash, R1T-WB-05) is kept as a conjunct boundary of the
+ *   sentence (NoteSentence.breaks), so a terse two-line note never lends a negation, hedge or frame across it ("no
+ *   swelling⏎knee pain on stairs" never anchors "no knee pain on stairs").
  * - draftSentences(text, people): a drafted paragraph's sentences, each with its attribution frame ("On 06/05/2026 Tom
  *   Ellis recorded that…", "In my opinion…", "Priya Shah's assessment (01/09/2026): …", a framed quotation "Tom Ellis
  *   recorded on 06/05/2026: “…”") and the claim after it, split into clauses.
@@ -39,7 +44,10 @@ const STOP = new Set(
     // harden-WB (check2-WB N1, N2): light verbs, reporting verbs and the answer particle carry no claim of their own –
     // "He made good progress" says what the note's "Good progress." says, "an explanation of the expected recovery" what
     // its "Explained … the expected recovery" says, and "Yes – resolved" answers the box's question.
-    "made make makes making show shows showed shown showing included explain explains explained explaining explanation explanations yes"
+    "made make makes making show shows showed shown showing included explain explains explained explaining explanation explanations yes " +
+    // Fix round 1 (R1T-WB-11): a test result's reporting verb carries no claim – "McMurray's test produced medial knee
+    // pain" says what the note's "McMurray's test: medial knee pain" says.
+    "produced produce produces producing reproduced reproduce reproduces revealed reveal reveals demonstrated demonstrate demonstrates elicited elicit elicits"
   ).split(/\s+/),
 );
 
@@ -125,9 +133,33 @@ const DATE = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g;
 /** Side shorthand in notes, read as the word (content stems only; the text is never rewritten). */
 const SIDE: Readonly<Record<string, string>> = { l: "left", lt: "left", r: "right", rt: "right", bilat: "bilateral" };
 
-/** The content stems of normalised text: claim words and figures, in order (duplicates kept once). */
-export function contentStems(norm: string, ignore: IgnoreNames = { people: [] }): string[] {
-  let s = ` ${norm} `.replace(/\[claimant\]/g, " ").replace(TITLE_NAME, " ").replace(DATE, " ");
+/**
+ * Same content in other words (fix round 1, R1T-WB-06), on both sides before the stems are read: a range written "2 to 3"
+ * is "2-3"; the home exercise programme is the note's "home programme" (and "HEP" written out); "back to / on football"
+ * is a return to it – each such phrase gives the other's stem too, so either side's wording holds the other's.
+ */
+export function canonicalContent(norm: string): string {
+  return norm
+    .replace(/\b(\d+(?:\.\d+)?) ?(?:-|to) ?(\d+(?:\.\d+)?)\b/g, "$1-$2")
+    .replace(/\bhome[- ]exercises? (?:programmes?|programs?|plan)\b/g, "home programme")
+    .replace(/\b(tender(?:ness)?) (?:on|to) palpation\b/g, "$1")
+    .replace(/\b(?:returned|returning|returns|return)( (?:to|on)\b)/g, "return back$1")
+    .replace(/\bback( (?:to|on|at|in) (?!(?:the |his |her |their )?(?:(?:left|right|upper|lower) )?(?:hip|hips|buttocks?|legs?|knees?|neck|shoulders?|thighs?|groin|foot|feet|ankles?|arms?|spine|pelvis)\b))/g, "return back$1");
+}
+
+/** A range of figures in one form ("2 to 3 weeks", "2 - 3 weeks" → "2-3 weeks"), so a phrase reads the same on both sides. */
+export function canonicalRanges(norm: string): string {
+  return norm.replace(/\b(\d+(?:\.\d+)?) ?(?:-|to) ?(\d+(?:\.\d+)?)\b(?!\/)/g, "$1-$2");
+}
+
+/**
+ * The content stems of normalised text: claim words and figures, in order (duplicates kept once). `canonical: false`
+ * reads the words as written (no canonicalContent) – whose finding a sentence is (attribution-colleague-named.ts) is
+ * read that way, as before fix round 1: a shared "return" (a draft's "getting back to …" beside a note's "phased return
+ * to …") is the same content for an anchor, never on its own a colleague's opinion.
+ */
+export function contentStems(norm: string, ignore: IgnoreNames = { people: [] }, opts: { canonical?: boolean } = {}): string[] {
+  let s = ` ${opts.canonical === false ? norm : canonicalContent(norm)} `.replace(/\[claimant\]/g, " ").replace(TITLE_NAME, " ").replace(DATE, " ");
   for (const name of ignore.people) if (name) s = s.replace(new RegExp(`\\b${escapeRegExp(name)}(?:['’]s)?\\b`, "g"), " ");
   const out: string[] = [];
   for (const m of Array.from(s.matchAll(/[a-z0-9]+(?:[-'’.][a-z0-9]+)*/g))) {
@@ -145,6 +177,18 @@ export function contentStems(norm: string, ignore: IgnoreNames = { people: [] })
   return out;
 }
 
+const PLAIN_STEMS = new WeakMap<NoteSentence, string[]>();
+
+/** A note sentence's content stems read as written (contentStems with `canonical: false`), computed once per sentence. */
+export function plainStemsOf(s: NoteSentence): string[] {
+  let out = PLAIN_STEMS.get(s);
+  if (!out) {
+    out = contentStems(s.norm, { people: [] }, { canonical: false });
+    PLAIN_STEMS.set(s, out);
+  }
+  return out;
+}
+
 /** A conjunct of a claim: its text (normalised) and offsets in the claim. */
 export interface Segment {
   text: string;
@@ -155,39 +199,101 @@ export interface Segment {
 /** Where a claim splits into conjuncts: a comma or semicolon, and / or / but / with / while between words. */
 const SEGMENT_SPLIT = /\s*[,;:]\s+|\s+(?:and|or|but|with|while|whereas)\s+/g;
 
-/** A normalised claim's conjunct segments ("working full time on normal duties, driving without restriction and swimming …"). */
-export function segmentsOf(norm: string): Segment[] {
+/** A gap [start, end) of a note sentence's normalised text that is a conjunct boundary its punctuation does not show. */
+export interface NoteBreak {
+  start: number;
+  end: number;
+}
+
+/**
+ * A normalised claim's conjunct segments ("working full time on normal duties, driving without restriction and swimming
+ * …"). `breaks` (a note sentence's NoteBreak gaps, offsets in `norm`): further boundaries – a joined line wrap, a spaced
+ * dash (fix round 1, R1T-WB-04 / 05).
+ */
+export function segmentsOf(norm: string, breaks: readonly NoteBreak[] = []): Segment[] {
   const out: Segment[] = [];
   let last = 0;
-  for (const m of Array.from(norm.matchAll(SEGMENT_SPLIT))) {
-    const at = m.index ?? 0;
-    if (at > last) out.push({ text: norm.slice(last, at), start: last, end: at });
-    last = at + m[0].length;
+  const cuts: Array<{ start: number; end: number }> = Array.from(norm.matchAll(SEGMENT_SPLIT), (m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
+  for (const b of breaks) if (b.start >= 0 && b.end <= norm.length && b.start < b.end) cuts.push(b);
+  cuts.sort((a, b) => a.start - b.start || a.end - b.end);
+  for (const c of cuts) {
+    if (c.start < last) {
+      last = Math.max(last, c.end);
+      continue;
+    }
+    if (c.start > last) out.push({ text: norm.slice(last, c.start), start: last, end: c.start });
+    last = c.end;
   }
   if (last < norm.length) out.push({ text: norm.slice(last), start: last, end: norm.length });
   return out.filter((x) => x.text.trim().length > 0);
 }
 
+/** The breaks inside [a, b) of a text, shifted to a slice that starts at `a`. */
+function breaksIn(breaks: readonly NoteBreak[] | undefined, a: number, b: number): NoteBreak[] {
+  if (!breaks || breaks.length === 0) return [];
+  return breaks.filter((x) => x.start >= a && x.end <= b).map((x) => ({ start: x.start - a, end: x.end - a }));
+}
+
 /**
  * Words that carry an opinion – a recovery, prognosis, permanence, cause, fitness, need, advice, modality or a
- * diagnosis – by stem. In an opinion place a segment with one of them must be anchored in a cited note; a segment
- * without one only describes (an incident, a frame, a treatment given) and has no opinion content of its own.
+ * diagnosis. In an opinion place a segment with one of them must be anchored in a cited note; a segment without one
+ * only describes (an incident, a frame, a treatment given) and has no opinion content of its own. (Until fix round 1
+ * these were stems matched as prefixes.)
+ *
+ * As whole words (fix round 1, R1T-WB-05): each cue with the inflections and derivations it
+ * takes – never as a prefix of another word ("shoulder" is not "should", "viewings" not "view", "needles" not "need",
+ * "cancelled" not "can", "health" not "heal", "relatives" not "related").
  */
-const OPINION_CUES = [
-  "recover", "better", "worse", "improv", "deteriorat", "settl", "resolv", "heal", "gone", "asymptomat",
-  "prognos", "outlook", "prospect", "expect", "anticipat", "likel", "unlikel", "probabl", "possibl", "predict", "future", "soon",
-  "permanen", "lasting", "lifelong", "chronic", "irreversib", "residual", "persist", "forever",
-  "caus", "due", "result", "trigger", "attribut", "consistent", "secondary", "relat", "because",
-  "fit", "unfit", "abl", "unabl", "capabl", "ready", "return", "resum", "restrict", "limit",
-  "need", "requir", "necessar", "recommend", "advis", "suggest", "benefit", "indicat", "warrant",
-  "should", "would", "will", "may", "might", "can", "could", "must", "ought",
-  "opinion", "view", "believ", "think", "consider", "feel", "diagnos", "impression", "genuin", "exaggerat",
-];
+const OPINION_CUE_WORD = new RegExp(
+  `^(?:${[
+    "recover(?:s|ed|ing|y|ies)?", "better", "worse(?:n|ns|ned|ning)?", "improv(?:e|es|ed|ing|ement|ements)",
+    "deteriorat(?:e|es|ed|ing|ion)", "settl(?:e|es|ed|ing)", "resol(?:ve|ves|ved|ving|ution)", "heal(?:s|ed|ing)?", "gone",
+    "asymptomatic(?:ally)?", "prognos(?:is|es|tic|tically)", "outlooks?", "prospects?", "expect(?:s|ed|ing|ation|ations|ancy)?",
+    "anticipat(?:e|es|ed|ing|ion)", "likel(?:y|ihood)", "unlikely", "probabl(?:e|y)", "probabilit(?:y|ies)", "possibl(?:e|y)",
+    "possibilit(?:y|ies)", "maybe", "predict(?:s|ed|ing|ion|ions|able|ably)?", "future", "soon(?:er|est)?",
+    "permanen(?:t|tly|ce|cy)", "lasting", "lifelong", "chronic(?:ally|ity)?", "irreversib(?:le|ly)", "residual(?:ly)?",
+    "persist(?:s|ed|ing|ent|ently|ence)?", "forever",
+    "caus(?:e|es|ed|ing|al|ally|ation|ative)", "due", "result(?:s|ed|ing|ant)?", "trigger(?:s|ed|ing)?", "attribut(?:e|es|ed|ing|able|ion)",
+    "consistent(?:ly)?", "secondar(?:y|ily)", "relat(?:e|es|ed|ing)", "because",
+    "fit(?:ness)?", "unfit(?:ness)?", "able", "ably", "abilit(?:y|ies)", "unable", "inability", "capab(?:le|ly|ility|ilities)",
+    "ready", "readiness", "return(?:s|ed|ing)?", "resum(?:e|es|ed|ing|ption)", "restrict(?:s|ed|ing|ion|ions|ive)?",
+    "limit(?:s|ed|ing|ation|ations)?", "need(?:s|ed|ing)?", "requir(?:e|es|ed|ing|ement|ements)", "necessar(?:y|ily)", "necessity",
+    "recommend(?:s|ed|ing|ation|ations)?", "advis(?:e|es|ed|ing|able|ory)", "advice", "suggest(?:s|ed|ing|ion|ions)?",
+    "benefi(?:t|ts|ted|ting|tted|tting|cial)", "indicat(?:e|es|ed|ing|ion|ions|ive)", "warrant(?:s|ed)?",
+    "should", "would", "will", "willing(?:ness)?", "may", "might", "can", "could", "must", "ought", "candidates?",
+    "opinions?", "views?", "believ(?:e|es|ed|ing)", "beliefs?", "think(?:s|ing)?", "thought", "consider(?:s|ed|ing|ation)?",
+    "feel(?:s|ing|ings)?", "felt", "diagnos(?:e|es|ed|is|tic)", "impressions?", "genuine(?:ly|ness)?", "exaggerat(?:e|es|ed|ing|ion)",
+  ].join("|")})$`,
+);
 
-/** Whether a normalised text has opinion content (an OPINION_CUES stem, or a modal word). */
+/**
+ * Whether a normalised text has opinion content (an opinion cue word, or a modal word). Word by word, as the content
+ * words of contentStems are chosen (function words, names, titles and dates left out), but the word as written is
+ * matched against the cue's own forms (OPINION_CUE_WORD), never its stem's prefix.
+ */
 export function hasOpinionCue(norm: string): boolean {
   if (/\b(?:should|would|will|may|might|can|could|must|ought|cannot|won't|wouldn't|shouldn't|needs?|needed|requires?|required|(?:un)?able)\b/.test(norm)) return true;
-  return contentStems(norm).some((w) => OPINION_CUES.some((c) => w.startsWith(c)));
+  // A movement or range described as restricted or limited is a finding ("painful restricted cervical range", "side
+  // flexion limited by pain"), not a work restriction or a limitation of function (fix round 1, R1T-WB-06).
+  const findings = norm.replace(MOVEMENT_LIMIT, " ");
+  return contentWords(findings).some((w) => OPINION_CUE_WORD.test(w) || OPINION_CUE_WORD.test(w.replace(/['’]s$/, "")));
+}
+// Regex literals (see PAST_TENSE: no template literal with "\\b" and a constant).
+const MOVEMENT_LIMIT =
+  /\b(?:restricted|limited|reduced)(?= (?:[a-z-]+ ){0,4}(?:range|movement|motion|rom|flexion|extension|rotation|abduction|adduction|side flexion|lateral flexion|bending|dorsiflexion|plantarflexion)\b)|(?<=\b(?:range|movement|motion|rom|flexion|extension|rotation|abduction|adduction|side flexion|lateral flexion|bending|dorsiflexion|plantarflexion) (?:(?:was|were|is|are) )?(?:\d+% )?)(?:restricted|limited|reduced)\b/g;
+
+/** The content words of normalised text as written (contentStems before stemming): no function words, names, titles or dates. */
+function contentWords(norm: string): string[] {
+  const s = ` ${norm} `.replace(/\[claimant\]/g, " ").replace(TITLE_NAME, " ").replace(DATE, " ");
+  const out: string[] = [];
+  for (const m of Array.from(s.matchAll(/[a-z0-9]+(?:[-'’.][a-z0-9]+)*/g))) {
+    const whole = m[0].replace(/[’]/g, "'");
+    for (const w of /\d/.test(whole) ? [whole] : whole.split("-")) {
+      if (STOP.has(w) || (w.length < 3 && !/\d/.test(w))) continue;
+      out.push(w);
+    }
+  }
+  return out;
 }
 
 /** Whether `have` holds every stem of `want` (stemsMatch); the ones it lacks. */
@@ -319,12 +425,15 @@ const FRAME_RES: ReadonlyArray<readonly [string, RegExp]> = FRAMES.map(([k, w]) 
  *   allowed" does not.
  */
 const TIME_FRAMES = new Set(["when", "after"]);
-/** Irregular pasts a narrative uses (the -ed rule below finds the regular ones). */
-const IRREGULAR_PAST = "felt|began|went|came|fell|gave|took|saw|got|ran|drove|rode|broke|woke|swam|spoke|brought|thought|caught|bought|held|lost|sat|stood|wore|knew|grew|threw|chose|became|meant|met|paid|sent|spent|built|struck|stuck|swung|taught|ate|drank|flew|forgot|hid|shook|bled|bent|dealt|told|said|kept|slept|found|made|hurt";
-/** Participles that name a kind of duty or programme ("amended duties", "graded return"), not a past event. */
-const PAST_TENSE = new RegExp(
-  `\\b(?:was|were|had|did|${IRREGULAR_PAST})\\b|\\b(?!(?:expect|anticipat|predict|forecast|plann|advis|recommend|hop|requir|need|indicat|propos|suggest|intend|schedul|book|arrang|agre|amend|modifi|adjust|restrict|reduc|phas|grad|limit|supervis|tailor|assist|prescrib|target|focus|load)ed\\b)[a-z]{3,}ed\\b`,
-);
+/**
+ * A conjunct told in the past: an auxiliary or an irregular past a narrative uses ("felt", "began" …), or a regular
+ * "-ed" past that is not a participle naming a kind of duty or programme ("amended duties", "graded return"). A regex
+ * LITERAL (fix round 1, R1T-WB-12): built from a template literal with a one-use constant, the production server build
+ * folded it into a string with "\\b" mis-escaped (a backspace), so it never matched on /validate and /sign – the server
+ * read the time frames differently from the review.
+ */
+const PAST_TENSE =
+  /\b(?:was|were|had|did|felt|began|went|came|fell|gave|took|saw|got|ran|drove|rode|broke|woke|swam|spoke|brought|thought|caught|bought|held|lost|sat|stood|wore|knew|grew|threw|chose|became|meant|met|paid|sent|spent|built|struck|stuck|swung|taught|ate|drank|flew|forgot|hid|shook|bled|bent|dealt|told|said|kept|slept|found|made|hurt)\b|\b(?!(?:expect|anticipat|predict|forecast|plann|advis|recommend|hop|requir|need|indicat|propos|suggest|intend|schedul|book|arrang|agre|amend|modifi|adjust|restrict|reduc|phas|grad|limit|supervis|tailor|assist|prescrib|target|focus|load)ed\b)[a-z]{3,}ed\b/;
 const OUTCOME_TO_COME =
   /\b(?:will|would|shall|should|can|could|may|might|must|ought|return\w*|rtw|resum\w*|back (?:to|on|at|in)|fit|unfit|able|unable|ready|discharg\w*|review\w*|progress(?:es|ed|ing)? (?:to|onto)|increas\w*|start\w*|begin\w*|commenc\w*|restart\w*|expect\w*|anticipat\w*|plan\w*|aim\w*|goals?|target\w*)\b/;
 const AFTER_COUNT = /^after (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (?:(?:treatment|physiotherapy|physio|supervised) )?(?:sessions?|treatments?|appointments?|visits?)\b/;
@@ -418,7 +527,8 @@ export function droppedFrames(noteScope: string, draft: string): string[] {
 }
 
 /** A segment that governs its clause from the side: a condition or a report lead ("assuming no setbacks", "according to his GP"). */
-const GOVERNING_LEAD = /^(?:if|unless|until|provided|providing|as long as|so long as|assuming|depending|subject to|once|when|whenever|whether|according to|as per|per)\b/;
+// Fix round 1 (R1T-WB-06): also after a report noun and "that" – "advice that if the knee locked …" is the same condition.
+const GOVERNING_LEAD = /^(?:(?:[a-z-]+ ){0,2}that )?(?:if|unless|until|provided|providing|as long as|so long as|assuming|depending|subject to|once|when|whenever|whether|according to|as per|per)\b/;
 const FRAME_ANY = new RegExp(FRAMES.map(([, w]) => `(?<![a-z0-9'/-])(?:${w})(?![a-z0-9'-])`).join("|"));
 const FRAME_ANY_G = new RegExp(FRAME_ANY.source, "g");
 /** Negators and hedges, as words to take out of a segment (stanceOf reads them). */
@@ -437,6 +547,21 @@ function isModifier(text: string): boolean {
 /** How far either side of a span frameScope reads its clause (a statement never runs further without a ; or a full stop). */
 export const FRAME_CONTEXT = 1500;
 
+/** Words that make the text before a colon a clause of its own (a negation, an auxiliary or a modal), not a heading. */
+const CLAUSE_WORDS = /\b(?:not|no|never|nil|without|cannot|yet|is|are|was|were|has|have|had|will|would|should|can|could|may|might|must|does|did|be|been|being)\b|n't\b/;
+
+/**
+ * Whether a note sentence's text before its colon governs the clause after it (fix round 1, R1T-WB-05): a heading
+ * ("Goal", "Plan", "Opinion on work", "Red flags") or a frame ("Solicitor asks for an opinion", "Employer has asked …"),
+ * or a bare modifier ("Possibly", "Query"), does; a statement of its own does not – "Not yet back to match play: the
+ * remaining limitation is quick changes of direction." says two things, and the first one's "not yet" is not the
+ * second's.
+ */
+export function labelGoverns(label: string): boolean {
+  if (!CLAUSE_WORDS.test(label)) return true;
+  return FRAME_ANY.test(label) || isModifier(label);
+}
+
 /**
  * The part of a note sentence that says [start, end), and so whose stance and frames are its own: the clause's conjunct
  * segments the span touches, the segments of the clause that govern it from the side (a lead condition or report –
@@ -444,7 +569,7 @@ export const FRAME_CONTEXT = 1500;
  * ("Solicitor asks for an opinion: …") – with `exclude` (a quotation's own words) left out. Another conjunct with its own
  * content ("…, no neurological signs") is not part of it.
  */
-export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: number, end: number, exclude?: { start: number; end: number }, side: "note" | "draft" = "note"): string {
+export function frameScope(s: Pick<NoteSentence, "norm" | "label"> & { breaks?: readonly NoteBreak[] }, start: number, end: number, exclude?: { start: number; end: number }, side: "note" | "draft" = "note"): string {
   const norm = s.norm;
   // The clause is read at most FRAME_CONTEXT characters either side of the span (check2-WB N4: bounded work per call).
   let a = start;
@@ -455,7 +580,7 @@ export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: numbe
   const cut = (a > 0 && !/[;:.!?]/.test(norm.charAt(a - 1))) || (b < norm.length && !/[;.!?]/.test(norm.charAt(b)));
   const clause = norm.slice(a, b);
   const parts: string[] = [];
-  for (const g of segmentsOf(clause)) {
+  for (const g of segmentsOf(clause, breaksIn(s.breaks, a, b))) {
     const gs = a + g.start;
     const ge = a + g.end;
     const text = g.text.trim();
@@ -463,7 +588,7 @@ export function frameScope(s: Pick<NoteSentence, "norm" | "label">, start: numbe
     else if (ge <= start && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
     else if (gs >= end && (GOVERNING_LEAD.test(text) || isModifier(text))) parts.push(text);
   }
-  if (s.label && a > 0 && norm.slice(Math.max(0, a - s.label.length - 8), a).replace(/[\s:]+$/, "").endsWith(s.label)) parts.push(s.label);
+  if (s.label && labelGoverns(s.label) && a > 0 && norm.slice(Math.max(0, a - s.label.length - 8), a).replace(/[\s:]+$/, "").endsWith(s.label)) parts.push(s.label);
   if (cut && side === "note") parts.push("?");
   return parts.join(" ; ");
 }
@@ -498,7 +623,9 @@ export function segmentStems(norm: string, ignore?: IgnoreNames, owner?: object)
     if (!byIgnore) sentenceSegments.set(owner, (byIgnore = new Map()));
     const hit = byIgnore.get(who);
     if (hit) return hit;
-    const out = computeSegmentStems(norm, ignore);
+    // A note sentence's own conjunct boundaries (a joined line wrap, a spaced dash – NoteSentence.breaks).
+    const own = owner as { norm?: unknown; breaks?: readonly NoteBreak[] };
+    const out = computeSegmentStems(norm, ignore, own.norm === norm ? own.breaks : undefined);
     byIgnore.set(who, out);
     return out;
   }
@@ -512,8 +639,8 @@ export function segmentStems(norm: string, ignore?: IgnoreNames, owner?: object)
   return out;
 }
 
-function computeSegmentStems(norm: string, ignore?: IgnoreNames): SegmentStems {
-  const segs = segmentsOf(norm);
+function computeSegmentStems(norm: string, ignore?: IgnoreNames, breaks?: readonly NoteBreak[]): SegmentStems {
+  const segs = segmentsOf(norm, breaks);
   return { segs, stems: segs.map((g) => contentStems(g.text, ignore)) };
 }
 
@@ -541,6 +668,12 @@ export interface NoteSentence {
   goalLabel: boolean;
   /** A question ("Permanent?"). */
   question: boolean;
+  /**
+   * Conjunct boundaries in `norm` its punctuation does not show (fix round 1): where a printed line wrap was joined
+   * (R1T-WB-04) and a spaced dash ("Sleeping poorly – wakes when turning over", R1T-WB-05). A negation, hedge or frame
+   * in the part before one is not the part after it (frameScope, coveringSpan).
+   */
+  breaks: readonly NoteBreak[];
 }
 
 const FIELDS: ReadonlyArray<[NoteField, (n: Note) => string | undefined]> = [
@@ -556,6 +689,52 @@ const FIELDS: ReadonlyArray<[NoteField, (n: Note) => string | undefined]> = [
 const GOAL_LABEL = /^(?:goals?|aims?|targets?|objectives?|stg|ltg|short[- ]term goals?|long[- ]term goals?|plan|plans|hopes?|expectations?|rtw plan|return to work plan)$/;
 const noteCache = new WeakMap<Note, NoteSentence[]>();
 
+/**
+ * A note's own line labels (a terse note's "Plan: …", "Rx: …" on a line of its own): a wrapped line never starts with
+ * one, so the line before it is not joined to it.
+ */
+const LINE_LABEL =
+  /^(?:plans?|goals?|aims?|stg|ltg|assessment|impression|diagnosis|dx|opinion|advice|rx|tx|treatment|hep|meds|medications?|pmh|dh|sh|hpc|pc|o\/e|review|outcome measures?|red flags?|yellow flags?|work|social|sleep|aggs|eases|imaging|investigations|special tests|notes?|comments?|next|subjective|objective|history|observation|palpation|rom|power|sensation|reflexes|neuro|posture|gait|pain|function|s|o|a|p)\s*:\s/i;
+/** A line ending at a stop (a full stop, "!", "?", an ellipsis or a heading's colon), closing quotes and brackets aside. */
+const ENDS_AT_STOP = /[.!?\u2026:]["\u201D\u2019')\]]*$/;
+/** A spaced dash between words in normalised text ("sleeping poorly - wakes when turning over"; never a range "4 - 6"). */
+const SPACED_DASH = /(?<=[a-z)\]'"%°])\s+-\s+(?=[a-z(])/g;
+
+/** Whether the first (`start`) or last (`end`) word of normalised text is a content word (not a function word; a figure counts). */
+function contentWordAt(norm: string, at: "start" | "end"): boolean {
+  const m = at === "end" ? /([a-z0-9][a-z0-9'’-]*)[^a-z0-9]*$/.exec(norm) : /^[^a-z0-9]*([a-z0-9][a-z0-9'’-]*)/.exec(norm);
+  if (!m) return false;
+  const w = m[1].replace(/['’]s$/, "");
+  if (/\d/.test(w)) return true;
+  return !STOP.has(w) && w.length >= 3;
+}
+
+/**
+ * The tokenizer's note sentences of one field, a printed line wrap inside a sentence joined back (fix round 1, R1T-WB-04;
+ * the W0 "notes" policy ends a sentence at every line break): span B continues span A when exactly one line break lies
+ * between them, A does not end at a stop, B starts with a lower-case letter, and B is neither a list item nor a "Label:"
+ * line – the prose rule. Each group is the spans of one sentence.
+ */
+function sentenceGroups(value: string): Array<Array<{ start: number; end: number; text: string }>> {
+  const spans = splitSentences(value, "notes");
+  const groups: Array<Array<{ start: number; end: number; text: string }>> = [];
+  for (const sp of spans) {
+    const last = groups[groups.length - 1];
+    const prev = last ? last[last.length - 1] : null;
+    const gap = prev ? value.slice(prev.end, sp.start) : "";
+    const wrapped =
+      prev !== null &&
+      /^[ \t\r]*\n[ \t\r]*$/.test(gap) &&
+      !ENDS_AT_STOP.test(prev.text) &&
+      sp.marker === undefined &&
+      /^[a-z]/.test(sp.text) &&
+      !LINE_LABEL.test(sp.text);
+    if (wrapped && last) last.push({ start: sp.start, end: sp.end, text: sp.text });
+    else groups.push([{ start: sp.start, end: sp.end, text: sp.text }]);
+  }
+  return groups;
+}
+
 /** Every sentence of a note (cached per note object). */
 export function noteSentences(note: Note): readonly NoteSentence[] {
   const hit = noteCache.get(note);
@@ -564,9 +743,24 @@ export function noteSentences(note: Note): readonly NoteSentence[] {
   for (const [field, get] of FIELDS) {
     const value = get(note);
     if (!value || !value.trim()) continue;
-    for (const span of splitSentences(value, "notes")) {
-      const text = span.text;
-      const norm = normaliseForMatch(expandNoteShorthand(text));
+    for (const group of sentenceGroups(value)) {
+      // The sentence as written, its wraps as single spaces; its normalised form part by part, so each join's place is known.
+      const text = group.map((g) => g.text).join(" ");
+      let norm = "";
+      const breaks: NoteBreak[] = [];
+      for (const g of group) {
+        const part = canonicalRanges(normaliseForMatch(expandNoteShorthand(g.text)));
+        if (!part) continue;
+        if (norm) {
+          // The join is a conjunct boundary only between two whole phrases – a content word ends the line and another
+          // starts the next ("no swelling⏎knee pain on stairs"); a wrap inside a phrase ("after a⏎twisting sports
+          // injury", "no evidence of⏎nerve root signs", "should be able to⏎return …") is one statement.
+          if (contentWordAt(norm, "end") && contentWordAt(part, "start")) breaks.push({ start: norm.length, end: norm.length + 1 });
+          norm += " ";
+        }
+        norm += part;
+      }
+      for (const m of Array.from(norm.matchAll(SPACED_DASH))) breaks.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length });
       const lab = /^([a-z][a-z /-]{0,30}?):\s/.exec(norm);
       const label = lab ? lab[1].trim() : null;
       out.push({
@@ -581,6 +775,7 @@ export function noteSentences(note: Note): readonly NoteSentence[] {
         stems: contentStems(norm),
         goalLabel: label !== null && GOAL_LABEL.test(label),
         question: /\?/.test(norm),
+        breaks: breaks.sort((a, b) => a.start - b.start),
       });
     }
   }
@@ -711,8 +906,10 @@ const FRAME_VERBS = "recorded|noted|documented|wrote|stated|reported|observed|fo
  * Where the clinician recorded it, or as what, after the frame verb: "recorded in his assessment that", "recorded in the
  * discharge note that", "recorded under opinion on work:", "recorded an assessment that", "recorded her assessment as".
  */
+// Fix round 1 (R1T-WB-06): the noun-phrase form is a frame only with what follows it ("recorded an assessment of …", "her
+// assessment as …", "his findings:") – "I explained the diagnosis and the expected recovery" is the act itself.
 const RECORD_WHERE =
-  "(?: (?:in|under) (?:his|her|their|my|the|an?|that|this) (?:[a-z-]+ ){0,3}?(?:assessment|note|notes|review|record|letter|opinion on work|plan)(?: of \\d{2}/\\d{2}/\\d{4})?:?| under [a-z ]{2,30}?:| (?:an?|his|her|their|the|my) (?:clinical |initial |working )?(?:assessment|impression|diagnosis|opinion|view|findings?)(?: (?:that|of|as))?)?";
+  "(?: (?:in|under) (?:his|her|their|my|the|an?|that|this) (?:[a-z-]+ ){0,3}?(?:assessment|note|notes|review|record|letter|opinion on work|plan)(?: of \\d{2}/\\d{2}/\\d{4})?:?| under [a-z ]{2,30}?:| (?:an?|his|her|their|the|my) (?:clinical |initial |working )?(?:assessment|impression|diagnosis|opinion|view|findings?)(?: (?:that|of|as)|:))?";
 
 function namesAlt(people: readonly string[]): string {
   return people.length ? people.map((p) => escapeRegExp(p.toLowerCase()).replace(/ /g, "\\s+")).join("|") : "(?!x)x";
@@ -722,10 +919,26 @@ function namesAlt(people: readonly string[]): string {
 const CLAUSE_SPLIT = /\s*;\s*|,\s+(?=(?:and|but|so|while|whereas|although|though|because|as|since|which|when)\b)|\s+(?=(?:and|but)\s+(?:he|she|they|his|her|their|i|we|it|the)\b)|\s+(?=(?:because|although|whereas|while)\b)/;
 
 /**
+ * Attribution and occasion frames inside a claim (fix round 1, R1T-WB-06 a, d), which say who recorded it and when, not
+ * what: "… and an assessment of good progress" ("an assessment of" / "her assessment as"), "… was sleeping poorly at that
+ * assessment" ("at that assessment", "at the initial assessment on 08/09/2026", "at my discharge review"). Removed only
+ * where something is left of the clause; the claim's own words are never touched.
+ */
+// A regex literal: a template literal with "\\b" and a constant is mis-escaped by the production server build (R1T-WB-12).
+const INLINE_FRAME =
+  /\b(?:(?:an?|his|her|their|the|my) (?:clinical |initial |working |discharge |final )?(?:assessment|impression|opinion|view) (?:of|as)|(?:at|by|on) (?:that|this|the|his|her|their|my|each|every) (?:(?:initial|first|discharge|final|last|latest|follow-up|second|third|same|previous|earlier) ){0,2}(?:assessment|review|appointment|session|visit|consultation)(?: on \d{2}\/\d{2}\/\d{4})?)\b ?/g;
+/** A reference back to the condition named before ("the same condition", "this injury"): it names, it claims nothing new. */
+const ANAPHORA = /\b(?:the same|this|that|the said) (?:condition|injury|problem|complaint|presentation)\b/g;
+function inlineFramesOut(claim: string): string {
+  const out = claim.replace(INLINE_FRAME, "").replace(ANAPHORA, "it").replace(/\s+([,;.])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  return out.length > 0 && /[a-z0-9]/.test(out) ? out : claim;
+}
+
+/**
  * Parse one drafted sentence: its frame, holder, quotation and claim. `people` are the clinicians' full names (any case).
  */
 export function parseDraftSentence(text: string, people: readonly string[]): Omit<DraftSentence, "start" | "end"> {
-  const norm = normaliseForMatch(text);
+  const norm = canonicalRanges(normaliseForMatch(text));
   const NAMES = namesAlt(people);
   let rest = norm;
   let holder: Holder | null = null;
@@ -739,14 +952,16 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
     framedBy = nameOf(qm[1]);
     holder = { kind: "named", name: framedBy };
     const raw = /["“]([^"”]+)["”]/.exec(text)?.[1] ?? qm[2];
-    quote = { text: raw, norm: normaliseForMatch(expandNoteShorthand(raw)) };
+    quote = { text: raw, norm: canonicalRanges(normaliseForMatch(expandNoteShorthand(raw))) };
     return { text, norm, holder, framedBy, quote, claim: "", clauses: [] };
   }
   // The note as the subject: "The same note contained …", "That note recorded that …" – a frame, not a claim.
   rest = rest.replace(new RegExp(`^(?:the|that|this|his|her|their) (?:same )?(?:[a-z-]+ )?(?:note|notes|record|assessment)(?: of ${UK_DATE_N})? (?:also )?(?:contained|recorded|included|gave|stated|said|noted)(?: that)?,? `), "");
   // A lead date or occasion: "On 06/05/2026", "At the review on 06/05/2026,", "At discharge,", "At that appointment",
   // "By the review on 19/08/2026" (harden-WB: the occasion is when, not what – "review" is not a claim word).
-  rest = rest.replace(new RegExp(`^(?:on ${UK_DATE_N}|(?:at|by) (?:the |my |his |her |their |this |that )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on ${UK_DATE_N})?),? `), "");
+  // Fix round 1 (R1T-WB-06 a): the occasion's words are read greedily – "At my discharge review on 16/09/2026" is all
+  // frame (a lazy read stopped at "discharge" and left "review on 16/09/2026" as claim content).
+  rest = rest.replace(new RegExp(`^(?:on ${UK_DATE_N}|on (?:the same|that) (?:date|day)|(?:at|by) (?:the |my |his |her |their |this |that )?(?:[a-z-]+ ){0,2}(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on ${UK_DATE_N})?),? `), "");
   // "<Name>'s assessment (01/09/2026): …" / "My assessment: …".
   let m = new RegExp(`^(${NAMES}|my)['’]?s? (?:clinical |professional |initial |discharge )?(?:assessment|opinion|view|impression|diagnosis|findings?|examination|note|expectation)(?: \\(${UK_DATE_N}\\))?: `).exec(rest);
   if (m) {
@@ -764,7 +979,17 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
       holder = { kind: "named", name: framedBy };
     }
     rest = rest.slice(m[0].length);
-  } else if ((m = new RegExp(`^(?:in (?:his|her|their|my) (?:clinical |initial |discharge )?(?:assessment|opinion|view|notes?|review),? )?(${NAMES}|i)(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(${FRAME_VERBS})${RECORD_WHERE}(?: that)?,? `).exec(rest))) {
+  } else if ((m = new RegExp(`^(${NAMES}|my|his|her|their)['’]?s? (?:clinical |professional |initial |discharge |final )?(?:opinion|view|assessment|impression|diagnosis|expectation|findings?)(?: (?:on|of|dated) ${UK_DATE_N}| \\(${UK_DATE_N}\\))? (?:is|was|were)(?: that)?,? `).exec(rest))) {
+    // Fix round 1 (R1T-WB-06 d, R1T-WB-11): "<Name>'s assessment on 20/10/2026 was …", "His assessment was …" – an
+    // attribution frame, not claim content. A pronoun names no one here: the colleague-named check reads it against the
+    // clinician the paragraph named before ("Her assessment was …" after "Priya Shah recorded …").
+    if (m[1] === "my") holder = { kind: "owner" };
+    else if (!/^(?:his|her|their)$/.test(m[1])) {
+      framedBy = nameOf(m[1]);
+      holder = { kind: "named", name: framedBy };
+    }
+    rest = rest.slice(m[0].length);
+  } else if ((m = new RegExp(`^(?:in (?:his|her|their|my) (?:clinical |initial |discharge )?(?:assessment|opinion|view|notes?|review),? )?(${NAMES}|i)(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(${FRAME_VERBS})(?: on ${UK_DATE_N})?${RECORD_WHERE}(?: that)?,? `).exec(rest))) {
     // "<Name>, physiotherapist, recorded that …" / "I recorded that …".
     if (m[1] === "i") holder = { kind: "owner" };
     else {
@@ -776,10 +1001,16 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
     const inHis = /^,?\s*in (?:his|her|their|my) (?:clinical |professional )?(?:opinion|view),? /.exec(rest);
     if (inHis) rest = rest.slice(inHis[0].length);
   }
-  // "He also recorded that …", "She recorded advice to …": the clinician named before (the frame, not the claim).
+  // "He also recorded that …", "She recorded advice to …": the clinician named before (the frame, not the claim) – also
+  // after "In his assessment of the same date" (fix round 1, R1T-WB-11).
   if (!framedBy) {
-    const pr = new RegExp(`^(?:he|she|they) (?:also |then |later |again )?(${FRAME_VERBS})${RECORD_WHERE}(?: that)?,? `).exec(rest);
+    const pr = new RegExp(`^(?:in (?:his|her|their) (?:clinical |initial |discharge |follow-up )?(?:assessment|note|notes|review|examination)(?: (?:of|on) (?:the same date|that date|that day|${UK_DATE_N}))?,? )?(?:he|she|they) (?:also |then |later |again )?(${FRAME_VERBS})(?: on ${UK_DATE_N})?${RECORD_WHERE}(?: that)?,? `).exec(rest);
     if (pr) rest = rest.slice(pr[0].length);
+  }
+  // "Assessment on 08/09/2026: …", "Discharge review (16/09/2026): …" – a label naming the occasion, not claim content.
+  if (!holder) {
+    const lab = new RegExp(`^(?:initial |discharge |follow-up |final |clinical )?(?:assessment|review|examination|impression|diagnosis|findings?)(?: (?:on|of) ${UK_DATE_N}| \\(${UK_DATE_N}\\))?: `).exec(rest);
+    if (lab) rest = rest.slice(lab[0].length);
   }
   // "In my opinion …" / "In Tom Ellis's opinion …" (at the start of the claim).
   const op = new RegExp(`^,?\\s*in (my|${NAMES})(?:['’]s)? (?:clinical |professional )?(?:opinion|view),? `).exec(rest);
@@ -801,7 +1032,7 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
     holder = holder ?? { kind: "named", name: who };
     rest = rest.slice(0, tail.index);
   }
-  const claim = rest.replace(/[.!]+$/, "").trim();
+  const claim = inlineFramesOut(rest.replace(/[.!]+$/, "").trim());
   const clauses = claim
     .split(CLAUSE_SPLIT)
     .map((c) => c.replace(/^(?:and|but|so|while|whereas|although|though|because|as|since|which|when)\s+/, "").trim())
@@ -818,15 +1049,45 @@ export function parseDraftSentence(text: string, people: readonly string[]): Omi
 export function holderAt(norm: string, index: number, people: readonly string[], fallback: Holder | null): Holder | null {
   const NAMES = namesAlt(people);
   const nameOf = (lower: string) => people.find((p) => p.toLowerCase().replace(/\s+/g, " ") === lower.replace(/\s+/g, " ")) ?? lower;
-  const re = new RegExp(`\\b(?:in (my|${NAMES})(?:['’]s)? (?:clinical |professional )?(?:opinion|view)|(my|${NAMES})['’]?s? (?:clinical |professional )?(?:opinion|view|assessment|impression) (?:is|was) that|(i|${NAMES})(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(?:recorded|noted|documented|wrote|stated|assessed|found|advised|recommended)${RECORD_WHERE} that)\\b`, "g");
+  // Fix round 1 (R1T-WB-06, R1T-WB-09): a named clinician's own frame verb governs what follows it, "that" or not –
+  // "…, and on 05/08/2026 Tom Ellis, physiotherapist, recorded advising a break …" is Tom Ellis's.
+  const re = new RegExp(`\\b(?:in (my|${NAMES})(?:['’]s)? (?:clinical |professional )?(?:opinion|view)|(my|${NAMES})['’]?s? (?:clinical |professional )?(?:opinion|view|assessment|impression) (?:is|was) that|(i|${NAMES})(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(?:recorded|noted|documented|wrote|stated|assessed|found|advised|recommended)(?: on ${UK_DATE_N})?${RECORD_WHERE} that|(${NAMES})(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(?:recorded|noted|documented|wrote|stated|assessed|found|advised|recommended|explained|measured|examined|observed|treated|discharged|reviewed|provided|gave)\\b)`, "g");
   let found: Holder | null = null;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(norm)) !== null) {
+  // A frame inside a quotation is the quoted clinician's own words ("Tom Ellis recorded: “In my opinion …”"), never a
+  // frame of the drafted sentence (fix round 1, R1T-WB-07): quoted text is read as blanks.
+  const unquoted = norm.replace(/"[^"]*"/g, (q) => " ".repeat(q.length));
+  while ((m = re.exec(unquoted)) !== null) {
     if (m.index > index) break;
-    const who = m[1] ?? m[2] ?? m[3];
+    const who = m[1] ?? m[2] ?? m[3] ?? m[4];
     found = who === "my" || who === "i" ? { kind: "owner" } : { kind: "named", name: nameOf(who) };
   }
   return found ?? fallback;
+}
+
+/**
+ * A drafted claim split where another frame starts inside it (fix round 1, R1T-WB-06 / R1T-WB-09): "advice on desk
+ * set-up and regular breaks, and on 05/08/2026 Tom Ellis, physiotherapist, recorded advising a break every 45 minutes …"
+ * is two runs – the first in the sentence's own holder's words, the second Tom Ellis's – each anchored to its own
+ * holder's notes. The frame words themselves are left out of the runs.
+ */
+export function claimRuns(claim: string, people: readonly string[], holder: Holder | null): Array<{ text: string; holder: Holder | null }> {
+  const NAMES = namesAlt(people);
+  const nameOf = (lower: string) => people.find((p) => p.toLowerCase().replace(/\s+/g, " ") === lower.replace(/\s+/g, " ")) ?? lower;
+  const re = new RegExp(`(?:,\\s*(?:and\\s+)?|;\\s*|\\s+and\\s+)(?:on ${UK_DATE_N},?\\s+)?(${NAMES}|i)(?:, [a-z ,-]{2,60}?,)? (?:also |then |later |again )?(?:${FRAME_VERBS})${RECORD_WHERE}(?: that)?,?\\s+`, "g");
+  const out: Array<{ text: string; holder: Holder | null }> = [];
+  let last = 0;
+  let current = holder;
+  for (const m of Array.from(claim.matchAll(re))) {
+    const at = m.index ?? 0;
+    const before = claim.slice(last, at).trim();
+    if (before) out.push({ text: before, holder: current });
+    current = m[1] === "i" ? { kind: "owner" } : { kind: "named", name: nameOf(m[1]) };
+    last = at + m[0].length;
+  }
+  const tail = claim.slice(last).trim();
+  if (tail) out.push({ text: tail, holder: current });
+  return out.length > 0 ? out : [{ text: claim, holder }];
 }
 
 /** Every sentence of a drafted paragraph, parsed (the W0 tokenizer, "prose" policy). */

@@ -101,6 +101,18 @@ const reportKnows = (key: string) => key in ReportSchema.shape;
 const receiptKnows = (key: string) => key in SignReceiptSchema.shape;
 const firstUnknown = (members: readonly string[], known: (m: string) => boolean, later: string) => members.find((m) => !known(m)) ?? later;
 
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** The same approved report and map twice: as this build writes them, and as the release writes them. */
 async function approvedPair(tenantId: string) {
   const baseForm = withAttestedConfirmation({ ...HARROW_PIKE_RAW, tenantId }, "Practice manager", "2026-10-01T09:00:00.000Z");
@@ -270,6 +282,11 @@ test("clinic Studio after a rollback: the store serves the release's report and 
   assert.equal(final.headers.get("x-medreport-content-sha256"), release.report.receipt!.contentSha256);
 
   // The release's keys change nothing this build prints: the same report without them, approved by this build.
+  // bh2 fix round 1 (WB, R1T-WB-03): this build's copy with its own words stamped, as the review stamps them (on a clinic's
+  // report with no approver, unstamped "clinician" text is a person's), and approved again as this build approves it.
+  const { receipt: _baseReceipt, ...baseDraftAgain } = base.report;
+  base.report = { ...withOwnWordsStamped(structuredClone({ ...baseDraftAgain, status: "draft" }) as Report), status: "signed" };
+  base.report.receipt = await receiptFor({ ...base.report, status: "draft" }, { signer: SARAH, attestations: FORM_ATTESTATIONS, formMapSha256: formMapSha256(base.form), now: SIGNED_AT });
   const baseFinal = await bodyOf(await render(base.report, base.form));
   assert.equal(baseFinal.headers.get("x-medreport-render"), "final", baseFinal.text());
   assert.equal(final.headers.get("content-type"), baseFinal.headers.get("content-type"));

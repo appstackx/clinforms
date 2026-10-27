@@ -38,6 +38,7 @@ import { dbUsageRecorder } from "../../src/server/usage/recorder";
 import { getDemoBundle } from "./dev-bundles";
 import { completedSampleReport } from "./form-sample-answers";
 import { member, storeDeps, storeFetch } from "./store-harness";
+import { asApproversReport } from "./release-store-fixture";
 import { demoBearer } from "./test-actors";
 
 const A = "usage-clinic-a";
@@ -52,7 +53,8 @@ const BUNDLE: EpisodeBundle = { ...getDemoBundle("megan-hart"), tenantId: A };
 const USAGE = { input_tokens: 4000, output_tokens: 900, cache_read_input_tokens: 1200, cache_creation_input_tokens: 300 };
 
 function reportOf(id: string, extra: Partial<Report> = {}): Report {
-  const r = completedSampleReport("megan-hart", FORM, { id });
+  // bh2 fix round 1 (WC, R1T-WC-06): stored as the Studio stores it – with its approving clinician (Sam).
+  const r = asApproversReport(completedSampleReport("megan-hart", FORM, { id }), CLIN);
   return { ...r, tenantId: A, bundleSnapshot: { ...r.bundleSnapshot, tenantId: A }, ...extra };
 }
 

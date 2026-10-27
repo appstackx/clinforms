@@ -251,8 +251,10 @@ test("fix round 1: otherCliniciansInFirstPerson – 'I' / 'me' / 'my' citing ano
   assert.equal(otherCliniciansInFirstPerson(p("She said “my back aches by the end of the shift”."), TOM_ONLY, SARAH), null, "a quotation from the note");
   // The signer's notes and another's together: fine while the other clinician is named.
   // bh2 WB design 7 (C-ATTR-3, lic-1/lic-2): the first person on drafted text only when every cited note is the owner's.
-  assert.deepEqual(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026, and Tom Ellis, physiotherapist, recorded it on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), ["Tom Ellis"]);
-  assert.deepEqual(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026 and on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), ["Tom Ellis"]);
+  // bh2 fix round 1 (R1T-WB-09, Khuram's E7/E8 decision of 26/10/2026): the first person clause by clause – the owner's
+  // own clause beside Tom Ellis named in the third person is licensed; an "I" over a date only Tom's note has is not.
+  assert.equal(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026, and Tom Ellis, physiotherapist, recorded it on 05/08/2026.", ["N-001", "N-004"]), mine, SARAH), null);
+  assert.deepEqual(otherCliniciansInFirstPerson(p("I repeated soft tissue release on 22/07/2026 and on 05/08/2026.", ["N-001", "N-004"]), { notes: [{ ...mine.notes[0], date: "2026-07-22" }, { ...mine.notes[1], date: "2026-08-05" }] } as typeof TOM_ONLY, SARAH), ["Tom Ellis"]);
   // No signing author: nothing is anyone's "I".
   assert.deepEqual(otherCliniciansInFirstPerson(p("Mr Ellery told me that driving was uncomfortable."), mine, null), ["Sarah Reid"]);
   assert.equal(otherCliniciansInFirstPerson(p("7 appointments were attended, and I was told of none missed.", ["FACT-attendance"]), TOM_ONLY, SARAH), null, "no note cited");

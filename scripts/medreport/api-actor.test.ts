@@ -280,9 +280,22 @@ const attest = (f: FormDefinition) => withAttestedConfirmation(f, "Practice mana
 const DEMO_FORM = attest(HARROW_PIKE_RAW);
 const formOf = (tenantId: string) => attest({ ...HARROW_PIKE_RAW, tenantId });
 
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** The completed sample report, as clinic `tenantId`'s own (bundle and report relabelled). */
 function reportOf(tenantId: string, opts: { connectorId?: "tm3" | "tm3-sim"; patientId?: string; episodeId?: string } = {}): Report {
   const r = completedSampleReport("megan-hart", DEMO_FORM, { id: `rpt_${tenantId}` });
+  withOwnWordsStamped(r);
   const episodeRef = {
     connectorId: opts.connectorId ?? r.episodeRef.connectorId,
     patientId: opts.patientId ?? r.episodeRef.patientId,

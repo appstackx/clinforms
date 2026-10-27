@@ -20,7 +20,7 @@
  */
 import type { EpisodeBundle, Note, Paragraph, ReportFlag, ReportSection } from "../types";
 import { sameClinician } from "../voice";
-import { clinicianNames, contentStems, draftSentences, noteSentences, segmentsOf, stemsMatch, type DraftSentence, type NoteSentence } from "./attribution-text";
+import { clinicianNames, contentStems, draftSentences, noteSentences, plainStemsOf, segmentsOf, stemsMatch, type DraftSentence, type NoteSentence } from "./attribution-text";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { authorshipOf, rawOpinionHits } from "./opinion-language";
 import { voiceIssue } from "./voice";
@@ -41,7 +41,7 @@ export function namesClinician(text: string, name: string): boolean {
  * "He recorded …" / "She also noted …": a clinician's act whose subject is the clinician the last sentence named – after a
  * lead date or occasion too ("On 20/10/2026 she recorded a plan …", harden-WB).
  */
-const PRONOUN_ACT = /^(?:(?:on \d{1,2}\/\d{1,2}\/\d{2,4}|(?:at|by) (?:the |that |this |his |her |their )?(?:[a-z-]+ ){0,2}?(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on \d{1,2}\/\d{1,2}\/\d{2,4})?),?\s+)?(?:(?:he|she|they)\s+(?:also\s+|then\s+|later\s+|again\s+)?(?:recorded|noted|documented|found|assessed|examined|measured|observed|advised|discharged|treated|reviewed|explained|reassured|referred|wrote|described|planned|progressed|taught|issued)|(?:his|her|their)\s+(?:[a-z-]+\s+){0,2}(?:assessment|findings?|opinion|impression|examination|plan|advice|diagnosis|view|recommendations?)|(?:the same|that|this|his|her|their)\s+(?:[a-z-]+\s+)?(?:note|notes|record|assessment))\b/i;
+const PRONOUN_ACT = /^(?:(?:on \d{1,2}\/\d{1,2}\/\d{2,4}|on (?:the same|that) (?:date|day)|(?:at|by) (?:the |that |this |his |her |their )?(?:[a-z-]+ ){0,2}(?:assessment|review|appointment|session|visit|consultation|discharge)(?: on \d{1,2}\/\d{1,2}\/\d{2,4})?),?\s+)?(?:in (?:his|her|their) (?:[a-z-]+ ){0,2}(?:assessment|note|notes|review|examination)(?: (?:of|on) (?:the same date|that date|that day|\d{1,2}\/\d{1,2}\/\d{2,4}))?,?\s+)?(?:(?:he|she|they)\s+(?:also\s+|then\s+|later\s+|again\s+)?(?:recorded|noted|documented|found|assessed|examined|measured|observed|advised|discharged|treated|reviewed|explained|reassured|referred|wrote|described|planned|progressed|taught|issued)|(?:his|her|their)\s+(?:[a-z-]+\s+){0,2}(?:assessment|findings?|opinion|impression|examination|plan|advice|diagnosis|view|recommendations?)|(?:the same|that|this|his|her|their)\s+(?:[a-z-]+\s+)?(?:note|notes|record|assessment))\b/i;
 
 /** The opinion box test (design 3): a clinician_opinion box, an opinion-labelled box, or a paragraph whose basis is a recorded opinion. */
 export function isOpinionPlace(section: Pick<ReportSection, "kind" | "title" | "key">, p: Pick<Paragraph, "basis">, label = ""): boolean {
@@ -59,7 +59,9 @@ export function bestNoteSentence(stems: readonly string[], notes: readonly Note[
   for (const note of notes) {
     for (const s of noteSentences(note)) {
       if (s.field === "history") continue;
-      const share = stems.filter((w) => s.stems.some((h) => stemsMatch(w, h))).length / stems.length;
+      // The words as written (fix round 1: plainStemsOf – the anchors' canonical synonyms never decide whose it is).
+      const have = plainStemsOf(s);
+      const share = stems.filter((w) => have.some((h) => stemsMatch(w, h))).length / stems.length;
       if (!best || share > best.share || (share === best.share && rank(s.field) < rank(best.sentence.field))) best = { sentence: s, share };
     }
   }
@@ -81,7 +83,7 @@ export function unnamedColleagues(input: {
   const { sentence: s, lastNamed, colleagues, people } = input;
   const out: string[] = [];
   const ignore = { people: people.map((x) => x.toLowerCase()) };
-  const stems = contentStems(s.norm, ignore);
+  const stems = contentStems(s.norm, ignore, { canonical: false });
   if (stems.length === 0) return out;
   const pronounAct = PRONOUN_ACT.test(s.text.trim());
   const hits = rawOpinionHits(s.norm).length > 0;
@@ -92,7 +94,7 @@ export function unnamedColleagues(input: {
   const from = new Map<string, boolean>();
   /** Whose part was only a finding or a plan (objective, plan) – the parts a paragraph's lead attribution carries on. */
   const continuable = new Map<string, boolean>();
-  const share = (want: readonly string[], text: string) => (want.length ? want.filter((w) => contentStems(text, ignore).some((h) => stemsMatch(w, h))).length / want.length : 0);
+  const share = (want: readonly string[], text: string) => (want.length ? want.filter((w) => contentStems(text, ignore, { canonical: false }).some((h) => stemsMatch(w, h))).length / want.length : 0);
   const classify = (best: { sentence: NoteSentence; share: number }): void => {
     const c = colleagues.find((x) => x.notes.some((n) => n.id === best.sentence.noteId));
     if (!c) return;
@@ -114,7 +116,7 @@ export function unnamedColleagues(input: {
     // finding each is; with none of those, an opinion phrase makes it every colleague's to name.
     let placed = false;
     for (const seg of segmentsOf(s.claim || s.norm)) {
-      const segStems = contentStems(seg.text, ignore);
+      const segStems = contentStems(seg.text, ignore, { canonical: false });
       if (segStems.length < 3) continue;
       const best = bestNoteSentence(segStems, input.cited);
       const rec = records ? share(segStems, records) : 0;

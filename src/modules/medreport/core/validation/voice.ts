@@ -25,6 +25,7 @@ import type { Clinician, EpisodeBundle, Note, Paragraph, ReportFlag } from "../t
 import { formatUkDate } from "../dates";
 import { firstPersonUses, namesPerson, otherCliniciansInFirstPerson, sameClinician } from "../voice";
 import { noteMentions } from "./attribution-text";
+import { firstPersonOverColleagues, type ColleagueClause } from "./attribution-voice";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { defineHook, hookEnabled } from "./hooks";
 import { authorshipOf } from "./opinion-language";
@@ -46,6 +47,8 @@ export interface VoiceIssue {
   others: string[];
   /** Licence (ii) applies: possessive or object uses only, the cited notes mention the owner – the approver may acknowledge. */
   possessiveLicence: boolean;
+  /** Fix round 1: the clauses whose first person is not the owner's own account (when the owner's notes are cited too). */
+  clauses?: ColleagueClause[];
 }
 
 /** Whether the paragraph's first person goes against the voice owner, and whether licence (ii) may cover it. */
@@ -53,8 +56,13 @@ export function voiceIssue(p: Pick<Paragraph, "text" | "sourceIds">, bundle: Pic
   const others = otherCliniciansInFirstPerson(p, bundle, owner);
   if (!others) return null;
   let possessiveLicence = false;
+  let clauses: ColleagueClause[] | undefined;
   if (owner?.name.trim() && hookEnabled(POSSESSIVE_LICENCE)) {
-    const uses = firstPersonUses(p.text);
+    // Fix round 1 (R1T-WB-09): only the first-person uses that are not the owner's own account count – the owner's "I"
+    // over their own notes in the other clauses is licensed (attribution-voice.ts), so a covering-leave sentence beside
+    // them is the possessive the approver may acknowledge.
+    clauses = firstPersonOverColleagues(p, bundle, owner) ?? undefined;
+    const uses = clauses ? clauses.flatMap((c) => c.uses) : firstPersonUses(p.text);
     // "told me", "reported to me": the owner took the history – a clinical act, never the possessive licence.
     const heardIt = (index: number) => /\b(?:told|said to|reported to|explained to|described to|showed|asked)\s+$/i.test(p.text.slice(Math.max(0, index - 16), index));
     const onlyPossessive =
@@ -68,7 +76,7 @@ export function voiceIssue(p: Pick<Paragraph, "text" | "sourceIds">, bundle: Pic
       possessiveLicence = cited.length > 0 && cited.every((n) => noteMentions(n, owner.name));
     }
   }
-  return { others, possessiveLicence };
+  return { others, possessiveLicence, ...(clauses ? { clauses } : {}) };
 }
 
 /* A first-person count of sessions (fix round 2, B1-14) ---------------------------------------- */
@@ -133,15 +141,23 @@ export function validateClinicianVoice(input: ValidatorInput): ReportFlag[] {
     const whoText = names(issue.others);
     const named = issue.others.every((n) => namesPerson(p.text, n));
     const yours = strict ? "the approving clinician's" : "yours";
+    // Fix round 1 (R1T-WB-09): supporting text of a tick or choice is kept with the report, not printed – the message
+    // never says it prints; and when the owner's own clauses are licensed, it names the clause that is not.
+    const printed = !section.answer || section.answer.kind === "text";
+    const onForm = printed ? "On the signed form" : "This supporting text is kept with the report (it is not printed on the form); there";
+    const clause = issue.clauses?.find((c) => !c.namesColleague) ?? null;
+    const clauseText = clause ? p.text.slice(clause.start, clause.end).trim().replace(/[,;.]+$/, "") : "";
     const message = issue.possessiveLicence
-      ? `This answer says “my”, “me” or “our” beside ${whoText}'s note, which mentions you (“${firstPersonUses(p.text)[0]?.word ?? "my"} …”). On the signed form those words read as ${yours}. The approving clinician confirms they are their own account (acknowledge with a reason), or rewrite it.`
+      ? `This answer says “my”, “me” or “our” beside ${whoText}'s note, which mentions you (“${(issue.clauses?.[0]?.uses[0] ?? firstPersonUses(p.text)[0])?.word ?? "my"} …”). ${onForm} those words read as ${yours}. The approving clinician confirms they are their own account (acknowledge with a reason), or rewrite it.`
       : strict
         ? `This answer speaks in the first person (“I”, “me”, “my”, “we”, “our”) and cites a note written by ${whoText}. No approving clinician is chosen yet, so the approving clinician must check whose words these are: name ${issue.others.length === 1 ? whoText : "the clinician"} instead, or rewrite it.`
-        : named
-          ? `This answer names ${whoText}, who wrote the note it cites, and also says “I”, “me”, “my”, “we” or “our”. On the signed form those words read as yours. ${who === "drafted" ? "Rewrite it so it is clear who did what." : "Rewrite it so it is clear who did what, or acknowledge it if those words are your own account."}`
-          : who === "drafted"
-            ? `This answer speaks in the first person (“I”, “me”, “my”, “we”, “our”), but the note it cites was written by ${whoText}. On the signed form it would read as your own. Name ${issue.others.length === 1 ? whoText : "the clinician"} instead, or rewrite it in your own words.`
-            : `This answer speaks in the first person (“I”, “me”, “my”, “we”, “our”), but the note it cites was written by ${whoText}. On the signed form it reads as your own. Name ${issue.others.length === 1 ? whoText : "the clinician"} instead, or acknowledge it if it is your own account.`;
+        : clause
+          ? `Here the first person gives what ${whoText}'s note records (“${clauseText.length > 90 ? `${clauseText.slice(0, 87)}…` : clauseText}”). ${onForm} it reads as ${yours}. Name ${issue.others.length === 1 ? whoText : "the clinician"} in that part${who === "drafted" ? "" : ", or acknowledge it if it is your own account"}.`
+          : named
+            ? `This answer names ${whoText}, who wrote the note it cites, and also says “I”, “me”, “my”, “we” or “our” in the same part. ${onForm} those words read as yours. ${who === "drafted" ? "Rewrite it so it is clear who did what." : "Rewrite it so it is clear who did what, or acknowledge it if those words are your own account."}`
+            : who === "drafted"
+              ? `This answer speaks in the first person (“I”, “me”, “my”, “we”, “our”), but the note it cites was written by ${whoText}. ${onForm} it would read as your own. Name ${issue.others.length === 1 ? whoText : "the clinician"} instead, or rewrite it in your own words.`
+              : `This answer speaks in the first person (“I”, “me”, “my”, “we”, “our”), but the note it cites was written by ${whoText}. ${onForm} it reads as your own. Name ${issue.others.length === 1 ? whoText : "the clinician"} instead, or acknowledge it if it is your own account.`;
     const flag = makeFlag({ code: "OTHER_CLINICIAN_VOICE", severity: "blocking", sectionKey: section.key, paragraphId: p.id, evidence: whoText, message });
     flag.ackPolicy = issue.possessiveLicence || who !== "drafted" ? "approver" : "never";
     flags.push(flag);

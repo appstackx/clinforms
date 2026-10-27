@@ -31,6 +31,7 @@
 import { formatUkDate } from "./dates";
 import type { Clinician, EpisodeBundle, Paragraph, Report } from "./types";
 import { defineHook, hookEnabled } from "./validation/hooks";
+import { firstPersonOverColleagues } from "./validation/attribution-voice";
 
 /** Ledger hooks (validation/__corpus__/ledger.json) owned here: "Write in my own voice" and "Name X instead". */
 export const OWN_VOICE = defineHook("own-voice");
@@ -92,8 +93,6 @@ const UK_DATE = "\\d{2}\\/\\d{2}\\/\\d{4}";
 const LEAD = `(?:(On (${UK_DATE})|At (?:my|the) (?:initial assessment|initial appointment|first appointment|assessment|latest review|final review|follow-up review|follow-up|discharge review|review|appointment|session) on (${UK_DATE})),?\\s+)?`;
 /** The rest of a sentence: up to its full stop (a decimal point "52.3" does not end it). */
 const REST = "((?:[^.!?]|\\.(?=\\d))*)";
-/** Pronoun-only voice: verbs a patient never does ("she recorded" is always the clinician). */
-const RECORD_VERBS = "recorded|documented|measured|examined";
 
 /** "the further sessions" → were; "the shoulder" → was. */
 function beFor(nounPhrase: string): string {
@@ -127,8 +126,10 @@ function narratesEarlierEvent(clause: string): boolean {
 function plainRecordedBody(body: string, lead: string, date: string): string | null {
   const leadComma = lead ? `${lead}, ` : "";
   const on = date ? ` on ${date}` : "";
-  const b = body.trim();
+  let b = body.trim();
   let m: RegExpExecArray | null;
+  // Fix round 1 (R1T-WB-L2): "I recorded on 16/09/2026 that …" – the date after the verb is the lead.
+  if (!lead && (m = /^on (\d{2}\/\d{2}\/\d{4}),? (that,?\s+[\s\S]*)$/.exec(b))) return plainRecordedBody(m[2], `On ${m[1]}`, m[1]);
   // Fix round 1 (B0-23): "…, and that no further treatment is needed" loses its "that" with the frame.
   if ((m = /^(?:that,? in my opinion,?|my opinion that,?)\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1].replace(/ and that,? /, " and ")}`;
   if ((m = /^the clinical reason(?: for (?:the )?further treatment)? (?:as follows|as):\s*([\s\S]*)$/.exec(b))) return m[1];
@@ -137,13 +138,16 @@ function plainRecordedBody(body: string, lead: string, date: string): string | n
   if ((m = /^(?:the |my )?goals? ((?:for|of) .+?) as ([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
   if ((m = /^(?:that )?the guideline (?:followed )?(?:as|was) ([\s\S]*)$/.exec(b))) return `Guideline followed: ${m[1]}`;
   if ((m = /^(?:my|the|an) assessment that,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my assessment, ${m[1]}`;
-  if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
+  // R1T-WB-L2: "…, and that the symptoms …" after the assessment is its own statement ("…; the symptoms …").
+  if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1].replace(/,? and that,? /g, "; ")}`;
   if ((m = /^a (?:further )?treatment request(?: to (?:the insurer|[A-Z][\w&'’.-]*(?: [A-Z][\w&'’.-]*)*))?(?: for| of)? ([\s\S]*)$/.exec(b))) return `Further treatment requested${on}: ${m[1]}`;
   if ((m = /^(?:in the |the |a )?past medical history(?: of| as)?,?\s+([\s\S]*)$/.exec(b))) return `Past medical history: ${m[1]}`;
   if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
   if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
   // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
-  if ((m = /^((?:the|my|an?)\s+[a-z][a-z' -]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
+  // R1T-WB-L2: the noun phrase may hold a grade or a numeral ("the whiplash associated disorder grade II as now largely
+  // resolved" → "… grade II was now largely resolved").
+  if ((m = /^((?:the|my|an?)\s+[a-z][A-Za-z0-9' –-]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
     return `${leadComma}${m[1]} ${beFor(m[1])} ${m[2]}`;
   }
   // "right shoulder active range of movement: flexion 120°…" → "Right shoulder active range of movement on 01/09/2026: …"
@@ -158,8 +162,12 @@ function plainRecordedBody(body: string, lead: string, date: string): string | n
     const clause = m[1].replace(new RegExp(`^(?:she|he) (${OWN_ACTION_VERBS})\\b`), "I $1").replace(/ and that,? /, " and ");
     return `${leadComma}${clause}`;
   }
-  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems."
-  return `${lead ? `${lead}: ` : ""}${b.replace(/, and that,? /, ", and ")}`;
+  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems." – unless
+  // a first-person clause or another "that" clause follows it ("a Neck Disability Index score of 44% …, and I planned
+  // to repeat …"): no grammatical sentence comes of it, so the sentence is kept as written (R1T-WB-L2).
+  if (/,? (?:and|but) (?:I|we) \w+/.test(b) || /^that\b/.test(b)) return null;
+  b = b.replace(/, and that,? /, ", and ");
+  return `${lead ? `${lead}: ` : ""}${b}`;
 }
 
 /** What a clinician does in a session ("she recorded that she provided education…" is the clinician). */
@@ -222,7 +230,9 @@ export function isOwnVoiceCandidate(
   const author = authorName.trim();
   if (p.origin !== "ai" || !author) return false;
   const named = p.text.indexOf(author) >= 0;
-  if (!named && !(opts.pronouns && new RegExp(`\\bI\\s+(?:(?:also|then|later|again)\\s+)?(?:${RECORD_VERBS})\\b`).test(p.text))) return false;
+  // Pronoun-only voice: verbs a patient never does ("I recorded" is the clinician). A regex literal (fix round 1,
+  // R1T-WB-12): the template-literal form was mis-escaped by the production server build ("\\b" became a backspace).
+  if (!named && !(opts.pronouns && /\bI\s+(?:(?:also|then|later|again)\s+)?(?:recorded|documented|measured|examined)\b/.test(p.text))) return false;
   const ids = citedNoteIds(p);
   if (ids.length === 0) return false;
   if (!ids.every((id) => bundle.notes.find((n) => n.id === id)?.author.name === author)) return false;
@@ -569,6 +579,11 @@ export function namesPerson(text: string, name: string): boolean {
  * - no owner (strict mode – no approving clinician chosen yet): every cited note counts as another clinician's.
  * Only N-* notes count: a paragraph citing no note (the registration record, a computed fact) is left to the other checks.
  * Ledger hook "first-person-licence": while it is disabled the owner's own notes do not licence the first person either.
+ *
+ * Fix round 1 (R1T-WB-09, Khuram's E7/E8 decision): when the paragraph cites the owner's own notes as well as a
+ * colleague's, the first person is judged clause by clause (validation/attribution-voice.ts firstPersonOverColleagues):
+ * "On 15/07/2026 I recorded … On 05/08/2026 Tom Ellis, physiotherapist, recorded …" is the owner's "I" over the owner's
+ * notes beside a named colleague – licensed; an "I" over the colleague's note (by its date or content) still is not.
  */
 export function otherCliniciansInFirstPerson(
   p: Pick<Paragraph, "text" | "sourceIds">,
@@ -583,7 +598,14 @@ export function otherCliniciansInFirstPerson(
   const licensed = hookEnabled(FIRST_PERSON_LICENCE);
   const own = (a: Pick<Clinician, "name"> & { hcpc?: string | null }) => licensed && Boolean(author?.name.trim()) && sameClinician(a, author as Pick<Clinician, "name">);
   const others = Array.from(new Set(cited.filter((n) => !own(n.author)).map((n) => n.author.name.trim()))).filter(Boolean);
-  return others.length > 0 ? others : null;
+  if (others.length === 0) return null;
+  if (author && cited.some((n) => own(n.author))) {
+    const clauses = firstPersonOverColleagues(p, bundle, author);
+    if (!clauses) return null;
+    const names = Array.from(new Set(clauses.flatMap((c) => c.colleagues))).filter((n) => others.includes(n));
+    return names.length > 0 ? names : others;
+  }
+  return others;
 }
 
 /**

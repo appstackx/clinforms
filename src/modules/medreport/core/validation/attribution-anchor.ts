@@ -35,7 +35,7 @@
  * Pure; browser and server. Owner: WB (opinion guard and attribution) – docs/bh2-ownership.json.
  */
 import type { Note } from "../types";
-import { MAX_CLAIM_SEGMENTS, MAX_WINDOW_SEGMENTS, contentStems, covers, droppedFrames, frameScope, noteSentences, sameName, segmentStems, segmentsOf, stanceOf, wordIndexOf, type IgnoreNames, type NoteSentence, type Segment } from "./attribution-text";
+import { MAX_CLAIM_SEGMENTS, MAX_WINDOW_SEGMENTS, contentStems, covers, droppedFrames, frameScope, hasOpinionCue, noteSentences, sameName, segmentStems, segmentsOf, stanceOf, wordIndexOf, type IgnoreNames, type NoteSentence, type Segment } from "./attribution-text";
 import { defineHook, hookEnabled } from "./hooks";
 import { normaliseForMatch } from "./text";
 
@@ -171,23 +171,41 @@ export function coveringWindow(norm: string, want: readonly string[], ignore?: I
 }
 
 /**
- * Whether the note sentence asserts what [start, end) says by itself (check-WB M2): no belief, worry, wish, report,
- * third party, risk, condition, refusal or earlier time frames it (attribution-text.ts frameScope) – unless the drafted
- * clause keeps that frame ("He is worried he will never fully recover").
+ * The note's own plan acts (fix round 1, R1T-WB-06): on a plan line "Request 3 further sessions … from the case
+ * manager", "Discussed a graded return with the case manager", "Consider a scan", "Refer back to his GP …" are what the
+ * clinician planned and whom it involves, not someone else's request, words or question – a draft that reports the
+ * plan, request, advice or referral ("recorded the plan to complete …", "a request to the case manager for …") keeps
+ * them. Any other frame of the plan line (a wish, a worry, a condition, an earlier time) still counts.
  */
-function framesKept(s: NoteSentence, start: number, end: number, draft: string): boolean {
-  return droppedFrames(frameScope(s, start, end), draft).length === 0;
+const PLAN_ACT_FRAMES = new Set(["request", "discuss", "consider", "ask", "gp", "solicitor", "employer"]);
+/**
+ * A draft that reports the plan itself – the plan, a request, an aim or a referral – so a plan line's own plan acts may
+ * stay unsaid. Advice or a recommendation is not such a report: "Surgery was recommended" never reports "Discuss
+ * surgery with GP" (a discussion is not a recommendation); a draft that says "discussed" keeps the frame by its own word.
+ */
+const PLAN_ACT_REPORT = /\b(?:plans?|planned|planning|request(?:s|ed|ing)?|aim(?:s|ed)?|goals?|to complete|refer(?:s|red|ring|ral)?)\b/;
+
+/** Whether the drafted clause (and its context) reports the plan itself (PLAN_ACT_REPORT). */
+function planActReported(clause: string, context = ""): boolean {
+  return PLAN_ACT_REPORT.test(`${context} ${clause}`);
+}
+
+/** The frames of `scope` the draft drops – a plan line's own plan acts kept when the draft reports the plan. */
+function droppedFramesOf(s: NoteSentence, scope: string, clause: string, planReported: boolean): string[] {
+  const dropped = droppedFrames(scope, clause);
+  if (!planReported || !isPlanLine(s)) return dropped;
+  return dropped.filter((k) => !PLAN_ACT_FRAMES.has(k));
 }
 
 /** Whether the note sentence's part that says [window] has the drafted stance: its frames kept, the same negation, its hedges kept, no stronger modality. */
-function stanceHolds(s: NoteSentence, window: { start: number; end: number }, clause: string, d: { negated: boolean; hedges: string[]; modality: number }): boolean {
+function stanceHolds(s: NoteSentence, window: { start: number; end: number }, clause: string, d: { negated: boolean; hedges: string[]; modality: number; planActReported?: boolean; goal?: boolean }): boolean {
   // The part of the note that says it (the window, a lead condition, a modifier, the label – attribution-text.ts
   // frameScope): said by the clinician, not someone's worry, wish, report or condition (unless the draft says whose it
   // is), and with no negator or hedge the draft drops ("Not fit for full warehouse duties at present" drafted as "was not
   // fit for full warehouse duties at present" keeps it). Another conjunct's own negation ("…, no neurological signs") is
   // not this statement's.
   const scope = frameScope(s, window.start, window.end);
-  if (droppedFrames(scope, clause).length > 0) return false;
+  if (droppedFramesOf(s, scope, clause, Boolean(d.planActReported)).length > 0) return false;
   const n = stanceOf(scope);
   if (n.negated !== d.negated) return false;
   if (!n.hedges.every((h) => d.hedges.includes(h))) return false;
@@ -227,6 +245,7 @@ export function findAnchor(input: FindAnchorInput): NoteAnchor | null {
     ...stanceOf(at0 < 0 ? clause : frameScope({ norm: clause, label: null }, at0, at0 + phrase.length, undefined, "draft")),
     goal: stanceOf(clause).goal,
     planFramed: planFramed(clause, input.context),
+    planActReported: planActReported(clause, input.context),
   };
   const want = contentStems(run, input.ignore);
   const forms = phraseForms(phrase);
@@ -254,6 +273,10 @@ const PLANISH_NOTE = /\b(?:advis\w*|advice|recommend\w*|plan|plans|planned)\b/;
 /** A drafted clause that reports advice given, and the advice words' stems. */
 const ADVICE_IN_DRAFT = /\b(?:advis(?:e|es|ed|ing)|advice|recommend(?:s|ed|ing|ation|ations)?)\b/;
 const ADVICE_STEM = /^(?:advis|advic|recommend)/;
+/** The light verbs that report advice given ("advice was given", "provided advice on", "gave him advice"). */
+const ADVICE_LIGHT_VERB = /^(?:give|giv|gave|provid|offer)$/;
+/** A drafted clause that gives what it says as the patient's history (past medical or social history, an earlier episode). */
+const HISTORY_IN_DRAFT = /\b(?:past medical history|medical history|social history|history of|pmh|previous(?:ly)?|prior|before the (?:accident|injury|incident)|in the past)\b/;
 
 /** A note's plan line: the plan field, a plan or advice label, or a sentence that plans or advises in its own words. */
 function isPlanLine(s: NoteSentence): boolean {
@@ -272,7 +295,7 @@ const GOAL_ONLY = /\b(?:goals?|aims?|aiming|targets?|objectives?|stg|ltg|hopes?|
  * keeps it a goal. Which modals may be read this way is the caller's (opinion-language.ts planWordsOf: should, needs to,
  * plans to …; will / would only when the draft reports a plan).
  */
-function planAnchor(input: FindAnchorInput, clause: string, run: string, d: { goal: boolean; negated: boolean; hedges: string[]; modality: number }): NoteAnchor | null {
+function planAnchor(input: FindAnchorInput, clause: string, run: string, d: { goal: boolean; negated: boolean; hedges: string[]; modality: number; planActReported?: boolean }): NoteAnchor | null {
   const drop = new Set(contentStems(normaliseForMatch(input.planWords ?? "")));
   const want = contentStems(run, input.ignore).filter((w) => !drop.has(w));
   if (want.length === 0) return null;
@@ -297,6 +320,8 @@ export interface AnchorClauseInput {
   notes: readonly Note[];
   holder?: string | null;
   ignore?: IgnoreNames;
+  /** The drafted sentence around the clause (normalised): whether it gives the clause as history ("… in his past medical history"). */
+  context?: string;
 }
 
 /**
@@ -309,19 +334,26 @@ export function anchorClause(input: AnchorClauseInput): NoteAnchor | null {
   const want = contentStems(clause, input.ignore);
   if (want.length === 0) return null;
   const d = stanceOf(clause);
-  // Advice the draft reports ("heat was advised for comfort", "he was advised to avoid twisting") is the note's plan
-  // line without the advice word ("Heat for comfort.", "Avoid twisting and pivoting for now." – check2-WB N2).
-  const advice = ADVICE_IN_DRAFT.test(clause) ? want.filter((w) => !ADVICE_STEM.test(w)) : null;
+  // Advice the draft reports ("heat was advised for comfort", "he was advised to avoid twisting", fix round 1: "advice
+  // was given to avoid twisting", "she gave advice on …") is the note's plan line without the advice word or the light
+  // verb that reports it ("Heat for comfort.", "Avoid twisting and pivoting for now." – check2-WB N2).
+  const advice = ADVICE_IN_DRAFT.test(clause) ? want.filter((w) => !ADVICE_STEM.test(w) && !ADVICE_LIGHT_VERB.test(w)) : null;
+  // A plan the draft reports as the plan, a request or a referral (fix round 1): a plan line's own plan acts are kept.
+  const planReported = planActReported(clause, input.context);
+  // History fields hold history facts (fix round 1, R1T-WB-06 e): a clause the draft gives as history, or one with no
+  // opinion cue (a condition and how it is managed – "asthma, well controlled with an inhaler"), may anchor there; an
+  // outcome, prognosis or other opinion never does ("settled with 4 sessions in 2019" never holds a recovery now).
+  const historyOk = HISTORY_IN_DRAFT.test(`${input.context ?? ""} ${clause}`) || !hasOpinionCue(clause);
   for (const note of input.notes) {
     if (input.holder && !sameName(note.author.name, input.holder)) continue;
     for (const s of noteSentences(note)) {
-      if (s.field === "history" || s.question) continue;
+      if ((s.field === "history" && !historyOk) || s.question) continue;
       const need = advice && advice.length > 0 && isPlanLine(s) && !covers(want, s.stems).ok ? advice : want;
       if (!covers(need, s.stems).ok) continue;
       // The part of the note that holds the claim decides its stance ("…fit for a phased return; he should avoid
       // lifting" – the second clause's "should" does not weaken the first, "no neurological signs" does not negate it).
       const span = coveringSpan(s.norm, need, input.ignore, undefined, s);
-      if (span && !framesKept(s, span.start, span.end, clause)) continue;
+      if (span && droppedFramesOf(s, frameScope(s, span.start, span.end), clause, planReported).length > 0) continue;
       // Its stance: the window with its modifiers and lead conditions (frameScope), not another conjunct's.
       const n = stanceOf(span ? frameScope(s, span.start, span.end) : s.norm);
       if (n.negated !== d.negated) continue;
@@ -416,7 +448,8 @@ export function quotedVerbatim(quoted: string, notes: readonly Note[], holder: s
   if (q.length < 3) return null;
   for (const note of notes) {
     if (holder && !sameName(note.author.name, holder)) continue;
-    for (const s of noteSentences(note)) {
+    const sentences = noteSentences(note);
+    for (const s of sentences) {
       if (s.field === "history") continue;
       // Each place the quotation is in the sentence, up to MAX_QUOTE_PLACES (check2-WB N4: a long note sentence that repeats
       // the quoted words is not read once per repeat; past the bound the quotation is not verbatim – fail closed).
@@ -424,6 +457,44 @@ export function quotedVerbatim(quoted: string, notes: readonly Note[], holder: s
       for (let at = wordIndexOf(s.norm, q); at >= 0 && tries < MAX_QUOTE_PLACES; at = wordIndexOf(s.norm, q, at + 1), tries++) {
         if (!quoteDropsStance(s, at, q, outside)) return { noteId: note.id, author: note.author, sentence: s.text };
       }
+    }
+    const run = quotedAcrossSentences(q, sentences, outside);
+    if (run) return { noteId: note.id, author: note.author, sentence: run };
+  }
+  return null;
+}
+
+/** At most this many consecutive note sentences make one quotation. */
+const MAX_QUOTE_SENTENCES = 4;
+
+/**
+ * Fix round 1 (R1T-WB-07): a quotation of two or more consecutive sentences of one note field, word for word ("Good
+ * progress after 5 sessions: the mechanical low back pain is resolving. In my opinion she should be able to return …").
+ * Each note sentence the quotation covers is checked as a one-sentence quotation is (quoteDropsStance on its quoted
+ * part): a first or last sentence quoted only in part keeps its negation, hedge, condition or frame inside the quotes,
+ * or the quotation is not verbatim. Returns the note's sentences as written, or null.
+ */
+function quotedAcrossSentences(q: string, sentences: readonly NoteSentence[], outside: string): string | null {
+  for (let i = 0; i < sentences.length; i++) {
+    if (sentences[i].field === "history") continue;
+    let joined = "";
+    const parts: Array<{ s: NoteSentence; start: number }> = [];
+    for (let j = i; j < sentences.length && j < i + MAX_QUOTE_SENTENCES && sentences[j].field === sentences[i].field; j++) {
+      parts.push({ s: sentences[j], start: joined ? joined.length + 1 : 0 });
+      joined = joined ? `${joined} ${sentences[j].norm}` : sentences[j].norm;
+      if (parts.length < 2) continue;
+      const at = wordIndexOf(joined, q);
+      if (at < 0) continue;
+      const end = at + q.length;
+      // It must start in the first sentence of the run and end in its last (a shorter run would have held it).
+      if (at >= parts[0].start + parts[0].s.norm.length || end <= parts[parts.length - 1].start) continue;
+      const ok = parts.every(({ s, start }) => {
+        const a = Math.max(at, start) - start;
+        const b = Math.min(end, start + s.norm.length) - start;
+        const piece = s.norm.slice(a, b).replace(/[.,;:!?]+$/, "").trim();
+        return piece.length > 0 && !quoteDropsStance(s, a, piece, outside);
+      });
+      if (ok) return parts.map((x) => x.s.text).join(" ");
     }
   }
   return null;
