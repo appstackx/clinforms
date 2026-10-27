@@ -30,9 +30,13 @@ migration numbers, conventions – binding for every builder) and in ClinForms' 
 - **Priority:** **MVP** = needed before Blue Heart can run a clinician's whole diary on K2 and then switch all 11
   sites. **Later** = after the switch, or only if Dell asks. "MVP (ext)" in the text means the code is MVP but it
   only works once an outside account or agreement exists (§10).
-- **Status** (checked 26 Oct 2026 from the branches and worktrees, tests **not** re-run for this spec):
+- **Status** (checked 26 Oct 2026 from the branches and worktrees, tests **not** re-run for this spec; diary and
+  records ids updated 27 Oct 2026 after the M3 merge – HANDOVER §12):
   - **done** – implemented in committed code on the named branch, with automated tests per its commit; if the
     requirement has a screen, the screen is committed too;
+  - **back end done, screen pending** – (27 Oct 2026, M3) the data layer and the server layer the screens will
+    call (permission-checked services, server actions, route handlers) are committed, merged into
+    `feat/clinic-system` and tested; only the screen (and its e2e) is missing – waiting for design;
   - **partial** – some layers are committed (usually domain rules + repositories + tests) but the screen, the
     wiring to another module or the live provider is missing;
   - **partial-wt** – as partial, but the missing layer exists **only as uncommitted work** in the module's worktree
@@ -133,13 +137,13 @@ clinicians see reports for their own caseload (`reports.view` is owner/admin onl
 - **K2-PLT-007** · MVP · done · foundation · FC none — The product name appears only through `CLINIC_SYSTEM_NAME`; banned names fail a test. AC: `scripts/pms/contract.test.ts` naming test passes on every branch.
 - **K2-PLT-008** · MVP · done · foundation · FC none — Shell `/app/clinic` with navigation and patient-record tabs aggregated from each module's registry and filtered by permission. AC: a module adds `nav/<m>.ts` / `record-tabs/<m>.ts` entries only; nothing else changes.
 - **K2-PLT-009** · MVP · done · foundation · FC 2.2-01 — Shared patient record and directory (patients, cases, authorisations, referrers/payers, sites, rooms, practitioners, services, price lists) with repositories used by every module. AC: `src/server/repos/pms/*` suite passes on SQLite, PGlite and D1 with the tenant-scope guard.
-- **K2-PLT-010** · MVP · partial · foundation · FC none — Demo seed `npm run pms:seed-demo` creates "Riverside Physiotherapy (fictional)" with 3 sites, 6 rooms, 8 practitioners, 9 appointment types, 4 price lists, 12 referrers/payers, 200 patients, ~250 cases, ~80 authorisations; each module adds `scripts/pms/seed-<m>.ts`, wired in at integration. AC: a fresh local database shows a full working week of fictional diary, notes, invoices and messages. Foundation seed done; **no module seed exists yet**.
+- **K2-PLT-010** · MVP · partial · foundation · FC none — Demo seed `npm run pms:seed-demo` creates "Riverside Physiotherapy (fictional)" with 3 sites, 6 rooms, 8 practitioners, 9 appointment types, 4 price lists, 12 referrers/payers, 200 patients, ~250 cases, ~80 authorisations; each module adds `scripts/pms/seed-<m>.ts`, wired in at integration. AC: a fresh local database shows a full working week of fictional diary, notes, invoices and messages. Foundation seed done; the diary and records seeds are wired in (27 Oct 2026, M3); billing, comms and portal seeds still to come.
 - **K2-PLT-011** · MVP · done · foundation · FC none — Offboarding a clinic exports every K2 row decrypted (`clinic-system.json`) and deletes them atomically with ClinForms' data, generically over each module's `<M>_TENANT_TABLES`. AC: every new per-clinic table is listed in its module's `_TENANT_TABLES`; offboard test covers it.
 
 ### 3.2 SITE – multi-site
 
 - **K2-SITE-001** · MVP · done · foundation · FC 2.1-01, 2.1-04 — Sites (name, address, phone, email) with rooms per site; practitioners may work at several sites. AC: directory repositories; set-up screens in K2-ADM-001.
-- **K2-SITE-002** · MVP · partial-wt · diary · FC 2.1-01 — Every diary view is for a chosen site (switcher) and date; reception can switch site without losing the date. AC: switching site keeps the day; URL carries site and date; keyboard operable.
+- **K2-SITE-002** · MVP · back end done, screen pending · diary · FC 2.1-01 — Every diary view is for a chosen site (switcher) and date; reception can switch site without losing the date. AC: switching site keeps the day; URL carries site and date; keyboard operable.
 - **K2-SITE-003** · MVP · partial-wt · reporting · FC 2.6-10 — Opening hours and closure days per site, used by the diary and online booking. AC: one opening-hours source for both (today reporting has `pms_site_hours`/`pms_site_closures` uncommitted and portal has its own `pms_booking_hours` – reconcile, §7).
 - **K2-SITE-004** · MVP · partial-wt · reporting · FC 2.6-12 — A user can be limited to some sites (`pms_staff_access`, `pms_staff_sites`); the limit applies to diary, patient lists, invoices and reports, not only to the reports screens. AC: a staff user limited to site A sees no appointment, invoice or report line of site B; repository suite proves it; default = all sites.
 - **K2-SITE-005** · MVP · missing · billing · FC 2.1-01 — Invoices, statements, letters and messages show the site's address and contact details (the site of the appointment, else the case's site). AC: a PDF invoice for an appointment at site B shows site B's address.
@@ -152,22 +156,22 @@ stand-in/real local D1. Uncommitted in `cs-diary`: grid, booking/appointment/blo
 model, server actions and API routes – **but no `page.tsx`** under `src/app/app/clinic/diary/`.
 
 - **K2-DIARY-001** · MVP · done · foundation · FC 2.1-10 — Appointment types/services with duration, price, category, colour and an online-bookable flag. AC: services in the directory; diary uses the duration as default length.
-- **K2-DIARY-002** · MVP · partial · diary · FC 2.1-07 — Practitioner working times (rotas) per site: days, times, repeat every N weeks, end date; overlap refused. AC: repository done (`availability.ts`); set-up screen missing; free slots respect rotas.
-- **K2-DIARY-003** · MVP · partial-wt · diary · FC 2.1-02, 2.1-04 — Day view with one column per practitioner or per room for a site; 24 h Europe/London; colour **and** text for status. AC: 10 practitioner columns readable on a laptop; at 375 px the grid scrolls inside its box; keyboard can reach every appointment.
-- **K2-DIARY-004** · MVP · partial-wt · diary · FC 2.1-03 — Week view for one practitioner or one room. AC: Monday–Sunday, same keyboard support as the day view.
+- **K2-DIARY-002** · MVP · back end done, screen pending · diary · FC 2.1-07 — Practitioner working times (rotas) per site: days, times, repeat every N weeks, end date; overlap refused. AC: repository done (`availability.ts`); set-up screen missing; free slots respect rotas.
+- **K2-DIARY-003** · MVP · back end done, screen pending · diary · FC 2.1-02, 2.1-04 — Day view with one column per practitioner or per room for a site; 24 h Europe/London; colour **and** text for status. AC: 10 practitioner columns readable on a laptop; at 375 px the grid scrolls inside its box; keyboard can reach every appointment.
+- **K2-DIARY-004** · MVP · back end done, screen pending · diary · FC 2.1-03 — Week view for one practitioner or one room. AC: Monday–Sunday, same keyboard support as the day view.
 - **K2-DIARY-005** · Later · missing · diary · FC 2.1-03 — Week view across several practitioners or rooms. AC: up to 5 resources side by side for a week.
 - **K2-DIARY-006** · MVP · done · diary · FC 2.1-06, 2.1-04 — No double booking of a practitioner or a room, enforced in the database (SQLite trigger `RAISE(ABORT)`; Postgres trigger with per-practitioner/per-room advisory locks; cancelled and late-cancelled rows excluded) and explained in the screen. AC: two concurrent bookings for the same slot – exactly one succeeds on SQLite, PGlite and D1; the other gets a plain message naming what is in the way.
-- **K2-DIARY-007** · MVP · partial-wt · diary · FC 2.1-11 — Reception books from a free slot: patient search, appointment type, practitioner, room, case (payer), note. AC: repository done; booking dialog uncommitted; booking from an empty slot takes ≤ 4 inputs for an existing patient.
-- **K2-DIARY-008** · MVP · partial-wt · diary · FC 2.1-12 — Recurring appointments (series): all-or-nothing or skip clashes; cancel the rest of a series. AC: repository done; a 6-week weekly series with one clash books 5 and lists the clash when "skip" is chosen.
-- **K2-DIARY-009** · MVP · partial-wt · diary · FC 2.1-13 — Move/reschedule an appointment, by drag **and** by a keyboard/click alternative. AC: repository done; moving into a clash is refused with the reason.
-- **K2-DIARY-010** · MVP · partial-wt · diary · FC 2.1-14, 2.1-15 — Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with fee flag), reinstate and undo. AC: repository done; DNA/late-cancel flag reaches billing as a charge suggestion (K2-BILL-001).
+- **K2-DIARY-007** · MVP · back end done, screen pending · diary · FC 2.1-11 — Reception books from a free slot: patient search, appointment type, practitioner, room, case (payer), note. AC: repository done; booking dialog uncommitted; booking from an empty slot takes ≤ 4 inputs for an existing patient.
+- **K2-DIARY-008** · MVP · back end done, screen pending · diary · FC 2.1-12 — Recurring appointments (series): all-or-nothing or skip clashes; cancel the rest of a series. AC: repository done; a 6-week weekly series with one clash books 5 and lists the clash when "skip" is chosen.
+- **K2-DIARY-009** · MVP · back end done, screen pending · diary · FC 2.1-13 — Move/reschedule an appointment, by drag **and** by a keyboard/click alternative. AC: repository done; moving into a clash is refused with the reason.
+- **K2-DIARY-010** · MVP · back end done, screen pending · diary · FC 2.1-14, 2.1-15 — Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with fee flag), reinstate and undo. AC: repository done; DNA/late-cancel flag reaches billing as a charge suggestion (K2-BILL-001).
 - **K2-DIARY-011** · MVP · done · diary · FC 2.2-08 — Marking attended updates the patient's last-seen date (retention) and uses one authorisation session; undo gives it back. AC: suite covers usage and give-back ordering.
-- **K2-DIARY-012** · MVP · partial-wt · diary · FC 2.1-08 — Blocked time (meeting, holiday, other) that stops booking. AC: repository done; block dialog uncommitted.
-- **K2-DIARY-013** · MVP · partial · diary · FC 2.1-16 — Waiting list per clinic with preferred practitioner/site/times; book from an entry atomically. AC: repository done; screen missing; no automatic offers.
+- **K2-DIARY-012** · MVP · back end done, screen pending · diary · FC 2.1-08 — Blocked time (meeting, holiday, other) that stops booking. AC: repository done; block dialog uncommitted.
+- **K2-DIARY-013** · MVP · back end done, screen pending · diary · FC 2.1-16 — Waiting list per clinic with preferred practitioner/site/times; book from an entry atomically. AC: repository done; screen missing; no automatic offers.
 - **K2-DIARY-014** · MVP · done · diary · FC 2.1-17 — Two users editing the same appointment: optimistic revision check; the second save gets "changed by someone else". AC: suite covers `rev` conflicts.
 - **K2-DIARY-015** · MVP · done · diary · FC none — Times are Europe/London including both clock changes. AC: domain tests for the March and October changes.
-- **K2-DIARY-016** · MVP · partial-wt · diary · FC 2.1-18 — Quick patient search from the diary (name, number, phone, DOB). AC: results in < 1 s on 10,000 patients; never decrypts.
-- **K2-DIARY-017** · MVP · missing · diary · FC 2.1-20 — Printable day list per practitioner/site (paper fallback during an outage). AC: print stylesheet; names, times, rooms; no clinical notes.
+- **K2-DIARY-016** · MVP · back end done, screen pending · diary · FC 2.1-18 — Quick patient search from the diary (name, number, phone, DOB). AC: results in < 1 s on 10,000 patients; never decrypts.
+- **K2-DIARY-017** · MVP · back end done, screen pending · diary · FC 2.1-20 — Printable day list per practitioner/site (paper fallback during an outage). AC: print stylesheet; names, times, rooms; no clinical notes.
 - **K2-DIARY-018** · MVP · done · diary · FC none — Booking, cancellation and waiting-list notes are encrypted; appointments are never deleted. AC: suite proves no plaintext in the row.
 - **K2-DIARY-019** · Later · missing · diary · FC 2.1-05 — Equipment as a bookable resource (beyond rooms). AC: a resource type other than room can be clash-checked.
 - **K2-DIARY-020** · Later · missing · diary · FC 2.1-09 — Skills limit which services a practitioner can be booked for. AC: a practitioner without the skill is not offered.
@@ -197,16 +201,16 @@ Foundation repositories done. Records UI (list, record layout and tabs, edit, ca
 authorisations, notes, outcomes, attachments, history, subject access/anonymise actions) is **uncommitted** in
 `cs-records`.
 
-- **K2-PAT-001** · MVP · partial-wt · records · FC 2.1-18, 2.2-01 — Patient list with search by name words, patient number, phone, date of birth, email; never decrypts in lists. AC: `searchPatients` done; list page uncommitted.
-- **K2-PAT-002** · MVP · partial-wt · records · FC 2.2-01, 2.2-02 — Create and edit a patient: demographics, contacts, emergency contact, GP, consent flags, marketing consent (email/SMS), with revision conflict handling. AC: repository done; form uncommitted; UK postcode/phone validation.
-- **K2-PAT-003** · MVP · partial-wt · records · FC none — Patient record page with tabs registered by modules (appointments, notes, outcomes, attachments, invoices, messages, forms, history). AC: a module's tab appears only with its permission; reception sees no clinical tab.
-- **K2-PAT-004** · MVP · partial-wt · records · FC 2.2-07 — Cases (episodes) with payer type (self-pay, insurer + membership/policy number, medico-legal company or solicitor, employer), referrer, referral reason (encrypted), status. AC: repository done; case screens uncommitted.
+- **K2-PAT-001** · MVP · back end done, screen pending · records · FC 2.1-18, 2.2-01 — Patient list with search by name words, patient number, phone, date of birth, email; never decrypts in lists. AC: `searchPatients` done; list page uncommitted.
+- **K2-PAT-002** · MVP · back end done, screen pending · records · FC 2.2-01, 2.2-02 — Create and edit a patient: demographics, contacts, emergency contact, GP, consent flags, marketing consent (email/SMS), with revision conflict handling. AC: repository done; form uncommitted; UK postcode/phone validation.
+- **K2-PAT-003** · MVP · partial · records · FC none — Patient record page with tabs registered by modules (appointments, notes, outcomes, attachments, invoices, messages, forms, history). AC: a module's tab appears only with its permission; reception sees no clinical tab.
+- **K2-PAT-004** · MVP · back end done, screen pending · records · FC 2.2-07 — Cases (episodes) with payer type (self-pay, insurer + membership/policy number, medico-legal company or solicitor, employer), referrer, referral reason (encrypted), status. AC: repository done; case screens uncommitted.
 - **K2-PAT-005** · MVP · partial · records · FC 2.2-04 — Medical alerts (encrypted) shown on the record and in the diary's appointment dialog. AC: field exists in the shared record; display in both places.
-- **K2-PAT-006** · MVP · partial · records · FC 2.2-03 — Patient status (active, archived, deceased with date) and legal hold. AC: `setPatientStatus`, `setPatientLegalHold` done; screen missing.
-- **K2-PAT-007** · MVP · partial-wt · records · FC 2.2-20 — Attachments: encrypted per clinic, type checked by magic bytes, size limits, withdrawn (never deleted). AC: repository done; upload/download routes uncommitted; download sends `Content-Disposition: attachment`.
-- **K2-PAT-008** · MVP · partial-wt · records · FC 2.6-13 — Per-patient history built from the audit log (who did what, when). AC: repository done; page uncommitted.
-- **K2-PAT-009** · MVP · partial-wt · records · FC 2.7-04 — Subject access export of one patient's full record as PDF and JSON (permission `patients.export`), audited. AC: collection done; output and screen uncommitted; export opens and lists every module's data for that patient.
-- **K2-PAT-010** · MVP · partial-wt · records · FC 2.7-05 — Anonymise a patient only after the retention review date, never under legal hold, confirmed by typing the patient number. AC: repository done (only path that passes the lock triggers); action uncommitted.
+- **K2-PAT-006** · MVP · back end done, screen pending · records · FC 2.2-03 — Patient status (active, archived, deceased with date) and legal hold. AC: `setPatientStatus`, `setPatientLegalHold` done; screen missing.
+- **K2-PAT-007** · MVP · back end done, screen pending · records · FC 2.2-20 — Attachments: encrypted per clinic, type checked by magic bytes, size limits, withdrawn (never deleted). AC: repository done; upload/download routes uncommitted; download sends `Content-Disposition: attachment`.
+- **K2-PAT-008** · MVP · back end done, screen pending · records · FC 2.6-13 — Per-patient history built from the audit log (who did what, when). AC: repository done; page uncommitted.
+- **K2-PAT-009** · MVP · partial · records · FC 2.7-04 — Subject access export of one patient's full record as PDF and JSON (permission `patients.export`), audited. AC: collection done; output and screen uncommitted; export opens and lists every module's data for that patient.
+- **K2-PAT-010** · MVP · back end done, screen pending · records · FC 2.7-05 — Anonymise a patient only after the retention review date, never under legal hold, confirmed by typing the patient number. AC: repository done (only path that passes the lock triggers); action uncommitted.
 - **K2-PAT-011** · MVP · partial-wt · reporting · FC 2.2-10 — Referrers and payer accounts directory (GP, consultant, insurer, medico-legal company, solicitor, employer, case manager). AC: repository done; set-up actions uncommitted.
 - **K2-PAT-012** · Later · missing · records · FC 2.2-06 — Merge duplicate patients (with audit and undo window).
 - **K2-PAT-013** · Later · missing · records · FC 2.2-05 — Tags on patients.
@@ -217,15 +221,15 @@ authorisations, notes, outcomes, attachments, history, subject access/anonymise 
 Committed on `feat/cs-records` (`74e579c`): migrations `0120`/`0121`, rules, repositories, suites (11 tests × 4
 backends). Screens uncommitted.
 
-- **K2-NOTE-001** · MVP · partial-wt · records · FC 2.2-11, 2.3-04 — Built-in templates (initial assessment SOAP, follow-up SOAP, discharge) and clinic templates (template editor). AC: templates done; editor screen uncommitted/missing.
-- **K2-NOTE-002** · MVP · partial-wt · records · FC 2.2-11 — Write a note for a patient, linked to a case and appointment; drafts saved with revision. AC: repository done; editor uncommitted.
+- **K2-NOTE-001** · MVP · back end done, screen pending · records · FC 2.2-11, 2.3-04 — Built-in templates (initial assessment SOAP, follow-up SOAP, discharge) and clinic templates (template editor). AC: templates done; editor screen uncommitted/missing.
+- **K2-NOTE-002** · MVP · back end done, screen pending · records · FC 2.2-11 — Write a note for a patient, linked to a case and appointment; drafts saved with revision. AC: repository done; editor uncommitted.
 - **K2-NOTE-003** · MVP · done · records · FC 2.2-17 — Sign and lock: only the author signs; a content fingerprint is stored; a database trigger refuses any change to a signed note. AC: suite proves `APPEND_ONLY` on SQLite, PGlite and D1.
-- **K2-NOTE-004** · MVP · partial-wt · records · FC 2.2-17 — Amendments to a signed note: append-only, with reason, author and time, shown as a visible history. AC: repository done; screen uncommitted.
-- **K2-NOTE-005** · MVP · partial-wt · records · FC 2.2-14 — Body chart (front/back outlines, markers stored as data). AC: rules done; editor uncommitted; usable by keyboard (markers via a list too).
-- **K2-NOTE-006** · MVP · partial-wt · records · FC 2.2-15 — Outcome measures NDI, ODI, NPRS, PSFS, QuickDASH, scored automatically, chart over time; no questionnaire wording held until licences are checked (Q-K8). AC: scoring tests done; screens uncommitted.
-- **K2-NOTE-007** · MVP · partial · records · FC none — Reception (`staff`) can never see clinical note content, outcome answers or health answers of intake forms. AC: permission rule done; every notes page/route checks `clinical.view`; e2e as staff gets 404/refusal.
-- **K2-NOTE-008** · MVP · missing · records · FC 2.2-18 — Unsigned-notes list per clinician (drafts older than N days, N per clinic). AC: clinician dashboard shows count; owner sees all.
-- **K2-NOTE-009** · MVP · partial-wt · records · FC 2.2-23 — Notes can be written on a phone (375 px). AC: e2e at 375 px writes and signs a note.
+- **K2-NOTE-004** · MVP · back end done, screen pending · records · FC 2.2-17 — Amendments to a signed note: append-only, with reason, author and time, shown as a visible history. AC: repository done; screen uncommitted.
+- **K2-NOTE-005** · MVP · partial · records · FC 2.2-14 — Body chart (front/back outlines, markers stored as data). AC: rules done; editor uncommitted; usable by keyboard (markers via a list too).
+- **K2-NOTE-006** · MVP · back end done, screen pending · records · FC 2.2-15 — Outcome measures NDI, ODI, NPRS, PSFS, QuickDASH, scored automatically, chart over time; no questionnaire wording held until licences are checked (Q-K8). AC: scoring tests done; screens uncommitted.
+- **K2-NOTE-007** · MVP · done · records · FC none — Reception (`staff`) can never see clinical note content, outcome answers or health answers of intake forms. AC: permission rule done; every notes page/route checks `clinical.view`; e2e as staff gets 404/refusal.
+- **K2-NOTE-008** · MVP · back end done, screen pending · records · FC 2.2-18 — Unsigned-notes list per clinician (drafts older than N days, N per clinic). AC: clinician dashboard shows count; owner sees all.
+- **K2-NOTE-009** · MVP · partial · records · FC 2.2-23 — Notes can be written on a phone (375 px). AC: e2e at 375 px writes and signs a note.
 - **K2-NOTE-010** · Later · missing · records · FC 2.2-12, 2.2-13, 2.2-16 — Note-writing aids (snippets), medical history carried across cases, goals.
 - **K2-NOTE-011** · Later · missing · records · FC 2.2-19 — Restrict a case to its own practitioner.
 
@@ -314,7 +318,7 @@ Committed on `feat/cs-billing` (`8ef137d`, `e0185da`): migrations `0130`/`0131`,
 - **K2-AUTHS-002** · MVP · done · foundation · FC 2.2-08 — Usage recorded atomically, never over the limit or below zero; diary (attended) and billing (issue) use it; undo/credit give it back. AC: suite.
 - **K2-AUTHS-003** · MVP · partial · diary · FC 2.2-08 — Booking or attending beyond the remaining sessions or after expiry shows a warning (`canUseAuthorisation`). AC: rule done; warning in booking dialog to verify.
 - **K2-AUTHS-004** · MVP · partial-wt · reporting · FC 2.2-09 — Expiring authorisations list (by date and by sessions left). AC: `listExpiringAuthorisations` done; report page uncommitted.
-- **K2-AUTHS-005** · MVP · partial-wt · records · FC 2.2-08 — Authorisation screens on the case page (add, edit, remaining). AC: case page uncommitted.
+- **K2-AUTHS-005** · MVP · partial · records · FC 2.2-08 — Authorisation screens on the case page (add, edit, remaining). AC: case page uncommitted.
 - **K2-AUTHS-006** · Later · missing · comms · FC none — Extension request letter to the payer from a template.
 
 ### 3.13 PAY – payments
@@ -436,7 +440,7 @@ outbox); two merge-field engines; foundation `clinic_entitlements`/`clinic_usage
 ### 5.2 UK GDPR
 - **K2-NFR-010** · MVP · missing · ops · FC none — Clinic = controller, AppstackX Ltd = processor; Article 28 DPA covering K2 with its sub-processors (hosting, database, email/SMS, payments). AC: signed DPA before any real data.
 - **K2-NFR-011** · MVP · missing · ops · FC none — DPIA covering K2 (names visible in the diary all day, plain demographics, reminders, portal, import). AC: DPIA approved by Khuram and the clinic.
-- **K2-NFR-012** · MVP · partial-wt · records · FC 2.7-04 — Subject access answered within one month using K2-PAT-009. AC: export complete across modules.
+- **K2-NFR-012** · MVP · partial · records · FC 2.7-04 — Subject access answered within one month using K2-PAT-009. AC: export complete across modules.
 - **K2-NFR-013** · MVP · done · records · FC 2.2-17 — Rectification through amendments; erasure limited by the retention rule (records not deleted). AC: triggers.
 - **K2-NFR-014** · MVP · done · comms · FC 2.5-07 — Data minimisation in messages; PECR consent for marketing. AC: tests.
 
@@ -658,33 +662,33 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 <!-- TRACE:BEGIN (generated by a one-off script from the requirement lines; regenerate if lines change) -->
 **Counts:** 205 requirements – MVP 176, Later 29.
 
-| Priority | done | partial | partial-wt | missing | total |
-|---|---:|---:|---:|---:|---:|
-| MVP | 61 | 35 | 48 | 32 | 176 |
-| Later | 0 | 1 | 1 | 27 | 29 |
-| **All** | 61 | 36 | 49 | 59 | 205 |
+| Priority | done | back end done (screen pending) | partial | partial-wt | missing | total |
+|---|---:|---:|---:|---:|---:|---:|
+| MVP | 62 | 24 | 37 | 23 | 30 | 176 |
+| Later | 0 | 0 | 1 | 1 | 27 | 29 |
+| **All** | 62 | 24 | 38 | 24 | 57 | 205 |
 
-| Area | done | partial | partial-wt | missing |
-|---|---:|---:|---:|---:|
-| PLT | 9 | 1 | 0 | 1 |
-| SITE | 1 | 0 | 3 | 2 |
-| DIARY | 6 | 2 | 8 | 6 |
-| BOOK | 1 | 5 | 0 | 4 |
-| PAT | 0 | 2 | 9 | 3 |
-| NOTE | 1 | 1 | 6 | 3 |
-| LTR | 2 | 2 | 1 | 2 |
-| FORM | 2 | 3 | 0 | 2 |
-| PORTAL | 1 | 5 | 0 | 1 |
-| COMMS | 3 | 3 | 3 | 3 |
-| BILL | 10 | 2 | 0 | 4 |
-| AUTHS | 2 | 1 | 2 | 1 |
-| PAY | 3 | 2 | 0 | 1 |
-| REP | 0 | 0 | 6 | 1 |
-| IMP | 0 | 0 | 5 | 5 |
-| CF | 1 | 0 | 2 | 3 |
-| ADM | 2 | 2 | 2 | 2 |
-| AUD | 3 | 0 | 1 | 1 |
-| NFR | 14 | 5 | 1 | 14 |
+| Area | done | back end done (screen pending) | partial | partial-wt | missing |
+|---|---:|---:|---:|---:|---:|
+| PLT | 9 | 0 | 1 | 0 | 1 |
+| SITE | 1 | 1 | 0 | 2 | 2 |
+| DIARY | 6 | 11 | 0 | 0 | 5 |
+| BOOK | 1 | 0 | 5 | 0 | 4 |
+| PAT | 0 | 7 | 3 | 1 | 3 |
+| NOTE | 2 | 5 | 2 | 0 | 2 |
+| LTR | 2 | 0 | 2 | 1 | 2 |
+| FORM | 2 | 0 | 3 | 0 | 2 |
+| PORTAL | 1 | 0 | 5 | 0 | 1 |
+| COMMS | 3 | 0 | 3 | 3 | 3 |
+| BILL | 10 | 0 | 2 | 0 | 4 |
+| AUTHS | 2 | 0 | 2 | 1 | 1 |
+| PAY | 3 | 0 | 2 | 0 | 1 |
+| REP | 0 | 0 | 0 | 6 | 1 |
+| IMP | 0 | 0 | 0 | 5 | 5 |
+| CF | 1 | 0 | 0 | 2 | 3 |
+| ADM | 2 | 0 | 2 | 2 | 2 |
+| AUD | 3 | 0 | 0 | 1 | 1 |
+| NFR | 14 | 0 | 6 | 0 | 14 |
 
 ### 13.1 Requirement → feature-comparison rows → branch → status
 
@@ -702,28 +706,28 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-PLT-010 | MVP | partial | feat/clinic-system | – | Demo seed `npm run pms:seed-demo` creates "Riverside Physiotherapy (fictional)" with 3 … |
 | K2-PLT-011 | MVP | done | feat/clinic-system | – | Offboarding a clinic exports every K2 row decrypted (`clinic-system.json`) and deletes … |
 | K2-SITE-001 | MVP | done | feat/clinic-system | 2.1-01, 2.1-04 | Sites (name, address, phone, email) with rooms per site; practitioners may work at … |
-| K2-SITE-002 | MVP | partial-wt | feat/cs-diary | 2.1-01 | Every diary view is for a chosen site (switcher) and date; reception can switch site … |
+| K2-SITE-002 | MVP | back end done, screen pending | feat/cs-diary | 2.1-01 | Every diary view is for a chosen site (switcher) and date; reception can switch site … |
 | K2-SITE-003 | MVP | partial-wt | feat/cs-reporting | 2.6-10 | Opening hours and closure days per site, used by the diary and online booking |
 | K2-SITE-004 | MVP | partial-wt | feat/cs-reporting | 2.6-12 | A user can be limited to some sites (`pms_staff_access`, `pms_staff_sites`); the limit … |
 | K2-SITE-005 | MVP | missing | feat/cs-billing | 2.1-01 | Invoices, statements, letters and messages show the site's address and contact details … |
 | K2-SITE-006 | Later | missing | feat/cs-diary | 2.1-01 | Per-site cancellation/DNA charges and per-site reminder templates |
 | K2-DIARY-001 | MVP | done | feat/clinic-system | 2.1-10 | Appointment types/services with duration, price, category, colour and an online-bookable … |
-| K2-DIARY-002 | MVP | partial | feat/cs-diary | 2.1-07 | Practitioner working times (rotas) per site: days, times, repeat every N weeks, end date; … |
-| K2-DIARY-003 | MVP | partial-wt | feat/cs-diary | 2.1-02, 2.1-04 | Day view with one column per practitioner or per room for a site; 24 h Europe/London; … |
-| K2-DIARY-004 | MVP | partial-wt | feat/cs-diary | 2.1-03 | Week view for one practitioner or one room |
+| K2-DIARY-002 | MVP | back end done, screen pending | feat/cs-diary | 2.1-07 | Practitioner working times (rotas) per site: days, times, repeat every N weeks, end date; … |
+| K2-DIARY-003 | MVP | back end done, screen pending | feat/cs-diary | 2.1-02, 2.1-04 | Day view with one column per practitioner or per room for a site; 24 h Europe/London; … |
+| K2-DIARY-004 | MVP | back end done, screen pending | feat/cs-diary | 2.1-03 | Week view for one practitioner or one room |
 | K2-DIARY-005 | Later | missing | feat/cs-diary | 2.1-03 | Week view across several practitioners or rooms |
 | K2-DIARY-006 | MVP | done | feat/cs-diary | 2.1-06, 2.1-04 | No double booking of a practitioner or a room, enforced in the database (SQLite trigger … |
-| K2-DIARY-007 | MVP | partial-wt | feat/cs-diary | 2.1-11 | Reception books from a free slot: patient search, appointment type, practitioner, room, … |
-| K2-DIARY-008 | MVP | partial-wt | feat/cs-diary | 2.1-12 | Recurring appointments (series): all-or-nothing or skip clashes; cancel the rest of a … |
-| K2-DIARY-009 | MVP | partial-wt | feat/cs-diary | 2.1-13 | Move/reschedule an appointment, by drag **and** by a keyboard/click alternative |
-| K2-DIARY-010 | MVP | partial-wt | feat/cs-diary | 2.1-14, 2.1-15 | Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with … |
+| K2-DIARY-007 | MVP | back end done, screen pending | feat/cs-diary | 2.1-11 | Reception books from a free slot: patient search, appointment type, practitioner, room, … |
+| K2-DIARY-008 | MVP | back end done, screen pending | feat/cs-diary | 2.1-12 | Recurring appointments (series): all-or-nothing or skip clashes; cancel the rest of a … |
+| K2-DIARY-009 | MVP | back end done, screen pending | feat/cs-diary | 2.1-13 | Move/reschedule an appointment, by drag **and** by a keyboard/click alternative |
+| K2-DIARY-010 | MVP | back end done, screen pending | feat/cs-diary | 2.1-14, 2.1-15 | Statuses booked, arrived, attended, did not attend, cancelled, late cancellation (with … |
 | K2-DIARY-011 | MVP | done | feat/cs-diary | 2.2-08 | Marking attended updates the patient's last-seen date (retention) and uses one … |
-| K2-DIARY-012 | MVP | partial-wt | feat/cs-diary | 2.1-08 | Blocked time (meeting, holiday, other) that stops booking |
-| K2-DIARY-013 | MVP | partial | feat/cs-diary | 2.1-16 | Waiting list per clinic with preferred practitioner/site/times; book from an entry … |
+| K2-DIARY-012 | MVP | back end done, screen pending | feat/cs-diary | 2.1-08 | Blocked time (meeting, holiday, other) that stops booking |
+| K2-DIARY-013 | MVP | back end done, screen pending | feat/cs-diary | 2.1-16 | Waiting list per clinic with preferred practitioner/site/times; book from an entry … |
 | K2-DIARY-014 | MVP | done | feat/cs-diary | 2.1-17 | Two users editing the same appointment: optimistic revision check; the second save gets … |
 | K2-DIARY-015 | MVP | done | feat/cs-diary | – | Times are Europe/London including both clock changes |
-| K2-DIARY-016 | MVP | partial-wt | feat/cs-diary | 2.1-18 | Quick patient search from the diary (name, number, phone, DOB) |
-| K2-DIARY-017 | MVP | missing | feat/cs-diary | 2.1-20 | Printable day list per practitioner/site (paper fallback during an outage) |
+| K2-DIARY-016 | MVP | back end done, screen pending | feat/cs-diary | 2.1-18 | Quick patient search from the diary (name, number, phone, DOB) |
+| K2-DIARY-017 | MVP | back end done, screen pending | feat/cs-diary | 2.1-20 | Printable day list per practitioner/site (paper fallback during an outage) |
 | K2-DIARY-018 | MVP | done | feat/cs-diary | – | Booking, cancellation and waiting-list notes are encrypted; appointments are never deleted |
 | K2-DIARY-019 | Later | missing | feat/cs-diary | 2.1-05 | Equipment as a bookable resource (beyond rooms) |
 | K2-DIARY-020 | Later | missing | feat/cs-diary | 2.1-09 | Skills limit which services a practitioner can be booked for |
@@ -739,29 +743,29 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-BOOK-008 | Later | missing | feat/cs-portal | 2.1-26 | Deposit or payment at booking |
 | K2-BOOK-009 | Later | missing | feat/cs-portal | 2.1-28 | Insured patients book online with insurer and authorisation details captured for staff to … |
 | K2-BOOK-010 | Later | missing | feat/cs-portal | 2.1-27 | Forms, add-ons and companion bookings inside the booking flow |
-| K2-PAT-001 | MVP | partial-wt | feat/cs-records | 2.1-18, 2.2-01 | Patient list with search by name words, patient number, phone, date of birth, email; … |
-| K2-PAT-002 | MVP | partial-wt | feat/cs-records | 2.2-01, 2.2-02 | Create and edit a patient: demographics, contacts, emergency contact, GP, consent flags, … |
-| K2-PAT-003 | MVP | partial-wt | feat/cs-records | – | Patient record page with tabs registered by modules (appointments, notes, outcomes, … |
-| K2-PAT-004 | MVP | partial-wt | feat/cs-records | 2.2-07 | Cases (episodes) with payer type (self-pay, insurer + membership/policy number, … |
+| K2-PAT-001 | MVP | back end done, screen pending | feat/cs-records | 2.1-18, 2.2-01 | Patient list with search by name words, patient number, phone, date of birth, email; … |
+| K2-PAT-002 | MVP | back end done, screen pending | feat/cs-records | 2.2-01, 2.2-02 | Create and edit a patient: demographics, contacts, emergency contact, GP, consent flags, … |
+| K2-PAT-003 | MVP | partial | feat/cs-records | – | Patient record page with tabs registered by modules (appointments, notes, outcomes, … |
+| K2-PAT-004 | MVP | back end done, screen pending | feat/cs-records | 2.2-07 | Cases (episodes) with payer type (self-pay, insurer + membership/policy number, … |
 | K2-PAT-005 | MVP | partial | feat/cs-records | 2.2-04 | Medical alerts (encrypted) shown on the record and in the diary's appointment dialog |
-| K2-PAT-006 | MVP | partial | feat/cs-records | 2.2-03 | Patient status (active, archived, deceased with date) and legal hold |
-| K2-PAT-007 | MVP | partial-wt | feat/cs-records | 2.2-20 | Attachments: encrypted per clinic, type checked by magic bytes, size limits, withdrawn … |
-| K2-PAT-008 | MVP | partial-wt | feat/cs-records | 2.6-13 | Per-patient history built from the audit log (who did what, when) |
-| K2-PAT-009 | MVP | partial-wt | feat/cs-records | 2.7-04 | Subject access export of one patient's full record as PDF and JSON (permission … |
-| K2-PAT-010 | MVP | partial-wt | feat/cs-records | 2.7-05 | Anonymise a patient only after the retention review date, never under legal hold, … |
+| K2-PAT-006 | MVP | back end done, screen pending | feat/cs-records | 2.2-03 | Patient status (active, archived, deceased with date) and legal hold |
+| K2-PAT-007 | MVP | back end done, screen pending | feat/cs-records | 2.2-20 | Attachments: encrypted per clinic, type checked by magic bytes, size limits, withdrawn … |
+| K2-PAT-008 | MVP | back end done, screen pending | feat/cs-records | 2.6-13 | Per-patient history built from the audit log (who did what, when) |
+| K2-PAT-009 | MVP | partial | feat/cs-records | 2.7-04 | Subject access export of one patient's full record as PDF and JSON (permission … |
+| K2-PAT-010 | MVP | back end done, screen pending | feat/cs-records | 2.7-05 | Anonymise a patient only after the retention review date, never under legal hold, … |
 | K2-PAT-011 | MVP | partial-wt | feat/cs-reporting | 2.2-10 | Referrers and payer accounts directory (GP, consultant, insurer, medico-legal company, … |
 | K2-PAT-012 | Later | missing | feat/cs-records | 2.2-06 | Merge duplicate patients (with audit and undo window) |
 | K2-PAT-013 | Later | missing | feat/cs-records | 2.2-05 | Tags on patients |
 | K2-PAT-014 | Later | missing | feat/cs-records | 2.2-04 | Clinical flags (red/black) that require acknowledgement |
-| K2-NOTE-001 | MVP | partial-wt | feat/cs-records | 2.2-11, 2.3-04 | Built-in templates (initial assessment SOAP, follow-up SOAP, discharge) and clinic … |
-| K2-NOTE-002 | MVP | partial-wt | feat/cs-records | 2.2-11 | Write a note for a patient, linked to a case and appointment; drafts saved with revision |
+| K2-NOTE-001 | MVP | back end done, screen pending | feat/cs-records | 2.2-11, 2.3-04 | Built-in templates (initial assessment SOAP, follow-up SOAP, discharge) and clinic … |
+| K2-NOTE-002 | MVP | back end done, screen pending | feat/cs-records | 2.2-11 | Write a note for a patient, linked to a case and appointment; drafts saved with revision |
 | K2-NOTE-003 | MVP | done | feat/cs-records | 2.2-17 | Sign and lock: only the author signs; a content fingerprint is stored; a database trigger … |
-| K2-NOTE-004 | MVP | partial-wt | feat/cs-records | 2.2-17 | Amendments to a signed note: append-only, with reason, author and time, shown as a … |
-| K2-NOTE-005 | MVP | partial-wt | feat/cs-records | 2.2-14 | Body chart (front/back outlines, markers stored as data) |
-| K2-NOTE-006 | MVP | partial-wt | feat/cs-records | 2.2-15 | Outcome measures NDI, ODI, NPRS, PSFS, QuickDASH, scored automatically, chart over time; … |
-| K2-NOTE-007 | MVP | partial | feat/cs-records | – | Reception (`staff`) can never see clinical note content, outcome answers or health … |
-| K2-NOTE-008 | MVP | missing | feat/cs-records | 2.2-18 | Unsigned-notes list per clinician (drafts older than N days, N per clinic) |
-| K2-NOTE-009 | MVP | partial-wt | feat/cs-records | 2.2-23 | Notes can be written on a phone (375 px) |
+| K2-NOTE-004 | MVP | back end done, screen pending | feat/cs-records | 2.2-17 | Amendments to a signed note: append-only, with reason, author and time, shown as a … |
+| K2-NOTE-005 | MVP | partial | feat/cs-records | 2.2-14 | Body chart (front/back outlines, markers stored as data) |
+| K2-NOTE-006 | MVP | back end done, screen pending | feat/cs-records | 2.2-15 | Outcome measures NDI, ODI, NPRS, PSFS, QuickDASH, scored automatically, chart over time; … |
+| K2-NOTE-007 | MVP | done | feat/cs-records | – | Reception (`staff`) can never see clinical note content, outcome answers or health … |
+| K2-NOTE-008 | MVP | back end done, screen pending | feat/cs-records | 2.2-18 | Unsigned-notes list per clinician (drafts older than N days, N per clinic) |
+| K2-NOTE-009 | MVP | partial | feat/cs-records | 2.2-23 | Notes can be written on a phone (375 px) |
 | K2-NOTE-010 | Later | missing | feat/cs-records | 2.2-12, 2.2-13, 2.2-16 | Note-writing aids (snippets), medical history carried across cases, goals |
 | K2-NOTE-011 | Later | missing | feat/cs-records | 2.2-19 | Restrict a case to its own practitioner |
 | K2-LTR-001 | MVP | partial | feat/cs-comms | 2.3-01 | Letter templates with merge fields from patient, case, payer, practitioner, appointments, … |
@@ -817,7 +821,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-AUTHS-002 | MVP | done | feat/clinic-system | 2.2-08 | Usage recorded atomically, never over the limit or below zero; diary (attended) and … |
 | K2-AUTHS-003 | MVP | partial | feat/cs-diary | 2.2-08 | Booking or attending beyond the remaining sessions or after expiry shows a warning … |
 | K2-AUTHS-004 | MVP | partial-wt | feat/cs-reporting | 2.2-09 | Expiring authorisations list (by date and by sessions left) |
-| K2-AUTHS-005 | MVP | partial-wt | feat/cs-records | 2.2-08 | Authorisation screens on the case page (add, edit, remaining) |
+| K2-AUTHS-005 | MVP | partial | feat/cs-records | 2.2-08 | Authorisation screens on the case page (add, edit, remaining) |
 | K2-AUTHS-006 | Later | missing | feat/cs-comms | – | Extension request letter to the payer from a template |
 | K2-PAY-001 | MVP | done | feat/cs-billing | 2.4-07 | Record payments by hand (cash, card on an outside terminal, bank transfer, other) and … |
 | K2-PAY-002 | MVP | done | feat/cs-billing | 2.4-06 | Refunds, reversals and removal of a mistaken payment, audited |
@@ -871,7 +875,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-NFR-008 | MVP | missing | – | – | Content Security Policy enforced (today Report-Only on `main`) |
 | K2-NFR-010 | MVP | missing | – | – | Clinic = controller, AppstackX Ltd = processor; Article 28 DPA covering K2 with its … |
 | K2-NFR-011 | MVP | missing | – | – | DPIA covering K2 (names visible in the diary all day, plain demographics, reminders, … |
-| K2-NFR-012 | MVP | partial-wt | feat/cs-records | 2.7-04 | Subject access answered within one month using K2-PAT-009 |
+| K2-NFR-012 | MVP | partial | feat/cs-records | 2.7-04 | Subject access answered within one month using K2-PAT-009 |
 | K2-NFR-013 | MVP | done | feat/cs-records | 2.2-17 | Rectification through amendments; erasure limited by the retention rule (records not … |
 | K2-NFR-014 | MVP | done | feat/cs-comms | 2.5-07 | Data minimisation in messages; PECR consent for marketing |
 | K2-NFR-020 | MVP | done | feat/clinic-system | 2.7-06 | Adults: 8 years after the last treatment; children: until their 25th birthday (26th if 17 … |

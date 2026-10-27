@@ -1,5 +1,7 @@
 # K2 clinic system – handover
 
+> **Update 27/10/2026:** M3 merged – diary and records **back ends** are on `feat/clinic-system` `f54aff5` (no screens yet). See §12.
+
 > **Update 26/10/2026 ~17:05 GMT:** M0 is DONE. The uncommitted work in every `clinforms-wt/cs-*` worktree was committed as-is ("WIP: save uncommitted K2 sprint work for handover", unreviewed) and all seven `feat/cs-*` branches plus `feat/clinic-system` are pushed to origin. Heads: cs-billing e0185da, cs-comms 4aa66a4, cs-diary 60c347c, cs-integration b7fd14d, cs-portal 23a9f0c, cs-records 0eeded6, cs-reporting dbb7bb0. Start from M1. Treat the WIP commits as drafts to review, not finished work.
 
 **Internal.** Mon 26 Oct 2026. For the Claude Code account that picks K2 up cold. Read this, then
@@ -293,3 +295,99 @@ Open – for Khuram:
    foundation's entitlement status `trial` (`src/modules/pms/core/entitlements.ts`). No clinic-system code reads
    main's trial yet – decide whether a trial-ended clinic is also blocked in the clinic system, and whether the
    entitlement `trial` status stays.
+
+---
+
+## 12. Update 27/10/2026 – M3: diary and records back ends merged into `feat/clinic-system` (no screens yet)
+
+M1 (diary) and M2 (records) **back ends are done**: data layer, permission-checked server layer, server actions and
+route handlers, demo seeds, tests. **No screens yet** – the diary's components were deleted and its nav/record-tab
+entries left empty; records keeps its draft patient pages (not reviewed as screens). Screens and their e2e wait for
+design. `main` was not touched.
+
+| Branch | New head (pushed) | What |
+|---|---|---|
+| `feat/clinic-system` | `f54aff5` | `58cfe2b` merge `feat/cs-diary` @ `97ccf57` → `3e98008` merge `feat/cs-records` @ `a5753dd` (both `--no-ff`, diary first) → `f54aff5` demo-seed wiring |
+| `feat/cs-diary` | `361cd21` | `feat/clinic-system` merged back in |
+| `feat/cs-records` | `6c5c6cf` | `feat/clinic-system` merged back in |
+
+Conflicts: **none** on either merge (each module kept to its own files; migrations diary `0110–0114`, records
+`0120–0124`, each with its Postgres twin). `.eslintrc.json` was not stale (contract test and lint green), so it was
+not regenerated.
+
+Foundation wiring (`f54aff5`, smallest change): `scripts/pms/seed-demo.ts` now runs, after `seedDemoClinic(...)`,
+`seedDiary({ db, cipher: getDataCipher() }, slug, { log })` then `seedRecords(...)` with the same arguments; new test
+`scripts/pms/seed-demo-modules.test.ts` runs clinic → diary → records on one clinic and checks that a re-run adds
+nothing. The records seed does **not** link its notes to the seeded appointments (it can't: `seedRecords` never sets
+`appointmentId`, though `ImportNoteInput` has the field) – not redesigned, left open below. A fresh
+`npm run pms:seed-demo -- --fresh` now prints: 22 rota entries (5 practitioners, Bletchley + Wolverton); week of
+2026-10-26 with 212 appointments (75 attended, 1 dna, 24 cancelled, 3 late_cancelled, 109 booked), 6 blocked times;
+4 on the waiting list; 241 notes (232 signed, 9 unsigned), 1 amendment, 275 outcome measures.
+
+Results on `feat/clinic-system` `f54aff5` (exact counts): test:pms **270/270**; typecheck, lint green;
+test:medreport 1777 pass/0 fail/3 skipped (1780); test:db 670/0/3 (673); test:auth 134/0; test:site 92/0;
+test:gateway 401/0/2 (403); build green. `wc-fix2-store` did not flake this time. Module branches after the
+merge-back: test:pms 270/270 and typecheck green on both.
+
+**Walk on a fresh local seed** (scratch SQLite, server functions called directly from a script – no screens):
+13/13 – reception finds Megan Hart (sim-pat-001) → books a follow-up from a free slot (`loadFreeSlots`,
+`bookAppointmentFor`) → arrived (`setAppointmentStatusFor`) → clinician `startNoteFor(..., { appointmentId })` →
+`saveNoteFor(..., { sign: true })` → note reads back signed with the appointment id → staff `getNoteFor` and
+`listNotesFor` refused (`forbidden`) → `loadDaySheet` shows "Arrived", then after attended both `loadDaySheet` and
+`loadDiaryView` show it attended; the day sheet carries no note text. The walk ran with the clock set to the
+appointment day (09:05 on 28/10): run at 23:08 the first free slot is tomorrow and signing a note dated in the future
+is refused ("The consultation date is in the future") – correct. **Seen on the way:** the diary let reception mark
+tomorrow's appointment "arrived" the night before – check whether arrive/attended should be refused for a future
+appointment (diary owner).
+
+**Browser check:** `scripts/e2e/clinic-system-shell.cjs` **9/9** on `localhost:3184` (fresh scratch SQLite; clinic B
+must have slug `harbour-clinic`), server stopped.
+
+### Server API surface for the screens
+
+- Diary: `src/server/pms/diary/` – `caller.ts` (`diaryCallerOf`, site scope), `view.ts` (`loadDiaryView` – day/week,
+  practitioner or room columns), `reads.ts` (`loadDaySheet`, `loadPatientAppointments`, `loadRotas`,
+  `loadWaitingList`, `loadWaitingListEntry`, `loadFreeSlots`, `searchDiaryPatients`, `loadBookingOptions`),
+  `details.ts` (`loadAppointmentDetails`), `writes.ts` (book, rebook, move, resize, status, cancel, details, cancel
+  series, blocks, rota create/update/end, waiting list add/update/status/offer/answer/book-offer;
+  `DIARY_ACTION_PERMISSIONS`), `actions-support.ts`. Actions: `src/app/app/clinic/diary/actions.ts`,
+  `diary/rotas/actions.ts`, `diary/waiting-list/actions.ts`. Routes: `src/app/app/clinic/diary/api/{view,day-sheet,
+  slots,rotas,patients,patients/[patientId],patients/[patientId]/appointments,appointments/[appointmentId],
+  waiting-list,waiting-list/[entryId]}/route.ts`.
+- Records: `src/server/pms/records/*-service.ts` – `patients-service`, `cases-service`, `notes-service`
+  (`listNotesFor`, `getNoteFor`, `startNoteFor`, `saveNoteFor`, `signNoteFor`, `discardNoteFor`, `amendNoteFor`,
+  `unsignedNotesFor`), `outcomes-service`, `templates-service`, `attachments-service`, `history-service`,
+  `export-service`; plus `access.ts` (guards, `Result`, safe messages), `subject-access-export.ts`. Actions:
+  `src/app/app/clinic/patients/{actions.ts,[patientId]/actions.ts,[patientId]/cases/actions.ts,
+  [patientId]/notes/actions.ts,[patientId]/outcomes/actions.ts,[patientId]/attachments/actions.ts,
+  note-templates/actions.ts}`. Routes: `patients/[patientId]/export/route.ts`,
+  `patients/[patientId]/attachments/upload/route.ts`, `patients/[patientId]/attachments/[attachmentId]/route.ts`.
+
+`requirements.md` §3/§5 lines and §13 updated: new status **"back end done, screen pending"** for SITE-002,
+DIARY-002/003/004/007/008/009/010/012/013/016/017, PAT-001/002/004/006/007/008/010, NOTE-001/002/004/006/008;
+NOTE-007 done (NOTE-003 already done); PAT-009 partial; the remaining diary/records `partial-wt` (PAT-003, NOTE-005,
+NOTE-009, AUTHS-005, NFR-012) became `partial` – the work is committed now; PLT-010 stays partial (billing, comms and
+portal seeds to come).
+
+### Open
+
+1. `pms_clinical_notes.appointment_id` has **no FK** yet (SQLite needs a table rebuild) – add in records' range
+   with its Postgres twin; then let the records seed link notes to the seeded diary appointments.
+2. **Shared site-scope read for K2-SITE-004:** `resolveDiarySiteScope` (`src/server/pms/diary/caller.ts`) returns
+   "every site"; the diary applies any scope it is given. Needs the foundation read over reporting's
+   `pms_staff_access`/`pms_staff_sites` (§7.7), used by diary, patient lists, invoices and reports.
+3. Diary performance measured only on local SQLite (`scripts/pms/diary-perf.ts`, 50,000 fictional appointments) –
+   measure on Postgres and D1.
+4. Waiting-list offers don't hold the slot: someone else can book it while the offer is out.
+5. Idea: an unsigned-notes count on the clinic dashboard (`unsignedNotesFor` exists).
+6. Arrive/attended allowed for a future appointment (see the walk) – confirm intended or refuse.
+7. Screens + e2e for diary and records: waiting for design.
+
+### Decisions for Khuram
+
+1. May reception (`staff`) see a case's **referral reason**? (Today it is treated as clinical.)
+2. **Q-K6** naming of package / demo / trial (see §11 open 1–3) – still open.
+3. **`diary.book` vs `diary.manage`** (`DIARY_ACTION_PERMISSIONS` in `src/server/pms/diary/writes.ts`): clinicians
+   and staff have `diary.book` – book, rebook, move, resize, status, cancel, cancel a series, **blocked time** and the
+   whole waiting list; only owner/admin have `diary.manage` – **rotas** (create, change, end). Confirm, or e.g. move
+   blocked time to `diary.manage`, or let clinicians change their own rota.
