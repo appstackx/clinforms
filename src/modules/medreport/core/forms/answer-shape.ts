@@ -92,7 +92,8 @@ export function timePointOf(field: Pick<FormField, "label" | "guidance" | "answe
   const structured = field.answerType !== "short_text" && field.answerType !== "long_text";
   if (!compact && !structured) return "episode";
   if (EPISODE_LABEL.test(field.label) && !/\b(?:now|current(?:ly)?|at discharge|latest|present(?:ly)?)\b/i.test(words)) return "episode";
-  if ((EPISODE_AREA.test(field.label.trim()) || EPISODE_MODALITY.test(words)) && !NOW_WORDS.test(words)) return "episode";
+  // A printed label is short; a longer one is not read for these (each rule reads it once).
+  if (words.length <= 600 && (EPISODE_AREA.test(field.label.trim()) || EPISODE_MODALITY.test(words)) && !NOW_WORDS.test(words)) return "episode";
   return "latest";
 }
 

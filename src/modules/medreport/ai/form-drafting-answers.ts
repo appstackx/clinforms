@@ -403,14 +403,17 @@ export function recordYesNoProblem(input: Pick<AnswerInput, "field" | "label" | 
   const support = input.paragraphs.map((p) => p.text).join(" ");
   // Quoted without its closing stop (the gap's own sentence ends after the quotation).
   const cut = (t: string) => {
-    const q = t.trim().replace(/[.;:,\s]+$/, "");
+    let end = t.length;
+    while (end > 0 && ".;:, \t\n\r".includes(t[end - 1])) end--;
+    const q = t.slice(0, end).trim();
     return q.length > 200 ? `${q.slice(0, 199).trimEnd()}…` : q;
   };
   const options = field.options?.length ? ` (${field.options.join(" / ")})` : "";
   const ask = `Which answer should be given to “${label}”${options}? Check the notes and answer it yourself.`;
   const applies = `Does “${label}” apply to this patient? If it does, which answer should be given${options}? Check the notes.`;
 
-  const self = SELF_CONDITION.exec(field.label.trim());
+  // A printed label is short; a longer one is not read for a condition of its own.
+  const self = field.label.length <= 300 ? SELF_CONDITION.exec(field.label.trim()) : null;
   const question = self ? self[2] : field.label;
   if (self) {
     const reading = conditionReading(conditionPhrase(self[1]), support, input.episodeNotes?.length ? input.episodeNotes : input.citedNotes);
