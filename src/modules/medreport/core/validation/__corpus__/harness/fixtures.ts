@@ -125,8 +125,12 @@ export interface RunSpec {
   color?: string;
   bold?: boolean;
 }
-/** A paragraph: plain text, or runs, with an optional right indent in twentieths of a point (may be negative). */
-export type ParaSpec = string | { runs?: RunSpec[]; text?: string; color?: string; bold?: boolean; indRight?: number; merge?: string };
+/**
+ * A paragraph: plain text, or runs, with an optional right indent in twentieths of a point (may be negative). `control`
+ * (bh2 fix round 1, R1T-WA2-01): a Word content control after the runs, showing its placeholder prompt (e.g. "Click or
+ * tap here to enter text.") as Word writes an empty one.
+ */
+export type ParaSpec = string | { runs?: RunSpec[]; text?: string; color?: string; bold?: boolean; indRight?: number; merge?: string; control?: string };
 /** A table cell: one paragraph, or several. */
 export type CellSpec = ParaSpec | { paras: ParaSpec[] };
 export type BlockSpec = { p: ParaSpec } | { table: CellSpec[][] };
@@ -164,11 +168,16 @@ function mergeFieldXml(name: string): string {
   return `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> MERGEFIELD ${esc(name)} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${runXml({ text: `«${name}»` })}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
 }
 
+/** An empty Word content control (w:sdt) showing its placeholder prompt in Word's placeholder style. */
+function contentControlXml(prompt: string): string {
+  return `<w:sdt><w:sdtPr><w:showingPlcHdr/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:rStyle w:val="PlaceholderText"/></w:rPr><w:t xml:space="preserve">${esc(prompt)}</w:t></w:r></w:sdtContent></w:sdt>`;
+}
+
 function paraXml(p: ParaSpec): string {
   if (typeof p === "string") return `<w:p>${p ? runXml({ text: p }) : ""}</w:p>`;
   const runs = p.runs ?? (p.text !== undefined ? [{ text: p.text, color: p.color, bold: p.bold }] : []);
   const pPr = p.indRight !== undefined ? `<w:pPr><w:ind w:right="${p.indRight}"/></w:pPr>` : "";
-  return `<w:p>${pPr}${runs.filter((r) => r.text !== "").map(runXml).join("")}${p.merge ? mergeFieldXml(p.merge) : ""}</w:p>`;
+  return `<w:p>${pPr}${runs.filter((r) => r.text !== "").map(runXml).join("")}${p.merge ? mergeFieldXml(p.merge) : ""}${p.control !== undefined ? contentControlXml(p.control) : ""}</w:p>`;
 }
 
 function cellXml(c: CellSpec, width: number): string {

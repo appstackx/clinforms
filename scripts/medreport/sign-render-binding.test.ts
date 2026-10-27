@@ -36,6 +36,8 @@ import { completedSampleReport } from "./form-sample-answers";
 import { bytesToBase64, createHttpHarness, postRenderFinal, postSign, putStoredReport } from "../../src/modules/medreport/core/validation/__corpus__/harness/http";
 import { openZipSafely } from "../../src/modules/medreport/forms/zip-guard";
 import { issuedContentSha256 } from "../../src/modules/medreport/api/handlers/sign/receipt";
+import { renderPreReleaseFinal } from "../../src/modules/medreport/forms/render-form";
+import { DOCX_MIME } from "../../src/modules/medreport/forms/file";
 
 process.env.MEDREPORT_AI_MODE = "demo";
 
@@ -149,7 +151,7 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     assert.ok(audit.filter((e) => (e.detail as Record<string, unknown>)?.refused === "ISSUED_COPY_CHANGED").every((e) => e.action === "report.issue_refused"));
   });
 
-  it("a receipt from before the release (no bound hashes) renders exactly the release's document (AC-ISSUE-6)", async () => {
+  it("a receipt from before the release (no bound hashes) renders the document production issued, not the release's (AC-ISSUE-6, R1T-WA2-02)", async () => {
     const { deps } = createHttpHarness();
     const b = await built(NA_CASE);
     const signed = await demoSign(deps, b);
@@ -160,7 +162,12 @@ describe("/sign binds the issued document; /render FINAL issues exactly it (R-se
     const old = await demoRender(deps, b, { ...b.report, status: "signed", receipt: legacy }, legacy);
     assert.equal(old.status, 200, JSON.stringify(old.json));
     assert.equal(old.headers.get("x-medreport-render"), "final");
-    assert.equal(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(bound.bytes as Uint8Array));
+    // bh2 fix round 1 (R1T-WA2-02): production's frozen forms engine issues it – production's answers (no condition
+    // reading: the ruled-out F-06 prints, as production printed it) – so it is not the release's bound document.
+    const production = await renderPreReleaseFinal({ report: b.report, form: b.form as FormDefinition, file: { bytes: b.fileBytes as Uint8Array, mimeType: DOCX_MIME, sha256: (b.form as FormDefinition).file.sha256, sizeBytes: (b.fileBytes as Uint8Array).byteLength }, receipt: legacy, format: "original" });
+    assert.equal(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(production.bytes));
+    assert.notEqual(issuedContentSha256(old.bytes as Uint8Array), issuedContentSha256(bound.bytes as Uint8Array));
+    assert.equal(documentText(old.bytes as Uint8Array).includes("More physiotherapy is advised."), true);
   });
 });
 

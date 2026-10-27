@@ -38,8 +38,10 @@ import "server-only";
  * acknowledgementsSha256, minted by /sign's dry run) makes a FINAL copy only when both still hold: the acknowledgements
  * the validators carry over now are the ones the approval relied on, and the Word document filled now (the issue
  * state's answers, the receipt's signer and time) hashes to the one checked at approval. Otherwise 409
- * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's. A receipt
- * from before the release (without those keys) renders exactly as before.
+ * ISSUED_COPY_CHANGED, written to the clinic's audit trail. The effective signer is always the receipt's.
+ * bh2 fix round 1 (R1T-WA2-02): a form report approved before the release (a receipt without those keys) is issued by
+ * production's own forms engine, frozen in forms/pre-release (forms/render-form.ts renderPreReleaseFinal): production's
+ * answers and production's fill, so its FINAL copy is the document production issued.
  * Release rule (README): no forms-engine change is deployed while approved trial reports exist without first running
  * scripts/admin/check-issued.ts (decrypt, re-render, compare).
  *
@@ -60,7 +62,7 @@ import { renderQuestionSummaryPdf } from "../../docgen/question-summary";
 import { buildViewModel } from "../../docgen/view-model";
 import { addDocxDemoNotice, stampPdfDemoNotice } from "../../forms/demo-notice";
 import { assertFormFileMatches } from "../../forms/file";
-import { fillWarningsHeader, formFileBaseName, renderFormFile, withSourceMarkers } from "../../forms/render-form";
+import { fillWarningsHeader, formFileBaseName, issuedByPreReleaseEngine, renderFormFile, renderPreReleaseFinal, withSourceMarkers } from "../../forms/render-form";
 import { CONTENT_TYPES, HEADERS, RenderQuerySchema, RenderRequestSchema, type RenderFormat } from "../contract";
 import type { MedreportDeps } from "../deps";
 import { fileResponse, logEvent, parseBody, parseQuery, problem, type MedreportHandler } from "../http";
@@ -361,9 +363,13 @@ export const handleRender: MedreportHandler = async (req, _ctx, deps) => {
     }
     let answers = buildFormAnswers(report, formDef, { receipt: final ? receipt : null });
     if (reviewCopy) answers = withSourceMarkers(answers, report, formDef);
+    // bh2 fix round 1 (R1T-WA2-02): approved before the release – production's own engine issues it (see the file comment).
+    const preRelease = final && receipt && issuedByPreReleaseEngine(receipt) ? receipt : null;
     const out =
       issued && format !== "pdf" && !notice
         ? issued
+        : preRelease
+          ? await renderPreReleaseFinal({ report, form: formDef, file, receipt: preRelease, format: format === "pdf" ? "pdf" : "original", continuationLabel: continuationLabelFor(report), ...(notice ? { demoNotice: notice } : {}) })
         : await renderFormFile({
             form: formDef,
             file,
