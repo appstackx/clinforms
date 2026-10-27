@@ -24,6 +24,7 @@
 import { formatUkDate } from "../dates";
 import type { Note, ReportFlag } from "../types";
 import { clinicianNames, noteMentions, sameName } from "./attribution-text";
+import { firstPersonOverColleagues, type ColleagueClause } from "./attribution-voice";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { authorshipOf } from "./opinion-language";
 import type { Validator } from "./registry";
@@ -209,10 +210,17 @@ export const validateClinicianNamed: Validator = (input) => {
     const patientSurname = input.bundle.registration?.lastName ?? null;
     const owner = voiceOwnerOf(input);
     const ownNotes = owner ? cited.filter((n) => sameName(n.author.name, owner.name)) : [];
+    let clauses: ColleagueClause[] | null | undefined;
+    const voiceClauses = (): ColleagueClause[] => (clauses === undefined ? (clauses = owner ? firstPersonOverColleagues(p, input.bundle, owner) : null) : clauses) ?? [];
     for (const s of splitSentences(p.text, "prose")) {
       // The owner's own record, misdated in the first person (a first person over a colleague's note is the voice check's).
       for (const act of ownNotes.length ? firstPersonDatedActs(s.text) : []) {
         if (ownNotes.some((n) => n.date === act.date) || seen.has(`I|${act.date}`)) continue;
+        // Fix round 1 (R1T-WB-09/11): a date only a colleague's cited note has is that colleague's clause in the owner's
+        // "I" – the voice check's one flag (attribution-voice.ts firstPersonOverColleagues: a clause dated to a colleague's
+        // note alone), answered by its "Name <colleague>" one-click. A second flag for the same words would leave that
+        // one-click unofferable (it would clear a blocking flag it does not answer).
+        if (cited.some((n) => !ownNotes.includes(n) && n.date === act.date) && voiceClauses().some((c) => !c.namesColleague && p.text.slice(c.start, c.end).includes(formatUkDate(act.date)))) continue;
         seen.add(`I|${act.date}`);
         const flag = makeFlag({
           code: "OTHER_CLINICIAN_VOICE",

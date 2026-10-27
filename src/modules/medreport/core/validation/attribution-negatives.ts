@@ -16,7 +16,8 @@
  * Run by the opinion-language validator (validateOpinionLanguage) after its own flags. Owner: WB – docs/bh2-ownership.json.
  */
 import type { Note, Paragraph, ReportFlag } from "../types";
-import { contentStems, noteSentences, stemsMatch } from "./attribution-text";
+import { coveringSpan } from "./attribution-anchor";
+import { contentStems, frameScope, noteSentences, stemsMatch } from "./attribution-text";
 import { makeFlag } from "./context";
 import { defineHook, hookEnabled } from "./hooks";
 import { splitSentences } from "../text/sentences";
@@ -46,14 +47,24 @@ export function negativeFindings(sentence: string): string[] {
     const otherVerb = new RegExp(`\\s(?:was|were|is|are|has been|have been)\\s+(?!(?:${FINDING_VERB})\\b)[a-z]+(?:ed|en)\\b`);
     if (otherVerb.test(` ${raw}`)) continue;
     const part = raw.replace(verb, " ").replace(new RegExp(`\\s+(?:${FINDING_VERB})\\b`), " ").trim();
-    // A clause that is not a finding at all ("… and he has made a full recovery").
-    const clean = part.split(/\s+(?:and|but|as|because|so)\s+(?:he|she|they|his|her|their|it|the)\b/)[0].trim();
+    // A clause that is not a finding at all ("… and he has made a full recovery"), or another conjunct with its own verb
+    // (fix round 1, R1T-WB-L4: "There was no quadriceps lag, and single-leg squat was painful …" denies only the lag – the
+    // squat is a second note sentence's finding, not part of the negative).
+    const clean = part
+      .split(/\s+(?:and|but|as|because|so)\s+(?:he|she|they|his|her|their|it|the)\b/)[0]
+      .split(/\s*(?:[,;]\s*(?:and|but|while|whereas)\s+|;\s*)(?=(?:[a-z-]+\s+){0,4}(?:was|were|is|are|had|has)\b)/)[0]
+      .trim();
     if (clean) out.push(clean);
   }
   return out;
 }
 
-/** Whether a cited note records the absence of `finding` (every content word in one sentence that negates it). */
+/**
+ * Whether a cited note records the absence of `finding`: one sentence holds every content word, and the part of it
+ * that says them negates them (fix round 1, R1T-WB-04: the negator is in that part's own conjuncts and modifiers –
+ * attribution-text.ts frameScope – so "No swelling" on one line of a terse note never lends its "no" to the next line's
+ * "knee pain on stairs").
+ */
 export function negativeRecorded(finding: string, notes: readonly Note[]): boolean {
   const want = contentStems(normaliseForMatch(finding)).filter((w) => !FRAME_WORDS.has(w));
   if (want.length === 0) return true;
@@ -61,7 +72,10 @@ export function negativeRecorded(finding: string, notes: readonly Note[]): boole
     for (const s of noteSentences(note)) {
       if (s.field === "history") continue;
       if (!NEGATOR.test(s.norm)) continue;
-      if (want.every((w) => s.stems.some((h) => stemsMatch(w, h)))) return true;
+      if (!want.every((w) => s.stems.some((h) => stemsMatch(w, h)))) continue;
+      const span = coveringSpan(s.norm, want, undefined, undefined, s);
+      if (!span) continue;
+      if (NEGATOR.test(frameScope(s, span.start, span.end))) return true;
     }
   }
   return false;
