@@ -17,6 +17,7 @@ import { HARROW_PIKE_FORM as HARROW_PIKE_RAW } from "../../modules/medreport/for
 import { getSampleForm } from "../../modules/medreport/forms/samples/registry";
 import { completedSampleReport } from "../../../scripts/medreport/form-sample-answers";
 import { member, storeDeps, storeFetch } from "../../../scripts/medreport/store-harness";
+import { asApproversReport, signingMember, storeClinicForm, withMapHash } from "../../../scripts/medreport/release-store-fixture";
 import { createPgliteTestDb, createSqliteTestDb, testCipher, type TestDb } from "../db/testing/databases";
 import { listAudit } from "../repos/audit";
 import type { RepoContext } from "../repos/context";
@@ -52,7 +53,8 @@ function defineSuite(label: string, factory: () => Promise<TestDb> | TestDb): vo
     before(async () => {
       testDb = await factory();
       ctx = { db: testDb.db, cipher: testCipher() };
-      const deps = storeDeps(createTenantStore(() => ctx), { a: member(A), b: member(B) });
+      // bh2 fix round 1 (WC, R1T-WC-06): the member who creates reports may approve them (a create names its approver).
+      const deps = storeDeps(createTenantStore(() => ctx), { a: signingMember(A), b: member(B) });
       a = storeFetch(deps, { member: "a" });
       b = storeFetch(deps, { member: "b" });
     });
@@ -61,7 +63,9 @@ function defineSuite(label: string, factory: () => Promise<TestDb> | TestDb): vo
     });
 
     it("reports: revisions, 409 with the stored copy, encrypted at rest, isolated, audited", async () => {
-      const report: Report = { ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id: "rpt_db" }), tenantId: A };
+      // bh2 fix round 2 (WC, R2-SAF-2): the clinic holds the map the report is started from, and the report names it.
+      await storeClinicForm(createTenantStore(() => ctx), A, { ...HARROW_PIKE_RAW, tenantId: A });
+      const report: Report = withMapHash(asApproversReport({ ...completedSampleReport("megan-hart", { ...HARROW_PIKE_RAW, tenantId: A }, { id: "rpt_db" }), tenantId: A }, signingMember(A)), { ...HARROW_PIKE_RAW, tenantId: A });
       const created = await a(storeApiPaths.report(report.id), put({ report }));
       assert.equal(created.status, 201, await created.clone().text());
       const edited = { ...report, patientLabel: "Megan Hart (edited)", updatedAt: "2026-10-09T12:00:00.000Z" };
@@ -85,6 +89,7 @@ function defineSuite(label: string, factory: () => Promise<TestDb> | TestDb): vo
       assert.deepEqual(audit.map((e) => e.action).reverse(), ["report.create", "report.update"]);
       assert.ok(audit.every((e) => e.userId === `user-${A}` && e.targetId === report.id));
       assert.ok(!JSON.stringify(audit).includes("Megan"));
+      await createTenantStore(() => ctx).deleteForm(A, HARROW_PIKE_RAW.id); // the forms test below stores it afresh
     });
 
     it("forms: an unattested confirmation is stored as proposed; an attested one stays confirmed", async () => {

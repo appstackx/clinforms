@@ -1,0 +1,209 @@
+/*
+ * FROZEN – the production forms engine as c883ce5 issued FINAL copies (bh2 fix round 1, R1T-WA2-02).
+ * This file is src/modules/medreport/forms/render-form.ts at c883ce5, byte for byte, except its relative import paths (rewired to the other frozen files
+ * in this folder, or to the same shared module). It issues the FINAL copy of a report approved before this release
+ * (a receipt without the release's issued-document hashes), so that copy is the document production issued.
+ * NEVER EDIT IT (fix the release engine instead); forms/pre-release-engine.test.ts pins its output.
+ */
+import "server-only";
+
+/**
+ * One place that turns (form map + original file + answers) into the completed file, used by
+ * POST /forms/fill-preview (always DRAFT) and POST /render for form reports (DRAFT or FINAL):
+ *
+ *   Word form  → original: filled .docx   · pdf: filled .docx converted by LibreOffice (null when absent)
+ *   PDF form   → original / pdf: filled PDF, flattened (DRAFT: watermark on top of the answers)
+ *
+ * Also: review-copy source markers for the answers, the fill-warnings header and file names.
+ *
+ * A demonstration form (FormDefinition.demoNotice) gets its footer line on every page of the draft and
+ * the final file (forms/demo-notice.ts); any other form is returned exactly as the fill produced it – except in a
+ * demo clinic, whose handlers pass `demoNotice` (core/demo-clinic.ts demoOutputNotice: the form's own
+ * notice, else the clinic notice). The notice is never part of the form map, so the approved map's hash is unchanged.
+ *
+ * Mail-merge fields (10/2026, core/merge-fields.ts): the completed file is scanned for «Name» / <<Name>> /
+ * MERGEFIELD. A FINAL copy with any is refused (422 FORM_INVALID) – approval is normally blocked before
+ * that by validation; a Word DRAFT lists them first in its warnings.
+ *
+ * Owner: forms-engine agent.
+ */
+import { CONTENT_TYPES, HEADERS } from "../../api/contract";
+import { HttpError } from "../../api/http";
+import { NOTICES } from "../../config.public";
+import { answerableFields, formTemplateId, type FormFillAnswers } from "./forms";
+import { prefillSigners } from "../../core/parties";
+import type { FormDefinition, Report } from "../../core/types";
+import { buildFileBaseName } from "../../docgen/view-model";
+import { docxToPdf } from "../convert";
+import { addDocxDemoNotice, stampPdfDemoNotice } from "../demo-notice";
+import { fillDocx } from "./docx-fill";
+import { DOCX_MIME, PDF_MIME, type DecodedFormFile } from "../file";
+import { mergeTokensInOutput } from "../merge-scan";
+import { listMergeTokens } from "../../core/merge-fields";
+import { fillPdf } from "./pdf-fill";
+
+export type FormOutputFormat = "original" | "pdf";
+
+export interface FormRenderInput {
+  form: FormDefinition;
+  file: DecodedFormFile;
+  answers: FormFillAnswers;
+  draft: boolean;
+  reviewMarkers?: boolean;
+  format: FormOutputFormat;
+  /** PDF: printed on every continuation page (fix wave 3), e.g. "Claimant: … · Reference: …". */
+  continuationLabel?: string;
+  /**
+   * The demonstration notice to print on every page (a demo clinic: core/demo-clinic.ts demoOutputNotice).
+   * Default: the form's own demoNotice (none for an ordinary form – the file is then exactly as filled).
+   */
+  demoNotice?: string;
+}
+
+export interface FormRenderOutput {
+  bytes: Uint8Array;
+  contentType: typeof CONTENT_TYPES.docx | typeof CONTENT_TYPES.pdf;
+  extension: "docx" | "pdf";
+  /** Plain-English warnings, errors first (a draft lists its errors here too, for the fill-warnings header). */
+  warnings: string[];
+  /** Problems that make the written form wrong (PDF fill's onError). A final copy is refused with any. */
+  errors?: string[];
+}
+
+/** 422 when the file type does not match the form map's kind (cannot happen when the SHA-256 matched). */
+function assertKind(form: FormDefinition, file: DecodedFormFile): void {
+  const wantDocx = form.kind === "docx";
+  if ((wantDocx && file.mimeType !== DOCX_MIME) || (!wantDocx && file.mimeType !== PDF_MIME)) {
+    throw new HttpError(422, "The file does not match the form map", {
+      code: "FORM_INVALID",
+      detail: `This form map is for a ${wantDocx ? "Word" : "PDF"} form, but the file sent is a ${file.mimeType === PDF_MIME ? "PDF" : "Word document"}.`,
+    });
+  }
+}
+
+function mergeFieldsLeft(tokens: string[]): string {
+  return `The completed form still contains ${tokens.length === 1 ? "a mail-merge field" : `${tokens.length} mail-merge fields`} (${listMergeTokens(tokens)}).`;
+}
+
+/** A final copy never leaves with a mail-merge field on it (see the file comment). */
+async function assertNoMergeFields(bytes: Uint8Array, kind: "docx" | "pdf"): Promise<void> {
+  const tokens = await mergeTokensInOutput(bytes, kind);
+  if (tokens.length === 0) return;
+  throw new HttpError(422, "This form still contains a mail-merge field", {
+    code: "FORM_INVALID",
+    detail: `${mergeFieldsLeft(tokens)} The final copy was not made. Answer the question in that box, or change the form's mapping so a question replaces it – an approved report cannot be edited, so use “Create amended version”.`,
+  });
+}
+
+/** Fill the referrer's original file (and convert a Word form to PDF when asked). */
+export async function renderFormFile(input: FormRenderInput): Promise<FormRenderOutput> {
+  const { form, file, answers, draft } = input;
+  assertKind(form, file);
+  const notice = input.demoNotice ?? form.demoNotice;
+  const warnings: string[] = [];
+  const onWarning = (m: string) => {
+    if (!warnings.includes(m)) warnings.push(m);
+  };
+  if (form.kind === "docx") {
+    const docx = addDocxDemoNotice(fillDocx(file.bytes, form, answers, { draft, reviewMarkers: input.reviewMarkers, onWarning }), notice);
+    if (draft) {
+      const left = await mergeTokensInOutput(docx, "docx");
+      if (left.length > 0) warnings.unshift(`${mergeFieldsLeft(left)} The form cannot be approved until each is answered or replaced.`);
+    } else await assertNoMergeFields(docx, "docx");
+    if (input.format === "original") return { bytes: docx, contentType: CONTENT_TYPES.docx, extension: "docx", warnings };
+    let pdf: Uint8Array | null;
+    try {
+      pdf = await docxToPdf(docx);
+    } catch {
+      throw new HttpError(502, "The PDF copy could not be made", {
+        code: "INTERNAL",
+        detail: "The PDF converter did not finish. Download the completed Word form instead, or try again.",
+        retryable: true,
+      });
+    }
+    if (!pdf) {
+      throw new HttpError(503, "PDF conversion is not available here", { code: "PDF_CONVERSION_UNAVAILABLE", detail: NOTICES.pdfConversionUnavailable });
+    }
+    return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings };
+  }
+  // Flattened in both cases: FINAL by rule; DRAFT so the watermark is drawn above the filled boxes.
+  const errors: string[] = [];
+  const onError = (m: string) => {
+    if (!errors.includes(m)) errors.push(m);
+  };
+  const filled = await fillPdf(file.bytes, form, answers, {
+    draft,
+    flatten: true,
+    reviewMarkers: input.reviewMarkers,
+    onWarning,
+    onError,
+    ...(input.continuationLabel ? { continuationLabel: input.continuationLabel } : {}),
+  });
+  if (errors.length > 0 && !draft) {
+    // Never issue a form with a value cut to fit (e.g. a date written "14/02/19").
+    throw new HttpError(422, "An answer does not fit the form", {
+      code: "FORM_INVALID",
+      detail: `${errors.join(" ")} The final copy was not made. Correct the answer and approve the report again – an approved report cannot be edited, so use “Create amended version”, correct the answer there and approve the amended version.`,
+    });
+  }
+  const pdf = await stampPdfDemoNotice(filled, notice, { draft });
+  if (!draft) await assertNoMergeFields(pdf, "pdf");
+  return { bytes: pdf, contentType: CONTENT_TYPES.pdf, extension: "pdf", warnings: [...errors, ...warnings], ...(errors.length > 0 && { errors }) };
+}
+
+/**
+ * Review copies: append the answer's sources to each written text answer, e.g. " [N-001, N-006]"
+ * (internal use only – a FINAL copy never carries them).
+ */
+export function withSourceMarkers(answers: FormFillAnswers, report: Pick<Report, "sections">, form: Pick<FormDefinition, "fields">): FormFillAnswers {
+  const out: FormFillAnswers = { ...answers };
+  for (const field of answerableFields(form)) {
+    // Only drafted / reviewed text answers: identifiers, numbers and dates stay exactly as on the record.
+    if (field.fillSource.kind !== "notes_narrative" && field.fillSource.kind !== "clinician_opinion") continue;
+    if (field.answerType !== "long_text" && field.answerType !== "short_text") continue;
+    if (field.anchor.kind === "docx" && (field.anchor.target === "checkbox_glyph" || field.anchor.target === "mark_cell" || field.anchor.target === "delete_options")) continue;
+    const answer = out[field.id];
+    if (!answer?.text) continue;
+    const section = report.sections.find((s) => s.key === field.id);
+    const ids = Array.from(new Set((section?.paragraphs ?? []).flatMap((p) => p.sourceIds))).filter((id) => /^(N-\d{3,}|FACT-|REG$)/.test(id));
+    if (ids.length) out[field.id] = { ...answer, text: `${answer.text} [${ids.join(", ")}]` };
+  }
+  return out;
+}
+
+/** Header value for HEADERS.fillWarnings: URI-encoded JSON, capped so proxies accept it. */
+export function fillWarningsHeader(warnings: string[]): Record<string, string> {
+  if (warnings.length === 0) return {};
+  const list: string[] = [];
+  let size = 2;
+  for (const w of warnings) {
+    const enc = encodeURIComponent(JSON.stringify(w)).length + 3;
+    if (size + enc > 6000 || list.length >= 25) {
+      list.push(`…and ${warnings.length - list.length} more.`);
+      break;
+    }
+    list.push(w);
+    size += enc;
+  }
+  return { [HEADERS.fillWarnings]: encodeURIComponent(JSON.stringify(list)) };
+}
+
+/**
+ * e.g. "Hart_M_Treating-Physiotherapist-Report_2026-10-07_SIGNED" (no extension). A form the clinic only
+ * prefills for someone else to sign (core/parties.ts prefillSigners – a patient's claim form) is never
+ * "_SIGNED": its approved file is "…_PREFILLED".
+ */
+export function formFileBaseName(report: Pick<Report, "bundleSnapshot" | "version">, form: FormDefinition, opts: { signed: boolean; dateIso: string; preview?: boolean }): string {
+  const reg = report.bundleSnapshot.registration;
+  const built0 = buildFileBaseName({
+    firstName: reg.firstName,
+    lastName: reg.lastName,
+    template: { id: formTemplateId(form.id), documentTitle: form.title },
+    dateIso: opts.dateIso,
+    signed: opts.signed,
+  });
+  const built = opts.signed && prefillSigners(form) ? built0.replace(/_SIGNED$/, "_PREFILLED") : built0;
+  // An amended version says so in its file name ("…_AMENDED-v2_SIGNED").
+  const base = report.version && report.version > 1 ? built.replace(/(_SIGNED|_PREFILLED|_DRAFT)?$/, `_AMENDED-v${report.version}$1`) : built;
+  return opts.preview ? `${base}_PREVIEW` : base;
+}

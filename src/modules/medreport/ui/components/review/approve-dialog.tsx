@@ -8,14 +8,19 @@
  * Tenant mode (a clinic's own Studio): the signer is the signed-in member, from their clinic profile
  * (name and HCPC number shown read-only when the profile has them); no demo hints.
  *
- * Owner: studio-b agent.
+ * bh2 (WB design 13): the approver's own confirmations, when the form would print them as the assessing or treating
+ * physiotherapist without their notes, or print a registration number that is not their profile's – the same rule as
+ * /sign (core/validation/attribution-confirmations.ts), ticked here and sent as ApproveInput.confirmations.
+ *
+ * Owner: WB (opinion guard and attribution) – docs/bh2-ownership.json.
  */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2, PenLine, ShieldCheck } from "lucide-react";
 import { signoffValuesFromReceipt } from "../../../core/forms";
 import { SIGNOFF_PART_LABELS } from "../../../core/labels";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
-import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
+import { confirmationText, requiredConfirmations } from "../../../core/validation/attribution-confirmations";
+import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate, SignerConfirmation } from "../../../core/types";
 import { useStudioMode } from "../../host-hooks";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, cn } from "../../primitives";
 import { TENANT_COPY } from "../../studio-copy";
@@ -26,6 +31,12 @@ export interface ApproveInput {
   typedSignature: string;
   statementAccepted: boolean;
   attestations: string[];
+  /**
+   * bh2 W0 follow-up (WB design 13): the confirmations the approver ticks here ("I assessed this patient", "This number is
+   * mine"). use-review-actions.ts sends ApproveInput to /sign as it is (SignRequest.confirmations), so this dialog –
+   * WB's since bh2-base2 – is the only file that adds them.
+   */
+  confirmations?: SignerConfirmation[];
 }
 
 export type ApproveResult = { ok: true } | { ok: false; title: string; detail?: string; issues?: string[]; blocking?: ReportFlag[] };
@@ -82,6 +93,7 @@ export function ApproveDialog({
   const [typed, setTyped] = useState("");
   const [statement, setStatement] = useState(false);
   const [ticked, setTicked] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Extract<ApproveResult, { ok: false }> | null>(null);
   const [succeeded, setSucceeded] = useState(false);
@@ -96,6 +108,7 @@ export function ApproveDialog({
     setTyped("");
     setStatement(false);
     setTicked([]);
+    setConfirmed([]);
     setFailure(null);
     setSucceeded(false);
   }, [open]);
@@ -118,7 +131,13 @@ export function ApproveDialog({
   const hcpcOk = hcpc.trim().length >= 2;
   const typedOk = typed.trim().length > 0 && normaliseName(typed) === normaliseName(name);
   const allTicked = template.attestations.every((a) => ticked.includes(a));
-  const canSubmit = nameOk && hcpcOk && typedOk && statement && allTicked && !busy;
+  // What /sign will ask this signer to confirm (a changed name or number asks again).
+  const confirmationsNeeded = useMemo(
+    () => requiredConfirmations(report, form, { name: name.trim(), hcpc: hcpc.trim() }).map((c) => ({ c, key: `${c.kind}:${c.fieldId ?? ""}:${c.value ?? ""}` })),
+    [report, form, name, hcpc],
+  );
+  const allConfirmed = confirmationsNeeded.every(({ key }) => confirmed.includes(key));
+  const canSubmit = nameOk && hcpcOk && typedOk && statement && allTicked && allConfirmed && !busy;
 
   const referrer = report.form?.referrer.name ?? report.instructingParty.name;
 
@@ -127,7 +146,14 @@ export function ApproveDialog({
     setBusy(true);
     setFailure(null);
     const signer: Clinician = { name: name.trim(), hcpc: hcpc.trim(), ...(defaultSigner?.role && normaliseName(defaultSigner.name) === normaliseName(name) ? { role: defaultSigner.role } : {}) };
-    const result = await onApprove({ signer, typedSignature: typed.trim(), statementAccepted: true, attestations: template.attestations.filter((a) => ticked.includes(a)) });
+    const confirmations = confirmationsNeeded.filter(({ key }) => confirmed.includes(key)).map(({ c }) => c);
+    const result = await onApprove({
+      signer,
+      typedSignature: typed.trim(),
+      statementAccepted: true,
+      attestations: template.attestations.filter((a) => ticked.includes(a)),
+      ...(confirmations.length > 0 ? { confirmations } : {}),
+    });
     setBusy(false);
     if (result.ok) {
       setSucceeded(true);
@@ -291,6 +317,25 @@ export function ApproveDialog({
               </Check>
             ))}
           </section>
+
+          {form && confirmationsNeeded.length > 0 && (
+            <section aria-labelledby={`${ids}-conf`} className="space-y-2.5">
+              <h3 id={`${ids}-conf`} className="text-sm font-semibold text-slate-900">
+                Your confirmation
+              </h3>
+              <p className="text-[13px] text-slate-700">This form prints your name or number in these places. Confirm each one before you approve:</p>
+              {confirmationsNeeded.map(({ c, key }, i) => (
+                <Check
+                  key={key}
+                  id={`${ids}-conf-${i}`}
+                  checked={confirmed.includes(key)}
+                  onChange={(v) => setConfirmed((list) => (v ? Array.from(new Set([...list, key])) : list.filter((x) => x !== key)))}
+                >
+                  {confirmationText(c, form)}
+                </Check>
+              ))}
+            </section>
+          )}
 
           <InlineAlert tone="info">
             <span className="inline-flex items-start gap-1.5">

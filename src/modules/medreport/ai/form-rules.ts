@@ -32,6 +32,8 @@ import { BOX_INSET, flatBoxQuestions, labelFor } from "./form-boxes";
 import { answerTypeFromLabel, classifyLabel } from "./form-classify";
 import { cellOfParagraph, isDocxAnswerSpace, pdfAnswerSpaces, pdfFlatLabelCandidates, rowKey, type ParsedForm } from "./form-outline";
 import { glyphOptionsFromText } from "./form-postvalidate";
+import { detectChoiceLayouts } from "./form-choice-rules";
+import { withBracketBoxesAsGlyphs } from "../forms/docx-dom";
 import { charGroupFormat, charGroupLabel, detectOptionGroups, isYesNoOptions, printedOptions, yesFirst, type OptionGroup } from "./pdf-groups";
 
 const ZERO_BOX = { page: 0, x: 0, y: 0, width: 0, height: 0 };
@@ -160,6 +162,8 @@ interface Pending {
 
 function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
   const out: AnalysisFieldOutput[] = [];
+  // 10/2026: typed tick boxes across cells, "mark the column" tables and "delete as necessary" lists (form-choice-rules.ts).
+  const layouts = detectChoiceLayouts(blocks);
   const ids = new Set(blocks.map((b) => b.id));
   const cellParas = new Map<string, OutlineBlock[]>();
   for (const b of blocks) {
@@ -184,6 +188,23 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
     const field = raw(l, section, rest, "", party);
     if (guidance) field.guidance = guidance.slice(0, 300);
     out.push(field);
+  };
+  /** The choice layouts found at this block (row key, cell or paragraph): one question each. */
+  const emitChoices = (at: string): boolean => {
+    const found = layouts.byAt.get(at);
+    if (!found?.length) return false;
+    for (const p of found) {
+      push(p.label, {
+        answerType: noTable(p.answerType),
+        options: p.options,
+        anchorTarget: p.target,
+        anchorRef: p.anchorRef,
+        placeholderText: p.placeholderText ?? "",
+        optionAnchors: p.optionAnchors,
+        ...(p.note && { note: p.note }),
+      });
+    }
+    return true;
   };
   /**
    * Fields for every placeholder in `b` ("Name: ____  Date of birth: ____"). `fallbackLabel` is the
@@ -233,6 +254,9 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
       }
       i -= 1;
       pending = null;
+      // A "mark the column" table: its heading row has no question; an item row is one question.
+      if (row && layouts.headerRows.has(row)) continue;
+      if (row) emitChoices(row);
       // A single short full-width cell is a sub-heading ("FOR OFFICE USE ONLY", "2  DIAGNOSIS").
       if (cells.length === 1 && !cells[0].isEmpty && !isDocxAnswerSpace(cells[0]) && !cellParas.has(cells[0].id) && cells[0].text.trim().length <= 80) {
         setSection(cells[0].text.replace(/\s+/g, " ").trim());
@@ -240,6 +264,8 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
       }
       for (let c = 0; c < cells.length; c += 1) {
         const cell = cells[c];
+        emitChoices(cell.id);
+        if (layouts.consumed.has(cell.id)) continue;
         const paras = cellParas.get(cell.id) ?? [];
         const left = cells[c - 1];
         const leftParas = left ? cellParas.get(left.id) ?? [] : [];
@@ -252,8 +278,12 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
           let guidance = leftGuidance;
           let answeredHere = false;
           for (const p of paras) {
+            if (emitChoices(p.id) || layouts.consumed.has(p.id)) {
+              answeredHere = true;
+              continue;
+            }
             if ((p.checkboxGlyphs ?? 0) > 0) {
-              const before = cleanLabel(p.text.split(/[☐☒☑]/)[0] ?? "");
+              const before = cleanLabel(withBracketBoxesAsGlyphs(p.text).split(/[☐☒☑]/)[0] ?? "");
               const f = glyphField(p, before.length > 2 ? before : question || lastText, section, party);
               if (f) out.push(f);
               answeredHere = true;
@@ -274,7 +304,7 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
         }
 
         if ((cell.checkboxGlyphs ?? 0) > 0) {
-          const before = cleanLabel(cell.text.split(/[☐☒☑]/)[0] ?? "");
+          const before = cleanLabel(withBracketBoxesAsGlyphs(cell.text).split(/[☐☒☑]/)[0] ?? "");
           const label = before.length > 2 ? before : leftLabel || lastText;
           const f = label ? glyphField(cell, label, section, party) : null;
           if (f) out.push(f);
@@ -304,8 +334,13 @@ function docxRules(blocks: OutlineBlock[]): AnalysisFieldOutput[] {
 
     // Body paragraphs.
     const text = b.text.trim();
+    if (emitChoices(b.id)) {
+      if (pending) pending.answered = true;
+      lastText = cleanLabel(text);
+      continue;
+    }
     if ((b.checkboxGlyphs ?? 0) > 0) {
-      const before = cleanLabel(b.text.split(/[☐☒☑]/)[0] ?? "");
+      const before = cleanLabel(withBracketBoxesAsGlyphs(b.text).split(/[☐☒☑]/)[0] ?? "");
       const label = before.length > 2 ? before : pending?.label || lastText;
       const f = label ? glyphField(b, label, section, party) : null;
       if (f) {

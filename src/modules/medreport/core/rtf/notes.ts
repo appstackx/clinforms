@@ -38,6 +38,12 @@ export function rtfConversionNotes(stats: RtfStats): string[] {
     const examples = stats.mergeFieldNames.slice(0, 3).map((n) => `«${n}»`).join(", ");
     notes.push(`${p}${plural(stats.mergeFields, "mail-merge field")} from your clinic system${examples ? ` (${examples})` : ""} ${was(stats.mergeFields)} turned into answer boxes – check the mapping once.`);
   }
+  if (stats.practiceCodes > 0) {
+    const examples = stats.practiceCodeNames.slice(0, 3).map((n) => `<<${n}>>`).join(", ");
+    notes.push(
+      `${p}${plural(stats.practiceCodes, "merge code")} from your clinic system${examples ? ` (${examples})` : ""} ${stats.practiceCodes === 1 ? "was" : "were"} kept, so the matching details from the patient's record fill ${stats.practiceCodes === 1 ? "it" : "them"} – check the mapping once.`,
+    );
+  }
   if (stats.otherTokens > 0) {
     const examples = stats.otherTokenExamples.join(", ");
     notes.push(

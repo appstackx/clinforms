@@ -12,6 +12,7 @@ import { handleFormsFillPreview } from "../../src/modules/medreport/api/handlers
 import { handleRender } from "../../src/modules/medreport/api/handlers/render";
 import { handleStoreFileChunk, handleStoreFileComplete, handleStoreFileGet, handleStoreFileInit } from "../../src/modules/medreport/api/handlers/store-files";
 import { handleStoreFormDelete, handleStoreFormGet, handleStoreFormPut } from "../../src/modules/medreport/api/handlers/store-forms";
+import { handleStoreReportReuse } from "../../src/modules/medreport/api/handlers/store-report-reuse";
 import { handleStoreReportDelete, handleStoreReportGet, handleStoreReportPut } from "../../src/modules/medreport/api/handlers/store-reports";
 import { handleStoreSettingsGet, handleStoreSettingsPut } from "../../src/modules/medreport/api/handlers/store-settings";
 import { handleStoreSnapshot } from "../../src/modules/medreport/api/handlers/store-snapshot";
@@ -51,6 +52,7 @@ const HANDLERS: Record<string, MedreportHandler> = {
   handleStoreReportGet,
   handleStoreReportPut,
   handleStoreReportDelete,
+  handleStoreReportReuse,
   handleStoreFormGet,
   handleStoreFormPut,
   handleStoreFormDelete,

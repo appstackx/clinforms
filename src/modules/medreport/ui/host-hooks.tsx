@@ -51,6 +51,18 @@ export interface StudioClinic {
    * offered when staff choose who wrote an uploaded note.
    */
   clinicians?: Array<{ name: string; hcpc?: string }>;
+  /**
+   * bh2 WC design 1: the members who may approve (not staff, "may sign", an HCPC number) – the choices for a new report's
+   * approving clinician. `userId` is the account id a member's Studio stamps on what they do (not a secret).
+   */
+  signers?: Array<{ userId: string; name: string; hcpc: string }>;
+  /**
+   * A DEMO clinic (the host's clinic_plan.demo_clinic, worked out on the server; set by ClinForms staff only –
+   * core/demo-clinic.ts): made-up data only. The Studio shows the "Demo clinic" pill, previews and copied answers carry
+   * the demonstration notice, and a member's made-up PH-DEMO number may approve. The server applies the same rules
+   * itself (POST /sign, /render, /forms/fill-preview) – this flag only shapes what the screens say.
+   */
+  demoClinic?: boolean;
 }
 
 /** The signed-in member (tenant mode). Their signing details are the default signer on approvals. */
@@ -142,6 +154,12 @@ export function HostHooksProvider({ hooks, children }: { hooks: HostHooks; child
 
 export function useHostHooks(): HostHooks {
   return useContext(HostHooksContext);
+}
+
+/** Whether this Studio is a demo clinic's (tenant mode only; the host read it on the server). */
+export function useDemoClinic(): boolean {
+  const hooks = useContext(HostHooksContext);
+  return hooks.mode === "tenant" && hooks.clinic?.demoClinic === true;
 }
 
 /** "demo" unless the host mounted the Studio for a clinic. */

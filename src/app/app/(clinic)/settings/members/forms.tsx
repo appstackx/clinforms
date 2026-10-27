@@ -1,8 +1,8 @@
 "use client";
 import { useFormState } from "react-dom";
 import { Field, Notice } from "@/components/account/shell";
-import { SecretBox, SubmitButton } from "@/components/account/form-controls";
-import { ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
+import { FormResult, SecretBox, SubmitButton } from "@/components/account/form-controls";
+import { INVITE_COPY, ROLE_DESCRIPTIONS, ROLE_LABELS, type RoleKey } from "@/lib/account-copy";
 import type { ActionResult } from "@/server/auth/session";
 import { changeRole, createResetLink, inviteMember, saveMemberProfile, type InviteResult, type ResetLinkResult } from "./actions";
 
@@ -22,7 +22,7 @@ function RoleSelect({ roles, defaultValue, name = "role" }: { roles: RoleKey[]; 
   );
 }
 
-export function InviteForm({ roles, emailOff }: { roles: RoleKey[]; emailOff: boolean }) {
+export function InviteForm({ roles }: { roles: RoleKey[] }) {
   const [state, action] = useFormState(inviteMember, null as InviteResult | null);
   return (
     <div className="space-y-4">
@@ -38,6 +38,21 @@ export function InviteForm({ roles, emailOff }: { roles: RoleKey[]; emailOff: bo
         </div>
         <SubmitButton pendingText="Inviting…">Invite</SubmitButton>
       </form>
+      {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
+      {state?.ok === true ? (
+        <div className="space-y-3" data-testid="invite-result">
+          <Notice tone={state.delivery === "sent" ? "success" : "warning"}>{INVITE_COPY.outcome(state.delivery, state.email)}</Notice>
+          {state.delivery === "sent" && !state.link ? <p className="text-xs text-slate-500">{INVITE_COPY.sentHint}</p> : null}
+          {state.link ? (
+            <SecretBox
+              label={`${INVITE_COPY.linkLabel(state.delivery)} for ${state.email}`}
+              value={state.link}
+              note={INVITE_COPY.linkWarning(state.delivery, "in 7 days")}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {/* Below the outcome, so "Invitation emailed to …" shows right under the Invite button. */}
       <ul className="grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
         {roles.map((r) => (
           <li key={r}>
@@ -45,19 +60,6 @@ export function InviteForm({ roles, emailOff }: { roles: RoleKey[]; emailOff: bo
           </li>
         ))}
       </ul>
-      {state?.ok === false ? <Notice tone="error">{state.error}</Notice> : null}
-      {state?.ok === true && state.link ? (
-        <SecretBox
-          label={`Invitation link for ${state.email}`}
-          value={state.link}
-          note={
-            emailOff
-              ? "Email is not set up yet, so nothing was sent. Pass this link to the person yourself. It works once and expires in 7 days."
-              : "The email could not be sent. Pass this link to the person yourself. It works once and expires in 7 days."
-          }
-        />
-      ) : null}
-      {state?.ok === true && state.sent ? <Notice tone="success">Invitation sent to {state.email}. The link expires in 7 days.</Notice> : null}
     </div>
   );
 }
@@ -71,8 +73,7 @@ export function RoleForm({ memberId, roles, current }: { memberId: string; roles
       <SubmitButton variant="secondary" pendingText="Saving…">
         Change role
       </SubmitButton>
-      {state?.ok === false ? <span className="text-sm text-red-700">{state.error}</span> : null}
-      {state?.ok === true ? <span className="text-sm text-teal-700">Role changed.</span> : null}
+      <FormResult state={state} success="Role changed." />
     </form>
   );
 }
@@ -83,12 +84,15 @@ export function SigningForm({
   hcpcNumber,
   canSign,
   staff,
+  demoHint,
 }: {
   memberId: string;
   jobTitle: string;
   hcpcNumber: string;
   canSign: boolean;
   staff: boolean;
+  /** A demo clinic (worked out on the server): made-up PH-DEMO-NN numbers are accepted here – say so. */
+  demoHint?: string;
 }) {
   const [state, action] = useFormState(saveMemberProfile, null as ActionResult | null);
   return (
@@ -98,17 +102,17 @@ export function SigningForm({
         <Field label="Job title" name="jobTitle" defaultValue={jobTitle} maxLength={120} placeholder="Senior Physiotherapist" />
         <Field label="HCPC registration number" name="hcpcNumber" defaultValue={hcpcNumber} maxLength={12} placeholder="As on the HCPC register" />
       </div>
+      {demoHint ? <p className="text-xs text-amber-900">{demoHint}</p> : null}
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" name="canSign" defaultChecked={canSign} disabled={staff} className="h-4 w-4 rounded border-slate-300" />
         May sign (approve) completed forms
         {staff ? <span className="text-xs text-slate-500">(not for staff)</span> : null}
       </label>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <SubmitButton variant="secondary" pendingText="Saving…">
           Save signing details
         </SubmitButton>
-        {state?.ok === false ? <span className="text-sm text-red-700">{state.error}</span> : null}
-        {state?.ok === true ? <span className="text-sm text-teal-700">Saved.</span> : null}
+        <FormResult state={state} />
       </div>
     </form>
   );

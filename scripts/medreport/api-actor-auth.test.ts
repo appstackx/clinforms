@@ -82,10 +82,23 @@ async function codeOf(res: Response): Promise<string> {
   return ProblemSchema.parse(await res.json()).code;
 }
 
+/**
+ * bh2 fix round 1 (WB, R1T-WB-03 – SEC-3): the clinician's own words as the Studio stores them. On a clinic's report
+ * with no approving clinician, "clinician" text nobody's stamp vouches for is a person's (checked, never taken as the
+ * approver's own); the review stamps every paragraph a person writes (Paragraph.by). The sample's own words carry the
+ * stamp of a fictional clinician who may approve. A report that names its approver is left as it is.
+ */
+const OWN_WORDS_BY: NonNullable<Report["sections"][number]["paragraphs"][number]["by"]> = { memberId: "user-sample-clinician", name: "Sam Ward (fictional)", role: "clinician", canSign: true, hcpc: "ZZ0005" };
+function withOwnWordsStamped(r: Report): Report {
+  if (!r.approver) for (const s of r.sections) for (const p of s.paragraphs) if (p.origin === "clinician" && !p.by) p.by = OWN_WORDS_BY;
+  return r;
+}
+
 /** The completed sample report as this clinic's own. */
 function clinicReport(): Report {
   const form = withAttestedConfirmation({ ...HARROW_PIKE_FORM, tenantId: TENANT }, "Practice manager", "2026-10-01T09:00:00.000Z");
   const r = completedSampleReport("megan-hart", form, { id: "rpt_glue" });
+  withOwnWordsStamped(r);
   return { ...r, tenantId: TENANT, bundleSnapshot: { ...r.bundleSnapshot, tenantId: TENANT } };
 }
 
@@ -140,16 +153,17 @@ test("with two-step on: file import is the clinic's, approval is signed as the m
 
   const report = clinicReport();
   const form = withAttestedConfirmation({ ...HARROW_PIKE_FORM, tenantId: TENANT }, "Practice manager", "2026-10-01T09:00:00.000Z");
-  const body = { report, signer: { name: "Gwen Owner (fictional)", hcpc: "PH-DEMO-09" }, typedSignature: "Gwen Owner (fictional)", statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form };
+  const body = { report, signer: { name: "Gwen Owner (fictional)", hcpc: "ZZ0009" }, typedSignature: "Gwen Owner (fictional)", statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form };
   // No HCPC / "may sign" on the member profile yet.
   const refused = await sign(req("/sign", { jar: ownerJar, body }), { params: {} });
   assert.equal(refused.status, 403);
   assert.equal(await codeOf(refused), "SIGNER_NOT_ALLOWED");
-  await upsertMemberProfile({ db: getDb() }, organizationId, ownerId, { jobTitle: "Clinical Lead", hcpcNumber: "PH-DEMO-09", canSign: true });
+  // A real clinic: a registration-format number (ZZ – never a real HCPC profession); PH-DEMO numbers approve in demo clinics only.
+  await upsertMemberProfile({ db: getDb() }, organizationId, ownerId, { jobTitle: "Clinical Lead", hcpcNumber: "ZZ0009", canSign: true });
   const ok = await sign(req("/sign", { jar: ownerJar, body }), { params: {} });
   assert.equal(ok.status, 200, await ok.clone().text());
   const { receipt } = SignResponseSchema.parse(await ok.json());
-  assert.deepEqual(receipt.signer, { name: "Gwen Owner (fictional)", hcpc: "PH-DEMO-09", role: "Clinical Lead" });
+  assert.deepEqual(receipt.signer, { name: "Gwen Owner (fictional)", hcpc: "ZZ0009", role: "Clinical Lead" });
   assert.equal(receipt.approvedVia?.kind, "user");
   assert.equal(receipt.approvedVia?.userId, ownerId);
   const rows = await listAudit({ db: getDb() }, TENANT);

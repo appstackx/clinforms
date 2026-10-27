@@ -38,6 +38,8 @@ export function FormsLibraryScreen() {
   const [portalOpen, setPortalOpen] = useState(false);
   const [busySample, setBusySample] = useState<string | null>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
+  // Fix round 1 (B0-9): a removal the clinic's storage refused (the card is back in the list).
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -101,7 +103,7 @@ export function FormsLibraryScreen() {
   return (
     <StudioShell
       title="Referrer forms"
-      description="Each MLC, insurer, case manager or employer sends its own report form. Upload it once: the questions are mapped to where the answers come from, a member of staff checks the mapping, and it is reused for every patient that referrer sends."
+      description="Each MLC, insurer, case manager or employer sends its own report form. Upload it once: the questions are mapped to where the answers come from, your clinic checks the mapping once (an owner, administrator or clinician confirms it), and it is reused for every patient that referrer sends."
       actions={
         <>
           <Button variant="outline" onClick={() => setPortalOpen(true)}>
@@ -122,8 +124,8 @@ export function FormsLibraryScreen() {
         <Point icon={Files} title="Their layout, not ours">
           Answers are written into the referrer&apos;s own Word or PDF file, in the boxes they printed.
         </Point>
-        <Point icon={ShieldCheck} title="Checked once by staff">
-          Nothing is used for patients until the mapping is confirmed. Changes need confirming again.
+        <Point icon={ShieldCheck} title="Checked once by your clinic">
+          Nothing is used for patients until an owner, administrator or clinician confirms the mapping. Changes need confirming again.
         </Point>
       </div>
 
@@ -161,9 +163,14 @@ export function FormsLibraryScreen() {
               {proposed ? ` · ${proposed} to review` : ""}
             </p>
           </div>
+          {removeError ? (
+            <Notice tone="error" title="Not removed">
+              {removeError}
+            </Notice>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {forms.map((form) => (
-              <FormCard key={form.id} form={form} />
+              <FormCard key={form.id} form={form} onRemoveFailed={(message) => setRemoveError(`“${form.title}” (${form.referrer.name}): ${message}`)} />
             ))}
           </div>
         </section>

@@ -1,0 +1,495 @@
+{
+ "_about": "Fictional initial-assessment form (ClinForms' own wording): physio choices, opinion ticks, a grade scale, a frame line and a typed registration box.",
+ "id": "cf-initial",
+ "title": "Initial Assessment Summary (fictional form)",
+ "referrer": {
+  "name": "Northgate Case Services (fictional)",
+  "type": "mlc"
+ },
+ "fileName": "cf-initial.docx",
+ "layout": [
+  {
+   "p": "Initial Assessment Summary (fictional form)"
+  },
+  {
+   "table": [
+    [
+     "Patient name",
+     ""
+    ],
+    [
+     "Date first seen",
+     ""
+    ],
+    [
+     "How did the problem start?",
+     "☐ Injury at work  ☐ Worse because of work  ☐ Not related to work"
+    ],
+    [
+     "Can the patient do their usual job?",
+     "☐ Yes  ☐ With changes  ☐ No"
+    ],
+    [
+     "Restriction: no heavy lifting",
+     "☐"
+    ],
+    [
+     "Restriction: no kneeling",
+     "☐"
+    ],
+    [
+     "Obstacles to getting better?",
+     "☐ Yes  ☐ No"
+    ],
+    [
+     "If yes, describe them",
+     ""
+    ],
+    [
+     "Pain at rest (0-10)",
+     ""
+    ],
+    [
+     "Severity grade",
+     "☐ Grade 1  ☐ Grade 2  ☐ Grade 3"
+    ],
+    [
+     "Sleep",
+     "☐ Sleeps well  ☐ Some difficulty  ☐ Poor sleep"
+    ],
+    [
+     "Current medication",
+     ""
+    ],
+    [
+     "Goal",
+     "To return to …"
+    ],
+    [
+     "Name of assessor",
+     ""
+    ],
+    [
+     "Registration number",
+     ""
+    ],
+    [
+     "Signature",
+     ""
+    ],
+    [
+     "Date",
+     ""
+    ]
+   ]
+  }
+ ],
+ "fields": [
+  {
+   "id": "F-01",
+   "label": "Patient name",
+   "guidance": "",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r0.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "patient.fullName"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-02",
+   "label": "Date first seen",
+   "guidance": "",
+   "answerType": "date",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r1.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "episode.firstSeen"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-03",
+   "label": "How did the problem start?",
+   "guidance": "Chosen by the physiotherapist from the clinical notes.",
+   "answerType": "single_choice",
+   "options": [
+    "Injury at work",
+    "Worse because of work",
+    "Not related to work"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r2.c1",
+    "optionGlyphs": [
+     {
+      "option": "Injury at work",
+      "blockId": "t0.r2.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "Worse because of work",
+      "blockId": "t0.r2.c1",
+      "glyphIndex": 1
+     },
+     {
+      "option": "Not related to work",
+      "blockId": "t0.r2.c1",
+      "glyphIndex": 2
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "staff.entry"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-04",
+   "label": "Can the patient do their usual job?",
+   "guidance": "",
+   "answerType": "single_choice",
+   "options": [
+    "Yes",
+    "With changes",
+    "No"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r3.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r3.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "With changes",
+      "blockId": "t0.r3.c1",
+      "glyphIndex": 1
+     },
+     {
+      "option": "No",
+      "blockId": "t0.r3.c1",
+      "glyphIndex": 2
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-05",
+   "label": "Restriction: no heavy lifting",
+   "guidance": "",
+   "answerType": "checkbox",
+   "options": [
+    "Yes"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r4.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r4.c1",
+      "glyphIndex": 0
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Work restrictions"
+  },
+  {
+   "id": "F-06",
+   "label": "Restriction: no kneeling",
+   "guidance": "",
+   "answerType": "checkbox",
+   "options": [
+    "Yes"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r5.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r5.c1",
+      "glyphIndex": 0
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": false,
+   "confidence": "high",
+   "section": "Work restrictions"
+  },
+  {
+   "id": "F-07",
+   "label": "Obstacles to getting better?",
+   "guidance": "",
+   "answerType": "yes_no",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r6.c1",
+    "optionGlyphs": [
+     {
+      "option": "Yes",
+      "blockId": "t0.r6.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "No",
+      "blockId": "t0.r6.c1",
+      "glyphIndex": 1
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-08",
+   "label": "If yes, describe them",
+   "guidance": "",
+   "answerType": "long_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r7.c1"
+   },
+   "fillSource": {
+    "kind": "clinician_opinion"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-09",
+   "label": "Pain at rest (0-10)",
+   "guidance": "A number only.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r8.c1"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-10",
+   "label": "Severity grade",
+   "guidance": "",
+   "answerType": "single_choice",
+   "options": [
+    "Grade 1",
+    "Grade 2",
+    "Grade 3"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r9.c1",
+    "optionGlyphs": [
+     {
+      "option": "Grade 1",
+      "blockId": "t0.r9.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "Grade 2",
+      "blockId": "t0.r9.c1",
+      "glyphIndex": 1
+     },
+     {
+      "option": "Grade 3",
+      "blockId": "t0.r9.c1",
+      "glyphIndex": 2
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-11",
+   "label": "Sleep",
+   "guidance": "",
+   "answerType": "single_choice",
+   "options": [
+    "Sleeps well",
+    "Some difficulty",
+    "Poor sleep"
+   ],
+   "anchor": {
+    "kind": "docx",
+    "target": "checkbox_glyph",
+    "blockId": "t0.r10.c1",
+    "optionGlyphs": [
+     {
+      "option": "Sleeps well",
+      "blockId": "t0.r10.c1",
+      "glyphIndex": 0
+     },
+     {
+      "option": "Some difficulty",
+      "blockId": "t0.r10.c1",
+      "glyphIndex": 1
+     },
+     {
+      "option": "Poor sleep",
+      "blockId": "t0.r10.c1",
+      "glyphIndex": 2
+     }
+    ]
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-12",
+   "label": "Current medication",
+   "guidance": "",
+   "answerType": "long_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r11.c1"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-13",
+   "label": "Goal – to return to",
+   "guidance": "Completes the printed words “To return to”.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "replace_placeholder",
+    "blockId": "t0.r12.c1",
+    "placeholderText": "…"
+   },
+   "fillSource": {
+    "kind": "notes_narrative"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-14",
+   "label": "Name of assessor",
+   "guidance": "",
+   "answerType": "clinician_name",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r13.c1"
+   },
+   "fillSource": {
+    "kind": "signoff",
+    "part": "name"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-15",
+   "label": "Registration number",
+   "guidance": "Typed by staff on each report.",
+   "answerType": "short_text",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r14.c1"
+   },
+   "fillSource": {
+    "kind": "registration",
+    "path": "staff.entry"
+   },
+   "required": false,
+   "confidence": "high"
+  },
+  {
+   "id": "F-16",
+   "label": "Signature",
+   "guidance": "",
+   "answerType": "signature",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r15.c1"
+   },
+   "fillSource": {
+    "kind": "signoff",
+    "part": "signature"
+   },
+   "required": true,
+   "confidence": "high"
+  },
+  {
+   "id": "F-17",
+   "label": "Date",
+   "guidance": "",
+   "answerType": "date_signed",
+   "anchor": {
+    "kind": "docx",
+    "target": "table_cell",
+    "blockId": "t0.r16.c1"
+   },
+   "fillSource": {
+    "kind": "signoff",
+    "part": "date"
+   },
+   "required": true,
+   "confidence": "high"
+  }
+ ]
+}

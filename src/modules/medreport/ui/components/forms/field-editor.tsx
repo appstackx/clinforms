@@ -4,22 +4,34 @@
  * Editor for one question of a referrer's form map: what is asked, the answer type, where the answer
  * comes from (fill source) and where it goes in the original document (anchor).
  *
- * Owner: studio-a agent.
+ * bh2 WE (designs 2, 4, 5): the stored guidance is what is shown and saved (a map from before this release also shows how
+ * it reads on reports now – never saved by viewing, B1-16); the map lint's checks for this question, with the remedies
+ * for a clinical judgement not left to the clinician (L5: make it the clinician's own answer, or – a clinician – accept
+ * it with a reason, which the server stamps with the confirming clinician at /forms/confirm); an attended appointment
+ * up to the 30th, and the list of attended dates (episode.attendedDates).
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Crosshair, Trash2 } from "lucide-react";
 import {
   ANSWER_TYPE_LABELS,
   COMPUTED_FACT_FORMAT_LABELS,
   REGISTRATION_PATH_LABELS,
   SIGNOFF_PART_LABELS,
+  isKnownRegistrationPath,
+  registrationPathLabel,
 } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
+import { currentGuidance } from "../../../core/forms/guidance";
+import { LINT_RULE_TITLES, type LintIssue } from "../../../core/form-map-lint";
 import {
   AnswerTypeSchema,
   ComputedFactFormatSchema,
   DocxAnchorTargetSchema,
   FactIdSchema,
   PdfFieldTypeSchema,
+  MAX_SESSION_PART,
   RegistrationPathSchema,
   SignoffPartSchema,
 } from "../../../core/schemas";
@@ -60,9 +72,22 @@ export interface FieldEditorProps {
   picking: boolean;
   onTogglePick(): void;
   readOnly?: boolean;
+  /** The map's analysis.guidanceVersion (absent: a map from before this release – its guidance is shown as it reads now too). */
+  guidanceVersion?: number;
+  /** The map lint's findings for this question (core/form-map-lint.ts): hints here, L5 blocks confirming. */
+  lint?: readonly LintIssue[];
+  /** Whether this member may accept a clinical judgement as it is (a clinician: role clinician, or may sign). */
+  mayAcceptJudgement?: boolean;
 }
 
-export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTogglePick, readOnly }: FieldEditorProps) {
+/** What the guidance editor shows and saves: the stored text (in plain words), and – for a map from before – how it reads now. */
+export function guidanceForEditing(field: Pick<FormField, "guidance" | "fillSource" | "answerType" | "options">, guidanceVersion?: number): { value: string; readsAs: string | null } {
+  const value = humaniseMergeCodes(field.guidance);
+  const now = humaniseMergeCodes(currentGuidance(field.guidance, field, { guidanceVersion }));
+  return { value, readsAs: now !== value ? now : null };
+}
+
+export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTogglePick, readOnly, guidanceVersion, lint = [], mayAcceptJudgement }: FieldEditorProps) {
   const id = useId();
   const tenant = useStudioMode() === "tenant";
   const sourceLabels = useFillSourceLabels();
@@ -117,7 +142,12 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
           <FieldLabel htmlFor={`${id}-guidance`} hint="(what the referrer wants – also the brief for drafting)">
             Guidance
           </FieldLabel>
-          <Textarea id={`${id}-guidance`} rows={2} value={field.guidance} onChange={(e) => set("guidance", e.target.value)} />
+          {/* Clinic-system codes in plain words: guidance is free text, so an edit keeps the words (core/practice-merge-codes.ts).
+              WE design 4 (B1-16): the stored guidance is edited and saved – never the "reads now" rewrite below. */}
+          <Textarea id={`${id}-guidance`} rows={2} value={guidanceForEditing(field, guidanceVersion).value} onChange={(e) => set("guidance", e.target.value)} />
+          {guidanceForEditing(field, guidanceVersion).readsAs ? (
+            <p className="mt-1 text-xs text-slate-500">On reports this reads: {guidanceForEditing(field, guidanceVersion).readsAs}</p>
+          ) : null}
         </div>
       </div>
 
@@ -148,13 +178,73 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
         {src.kind === "registration" ? (
           <div>
             <FieldLabel htmlFor={`${id}-path`}>{tenant ? TENANT_COPY.sources.registrationValue : "TM3 value"}</FieldLabel>
-            <Select id={`${id}-path`} value={src.path} onChange={(e) => setSource({ kind: "registration", path: RegistrationPathSchema.parse(e.target.value) })}>
+            <Select
+              id={`${id}-path`}
+              value={src.path}
+              onChange={(e) => {
+                const path = RegistrationPathSchema.parse(e.target.value);
+                // An address line spread over several printed lines keeps its line while the source stays an address; an
+                // attended appointment (fix round 1) starts at the first.
+                const session = path === "episode.attendedDate" || path === "episode.attendedTime";
+                const part = src.part && (/addressLines$/.test(path) || session) ? src.part : session ? { index: 1, of: 1 } : undefined;
+                // bh2 WE design 5: the attended dates as one list, from the first attended appointment unless chosen.
+                const sessions = path === "episode.attendedDates" ? (src.sessions ?? { fromSession: 1 }) : undefined;
+                setSource({ kind: "registration", path, ...(part ? { part } : {}), ...(sessions ? { sessions } : {}) });
+              }}
+            >
+              {/* A record value a later release set (this build does not offer it): shown as kept, never as another value. */}
+              {isKnownRegistrationPath(src.path) ? null : (
+                <option value={src.path} disabled>
+                  {registrationPathLabel(src.path)}
+                </option>
+              )}
               {RegistrationPathSchema.options.map((p) => (
                 <option key={p} value={p}>
                   {REGISTRATION_PATH_LABELS[p]}
                 </option>
               ))}
             </Select>
+            {src.part && /addressLines$/.test(src.path) ? (
+              <p className="mt-1 text-xs text-slate-600">
+                Line {src.part.index} of the {src.part.of} address lines printed on the form. A line the address does not have is left empty.
+              </p>
+            ) : null}
+            {src.path === "episode.attendedDate" || src.path === "episode.attendedTime" ? (
+              <div className="mt-2">
+                <FieldLabel htmlFor={`${id}-session`}>Which attended appointment (1 = the first)</FieldLabel>
+                <Input
+                  id={`${id}-session`}
+                  type="number"
+                  min={1}
+                  max={MAX_SESSION_PART}
+                  className="w-24"
+                  value={src.part?.index ?? 1}
+                  onChange={(e) => {
+                    const index = Math.min(MAX_SESSION_PART, Math.max(1, Math.floor(Number(e.target.value) || 1)));
+                    setSource({ kind: "registration", path: src.path, part: { index, of: Math.min(MAX_SESSION_PART, Math.max(index, src.part?.of ?? 1)) } });
+                  }}
+                />
+                <p className="mt-1 text-xs text-slate-600">From the appointments in the notes. A session the record does not have is left empty.</p>
+              </div>
+            ) : null}
+            {src.path === "episode.attendedDates" ? (
+              <div className="mt-2">
+                <FieldLabel htmlFor={`${id}-from-session`}>From which attended appointment (1 = the first, 2 = after the first assessment)</FieldLabel>
+                <Input
+                  id={`${id}-from-session`}
+                  type="number"
+                  min={1}
+                  max={MAX_SESSION_PART}
+                  className="w-24"
+                  value={src.sessions?.fromSession ?? 1}
+                  onChange={(e) => {
+                    const fromSession = Math.min(MAX_SESSION_PART, Math.max(1, Math.floor(Number(e.target.value) || 1)));
+                    setSource({ kind: "registration", path: src.path, sessions: { ...(src.sessions?.of ? { of: src.sessions.of } : {}), fromSession } });
+                  }}
+                />
+                <p className="mt-1 text-xs text-slate-600">The attended appointments&apos; dates in date order, from the appointments in the notes. None left: left empty.</p>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {src.kind === "computed_fact" ? (
@@ -222,7 +312,8 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
             {picking ? "Click in the form…" : "Choose in the form"}
           </Button>
         </div>
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{plainAnchorDescription({ anchor: a, label: field.label })}</p>
+        {/* Fix B1-17(a): described by what the question is really filled with, as on its row. */}
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{plainAnchorDescription({ anchor: a, label: field.label, fillSource: field.fillSource })}</p>
         <details className="text-xs">
           <summary className="cursor-pointer text-slate-500 hover:text-slate-800">Edit the location by hand</summary>
           <p className="mt-2 font-mono text-[11px] text-slate-500">{describeAnchor(a)}</p>
@@ -318,7 +409,68 @@ export function FieldEditor({ field, formKind, onChange, onRemove, picking, onTo
           Remove question
         </Button>
       </div>
-      {field.note ? <p className="text-xs text-slate-500">Note: {field.note}</p> : null}
+      {field.note ? <p className="text-xs text-slate-500">Note: {humaniseMergeCodes(field.note)}</p> : null}
+      {lint.length ? <LintChecks field={field} lint={lint} onChange={onChange} mayAcceptJudgement={Boolean(mayAcceptJudgement)} readOnly={readOnly} /> : null}
     </fieldset>
+  );
+}
+
+/**
+ * The map lint's checks for one question (hints; L5 – a clinical judgement filled by staff, a fixed answer or a draft –
+ * blocks confirming until it is the clinician's own answer or a clinician accepts it with a reason).
+ */
+function LintChecks({ field, lint, onChange, mayAcceptJudgement, readOnly }: { field: FormField; lint: readonly LintIssue[]; onChange(f: FormField): void; mayAcceptJudgement: boolean; readOnly?: boolean }) {
+  const id = useId();
+  const [reason, setReason] = useState("");
+  const accept = (rule: LintIssue["rule"]) => {
+    const text = reason.trim();
+    if (!text) return;
+    const others = (field.lintAccepted ?? []).filter((x) => x.rule !== rule);
+    // The server stamps who accepted it (the confirming clinician) and when, at /forms/confirm.
+    onChange({ ...field, lintAccepted: [...others, { rule, reason: text.slice(0, 500), at: new Date().toISOString() }] });
+    setReason("");
+  };
+  const undo = (rule: LintIssue["rule"]) => {
+    const left = (field.lintAccepted ?? []).filter((x) => x.rule !== rule);
+    const next: FormField = { ...field, lintAccepted: left };
+    if (left.length === 0) delete next.lintAccepted;
+    onChange(next);
+  };
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="group" aria-label={`Checks for ${field.id}`}>
+      {lint.map((issue) => (
+        <div key={`${issue.rule}-${issue.severity}`} className="space-y-1">
+          <p>
+            <span className="font-semibold">{issue.severity === "accepted" ? "Accepted – " : "Check – "}{LINT_RULE_TITLES[issue.rule]}:</span> {issue.severity === "accepted" ? `“${issue.acceptedReason ?? ""}”` : issue.message}
+          </p>
+          {issue.rule === "L5" && !readOnly ? (
+            issue.severity === "accepted" ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => undo("L5")}>
+                Undo the acceptance
+              </Button>
+            ) : (
+              <div className="flex flex-wrap items-end gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => onChange({ ...field, fillSource: { kind: "clinician_opinion" } })}>
+                  Make it the clinician&apos;s own answer
+                </Button>
+                {mayAcceptJudgement ? (
+                  <>
+                    <div className="min-w-[12rem] flex-1">
+                      <FieldLabel htmlFor={`${id}-reason`}>Or accept it as it is, because</FieldLabel>
+                      <Input id={`${id}-reason`} value={reason} placeholder="for example: the patient reports it" onChange={(e) => setReason(e.target.value)} />
+                    </div>
+                    <Button type="button" size="sm" variant="outline" disabled={!reason.trim()} onClick={() => accept("L5")}>
+                      Accept
+                    </Button>
+                  </>
+                ) : (
+                  <span>Only a clinician can accept it as it is.</span>
+                )}
+              </div>
+            )
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }

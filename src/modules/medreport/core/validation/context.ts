@@ -8,10 +8,11 @@
  * Owner: ai agent.
  */
 import { applyScope } from "../scope";
-import type { FlagSeverity, Paragraph, ReportFlag, ReportFlagCode, ReportSection, TemplateSection } from "../types";
+import type { Clinician, FlagSeverity, Paragraph, ReportFlag, ReportFlagCode, ReportSection, TemplateSection } from "../types";
 import type { ValidatorInput } from "./index";
 import { buildSourceTexts } from "./sources";
 import { addShortDatesToIndex, addToFigureIndex, emptyFigureIndex, normaliseForMatch, type FigureIndex } from "./text";
+import { defaultVoiceOwner } from "./attribution-owner";
 
 /** Origins whose text must be backed by citations and is checked for figures and opinion wording. */
 export const CHECKED_ORIGINS: ReadonlyArray<Paragraph["origin"]> = ["ai", "edited"];
@@ -40,6 +41,15 @@ export interface ValidationContext {
   sourceTexts: Map<string, string>;
   paragraphs: ParagraphRef[];
   cited(paragraph: Paragraph): CitedSources;
+}
+
+/**
+ * The voice owner of a validation run – whose "I" the report speaks in: `input.voice.owner` when the caller names one
+ * (W0.6 plumbing), else WB's default (attribution-owner.ts defaultVoiceOwner – bh2-base2 seam "voice-owner"; today the
+ * report's author, as before; WB makes it the approver).
+ */
+export function voiceOwnerOf(input: Pick<ValidatorInput, "report" | "voice">): Clinician | null {
+  return input.voice ? input.voice.owner : defaultVoiceOwner(input.report);
 }
 
 const cache = new WeakMap<ValidatorInput, ValidationContext>();
