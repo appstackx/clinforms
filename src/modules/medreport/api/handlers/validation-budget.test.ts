@@ -83,11 +83,18 @@ describe("the validators' budget (R1T-WA1-03)", () => {
       assert.equal(res.code, "PAYLOAD_TOO_LARGE", label);
       assert.ok(res.ms < 1_500, `${label}: refused in ${res.ms} ms`);
     }
-    // SAF-1's shape: an edited paragraph and one long tombstone of drafted text.
-    const tombstone = { ...b.report, sections: b.report.sections.map((s) => (s.key === "F-32" ? { ...s, tombstones: [{ paragraphId: "gone", text: hostileText(140_000), sourceIds: ["N-002"], by: { memberId: "demo", name: "Sarah Reid", role: "clinician" as const, canSign: true }, at: "2026-10-26T10:00:00.000Z" }] } : s)) } as Report;
-    const refused = await post(handleValidate, "/validate", { report: tombstone, form: b.form });
-    assert.deepEqual([refused.status, refused.code], [413, "PAYLOAD_TOO_LARGE"]);
+    // SAF-1's shape: an edited paragraph and one long tombstone of drafted text. merge:r1 (WA1 x WC): R1T-WC-01 caps a
+    // tombstone's text at DRAFT_TOMBSTONE_MAX_CHARS (8,000) in the schema, so this body is now refused even earlier, when
+    // it is parsed (422 VALIDATION_FAILED) – still before any validator, still fast.
+    const tombstones = (n: number, chars: number) => Array.from({ length: n }, (_, i) => ({ paragraphId: `gone-${i}`, text: hostileText(chars), sourceIds: ["N-002"], by: { memberId: "demo", name: "Sarah Reid", role: "clinician" as const, canSign: true }, at: "2026-10-26T10:00:00.000Z" }));
+    const withTombstones = (t: ReturnType<typeof tombstones>) => ({ ...b.report, sections: b.report.sections.map((s) => (s.key === "F-32" ? { ...s, tombstones: t } : s)) }) as Report;
+    const refused = await post(handleValidate, "/validate", { report: withTombstones(tombstones(1, 140_000)), form: b.form });
+    assert.deepEqual([refused.status, refused.code], [422, "VALIDATION_FAILED"]);
     assert.ok(refused.ms < 1_000, `refused in ${refused.ms} ms`);
+    // Tombstones the schema accepts one by one (7,999 characters each) but over the budget together (50,000): 413.
+    const many = await post(handleValidate, "/validate", { report: withTombstones(tombstones(7, 7_999)), form: b.form });
+    assert.deepEqual([many.status, many.code], [413, "PAYLOAD_TOO_LARGE"]);
+    assert.ok(many.ms < 1_000, `refused in ${many.ms} ms`);
 
     const real = await post(handleValidate, "/validate", { report: b.report, form: b.form });
     assert.equal(real.status, 200, `${real.status} ${real.code}`);
