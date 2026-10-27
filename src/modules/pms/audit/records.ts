@@ -12,6 +12,9 @@ export const RECORDS_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.note.view": "Clinical note opened",
   "pms.note_template.create": "Note template added",
   "pms.note_template.update": "Note template updated",
+  "pms.note_template.retire": "Note template retired",
+  "pms.note_template.restore": "Note template back in use",
+  "pms.records_settings.update": "Clinical note settings changed",
   "pms.outcome.record": "Outcome measure recorded",
   "pms.outcome.error": "Outcome measure marked as entered in error",
   "pms.attachment.upload": "File attached to a patient record",
@@ -29,4 +32,5 @@ export const RECORDS_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_note_template: "Note template",
   pms_outcome: "Outcome measure",
   pms_attachment: "Attached file",
+  pms_records_settings: "Clinical note settings",
 };

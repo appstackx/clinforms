@@ -19,6 +19,7 @@ import { BodyChartSchema, normaliseChart, parseBodyChart, type BodyChart } from 
 import {
   AmendmentInputSchema,
   NoteContentSchema,
+  NoteSectionsSchema,
   NoteDraftInputSchema,
   canSign,
   canonicalNoteContent,
@@ -43,7 +44,6 @@ import {
   assertTenantId,
   decryptField,
   encryptField,
-  guarded,
   isOn,
   nowIso,
   num,
@@ -55,6 +55,7 @@ import {
   type RepoContext,
 } from "../context";
 import { getNoteTemplate } from "./templates";
+import { updateWithAudit } from "./write";
 
 const N = "pms_clinical_notes";
 const AM = "pms_note_amendments";
@@ -74,6 +75,7 @@ const SUMMARY_COLUMNS = [
   "rev",
   "patient_id",
   "case_id",
+  "appointment_id",
   "template_id",
   "template_name",
   "note_type",
@@ -97,6 +99,7 @@ function toSummary(r: Pick<NoteRow, (typeof SUMMARY_COLUMNS)[number]>): NoteSumm
     rev: num(r.rev),
     patientId: r.patient_id,
     caseId: r.case_id,
+    appointmentId: r.appointment_id ?? null,
     templateId: r.template_id,
     templateName: r.template_name,
     noteType: r.note_type as NoteType,
@@ -177,6 +180,20 @@ function encryptSections(ctx: RepoContext, tenantId: string, id: string, section
   return Object.keys(sections).length === 0 ? null : encryptField(ctx, tenantId, N, "sections_enc", id, JSON.stringify(sections));
 }
 
+function assertRev(expectedRev: number): void {
+  if (!Number.isInteger(expectedRev) || expectedRev < 1) throw new RepoInputError("expectedRev must be a positive whole number.");
+}
+
+/** The note exactly as an update leaves it (its audit row is written only when this finds it). */
+function changedNote(ctx: RepoContext, tenantId: string, id: string, rev: number, at: string) {
+  return ctx.db.selectFrom(N).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", rev).where("updated_at", "=", at);
+}
+
+async function conflictOrMissing(ctx: RepoContext, tenantId: string, id: string): Promise<PmsSaveResult> {
+  const now = await ctx.db.selectFrom(N).select("rev").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  return now ? { ok: false, reason: "conflict", currentRev: num(now.rev) } : { ok: false, reason: "not_found" };
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Drafts
  * ----------------------------------------------------------------------------------------------*/
@@ -189,6 +206,13 @@ export async function createNoteDraft(ctx: RepoContext, tenantId: string, input:
   const d = parseInput(NoteDraftInputSchema, input, "Note");
   const template = await getNoteTemplate(ctx, tenantId, d.templateId);
   if (!template || !template.active) throw new RepoInputError("Choose a template that is in use.");
+  const anonymised = await ctx.db
+    .selectFrom("pms_patient_anonymisations")
+    .select("status")
+    .where("tenant_id", "=", tenantId)
+    .where("patient_id", "=", d.patientId)
+    .executeTakeFirst();
+  if (anonymised) throw new RepoInputError("This record has been anonymised. No new notes can be added.");
   const id = pmsId(P.note, ctx);
   const at = nowIso(ctx);
   await writeWithAudit(
@@ -200,10 +224,11 @@ export async function createNoteDraft(ctx: RepoContext, tenantId: string, input:
         rev: 1,
         patient_id: d.patientId,
         case_id: d.caseId ?? null,
+        appointment_id: d.appointmentId ?? null,
         template_id: template.id,
         template_name: template.name,
         note_type: template.noteType,
-        template_json: JSON.stringify(toSnapshot(template)),
+        template_json: JSON.stringify({ ...toSnapshot(template), version: template.rev }),
         seen_on: d.seenOn,
         practitioner_id: d.practitionerId ?? null,
         author_user_id: who.userId,
@@ -237,7 +262,7 @@ export async function saveNoteDraft(ctx: RepoContext, tenantId: string, id: stri
   assertTenantId(tenantId);
   assertId(id, "note id");
   const who = assertActor(actor);
-  if (!Number.isInteger(expectedRev) || expectedRev < 1) throw new RepoInputError("expectedRev must be a positive whole number.");
+  assertRev(expectedRev);
   const d = parseInput(NoteContentSchema, content, "Note");
   const row = await ctx.db.selectFrom(N).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
   if (!row) return { ok: false, reason: "not_found" };
@@ -248,37 +273,33 @@ export async function saveNoteDraft(ctx: RepoContext, tenantId: string, id: stri
   const sections = sectionsForTemplate(template, d.sections);
   const chart = template.bodyChart && d.bodyChart ? parseInput(BodyChartSchema, d.bodyChart, "Body chart") : null;
   const at = nowIso(ctx);
+  const sectionsEnc = encryptSections(ctx, tenantId, id, sections);
   const set: Record<string, unknown> = {
-    sections_enc: encryptSections(ctx, tenantId, id, sections),
+    sections_enc: sectionsEnc,
     body_chart_enc: encryptChart(ctx, tenantId, id, chart),
     rev: expectedRev + 1,
     updated_at: at,
   };
   if (d.seenOn !== undefined) set.seen_on = d.seenOn;
   if (d.caseId !== undefined) set.case_id = d.caseId;
-  const result = await guarded(
-    () =>
-      ctx.db
-        .updateTable(N)
-        .set(set)
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", id)
-        .where("rev", "=", expectedRev)
-        .where("status", "=", "draft")
-        .where("author_user_id", "=", who.userId as string)
-        .executeTakeFirst(),
+  const changed = await updateWithAudit(
+    ctx,
+    tenantId,
+    who,
+    ctx.db
+      .updateTable(N)
+      .set(set)
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "=", "draft")
+      .where("author_user_id", "=", who.userId as string),
+    { action: "pms.note.save", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1, sections: Object.keys(sections).length, markers: chart?.markers.length ?? 0 } },
+    // The fresh ciphertext (random IV) makes the check exact; an empty draft falls back to revision + time.
+    sectionsEnc ? changedNote(ctx, tenantId, id, expectedRev + 1, at).where("sections_enc", "=", sectionsEnc) : changedNote(ctx, tenantId, id, expectedRev + 1, at),
     MESSAGES,
   );
-  if (Number(result.numUpdatedRows) === 0) {
-    const now = await ctx.db.selectFrom(N).select("rev").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
-    return now ? { ok: false, reason: "conflict", currentRev: num(now.rev) } : { ok: false, reason: "not_found" };
-  }
-  await pmsAudit(ctx, tenantId, who, {
-    action: "pms.note.save",
-    targetType: "pms_note",
-    targetId: id,
-    detail: { rev: expectedRev + 1, sections: Object.keys(sections).length, markers: chart?.markers.length ?? 0 },
-  });
+  if (!changed) return conflictOrMissing(ctx, tenantId, id);
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
@@ -287,24 +308,30 @@ export async function discardNoteDraft(ctx: RepoContext, tenantId: string, id: s
   assertTenantId(tenantId);
   assertId(id, "note id");
   const who = assertActor(actor);
+  assertRev(expectedRev);
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(N)
-    .set({ status: "discarded", discarded_at: at, rev: expectedRev + 1, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("rev", "=", expectedRev)
-    .where("status", "=", "draft")
-    .where("author_user_id", "=", who.userId ?? "")
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
+  const changed = await updateWithAudit(
+    ctx,
+    tenantId,
+    who,
+    ctx.db
+      .updateTable(N)
+      .set({ status: "discarded", discarded_at: at, rev: expectedRev + 1, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "=", "draft")
+      .where("author_user_id", "=", who.userId ?? ""),
+    { action: "pms.note.discard", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1 } },
+    changedNote(ctx, tenantId, id, expectedRev + 1, at),
+  );
+  if (!changed) {
     const now = await ctx.db.selectFrom(N).select(["rev", "status", "author_user_id"]).where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
     if (!now) return { ok: false, reason: "not_found" };
     if (now.status !== "draft") throw new RepoInputError("Only a draft can be discarded.");
     if (now.author_user_id !== who.userId) throw new RepoInputError("Only the note's author can discard a draft.");
     return { ok: false, reason: "conflict", currentRev: num(now.rev) };
   }
-  await pmsAudit(ctx, tenantId, who, { action: "pms.note.discard", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
@@ -324,6 +351,7 @@ export async function signNote(ctx: RepoContext, tenantId: string, id: string, e
   assertTenantId(tenantId);
   assertId(id, "note id");
   const who = assertActor(actor);
+  assertRev(expectedRev);
   const row = await ctx.db.selectFrom(N).selectAll().where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
   if (!row) return { ok: false, reason: "not_found" };
   if (num(row.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
@@ -334,29 +362,31 @@ export async function signNote(ctx: RepoContext, tenantId: string, id: string, e
   if (!check.ok) throw new RepoInputError(check.error);
   const hash = noteFingerprint(row.template_id, row.seen_on, sections, chart);
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(N)
-    .set({
-      status: "signed",
-      signed_at: at,
-      signed_by_user_id: who.userId,
-      signed_by_name: authorName(signer),
-      signed_registration: registration(signer),
-      content_hash: hash,
-      rev: expectedRev + 1,
-      updated_at: at,
-    })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("rev", "=", expectedRev)
-    .where("status", "=", "draft")
-    .where("author_user_id", "=", who.userId as string)
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
-    const now = await ctx.db.selectFrom(N).select("rev").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
-    return now ? { ok: false, reason: "conflict", currentRev: num(now.rev) } : { ok: false, reason: "not_found" };
-  }
-  await pmsAudit(ctx, tenantId, who, { action: "pms.note.sign", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1, sections: Object.keys(sections).length } });
+  const changed = await updateWithAudit(
+    ctx,
+    tenantId,
+    who,
+    ctx.db
+      .updateTable(N)
+      .set({
+        status: "signed",
+        signed_at: at,
+        signed_by_user_id: who.userId,
+        signed_by_name: authorName(signer),
+        signed_registration: registration(signer),
+        content_hash: hash,
+        rev: expectedRev + 1,
+        updated_at: at,
+      })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev)
+      .where("status", "=", "draft")
+      .where("author_user_id", "=", who.userId as string),
+    { action: "pms.note.sign", targetType: "pms_note", targetId: id, detail: { rev: expectedRev + 1, sections: Object.keys(sections).length } },
+    changedNote(ctx, tenantId, id, expectedRev + 1, at),
+  );
+  if (!changed) return conflictOrMissing(ctx, tenantId, id);
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
@@ -423,6 +453,114 @@ export async function addAmendment(ctx: RepoContext, tenantId: string, noteId: s
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Bulk loads (demo seed, data import)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A note written elsewhere (an earlier system, the demo seed): its author is not the member running the load. */
+export interface ImportNoteInput {
+  patientId: string;
+  caseId?: string | null;
+  appointmentId?: string | null;
+  templateId: string;
+  seenOn: string;
+  practitionerId?: string | null;
+  /** Who wrote (and, when signed, signed) it. userId null = not a member of this clinic (nobody can change a draft). */
+  author: NoteAuthor & { userId?: string | null };
+  sections: Record<string, string>;
+  bodyChart?: BodyChart | null;
+  signed: boolean;
+  /** When it was signed (default: the consultation day, 18:00 UTC). */
+  signedAt?: string;
+  /** Required: a re-run or re-import is refused by the unique (tenant, import_ref) index, never duplicated. */
+  importRef: string;
+}
+
+/**
+ * Many notes at once – batches of 40 rows with one audit row per batch ("pms.note.bulk_create"). Signed notes are
+ * inserted signed (fingerprint over their content, the same rule as signNote: content needed, consultation not in
+ * the future); the 0121 lock applies to them from then on.
+ */
+export async function bulkImportNotes(ctx: RepoContext, tenantId: string, inputs: readonly ImportNoteInput[], actor: PmsActor, detail: Record<string, unknown> = {}): Promise<string[]> {
+  assertTenantId(tenantId);
+  const who = assertActor(actor);
+  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const at = nowIso(ctx);
+  const templates = new Map<string, TemplateSnapshot & { rev: number }>();
+  const rows: (Record<string, unknown> & { id: string })[] = [];
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const d = parseInput(NoteDraftInputSchema, { ...input, importRef: input.importRef }, `Note ${i + 1}`);
+    if (!d.importRef) throw new RepoInputError(`Note ${i + 1}: an import reference is required.`);
+    let template = templates.get(d.templateId);
+    if (!template) {
+      const t = await getNoteTemplate(ctx, tenantId, d.templateId);
+      if (!t) throw new RepoInputError(`Note ${i + 1}: the template does not exist in this clinic.`);
+      template = { ...toSnapshot(t), rev: t.rev };
+      templates.set(d.templateId, template);
+    }
+    const sections = sectionsForTemplate(template, parseInput(NoteSectionsSchema, input.sections ?? {}, `Note ${i + 1}`));
+    const chart = template.bodyChart && input.bodyChart ? parseInput(BodyChartSchema, input.bodyChart, `Note ${i + 1}`) : null;
+    const id = pmsId(P.note, ctx);
+    const authorUserId = input.author.userId ? assertId(input.author.userId, "author") : null;
+    let signed: Record<string, unknown> = { status: "draft", content_hash: null, signed_at: null, signed_by_user_id: null, signed_by_name: null, signed_registration: null };
+    if (input.signed) {
+      if (d.seenOn > today) throw new RepoInputError(`Note ${i + 1}: the consultation date is in the future.`);
+      if (!noteHasContent(sections, chart)) throw new RepoInputError(`Note ${i + 1}: a signed note needs content.`);
+      const signedAt = input.signedAt ?? `${d.seenOn}T18:00:00.000Z`;
+      if (Number.isNaN(Date.parse(signedAt))) throw new RepoInputError(`Note ${i + 1}: signedAt is not a time.`);
+      signed = {
+        status: "signed",
+        content_hash: noteFingerprint(template.id, d.seenOn, sections, chart),
+        signed_at: new Date(signedAt).toISOString(),
+        signed_by_user_id: authorUserId,
+        signed_by_name: authorName(input.author),
+        signed_registration: registration(input.author),
+      };
+    }
+    rows.push({
+      tenant_id: tenantId,
+      id,
+      rev: 1,
+      patient_id: d.patientId,
+      case_id: d.caseId ?? null,
+      appointment_id: d.appointmentId ?? null,
+      template_id: template.id,
+      template_name: template.name,
+      note_type: template.noteType,
+      template_json: JSON.stringify({ ...toSnapshot(template), version: template.rev }),
+      seen_on: d.seenOn,
+      practitioner_id: d.practitionerId ?? null,
+      author_user_id: authorUserId,
+      author_name: authorName(input.author),
+      sections_enc: encryptSections(ctx, tenantId, id, sections),
+      body_chart_enc: encryptChart(ctx, tenantId, id, chart),
+      entered_in_error: 0,
+      amendment_count: 0,
+      discarded_at: null,
+      anonymised_at: null,
+      import_ref: d.importRef,
+      created_at: at,
+      updated_at: at,
+      ...signed,
+    });
+  }
+  const ids: string[] = [];
+  for (let i = 0; i < rows.length; i += 40) {
+    const batch = rows.slice(i, i + 40);
+    ids.push(...batch.map((r) => r.id));
+    await writeWithAudit(
+      ctx,
+      [
+        ...batch.map((r) => ctx.db.insertInto(N).values(r as never)),
+        pmsAuditQuery(ctx, tenantId, who, { action: "pms.note.bulk_create", targetType: "pms_note", targetId: batch[0].id, detail: { ...detail, count: batch.length } }),
+      ],
+      MESSAGES,
+    );
+  }
+  return ids;
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Reads
  * ----------------------------------------------------------------------------------------------*/
 
@@ -449,6 +587,7 @@ export async function getNote(ctx: RepoContext, tenantId: string, id: string): P
 export interface ListNotesOptions {
   includeDiscarded?: boolean;
   caseId?: string;
+  appointmentId?: string;
   /** Default 200, at most 500. */
   limit?: number;
 }
@@ -460,6 +599,7 @@ export async function listNotesForPatient(ctx: RepoContext, tenantId: string, pa
   let q = ctx.db.selectFrom(N).select(SUMMARY_COLUMNS).where("tenant_id", "=", tenantId).where("patient_id", "=", patientId);
   if (!options.includeDiscarded) q = q.where("status", "!=", "discarded");
   if (options.caseId) q = q.where("case_id", "=", options.caseId);
+  if (options.appointmentId) q = q.where("appointment_id", "=", options.appointmentId);
   const rows = await q.orderBy("seen_on", "desc").orderBy("id", "desc").limit(limit).execute();
   return rows.map(toSummary);
 }
@@ -477,6 +617,56 @@ export async function listDraftsByAuthor(ctx: RepoContext, tenantId: string, use
     .limit(Math.min(Math.max(1, limit), 200))
     .execute();
   return rows.map(toSummary);
+}
+
+export interface UnsignedNotesOptions {
+  /** One clinician's drafts; omitted = every author's (owner/admin view). */
+  authorUserId?: string;
+  /** Only drafts whose consultation date is on or before this date (YYYY-MM-DD): the overdue ones. */
+  seenOnOrBefore?: string;
+  /** Default 200, at most 500. */
+  limit?: number;
+}
+
+/** Unsigned notes (drafts), oldest consultation first – the ones to finish (summaries: nothing decrypted). */
+export async function listUnsignedNotes(ctx: RepoContext, tenantId: string, options: UnsignedNotesOptions = {}): Promise<NoteSummary[]> {
+  assertTenantId(tenantId);
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 200)), 500);
+  let q = ctx.db.selectFrom(N).select(SUMMARY_COLUMNS).where("tenant_id", "=", tenantId).where("status", "=", "draft");
+  if (options.authorUserId !== undefined) q = q.where("author_user_id", "=", assertId(options.authorUserId, "author"));
+  if (options.seenOnOrBefore !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(options.seenOnOrBefore)) throw new RepoInputError("seenOnOrBefore must be a date (YYYY-MM-DD).");
+    q = q.where("seen_on", "<=", options.seenOnOrBefore);
+  }
+  const rows = await q.orderBy("seen_on").orderBy("id").limit(limit).execute();
+  return rows.map(toSummary);
+}
+
+export interface UnsignedCount {
+  authorUserId: string | null;
+  authorName: string | null;
+  drafts: number;
+  /** Drafts whose consultation date is on or before the cut-off. */
+  overdue: number;
+}
+
+/** Unsigned notes per author (the owner's overview and each clinician's own count). */
+export async function countUnsignedNotesByAuthor(ctx: RepoContext, tenantId: string, options: { overdueOnOrBefore: string; authorUserId?: string }): Promise<UnsignedCount[]> {
+  assertTenantId(tenantId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(options.overdueOnOrBefore)) throw new RepoInputError("overdueOnOrBefore must be a date (YYYY-MM-DD).");
+  let q = ctx.db
+    .selectFrom(N)
+    .select((eb) => [
+      "author_user_id",
+      eb.fn.max("author_name").as("author_name"),
+      eb.fn.countAll<number>().as("drafts"),
+      eb.fn.sum<number>(eb.case().when("seen_on", "<=", options.overdueOnOrBefore).then(1).else(0).end()).as("overdue"),
+    ])
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "draft");
+  if (options.authorUserId !== undefined) q = q.where("author_user_id", "=", assertId(options.authorUserId, "author"));
+  const rows = await q.groupBy("author_user_id").orderBy("author_user_id").limit(500).execute();
+  return rows.map((r) => ({ authorUserId: r.author_user_id, authorName: (r.author_name as string | null) ?? null, drafts: num(r.drafts), overdue: num(r.overdue ?? 0) }));
 }
 
 /** The latest consultation date of a signed note (record-keeping: the last treatment). */

@@ -19,7 +19,8 @@ import {
 } from "../../../../modules/pms/records/templates";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
 import type { PmsNoteTemplatesTable } from "../../../db/pms-schema/records";
-import { RepoInputError, assertId, assertTenantId, b01, guarded, isOn, nowIso, num, parseInput, patchColumns, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, b01, isOn, nowIso, num, parseInput, patchColumns, pmsAuditQuery, pmsId, writeWithAudit, type DbContext } from "../context";
+import { updateWithAudit } from "./write";
 
 const T = "pms_note_templates";
 const MESSAGES = { unique: "A template with this name already exists." };
@@ -127,21 +128,50 @@ export async function updateNoteTemplate(ctx: DbContext, tenantId: string, id: s
   if (num(current.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(current.rev) };
   if (fields.length === 0) return { ok: true, rev: expectedRev, updatedAt: current.updated_at };
   const at = nowIso(ctx);
-  const result = await guarded(
-    () =>
-      ctx.db
-        .updateTable(T)
-        .set({ ...set, rev: expectedRev + 1, updated_at: at })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", id)
-        .where("rev", "=", expectedRev)
-        .executeTakeFirst(),
+  const changed = await updateWithAudit(
+    ctx,
+    tenantId,
+    actor,
+    ctx.db
+      .updateTable(T)
+      .set({ ...set, rev: expectedRev + 1, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev),
+    { action: auditAction(d), targetType: "pms_note_template", targetId: id, detail: { fields, rev: expectedRev + 1 } },
+    ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", expectedRev + 1).where("updated_at", "=", at),
     MESSAGES,
   );
-  if (Number(result.numUpdatedRows) === 0) {
+  if (!changed) {
     const now = await ctx.db.selectFrom(T).select("rev").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
     return now ? { ok: false, reason: "conflict", currentRev: num(now.rev) } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.note_template.update", targetType: "pms_note_template", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
+}
+
+/** A change that only switches a template off or on is a retirement / restoration; anything else an update. */
+function auditAction(d: NoteTemplatePatch): string {
+  const keys = Object.keys(d).filter((k) => (d as Record<string, unknown>)[k] !== undefined);
+  if (keys.length === 1 && keys[0] === "active") return d.active ? "pms.note_template.restore" : "pms.note_template.retire";
+  return "pms.note_template.update";
+}
+
+/**
+ * Retires a clinic template (no new notes can start from it; notes already written keep their own snapshot) or
+ * brings it back. Revision-checked like any change.
+ */
+export async function setNoteTemplateActive(ctx: DbContext, tenantId: string, id: string, expectedRev: number, active: boolean, actor: PmsActor): Promise<PmsSaveResult> {
+  return updateNoteTemplate(ctx, tenantId, id, expectedRev, { active }, actor);
+}
+
+/** A copy of a built-in or clinic template under a new name (the editor's "Make a copy"). */
+export async function copyNoteTemplate(ctx: DbContext, tenantId: string, fromId: string, name: string, actor: PmsActor): Promise<NoteTemplate> {
+  const from = await getNoteTemplate(ctx, tenantId, fromId);
+  if (!from) throw new RepoInputError("The template to copy does not exist in this clinic.");
+  return createNoteTemplate(
+    ctx,
+    tenantId,
+    { name, noteType: from.noteType, sections: from.sections, bodyChart: from.bodyChart, active: true, sortOrder: from.builtin ? 100 : from.sortOrder, basedOn: from.builtin ? from.id : null },
+    actor,
+  );
 }

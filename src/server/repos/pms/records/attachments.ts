@@ -21,6 +21,7 @@ import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import type { PmsAttachmentsTable } from "../../../db/pms-schema/records";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
+import { updateWithAudit } from "./write";
 
 const T = "pms_attachments";
 const CH = "pms_attachment_chunks";
@@ -237,14 +238,18 @@ export async function withdrawAttachment(ctx: RepoContext, tenantId: string, id:
   if (!text) throw new RepoInputError("Give the reason.");
   if (text.length > 500) throw new RepoInputError("The reason can be at most 500 characters.");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(T)
-    .set({ status: "withdrawn", withdrawn_at: at, withdrawn_by: actor.userId, withdrawn_reason_enc: encryptField(ctx, tenantId, T, "withdrawn_reason_enc", id, text), updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("status", "=", "active")
-    .executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
-  if (changed) await pmsAudit(ctx, tenantId, actor, { action: "pms.attachment.withdraw", targetType: "pms_attachment", targetId: id });
-  return changed;
+  const reasonEnc = encryptField(ctx, tenantId, T, "withdrawn_reason_enc", id, text) as string;
+  return updateWithAudit(
+    ctx,
+    tenantId,
+    actor,
+    ctx.db
+      .updateTable(T)
+      .set({ status: "withdrawn", withdrawn_at: at, withdrawn_by: actor.userId, withdrawn_reason_enc: reasonEnc, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("status", "=", "active"),
+    { action: "pms.attachment.withdraw", targetType: "pms_attachment", targetId: id },
+    ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "withdrawn").where("withdrawn_reason_enc", "=", reasonEnc),
+  );
 }

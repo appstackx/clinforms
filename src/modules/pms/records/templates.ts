@@ -87,6 +87,8 @@ export interface TemplateSnapshot {
   noteType: NoteType;
   sections: TemplateSection[];
   bodyChart: boolean;
+  /** The template's revision when the note was started (a clinic template's version; built-in ones are 1). */
+  version?: number;
 }
 
 export interface NoteTemplate extends TemplateSnapshot {
@@ -197,7 +199,9 @@ export function parseSnapshot(json: string | null | undefined): TemplateSnapshot
     const sections = TemplateSectionsSchema.safeParse(raw.sections);
     const type = NoteTypeSchema.safeParse(raw.noteType);
     if (!sections.success || !type.success || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
-    return { id: raw.id, name: raw.name, noteType: type.data, sections: sections.data, bodyChart: raw.bodyChart === true };
+    const out: TemplateSnapshot = { id: raw.id, name: raw.name, noteType: type.data, sections: sections.data, bodyChart: raw.bodyChart === true };
+    if (typeof raw.version === "number" && Number.isInteger(raw.version) && raw.version > 0) out.version = raw.version;
+    return out;
   } catch {
     return null;
   }

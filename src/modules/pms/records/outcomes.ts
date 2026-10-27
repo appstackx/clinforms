@@ -258,3 +258,46 @@ export function answersFromForm(id: OutcomeMeasureId, read: (name: string) => st
   }
   return def.namedActivities ? { items, activities } : { items };
 }
+
+export interface OutcomePoint {
+  id: string;
+  takenOn: string;
+  scoreTenths: number;
+  band: string | null;
+  caseId: string | null;
+}
+
+/** One measure over time for one patient: the points (oldest first) and the change from the first to the latest. */
+export interface OutcomeSeries {
+  measure: OutcomeMeasureId;
+  short: string;
+  scoreMax: number;
+  higherIsBetter: boolean;
+  points: OutcomePoint[];
+  first: OutcomePoint;
+  latest: OutcomePoint;
+  change: { deltaTenths: number; direction: ChangeDirection };
+}
+
+/**
+ * Groups recorded scores into one series per measure (measures in their fixed order, points by date then id).
+ * Scores marked "entered in error" are left out. `caseId` limits the series to one case (episode).
+ */
+export function outcomeSeries(
+  rows: readonly { id: string; measure: OutcomeMeasureId; takenOn: string; scoreTenths: number; band: string | null; caseId: string | null; status: "recorded" | "entered_in_error" }[],
+  options: { caseId?: string | null } = {},
+): OutcomeSeries[] {
+  const out: OutcomeSeries[] = [];
+  for (const measure of OUTCOME_MEASURES) {
+    const points = rows
+      .filter((r) => r.measure === measure && r.status === "recorded" && (options.caseId === undefined || r.caseId === options.caseId))
+      .map((r) => ({ id: r.id, takenOn: r.takenOn, scoreTenths: r.scoreTenths, band: r.band, caseId: r.caseId }))
+      .sort((a, b) => (a.takenOn === b.takenOn ? (a.id < b.id ? -1 : 1) : a.takenOn < b.takenOn ? -1 : 1));
+    if (points.length === 0) continue;
+    const def = MEASURES[measure];
+    const first = points[0];
+    const latest = points[points.length - 1];
+    out.push({ measure, short: def.short, scoreMax: def.scoreMax, higherIsBetter: def.higherIsBetter, points, first, latest, change: outcomeChange(measure, first.scoreTenths, latest.scoreTenths) });
+  }
+  return out;
+}

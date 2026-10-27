@@ -1,7 +1,7 @@
 /**
  * Tables of the records module (owned by the records builder – docs/clinic-system/contract.md §3–4), migrations
- * 0120–0121 / 20261024000120–…121: note templates, clinical notes and amendments, outcome measures, attached files
- * (metadata + encrypted chunks) and patient anonymisations.
+ * 0120–0122 / 20261024000120–…122: note templates, clinical notes and amendments, outcome measures, attached files
+ * (metadata + encrypted chunks), patient anonymisations and the clinic's record-keeping settings for notes.
  *
  * - PRIMARY KEY (tenant_id, id) everywhere; foreign keys include tenant_id AND the patient where a row belongs to
  *   one (a note's case, an amendment's note, an outcome's note, a file's note are the same patient's).
@@ -41,6 +41,8 @@ export interface PmsClinicalNotesTable {
   rev: number;
   patient_id: string;
   case_id: string | null;
+  /** The diary appointment the note is about (0123; plain id, checked by the app). */
+  appointment_id: WithDefault<string | null>;
   template_id: string;
   template_name: string;
   note_type: string;
@@ -166,6 +168,17 @@ export interface PmsPatientAnonymisationsTable {
   updated_at: IsoTimestamp;
 }
 
+/** One row per clinic (id "records"); no row = the defaults (src/modules/pms/records/settings.ts). */
+export interface PmsRecordsSettingsTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  unsigned_note_days: WithDefault<number>;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface RecordsTables {
   pms_note_templates: PmsNoteTemplatesTable;
   pms_clinical_notes: PmsClinicalNotesTable;
@@ -174,6 +187,7 @@ export interface RecordsTables {
   pms_attachments: PmsAttachmentsTable;
   pms_attachment_chunks: PmsAttachmentChunksTable;
   pms_patient_anonymisations: PmsPatientAnonymisationsTable;
+  pms_records_settings: PmsRecordsSettingsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -185,6 +199,7 @@ export const RECORDS_TABLES = [
   "pms_attachments",
   "pms_attachment_chunks",
   "pms_patient_anonymisations",
+  "pms_records_settings",
 ] as const satisfies readonly (keyof RecordsTables)[];
 
 export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[number]]: readonly (keyof RecordsTables[T] & string)[] } = {
@@ -195,6 +210,7 @@ export const RECORDS_PRIMARY_KEYS: { readonly [T in (typeof RECORDS_TABLES)[numb
   pms_attachments: ["tenant_id", "id"],
   pms_attachment_chunks: ["tenant_id", "id"],
   pms_patient_anonymisations: ["tenant_id", "id"],
+  pms_records_settings: ["tenant_id", "id"],
 };
 
 /** Timestamp columns besides created_at / updated_at (TEXT in SQLite, timestamptz in Postgres). */

@@ -13,7 +13,8 @@ import type { OutcomeRecord, OutcomeSummary } from "../../../../modules/pms/reco
 import { isIsoDate, ukToday } from "../../../../modules/pms/core/text";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { PmsOutcomeMeasuresTable } from "../../../db/pms-schema/records";
-import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
+import { updateWithAudit } from "./write";
 
 const T = "pms_outcome_measures";
 const MESSAGES = {
@@ -159,14 +160,18 @@ export async function markOutcomeInError(ctx: RepoContext, tenantId: string, id:
   if (!text) throw new RepoInputError("Give the reason.");
   if (text.length > 500) throw new RepoInputError("The reason can be at most 500 characters.");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(T)
-    .set((eb) => ({ status: "entered_in_error", error_at: at, error_reason_enc: encryptField(ctx, tenantId, T, "error_reason_enc", id, text), rev: eb("rev", "+", 1), updated_at: at }))
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("status", "=", "recorded")
-    .executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
-  if (changed) await pmsAudit(ctx, tenantId, actor, { action: "pms.outcome.error", targetType: "pms_outcome", targetId: id });
-  return changed;
+  const reasonEnc = encryptField(ctx, tenantId, T, "error_reason_enc", id, text) as string;
+  return updateWithAudit(
+    ctx,
+    tenantId,
+    actor,
+    ctx.db
+      .updateTable(T)
+      .set((eb) => ({ status: "entered_in_error", error_at: at, error_reason_enc: reasonEnc, rev: eb("rev", "+", 1), updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("status", "=", "recorded"),
+    { action: "pms.outcome.error", targetType: "pms_outcome", targetId: id },
+    ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "entered_in_error").where("error_reason_enc", "=", reasonEnc),
+  );
 }

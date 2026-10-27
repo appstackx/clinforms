@@ -4,7 +4,8 @@
  *
  * Covers the shared record (patient, cases, authorisations) and the records module (notes with their
  * amendments, outcome measures, the list of attached files). Other modules' data about the patient
- * (appointments, invoices, messages, forms) is added by those modules (see docs/clinic-system/records.md).
+ * (appointments, invoices, messages, forms) is added by those modules through the export's extraSections /
+ * extraJson (src/server/pms/records/export-service.ts).
  */
 import type { Authorisation, Case, Patient } from "../../../../modules/pms/core/types";
 import type { AttachmentDetails, ClinicalNote, OutcomeRecord } from "../../../../modules/pms/records/types";

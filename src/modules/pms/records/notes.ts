@@ -35,6 +35,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date as YYYY-MM
 export const NoteDraftInputSchema = z.object({
   patientId: z.string().min(1),
   caseId: z.union([z.string().min(1), z.null()]).optional(),
+  /** The diary appointment the note is about (optional). */
+  appointmentId: z.union([z.string().regex(/^[a-z]{2,6}_[0-9A-HJKMNP-TV-Z]{26}$/, "Not an appointment"), z.null()]).optional(),
   templateId: z.string().min(1, "Choose a template"),
   /** The date of the consultation the note is about. */
   seenOn: isoDate,

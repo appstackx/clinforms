@@ -21,10 +21,27 @@ import { unscopedStatements } from "../../testing/guarded-db";
 import { anonymiseEligibility, anonymisePatient, getAnonymisation } from "../anonymise";
 import { ATTACHMENT_CHUNK_BYTES, getAttachmentFile, getPatientAttachments, listAttachmentsForPatient, putAttachment, recordAttachmentDownload, withdrawAttachment } from "../attachments";
 import { listPatientHistory } from "../history";
-import { addAmendment, createNoteDraft, discardNoteDraft, getNote, isLockedError, lastSignedNoteDate, listDraftsByAuthor, listNotesForPatient, noteFingerprint, recordNoteView, saveNoteDraft, signNote } from "../notes";
+import { findPossibleDuplicates } from "../duplicates";
+import {
+  addAmendment,
+  countUnsignedNotesByAuthor,
+  createNoteDraft,
+  discardNoteDraft,
+  getNote,
+  isLockedError,
+  lastSignedNoteDate,
+  listDraftsByAuthor,
+  listNotesForPatient,
+  listUnsignedNotes,
+  noteFingerprint,
+  recordNoteView,
+  saveNoteDraft,
+  signNote,
+} from "../notes";
 import { bulkRecordOutcomes, getOutcome, listOutcomesForPatient, markOutcomeInError, recordOutcome } from "../outcomes";
 import { collectSubjectAccess } from "../subject-access";
-import { createNoteTemplate, getNoteTemplate, listNoteTemplates, updateNoteTemplate } from "../templates";
+import { getRecordsSettings, saveRecordsSettings } from "../settings";
+import { copyNoteTemplate, createNoteTemplate, getNoteTemplate, listNoteTemplates, setNoteTemplateActive, updateNoteTemplate } from "../templates";
 
 export interface RecordsSuiteDb {
   db: Kysely<Database>;
@@ -321,6 +338,92 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.equal(await collectSubjectAccess(ctx, B, ids.megan), null);
     });
 
+    it("same-batch audit: a refused or stale change leaves no audit row; a done one leaves exactly one", async () => {
+      tick();
+      const count = async (action: string, targetId: string) => (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.action === action && e.targetId === targetId).length;
+      const draft = await createNoteDraft(ctx, A, { patientId: ids.daniel, templateId: "builtin-follow-up-soap", seenOn: "2026-10-20", appointmentId: "appt_01JB0000000000000000000001" }, SARAH_AUTHOR, SARAH);
+      assert.equal(draft.appointmentId, "appt_01JB0000000000000000000001");
+      assert.deepEqual((await listNotesForPatient(ctx, A, ids.daniel, { appointmentId: "appt_01JB0000000000000000000001" })).map((n) => n.id), [draft.id]);
+      assert.equal((await getNote(ctx, A, draft.id))?.template.version, 1, "the note keeps the template's version");
+      assert.equal(await count("pms.note.save", draft.id), 0);
+      assert.deepEqual(await saveNoteDraft(ctx, A, draft.id, 7, { sections: { subjective: "stale" } }, SARAH), { ok: false, reason: "conflict", currentRev: 1 });
+      await rejects(saveNoteDraft(ctx, A, draft.id, 1, { sections: { subjective: "not mine" } }, TOM), /Only the note's author/);
+      assert.equal(await count("pms.note.save", draft.id), 0, "no audit row for a change that did not happen");
+      assert.ok((await saveNoteDraft(ctx, A, draft.id, 1, { sections: { subjective: "Better this week" } }, SARAH)).ok);
+      assert.equal(await count("pms.note.save", draft.id), 1);
+      tick();
+      assert.deepEqual(await discardNoteDraft(ctx, A, draft.id, 1, SARAH), { ok: false, reason: "conflict", currentRev: 2 });
+      await rejects(discardNoteDraft(ctx, A, draft.id, 0, SARAH), /expectedRev/);
+      assert.equal(await count("pms.note.discard", draft.id), 0);
+      assert.equal(await markOutcomeInError(ctx, A, ids.ndi, "Duplicate entry", SARAH), true);
+      assert.equal(await count("pms.outcome.error", ids.ndi), 1);
+      assert.equal(await markOutcomeInError(ctx, A, ids.ndi, "again", SARAH), false);
+      assert.equal(await count("pms.outcome.error", ids.ndi), 1, "the second marking changed nothing and left no row");
+      ids.unsignedDraft = draft.id;
+    });
+
+    it("unsigned notes: per author and for the whole clinic, overdue by consultation date", async () => {
+      const all = await listUnsignedNotes(ctx, A);
+      assert.ok(all.length >= 2 && all.every((n) => n.status === "draft"));
+      for (let i = 1; i < all.length; i++) assert.ok(all[i - 1].seenOn <= all[i].seenOn, "oldest consultation first");
+      assert.ok(all.every((n) => !("sections" in n)), "nothing decrypted");
+      assert.deepEqual((await listUnsignedNotes(ctx, A, { authorUserId: TOM.userId })).length, 0);
+      const overdue = await listUnsignedNotes(ctx, A, { authorUserId: SARAH.userId, seenOnOrBefore: "2026-10-21" });
+      assert.ok(overdue.some((n) => n.id === ids.unsignedDraft) && overdue.every((n) => n.seenOn <= "2026-10-21"));
+      const counts = await countUnsignedNotesByAuthor(ctx, A, { overdueOnOrBefore: "2026-10-21" });
+      const sarah = counts.find((c) => c.authorUserId === SARAH.userId);
+      assert.ok(sarah && sarah.drafts === all.filter((n) => n.authorUserId === SARAH.userId).length && sarah.overdue === overdue.length && sarah.authorName === "Sarah Reid");
+      assert.deepEqual(await listUnsignedNotes(ctx, B), [], "another clinic sees none of them");
+      assert.deepEqual(await countUnsignedNotesByAuthor(ctx, B, { overdueOnOrBefore: "2026-10-21" }), []);
+      await rejects(listUnsignedNotes(ctx, A, { seenOnOrBefore: "21/10/2026" }), /date/);
+    });
+
+    it("note settings: defaults, revision-checked saves, per clinic", async () => {
+      assert.deepEqual(await getRecordsSettings(ctx, A), { unsignedNoteDays: 3, rev: 0, updatedAt: null });
+      const first = await saveRecordsSettings(ctx, A, 0, { unsignedNoteDays: 5 }, SARAH);
+      assert.ok(first.ok && first.rev === 1);
+      assert.deepEqual(await saveRecordsSettings(ctx, A, 0, { unsignedNoteDays: 6 }, SARAH), { ok: false, reason: "conflict", currentRev: 1 });
+      assert.ok((await saveRecordsSettings(ctx, A, 1, { unsignedNoteDays: 7 }, SARAH)).ok);
+      assert.deepEqual(await saveRecordsSettings(ctx, A, 1, { unsignedNoteDays: 8 }, SARAH), { ok: false, reason: "conflict", currentRev: 2 });
+      await rejects(saveRecordsSettings(ctx, A, 2, { unsignedNoteDays: 0 }, SARAH), /At least 1/);
+      assert.equal((await getRecordsSettings(ctx, A)).unsignedNoteDays, 7);
+      assert.equal((await getRecordsSettings(ctx, B)).unsignedNoteDays, 3, "another clinic keeps its own");
+    });
+
+    it("templates: copy, change (new version, old notes keep theirs), retire and bring back", async () => {
+      tick();
+      const copy = await copyNoteTemplate(ctx, A, "builtin-discharge", "Discharge (clinic)", SARAH);
+      assert.deepEqual([copy.builtin, copy.rev, copy.sections.length], [false, 1, 5]);
+      const note = await createNoteDraft(ctx, A, { patientId: ids.daniel, templateId: copy.id, seenOn: "2026-10-23" }, SARAH_AUTHOR, SARAH);
+      const changed = await updateNoteTemplate(ctx, A, copy.id, 1, { sections: [{ key: "reason", label: "Why discharged" }] }, SARAH);
+      assert.ok(changed.ok && changed.rev === 2);
+      const kept = await getNote(ctx, A, note.id);
+      assert.deepEqual([kept?.template.version, kept?.template.sections.length], [1, 5], "the note keeps the version it was started from");
+      const retired = await setNoteTemplateActive(ctx, A, copy.id, 2, false, SARAH);
+      assert.ok(retired.ok);
+      assert.ok(!(await listNoteTemplates(ctx, A)).some((t) => t.id === copy.id), "retired templates are not offered");
+      assert.ok((await listNoteTemplates(ctx, A, { includeInactive: true })).some((t) => t.id === copy.id), "…but kept");
+      await rejects(createNoteDraft(ctx, A, { patientId: ids.daniel, templateId: copy.id, seenOn: "2026-10-23" }, SARAH_AUTHOR, SARAH), /in use/);
+      assert.ok((await setNoteTemplateActive(ctx, A, copy.id, 3, true, SARAH)).ok);
+      const actions = (await listAudit(ctx, A, { limit: 500 })).filter((e) => e.targetId === copy.id).map((e) => e.action);
+      for (const a of ["pms.note_template.create", "pms.note_template.update", "pms.note_template.retire", "pms.note_template.restore"]) assert.ok(actions.includes(a), a);
+      assert.deepEqual(await setNoteTemplateActive(ctx, B, copy.id, 4, false, OTHER_CLINIC), { ok: false, reason: "not_found" });
+      await rejects(copyNoteTemplate(ctx, B, copy.id, "Stolen", OTHER_CLINIC), /does not exist/);
+    });
+
+    it("possible duplicates: same last name and birth date, email or phone – this clinic only", async () => {
+      const lucy = await createPatient(ctx, A, { firstName: "Lucy", lastName: "O'Neill", dateOfBirth: "1988-05-04", email: "lucy.oneill@example.com", phoneMobile: "07700 900123" }, SARAH);
+      await createPatient(ctx, B, { firstName: "Lucy", lastName: "O'Neill", dateOfBirth: "1988-05-04" }, OTHER_CLINIC);
+      const byName = await findPossibleDuplicates(ctx, A, { firstName: "Lucie", lastName: "O'Neill", dateOfBirth: "1988-05-04" });
+      assert.deepEqual(byName.map((d) => [d.patient.id, d.reasons]), [[lucy.id, ["name_and_birth_date"]]]);
+      assert.deepEqual((await findPossibleDuplicates(ctx, A, { lastName: "Someone", email: "LUCY.ONEILL@example.com" }))[0]?.reasons, ["email"]);
+      assert.deepEqual((await findPossibleDuplicates(ctx, A, { lastName: "Someone", phones: ["+44 7700 900123"] }))[0]?.reasons, ["phone"]);
+      assert.deepEqual(await findPossibleDuplicates(ctx, A, { lastName: "Smith", dateOfBirth: "1988-05-04" }), [], "same birth date, other name: no match");
+      assert.deepEqual(await findPossibleDuplicates(ctx, A, { lastName: "O'Neill", dateOfBirth: "1988-05-04" }, { excludeId: lucy.id }), []);
+      assert.deepEqual(await findPossibleDuplicates(ctx, A, { firstName: "Lucy", lastName: "O'Neill" }), [], "a name alone is not enough");
+      assert.equal((await findPossibleDuplicates(ctx, B, { lastName: "O'Neill", dateOfBirth: "1988-05-04" })).length, 1, "the other clinic finds only its own");
+    });
+
     it("anonymising: refused before the record-keeping period or on hold; afterwards removes identity and free text", async () => {
       tick();
       const early = await anonymiseEligibility(ctx, A, ids.megan);
@@ -366,6 +469,7 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
       assert.equal(await getAttachmentFile(ctx, A, file.id), null, "the file's bytes are gone");
       assert.equal((await getAnonymisation(ctx, A, old.id))?.status, "done");
       await rejects(anonymisePatient(ctx, A, old.id, { confirmNumber: old.patientNumber, reviewed: true }, SARAH), /already been anonymised/);
+      await rejects(createNoteDraft(ctx, A, { patientId: old.id, templateId: "builtin-follow-up-soap", seenOn: "2026-10-24" }, SARAH_AUTHOR, SARAH), /anonymised/);
       const dump = JSON.stringify(await ctx.db.selectFrom("pms_patients").selectAll().where("tenant_id", "=", A).where("id", "=", old.id).execute());
       for (const s of ["Alan", "Whitfield", "1950", "900777", "example.com"]) assert.ok(!dump.includes(s), s);
     });
@@ -389,6 +493,9 @@ export function defineRecordsRepoSuite(label: string, factory: () => Promise<Rec
         "pms.attachment.download",
         "pms.attachment.withdraw",
         "pms.patient.anonymise",
+        "pms.note_template.retire",
+        "pms.note_template.restore",
+        "pms.records_settings.update",
       ]) {
         assert.ok(codes.has(code), code);
       }
