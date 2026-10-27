@@ -20,7 +20,8 @@
  */
 import type { EpisodeBundle, Note, Paragraph, ReportFlag, ReportSection } from "../types";
 import { sameClinician } from "../voice";
-import { clinicianNames, contentStems, draftSentences, noteSentences, plainStemsOf, segmentsOf, stemsMatch, type DraftSentence, type NoteSentence } from "./attribution-text";
+import { clinicianNames, contentStems, draftSentences, segmentsOf, type DraftSentence, type NoteSentence } from "./attribution-text";
+import { bestIndexed, shareIn, StemSet } from "./attribution-stem-index";
 import { getValidationContext, hasText, makeFlag, voiceOwnerOf } from "./context";
 import { authorshipOf, rawOpinionHits } from "./opinion-language";
 import { voiceIssue } from "./voice";
@@ -49,23 +50,18 @@ export function isOpinionPlace(section: Pick<ReportSection, "kind" | "title" | "
   return /\b(?:opinion|prognos\w*|impression|diagnos\w*|expected recovery|recovery time)\b/i.test(`${section.title} ${label}`);
 }
 
-/** The note sentence (among `notes`) that holds the largest share of `stems`, with that share. */
+/**
+ * The note sentence (among `notes`) that holds the largest share of `stems`, with that share. On a tie the treatment and
+ * advice given (the plan) or the patient's own report wins over a finding: a treatment summary naming the muscles treated
+ * is not the palpation finding that names them too. The words as written (fix round 1: plainStemsOf – the anchors'
+ * canonical synonyms never decide whose it is); history left out.
+ *
+ * Fix round 2 (R2-SEC-1): read through each note's inverted stem index (attribution-stem-index.ts), built once per note –
+ * the same answer as scanning every sentence of every cited note for every drafted sentence, which made an
+ * unauthenticated /validate body inside VALIDATION_BUDGET cost tens of seconds.
+ */
 export function bestNoteSentence(stems: readonly string[], notes: readonly Note[]): { sentence: NoteSentence; share: number } | null {
-  if (stems.length === 0) return null;
-  let best: { sentence: NoteSentence; share: number } | null = null;
-  // On a tie the treatment and advice given (the plan) or the patient's own report wins over a finding: a treatment
-  // summary naming the muscles treated is not the palpation finding that names them too.
-  const rank = (f: NoteSentence["field"]) => (f === "plan" ? 0 : f === "subjective" ? 1 : f === "other" ? 2 : 3);
-  for (const note of notes) {
-    for (const s of noteSentences(note)) {
-      if (s.field === "history") continue;
-      // The words as written (fix round 1: plainStemsOf – the anchors' canonical synonyms never decide whose it is).
-      const have = plainStemsOf(s);
-      const share = stems.filter((w) => have.some((h) => stemsMatch(w, h))).length / stems.length;
-      if (!best || share > best.share || (share === best.share && rank(s.field) < rank(best.sentence.field))) best = { sentence: s, share };
-    }
-  }
-  return best;
+  return bestIndexed(stems, notes);
 }
 
 /** What a drafted sentence needs: the colleagues it takes a finding, opinion or plan from without naming them. */
@@ -77,6 +73,8 @@ export function unnamedColleagues(input: {
   /** Every note the paragraph cites (any author) and the text of the record sources it cites (normalised). */
   cited: readonly Note[];
   records: readonly string[];
+  /** The content stems of `records` joined (recordStems), when the caller has them already (once per paragraph). */
+  recordStems?: StemSet;
   people: readonly string[];
   opinionPlace: boolean;
 }): string[] {
@@ -94,7 +92,12 @@ export function unnamedColleagues(input: {
   const from = new Map<string, boolean>();
   /** Whose part was only a finding or a plan (objective, plan) – the parts a paragraph's lead attribution carries on. */
   const continuable = new Map<string, boolean>();
-  const share = (want: readonly string[], text: string) => (want.length ? want.filter((w) => contentStems(text, ignore, { canonical: false }).some((h) => stemsMatch(w, h))).length / want.length : 0);
+  // The cited record sources' stems, read once (fix round 2, R2-SEC-1: not once per wanted stem).
+  let recordSet: StemSet | null = input.recordStems ?? null;
+  const share = (want: readonly string[], text: string) => {
+    recordSet ??= new StemSet(contentStems(text, ignore, { canonical: false }));
+    return shareIn(want, recordSet);
+  };
   const classify = (best: { sentence: NoteSentence; share: number }): void => {
     const c = colleagues.find((x) => x.notes.some((n) => n.id === best.sentence.noteId));
     if (!c) return;
@@ -161,6 +164,21 @@ function names(list: readonly string[]): string {
   return list.length <= 1 ? list.join("") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
+/**
+ * The content stems of a paragraph's cited record sources joined, as unnamedColleagues reads them (fix round 2,
+ * R2-SEC-1: once per paragraph – or once per validation for the same sources – instead of once per wanted stem).
+ */
+function recordStemsOf(records: readonly string[], people: readonly string[]): StemSet | undefined {
+  const text = records.join("\n");
+  return text ? new StemSet(contentStems(text, { people: people.map((x) => x.toLowerCase()) }, { canonical: false })) : undefined;
+}
+
+/** The cited record sources of one set of source ids within one validation: their normalised texts and stems, read once. */
+interface RecordSources {
+  texts: string[];
+  stems?: StemSet | null;
+}
+
 /** The sentences of a paragraph that take a colleague's finding or opinion without naming them, with whom. */
 export function unattributedSentences(input: {
   paragraph: Pick<Paragraph, "text" | "sourceIds" | "basis">;
@@ -170,6 +188,8 @@ export function unattributedSentences(input: {
   label?: string;
   /** The normalised text of each cited record source (FACT-*, REG). */
   records?: readonly string[];
+  /** The same sources' stems, shared by the paragraphs of one validation that cite them (validateColleagueNamed). */
+  recordSources?: RecordSources;
 }): Array<{ sentence: DraftSentence; colleagues: string[] }> {
   const { paragraph: p, section, bundle, owner } = input;
   const colleagues = colleaguesCited(p, bundle, owner);
@@ -180,9 +200,15 @@ export function unattributedSentences(input: {
   const out: Array<{ sentence: DraftSentence; colleagues: string[] }> = [];
   let lastNamed: string | null = null;
   const commentary = new Set(commentarySentences(p.text).map((c) => c.start));
+  const records = input.recordSources?.texts ?? input.records ?? [];
+  let recordStems: StemSet | undefined;
+  if (input.recordSources) {
+    if (input.recordSources.stems === undefined) input.recordSources.stems = recordStemsOf(records, people) ?? null;
+    recordStems = input.recordSources.stems ?? undefined;
+  } else recordStems = recordStemsOf(records, people);
   for (const s of draftSentences(p.text, people)) {
     // Commentary about the notes is draft-fit's warning (commentary.ts), not a finding to attribute.
-    const missing = commentary.has(s.start) ? [] : unnamedColleagues({ sentence: s, lastNamed, colleagues, cited, records: input.records ?? [], people, opinionPlace });
+    const missing = commentary.has(s.start) ? [] : unnamedColleagues({ sentence: s, lastNamed, colleagues, cited, records, recordStems, people, opinionPlace });
     if (missing.length) out.push({ sentence: s, colleagues: missing });
     // The clinician "He recorded …" / "Her assessment …" refers to: the last one named, until another is named.
     const named = people.filter((n) => namesClinician(s.text, n));
@@ -205,13 +231,22 @@ export const validateColleagueNamed: Validator = (input) => {
   const owner = voiceOwnerOf(input);
   const people = clinicianNames(input.bundle);
   const flags: ReportFlag[] = [];
+  // The cited record sources by source ids, read once per validation (fix round 2, R2-SEC-1): the same referral cited by
+  // every paragraph is normalised and stemmed once.
+  const recordSources = new Map<string, RecordSources>();
   for (const { paragraph: p, section } of ctx.paragraphs) {
     if (!hasText(p)) continue;
     const who = authorshipOf(p, input.report, section);
     if (who === "approver" || who === "record") continue;
     const label = input.form?.fields.find((f) => f.id === section.key)?.label ?? "";
-    const records = p.sourceIds.filter((id) => !/^N-\d+$/.test(id)).map((id) => normaliseForMatch(ctx.sourceTexts.get(id) ?? "")).filter(Boolean);
-    const found = unattributedSentences({ paragraph: p, section, bundle: input.bundle, owner: owner?.name.trim() ? owner : null, label, records });
+    const recordIds = p.sourceIds.filter((id) => !/^N-\d+$/.test(id));
+    const key = recordIds.join("\u0000");
+    let sources = recordSources.get(key);
+    if (!sources) {
+      sources = { texts: recordIds.map((id) => normaliseForMatch(ctx.sourceTexts.get(id) ?? "")).filter(Boolean) };
+      recordSources.set(key, sources);
+    }
+    const found = unattributedSentences({ paragraph: p, section, bundle: input.bundle, owner: owner?.name.trim() ? owner : null, label, recordSources: sources });
     // The first person over a colleague's note is the voice check's flag (with "Name X instead"): not raised twice.
     const voiced = voiceIssue(p, input.bundle, owner?.name.trim() ? owner : null)?.others ?? [];
     const missing = Array.from(new Set(found.flatMap((f) => f.colleagues))).filter((n) => !voiced.some((v) => v.toLowerCase() === n.toLowerCase()));
