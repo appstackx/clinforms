@@ -4,7 +4,7 @@
  * warns about bookings outside them, and online booking offers only slots inside them.
  *
  * Never deleted: a rota entry is ended (its last day set) or switched off. Overlapping entries of one practitioner
- * are refused. Every write is audited.
+ * are refused. Every write is audited in the same batch.
  */
 import { DIARY_ID_PREFIXES as P } from "../../../../modules/pms/diary/ids";
 import { rulesOverlap, windowsOn, type RotaRule, type RotaWindow } from "../../../../modules/pms/diary/rules";
@@ -21,19 +21,17 @@ import {
   assertId,
   assertTenantId,
   b01,
-  guarded,
   isOn,
   nowIso,
   num,
   parseInput,
-  pmsAudit,
   pmsAuditQuery,
   pmsId,
   translateDbError,
   writeWithAudit,
   type DbContext,
 } from "../context";
-import { loadPractitionerRef, loadRoomRef, loadSiteRef } from "./shared";
+import { auditWhenWritten, loadPractitionerRef, loadRoomRef, loadSiteRef, newWriteId, runChange } from "./shared";
 
 const T = "pms_availability";
 const MESSAGES = { foreignKey: "That practitioner, site or room does not exist in this clinic.", unique: "A rota entry with this import reference already exists." };
@@ -146,8 +144,10 @@ export async function updateAvailability(ctx: DbContext, tenantId: string, id: s
   if (onlineBookable !== current.onlineBookable) fields.push("onlineBookable");
   if (fields.length === 0) return { ok: true, rev: current.rev, updatedAt: current.updatedAt };
   const at = nowIso(ctx);
-  const result = await guarded(
-    () =>
+  const writeId = newWriteId(ctx);
+  let updated: number;
+  try {
+    [updated] = await runChange(ctx, [
       ctx.db
         .updateTable(T)
         .set({
@@ -158,19 +158,21 @@ export async function updateAvailability(ctx: DbContext, tenantId: string, id: s
           valid_to: next.validTo,
           online_bookable: b01(onlineBookable),
           rev: expectedRev + 1,
+          write_id: writeId,
           updated_at: at,
         })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
-        .where("rev", "=", expectedRev)
-        .executeTakeFirst(),
-    MESSAGES,
-  );
-  if (Number(result.numUpdatedRows) === 0) {
+        .where("rev", "=", expectedRev),
+      auditWhenWritten(ctx, tenantId, actor, { action: "pms.availability.update", targetType: "pms_availability", targetId: id, detail: { fields, rev: expectedRev + 1 } }, T, writeId, id),
+    ]);
+  } catch (err) {
+    throw translateDbError(err, MESSAGES);
+  }
+  if (updated === 0) {
     const now = await getAvailability(ctx, tenantId, id);
     return now ? { ok: false, reason: "conflict", currentRev: now.rev } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.availability.update", targetType: "pms_availability", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 
@@ -187,18 +189,20 @@ export async function endAvailability(ctx: DbContext, tenantId: string, id: stri
   if (current.rev !== expectedRev) return { ok: false, reason: "conflict", currentRev: current.rev };
   const switchOff = lastDate < current.validFrom;
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(T)
-    .set(switchOff ? { active: 0, rev: expectedRev + 1, updated_at: at } : { valid_to: lastDate, rev: expectedRev + 1, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("rev", "=", expectedRev)
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
+  const writeId = newWriteId(ctx);
+  const [updated] = await runChange(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set(switchOff ? { active: 0, rev: expectedRev + 1, write_id: writeId, updated_at: at } : { valid_to: lastDate, rev: expectedRev + 1, write_id: writeId, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("rev", "=", expectedRev),
+    auditWhenWritten(ctx, tenantId, actor, { action: "pms.availability.end", targetType: "pms_availability", targetId: id, detail: { switchedOff: switchOff, rev: expectedRev + 1 } }, T, writeId, id),
+  ]);
+  if (updated === 0) {
     const now = await getAvailability(ctx, tenantId, id);
     return now ? { ok: false, reason: "conflict", currentRev: now.rev } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.availability.end", targetType: "pms_availability", targetId: id, detail: { switchedOff: switchOff, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }
 

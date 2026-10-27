@@ -26,7 +26,10 @@ export const DIARY_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.availability.bulk_create": "Rota entries added in bulk",
   "pms.waiting_list.add": "Patient added to the waiting list",
   "pms.waiting_list.update": "Waiting-list entry changed",
-  "pms.waiting_list.status": "Waiting-list entry offered or removed",
+  "pms.waiting_list.status": "Waiting-list entry removed or put back",
+  "pms.waiting_list.offer": "Slot offered from the waiting list",
+  "pms.waiting_list.offer_decline": "Offered slot declined",
+  "pms.waiting_list.offer_withdraw": "Offered slot withdrawn",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */

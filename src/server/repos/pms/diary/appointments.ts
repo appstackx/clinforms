@@ -37,6 +37,8 @@ import {
   BookAppointmentSchema,
   BulkDiaryItemSchema,
   MoveAppointmentSchema,
+  RebookAppointmentSchema,
+  ResizeAppointmentSchema,
   endMinuteOf,
   type AppointmentDetailsPatch,
   type AppointmentStatusChange,
@@ -44,12 +46,15 @@ import {
   type BookAppointmentInput,
   type BulkDiaryItem,
   type MoveAppointmentInput,
+  type RebookAppointmentInput,
+  type ResizeAppointmentInput,
 } from "../../../../modules/pms/diary/schemas";
 import { addMinutesIso, londonDate, londonParts, londonToUtc, minutesBetween, parseHhmm } from "../../../../modules/pms/diary/time";
 import type { Appointment, BookResult, DiaryItem, DiarySaveResult, DiaryWarning } from "../../../../modules/pms/diary/types";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { isIsoDate } from "../../../../modules/pms/core/text";
 import { runBatch, type BatchQuery } from "../../../db/batch";
+import type { PmsAuditEntry } from "../context";
 import { recordAuthorisationUsage } from "../cases";
 import { touchPatientLastSeen } from "../patients";
 import {
@@ -63,7 +68,6 @@ import {
   nowIso,
   num,
   parseInput,
-  pmsAudit,
   pmsAuditQuery,
   pmsId,
   translateDbError,
@@ -75,7 +79,13 @@ import {
   APPOINTMENTS as T,
   ITEM_COLUMNS,
   LOOK_BACK_MS,
+  auditWhenInserted,
+  auditWhenWritten,
+  insertWhenExists,
   isClashError,
+  newWriteId,
+  runChange,
+  writtenRows,
   loadAuthorisationRef,
   loadCaseRef,
   loadPatientRef,
@@ -88,6 +98,8 @@ import {
   toItem,
   type AppointmentRow,
 } from "./shared";
+
+const WAITING_TAKEN = "This waiting-list entry has been booked or removed already. Refresh the list.";
 
 const MESSAGES = {
   foreignKey: "A linked record (patient, case, practitioner, room, site or appointment type) does not exist in this clinic.",
@@ -152,15 +164,29 @@ export interface BookOptions {
   skipClashes?: boolean;
   /** Book although the patient has another appointment at the same time (two practitioners seeing them together). */
   allowPatientOverlap?: boolean;
-  /** The waiting-list entry this booking settles (marked booked in the same atomic write). */
+  /**
+   * The waiting-list entry this booking settles: marked booked in the same atomic write, and nothing is booked
+   * when the entry was booked or removed meanwhile (it must be this patient's open entry).
+   */
   waitingListId?: string;
+  /** The slot offer of that entry being accepted (marked accepted in the same write). Needs waitingListId. */
+  offerId?: string;
+  /** The appointment this booking replaces (rebookAppointment) – recorded in the audit row. */
+  rebookOf?: string;
 }
+
+const OPEN_WAITING = ["waiting", "offered"];
 
 /** Books an appointment – or a recurring series (weekly, fortnightly…) – for a patient. */
 export async function bookAppointment(ctx: RepoContext, tenantId: string, input: BookAppointmentInput, actor: PmsActor, options: BookOptions = {}): Promise<BookResult> {
   assertTenantId(tenantId);
   const d = parseInput(BookAppointmentSchema, input, "Appointment");
   if (options.waitingListId !== undefined) assertId(options.waitingListId, "waiting-list id");
+  if (options.offerId !== undefined) {
+    assertId(options.offerId, "offer id");
+    if (!options.waitingListId) throw new RepoInputError("An offer is booked from its waiting-list entry.");
+  }
+  if (options.rebookOf !== undefined) assertId(options.rebookOf, "appointment id");
   const [, service] = await Promise.all([
     loadPatientRef(ctx, tenantId, d.patientId),
     loadServiceRef(ctx, tenantId, d.serviceId),
@@ -234,38 +260,77 @@ export async function bookAppointment(ctx: RepoContext, tenantId: string, input:
       updated_at: at,
     };
   });
-  const queries: BatchQuery[] = [];
-  if (seriesId && d.repeat) {
-    queries.push(ctx.db.insertInto("pms_appointment_series").values({ tenant_id: tenantId, id: seriesId, interval_weeks: d.repeat.intervalWeeks, occurrences: rows.length, created_by: actor.userId, created_at: at }));
+  // From the waiting list: the entry is marked booked FIRST (conditionally, carrying a fresh write id); every
+  // insert of the booking is gated on that write id, so when someone else booked or removed the entry meanwhile
+  // the whole batch writes nothing (on Postgres the entry's row lock serialises two such bookings).
+  const waitingListId = options.waitingListId;
+  let gate: ReturnType<typeof writtenRows> | null = null;
+  if (waitingListId) {
+    const entry = await ctx.db.selectFrom("pms_waiting_list").select(["patient_id", "status"]).where("tenant_id", "=", tenantId).where("id", "=", waitingListId).executeTakeFirst();
+    if (!entry || entry.patient_id !== d.patientId) throw new RepoInputError("That waiting-list entry is not this patient's.");
+    if (!OPEN_WAITING.includes(entry.status)) throw new RepoInputError(WAITING_TAKEN);
+    if (options.offerId) {
+      const offer = await ctx.db.selectFrom("pms_waiting_list_offers").select(["waiting_list_id", "status"]).where("tenant_id", "=", tenantId).where("id", "=", options.offerId).executeTakeFirst();
+      if (!offer || offer.waiting_list_id !== waitingListId) throw new RepoInputError("That offer is not one of this waiting-list entry's.");
+      if (offer.status !== "open") throw new RepoInputError("That offer has been answered already.");
+    }
   }
-  queries.push(...rows.map((row) => ctx.db.insertInto(T).values(row)));
-  if (options.waitingListId) {
+  const queries: BatchQuery[] = [];
+  if (waitingListId) {
+    const writeId = newWriteId(ctx);
     queries.push(
       ctx.db
         .updateTable("pms_waiting_list")
-        .set((eb) => ({ status: "booked", booked_appointment_id: rows[0].id, rev: eb("rev", "+", 1), updated_at: at }))
+        .set((eb) => ({ status: "booked", write_id: writeId, rev: eb("rev", "+", 1), updated_at: at }))
         .where("tenant_id", "=", tenantId)
-        .where("id", "=", options.waitingListId)
+        .where("id", "=", waitingListId)
         .where("patient_id", "=", d.patientId)
-        .where("status", "in", ["waiting", "offered"]),
+        .where("status", "in", OPEN_WAITING),
     );
+    gate = writtenRows(ctx, tenantId, "pms_waiting_list", writeId, waitingListId);
   }
-  queries.push(
-    pmsAuditQuery(ctx, tenantId, actor, {
-      action: "pms.appointment.book",
-      targetType: "pms_appointment",
-      targetId: rows[0].id,
-      detail: {
-        count: rows.length,
-        ...(seriesId ? { seriesId, skipped: spans.length - rows.length } : {}),
-        source: d.source ?? "staff",
-        ...(options.waitingListId ? { waitingListId: options.waitingListId } : {}),
-      },
-    }),
-  );
+  const insert = (table: "pms_appointments" | "pms_appointment_series", row: Record<string, unknown>): BatchQuery =>
+    gate ? insertWhenExists(ctx, table, row, gate) : ctx.db.insertInto(table).values(row as never);
+  if (seriesId && d.repeat) {
+    queries.push(insert("pms_appointment_series", { tenant_id: tenantId, id: seriesId, interval_weeks: d.repeat.intervalWeeks, occurrences: rows.length, created_by: actor.userId, created_at: at }));
+  }
+  queries.push(...rows.map((row) => insert(T, row)));
+  if (waitingListId && gate) {
+    const g = gate;
+    queries.push(ctx.db.updateTable("pms_waiting_list").set({ booked_appointment_id: rows[0].id }).where("tenant_id", "=", tenantId).where("id", "=", waitingListId).where((eb) => eb.exists(g)));
+    if (options.offerId) {
+      const offerWrite = newWriteId(ctx);
+      queries.push(
+        ctx.db
+          .updateTable("pms_waiting_list_offers")
+          .set((eb) => ({ status: "accepted", appointment_id: rows[0].id, write_id: offerWrite, rev: eb("rev", "+", 1), updated_at: at }))
+          .where("tenant_id", "=", tenantId)
+          .where("id", "=", options.offerId)
+          .where("waiting_list_id", "=", waitingListId)
+          .where("status", "=", "open")
+          .where((eb) => eb.exists(g)),
+      );
+    }
+  }
+  const audit: PmsAuditEntry = {
+    action: "pms.appointment.book",
+    targetType: "pms_appointment",
+    targetId: rows[0].id,
+    detail: {
+      count: rows.length,
+      ...(seriesId ? { seriesId, skipped: spans.length - rows.length } : {}),
+      source: d.source ?? "staff",
+      ...(waitingListId ? { waitingListId } : {}),
+      ...(options.offerId ? { offerId: options.offerId } : {}),
+      ...(options.rebookOf ? { rebookOf: options.rebookOf } : {}),
+    },
+  };
+  queries.push(gate ? auditWhenInserted(ctx, tenantId, actor, audit, T, rows[0].id) : pmsAuditQuery(ctx, tenantId, actor, audit));
   try {
-    await runBatch(ctx.db, queries);
+    const changed = await runChange(ctx, queries);
+    if (waitingListId && changed[0] === 0) throw new RepoInputError(WAITING_TAKEN);
   } catch (err) {
+    if (err instanceof RepoInputError) throw err;
     if (isClashError(err)) {
       const now = await clashesFor(free);
       if (now.length > 0) return { ok: false, reason: "clash", clashes: now };
@@ -341,8 +406,79 @@ export async function createBlock(ctx: RepoContext, tenantId: string, input: Blo
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Moving
+ * Moving and resizing
  * ----------------------------------------------------------------------------------------------*/
+
+interface Placement {
+  startsAt: string;
+  endsAt: string;
+  startsOn: string;
+  siteId: string;
+  practitionerId: string | null;
+  roomId: string | null;
+}
+
+/** Puts a booked / arrived item at a new place and time: clash check, then the change and its audit row in one batch. */
+async function relocate(ctx: RepoContext, tenantId: string, row: AppointmentRow, to: Placement, expectedRev: number, actor: PmsActor, options: { allowPatientOverlap?: boolean }): Promise<DiarySaveResult> {
+  const id = row.id;
+  const fields = [
+    to.startsAt !== row.starts_at ? "startsAt" : null,
+    to.endsAt !== row.ends_at ? "endsAt" : null,
+    to.practitionerId !== row.practitioner_id ? "practitionerId" : null,
+    to.roomId !== row.room_id ? "roomId" : null,
+    to.siteId !== row.site_id ? "siteId" : null,
+  ].filter((f): f is string => f !== null);
+  if (fields.length === 0) return { ok: true, item: toItem(row), warnings: [] };
+
+  const span = { startsAt: to.startsAt, endsAt: to.endsAt };
+  const check = async () =>
+    findClashes(
+      { id, ...span, practitionerId: to.practitionerId, roomId: to.roomId, patientId: options.allowPatientOverlap || row.kind === "block" ? null : row.patient_id },
+      await occupyingNear(ctx, tenantId, { spans: [span], practitionerId: to.practitionerId, roomId: to.roomId, patientId: row.kind === "appointment" ? row.patient_id : null, excludeId: id }),
+    );
+  const clashes = await check();
+  if (clashes.length > 0) return { ok: false, reason: "clash", clashes };
+  const at = nowIso(ctx);
+  const writeId = newWriteId(ctx);
+  const update = ctx.db
+    .updateTable(T)
+    .set({ starts_at: to.startsAt, ends_at: to.endsAt, starts_on: to.startsOn, site_id: to.siteId, practitioner_id: to.practitionerId, room_id: to.roomId, rev: expectedRev + 1, write_id: writeId, updated_at: at })
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", id)
+    .where("rev", "=", expectedRev)
+    .where("status", "in", ["booked", "arrived"]);
+  const audit = auditWhenWritten(
+    ctx,
+    tenantId,
+    actor,
+    { action: row.kind === "block" ? "pms.block.move" : "pms.appointment.move", targetType: "pms_appointment", targetId: id, detail: { fields, rev: expectedRev + 1 } },
+    T,
+    writeId,
+    id,
+  );
+  let updated: number;
+  try {
+    [updated] = await runChange(ctx, [update, audit]);
+  } catch (err) {
+    if (isClashError(err)) return { ok: false, reason: "clash", clashes: await check() };
+    throw translateDbError(err, MESSAGES);
+  }
+  if (updated === 0) return staleResult(ctx, tenantId, id);
+  const warnings: DiaryWarning[] = [];
+  if (row.kind === "appointment" && to.practitionerId && !(await insideWorkingHours(ctx, tenantId, to.practitionerId, [span]))) warnings.push("outside_hours");
+  return { ok: true, item: await itemById(ctx, tenantId, id), warnings };
+}
+
+async function movableRow(ctx: DbContext, tenantId: string, id: string, expectedRev: number): Promise<AppointmentRow | Exclude<DiarySaveResult, { ok: true }>> {
+  const row = await currentRow(ctx, tenantId, id);
+  if (!row) return { ok: false, reason: "not_found" };
+  if (num(row.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
+  const status = row.status as AppointmentStatus;
+  if (!canMove(status)) {
+    throw new RepoInputError(isCancelledStatus(status) ? "Reinstate the cancelled appointment before moving it." : `An appointment marked "${STATUS_LABELS[status]}" cannot be moved.`);
+  }
+  return row;
+}
 
 /**
  * Moves an appointment (or blocked time) to another time, day, practitioner, room or site – drag and drop and the
@@ -352,13 +488,8 @@ export async function moveAppointment(ctx: RepoContext, tenantId: string, id: st
   assertTenantId(tenantId);
   assertId(id, "appointment id");
   const d = parseInput(MoveAppointmentSchema, input, "Move");
-  const row = await currentRow(ctx, tenantId, id);
-  if (!row) return { ok: false, reason: "not_found" };
-  if (num(row.rev) !== d.expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
-  const status = row.status as AppointmentStatus;
-  if (!canMove(status)) {
-    throw new RepoInputError(isCancelledStatus(status) ? "Reinstate the cancelled appointment before moving it." : `An appointment marked "${STATUS_LABELS[status]}" cannot be moved.`);
-  }
+  const row = await movableRow(ctx, tenantId, id, d.expectedRev);
+  if (!("tenant_id" in row)) return row;
   const siteId = d.siteId ?? row.site_id;
   const practitionerId = d.practitionerId === undefined ? row.practitioner_id : d.practitionerId;
   const roomId = d.roomId !== undefined ? d.roomId : siteId !== row.site_id ? null : row.room_id;
@@ -370,76 +501,47 @@ export async function moveAppointment(ctx: RepoContext, tenantId: string, id: st
   const duration = d.durationMinutes ?? minutesBetween(row.starts_at, row.ends_at);
   if (row.kind === "appointment" && duration > MAX_APPOINTMENT_MINUTES) throw new RepoInputError(`Appointment: at most ${MAX_APPOINTMENT_MINUTES} minutes.`);
   const startsAt = localStart(d.date, d.startTime);
-  const endsAt = addMinutesIso(startsAt, duration);
-  const fields = [
-    startsAt !== row.starts_at ? "startsAt" : null,
-    endsAt !== row.ends_at ? "endsAt" : null,
-    practitionerId !== row.practitioner_id ? "practitionerId" : null,
-    roomId !== row.room_id ? "roomId" : null,
-    siteId !== row.site_id ? "siteId" : null,
-  ].filter((f): f is string => f !== null);
-  if (fields.length === 0) return { ok: true, item: toItem(row), warnings: [] };
+  return relocate(ctx, tenantId, row, { startsAt, endsAt: addMinutesIso(startsAt, duration), startsOn: d.date, siteId, practitionerId, roomId }, d.expectedRev, actor, options);
+}
 
-  const span = { startsAt, endsAt };
-  const check = async () =>
-    findClashes(
-      { id, ...span, practitionerId, roomId, patientId: options.allowPatientOverlap || row.kind === "block" ? null : row.patient_id },
-      await occupyingNear(ctx, tenantId, { spans: [span], practitionerId, roomId, patientId: row.kind === "appointment" ? row.patient_id : null, excludeId: id }),
-    );
-  const clashes = await check();
-  if (clashes.length > 0) return { ok: false, reason: "clash", clashes };
-  const at = nowIso(ctx);
-  let updated: number;
-  try {
-    const result = await ctx.db
-      .updateTable(T)
-      .set({ starts_at: startsAt, ends_at: endsAt, starts_on: d.date, site_id: siteId, practitioner_id: practitionerId, room_id: roomId, rev: d.expectedRev + 1, updated_at: at })
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", id)
-      .where("rev", "=", d.expectedRev)
-      .where("status", "in", ["booked", "arrived"])
-      .executeTakeFirst();
-    updated = Number(result.numUpdatedRows);
-  } catch (err) {
-    if (isClashError(err)) return { ok: false, reason: "clash", clashes: await check() };
-    throw translateDbError(err, MESSAGES);
-  }
-  if (updated === 0) return staleResult(ctx, tenantId, id);
-  if (row.kind === "block") {
-    await pmsAudit(ctx, tenantId, actor, { action: "pms.block.move", targetType: "pms_appointment", targetId: id, detail: { fields, rev: d.expectedRev + 1 } });
-  } else {
-    await pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.move", targetType: "pms_appointment", targetId: id, detail: { fields, rev: d.expectedRev + 1 } });
-  }
-  const warnings: DiaryWarning[] = [];
-  if (row.kind === "appointment" && practitionerId && !(await insideWorkingHours(ctx, tenantId, practitionerId, [span]))) warnings.push("outside_hours");
-  return { ok: true, item: await itemById(ctx, tenantId, id), warnings };
+/** Makes an appointment (or blocked time) longer or shorter: same start, new end (dragging the bottom edge). */
+export async function resizeAppointment(ctx: RepoContext, tenantId: string, id: string, input: ResizeAppointmentInput, actor: PmsActor): Promise<DiarySaveResult> {
+  assertTenantId(tenantId);
+  assertId(id, "appointment id");
+  const d = parseInput(ResizeAppointmentSchema, input, "Length");
+  const row = await movableRow(ctx, tenantId, id, d.expectedRev);
+  if (!("tenant_id" in row)) return row;
+  if (row.kind === "appointment" && d.durationMinutes > MAX_APPOINTMENT_MINUTES) throw new RepoInputError(`Appointment: at most ${MAX_APPOINTMENT_MINUTES} minutes.`);
+  return relocate(
+    ctx,
+    tenantId,
+    row,
+    { startsAt: row.starts_at, endsAt: addMinutesIso(row.starts_at, d.durationMinutes), startsOn: row.starts_on, siteId: row.site_id, practitionerId: row.practitioner_id, roomId: row.room_id },
+    d.expectedRev,
+    actor,
+    {},
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------
  * Status: arrived, attended, did not attend, cancelled, late cancellation, reinstated
  * ----------------------------------------------------------------------------------------------*/
 
-async function auditStatus(ctx: DbContext, tenantId: string, actor: PmsActor, id: string, kind: string, from: string, to: AppointmentStatus, detail: Record<string, unknown>): Promise<void> {
-  const base = { targetType: "pms_appointment", targetId: id, detail: { from, to, ...detail } };
-  if (kind === "block") {
-    if (to === "cancelled") await pmsAudit(ctx, tenantId, actor, { action: "pms.block.remove", ...base });
-    else await pmsAudit(ctx, tenantId, actor, { action: "pms.block.restore", ...base });
-    return;
-  }
+function statusAction(kind: string, from: string, to: AppointmentStatus): string {
+  if (kind === "block") return to === "cancelled" ? "pms.block.remove" : "pms.block.restore";
   switch (to) {
     case "arrived":
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.arrive", ...base });
+      return "pms.appointment.arrive";
     case "attended":
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.attend", ...base });
+      return "pms.appointment.attend";
     case "dna":
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.dna", ...base });
+      return "pms.appointment.dna";
     case "cancelled":
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.cancel", ...base });
+      return "pms.appointment.cancel";
     case "late_cancelled":
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.late_cancel", ...base });
+      return "pms.appointment.late_cancel";
     default:
-      if (isCancelledStatus(from)) return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.reinstate", ...base });
-      return pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.status_undo", ...base });
+      return isCancelledStatus(from) ? "pms.appointment.reinstate" : "pms.appointment.status_undo";
   }
 }
 
@@ -458,7 +560,8 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
     throw new RepoInputError(kind === "block" ? "Blocked time can only be removed or restored." : `An appointment marked "${STATUS_LABELS[from]}" cannot be changed to "${STATUS_LABELS[to]}".`);
   }
   const at = nowIso(ctx);
-  const set: Record<string, unknown> = { status: to, status_at: at, status_by: actor.userId, rev: d.expectedRev + 1, updated_at: at };
+  const writeId = newWriteId(ctx);
+  const set: Record<string, unknown> = { status: to, status_at: at, status_by: actor.userId, rev: d.expectedRev + 1, write_id: writeId, updated_at: at };
   if (isCancelledStatus(to)) {
     set.cancelled_at = at;
     set.cancelled_by = actor.userId;
@@ -476,7 +579,8 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   }
 
   const warnings: DiaryWarning[] = [];
-  // Treatment authorisation: one session per attended appointment (counted first, so it can never be skipped).
+  // Treatment authorisation: one session per attended appointment (counted first, so it can never be skipped;
+  // recordAuthorisationUsage writes its own audit row).
   let counted = false;
   if (to === "attended" && row.authorisation_id && !isOn(row.auth_session_used)) {
     const usage = await recordAuthorisationUsage(ctx, tenantId, row.authorisation_id, { sessions: 1 }, actor, id);
@@ -493,10 +597,18 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   const undoCount = async () => {
     if (counted && row.authorisation_id) await recordAuthorisationUsage(ctx, tenantId, row.authorisation_id, { sessions: -1 }, actor, id);
   };
+  const update = ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", d.expectedRev).where("status", "=", from);
+  const detail = {
+    from,
+    to,
+    rev: d.expectedRev + 1,
+    ...(set.fee_due === 1 ? { feeDue: true } : {}),
+    ...(isCancelledStatus(to) && kind === "appointment" ? { reason: set.cancel_reason } : {}),
+  };
+  const audit = auditWhenWritten(ctx, tenantId, actor, { action: statusAction(kind, from, to), targetType: "pms_appointment", targetId: id, detail }, T, writeId, id);
   let updated: number;
   try {
-    const result = await ctx.db.updateTable(T).set(set).where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", d.expectedRev).where("status", "=", from).executeTakeFirst();
-    updated = Number(result.numUpdatedRows);
+    [updated] = await runChange(ctx, [update, audit]);
   } catch (err) {
     await undoCount();
     if (isClashError(err)) {
@@ -515,28 +627,79 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
   }
   if (giveBack && row.authorisation_id) await recordAuthorisationUsage(ctx, tenantId, row.authorisation_id, { sessions: -1 }, actor, id);
   if (to === "attended" && row.patient_id) await touchPatientLastSeen(ctx, tenantId, row.patient_id, row.starts_on);
-  await auditStatus(ctx, tenantId, actor, id, kind, from, to, { rev: d.expectedRev + 1, ...(set.fee_due === 1 ? { feeDue: true } : {}), ...(isCancelledStatus(to) && kind === "appointment" ? { reason: set.cancel_reason } : {}) });
   return { ok: true, item: await itemById(ctx, tenantId, id), warnings };
 }
 
-/** Cancels the booked appointments of a series from a date on (the rest of a course of treatment). */
+/**
+ * Cancels the booked appointments of a series from a date on (the rest of a course of treatment). The change and
+ * its audit row are one batch. Returns how many were cancelled.
+ */
 export async function cancelSeriesFrom(ctx: DbContext, tenantId: string, seriesId: string, fromDate: string, actor: PmsActor, reason: CancelReason = "patient"): Promise<number> {
   assertTenantId(tenantId);
   assertId(seriesId, "series id");
   if (!isIsoDate(fromDate)) throw new RepoInputError("Enter the date as YYYY-MM-DD.");
   if (!(CANCEL_REASONS as readonly string[]).includes(reason)) throw new RepoInputError("Unknown cancellation reason.");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(T)
-    .set((eb) => ({ status: "cancelled", cancelled_at: at, cancelled_by: actor.userId, cancel_reason: reason, status_at: at, status_by: actor.userId, rev: eb("rev", "+", 1), updated_at: at }))
-    .where("tenant_id", "=", tenantId)
-    .where("series_id", "=", seriesId)
-    .where("status", "=", "booked")
-    .where("starts_on", ">=", fromDate)
-    .executeTakeFirst();
-  const count = Number(result.numUpdatedRows);
-  if (count > 0) await pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.cancel_series", targetType: "pms_appointment_series", targetId: seriesId, detail: { count, reason } });
+  const writeId = newWriteId(ctx);
+  const [count] = await runChange(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set((eb) => ({ status: "cancelled", cancelled_at: at, cancelled_by: actor.userId, cancel_reason: reason, status_at: at, status_by: actor.userId, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("series_id", "=", seriesId)
+      .where("status", "=", "booked")
+      .where("starts_on", ">=", fromDate),
+    auditWhenWritten(ctx, tenantId, actor, { action: "pms.appointment.cancel_series", targetType: "pms_appointment_series", targetId: seriesId, detail: { fromDate, reason } }, T, writeId),
+  ]);
   return count;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Rebooking: a new appointment like a cancelled or missed one
+ * ----------------------------------------------------------------------------------------------*/
+
+/**
+ * Books a new appointment for the patient of a cancelled, late-cancelled or missed appointment: same appointment
+ * type, case and (while it is still active) authorisation; practitioner, site and room as before unless given.
+ * The old appointment stays as it is (history, fee flag). The booking note is not copied.
+ */
+export async function rebookAppointment(ctx: RepoContext, tenantId: string, id: string, input: RebookAppointmentInput, actor: PmsActor, options: Omit<BookOptions, "rebookOf"> = {}): Promise<BookResult> {
+  assertTenantId(tenantId);
+  assertId(id, "appointment id");
+  const d = parseInput(RebookAppointmentSchema, input, "Rebook");
+  const row = await currentRow(ctx, tenantId, id);
+  if (!row || row.kind !== "appointment" || !row.patient_id || !row.service_id || !row.practitioner_id) throw new RepoInputError(DIARY_COPY.notFound);
+  if (!(isCancelledStatus(row.status) || row.status === "dna")) throw new RepoInputError("Only a cancelled or missed appointment is rebooked. Move a booked appointment instead.");
+  const siteId = d.siteId ?? row.site_id;
+  let authorisationId: string | null = null;
+  if (row.authorisation_id) {
+    const auth = await ctx.db.selectFrom("pms_authorisations").select("status").where("tenant_id", "=", tenantId).where("id", "=", row.authorisation_id).executeTakeFirst();
+    authorisationId = auth?.status === "active" ? row.authorisation_id : null;
+  }
+  let caseId: string | null = null;
+  if (row.case_id) {
+    const kase = await ctx.db.selectFrom("pms_cases").select("status").where("tenant_id", "=", tenantId).where("id", "=", row.case_id).executeTakeFirst();
+    caseId = kase && kase.status !== "closed" ? row.case_id : null;
+  }
+  return bookAppointment(
+    ctx,
+    tenantId,
+    {
+      patientId: row.patient_id,
+      serviceId: row.service_id,
+      practitionerId: d.practitionerId ?? row.practitioner_id,
+      siteId,
+      roomId: d.roomId !== undefined ? d.roomId : siteId === row.site_id ? row.room_id : null,
+      caseId,
+      authorisationId: caseId ? authorisationId : null,
+      date: d.date,
+      startTime: d.startTime,
+      durationMinutes: d.durationMinutes ?? Math.min(MAX_APPOINTMENT_MINUTES, minutesBetween(row.starts_at, row.ends_at)),
+      source: "staff",
+    },
+    actor,
+    { ...options, rebookOf: id },
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -585,21 +748,22 @@ export async function updateAppointmentDetails(ctx: RepoContext, tenantId: strin
   }
   if (fields.length === 0) return { ok: true, item: toItem(row), warnings: [] };
   const at = nowIso(ctx);
+  const writeId = newWriteId(ctx);
   let updated: number;
   try {
-    const result = await ctx.db
-      .updateTable(T)
-      .set({ ...set, rev: expectedRev + 1, updated_at: at })
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", id)
-      .where("rev", "=", expectedRev)
-      .executeTakeFirst();
-    updated = Number(result.numUpdatedRows);
+    [updated] = await runChange(ctx, [
+      ctx.db
+        .updateTable(T)
+        .set({ ...set, rev: expectedRev + 1, write_id: writeId, updated_at: at })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", id)
+        .where("rev", "=", expectedRev),
+      auditWhenWritten(ctx, tenantId, actor, { action: "pms.appointment.update", targetType: "pms_appointment", targetId: id, detail: { fields, rev: expectedRev + 1 } }, T, writeId, id),
+    ]);
   } catch (err) {
     throw translateDbError(err, MESSAGES);
   }
   if (updated === 0) return staleResult(ctx, tenantId, id);
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.appointment.update", targetType: "pms_appointment", targetId: id, detail: { fields, rev: expectedRev + 1 } });
   return { ok: true, item: await itemById(ctx, tenantId, id), warnings: [] };
 }
 
@@ -612,6 +776,31 @@ export async function getAppointment(ctx: RepoContext, tenantId: string, id: str
   assertTenantId(tenantId);
   const row = await currentRow(ctx, tenantId, id);
   return row ? toAppointment(ctx, row) : null;
+}
+
+/** One item without its notes (nothing decrypted) – e.g. to check where it is before a change. */
+export async function getDiaryItem(ctx: DbContext, tenantId: string, id: string): Promise<DiaryItem | null> {
+  assertTenantId(tenantId);
+  const row = await ctx.db.selectFrom(T).select(ITEM_COLUMNS).where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  return row ? toItem(row) : null;
+}
+
+/** The sites of a series' booked appointments from a date on (what cancelling the rest would touch). */
+export async function seriesSitesFrom(ctx: DbContext, tenantId: string, seriesId: string, fromDate: string): Promise<string[]> {
+  assertTenantId(tenantId);
+  assertId(seriesId, "series id");
+  if (!isIsoDate(fromDate)) throw new RepoInputError("Enter the date as YYYY-MM-DD.");
+  const rows = await ctx.db
+    .selectFrom(T)
+    .select("site_id")
+    .distinct()
+    .where("tenant_id", "=", tenantId)
+    .where("series_id", "=", seriesId)
+    .where("status", "=", "booked")
+    .where("starts_on", ">=", fromDate)
+    .limit(60)
+    .execute();
+  return rows.map((r) => r.site_id);
 }
 
 /** Items by id (groups of 90). */
@@ -631,8 +820,12 @@ export interface DiaryQuery {
   from: string;
   to: string;
   siteId?: string;
+  /** Only items at these sites (a member limited to some sites – at most 90). */
+  siteIds?: readonly string[];
   practitionerIds?: readonly string[];
   roomIds?: readonly string[];
+  /** Only appointments (no blocked time). */
+  appointmentsOnly?: boolean;
   /** Cancelled and late-cancelled items too (default false). */
   includeCancelled?: boolean;
   /** Default and maximum 500. */
@@ -651,6 +844,11 @@ export async function listDiary(ctx: DbContext, tenantId: string, q: DiaryQuery)
     .where("ends_at", ">", q.from)
     .where("starts_at", ">", new Date(Date.parse(q.from) - LOOK_BACK_MS).toISOString());
   if (q.siteId) query = query.where("site_id", "=", q.siteId);
+  if (q.siteIds) {
+    if (q.siteIds.length === 0) return { items: [], truncated: false };
+    query = query.where("site_id", "in", q.siteIds.slice(0, 90) as string[]);
+  }
+  if (q.appointmentsOnly) query = query.where("kind", "=", "appointment");
   const practitioners = q.practitionerIds ? q.practitionerIds.slice(0, 90) : null;
   const rooms = q.roomIds ? q.roomIds.slice(0, 90) : null;
   if (practitioners && rooms) {
@@ -670,15 +868,26 @@ export async function listDiary(ctx: DbContext, tenantId: string, q: DiaryQuery)
   return { items: rows.slice(0, limit).map(toItem), truncated: rows.length > limit };
 }
 
-/** A patient's appointments, newest first (at most 200). */
-export async function listPatientAppointments(ctx: DbContext, tenantId: string, patientId: string, options: { limit?: number } = {}): Promise<DiaryItem[]> {
+export interface PatientAppointmentsQuery {
+  /** Default and maximum 200. */
+  limit?: number;
+  /** Only appointments at these sites (a member limited to some sites – at most 90). */
+  siteIds?: readonly string[];
+  /** Only appointments starting before this instant (paging back: the oldest startsAt shown). */
+  before?: string;
+}
+
+/** A patient's appointments, newest first (at most 200 a page). */
+export async function listPatientAppointments(ctx: DbContext, tenantId: string, patientId: string, options: PatientAppointmentsQuery = {}): Promise<DiaryItem[]> {
   assertTenantId(tenantId);
   assertId(patientId, "patient id");
-  const rows = await ctx.db
-    .selectFrom(T)
-    .select(ITEM_COLUMNS)
-    .where("tenant_id", "=", tenantId)
-    .where("patient_id", "=", patientId)
+  let q = ctx.db.selectFrom(T).select(ITEM_COLUMNS).where("tenant_id", "=", tenantId).where("patient_id", "=", patientId);
+  if (options.siteIds) {
+    if (options.siteIds.length === 0) return [];
+    q = q.where("site_id", "in", options.siteIds.slice(0, 90) as string[]);
+  }
+  if (options.before) q = q.where("starts_at", "<", options.before);
+  const rows = await q
     .orderBy("starts_at", "desc")
     .orderBy("id", "desc")
     .limit(Math.min(200, Math.max(1, options.limit ?? 200)))
@@ -686,24 +895,42 @@ export async function listPatientAppointments(ctx: DbContext, tenantId: string, 
   return rows.map(toItem);
 }
 
-/** Each patient's next occupying appointment from `fromIso` on (quick search). */
-export async function nextAppointmentsFor(ctx: DbContext, tenantId: string, patientIds: readonly string[], fromIso: string): Promise<Map<string, DiaryItem>> {
+/** Each patient's next occupying appointment from `fromIso` on (quick search), optionally only at some sites. */
+export async function nextAppointmentsFor(ctx: DbContext, tenantId: string, patientIds: readonly string[], fromIso: string, options: { siteIds?: readonly string[] } = {}): Promise<Map<string, DiaryItem>> {
   assertTenantId(tenantId);
   const out = new Map<string, DiaryItem>();
   const unique = Array.from(new Set(patientIds));
-  for (let i = 0; i < unique.length; i += 90) {
-    const rows = await ctx.db
+  if (options.siteIds && options.siteIds.length === 0) return out;
+  // Groups of 60 patients (+ up to 30 sites) stay under D1's 100 bound parameters.
+  for (let i = 0; i < unique.length; i += 60) {
+    let q = ctx.db
       .selectFrom(T)
       .select(ITEM_COLUMNS)
       .where("tenant_id", "=", tenantId)
-      .where("patient_id", "in", unique.slice(i, i + 90))
+      .where("patient_id", "in", unique.slice(i, i + 60))
       .where("starts_at", ">=", fromIso)
-      .where("status", "in", ["booked", "arrived"])
-      .orderBy("starts_at")
-      .limit(500)
-      .execute();
+      .where("status", "in", ["booked", "arrived"]);
+    if (options.siteIds) q = q.where("site_id", "in", options.siteIds.slice(0, 30) as string[]);
+    const rows = await q.orderBy("starts_at").limit(500).execute();
     for (const r of rows) if (r.patient_id && !out.has(r.patient_id)) out.set(r.patient_id, toItem(r));
   }
+  return out;
+}
+
+/** A patient's appointments per status (the record's Appointments tab), optionally only at some sites. */
+export async function countPatientAppointmentsByStatus(ctx: DbContext, tenantId: string, patientId: string, options: { siteIds?: readonly string[] } = {}): Promise<Record<AppointmentStatus, number>> {
+  assertTenantId(tenantId);
+  assertId(patientId, "patient id");
+  const out: Record<AppointmentStatus, number> = { booked: 0, arrived: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 };
+  if (options.siteIds && options.siteIds.length === 0) return out;
+  let q = ctx.db
+    .selectFrom(T)
+    .select(["status", (eb) => eb.fn.countAll<number>().as("n")])
+    .where("tenant_id", "=", tenantId)
+    .where("patient_id", "=", patientId)
+    .where("kind", "=", "appointment");
+  if (options.siteIds) q = q.where("site_id", "in", options.siteIds.slice(0, 90) as string[]);
+  for (const r of await q.groupBy("status").execute()) out[r.status as AppointmentStatus] = num(r.n);
   return out;
 }
 

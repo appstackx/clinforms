@@ -3,12 +3,16 @@
  * (patient, case, authorisation, practitioner, site, room, appointment type – all scoped to the clinic), the
  * nearby-items read behind the clash check, and the database's clash refusal (migration 0110's triggers).
  */
-import type { Selectable } from "kysely";
+import type { Expression, Selectable } from "kysely";
 import { OCCUPYING_STATUSES, type AppointmentSource, type AppointmentStatus, type BlockKind, type CancelReason, type DiaryItemKind, type DiaryItemLike } from "../../../../modules/pms/diary/rules";
 import type { DiaryItem } from "../../../../modules/pms/diary/types";
+import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
+import type { Database } from "../../../db/schema";
+import { auditInsertWhenExists } from "../../audit";
+import { ulid } from "../../context";
 import type { PmsAppointmentsTable } from "../../../db/pms-schema/diary";
-import { RepoInputError, isOn, num, numOrNull, type DbContext } from "../context";
+import { RepoInputError, assertActor, isOn, num, numOrNull, type DbContext, type PmsActor, type PmsAuditEntry } from "../context";
 
 export const APPOINTMENTS = "pms_appointments";
 export type AppointmentRow = Selectable<PmsAppointmentsTable>;
@@ -72,6 +76,58 @@ export function toItem(r: Pick<AppointmentRow, (typeof ITEM_COLUMNS)[number]>): 
     cancelReason: (r.cancel_reason as CancelReason | null) ?? null,
     updatedAt: r.updated_at,
   };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A change and its audit row in ONE atomic batch
+ *
+ * Every change of a diary row sets a fresh write id (column write_id, migrations 0111–0114). The audit row is
+ * an INSERT … SELECT … WHERE EXISTS (a row carrying that write id), sent in the same batch right after the change:
+ * it is written exactly when the change was – on SQLite, D1 and Postgres alike, also when two writers race (the
+ * loser's conditional UPDATE matches nothing, so its write id is nowhere and its audit row is not written).
+ * ----------------------------------------------------------------------------------------------*/
+
+export type DiaryWriteTable = "pms_appointments" | "pms_availability" | "pms_waiting_list" | "pms_waiting_list_offers";
+
+/** A fresh write id ("w_<ULID>"). */
+export function newWriteId(ctx: DbContext): string {
+  return `w_${ulid(ctx.now ? ctx.now().getTime() : Date.now())}`;
+}
+
+/** Rows of `table` carrying `writeId` (and, when given, with this id). */
+export function writtenRows(ctx: DbContext, tenantId: string, table: DiaryWriteTable, writeId: string, rowId?: string): Expression<unknown> {
+  let q = ctx.db.selectFrom(table).select("id").where("tenant_id", "=", tenantId).where("write_id", "=", writeId);
+  if (rowId !== undefined) q = q.where("id", "=", rowId);
+  return q;
+}
+
+/** The audit INSERT of a change: written in the same batch only when a row of `table` carries `writeId`. */
+export function auditWhenWritten(ctx: DbContext, tenantId: string, actor: PmsActor, entry: PmsAuditEntry, table: DiaryWriteTable, writeId: string, rowId?: string): BatchQuery {
+  const who = assertActor(actor);
+  return auditInsertWhenExists(ctx, tenantId, { ...entry, userId: who.userId, sessionId: who.sessionId }, writtenRows(ctx, tenantId, table, writeId, rowId)).query;
+}
+
+/** The audit INSERT of a new row: written in the same batch only when that row exists (a conditional insert ran). */
+export function auditWhenInserted(ctx: DbContext, tenantId: string, actor: PmsActor, entry: PmsAuditEntry, table: DiaryWriteTable, rowId: string): BatchQuery {
+  const who = assertActor(actor);
+  const exists = ctx.db.selectFrom(table).select("id").where("tenant_id", "=", tenantId).where("id", "=", rowId);
+  return auditInsertWhenExists(ctx, tenantId, { ...entry, userId: who.userId, sessionId: who.sessionId }, exists).query;
+}
+
+/** INSERT … SELECT <values> WHERE EXISTS (…): the row is inserted only while the condition holds (same batch). */
+export function insertWhenExists<T extends DiaryWriteTable | "pms_appointment_series">(ctx: DbContext, table: T, row: Record<string, unknown>, whenExists: Expression<unknown>): BatchQuery {
+  const columns = Object.keys(row);
+  const db = ctx.db as unknown as import("kysely").Kysely<Database>;
+  return db
+    .insertInto(table)
+    .columns(columns as never)
+    .expression(db.selectNoFrom((eb) => columns.map((c) => eb.val(row[c]).as(c)) as never).where((eb) => eb.exists(whenExists)) as never);
+}
+
+/** Runs a batch; the rows each statement changed. */
+export async function runChange(ctx: DbContext, queries: readonly BatchQuery[]): Promise<number[]> {
+  const results = await runBatch(ctx.db, queries);
+  return results.map((r) => Number(r.numAffectedRows ?? 0));
 }
 
 /** True when a write was refused by the clash triggers (practitioner or room already taken). */

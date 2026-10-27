@@ -19,7 +19,6 @@ import {
   MAX_SERIES_OCCURRENCES,
   TIMES_OF_DAY,
   WAITING_PRIORITIES,
-  WAITING_STATUSES,
 } from "./rules";
 import { isCanonicalIso, parseHhmm } from "./time";
 
@@ -95,6 +94,41 @@ export const AppointmentStatusChangeSchema = z.object({
   feePence: OptionalMoneySchema,
 });
 export type AppointmentStatusChange = z.input<typeof AppointmentStatusChangeSchema>;
+
+export const ResizeAppointmentSchema = z.object({
+  expectedRev: ExpectedRevSchema,
+  /** The new length (the start stays). */
+  durationMinutes: z.number().int("Whole minutes").min(5, "At least 5 minutes").max(MAX_ITEM_MINUTES, "At most 24 hours"),
+});
+export type ResizeAppointmentInput = z.input<typeof ResizeAppointmentSchema>;
+
+/** A new appointment like a cancelled or missed one (same patient, type, case): where and when. */
+export const RebookAppointmentSchema = z.object({
+  date: IsoDateSchema,
+  startTime: TimeSchema,
+  /** Default: the old appointment's length. */
+  durationMinutes: z.number().int("Whole minutes").min(5, "At least 5 minutes").max(MAX_APPOINTMENT_MINUTES, `At most ${MAX_APPOINTMENT_MINUTES} minutes`).optional(),
+  /** Default: as before. */
+  practitionerId: PmsIdSchema.optional(),
+  siteId: PmsIdSchema.optional(),
+  /** undefined = as before (none when the site changes), null = no room. */
+  roomId: optionalId(),
+});
+export type RebookAppointmentInput = z.input<typeof RebookAppointmentSchema>;
+
+/**
+ * Cancelling (the diary's "Cancel" form). `late` undefined = decided by the clock (less than
+ * LATE_CANCELLATION_HOURS before the start = a late cancellation); the fee flag defaults to on for a late one.
+ */
+export const CancelAppointmentSchema = z.object({
+  expectedRev: ExpectedRevSchema,
+  reason: z.enum(CANCEL_REASONS),
+  note: optionalText(500),
+  late: z.boolean().optional(),
+  feeDue: z.boolean().optional(),
+  feePence: OptionalMoneySchema,
+});
+export type CancelAppointmentInput = z.input<typeof CancelAppointmentSchema>;
 
 export const AppointmentDetailsPatchSchema = z.object({
   notes: optionalText(2000),
@@ -197,10 +231,34 @@ export type WaitingListPatch = z.input<typeof WaitingListPatchSchema>;
 
 export const WaitingListStatusSchema = z.object({
   expectedRev: ExpectedRevSchema,
-  status: z.enum(WAITING_STATUSES).refine((s) => s !== "booked", "An entry is marked booked by booking the appointment"),
+  /** Back to waiting, or removed. "offered" comes from offering a slot, "booked" from booking it. */
+  status: z.enum(["waiting", "removed"], "Choose waiting or removed"),
   reason: optionalText(200),
 });
 export type WaitingListStatusChange = z.input<typeof WaitingListStatusSchema>;
+
+/** A free slot offered to a waiting patient (the offer does not hold the slot). */
+export const WaitingListOfferSchema = z.object({
+  expectedRev: ExpectedRevSchema,
+  siteId: PmsIdSchema,
+  practitionerId: PmsIdSchema,
+  roomId: optionalId(),
+  /** Default: the entry's appointment type. */
+  serviceId: optionalId(),
+  date: IsoDateSchema,
+  startTime: TimeSchema,
+  /** Default: the appointment type's length. */
+  durationMinutes: z.number().int("Whole minutes").min(5, "At least 5 minutes").max(MAX_APPOINTMENT_MINUTES, `At most ${MAX_APPOINTMENT_MINUTES} minutes`).optional(),
+});
+export type WaitingListOfferInput = z.input<typeof WaitingListOfferSchema>;
+
+/** The patient's answer to an offer other than booking it (declined), or the clinic taking it back (withdrawn). */
+export const WaitingListOfferAnswerSchema = z.object({
+  /** The entry's revision. */
+  expectedRev: ExpectedRevSchema,
+  status: z.enum(["declined", "withdrawn"]),
+});
+export type WaitingListOfferAnswer = z.input<typeof WaitingListOfferAnswerSchema>;
 
 /* ------------------------------------------------------------------------------------------------
  * Bulk loads (demo seed, data import): instants already known

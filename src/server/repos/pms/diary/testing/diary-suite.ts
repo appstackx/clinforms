@@ -27,19 +27,35 @@ import {
   bulkCreateDiaryItems,
   cancelSeriesFrom,
   countAppointmentsByStatus,
+  countPatientAppointmentsByStatus,
   createBlock,
   getAppointment,
+  getDiaryItem,
   listDiary,
   listFeesDue,
   listPatientAppointments,
   moveAppointment,
   nextAppointmentsFor,
+  rebookAppointment,
+  resizeAppointment,
+  seriesSitesFrom,
   setAppointmentStatus,
   updateAppointmentDetails,
 } from "../appointments";
 import { availabilityWindows, createAvailability, endAvailability, listAvailability, updateAvailability } from "../availability";
 import { findFreeSlots } from "../slots";
-import { addToWaitingList, getWaitingListEntry, listWaitingList, setWaitingListStatus, updateWaitingListEntry } from "../waiting-list";
+import {
+  addToWaitingList,
+  answerWaitingListOffer,
+  countWaitingList,
+  getWaitingListEntry,
+  getWaitingListOffer,
+  listWaitingList,
+  listWaitingListOffers,
+  offerWaitingListSlot,
+  setWaitingListStatus,
+  updateWaitingListEntry,
+} from "../waiting-list";
 import { londonDayRange } from "../../../../../modules/pms/diary/time";
 
 export interface DiarySuiteDb {
@@ -223,7 +239,11 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
       assert.deepEqual(audit.detail, { count: 2, seriesId: some.seriesId, skipped: 1, source: "staff" });
       // Cancel the rest of the series from 1 Nov.
       tick();
+      assert.deepEqual(await seriesSitesFrom(ctx, A, some.seriesId as string, "2026-11-01"), [a.site]);
       assert.equal(await cancelSeriesFrom(ctx, A, some.seriesId as string, "2026-11-01", ACTOR), 1);
+      assert.deepEqual((await listAudit(ctx, A, { action: "pms.appointment.cancel_series" }))[0].detail, { fromDate: "2026-11-01", reason: "patient" });
+      assert.equal(await cancelSeriesFrom(ctx, A, some.seriesId as string, "2026-11-01", ACTOR), 0, "nothing left");
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.cancel_series" })).length, 1, "no audit row for a change that changed nothing");
       assert.equal((await listPatientAppointments(ctx, A, a.megan)).find((i) => i.startsOn === "2026-11-03")?.status, "cancelled");
     });
 
@@ -461,6 +481,155 @@ export function defineDiaryRepoSuite(label: string, factory: () => Promise<Diary
         /share a practitioner or a room/,
       );
       await rejects(bulkCreateDiaryItems(ctx, A, [{ ...items[0], startsAt: "2026-12-01T09:00:00Z" }], ACTOR), /ISO-8601/);
+    });
+
+    it("a change and its audit row are one batch: a stale or refused change leaves no audit row", async () => {
+      const r = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: "2026-11-16", startTime: "09:00" }), ACTOR);
+      assert.ok(r.ok);
+      const id = r.items[0].id;
+      const moves = async () => (await listAudit(ctx, A, { action: "pms.appointment.move" })).filter((e) => e.targetId === id).length;
+      tick();
+      assert.ok((await moveAppointment(ctx, A, id, { expectedRev: 1, date: "2026-11-16", startTime: "09:30" }, ACTOR)).ok);
+      assert.equal(await moves(), 1);
+      assert.equal((await moveAppointment(ctx, A, id, { expectedRev: 1, date: "2026-11-16", startTime: "10:00" }, ACTOR_2)).ok, false, "stale");
+      assert.equal(await moves(), 1, "the stale move wrote no audit row");
+      const raw = await suite.db.selectFrom("pms_appointments").select(["write_id", "rev"]).where("tenant_id", "=", A).where("id", "=", id).executeTakeFirstOrThrow();
+      assert.match(String(raw.write_id), /^w_[0-9A-Z]{26}$/);
+      // Status: the same rule.
+      assert.ok((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "arrived" }, ACTOR)).ok);
+      assert.equal((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "dna" }, ACTOR_2)).ok, false);
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.dna" })).filter((e) => e.targetId === id).length, 0);
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.arrive" })).filter((e) => e.targetId === id).length, 1);
+    });
+
+    it("resize: same start, new end; a clash is refused; history does not change length", async () => {
+      const first = await bookAppointment(ctx, A, book(a, { patientId: a.megan, practitionerId: a.tom, roomId: null, date: "2026-11-16", startTime: "11:00" }), ACTOR);
+      const second = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: "2026-11-16", startTime: "11:45" }), ACTOR);
+      assert.ok(first.ok && second.ok);
+      const id = first.items[0].id;
+      const longer = await resizeAppointment(ctx, A, id, { expectedRev: 1, durationMinutes: 45 }, ACTOR);
+      assert.ok(longer.ok);
+      assert.deepEqual([longer.item.startsAt, longer.item.endsAt, longer.item.rev], [utc("2026-11-16", "11:00"), utc("2026-11-16", "11:45"), 2]);
+      const tooLong = await resizeAppointment(ctx, A, id, { expectedRev: 2, durationMinutes: 60 }, ACTOR);
+      assert.equal(!tooLong.ok && tooLong.reason, "clash");
+      assert.deepEqual((await listAudit(ctx, A, { action: "pms.appointment.move" })).find((e) => e.targetId === id)?.detail, { fields: ["endsAt"], rev: 2 });
+      assert.ok((await setAppointmentStatus(ctx, A, id, { expectedRev: 2, status: "attended" }, ACTOR)).ok);
+      await rejects(resizeAppointment(ctx, A, id, { expectedRev: 3, durationMinutes: 30 }, ACTOR), /cannot be moved/);
+    });
+
+    it("rebook: a cancelled or missed appointment gets a new one like it; the old one stays", async () => {
+      const r = await bookAppointment(ctx, A, book(a, { patientId: a.megan, practitionerId: a.sarah, roomId: a.room2, date: "2026-11-17", startTime: "09:00", caseId: a.meganCase, notes: "Old note (fictional)" }), ACTOR);
+      assert.ok(r.ok);
+      const old = r.items[0].id;
+      await rejects(rebookAppointment(ctx, A, old, { date: "2026-11-18", startTime: "09:00" }, ACTOR), /Move a booked appointment/);
+      assert.ok((await setAppointmentStatus(ctx, A, old, { expectedRev: 1, status: "dna", feeDue: true }, ACTOR)).ok);
+      const again = await rebookAppointment(ctx, A, old, { date: "2026-11-18", startTime: "10:00" }, ACTOR);
+      assert.ok(again.ok);
+      const fresh = again.items[0];
+      assert.deepEqual([fresh.patientId, fresh.serviceId, fresh.practitionerId, fresh.roomId, fresh.caseId, fresh.status, fresh.hasNotes], [a.megan, a.fu, a.sarah, a.room2, a.meganCase, "booked", false]);
+      assert.equal((await getDiaryItem(ctx, A, old))?.status, "dna", "the missed one stays (fee flag for billing)");
+      const audit = (await listAudit(ctx, A, { action: "pms.appointment.book" })).find((e) => e.targetId === fresh.id);
+      assert.equal(audit?.detail?.rebookOf, old);
+      const elsewhere = await rebookAppointment(ctx, A, old, { date: "2026-11-19", startTime: "10:00", siteId: a.site2 }, ACTOR);
+      assert.ok(elsewhere.ok && elsewhere.items[0].siteId === a.site2 && elsewhere.items[0].roomId === null, "another site: no room");
+      await rejects(rebookAppointment(ctx, B, old, { date: "2026-11-19", startTime: "11:00" }, ACTOR_B), /no longer exists/);
+    });
+
+    it("waiting list: an entry booked or removed meanwhile books nothing at all", async () => {
+      const entry = await addToWaitingList(ctx, A, { patientId: a.daniel, serviceId: a.fu }, ACTOR);
+      const taken = await bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: "2026-11-20", startTime: "09:00" }), ACTOR, { waitingListId: entry.id });
+      assert.ok(taken.ok);
+      const before = (await listPatientAppointments(ctx, A, a.daniel)).length;
+      await rejects(
+        bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: "2026-11-20", startTime: "10:00", repeat: { intervalWeeks: 1, occurrences: 2 } }), ACTOR, { waitingListId: entry.id }),
+        /booked or removed already/,
+      );
+      assert.equal((await listPatientAppointments(ctx, A, a.daniel)).length, before, "nothing booked");
+      await rejects(bookAppointment(ctx, A, book(a, { patientId: a.megan, practitionerId: a.tom, roomId: null, date: "2026-11-20", startTime: "11:00" }), ACTOR, { waitingListId: entry.id }), /not this patient's/);
+      // Two receptionists booking one entry at the same moment (different free times, so only the entry is in
+      // the way): both pass the pre-check, exactly one batch writes anything.
+      const second = await addToWaitingList(ctx, A, { patientId: a.daniel, serviceId: a.fu }, ACTOR);
+      const race = await Promise.allSettled([
+        bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.tom, roomId: null, date: "2026-11-20", startTime: "12:00" }), ACTOR, { waitingListId: second.id }),
+        bookAppointment(ctx, A, book(a, { patientId: a.daniel, practitionerId: a.sarah, roomId: null, date: "2026-11-20", startTime: "14:00" }), ACTOR_2, { waitingListId: second.id }),
+      ]);
+      assert.deepEqual(race.map((r) => r.status).sort(), ["fulfilled", "rejected"]);
+      const lost = race.find((r) => r.status === "rejected") as PromiseRejectedResult;
+      assert.ok(lost.reason instanceof RepoInputError && /booked or removed already/.test(lost.reason.message));
+      assert.equal((await listPatientAppointments(ctx, A, a.daniel)).length, before + 1, "one booking, not two");
+      const settled = await getWaitingListEntry(ctx, A, second.id);
+      const won = (race.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof bookAppointment>>>).value;
+      assert.ok(won.ok && settled?.bookedAppointmentId === won.items[0].id);
+      assert.equal((await listAudit(ctx, A, { action: "pms.appointment.book" })).filter((e) => e.detail?.waitingListId === second.id).length, 1, "one audit row");
+    });
+
+    it("offers: offer a slot (entry offered), decline (back to waiting), offer again and book it in one write", async () => {
+      const entry = await addToWaitingList(ctx, A, { patientId: a.megan, serviceId: a.fu, siteId: a.site, notes: "Any cancellation (fictional)" }, ACTOR);
+      const first = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 1, siteId: a.site, practitionerId: a.sarah, roomId: a.room1, date: "2026-11-23", startTime: "09:00" }, ACTOR);
+      assert.ok(first.ok);
+      assert.match(first.offer.id, /^woff_/);
+      assert.deepEqual([first.offer.status, first.offer.startsAt, first.offer.endsAt, first.entryRev], ["open", utc("2026-11-23", "09:00"), utc("2026-11-23", "09:30"), 2]);
+      assert.equal((await getWaitingListEntry(ctx, A, entry.id))?.status, "offered");
+      const stale = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 1, siteId: a.site, practitionerId: a.sarah, date: "2026-11-23", startTime: "10:00" }, ACTOR);
+      assert.deepEqual(stale, { ok: false, reason: "conflict", currentRev: 2 });
+      assert.equal((await listWaitingListOffers(ctx, A, entry.id)).length, 1, "a stale offer writes nothing");
+      const declined = await answerWaitingListOffer(ctx, A, first.offer.id, { expectedRev: 2, status: "declined" }, ACTOR);
+      assert.ok(declined.ok);
+      assert.equal((await getWaitingListEntry(ctx, A, entry.id))?.status, "waiting");
+      assert.equal((await getWaitingListOffer(ctx, A, first.offer.id))?.status, "declined");
+      await rejects(answerWaitingListOffer(ctx, A, first.offer.id, { expectedRev: 3, status: "withdrawn" }, ACTOR), /answered already/);
+      const second = await offerWaitingListSlot(ctx, A, entry.id, { expectedRev: 3, siteId: a.site, practitionerId: a.sarah, roomId: a.room1, date: "2026-11-23", startTime: "10:00" }, ACTOR);
+      assert.ok(second.ok);
+      const booked = await bookAppointment(ctx, A, book(a, { date: "2026-11-23", startTime: "10:00" }), ACTOR, { waitingListId: entry.id, offerId: second.offer.id });
+      assert.ok(booked.ok);
+      const after = await getWaitingListEntry(ctx, A, entry.id);
+      assert.deepEqual([after?.status, after?.bookedAppointmentId], ["booked", booked.items[0].id]);
+      assert.deepEqual([(await getWaitingListOffer(ctx, A, second.offer.id))?.status, (await getWaitingListOffer(ctx, A, second.offer.id))?.appointmentId], ["accepted", booked.items[0].id]);
+      assert.deepEqual(
+        (await listAudit(ctx, A, { action: "pms.waiting_list.offer" })).map((e) => e.detail?.offerId).sort(),
+        [first.offer.id, second.offer.id].sort(),
+      );
+      assert.equal((await listAudit(ctx, A, { action: "pms.waiting_list.offer_decline" })).length, 1);
+      // Removing an entry withdraws its open offers in the same batch.
+      const other = await addToWaitingList(ctx, A, { patientId: a.daniel, serviceId: a.fu }, ACTOR);
+      const o = await offerWaitingListSlot(ctx, A, other.id, { expectedRev: 1, siteId: a.site, practitionerId: a.tom, date: "2026-11-24", startTime: "09:00" }, ACTOR);
+      assert.ok(o.ok);
+      assert.ok((await setWaitingListStatus(ctx, A, other.id, { expectedRev: 2, status: "removed", reason: "No longer needed" }, ACTOR)).ok);
+      assert.equal((await getWaitingListOffer(ctx, A, o.offer.id))?.status, "withdrawn");
+      // Clinic isolation.
+      assert.equal(await getWaitingListOffer(ctx, B, o.offer.id), null);
+      assert.deepEqual(await answerWaitingListOffer(ctx, B, o.offer.id, { expectedRev: 3, status: "withdrawn" }, ACTOR_B), { ok: false, reason: "not_found" });
+      assert.equal(await countWaitingList(ctx, A, { siteIds: [a.site2] }) >= 0, true);
+    });
+
+    it("site filters: the diary, a patient's list, next appointments, counts and the waiting list by site", async () => {
+      const day = londonDayRange("2026-11-19");
+      const atSite2 = await listDiary(ctx, A, { ...day, siteIds: [a.site2] });
+      assert.ok(atSite2.items.length >= 1 && atSite2.items.every((i) => i.siteId === a.site2));
+      assert.equal((await listDiary(ctx, A, { ...day, siteIds: [] })).items.length, 0);
+      const megan = await listPatientAppointments(ctx, A, a.megan, { siteIds: [a.site2] });
+      assert.ok(megan.length >= 1 && megan.every((i) => i.siteId === a.site2));
+      const page = await listPatientAppointments(ctx, A, a.megan, { limit: 2 });
+      const older = await listPatientAppointments(ctx, A, a.megan, { limit: 2, before: page[1].startsAt });
+      assert.ok(older.every((i) => i.startsAt < page[1].startsAt));
+      const next = await nextAppointmentsFor(ctx, A, [a.megan], utc("2026-11-19", "00:00"), { siteIds: [a.site2] });
+      assert.equal(next.get(a.megan)?.siteId, a.site2);
+      const counts = await countPatientAppointmentsByStatus(ctx, A, a.megan);
+      assert.ok(counts.booked >= 1 && counts.dna >= 1);
+      assert.deepEqual(await countPatientAppointmentsByStatus(ctx, A, a.megan, { siteIds: [] }), { booked: 0, arrived: 0, attended: 0, dna: 0, late_cancelled: 0, cancelled: 0 });
+      const forSite2 = await addToWaitingList(ctx, A, { patientId: a.megan, siteId: a.site2 }, ACTOR);
+      const scoped = await listWaitingList(ctx, A, { siteIds: [a.site] });
+      assert.equal(scoped.some((e) => e.id === forSite2.id), false, "an entry for another site is not shown");
+      assert.ok((await listWaitingList(ctx, A, { siteIds: [a.site2] })).some((e) => e.id === forSite2.id));
+    });
+
+    it("free slots that suit a waiting patient: preferred days, time of day and dates", async () => {
+      await createAvailability(ctx, A, { practitionerId: a.sarah, siteId: a.site2, weekday: 2, startTime: "09:00", endTime: "17:00", validFrom: "2026-11-24", validTo: "2026-12-31" }, ACTOR);
+      const prefs = { preferredDays: [2], preferredTime: "afternoon" as const, earliestOn: "2026-12-01", latestOn: null };
+      const slots = await findFreeSlots(ctx, A, { fromDate: "2026-11-24", days: 14, practitionerIds: [a.sarah], serviceId: a.fu, stepMinutes: 60, notBefore: utc("2026-11-01", "00:00"), preferences: prefs, limit: 50 });
+      assert.ok(slots.length > 0);
+      assert.ok(slots.every((s) => s.date === "2026-12-01" && s.startMinute >= 720 && s.startMinute < 1020), slots.map((s) => `${s.date} ${s.startMinute}`).join(" "));
+      assert.equal((await findFreeSlots(ctx, A, { fromDate: "2026-11-24", days: 14, practitionerIds: [a.sarah], serviceId: a.fu, siteIds: [a.site], notBefore: utc("2026-11-01", "00:00") })).length, 0, "no rota at the allowed site");
     });
 
     it("every clinic-system statement named tenant_id", () => {

@@ -9,6 +9,7 @@ import type {
   CancelReason,
   DiaryClash,
   DiaryItemKind,
+  OfferStatus,
   RotaRule,
   TimeOfDay,
   WaitingPriority,
@@ -110,6 +111,25 @@ export interface WaitingListEntry extends WaitingListSummary {
   createdBy: string | null;
 }
 
+/** A slot offered to a waiting patient (does not hold the slot). */
+export interface WaitingListOffer {
+  tenantId: string;
+  id: string;
+  rev: number;
+  waitingListId: string;
+  siteId: string;
+  practitionerId: string;
+  roomId: string | null;
+  serviceId: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: OfferStatus;
+  appointmentId: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type DiaryWarning = "outside_hours" | "authorisation_short" | "authorisation_used_up";
 
 /** Outcome of a booking (one appointment or a recurring series – all or nothing unless skipClashes). */
@@ -125,7 +145,19 @@ export type DiarySaveResult =
 
 /** What the diary's server actions answer (plain words; the forms show them). */
 export type DiaryActionResult =
-  | { ok: true; message: string; warnings: string[]; itemId?: string }
+  | {
+      ok: true;
+      message: string;
+      warnings: string[];
+      /** The appointment, block, rota entry, waiting-list entry or offer written (the first one of a series). */
+      itemId?: string;
+      /** Every appointment a booking wrote (a series). */
+      itemIds?: string[];
+      /** The new revision of the record changed (send it with the next change). */
+      rev?: number;
+      /** Dates of a recurring booking that were not free and were skipped. */
+      skippedDates?: string[];
+    }
   | {
       ok: false;
       error: string;
@@ -139,3 +171,6 @@ export type DiaryActionResult =
       /** The screen was stale: refresh it. */
       conflict?: boolean;
     };
+
+/** What the diary's reads answer: the data, or why not (403 = not allowed, 404 = not there or not in scope). */
+export type DiaryRead<T> = { ok: true; data: T } | { ok: false; status: 403 | 404; error: string };

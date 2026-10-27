@@ -45,6 +45,8 @@ export interface PmsAvailabilityTable {
   online_bookable: WithDefault<number>;
   active: WithDefault<number>;
   import_ref: string | null;
+  /** A fresh id set by every change: the audit row is written in the same batch only where it is found (migration 0112). */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -85,6 +87,8 @@ export interface PmsAppointmentsTable {
   status_at: IsoTimestamp | null;
   status_by: string | null;
   import_ref: string | null;
+  /** A fresh id set by every change: the audit row is written in the same batch only where it is found (migration 0111). */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -112,6 +116,29 @@ export interface PmsWaitingListTable {
   notes_enc: string | null;
   booked_appointment_id: string | null;
   removed_reason: string | null;
+  /** A fresh id set by every change: the audit row is written in the same batch only where it is found (migration 0113). */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
+  created_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** A slot offered to a patient on the waiting list (migration 0114). */
+export interface PmsWaitingListOffersTable {
+  tenant_id: string;
+  id: string;
+  rev: number;
+  waiting_list_id: string;
+  site_id: string;
+  practitioner_id: string;
+  room_id: string | null;
+  service_id: string | null;
+  starts_at: IsoTimestamp;
+  ends_at: IsoTimestamp;
+  /** open | accepted | declined | withdrawn */
+  status: WithDefault<string>;
+  appointment_id: string | null;
+  write_id: string | null;
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
@@ -122,16 +149,18 @@ export interface DiaryTables {
   pms_availability: PmsAvailabilityTable;
   pms_appointments: PmsAppointmentsTable;
   pms_waiting_list: PmsWaitingListTable;
+  pms_waiting_list_offers: PmsWaitingListOffersTable;
 }
 
 /** Foreign-key order (parents first). */
-export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list"] as const satisfies readonly (keyof DiaryTables)[];
+export const DIARY_TABLES = ["pms_appointment_series", "pms_availability", "pms_appointments", "pms_waiting_list", "pms_waiting_list_offers"] as const satisfies readonly (keyof DiaryTables)[];
 
 export const DIARY_PRIMARY_KEYS: { readonly [T in (typeof DIARY_TABLES)[number]]: readonly (keyof DiaryTables[T] & string)[] } = {
   pms_appointment_series: ["tenant_id", "id"],
   pms_availability: ["tenant_id", "id"],
   pms_appointments: ["tenant_id", "id"],
   pms_waiting_list: ["tenant_id", "id"],
+  pms_waiting_list_offers: ["tenant_id", "id"],
 };
 
 /** Timestamp columns (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy compares them as ISO. */

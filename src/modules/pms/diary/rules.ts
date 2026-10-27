@@ -46,6 +46,10 @@ export type WaitingStatus = (typeof WAITING_STATUSES)[number];
 export const TIMES_OF_DAY = ["any", "morning", "afternoon", "evening"] as const;
 export type TimeOfDay = (typeof TIMES_OF_DAY)[number];
 
+/** A slot offered to a waiting patient: open until booked (accepted), declined or withdrawn. */
+export const OFFER_STATUSES = ["open", "accepted", "declined", "withdrawn"] as const;
+export type OfferStatus = (typeof OFFER_STATUSES)[number];
+
 /** Longest diary item (a block of leave for a whole day). The database checks it; clash checks rely on it. */
 export const MAX_ITEM_MINUTES = 1440;
 /** Longest appointment. */
@@ -393,4 +397,24 @@ export function gridHours(windows: readonly { startMinute: number; endMinute: nu
 /** Morning before 12:00, afternoon 12:00–17:00, evening from 17:00. */
 export function timeOfDay(minute: number): Exclude<TimeOfDay, "any"> {
   return minute < 720 ? "morning" : minute < 1020 ? "afternoon" : "evening";
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Waiting list: which free slots suit an entry
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface WaitingPreferences {
+  /** ISO weekdays (none = any day). */
+  preferredDays: readonly number[];
+  preferredTime: TimeOfDay;
+  earliestOn: string | null;
+  latestOn: string | null;
+}
+
+/** Whether a free slot (UK date, local start minute) suits the patient's preferred days, time of day and dates. */
+export function slotSuits(slot: { date: string; startMinute: number }, prefs: WaitingPreferences): boolean {
+  if (prefs.earliestOn && slot.date < prefs.earliestOn) return false;
+  if (prefs.latestOn && slot.date > prefs.latestOn) return false;
+  if (prefs.preferredDays.length > 0 && !prefs.preferredDays.includes(isoWeekday(slot.date))) return false;
+  return prefs.preferredTime === "any" || timeOfDay(slot.startMinute) === prefs.preferredTime;
 }
