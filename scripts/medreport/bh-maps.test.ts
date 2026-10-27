@@ -12,7 +12,11 @@
  * anchor in the release converter's file, checkFormDefinition, the source pin, the map lint with 0 errors – accepted
  * findings listed); no merge code in a conditional box; the per-file question and merge-code counts and the expected
  * source per field id (BLUE_HEART_EXPECT); every attended-session field's index = the number in its printed label +
- * the template's offset (CLM and Physio-Link: + 1, stored in table reading order).
+ * the template's offset (CLM and Physio-Link: + 1, stored in table reading order). Fix round 1 (R1T-WE-02): every
+ * printed paragraph or cell of a template that reads as a clinical statement made for every patient (advice, treatments,
+ * goals, targets, a percentage) is covered by a box – its placeholder or options – so the approver sees it on a card and
+ * it prints only as decided; anything else of that kind must be on BLUE_HEART_EXPECT's `fixedText` list (template →
+ * block id → reason code, ids only), and an entry that no longer matches fails too.
  * T3b: what the runtime reads from each field – its condition (conditionText), recordSourceOf, compactPlace, the
  * printed lead (printedLeadsOf on the template's text, with BLUE_HEART_TEMPLATES_DIR), the session question
  * (sessionQuestionOf), the guidance as it reads (currentGuidance), the source, required – compared between the maps the
@@ -80,6 +84,48 @@ function templateBlocks(template: string): ((id: string) => string | null) | und
   if (!/wordprocessingml/.test(file.mimeType)) return undefined;
   const blocks = new Map(buildDocxOutline(file.bytes).blocks.map((b) => [b.id, b.text] as const));
   return (id: string) => blocks.get(id) ?? blocks.get(id.replace(/\.p\d+$/, "")) ?? null;
+}
+
+/**
+ * Fix round 1 (R1T-WE-02): printed text of a template that reads as a clinical statement made for every patient – advice
+ * given, treatments, goals, targets, expected outcomes, a percentage – and not a question, an instruction or a heading.
+ * Such text must be a box the approver sees on a card (the box's placeholder or options cover it), or be on the reviewed
+ * list (BLUE_HEART_EXPECT `fixedText`: template → block id → reason code; ids only, never the wording).
+ */
+const CLINICAL_WORDS =
+  /\b(?:advis\w*|advice|exercis\w*|therap\w*|treatment|treated|mobilis\w*|manipulat\w*|laser|ultrasound|electro\w*|goals?|recover\w*|pain|range[- ]of[- ]mo\w*|rom|pre-morbid|self-manag\w*|baseline|prognos\w*|discharg\w*|improv\w*|expected|reduc\w*|co-?operated)\b|\d\s*%/i;
+const NOT_A_STATEMENT =
+  /\?|:\s*$|^\s*(?:please|if|delete|indicate|give|state|list|detail|add|describe|does|do|did|is|are|has|have|was|were|how|what|when|where|which|who|why)\b|^\s*\(?[a-z0-9]{1,2}[.)]\s/i;
+const MIN_STATEMENT_WORDS = 8;
+const COVERED_SHARE = 0.8;
+
+/** The template's leaf blocks (no block inside them) whose text reads as a fixed clinical statement (ids and text). */
+function fixedStatements(blocks: ReadonlyArray<{ id: string; text?: string }>): Array<{ id: string; text: string }> {
+  const out: Array<{ id: string; text: string }> = [];
+  for (const b of blocks) {
+    if (blocks.some((c) => c.id.startsWith(`${b.id}.`))) continue;
+    const text = (b.text ?? "").replace(/\s+/g, " ").trim();
+    if (text.split(" ").filter(Boolean).length < MIN_STATEMENT_WORDS || !CLINICAL_WORDS.test(text) || NOT_A_STATEMENT.test(text)) continue;
+    const heading = /^[^a-z]*[A-Z]{2,}[^a-z]*\s+[A-Z/&]{2,}\b/.test(text) && !/[.!]$/.test(text);
+    const instruction = /\bplease\b/i.test(text) || /^\(.*\)$/.test(text);
+    if (!heading && !instruction) out.push({ id: b.id, text });
+  }
+  return out;
+}
+
+/** How much of a block's printed text the map's boxes replace or remove (placeholders, printed options), 0–1. */
+function coveredShare(fields: readonly FormField[], blockId: string, text: string): number {
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const near = (id: string) => id === blockId || blockId.startsWith(`${id}.`) || id.startsWith(`${blockId}.`);
+  const texts: string[] = [];
+  for (const f of fields) {
+    if (f.anchor.kind !== "docx") continue;
+    const a = f.anchor;
+    if (near(a.blockId)) texts.push(a.placeholderText ?? "", ...(a.target === "delete_options" ? (f.options ?? []) : []));
+    for (const o of a.optionTexts ?? []) if (near(o.blockId)) texts.push(o.text);
+  }
+  const chars = texts.map(norm).filter((t) => t && text.includes(t)).reduce((n, t) => n + t.length, 0);
+  return text.length ? chars / text.length : 1;
 }
 
 /** What the runtime reads from one field (T3b), as comparable strings – never printed. */
@@ -177,6 +223,55 @@ if (MAPS) {
           assert.deepEqual(lintSummary(lintErrors(issues).filter((i) => i.rule !== "L8")), "", template);
         }
       }
+    });
+
+    test("T3 (R1T-WE-02): every fixed clinical statement a template prints is a box on the card, or reviewed (ids only)", { skip: !TEMPLATES || !EXPECT ? "BLUE_HEART_TEMPLATES_DIR and BLUE_HEART_EXPECT are needed" : false }, () => {
+      const reviewed = (expect as { fixedText?: Record<string, Record<string, string>> }).fixedText;
+      assert.ok(reviewed, "BLUE_HEART_EXPECT has no fixedText list (template → block id → reason code)");
+      const open: string[] = [];
+      const seen = new Set<string>();
+      for (const maps of Object.values(v2)) {
+        for (const [template, map] of Object.entries(maps)) {
+          const dir = folderOf(TEMPLATES as string, template);
+          assert.ok(dir, `${template}: not under the templates folder`);
+          const file = decodeFormFile(fs.readFileSync(path.join(dir, template)).toString("base64"), { convertRtf: true });
+          if (!/wordprocessingml/.test(file.mimeType)) continue;
+          const fields = fieldsOf(map);
+          for (const s of fixedStatements(buildDocxOutline(file.bytes).blocks)) {
+            if (coveredShare(fields, s.id, s.text) >= COVERED_SHARE) continue;
+            const key = `${template} ${s.id}`;
+            if (reviewed[template]?.[s.id]) seen.add(key);
+            else open.push(key);
+          }
+        }
+      }
+      const stale = Object.entries(reviewed).flatMap(([t, ids]) => Object.keys(ids).map((id) => `${t} ${id}`)).filter((k) => !seen.has(k));
+      console.log(`# T3 fixed text: ${seen.size} reviewed; ${open.length} printed for every patient with no box; ${stale.length} reviewed entries unused`);
+      assert.deepEqual(open, [], "a fixed clinical statement prints on every form but no card shows it: map it as a box (or review it)");
+      assert.deepEqual(stale, [], "every reviewed entry is still printed text with no box");
+    });
+
+    test("T3 (R1T-WE-03): a question about other treatment the patient is having, and its details box, exclude the physiotherapy being reported", () => {
+      // The yes/no (whether the patient has other treatment) and the "If yes …" box that gives its details: drafted from the
+      // notes, they must never count the physiotherapy this report is about as "other treatment" (a drafted Yes repeated
+      // the physio plan as other treatment, R1-PC-04).
+      const asksOther = (f: FormField) =>
+        /\b(?:undergoing|receiving|having|attending|getting)\b[^?]{0,40}\bother\b[^?]{0,20}\b(?:treatments?|therap(?:y|ies)|care)\b/i.test(f.label) ||
+        (/^\s*if (?:yes|so)\b/i.test(f.label) && /\bother treatment\b/i.test(f.guidance));
+      const checked: string[] = [];
+      const missing: string[] = [];
+      for (const maps of Object.values(v2)) {
+        for (const [template, map] of Object.entries(maps)) {
+          for (const f of fieldsOf(map)) {
+            if (!asksOther(f)) continue;
+            checked.push(`${template} ${f.id}`);
+            if (!/\bthe physiotherapy this report is about\b/i.test(f.guidance)) missing.push(`${template} ${f.id}`);
+          }
+        }
+      }
+      console.log(`# T3 other treatment: ${checked.length} questions checked`);
+      assert.ok(checked.length > 0, "no other-treatment question found");
+      assert.deepEqual(missing, [], "the guidance says the physiotherapy this report is about is not other treatment");
     });
 
     test("T3b: what the runtime reads from each field changes only where the allowlist says", { skip: !V1 ? "BLUE_HEART_MAPS_V1_DIR not set" : false }, () => {

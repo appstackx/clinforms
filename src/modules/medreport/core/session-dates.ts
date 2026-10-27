@@ -13,8 +13,11 @@
  *    appointments instead of being drafted (one was left out, a list came out of order). It applies only to maps
  *    without any explicit episode.attended* / episode.firstSeenTime field (a map that names the record paths is the
  *    single source of truth: its other boxes are drafted as the map says), never to a clinician's opinion box, and
- *    never on an initial assessment form (the record there is as at that assessment). createFormReport
- *    (core/report-factory.ts, WA1) asks it for every drafted box (seam "session-dates-call-site").
+ *    never on an initial assessment form (the record there is as at that assessment), and never for a question that
+ *    asks for the missed appointments too (fix round 1, R1T-WE-01: the attended appointments alone leave out what such
+ *    a box asks for, and a box filled by code cannot be corrected on the review; it is drafted from the notes, as
+ *    production does). createFormReport (core/report-factory.ts, WA1) asks it for every drafted box (seam
+ *    "session-dates-call-site").
  *
  * Pure; browser and server.
  * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
@@ -61,6 +64,33 @@ export function sessionNumberOf(label: string): number | null {
   return null;
 }
 
+/**
+ * Fix round 1 (R1T-WE-01, Ascenti ML EOTS F-31): words that name an appointment the patient did not attend – a failure
+ * to attend, a DNA, a no-show, a missed or a cancelled appointment, a non-attendance.
+ */
+const MISSED_APPOINTMENT = /\b(?:fail(?:ure|ures|ed|s)?\s+to\s+attend|did\s+not\s+attend|non[-\s]?attend(?:ance|ances|ed)?|not\s+attended|unattended|missed|d\.?n\.?a\.?s?|no[-\s]?shows?|(?:late\s+)?cancel(?:l?ed|l?ations?|s)?)\b/i;
+/** "…excluding DNAs", "except cancellations", "not counting missed ones": the words name what is left out. */
+const LEFT_OUT_BEFORE = /\b(?:excluding|excludes?|except(?:\s+for)?|not\s+(?:including|counting|listing)|other\s+than|apart\s+from|without|leaving\s+out|leave\s+out|omit(?:ting)?)\b[^.;:()\n]*$/i;
+
+/**
+ * Fix round 1 (R1T-WE-01): whether the question asks for the appointments the patient did NOT attend as well ("All
+ * appointment dates, any missed ones included", guidance "mark the ones not attended") – read from its printed label
+ * and its guidance. The attended appointments alone would leave out what it asks for, so such a question is never "the
+ * attended sessions" (sessionQuestionOf): it is drafted from the notes, which the physio can correct, never filled by
+ * code from the attended sessions only (production drafted it). Words that say what is left out ("excluding DNAs",
+ * "not counting cancellations") do not count.
+ */
+export function asksForMissedAppointments(field: Pick<FormField, "label"> & Partial<Pick<FormField, "guidance">>): boolean {
+  for (const text of [field.label, field.guidance ?? ""]) {
+    const t = text.replace(/\s+/g, " ").slice(0, 2000);
+    const re = new RegExp(MISSED_APPOINTMENT.source, "gi");
+    for (let m = re.exec(t); m; m = re.exec(t)) {
+      if (!LEFT_OUT_BEFORE.test(t.slice(Math.max(0, m.index - 60), m.index))) return true;
+    }
+  }
+  return false;
+}
+
 const DURATION = /\b(?:length|duration|how long|minutes?|mins?|hours?)\b/i;
 const AFTER_ASSESSMENT = /\bafter the (?:initial |first )?assessment\b/i;
 const FIRST_APPOINTMENT = new RegExp(String.raw`\b(?:first|initial)\s+(?:seen|attended|attendance|appointment|assessment|consultation|${SESSION_WORD})\b|\b(?:date|time)\s+(?:first\s+)?(?:seen|attended)\b|\bfirst\s+seen\b`, "i");
@@ -71,7 +101,9 @@ const SESSION_LIST = new RegExp(
 
 /**
  * What the question asks of the appointments in the record, read from its printed label (and, for "after the
- * assessment", its guidance) – or null. A duration ("Session length", "Duration of sessions") is not a record value.
+ * assessment", its guidance) – or null. A duration ("Session length", "Duration of sessions") is not a record value, and
+ * nor is a list or a numbered appointment that includes the missed ones (asksForMissedAppointments, fix round 1
+ * R1T-WE-01): the record paths and the fill by code hold the attended appointments only.
  */
 export function sessionQuestionOf(field: Pick<FormField, "label" | "answerType"> & Partial<Pick<FormField, "guidance">>, extra = ""): SessionQuestion | null {
   const label = field.label.replace(/\s+/g, " ").trim();
@@ -83,12 +115,15 @@ export function sessionQuestionOf(field: Pick<FormField, "label" | "answerType">
   const isTime = /\btimes?\b/i.test(label) && !/\bdates?\b/i.test(label);
   const isDate = /\bdates?\b/i.test(label) || field.answerType === "date";
   if (!isTime && !isDate) return null;
+  // Fix round 1 (R1T-WE-01): a list (or the Nth appointment) that includes the missed appointments is not a question
+  // about the attended sessions – the record path and the fill by code would leave the missed ones out.
+  const missedToo = asksForMissedAppointments({ label, guidance: field.guidance ?? "" });
   if (isDate && field.answerType !== "date" && (field.answerType === "long_text" || field.answerType === "short_text") && SESSION_LIST.test(label)) {
-    return { kind: "session_dates", afterAssessment };
+    return missedToo ? null : { kind: "session_dates", afterAssessment };
   }
   if (FIRST_APPOINTMENT.test(label)) return { kind: isTime ? "first_time" : "first_date" };
   const n = sessionNumberOf(label);
-  if (n === null) return null;
+  if (n === null || missedToo) return null;
   return { kind: isTime ? "session_time" : "session_date", n, afterAssessment };
 }
 
