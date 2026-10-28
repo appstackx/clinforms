@@ -822,14 +822,3 @@ export function TargetsSetup({ settings }: { settings: ReportTargets }) {
  * Import data (M9)
  * ----------------------------------------------------------------------------------------------*/
 
-export function ImportPlaceholder() {
-  return (
-    <SetupPage>
-      <SetupHeader title="Import data" description="Bring patients, cases, appointments and invoices over from your previous system." />
-      <PmsNotice tone="info" title="Coming with the next release">
-        Import from your previous system arrives with the next release. You will upload CSV exports of patients, cases (with referrers, payers and authorisations), appointments and invoices, match their columns to the
-        clinic system&apos;s fields, check the rows before anything is written, run the import, re-run it without duplicates, and undo a whole import if needed.
-      </PmsNotice>
-    </SetupPage>
-  );
-}

@@ -29,6 +29,7 @@ import type {
   ImportPayload,
 } from "../../modules/medreport/core/types";
 import { CLINIC_SYSTEM_NAME } from "../../lib/brand";
+import { pmsNow } from "../../modules/pms/core/clock";
 import type { PmsPermission } from "../../modules/pms/core/permissions";
 import type { PmsActor } from "../../modules/pms/core/types";
 import { getDataCipher } from "../crypto";
@@ -84,7 +85,7 @@ const NOT_AVAILABLE =
 export function createNativeConnector(
   deps: NativeConnectorDeps = {},
 ): ClinicSystemConnector {
-  const repo = deps.repo ?? (() => ({ db: getDb(), cipher: getDataCipher() }));
+  const repo = deps.repo ?? (() => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }));
   const ports = deps.ports ?? integrationPorts;
   const entitled =
     deps.entitled ?? ((tenantId: string) => hasPackage(tenantId, "clinic"));
@@ -159,7 +160,7 @@ export function createNativeConnector(
             ports: ports(),
             clinical,
             referral: caller.can("patients.referral"),
-            now: deps.now?.(),
+            now: deps.now?.() ?? pmsNow(),
           },
         );
         await pmsAudit(repoCtx, ctx.tenantId, caller.actor, {
