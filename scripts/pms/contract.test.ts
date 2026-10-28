@@ -25,6 +25,12 @@ describe("migration ranges (contract §3)", () => {
     assert.equal(moduleForMigration(100), "foundation");
     assert.equal(moduleForMigration(115), "diary");
     assert.equal(moduleForMigration(179), "integration");
+    // Follow-up numbers (0180 onwards): each owned by exactly one module, never inside another range.
+    const all = PMS_MODULE_IDS.flatMap((id) => [PMS_MODULES[id].sqlite, ...(PMS_MODULES[id].extra ?? [])].map((r) => ({ id, r })));
+    for (const a of all) for (const b of all) if (a !== b) assert.ok(a.r[1] < b.r[0] || b.r[1] < a.r[0], `${a.id} ${a.r} overlaps ${b.id} ${b.r}`);
+    assert.equal(moduleForMigration(180), "diary");
+    assert.equal(moduleForMigration(182), "portal");
+    assert.equal(moduleForMigration(190), null);
     assert.equal(postgresTwinName("0110_diary_core.sql"), "20261024000110_diary_core.sql");
   });
 
