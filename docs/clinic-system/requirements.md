@@ -143,9 +143,9 @@ clinicians see reports for their own caseload (`reports.view` is owner/admin onl
 ### 3.2 SITE – multi-site
 
 - **K2-SITE-001** · MVP · done · foundation · FC 2.1-01, 2.1-04 — Sites (name, address, phone, email) with rooms per site; practitioners may work at several sites. AC: directory repositories; set-up screens in K2-ADM-001.
-- **K2-SITE-002** · MVP · back end done, screen pending · diary · FC 2.1-01 — Every diary view is for a chosen site (switcher) and date; reception can switch site without losing the date. AC: switching site keeps the day; URL carries site and date; keyboard operable.
-- **K2-SITE-003** · MVP · partial-wt · reporting · FC 2.6-10 — Opening hours and closure days per site, used by the diary and online booking. AC: one opening-hours source for both (today reporting has `pms_site_hours`/`pms_site_closures` uncommitted and portal has its own `pms_booking_hours` – reconcile, §7).
-- **K2-SITE-004** · MVP · partial-wt · reporting · FC 2.6-12 — A user can be limited to some sites (`pms_staff_access`, `pms_staff_sites`); the limit applies to diary, patient lists, invoices and reports, not only to the reports screens. AC: a staff user limited to site A sees no appointment, invoice or report line of site B; repository suite proves it; default = all sites.
+- **K2-SITE-002** · MVP · done · diary · FC 2.1-01 — Every diary view is for a chosen site (switcher) and date; reception can switch site without losing the date. AC: switching site keeps the day; URL carries site and date; keyboard operable.
+- **K2-SITE-003** · MVP · done · reporting · FC 2.6-10 — Opening hours and closure days per site, used by the diary and online booking. AC: one opening-hours source for both (today reporting has `pms_site_hours`/`pms_site_closures` uncommitted and portal has its own `pms_booking_hours` – reconcile, §7).
+- **K2-SITE-004** · MVP · done · reporting · FC 2.6-12 — A user can be limited to some sites (`pms_staff_access`, `pms_staff_sites`); the limit applies to diary, patient lists, invoices and reports, not only to the reports screens. AC: a staff user limited to site A sees no appointment, invoice or report line of site B; repository suite proves it; default = all sites.
 - **K2-SITE-005** · MVP · missing · billing · FC 2.1-01 — Invoices, statements, letters and messages show the site's address and contact details (the site of the appointment, else the case's site). AC: a PDF invoice for an appointment at site B shows site B's address.
 - **K2-SITE-006** · Later · missing · diary · FC 2.1-01 — Per-site cancellation/DNA charges and per-site reminder templates. AC: two sites with different DNA fees produce different charges.
 
@@ -310,7 +310,7 @@ Committed on `feat/cs-billing` (`8ef137d`, `e0185da`): migrations `0130`/`0131`,
 - **K2-BILL-010** · MVP · done · billing · FC 2.4-09, 2.6-05 — Debtors and aged debt (by payer and patient, age bands). AC: repository; aged debt tab by account type and age band, largest overdue accounts (M5).
 - **K2-BILL-011** · MVP · done · billing · FC 2.4-14 — Insurer claims export (CSV, logged) with codes and pre-authorisation number; the Healthcode channel is listed as "not connected" and refuses. AC: tests.
 - **K2-BILL-012** · MVP · done · billing · FC 2.4-19 — Accounts CSV exports with a formula-injection guard. AC: tests.
-- **K2-BILL-013** · MVP · partial · billing · FC 2.4-01 — Billing screens: invoice list, draft from appointments, issue, credit, payments, statements, debtors, billing settings (VAT, prefix, terms, bank details), the patient's Invoices tab. AC: M5 – invoice list (search, chips, CSV), invoice visits (choose → preview → issue), invoice detail (issue, credit, refund, void, payment link), take payment (incl. 375 px), remittance, statements, aged debt, the patient's Invoices tab and Account card; e2e pms-billing-screens 18/18. Missing: billing settings screen (VAT, prefix, terms, bank details – defaults apply; with Set-up, M8).
+- **K2-BILL-013** · MVP · done · billing · FC 2.4-01 — Billing screens: invoice list, draft from appointments, issue, credit, payments, statements, debtors, billing settings (VAT, prefix, terms, bank details), the patient's Invoices tab. AC: M5 – invoice list (search, chips, CSV), invoice visits (choose → preview → issue), invoice detail (issue, credit, refund, void, payment link), take payment (incl. 375 px), remittance, statements, aged debt, the patient's Invoices tab and Account card; e2e pms-billing-screens 18/18. Missing: billing settings screen (VAT, prefix, terms, bank details – defaults apply; with Set-up, M8).
 - **K2-BILL-014** · Later · missing · billing · FC 2.4-14 — Healthcode e-billing (registration is per practice system; 2–6 months). MVP only if Dell's insurers refuse other routes (Q-D3).
 - **K2-BILL-015** · Later · partial · billing · FC 2.4-06, 2.4-10 — Discounts, write-offs and debt chasing.
 - **K2-BILL-016** · Later · missing · billing · FC 2.4-19, 2.4-20 — Ledger codes, period lock, accounting-software sync.
@@ -339,12 +339,12 @@ All reporting code is **uncommitted** in `cs-reporting` (no commit on `feat/cs-r
 periods, catalogue, CSV, repositories, report pages (attendance, authorisations, caseload, debtors, patients,
 revenue, utilisation, export route), migration `0160`, D1 stack test.
 
-- **K2-REP-001** · MVP · partial-wt · reporting · FC 2.6-01 — Dashboard: today's appointments, utilisation, DNA rate, revenue, outstanding, expiring authorisations. AC: figures match the seeded data's hand-calculated values (`fact-checks.ts`).
-- **K2-REP-002** · MVP · partial-wt · reporting · FC 2.6-02 — Utilisation by practitioner, site and room for a period. AC: booked minutes ÷ rota minutes; excludes blocks.
-- **K2-REP-003** · MVP · partial-wt · reporting · FC 2.6-03 — DNA and late-cancellation rates by practitioner and site. AC: matches diary statuses.
-- **K2-REP-004** · MVP · partial-wt · reporting · FC 2.6-04 — New vs returning patients. AC: definition stated on screen.
-- **K2-REP-005** · MVP · partial-wt · reporting · FC 2.6-05 — Revenue (invoiced, paid) and outstanding debt by payer type. AC: equals billing's totals.
-- **K2-REP-006** · MVP · partial-wt · reporting · FC 2.6-06 — Caseload and a fixed report library with CSV export of every report (`reports.export`, audited, formula-injection guard). AC: each report downloads as CSV.
+- **K2-REP-001** · MVP · done · reporting · FC 2.6-01 — Dashboard: today's appointments, utilisation, DNA rate, revenue, outstanding, expiring authorisations. AC: figures match the seeded data's hand-calculated values (`fact-checks.ts`).
+- **K2-REP-002** · MVP · done · reporting · FC 2.6-02 — Utilisation by practitioner, site and room for a period. AC: booked minutes ÷ rota minutes; excludes blocks.
+- **K2-REP-003** · MVP · done · reporting · FC 2.6-03 — DNA and late-cancellation rates by practitioner and site. AC: matches diary statuses.
+- **K2-REP-004** · MVP · partial · reporting · FC 2.6-04 — New vs returning patients. AC: definition stated on screen.
+- **K2-REP-005** · MVP · done · reporting · FC 2.6-05 — Revenue (invoiced, paid) and outstanding debt by payer type. AC: equals billing's totals.
+- **K2-REP-006** · MVP · done · reporting · FC 2.6-06 — Caseload and a fixed report library with CSV export of every report (`reports.export`, audited, formula-injection guard). AC: each report downloads as CSV.
 - **K2-REP-007** · Later · missing · reporting · FC 2.6-07, 2.6-08, 2.6-09 — Clinical reports, outcome exports (national datasets), custom reports.
 
 ### 3.15 IMP – data import from the current system
@@ -380,12 +380,12 @@ Khuram's/the orchestrator's go**). **`src/server/pms/native-connector.ts` does n
 
 ### 3.17 ADM – admin and settings
 
-- **K2-ADM-001** · MVP · partial-wt · reporting · FC 2.6-10 — Set-up screens (`/app/clinic/setup/**`): sites (and rooms, opening hours, closures), practitioners, services/appointment types, price lists and items, referrers/payers, record-keeping settings (retention years, upward only). AC: pages for sites, services, prices uncommitted; practitioners, referrers, records, staff have actions only.
-- **K2-ADM-002** · MVP · partial-wt · reporting · FC 2.6-11, 2.6-12 — Staff: members (existing ClinForms invitations), role, link to a practitioner, site limits. AC: changing a role takes effect on the next request; audited.
+- **K2-ADM-001** · MVP · done · reporting · FC 2.6-10 — Set-up screens (`/app/clinic/setup/**`): sites (and rooms, opening hours, closures), practitioners, services/appointment types, price lists and items, referrers/payers, record-keeping settings (retention years, upward only). AC: pages for sites, services, prices uncommitted; practitioners, referrers, records, staff have actions only.
+- **K2-ADM-002** · MVP · done · reporting · FC 2.6-11, 2.6-12 — Staff: members (existing ClinForms invitations), role, link to a practitioner, site limits. AC: changing a role takes effect on the next request; audited.
 - **K2-ADM-003** · MVP · done · foundation · FC 2.6-11 — Fixed permission matrix (§2). AC: `pmsCan` tests.
 - **K2-ADM-004** · MVP · done · foundation · FC 2.7-01 — Two-step sign-in required for every staff user (existing ClinForms). AC: existing auth tests.
-- **K2-ADM-005** · MVP · partial · billing · FC 2.4-02 — Billing settings (VAT registration and number, number prefix, payment terms, bank details). AC: data done; screen missing.
-- **K2-ADM-006** · MVP · partial · comms · FC 2.5-02 — Comms settings (sender name, reminder rules, quiet hours, templates). AC: data done; screen missing.
+- **K2-ADM-005** · MVP · done · billing · FC 2.4-02 — Billing settings (VAT registration and number, number prefix, payment terms, bank details). AC: data done; screen missing.
+- **K2-ADM-006** · MVP · done · comms · FC 2.5-02 — Comms settings (sender name, reminder rules, quiet hours, templates). AC: data done; screen missing.
 - **K2-ADM-007** · Later · missing · foundation · FC 2.7-02 — SSO and IP allow-list.
 - **K2-ADM-008** · Later · missing · reporting · FC 2.6-14 — Tasks and teams.
 
@@ -393,7 +393,7 @@ Khuram's/the orchestrator's go**). **`src/server/pms/native-connector.ts` does n
 
 - **K2-AUD-001** · MVP · done · foundation · FC 2.6-13 — Every write is audited through the repositories in the same atomic batch; codes `pms.<entity>.<verb>`, each labelled; audit rows hold ids, counts, field names and statuses – never names, DOBs or note text. AC: activity test fails on an unlabelled code; per-module suites check audit rows.
 - **K2-AUD-002** · MVP · done · foundation · FC 2.6-13 — "Clinic system" filter group on `/app/settings/activity` with CSV, only for clinics with the package. AC: foundation e2e.
-- **K2-AUD-003** · MVP · partial-wt · reporting · FC 2.6-13 — Audit search by user, patient, action, record type and date. AC: repository uncommitted.
+- **K2-AUD-003** · MVP · done · reporting · FC 2.6-13 — Audit search by user, patient, action, record type and date. AC: repository uncommitted.
 - **K2-AUD-004** · MVP · done · foundation · FC none — Platform actions on a clinic (package changes) appear in the clinic's own trail as "ClinForms support". AC: foundation tests.
 - **K2-AUD-005** · Later · missing · records · FC 2.6-13 — Record views (who opened a patient's clinical notes) are logged. MVP if the DPIA requires it (Q-K7).
 
@@ -709,9 +709,9 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-PLT-010 | MVP | partial | feat/clinic-system | – | Demo seed `npm run pms:seed-demo` creates "Riverside Physiotherapy (fictional)" with 3 … |
 | K2-PLT-011 | MVP | done | feat/clinic-system | – | Offboarding a clinic exports every K2 row decrypted (`clinic-system.json`) and deletes … |
 | K2-SITE-001 | MVP | done | feat/clinic-system | 2.1-01, 2.1-04 | Sites (name, address, phone, email) with rooms per site; practitioners may work at … |
-| K2-SITE-002 | MVP | back end done, screen pending | feat/cs-diary | 2.1-01 | Every diary view is for a chosen site (switcher) and date; reception can switch site … |
-| K2-SITE-003 | MVP | partial-wt | feat/cs-reporting | 2.6-10 | Opening hours and closure days per site, used by the diary and online booking |
-| K2-SITE-004 | MVP | partial-wt | feat/cs-reporting | 2.6-12 | A user can be limited to some sites (`pms_staff_access`, `pms_staff_sites`); the limit … |
+| K2-SITE-002 | MVP | done | feat/clinic-system | 2.1-01 | Every diary view is for a chosen site (switcher) and date; reception can switch site … |
+| K2-SITE-003 | MVP | done | feat/clinic-system | 2.6-10 | Opening hours and closure days per site (`pms_site_hours`, `pms_site_closures`, Set-up → Sites and hours) – the ONE source: the diary's rota windows, free slots, booking check and online booking are clipped to them (M8) |
+| K2-SITE-004 | MVP | done | feat/clinic-system | 2.6-12 | A user can be limited to some sites (access module "works at"/"can see", `actor.siteIds`); applied by diary, patients, billing, messages, reports, CSV and the dashboard (M8 e2e: an admin limited to one site sees nothing of the others) |
 | K2-SITE-005 | MVP | missing | feat/cs-billing | 2.1-01 | Invoices, statements, letters and messages show the site's address and contact details … |
 | K2-SITE-006 | Later | missing | feat/cs-diary | 2.1-01 | Per-site cancellation/DNA charges and per-site reminder templates |
 | K2-DIARY-001 | MVP | done | feat/clinic-system | 2.1-10 | Appointment types/services with duration, price, category, colour and an online-bookable … |
@@ -816,7 +816,7 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-BILL-010 | MVP | done | feat/cs-billing | 2.4-09, 2.6-05 | Debtors and aged debt (by payer and patient, age bands) |
 | K2-BILL-011 | MVP | done | feat/cs-billing | 2.4-14 | Insurer claims export (CSV, logged) with codes and pre-authorisation number; the … |
 | K2-BILL-012 | MVP | done | feat/cs-billing | 2.4-19 | Accounts CSV exports with a formula-injection guard |
-| K2-BILL-013 | MVP | partial | feat/cs-billing | 2.4-01 | Billing screens: invoice list, draft from appointments, issue, credit, payments, … |
+| K2-BILL-013 | MVP | done | feat/clinic-system | 2.4-01 | Billing screens: invoice list, draft from appointments, issue, credit, payments, … |
 | K2-BILL-014 | Later | missing | feat/cs-billing | 2.4-14 | Healthcode e-billing (registration is per practice system; 2–6 months) |
 | K2-BILL-015 | Later | partial | feat/cs-billing | 2.4-06, 2.4-10 | Discounts, write-offs and debt chasing |
 | K2-BILL-016 | Later | missing | feat/cs-billing | 2.4-19, 2.4-20 | Ledger codes, period lock, accounting-software sync |
@@ -832,12 +832,12 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-PAY-004 | MVP | done | feat/cs-billing | 2.4-11 | Payment provider interface (`CLINIC_PAYMENTS_PROVIDER`): manual default; `stripe_test` … |
 | K2-PAY-005 | Later | partial | feat/cs-billing | 2.4-11 | Payment links (single payment, nothing clinical) recorded once by provider reference |
 | K2-PAY-006 | Later | partial | feat/cs-billing | 2.4-12, 2.4-13 | Card terminals, saved cards, automatic fees, deposits |
-| K2-REP-001 | MVP | partial-wt | feat/cs-reporting | 2.6-01 | Dashboard: today's appointments, utilisation, DNA rate, revenue, outstanding, expiring … |
-| K2-REP-002 | MVP | partial-wt | feat/cs-reporting | 2.6-02 | Utilisation by practitioner, site and room for a period |
-| K2-REP-003 | MVP | partial-wt | feat/cs-reporting | 2.6-03 | DNA and late-cancellation rates by practitioner and site |
-| K2-REP-004 | MVP | partial-wt | feat/cs-reporting | 2.6-04 | New vs returning patients |
-| K2-REP-005 | MVP | partial-wt | feat/cs-reporting | 2.6-05 | Revenue (invoiced, paid) and outstanding debt by payer type |
-| K2-REP-006 | MVP | partial-wt | feat/cs-reporting | 2.6-06 | Caseload and a fixed report library with CSV export of every report (`reports.export`, … |
+| K2-REP-001 | MVP | done | feat/clinic-system | 2.6-01 | Dashboard "Today" per role (owner/admin, clinician, reception; 1440 + 375 px) – replaces the Overview (M8) |
+| K2-REP-002 | MVP | done | feat/clinic-system | 2.6-02 | Utilisation by practitioner, site and room for a period |
+| K2-REP-003 | MVP | done | feat/clinic-system | 2.6-03 | DNA and late-cancellation rates by practitioner and site |
+| K2-REP-004 | MVP | partial | feat/clinic-system | 2.6-04 | New vs returning patients – loader and tests kept, no page in M8 (dropped from the six-report library; decision for Khuram) |
+| K2-REP-005 | MVP | done | feat/clinic-system | 2.6-05 | Revenue (invoiced, paid) and outstanding debt by payer type |
+| K2-REP-006 | MVP | done | feat/clinic-system | 2.6-06 | Caseload and the fixed report library (Attendance and DNA, Utilisation, Caseload, Revenue, Debtors, Authorisations) with CSV of every report (`reports.export`, audited, formula-safe); clinicians own caseload (`reports.own`) |
 | K2-REP-007 | Later | missing | feat/cs-reporting | 2.6-07, 2.6-08, 2.6-09 | Clinical reports, outcome exports (national datasets), custom reports |
 | K2-IMP-001 | MVP | partial-wt | feat/cs-integration | 2.8-01 | CSV import of patients, cases (payer, referrer), appointments (past and future) and … |
 | K2-IMP-002 | MVP | partial-wt | feat/cs-integration | 2.8-01 | Column mapping step (any header naming), saved per clinic; template headers downloadable |
@@ -855,17 +855,17 @@ Generated from the requirement lines above (§3, §5). "FC" = feature-comparison
 | K2-CF-004 | MVP | partial-wt | feat/cs-integration | 2.3-05, 2.3-03 | The approved form is filed back to the patient record and listed there; form requests are … |
 | K2-CF-005 | MVP | done | feat/clinic-system | – | `medreport` never imports `pms`; `pms` imports only medreport's connector types … |
 | K2-CF-006 | MVP | missing | feat/cs-integration | – | A report completed through the native connector counts against the clinic's Reports … |
-| K2-ADM-001 | MVP | partial-wt | feat/cs-reporting | 2.6-10 | Set-up screens (`/app/clinic/setup/**`): sites (and rooms, opening hours, closures), … |
-| K2-ADM-002 | MVP | partial-wt | feat/cs-reporting | 2.6-11, 2.6-12 | Staff: members (existing ClinForms invitations), role, link to a practitioner, site limits |
+| K2-ADM-001 | MVP | done | feat/clinic-system | 2.6-10 | Set-up screens (`/app/clinic/setup/**`, Set-up section nav): sites and hours, closures, rooms, services, price lists, referrers and insurers (payer-account editor), practitioners, record templates + retention, billing settings, report targets, audit trail, import (M9) |
+| K2-ADM-002 | MVP | done | feat/clinic-system | 2.6-11, 2.6-12 | Staff: Staff access / Roles and permissions (access module), link a member to a practitioner (Set-up → Practitioners, M8) |
 | K2-ADM-003 | MVP | done | feat/clinic-system | 2.6-11 | Fixed permission matrix (§2) |
 | K2-ADM-004 | MVP | done | feat/clinic-system | 2.7-01 | Two-step sign-in required for every staff user (existing ClinForms) |
-| K2-ADM-005 | MVP | partial | feat/cs-billing | 2.4-02 | Billing settings (VAT registration and number, number prefix, payment terms, bank details) |
-| K2-ADM-006 | MVP | partial | feat/cs-comms | 2.5-02 | Comms settings (sender name, reminder rules, quiet hours, templates) |
+| K2-ADM-005 | MVP | done | feat/clinic-system | 2.4-02 | Billing settings (VAT, prefixes, first numbers, terms, DNA/late %, payment instructions, bank details – 0139) on Set-up → Billing settings; printed on invoices and statements (M8) |
+| K2-ADM-006 | MVP | done | feat/clinic-system | 2.5-02 | Comms settings (sender name, reminder rules, quiet hours, templates) |
 | K2-ADM-007 | Later | missing | feat/clinic-system | 2.7-02 | SSO and IP allow-list |
 | K2-ADM-008 | Later | missing | feat/cs-reporting | 2.6-14 | Tasks and teams |
 | K2-AUD-001 | MVP | done | feat/clinic-system | 2.6-13 | Every write is audited through the repositories in the same atomic batch; codes … |
 | K2-AUD-002 | MVP | done | feat/clinic-system | 2.6-13 | "Clinic system" filter group on `/app/settings/activity` with CSV, only for clinics with … |
-| K2-AUD-003 | MVP | partial-wt | feat/cs-reporting | 2.6-13 | Audit search by user, patient, action, record type and date |
+| K2-AUD-003 | MVP | done | feat/clinic-system | 2.6-13 | Audit search by user, patient (record id), action, record type and date with CSV (Set-up → Audit trail, M8) |
 | K2-AUD-004 | MVP | done | feat/clinic-system | – | Platform actions on a clinic (package changes) appear in the clinic's own trail as … |
 | K2-AUD-005 | Later | missing | feat/cs-records | 2.6-13 | Record views (who opened a patient's clinical notes) are logged |
 | K2-NFR-001 | MVP | done | feat/clinic-system | – | Every page/layout under `/app/clinic` calls `requireClinicActor` first; every action … |

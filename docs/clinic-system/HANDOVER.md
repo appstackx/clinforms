@@ -1,7 +1,9 @@
 # K2 clinic system – handover
 
-> **Update 28/10/2026 (IN PROGRESS – read §17 first):** M8 set-up + reports + dashboard running on `feat/cs-reporting`
-> (worktree `clinforms-wt/cs-reporting`). Midpoint recorded in §17; resume from there if this account stops.
+> **Update 28/10/2026 (latest – read §17 first):** M8 set-up + reports + dashboard DONE – Set-up section (sites and
+> hours = the one opening-hours source, rooms, services, prices, payers, practitioners linking, billing settings with bank
+> details, targets, audit trail), six reports with CSV, "Today" per role, test clock for e2e; merged into
+> `feat/clinic-system` `9b97f96`. Next: M9 integration (running in parallel – §18). See §17.
 
 > **Update 28/10/2026 (latest – read §16 first):** M7 online booking + patient portal + intake forms + patient outcome
 > questionnaires DONE – online bookings are diary appointments, the portal's emails go through comms, public pages
@@ -895,7 +897,7 @@ Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-hando
 **M8 Set-up + reports + dashboard** (reporting branch, drop its staff-access tables in favour of cs-access; set-up
 sub-pages without design; dashboard per role incl. billing money tiles and `failedMessagesSummaryFor`).
 
-## 17. M8 set-up + reports + dashboard (28/10/2026) – IN PROGRESS
+## 17. M8 set-up + reports + dashboard (28/10/2026) – DONE, merged into `feat/clinic-system`
 
 ### 17.1 Decisions (Khuram, 28/10/2026 – M7 follow-ups) – recorded here, implemented in M8
 1. **Postcode distance:** bundle the ONS postcode-district centroid list (Open Government Licence v3.0) as a small
@@ -941,3 +943,113 @@ sub-pages without design; dashboard per role incl. billing money tiles and `fail
 - Running in parallel (same worktree): Set-up pages + one opening-hours source (diary availability clipped to site
   hours/closures) + billing settings (0139 bank details) – and Reports (sources, pages, CSV, fact-check suite, D1).
 - Not yet: e2e `pms-setup-reports.cjs`, full chain, merges, designs commit, requirements statuses.
+
+### 17.3 Final heads (all pushed; `main` untouched)
+`feat/cs-reporting` **`e717370`** · `feat/clinic-system` **`9b97f96`** (merge of `feat/cs-reporting`, tree identical;
+`feat/clinic-system` had not moved since `caa9b4d` – M9 had not merged yet, so M9 merges second and takes M8 in first) ·
+merged back (trees identical to `9b97f96`, typecheck + test:pms 597/597 each): `feat/cs-diary` `229e81c`,
+`feat/cs-records` `c5fcefc`, `feat/cs-billing` `7622c8e`, `feat/cs-comms` `b90eacd`, `feat/cs-portal` `631c2f6`.
+
+| Commit on `feat/cs-reporting` | What |
+|---|---|
+| `5ebd9c3` | `feat/clinic-system` `caa9b4d` merged into the October draft (no conflicts) |
+| `f6f97f5` | Test clock (`pmsNow()` in all clinic-system server code, repos' `ctx.now`, seeds); comms seed history at any hour; removes the draft's pages/staff-access code (intermediate tree does not build alone) |
+| `d751256` | Reports back end + pages (0160 edited in place) |
+| `0d57c68` | Set-up pages + one opening-hours source + billing bank details (0139) + demo hours/closures |
+| `fb57d0c` | Shell Set-up / Reports sections, Dashboard start page, nav tests, contract, e2e nav updates |
+| `c03f988` | "Today" per role; diary payer label per billing mode; idempotent diary site-cookie and reply-thread effects |
+| `ce90c57` | Bundled ONS postcode-district centres + attribution (decision 1) |
+| `e717370` | e2e `pms-setup-reports.cjs`, designs `docs/clinic-system/design/round3/setup-reports-dashboard/`, `reporting.md` |
+
+### 17.4 Review findings on the October draft (fixed)
+1. **Own staff-access tables** (`pms_staff_access`/`pms_staff_sites`) duplicated the access module – dropped (0160 edited
+   in place, never applied anywhere); every scope is `actor.siteIds`.
+2. **Old permission ids** (`reports.view`, `settings.manage`, `directory.edit`) → `reports.own|all|export`, `settings.setup`,
+   `settings.members`, `settings.import`.
+3. **Two opening-hours notions** (reporting's hours only fed utilisation; diary/portal used rota windows alone) – now
+   `availabilityWindows` clips every rota window to the site's hours and drops closure days, so diary shading, free
+   slots, booking check, online booking and utilisation agree. A site with no hours rows = not limited (existing data);
+   "closed every day" is refused (switch the site off or add a closure).
+4. **No data sources registered** – reports read nothing from the diary or billing; now a diary source and a billing
+   source (aggregated SQL in the owning module, registered by default), fact-checked again in reporting.
+5. `reporting-repos.test.ts` ran nothing – now runs the suite on SQLite + PGlite; D1 stack runs repo + service suites.
+6. Draft set-up pages had no design pattern and missed practitioners/referrers/records/staff – all rebuilt (below).
+7. Found while testing: a new price list could overwrite the default list when the form was typed into before the page
+   switched (test race – the e2e now waits; the page keys the form by list); price items reset on refresh (fixed); the
+   seed's payment instructions duplicated the new bank line (seed moved to the bank fields, lines de-duplicated); the
+   diary's site-cookie effect and the reply thread's load were not safe with React's double effects (fixed – dev only).
+
+### 17.5 What is built (by requirement)
+- **SITE-003** one opening-hours source (above); **SITE-004** scope everywhere incl. reports, CSV, dashboard (e2e).
+- **ADM-001** Set-up (`/app/clinic/setup/*`, `settings.setup`, audited, tenant-scoped; site-specific writes need the site
+  in scope, clinic-wide need every site): Sites and hours (design round 2c – list + details + weekly hours + closures,
+  Add site with default hours Mon–Fri 08–20, Sat 09–13), Rooms, Services (duration, buffer, price, bookable online),
+  Price lists (incl. an insurer's own list, items), Referrers and insurers (+ payer-account editor: "How the patient's
+  part is billed" per case / per visit, the clinic's account terms, the payer's lists), Practitioners (link a member's
+  sign-in – §13.4/1 closed; bookable / bookable online; rota link; signing details stay on Member access), Record
+  templates (note templates + retention, upward only), Billing settings, Report targets, Audit trail, Import data
+  (placeholder for M9). Staff access, Roles and permissions, Online booking, Intake forms, Practitioner rotas and Message
+  settings now sit in the Set-up section list. `/app/clinic/setup` opens the first page the member may open.
+- **ADM-002** member ↔ practitioner link on screen; **ADM-005 / BILL-013** billing settings screen incl. bank details
+  (`pms_billing_settings.bank_details_json`, 0139) printed on invoices and statements; **AUD-003** audit search + CSV.
+- **REP-001** "Today" per role (`/app/clinic`, design round 3, 1440 + 375 px, refreshes every minute; tiles only for
+  who may see the data; per-tile "Couldn't load"): owner/admin – appointments today, utilisation by site vs target,
+  taken today by method, overdue invoices (Payment link / Send reminder), failed messages (Retry), authorisations ending
+  soon (Request extension = a letter); clinician – my next patients, unsigned notes, outcome measures due (first visit
+  or every 4th session), open cases; reception – arrivals (Arrived), waiting list (Book), invoices to raise, replies.
+- **REP-002/003/005/006** Attendance and DNA, Utilisation, Caseload, Revenue, Debtors, Authorisations (design round 2c):
+  period chips (This week / Last 6 weeks / This quarter / Custom), site / practitioner / service filters, three figures,
+  chart, tables, Export CSV (`reports.export`, formula-safe, audited `pms.report.export`); clinicians with
+  `reports.own` get Attendance / Utilisation / Caseload for their own practitioner only; in treatment counts as
+  arrived = attended; Completed = attended. Reports section in the shell (Appointments / Clinical / Finance).
+- Diary payer label per billing mode ("– patient pays £20.00 a visit"); decision 1: ONS district centres bundled.
+
+### 17.6 Test clock (how the three time-dependent scripts became deterministic)
+`src/modules/pms/core/clock.ts` – see §17.2 and `reporting.md` "Test clock". Proof it never runs in production: the
+guard is `process.env.NODE_ENV === "production"` (inlined by Next.js at build time), `clock.test.ts` checks a production
+NODE_ENV ignores it, and a grep of the production build (`.next/server`, `.next/static`) finds **0** occurrences of
+`PMS_TEST_NOW`. Runner (scratchpad `run-e2e-m8.sh <script> <port> <out> dev`) seeds and starts `next dev` with the
+clock at 10:30 London today.
+
+### 17.7 Results
+- Full chain on `e717370` (= `9b97f96`): typecheck, lint green; **test:pms 597/597**; test:medreport 1777/0/3; test:db
+  997/0/3; test:auth 134/0; **test:site 125/0**; **test:gateway 591/0/2** (incl. **pms-reporting-stack** 36/36 – stand-in
+  + local workerd D1); build green (re-built after the last dashboard tweak).
+- E2E, each on a fresh `pms:seed-demo -- --fresh` scratch SQLite + reports-only clinic B, port 3185/3186, servers
+  stopped, run 22:27–22:55 GMT (outside clinic hours): with the TEST clock on `next dev` – **pms-diary-screens 24/24**,
+  **pms-prototype-a 10/10**, **pms-messages-screens 18/18**, **pms-setup-reports 13/13** (new; axe clean); production
+  build – clinic-system-shell 10/10, clinic-system-access 13/13, pms-records-screens 17/17, pms-billing-screens 21/21
+  (stub), pms-prototype-b 6/6, pms-portal-screens 15/15, and pms-messages-screens 18/18 again (now passes at night
+  without the clock too – the seed fix).
+- Screenshots: `/private/tmp/claude-501/-Users-khuram-Projects-Appstackx-bh2-handover/ef471414-85b1-422d-bf98-018c56c69aec/scratchpad/k2design/out-setup/`
+  (`setup-reports/` – 1440 set-up pages, every report, dashboard per role, admin limited to one site, 375 dashboards /
+  report / set-up, booking times following the hours, invoice print with bank details; plus one folder per script).
+
+### 17.8 Differences from the design
+Set-up: one opening session per day in the form (repo takes up to 3); Services have no note-template column; payer
+card shows the clinic's account terms read-only (no per-payer terms in billing). Reports: Debtors uses billing's five
+age bands; Utilisation adds a By-site table; Caseload has no "Avg sessions"; Revenue adds Received and by-payer; money
+in pence; no previous-period comparison; filter chips are selects styled as chips. Dashboard: "done" = arrived + in
+treatment + completed (as the Attendance report); overdue pill "Over 30 days"/"Overdue" (design "Over 24 h");
+Request extension opens a new letter; waiting-list action is "Book" (no "Offer 14:00 by text" suggestion);
+utilisation can show >100 % when appointments sit outside the (changed) hours; bottom tabs only on Today at 375 px.
+
+### 17.9 Open items
+1. K2-REP-004 new vs returning: loader + tests kept, no page (dropped from the six) – decision below.
+2. Utilisation does not subtract leave blocks from rota time.
+3. Admins cannot export CSV by default (access defaults) – as designed, note for demos.
+4. Closure notice ("Closed – Christmas") not shown on the diary day view (slots are already gone).
+5. Audit "patient" search by record id only (rows hold no names).
+6. The demo seed's history is only this week (earlier weeks of the six-week charts are empty).
+7. M9 (running in parallel, §18) puts Import under Set-up (`SETUP_ORDER` has `reporting.import` – replace or add).
+
+### 17.10 Decisions for Khuram (defaults chosen and built – change any if you disagree)
+1. Reception keeps "Practitioner rotas" in its main list and has no Set-up area; owners/admins find rotas under Set-up.
+2. A site with no opening-hours rows is unrestricted; closing a site = switch it off or add a closure.
+3. Dashboard "Request extension" = a new letter to the insurer (no request workflow).
+4. New-vs-returning report: keep it out of the six (as now) or add a seventh page?
+5. Outcome measures "due" = first visit of a case (no score yet) or every 4th attended session.
+
+### 17.11 Next
+**M9 integration** (native connector, "Complete referrer form", import) – running in parallel on `feat/cs-integration`;
+it merges second, so it merges `feat/clinic-system` `9b97f96` in first and re-runs the chain (§18).
