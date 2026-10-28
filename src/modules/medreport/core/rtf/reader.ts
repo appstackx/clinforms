@@ -41,6 +41,7 @@ import {
   symbolGlyph,
   type SymbolFontKind,
 } from "./codepages";
+import { isPracticeCodeName } from "../practice-merge-codes";
 import { isRtfBytes } from "./sniff";
 import {
   defaultCellDef,
@@ -97,6 +98,18 @@ export interface RtfReadLimits {
   maxCellDefs?: number;
 }
 
+/** A picture's hex digits as text (ASCII; any length – never spread into function arguments). */
+const ASCII = new TextDecoder("latin1");
+
+/** Module-level (not per call): the reader calls these once per control word of a file of up to 12 MB. */
+function isLetter(b: number): boolean {
+  return (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+}
+
+function hex(b: number | undefined): number {
+  return b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Reader state
  * ----------------------------------------------------------------------------------------------*/
@@ -114,7 +127,14 @@ type Dest =
   | "ffl"
   | "collect"
   | "nesttableprops"
-  | "upr";
+  | "upr"
+  /** Fix round 1 (B0-14): a picture's data and properties (\pict). */
+  | "pict"
+  /** Fix round 1 (B0-14): a Word 97+ picture's group (\*\shppict) or a shape (\shp) – only a \pict inside is read. */
+  | "shppict"
+  | "shape"
+  /** A text box's text (\shptxt): not carried over – only a picture in it is read, and whether it held any text. */
+  | "shapetext";
 
 interface FontInfo {
   name: string;
@@ -163,7 +183,47 @@ interface State {
   styleEntry: { index: number; name: string; done: boolean } | null;
   ownsStyleEntry: boolean;
   fflItem: { text: string } | null;
+  /** Fix round 1 (B0-14): the picture being read (owned by its \pict group), and the shape around it. */
+  pict: PictCtx | null;
+  ownsPict: boolean;
+  shape: ShapeCtx | null;
+  ownsShape: boolean;
 }
+
+/** A picture while it is read: its format, sizes and data (hex text or \bin bytes). */
+interface PictCtx {
+  format: "png" | "jpeg" | "other" | null;
+  goalW: number;
+  goalH: number;
+  scaleX: number;
+  scaleY: number;
+  pxW: number;
+  pxH: number;
+  hex: string[];
+  hexLength: number;
+  binary: Uint8Array | null;
+  tooLarge: boolean;
+  shape: ShapeCtx | null;
+}
+
+/** A shape (\shp) while it is read: its box, and the picture it holds (a picture frame), if any. */
+interface ShapeCtx {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  sawPicture: boolean;
+  /** A text box with text of its own (left out – counted as a text box). */
+  hadText: boolean;
+  picture: Extract<Inline, { kind: "picture" }> | null;
+}
+
+/**
+ * Pictures carried over: each at most `maxBytes` (decoded), together at most `totalBytes`, at most `maxPictures` – a
+ * template's logos are far smaller, and the converted form stays well inside the upload limit (a larger picture is left
+ * out and noted, as before).
+ */
+export const RTF_PICTURE_LIMITS = { maxBytes: 1_000_000, totalBytes: 1_500_000, maxPictures: 24 } as const;
 
 interface HeaderTarget {
   footer: boolean;
@@ -403,7 +463,7 @@ const SKIP_DESTINATIONS = new Set([
 ]);
 
 /** `\*` destinations the reader understands; every other `\*` group is left out. */
-const STAR_HANDLED = new Set(["fldinst", "formfield", "ffname", "ffdeftext", "ffl", "shppict", "nesttableprops", "ud", "do", "annotation", "footnote", "shp", "shpgrp"]);
+const STAR_HANDLED = new Set(["fldinst", "formfield", "ffname", "ffdeftext", "ffl", "shppict", "nesttableprops", "ud", "do", "annotation", "footnote", "shp", "shpgrp", "shpinst", "shptxt"]);
 
 const HEADER_WORDS: Record<string, HeaderTarget> = {
   header: { footer: false, kind: "default" },
@@ -488,6 +548,7 @@ class Reader {
   private readonly maxInlines: number;
   private readonly maxCellDefs: number;
   private blocks = 0;
+  private keptPictureBytes = 0;
   private inlineCount = 0;
   private cellDefCount = 0;
 
@@ -550,6 +611,10 @@ class Reader {
       styleEntry: null,
       ownsStyleEntry: false,
       fflItem: null,
+      pict: null,
+      ownsPict: false,
+      shape: null,
+      ownsShape: false,
     };
   }
 
@@ -674,12 +739,14 @@ class Reader {
       this.state.dest = "skip";
     }
     this.stack.push(this.state);
-    this.state = { ...this.state, ownsField: false, ownsStory: null, ownsStyleEntry: false, starPending: false };
+    this.state = { ...this.state, ownsField: false, ownsStory: null, ownsStyleEntry: false, starPending: false, ownsPict: false, ownsShape: false };
     this.skipChars = 0;
   }
 
   private popGroup(): void {
     const s = this.state;
+    if (s.ownsPict && s.pict) this.finishPicture(s.pict, s);
+    if (s.ownsShape && s.shape) this.finishShape(s.shape, s);
     if (s.ownsField && s.field) this.finishField(s.field);
     if (s.ownsStyleEntry && s.styleEntry) this.finishStyleEntry(s);
     if (s.fflItem && s.dest === "ffl" && s.destField && this.stack[this.stack.length - 1]?.fflItem !== s.fflItem) {
@@ -703,7 +770,15 @@ class Reader {
       s.starPending = false;
       s.dest = "skip";
     }
-    if (s.dest === "skip" || s.dest === "upr" || s.dest === "formfield" || s.dest === "nesttableprops") return;
+    if (s.dest === "shapetext") {
+      if (s.shape && !s.shape.hadText) for (let k = start; k < end && !s.shape.hadText; k++) if (bytes[k] > 0x20) s.shape.hadText = true;
+      return;
+    }
+    if (s.dest === "skip" || s.dest === "upr" || s.dest === "formfield" || s.dest === "nesttableprops" || s.dest === "shppict" || s.dest === "shape") return;
+    if (s.dest === "pict") {
+      if (s.pict) this.pictureHex(s.pict, bytes, start, end);
+      return;
+    }
     let ascii = "";
     for (let k = start; k < end; k++) {
       const b = bytes[k];
@@ -874,7 +949,7 @@ class Reader {
     const n = bytes.length;
     if (i + 1 >= n) return n;
     const c = bytes[i + 1];
-    const isLetter = (b: number) => (b >= 0x61 && b <= 0x7a) || (b >= 0x41 && b <= 0x5a);
+    if (isLetter(c) && this.state.dest === "skip") return this.skipControlWord(bytes, i);
     if (isLetter(c)) {
       let j = i + 1;
       while (j < n && isLetter(bytes[j]) && j - i <= 32) j++;
@@ -900,6 +975,11 @@ class Reader {
       if (word === "bin") {
         this.flushBytes();
         const len = param !== null && param > 0 ? param : 0;
+        const pict = this.state.dest === "pict" ? this.state.pict : null;
+        if (pict && len > 0) {
+          if (len > RTF_PICTURE_LIMITS.maxBytes || j + len > n) pict.tooLarge = true;
+          else pict.binary = bytes.slice(j, j + len);
+        }
         return Math.min(n, j + len);
       }
       if (word !== "u") this.flushBytes();
@@ -907,8 +987,6 @@ class Reader {
       return j;
     }
     if (c === 0x27) {
-      const hex = (b: number | undefined) =>
-        b === undefined ? -1 : b >= 0x30 && b <= 0x39 ? b - 0x30 : b >= 0x61 && b <= 0x66 ? b - 0x57 : b >= 0x41 && b <= 0x46 ? b - 0x37 : -1;
       const h1 = hex(bytes[i + 2]);
       const h2 = hex(bytes[i + 3]);
       if (h1 < 0 || h2 < 0) return Math.min(n, i + 2);
@@ -926,6 +1004,35 @@ class Reader {
     this.flushBytes();
     this.controlSymbol(c);
     return i + 2;
+  }
+
+  /**
+   * A control word inside a skipped destination (a picture's hex, an embedded object, a theme…; 10/2026, for RTF
+   * templates of up to 12 MB): word() would ignore it, so it is stepped over without building the word – only \binN
+   * still jumps over its N bytes. Same result as the full path (nothing in a skipped group is read), in a fraction
+   * of the time, so a template that is mostly pictures converts quickly.
+   */
+  private skipControlWord(bytes: Uint8Array, i: number): number {
+    const n = bytes.length;
+    let j = i + 1;
+    while (j < n && isLetter(bytes[j])) j++;
+    const bin = j - i - 1 === 3 && bytes[i + 1] === 0x62 && bytes[i + 2] === 0x69 && bytes[i + 3] === 0x6e;
+    let neg = false;
+    if (bytes[j] === 0x2d && j + 1 < n && bytes[j + 1] >= 0x30 && bytes[j + 1] <= 0x39) {
+      neg = true;
+      j++;
+    }
+    let param = 0;
+    let digits = 0;
+    while (j < n && bytes[j] >= 0x30 && bytes[j] <= 0x39) {
+      if (digits < 10) param = param * 10 + (bytes[j] - 0x30);
+      digits++;
+      j++;
+    }
+    if (j < n && bytes[j] === 0x20) j++;
+    this.state.starPending = false; // as word() does for any control word
+    if (bin && digits > 0 && !neg) return Math.min(n, j + Math.min(2147483647, param));
+    return j;
   }
 
   private controlSymbol(c: number): void {
@@ -967,6 +1074,158 @@ class Reader {
     }
   }
 
+  /* pictures (fix round 1, B0-14) ------------------------------------------------------------ */
+
+  private startPicture(shape: ShapeCtx | null): void {
+    const s = this.state;
+    s.dest = "pict";
+    s.pict = { format: null, goalW: 0, goalH: 0, scaleX: 100, scaleY: 100, pxW: 0, pxH: 0, hex: [], hexLength: 0, binary: null, tooLarge: false, shape };
+    s.ownsPict = true;
+    if (shape) shape.sawPicture = true;
+  }
+
+  /** A control word in a shape (\shp, its \*\shpinst) or a Word 97+ picture group: its box, and a \pict inside. */
+  private shapeWord(word: string, param: number | null): void {
+    const s = this.state;
+    const shape = s.dest === "shape" || s.dest === "shapetext" ? s.shape : null;
+    const v = param ?? 0;
+    switch (word) {
+      case "pict":
+        this.startPicture(shape);
+        return;
+      case "shpleft":
+        if (shape) shape.left = v;
+        return;
+      case "shpright":
+        if (shape) shape.right = v;
+        return;
+      case "shptop":
+        if (shape) shape.top = v;
+        return;
+      case "shpbottom":
+        if (shape) shape.bottom = v;
+        return;
+      case "shptxt":
+        // A text box: its text is not carried over (counted with the shape); a picture in it (a logo) is.
+        if (shape) s.dest = "shapetext";
+        return;
+      default:
+        return;
+    }
+  }
+
+  private pictureWord(p: PictCtx, word: string, param: number | null): void {
+    const v = param ?? 0;
+    switch (word) {
+      case "pngblip":
+        p.format = "png";
+        return;
+      case "jpegblip":
+        p.format = "jpeg";
+        return;
+      case "emfblip":
+      case "wmetafile":
+      case "macpict":
+      case "pmmetafile":
+      case "dibitmap":
+      case "wbitmap":
+        p.format = "other";
+        return;
+      case "picwgoal":
+        p.goalW = v;
+        return;
+      case "pichgoal":
+        p.goalH = v;
+        return;
+      case "picscalex":
+        p.scaleX = v > 0 ? v : 100;
+        return;
+      case "picscaley":
+        p.scaleY = v > 0 ? v : 100;
+        return;
+      case "picw":
+        p.pxW = v;
+        return;
+      case "pich":
+        p.pxH = v;
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** A picture's hex digits (linear: kept as slices, joined once at the end). */
+  private pictureHex(p: PictCtx, bytes: Uint8Array, start: number, end: number): void {
+    if (p.tooLarge || p.format === "other") return;
+    p.hexLength += end - start;
+    if (p.hexLength > RTF_PICTURE_LIMITS.maxBytes * 2 + 64) {
+      p.tooLarge = true;
+      p.hex = [];
+      return;
+    }
+    p.hex.push(ASCII.decode(bytes.subarray(start, end)));
+  }
+
+  /** The picture's bytes when it is a PNG or JPEG of a sensible size, else null. */
+  private pictureData(p: PictCtx): Uint8Array | null {
+    if (p.tooLarge || (p.format !== "png" && p.format !== "jpeg")) return null;
+    let data = p.binary;
+    if (!data) {
+      const hexText = p.hex.join("").replace(/[^0-9a-fA-F]/g, "");
+      if (hexText.length < 8 || hexText.length % 2 !== 0) return null;
+      data = new Uint8Array(hexText.length / 2);
+      for (let k = 0; k < data.length; k++) data[k] = parseInt(hexText.substr(k * 2, 2), 16);
+    }
+    // A whole picture only: the PNG signature and its IHDR header, or a JPEG from its start to its end marker.
+    const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const png = data.length >= 33 && sig.every((b, k) => data![k] === b) && String.fromCharCode(data[12], data[13], data[14], data[15]) === "IHDR";
+    const jpeg = data.length >= 128 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff && data[data.length - 2] === 0xff && data[data.length - 1] === 0xd9;
+    return (p.format === "png" && png) || (p.format === "jpeg" && jpeg) ? data : null;
+  }
+
+  /** Whether one more picture of `bytes` may be carried over (count and total size). */
+  private pictureFits(bytes: number): boolean {
+    return this.stats.picturesKept < RTF_PICTURE_LIMITS.maxPictures && this.keptPictureBytes + bytes <= RTF_PICTURE_LIMITS.totalBytes;
+  }
+
+  /** Twips, from the goal size and scale, else the pixel size at 96 dpi (15 twips a pixel); at least 1 pt. */
+  private static pictureSize(p: PictCtx): { width: number; height: number } {
+    const w = p.goalW > 0 ? (p.goalW * p.scaleX) / 100 : p.pxW * 15;
+    const h = p.goalH > 0 ? (p.goalH * p.scaleY) / 100 : p.pxH * 15;
+    return { width: Math.max(20, Math.round(w || 1440)), height: Math.max(20, Math.round(h || 1440)) };
+  }
+
+  private finishPicture(p: PictCtx, s: State): void {
+    const data = this.pictureData(p);
+    if (p.shape) {
+      if (data && !p.shape.picture) p.shape.picture = { kind: "picture", format: p.format as "png" | "jpeg", data, ...Reader.pictureSize(p), style: s.run };
+      return;
+    }
+    if (!data || !this.pictureFits(data.length)) {
+      this.stats.pictures += 1;
+      return;
+    }
+    this.stats.picturesKept += 1;
+    this.keptPictureBytes += data.length;
+    s.story.addInline({ kind: "picture", format: p.format as "png" | "jpeg", data, ...Reader.pictureSize(p), style: s.run });
+  }
+
+  private finishShape(shape: ShapeCtx, s: State): void {
+    if (shape.picture && this.pictureFits(shape.picture.data.length)) {
+      this.keptPictureBytes += shape.picture.data.length;
+      // A picture frame: drawn in line where it is anchored, at the frame's own size when it gives one.
+      const w = shape.right - shape.left;
+      const h = shape.bottom - shape.top;
+      const sized = w > 0 && h > 0 ? { ...shape.picture, width: w, height: h } : shape.picture;
+      this.stats.picturesKept += 1;
+      s.story.addInline(sized);
+      if (shape.hadText) this.stats.shapes += 1; // the text box's own text is still left out
+      return;
+    }
+    if (shape.sawPicture && !shape.hadText) this.stats.pictures += 1;
+    else this.stats.shapes += 1;
+  }
+
   private setRun(patch: Partial<RunStyle>): void {
     this.state.run = { ...this.state.run, ...patch };
   }
@@ -996,6 +1255,15 @@ class Reader {
       }
     }
     if (s.dest === "skip") return;
+    // Fix round 1 (B0-14): inside a picture, a Word 97+ picture group or a shape, only what describes a picture counts.
+    if (s.dest === "pict") {
+      if (s.pict) this.pictureWord(s.pict, word, param);
+      return;
+    }
+    if (s.dest === "shppict" || s.dest === "shape" || s.dest === "shapetext") {
+      this.shapeWord(word, param);
+      return;
+    }
     const on = param === null || param !== 0;
 
     // Destinations ----------------------------------------------------------------------------
@@ -1017,18 +1285,26 @@ class Reader {
         s.dest = "stylesheet";
         return;
       case "pict":
-        if (s.dest === "normal" || s.dest === "collect") this.stats.pictures += 1;
-        s.dest = "skip";
+        // Fix round 1 (B0-14): a PNG or JPEG picture is carried over; anything else is counted as left out.
+        if (s.dest === "normal" || s.dest === "collect") this.startPicture(null);
+        else s.dest = "skip";
         return;
       case "shppict":
-        if (s.dest === "normal" || s.dest === "collect") this.stats.pictures += 1;
-        s.dest = "skip";
+        if (s.dest === "normal" || s.dest === "collect") s.dest = "shppict";
+        else s.dest = "skip";
         return;
       case "object":
         if (s.dest === "normal" || s.dest === "collect") this.stats.objects += 1;
         s.dest = "skip";
         return;
       case "shp":
+        // Fix round 1 (B0-14): a shape is read for a picture it holds (a picture frame); else it is a shape left out.
+        if (s.dest === "normal" || s.dest === "collect") {
+          s.shape = { left: 0, right: 0, top: 0, bottom: 0, sawPicture: false, hadText: false, picture: null };
+          s.ownsShape = true;
+          s.dest = "shape";
+        } else s.dest = "skip";
+        return;
       case "shpgrp":
       case "do":
         if (s.dest === "normal" || s.dest === "collect") this.stats.shapes += 1;
@@ -1915,6 +2191,11 @@ const FILLER_ONLY = /^[\s,;:.\-\u2013\u2014/()]*$/;
 /** The fill-in line a merge field becomes when the line has other text ("Patient: __________"). */
 export const MERGE_BLANK = "__________";
 
+function notePracticeCode(stats: RtfStats, name: string): void {
+  stats.practiceCodes += 1;
+  if (stats.practiceCodeNames.length < 50 && !stats.practiceCodeNames.includes(name)) stats.practiceCodeNames.push(name);
+}
+
 function noteMergeName(stats: RtfStats, name: string): void {
   stats.mergeFields += 1;
   const n = name.trim().slice(0, 60);
@@ -1936,10 +2217,17 @@ function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: bo
     starts.push(full.length);
     full += inl.kind === "text" && !inl.generated ? inl.text : "\u0000";
   }
-  const ranges: Array<{ start: number; end: number; name: string }> = [];
+  const ranges: Array<{ start: number; end: number; name: string; keep: boolean }> = [];
   const re = new RegExp(TYPED_MERGE.source, "g");
   let m: RegExpExecArray | null;
-  while ((m = re.exec(full)) !== null) ranges.push({ start: m.index, end: m.index + m[0].length, name: (m[1] ?? m[2] ?? "").trim() });
+  while ((m = re.exec(full)) !== null) {
+    const name = (m[1] ?? m[2] ?? "").trim();
+    // 10/2026: a clinic system's own letter code (<<P_SURNAME>>, <<DATE>> – upper case in double angle brackets) is
+    // kept as printed in the body, so the form reading can fill it from the record (core/practice-merge-codes.ts);
+    // the merge-field safety block still stops approval while one is left. Headers and footers: as before.
+    const keep = m[2] !== undefined && !headerFooter && isPracticeCodeName(name);
+    ranges.push({ start: m.index, end: m.index + m[0].length, name, keep });
+  }
   const other = new RegExp(OTHER_TOKENS.source, "g");
   while ((m = other.exec(full)) !== null) {
     stats.otherTokens += 1;
@@ -1968,7 +2256,8 @@ function resolveMergeFields(inlines: Inline[], stats: RtfStats, headerFooter: bo
           if (pos === range.start) {
             if (piece) work.push({ kind: "text", text: piece, style: inl.style });
             piece = "";
-            work.push({ kind: "merge", name: range.name, style: inl.style });
+            work.push(range.keep ? { kind: "text", text: `<<${range.name}>>`, style: inl.style } : { kind: "merge", name: range.name, style: inl.style });
+            if (range.keep) notePracticeCode(stats, range.name);
           }
           continue;
         }

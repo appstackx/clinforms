@@ -4,8 +4,9 @@ import "server-only";
  * The PDF summary of a portal question set (FormKind "questions"): there is no referrer file to fill,
  * so the record copy is the built-in report layout (docgen/pdf) with one numbered section per question
  * and its answer exactly as "Copy answers" gives it (core/answer-copy.ts) – "[to complete]" for an
- * unanswered question ("[left blank]" once approved), the DRAFT watermark until approval, the
- * signature block and fingerprint after.
+ * unanswered question ("[left blank]" once approved), "[not applicable]" for one that does not apply (bh2 WA1: what
+ * each question issues comes from core/issue-state.ts), the DRAFT watermark until approval, the signature block and
+ * fingerprint after.
  *
  * Used by POST /render (format original|pdf) and POST /forms/fill-preview for a question set.
  *
@@ -28,7 +29,9 @@ export function buildQuestionSummaryViewModel(
 ): ReportViewModel {
   const vm = buildViewModel(report, report.bundleSnapshot, template, { receipt: opts.receipt, now: opts.now });
   const kinds = new Map(report.sections.map((s) => [s.key, s.kind]));
-  const entries = copyEntries({ sections: report.sections, status: opts.receipt ? "signed" : "draft", receipt: opts.receipt }, form);
+  // bh2 WA1 design 4: the whole report (its approver and frozen conditions decide what each question issues); approved
+  // only with the verified receipt the caller passes, never the report's own status.
+  const entries = copyEntries({ ...report, status: opts.receipt ? "signed" : "draft", receipt: opts.receipt }, form);
   const sections: ReportViewSection[] = entries.map((e) => {
     const number = String(e.number);
     const paragraphs = e.answer

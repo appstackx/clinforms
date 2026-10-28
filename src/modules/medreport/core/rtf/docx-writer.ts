@@ -2,7 +2,8 @@
  * RtfDocument (model.ts) → a Word .docx package (WordprocessingML). Writes plain, conventional markup
  * the forms engine already reads (forms/docx-dom.ts): body paragraphs and tables in document order,
  * direct paragraph and run formatting, outline levels for headings, ☐/☒ as text, page headers and
- * footers as their own parts. Deterministic: the same document always gives the same bytes.
+ * footers as their own parts, and (fix round 1, B0-14) PNG and JPEG pictures as inline drawings with their bytes in
+ * word/media. Deterministic: the same document always gives the same bytes.
  *
  * Tables: every row's cell boundaries (RTF \cellx) go into one grid for the table, so rows with
  * different cell layouts keep their widths (cells span grid columns with w:gridSpan, rows that start
@@ -96,6 +97,35 @@ interface Ctx {
   defaultFont: string | null;
   rprCache: Map<RunStyle, string>;
   textWidth: number;
+  /** Fix round 1 (B0-14): the pictures written so far (the package's media) and the part being written. */
+  media: Array<{ file: string; data: Uint8Array }>;
+  partRels: string[];
+}
+
+const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+
+/** A picture in line with the text (fix round 1, B0-14): its bytes as word/media/imageN, related from this part. */
+function pictureXml(inl: Extract<Inline, { kind: "picture" }>, ctx: Ctx): string {
+  const n = ctx.media.length + 1;
+  const file = `image${n}.${inl.format === "png" ? "png" : "jpeg"}`;
+  ctx.media.push({ file, data: inl.data });
+  const rId = `rIdImg${n}`;
+  ctx.partRels.push(`<Relationship Id="${rId}" Type="${IMAGE_REL}" Target="media/${file}"/>`);
+  // EMU (914400 an inch) from twips (1440 an inch).
+  const cx = Math.round(inl.width * 635);
+  const cy = Math.round(inl.height * 635);
+  return (
+    // (The drawing namespace is declared here, so a form without pictures converts to exactly the bytes it did.)
+    `<w:r>${rPr(inl.style, ctx)}<w:drawing><wp:inline xmlns:wp="${WP_NS}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:docPr id="${n}" name="Picture ${n}"/><a:graphic xmlns:a="${A_NS}"><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
+    `<pic:nvPicPr><pic:cNvPr id="${n}" name="Picture ${n}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    "</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -149,6 +179,11 @@ function runsXml(inlines: Inline[], ctx: Ctx, out: Out): void {
     if (inl.kind === "field") {
       flushRun();
       out.push(`<w:fldSimple w:instr=" ${inl.instr} "><w:r>${rPr(inl.style, ctx)}<w:t xml:space="preserve">${esc(inl.text)}</w:t></w:r></w:fldSimple>`);
+      continue;
+    }
+    if (inl.kind === "picture") {
+      flushRun();
+      out.push(pictureXml(inl, ctx));
       continue;
     }
     if (inl.kind === "sym") {
@@ -413,7 +448,9 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
   let width = page.width;
   let height = page.height;
   if (page.landscape && width < height) [width, height] = [height, width];
-  const ctx: Ctx = { defaultFont: doc.defaultFont, rprCache: new Map(), textWidth: Math.max(1440, width - page.left - page.right) };
+  const ctx: Ctx = { defaultFont: doc.defaultFont, rprCache: new Map(), textWidth: Math.max(1440, width - page.left - page.right), media: [], partRels: [] };
+  /** Each header / footer part's picture relationships (its own .rels part). */
+  const partRels = new Map<string, string[]>();
 
   const parts: HeaderPart[] = [];
   const addParts = (footer: boolean, set: RtfDocument["headers"]) => {
@@ -424,9 +461,12 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
       const out = new Out(budget);
       const tag = footer ? "ftr" : "hdr";
       out.push(`${XML_DECL}<w:${tag} xmlns:w="${W_NS}" xmlns:r="${R_NS}">`);
+      ctx.partRels = [];
       blocksXml(blocks, ctx, out);
       out.push(`</w:${tag}>`);
-      parts.push({ footer, kind, file: `${footer ? "footer" : "header"}${n}.xml`, rId: `rId${3 + parts.length}`, xml: out.toString() });
+      const file = `${footer ? "footer" : "header"}${n}.xml`;
+      if (ctx.partRels.length) partRels.set(file, ctx.partRels);
+      parts.push({ footer, kind, file, rId: `rId${3 + parts.length}`, xml: out.toString() });
     }
   };
   addParts(false, doc.headers);
@@ -434,7 +474,9 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
 
   const body = new Out(budget);
   body.push(`${XML_DECL}<w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}"><w:body>`);
+  ctx.partRels = [];
   blocksXml(doc.body, ctx, body);
+  const bodyRels = ctx.partRels;
   let sect = "";
   for (const p of parts) sect += `<w:${p.footer ? "footer" : "header"}Reference w:type="${p.kind}" r:id="${p.rId}"/>`;
   sect += `<w:pgSz w:w="${width}" w:h="${height}"${page.landscape ? ' w:orient="landscape"' : ""}/>`;
@@ -446,6 +488,8 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
     `${XML_DECL}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
+    (ctx.media.some((m) => m.file.endsWith(".png")) ? '<Default Extension="png" ContentType="image/png"/>' : "") +
+    (ctx.media.some((m) => m.file.endsWith(".jpeg")) ? '<Default Extension="jpeg" ContentType="image/jpeg"/>' : "") +
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
     '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>' +
@@ -462,7 +506,9 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
     '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
     parts.map((p) => `<Relationship Id="${p.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${p.footer ? "footer" : "header"}" Target="${p.file}"/>`).join("") +
+    bodyRels.join("") +
     "</Relationships>";
+  const relsPart = (rels: string[]) => `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join("")}</Relationships>`;
 
   const enc = new TextEncoder();
   const entries: ZipEntry[] = [
@@ -473,6 +519,8 @@ export function writeDocx(doc: RtfDocument, opts: DocxWriteOptions): Uint8Array 
     { name: "word/styles.xml", data: enc.encode(stylesXml(doc)) },
     { name: "word/settings.xml", data: enc.encode(settingsXml(doc)) },
     ...parts.map((p) => ({ name: `word/${p.file}`, data: enc.encode(p.xml) })),
+    ...Array.from(partRels.entries()).map(([file, rels]) => ({ name: `word/_rels/${file}.rels`, data: enc.encode(relsPart(rels)) })),
+    ...ctx.media.map((m) => ({ name: `word/media/${m.file}`, data: m.data })),
   ];
   const zip = zipStored(entries);
   if (zip.byteLength > opts.maxBytes) {

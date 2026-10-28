@@ -57,7 +57,7 @@ import {
 } from "../patients";
 import { createPriceList, listPriceListItems, priceFor, removePriceListItem, setPriceListItem, updatePriceList } from "../price-lists";
 import { createReferrer, getReferrer, listReferrers, updateReferrer } from "../referrers";
-import { getPmsSettings, setDemoClinic, updatePmsSettings } from "../settings";
+import { getPmsSettings, setPmsDemoFlag, updatePmsSettings } from "../settings";
 import type { QueryLog } from "./guarded-db";
 import { unscopedStatements } from "./guarded-db";
 
@@ -147,7 +147,7 @@ export function definePmsRepoSuite(label: string, factory: () => Promise<PmsSuit
       assert.equal(s.retentionAdultYears, 10);
       assert.equal(s.retentionChildUntilAge, 25);
       await rejects(updatePmsSettings(ctx, A, { retentionAdultYears: 5 }, ACTOR), /retentionAdultYears/);
-      assert.equal((await setDemoClinic(ctx, A, true, ACTOR)).isDemo, true);
+      assert.equal((await setPmsDemoFlag(ctx, A, true, ACTOR)).isDemo, true);
       assert.equal((await getPmsSettings(ctx, A)).retentionAdultYears, 10, "the demo flag keeps the other settings");
       assert.equal((await getPmsSettings(ctx, B)).isDemo, false);
     });

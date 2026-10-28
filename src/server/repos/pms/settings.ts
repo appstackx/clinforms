@@ -53,7 +53,7 @@ export async function updatePmsSettings(ctx: DbContext, tenantId: string, input:
 }
 
 /** Marks a clinic as a demonstration clinic (platform scripts only: scripts/pms/seed-demo.ts). */
-export async function setDemoClinic(ctx: DbContext, tenantId: string, isDemo: boolean, actor: PmsActor): Promise<PmsSettings> {
+export async function setPmsDemoFlag(ctx: DbContext, tenantId: string, isDemo: boolean, actor: PmsActor): Promise<PmsSettings> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
   await writeWithAudit(ctx, [

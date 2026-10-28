@@ -7,12 +7,13 @@
  *                     if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
  *
  * Both re-read the session from the database (past the 5-minute cookie cache), require two-step verification,
- * membership of the active clinic AND the "clinic" package, then the role's permission. Pages answer the 404
- * page when the package or the permission is missing.
+ * membership of the active clinic AND the "clinic" package, then the member's EFFECTIVE permission (role default →
+ * clinic override → member exception → locks, read on every request by ./access.ts). Pages answer the 404 page when
+ * the package or the permission is missing. The actor also carries the member's site scope (`siteIds`).
  */
 import "server-only";
 import { notFound } from "next/navigation";
-import { pmsCan, pmsPermissionsOf, type PmsPermission } from "../../modules/pms/core/permissions";
+import type { GrantedPermission, PmsPermission } from "../../modules/pms/core/permissions";
 import type { PmsActor } from "../../modules/pms/core/types";
 import { actionContext, type AppContext } from "../auth/session";
 import type { MemberRole } from "../auth/roles";
@@ -20,6 +21,7 @@ import { getDataCipher } from "../crypto";
 import { getDb } from "../db";
 import type { RepoContext } from "../repos/context";
 import { findPractitionerByUser } from "../repos/pms/directory";
+import { resolveMemberAccess } from "./access";
 import { hasPackage, requireEntitlement } from "./entitlements";
 
 export interface ClinicActor {
@@ -31,16 +33,21 @@ export interface ClinicActor {
   name: string;
   email: string;
   role: MemberRole;
-  permissions: readonly PmsPermission[];
+  /** Effective permissions ("clinic.view" + the grid's ids); empty when their clinic-system access is off. */
+  permissions: readonly GrantedPermission[];
+  /** Effective check; old permission ids are accepted as aliases. */
   can: (permission: PmsPermission) => boolean;
+  /** The sites the member may see (works at ∪ can see); null = every site. */
+  siteIds: ReadonlySet<string> | null;
   /** Who did it, for the repositories' audit rows. */
   actor: PmsActor;
   /** The repositories' context (database + data cipher). */
   repo: () => RepoContext;
 }
 
-function toActor(ctx: AppContext): ClinicActor {
+async function toActor(ctx: AppContext): Promise<ClinicActor> {
   const role = ctx.membership.role;
+  const access = await resolveMemberAccess({ db: getDb() }, ctx.membership.tenantId, ctx.session.user.id, role);
   return {
     tenantId: ctx.membership.tenantId,
     organizationId: ctx.membership.organizationId,
@@ -50,8 +57,9 @@ function toActor(ctx: AppContext): ClinicActor {
     name: ctx.session.user.name,
     email: ctx.session.user.email,
     role,
-    permissions: pmsPermissionsOf(role),
-    can: (permission) => pmsCan(role, permission),
+    permissions: Array.from(access.permissions),
+    can: access.can,
+    siteIds: access.siteIds,
     actor: { userId: ctx.session.user.id, sessionId: ctx.session.session.id },
     repo: () => ({ db: getDb(), cipher: getDataCipher() }),
   };
@@ -60,7 +68,7 @@ function toActor(ctx: AppContext): ClinicActor {
 /** For pages and layouts under /app/clinic. */
 export async function requireClinicActor(options: { permission?: PmsPermission } = {}): Promise<ClinicActor> {
   const ctx = await requireEntitlement("clinic");
-  const actor = toActor(ctx);
+  const actor = await toActor(ctx);
   if (!actor.can(options.permission ?? "clinic.view")) notFound();
   return actor;
 }
@@ -72,7 +80,7 @@ export async function clinicActionActor(options: { permission?: PmsPermission } 
   const ctx = await actionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!(await hasPackage(ctx.membership.tenantId, "clinic"))) return { error: "not_entitled" };
-  const actor = toActor(ctx);
+  const actor = await toActor(ctx);
   if (!actor.can(options.permission ?? "clinic.view")) return { error: "forbidden" };
   return actor;
 }

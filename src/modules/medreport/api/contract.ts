@@ -9,6 +9,11 @@
  * logs hold IDs, timings and token counts, never note text.
  *
  * Shared contract (orchestrator-owned): additive optional fields only.
+ *
+ * Stored records a request carries for READING (the report, receipt and form map behind /validate, /render, the
+ * fill preview and the write-back; the form map behind /drafts and /sign) use the read schemas of
+ * core/stored-schemas.ts, so a record a later release wrote keeps its hashes and MACs. What this build signs or
+ * stores (/sign's report, /forms/confirm) keeps the strict schemas.
  */
 import { z } from "zod";
 import { NotesReviewSchema } from "../connectors/file-import/review-contract";
@@ -31,8 +36,10 @@ import {
   InstructingPartySchema,
   IsoDateTimeSchema,
   LaunchClaimsSchema,
+  MAX_SIGNER_CONFIRMATIONS,
   PatientSummarySchema,
   ReferrerInfoSchema,
+  ReportApproverSchema,
   ReportFlagSchema,
   ReportSchema,
   ReportSectionSchema,
@@ -41,8 +48,10 @@ import {
   SessionTokenSchema,
   Sha256HexSchema,
   SignReceiptSchema,
+  SignerConfirmationSchema,
   TraceEntrySchema,
 } from "../core/schemas";
+import { StoredFormDefinitionSchema, StoredReportSchema, StoredSignReceiptSchema } from "../core/stored-schemas";
 import { MAX_FORM_FIELDS_PER_DRAFT, MAX_SECTIONS_PER_DRAFT } from "../config.public";
 
 /* ------------------------------------------------------------------------------------------------
@@ -77,6 +86,12 @@ export const HEADERS = {
    * patient's episode (auth/attestations.ts). POST /connectors/{id}/documents requires it as `fileToken`.
    */
   fileToken: "x-medreport-file-token",
+  /**
+   * bh2 W0 follow-up (WA2 design 3): on /forms/fill-preview and form /render responses – URI-encoded JSON array of
+   * the fill's per-field outcomes (core/issue-types.ts FillOutcome), for the review card's "On the form" line. Absent
+   * until the forms engine writes it (ui/api-client.ts reads it as []).
+   */
+  fillOutcomes: "x-medreport-fill-outcomes",
 } as const;
 
 export const CONTENT_TYPES = {
@@ -179,7 +194,7 @@ export const REPORT_API_ENDPOINTS: readonly EndpointSpec[] = [
   { name: "templatesValidate", method: "POST", path: "/api/reports/v1/templates/validate", auth: "actor", handler: "templates-validate.ts", summary: "Validate an uploaded tagged .docx; plain-English TemplateErrors" },
   { name: "drafts", method: "POST", path: "/api/reports/v1/drafts", auth: "actor", handler: "drafts.ts", summary: "Draft one group of 1–2 sections (live Claude or badged demo draft)" },
   { name: "validate", method: "POST", path: "/api/reports/v1/validate", auth: "actor", handler: "validate.ts", summary: "Run the validators; flags + canSign" },
-  { name: "sign", method: "POST", path: "/api/reports/v1/sign", auth: "actor", handler: "sign.ts", summary: "Re-validate and issue an HMAC'd SignReceipt bound to the session, the form map and the content (409 SIGNOFF_BLOCKED if blocked)" },
+  { name: "sign", method: "POST", path: "/api/reports/v1/sign", auth: "actor", handler: "sign/index.ts", summary: "Re-validate and issue an HMAC'd SignReceipt bound to the session, the form map and the content (409 SIGNOFF_BLOCKED if blocked)" },
   { name: "render", method: "POST", path: "/api/reports/v1/render", auth: "actor", handler: "render.ts", summary: "Render .docx or .pdf (?format=docx|pdf), or a completed referrer form (?format=original|pdf); FINAL only with a valid receipt, otherwise DRAFT" },
   { name: "documents", method: "POST", path: "/api/reports/v1/connectors/[id]/documents", auth: "actor", handler: "documents.ts", summary: "Write a signed file back to the clinic system with its receipt" },
   { name: "formsAnalyse", method: "POST", path: "/api/reports/v1/forms/analyse", auth: "actor", handler: "forms-analyse.ts", summary: "Analyse a referrer's form (.docx or PDF) into a proposed form map (live Claude, recorded analysis or rules)" },
@@ -272,6 +287,25 @@ export const PROBLEM_CODES = [
   // Fix wave 2: the Studio page's sign-in changed (store); answers drafted in another clinician's voice (sign).
   "SIGN_IN_CHANGED",
   "SIGNER_NOT_AUTHOR",
+  // 10/2026: the clinic's trial has ended – nothing new is created (auth/clinic-access.ts).
+  "TRIAL_ENDED",
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (sign; core/demo-clinic.ts).
+  "DEMO_NUMBER_NOT_ALLOWED",
+  // bh2 W0 follow-up (bh2-base2): the refusals the release's designs name, defined once here (no handler sends them yet).
+  // 409 /sign: the body is not the stored revision (WA1 design 6).
+  "STALE_REPORT",
+  // 409 /render FINAL: the document would differ from the one the receipt covers (WA1 design 7; audited).
+  "ISSUED_COPY_CHANGED",
+  // 409 /sign: the document that would be issued is not complete – per-field items in `issues` (WA1 design 6 dry run).
+  "ISSUE_REFUSED",
+  // 422: the form is too complex to fill within the step budget (WA2 design 4).
+  "FORM_TOO_COMPLEX",
+  // 409 /sign: the signer is not the report's approver and did not take over (WC design 1).
+  "APPROVER_MISMATCH",
+  // 403 store PUT: a decision stamped for someone else, or an approver-only decision by another member (WC design 2).
+  "DECISION_NOT_ALLOWED",
+  // 409 /sign: a confirmation the approver must give is missing ("I assessed this patient", "This number is mine" – WB design 13).
+  "CONFIRMATION_REQUIRED",
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -432,14 +466,24 @@ export const DraftsRequestSchema = z
      * Referrer forms (Revision 2): the form map being completed. The server drafts against
      * formToTemplate(form) instead of the template registry (forms live in the browser).
      */
-    form: FormDefinitionSchema.optional(),
+    form: StoredFormDefinitionSchema.optional(),
     /**
      * Referrer forms: the clinician who will sign the form (the report's author). Live drafting writes
      * what they recorded in the first person ("I recorded…"); other clinicians stay named.
      */
     author: ClinicianSchema.optional(),
+    /**
+     * bh2 W0 follow-up (WD design 2): the report's approving physio (Report.approver) – the drafting voice owner. First
+     * person only for their own notes; everyone else stays named. Read by WD (until then `author` decides, as before).
+     */
+    approver: ReportApproverSchema.optional(),
     /** Wave 2: the report being drafted (recorded in a clinic's audit trail; never required). */
     reportId: z.string().min(1).max(128).optional(),
+    /**
+     * 25/10/2026 (usage): the approved report this one amends (report.amends.reportId), so drafting an amended
+     * version never counts as a new report. Checked by the host against its own record of approvals.
+     */
+    amendsReportId: z.string().min(1).max(128).optional(),
   })
   .superRefine((body, ctx) => {
     if (!body.form && body.sectionKeys.length > MAX_SECTIONS_PER_DRAFT) {
@@ -461,9 +505,9 @@ export const DraftsResponseSchema = z.object({
 
 // POST /validate
 export const ValidateRequestSchema = z.object({
-  report: ReportSchema,
+  report: StoredReportSchema,
   /** Required for a form report (report.form set): its form map (the server has no form library). */
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
 });
 export const ValidateResponseSchema = z.object({
   flags: z.array(ReportFlagSchema),
@@ -480,8 +524,22 @@ export const SignRequestSchema = z.object({
   statementAccepted: z.boolean(),
   /** The attestations the signer ticked (must equal the template's attestations; FORM_ATTESTATIONS for forms). */
   attestations: z.array(z.string()),
-  /** Required for a form report (report.form set): its form map. */
-  form: FormDefinitionSchema.optional(),
+  /**
+   * Required for a form report (report.form set): its form map – read as stored, so its attestation verifies. The
+   * report stays strict: the receipt covers exactly the content this build understands and the store keeps.
+   */
+  form: StoredFormDefinitionSchema.optional(),
+  /**
+   * bh2 W0 follow-up (WA1 design 6): the public demo's form reports send the referrer's original file (base64, decoded
+   * ≤ MAX_FORM_FILE_BYTES, SHA-256 = report.form.fileSha256) for /sign's dry-run FINAL fill; a clinic's Studio fills the
+   * stored file instead. Read by WA1; ignored until then.
+   */
+  fileBase64: z.string().min(1).optional(),
+  /**
+   * bh2 W0 follow-up (WB design 13): the confirmations the approver gave in the approve dialog ("I assessed this
+   * patient", "This number is mine"); /sign checks them and the receipt records them (SignReceipt.signerConfirmations).
+   */
+  confirmations: z.array(SignerConfirmationSchema).max(MAX_SIGNER_CONFIRMATIONS).optional(),
 });
 export const SignResponseSchema = z.object({
   receipt: SignReceiptSchema,
@@ -500,9 +558,9 @@ export const SignResponseSchema = z.object({
 export const RenderFormatSchema = z.enum(["docx", "pdf", "original"]);
 export const RenderQuerySchema = z.object({ format: RenderFormatSchema });
 export const RenderRequestSchema = z.object({
-  report: ReportSchema,
+  report: StoredReportSchema,
   /** FINAL only if this verifies (mac + recomputed hash) and no blocking flags remain. */
-  receipt: SignReceiptSchema.optional(),
+  receipt: StoredSignReceiptSchema.optional(),
   /** A clinic's own tagged template (base64, decoded ≤ MAX_TEMPLATE_DOCX_BYTES). docx only. */
   templateDocxBase64: z.string().optional(),
   /** Add [DD/MM/YYYY] source markers for internal review. */
@@ -516,7 +574,7 @@ export const RenderRequestSchema = z.object({
    */
   purpose: z.enum(["download", "preview", "file_back"]).optional(),
   /** Form reports: the form map (required when report.form is set). */
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
   /**
    * Form reports: the referrer's original file as base64 (decoded ≤ MAX_FORM_FILE_BYTES; its SHA-256 must
    * equal report.form.fileSha256, otherwise 409 FORM_MISMATCH). In a clinic's own Studio the server reads the
@@ -535,7 +593,7 @@ export const DocumentsRequestSchema = z.object({
   contentBase64: z.string().min(1),
   /** SHA-256 of the decoded file bytes. */
   sha256: Sha256HexSchema,
-  signReceipt: SignReceiptSchema,
+  signReceipt: StoredSignReceiptSchema,
   /**
    * The server's token from the FINAL /render response (HEADERS.fileToken). Required: only the exact
    * file ClinForms issued for this approval and this patient's episode is filed.
@@ -620,8 +678,8 @@ export const FormSamplesResponseSchema = z.object({ samples: z.array(FormSampleS
 
 // POST /forms/fill-preview → binary (same type as the original), HEADERS.renderKind "draft", HEADERS.fillWarnings
 export const FormFillPreviewRequestSchema = z.object({
-  report: ReportSchema,
-  form: FormDefinitionSchema,
+  report: StoredReportSchema,
+  form: StoredFormDefinitionSchema,
   /**
    * The referrer's original file (base64, decoded ≤ MAX_FORM_FILE_BYTES, SHA-256 = form.file.sha256). Optional
    * since wave 2: in a clinic's own Studio the server reads the file from the clinic's storage by SHA-256 (and
@@ -648,7 +706,7 @@ export const AiPayloadPreviewRequestSchema = z.object({
   templateId: z.string().min(1),
   bundle: EpisodeBundleSchema,
   instructingParty: InstructingPartySchema,
-  form: FormDefinitionSchema.optional(),
+  form: StoredFormDefinitionSchema.optional(),
 });
 export const AiPayloadPreviewResponseSchema = z.object({
   model: z.string(),

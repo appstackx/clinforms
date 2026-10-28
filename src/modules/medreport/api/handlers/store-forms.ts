@@ -6,7 +6,8 @@ import "server-only";
  * GET    → {rev, updatedAt, form}, ETag "<rev>"; 404 when the clinic has no such form map.
  * PUT    {form} → 201 / 200 {rev, updatedAt, form, downgraded?}, ETag "<rev>". No If-Match = create;
  *        If-Match: "<rev>" = update; 409 REV_CONFLICT {current} as for reports.
- *        Rules: FormDefinitionSchema (422); form.id = the path id; form.tenantId is set from the sign-in; a map
+ *        Rules: FormDefinitionSchema (422 – strict; a stored copy is READ with StoredFormDefinitionSchema,
+ *        core/stored-schemas.ts); form.id = the path id; form.tenantId is set from the sign-in; a map
  *        marked "confirmed" is stored as "proposed" unless it carries the server's valid attestation of exactly
  *        this map for this clinic (auth/attestations.ts) – "confirmed" is never just the browser's claim.
  *        Portal question sets (kind "questions") have no file: nothing here requires one.
@@ -16,14 +17,18 @@ import "server-only";
  * DELETE → {deleted}; the map's file is deleted too when no other map of the clinic uses it (as in the
  *        browser store). If-Match optional. (Fix wave 2) a confirmed map is deleted only by a role that may confirm.
  * Every change writes an audit row (ids, revision and status only).
+ * Usage (25/10/2026): a portal question set (kind "questions") stored for the first time is counted for the clinic.
+ * bh2 WE design 2 (map lint L5): a map newly stored as "confirmed" (not the same confirmation stored again) is refused
+ * (422 VALIDATION_FAILED) while a question asking for a clinical judgement would be answered by staff, a fixed value or
+ * a draft without an acceptance stamped by a clinician (/forms/confirm stamps it; the attestation covers it).
  *
- * Owner: store slice (wave 2).
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import { CONFIRM_ROLES, assertActorTenant } from "../../auth/actor";
 import { formConfirmationProblem, verifyFormConfirmation } from "../../auth/attestations";
 import { DEMO_TENANT_ID } from "../../config.public";
 import { WORDING } from "../../core/wording";
-import { FormDefinitionSchema } from "../../core/schemas";
+import { StoredFormDefinitionSchema } from "../../core/stored-schemas";
 import type { FormDefinition } from "../../core/types";
 import { HttpError, json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import {
@@ -36,6 +41,29 @@ import {
 } from "../store-contract";
 import type { TenantStore } from "../store-port";
 import { assertContentType, auditStore, jsonWithRev, pathParam, problemWith, requireTenantActor, takeNewData } from "./store-actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
+import { recordUsage } from "../usage";
+import { acceptanceFor, acceptsJudgement, judgementOnNonClinicianSource } from "../../core/form-map-lint";
+
+/**
+ * L5 for a confirmed map: every question that asks for a clinical judgement but would be answered by staff, a fixed
+ * value or a draft carries an acceptance (with a reason that is not blank) stamped by a clinician (the role clinician, or
+ * a member who may sign – acceptsJudgement, the rule /forms/confirm applies to the caller). The problems found, as API
+ * issues (empty: none).
+ */
+export function confirmedJudgementIssues(form: Pick<FormDefinition, "fields">): Array<{ path: string; message: string }> {
+  const issues: Array<{ path: string; message: string }> = [];
+  for (const f of form.fields) {
+    const j = judgementOnNonClinicianSource(f);
+    if (!j) continue;
+    const acceptance = acceptanceFor(f, "L5");
+    if (!acceptance) issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) not left to the clinician, and not accepted.` });
+    else if (!acceptsJudgement(acceptance.by)) {
+      issues.push({ path: `form.fields.${f.id}`, message: `A clinical judgement (${j.kind}) accepted, but not by a clinician.` });
+    }
+  }
+  return issues;
+}
 
 function readIfMatch(req: Request): number | null {
   const raw = req.headers.get("if-match");
@@ -50,7 +78,7 @@ function readIfMatch(req: Request): number | null {
 async function currentCopy(store: TenantStore, tenantId: string, id: string): Promise<Omit<StoreFormResponse, "downgraded"> | null> {
   const stored = await store.getForm(tenantId, id);
   if (!stored) return null;
-  const parsed = FormDefinitionSchema.safeParse(stored.payload);
+  const parsed = StoredFormDefinitionSchema.safeParse(stored.payload);
   return parsed.success ? { rev: stored.rev, updatedAt: stored.updatedAt, form: parsed.data } : null;
 }
 
@@ -82,7 +110,8 @@ export const handleStoreFormGet: MedreportHandler = async (req, ctx, deps) => {
   const id = pathParam(ctx.params, "id", STORE_RECORD_ID_PATTERN);
   const stored = await t.store.getForm(t.tenantId, id);
   if (!stored) return problem(404, "Form mapping not found", { code: "NOT_FOUND", detail: "This form mapping is not in the clinic's library." });
-  const parsed = FormDefinitionSchema.safeParse(stored.payload);
+  // Read as stored (core/stored-schemas.ts): what a later release wrote stays in, so the map's attestation verifies.
+  const parsed = StoredFormDefinitionSchema.safeParse(stored.payload);
   if (!parsed.success) {
     logEvent("store_form_unreadable", { id });
     throw new HttpError(500, "The stored form mapping could not be read", { code: "INTERNAL", detail: "Please try again, or contact support." });
@@ -103,6 +132,17 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
   }
   if (parsed.data.form.tenantId !== DEMO_TENANT_ID) assertActorTenant(t.actor, parsed.data.form.tenantId, "form");
   const { form, downgraded } = normaliseStoredForm(parsed.data.form, t.tenantId);
+  // bh2 WE design 2: a new confirmation settles every clinical judgement (L5); the same confirmation stored again is not new.
+  if (form.status === "confirmed") {
+    const issues = confirmedJudgementIssues(form);
+    if (issues.length > 0) {
+      const stored = ifMatch !== null ? await currentCopy(t.store, t.tenantId, id) : null;
+      const same = stored?.form.status === "confirmed" && stored.form.confirmed?.mapSha256 === form.confirmed?.mapSha256;
+      if (!same) {
+        return problem(422, "A clinical judgement is not left to the clinician", { code: "VALIDATION_FAILED", detail: issues[0].message, issues });
+      }
+    }
+  }
   if (new TextEncoder().encode(JSON.stringify(form)).byteLength > STORE_MAX_RECORD_BYTES) {
     return problem(413, "This form mapping is too large to store", { code: "PAYLOAD_TOO_LARGE" });
   }
@@ -122,6 +162,8 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
   };
   // The daily new-data allowance: a new form map in full, and (fix wave 3) the growth of an update.
   const bytes = new TextEncoder().encode(JSON.stringify(form)).byteLength;
+  // 10/2026: a clinic whose trial has ended keeps (and may still change) what it has, but creates nothing new.
+  if (ifMatch === null) await assertClinicMayCreate(t.actor, deps, "form");
   if (ifMatch === null) await takeNewData(deps, t, bytes);
   else {
     const previous = await t.store.getForm(t.tenantId, id);
@@ -148,6 +190,7 @@ export const handleStoreFormPut: MedreportHandler = async (req, ctx, deps) => {
     targetId: id,
     detail: { rev: result.rev, status: form.status, kind: form.kind, downgraded },
   });
+  if (created && form.kind === "questions") await recordUsage(deps, t.actor, { kind: "question_set_created", formId: id });
   const body: StoreFormResponse = { rev: result.rev, updatedAt: result.updatedAt, form, ...(downgraded ? { downgraded: true } : {}) };
   return jsonWithRev(body, result.rev, { status: created ? 201 : 200 });
 };

@@ -25,7 +25,9 @@ import { createPartnerKey } from "../../repos/partner-keys";
 import { createAuth, type Auth, type AuthDialect } from "../create-auth";
 import { buildAuthContext, loadClinicProfile } from "../medreport-actor";
 import { findInvitationForLink, findMembership, findOpenInvitation, listClinicMembers, listPendingInvitations } from "../membership";
-import { createClinic, listClinics, offboardClinic, resetTwoFactor } from "../platform";
+import { createClinic, createOwnerResetLink, listClinics, offboardClinic, resetTwoFactor } from "../platform";
+import { PLATFORM_AUDIT_TENANT, createOwnerResetLinkAsPlatform } from "../../admin/platform-console";
+import { PLATFORM_USER_ID } from "../create-auth";
 import { TenantSlugError } from "../tenant";
 import { CookieJar } from "./cookie-jar";
 import { parseOtpAuthUri, totp, wrongTotp, type OtpAuth } from "./totp";
@@ -428,6 +430,78 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       await auth.api.changePassword({ body: { currentPassword: newPassword, newPassword: PASSWORD }, headers: ownerJar.headers() });
     });
 
+    it("the admin script's path: createClinic({ sendEmail: false }) emails nothing, returns the link and audits 'withheld' (24/10)", async () => {
+      const before = sent.length;
+      const quiet = await createClinic(t.db, {
+        name: "Quiet Clinic (fictional)",
+        slug: "quiet-clinic-test",
+        ownerEmail: "owner@quiet.example",
+        appOrigin: ORIGIN,
+        linkSecret: SECRET,
+        sendEmail: false,
+      });
+      assert.equal(sent.length, before, "the provider is never called");
+      assert.deepEqual(quiet.email, { status: "withheld", provider: "none" });
+      assert.match(quiet.inviteLink, /\/accept-invite\?token=/);
+      const row = (await listAudit({ db: t.db }, "quiet-clinic-test")).find((a) => a.action === "clinic.create");
+      assert.equal(row?.detail?.emailStatus, "withheld");
+      assert.equal(row?.detail?.emailProvider, "none");
+      assert.ok(!JSON.stringify(row).includes(new URL(quiet.inviteLink).searchParams.get("token") ?? "?"), "never the link");
+    });
+
+    it("platform: a one-time owner reset link – never emailed, audited without the link, works once; refused for non-owners, platform administrators and unknown clinics (24/10)", async () => {
+      const before = sent.length;
+      const ADMIN = { userId: "u-ops-test", sessionId: "s-ops-test", email: "ops@platform.example", name: "Ops" };
+      const requestReset = (email: string) => auth.api.requestPasswordReset({ body: { email } });
+      // The owner is also a clinician in another clinic: that clinic is not told (security fix 24/10, D9).
+      const ownerUser = await t.db.selectFrom("user").select("id").where("email", "=", "owner@riverside.example").executeTakeFirstOrThrow();
+      const quietOrg = await t.db.selectFrom("organization").select("id").where("slug", "=", "quiet-clinic-test").executeTakeFirstOrThrow();
+      await t.db.insertInto("member").values({ id: "m-owner-in-quiet", organizationId: quietOrg.id, userId: ownerUser.id, role: "clinician", createdAt: new Date().toISOString() }).execute();
+      const made = await createOwnerResetLinkAsPlatform(t.db, ADMIN, {
+        tenantId: "riverside-test",
+        ownerEmail: " Owner@Riverside.example ",
+        requestReset,
+        isPlatformAdminEmail: () => false,
+      });
+      assert.equal(sent.length, before, "nothing was emailed: the link is only shown once to the administrator");
+      assert.ok(made.link.startsWith(`${ORIGIN}/reset-password?token=`));
+      const left = Date.parse(made.expiresAt) - Date.now();
+      assert.ok(left > 110 * 60_000 && left <= 120 * 60_000 + 5_000, "expires in 2 hours");
+      const token = new URL(made.link).searchParams.get("token")!;
+      const clinicRows = (await listAudit({ db: t.db }, "riverside-test")).filter((a) => a.action === "auth.password_reset_link");
+      assert.equal(clinicRows.length, 1);
+      assert.equal(clinicRows[0].userId, PLATFORM_USER_ID);
+      assert.deepEqual(clinicRows[0].detail, { delivery: "platform" });
+      assert.equal((await listAudit({ db: t.db }, "quiet-clinic-test")).filter((a) => a.action === "auth.password_reset_link").length, 0, "the other clinic is not told");
+      await t.db.deleteFrom("member").where("id", "=", "m-owner-in-quiet").execute();
+      const platformRows = (await listAudit({ db: t.db }, PLATFORM_AUDIT_TENANT)).filter((a) => a.action === "platform.owner_reset_link");
+      assert.equal(platformRows.length, 1);
+      assert.equal(platformRows[0].userId, ADMIN.userId);
+      assert.deepEqual(platformRows[0].detail, { tenantId: "riverside-test" });
+      assert.ok(!JSON.stringify([...clinicRows, ...platformRows]).includes(token), "the token is never audited");
+
+      const refuse = (input: { tenantId: string; ownerEmail: string; admin?: boolean }) =>
+        createOwnerResetLink(t.db, { tenantId: input.tenantId, ownerEmail: input.ownerEmail, requestReset, isPlatformAdminEmail: () => input.admin === true });
+      await assert.rejects(refuse({ tenantId: "riverside-test", ownerEmail: "clinician@riverside.example" }), /not an owner/);
+      await assert.rejects(refuse({ tenantId: "riverside-test", ownerEmail: "stranger@elsewhere.example" }), /not an owner/);
+      await assert.rejects(refuse({ tenantId: "no-such-clinic", ownerEmail: "owner@riverside.example" }), /No open clinic/);
+      await assert.rejects(refuse({ tenantId: "riverside-test", ownerEmail: "owner@riverside.example", admin: true }), /ClinForms administrator/);
+      assert.equal(sent.length, before);
+
+      // The link works once: a new password, then the second factor is still needed.
+      const newPassword = "a platform reset long password";
+      await auth.api.resetPassword({ body: { newPassword, token } });
+      assert.equal(await auth.api.getSession({ headers: ownerJar.headers(), query: { disableCookieCache: true } }), null, "old sessions revoked");
+      assert.equal((await apiError(auth.api.resetPassword({ body: { newPassword: "yet another long password", token } }))).code, "INVALID_TOKEN");
+      const jar = new CookieJar();
+      const res = await auth.api.signInEmail({ body: { email: "owner@riverside.example", password: newPassword }, returnHeaders: true });
+      jar.absorb(res.headers);
+      assert.equal((res.response as { twoFactorRedirect?: boolean }).twoFactorRedirect, true);
+      jar.absorb((await auth.api.verifyTOTP({ body: { code: totp(ownerOtp) }, headers: jar.headers(), returnHeaders: true })).headers);
+      ownerJar = jar;
+      await auth.api.changePassword({ body: { currentPassword: newPassword, newPassword: PASSWORD }, headers: ownerJar.headers() });
+    });
+
     it("expired sessions are refused (dates read back correctly on this database)", async () => {
       const session = await auth.api.getSession({ headers: ownerJar.headers(), query: { disableCookieCache: true } });
       assert.ok(session);
@@ -449,6 +523,36 @@ export function defineAuthSuite(name: string, setup: () => Promise<AuthTestDb>, 
       assert.equal(res.status, 200);
       const body = (await res.json()) as { user?: { email?: string } };
       assert.equal(body.user?.email, "owner@riverside.example");
+    });
+
+    it("security fix 24/10 (ops M2): POST /request-password-reset is closed over HTTP; the server API (reset page, platform link) still works", async () => {
+      const before = sent.length;
+      for (let i = 0; i < 3; i++) {
+        const res = await auth.handler(
+          new Request(`${ORIGIN}/api/auth/request-password-reset`, {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: ORIGIN },
+            body: JSON.stringify({ email: "owner@riverside.example", redirectTo: `${ORIGIN}/reset-password` }),
+          }),
+        );
+        assert.equal(res.status, 404, "the HTTP route is not offered");
+      }
+      assert.equal(sent.length, before, "no reset email from the HTTP route");
+      // The reset page's server action calls the API directly: still one email.
+      await auth.api.requestPasswordReset({ body: { email: "owner@riverside.example" } });
+      assert.equal(sent.length, before + 1);
+      const message = sent.at(-1);
+      assert.equal(message?.kind, "password_reset");
+      assert.match(message?.link ?? "", /\/reset-password\?token=/);
+      // The platform's owner reset link (server API inside captureOutbox, withheld): still produced.
+      const made = await createOwnerResetLink(t.db, {
+        tenantId: "riverside-test",
+        ownerEmail: "owner@riverside.example",
+        requestReset: (email) => auth.api.requestPasswordReset({ body: { email } }),
+        isPlatformAdminEmail: () => false,
+      });
+      assert.match(made.link, /\/reset-password\?token=/);
+      assert.equal(sent.length, before + 1, "the platform link is never emailed");
     });
 
     it("the module seam: clinic profile for the tenant", async () => {

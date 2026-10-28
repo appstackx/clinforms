@@ -1,7 +1,7 @@
 /**
- * Platform operations (run by ClinForms staff through scripts/admin/*, never from a web page in this wave):
- * create a clinic, list clinics, offboard a clinic, reset a locked-out member's two-step verification.
- * Runbook: docs/auth.md.
+ * Platform operations (run by ClinForms staff through scripts/admin/* and the platform page /app/platform):
+ * create a clinic, list clinics, offboard a clinic, reset a locked-out member's two-step verification, and a
+ * one-time password reset link for a clinic owner (platform page only). Runbook: docs/auth.md.
  *
  * These write Better Auth's tables directly (in one atomic batch where it matters, which also works on D1),
  * using Better Auth's encodings: ids are random strings, timestamps ISO-8601, booleans true/false (stored
@@ -14,8 +14,11 @@ import type { Kysely } from "kysely";
 import type { DataCipher } from "../crypto/envelope";
 import { runBatch, type BatchQuery } from "../db/batch";
 import { authBool, type Database } from "../db/schema";
-import { deliverEmail, emailProviderName, invitationEmail, type DeliveryResult } from "../email";
+import { captureOutbox, deliverEmail, invitationEmail, type DeliveryResult } from "../email";
 import { appendAudit, listAudit } from "../repos/audit";
+import { getClinicPlan } from "../repos/clinic-plan";
+import { readClinicPackage } from "../repos/clinic-package";
+import { isMissingUsageTable } from "../repos/usage-period";
 import { getClinicProfile } from "../repos/clinic-profile";
 import { RepoInputError, assertText } from "../repos/context";
 import { getFormFile, listFormFiles } from "../repos/form-files";
@@ -23,7 +26,8 @@ import { listMemberProfiles } from "../repos/member-profile";
 import { listPartnerKeys } from "../repos/partner-keys";
 import { getTenantSettings } from "../repos/tenant-settings";
 import { countPmsRows, deletePmsQueries, exportPmsData } from "../pms/offboard";
-import { INVITATION_TTL_SECONDS, PLATFORM_USER_EMAIL, PLATFORM_USER_ID, invitationRef } from "./create-auth";
+import { PLATFORM_USER_EMAIL, PLATFORM_USER_ID, RESET_TOKEN_TTL_SECONDS, invitationRef } from "./create-auth";
+import { invitationExpiry } from "./invitation-expiry";
 import { inviteLink } from "./invite-token";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from "../../lib/account-copy";
 import { assertTenantSlug } from "./tenant";
@@ -78,6 +82,11 @@ export interface CreateClinicInput {
   appOrigin: string;
   /** BETTER_AUTH_SECRET of the target app: signs the invitation link (an invitation id alone is not a link). */
   linkSecret: string;
+  /**
+   * Email the invitation to the owner through the configured provider (default true). false = only return the link
+   * (status "withheld"): the admin script always passes false, so a command run on a laptop never sends email.
+   */
+  sendEmail?: boolean;
   now?: Date;
 }
 
@@ -109,7 +118,7 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
   const at = now.toISOString();
   const organizationId = authId();
   const invitationId = authId();
-  const invitationExpiresAt = new Date(now.getTime() + INVITATION_TTL_SECONDS * 1000).toISOString();
+  const invitationExpiresAt = invitationExpiry(now).toISOString();
   const link = inviteLink(input.appOrigin, invitationId, input.linkSecret); // before any write: a bad secret changes nothing
   await runBatch(db, [
     db.insertInto("organization").values({ id: organizationId, name, slug, logo: null, createdAt: at, metadata: null }),
@@ -138,15 +147,15 @@ export async function createClinic(db: Kysely<Database>, input: CreateClinicInpu
       inviterId: PLATFORM_USER_ID,
     }),
   ]);
-  const email = await deliverEmail(
-    invitationEmail({ to: { email: ownerEmail }, clinicName: name, role: "owner", inviterName: null, link, expiresAt: invitationExpiresAt }),
-  );
+  const message = invitationEmail({ to: { email: ownerEmail }, clinicName: name, role: "owner", inviterName: null, link, expiresAt: invitationExpiresAt });
+  const email: DeliveryResult = input.sendEmail === false ? { status: "withheld", provider: "none" } : await deliverEmail(message);
   await appendAudit({ db }, slug, {
     userId: PLATFORM_USER_ID,
     action: "clinic.create",
     targetType: "organization",
     targetId: organizationId,
-    detail: { invitation: invitationRef(invitationId), retentionDays, emailProvider: emailProviderName(), emailStatus: email.status },
+    // The invitation by its one-way reference only: never the link or its token.
+    detail: { invitation: invitationRef(invitationId), retentionDays, emailProvider: email.provider, emailStatus: email.status },
   });
   return { organizationId, tenantId: slug, invitationId, inviteLink: link, invitationExpiresAt, email };
 }
@@ -260,6 +269,16 @@ async function exportAudit(db: Kysely<Database>, tenantId: string): Promise<unkn
   }
 }
 
+/** Every month's usage counters of the clinic (export), oldest first; none before migration 0007. */
+async function exportUsage(db: Kysely<Database>, tenantId: string): Promise<Record<string, unknown>[]> {
+  try {
+    return (await db.selectFrom("clinic_usage").selectAll().where("tenant_id", "=", tenantId).orderBy("period").execute()) as Record<string, unknown>[];
+  } catch (err) {
+    if (isMissingUsageTable(err)) return [];
+    throw err;
+  }
+}
+
 function writePrivate(file: string, content: string | Buffer): void {
   fs.writeFileSync(file, content, { mode: 0o600 });
 }
@@ -349,6 +368,10 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     tenantId,
     organization: { id: org.id, name: org.name, createdAt: org.createdAt },
     clinicProfile: await getClinicProfile(ctx, tenantId),
+    clinicPlan: await getClinicPlan(ctx, tenantId),
+    // 25/10/2026: the package and every month's usage counters (billing records: no patient data).
+    clinicPackage: await readClinicPackage(ctx, tenantId),
+    usage: await exportUsage(db, tenantId),
     tenantSettings: await getTenantSettings(ctx, tenantId),
     members: members.map((m) => ({ memberId: m.id, userId: m.userId, name: m.name, email: m.email, role: m.role, joinedAt: m.createdAt })),
     memberProfiles: profiles,
@@ -385,6 +408,17 @@ export async function offboardClinic(db: Kysely<Database>, cipher: DataCipher | 
     db.deleteFrom("form_files").where("tenant_id", "=", tenantId),
     db.deleteFrom("tenant_settings").where("tenant_id", "=", tenantId),
     db.deleteFrom("clinic_profile").where("tenant_id", "=", tenantId),
+    db.deleteFrom("clinic_plan").where("tenant_id", "=", tenantId),
+    db.deleteFrom("clinic_package").where("tenant_id", "=", tenantId),
+    // The usage counters are billing records (no patient data) and stay with the closed clinic's id – unless the id
+    // is released for reuse, when a new clinic must not inherit them.
+    ...(input.releaseSlug
+      ? [
+          db.deleteFrom("clinic_usage").where("tenant_id", "=", tenantId),
+          db.deleteFrom("usage_report").where("tenant_id", "=", tenantId),
+          db.deleteFrom("usage_event").where("tenant_id", "=", tenantId),
+        ]
+      : []),
     db.deleteFrom("member_profile").where("organization_id", "=", org.id),
     db.updateTable("partner_keys").set({ revoked_at: now }).where("tenant_id", "=", tenantId).where("revoked_at", "is", null),
     db.deleteFrom("invitation").where("organizationId", "=", org.id),
@@ -451,4 +485,63 @@ export async function resetTwoFactor(db: Kysely<Database>, email: string, option
     await appendAudit({ db }, m.slug, { userId: PLATFORM_USER_ID, action: "auth.two_factor_reset", targetType: "user", targetId: user.id });
   }
   return result;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * A password reset link for a clinic owner (platform page only, 10/2026)
+ *
+ * For an owner who cannot use "Forgotten your password?" (email off or not arriving, a shared inbox) and has no
+ * other owner or administrator to create a link in Settings → Members. The link is made by Better Auth's own
+ * reset flow (one-time token, stored hashed, expires after RESET_TOKEN_TTL_SECONDS) with the email WITHHELD – it is
+ * returned once, for the administrator to pass on after confirming who they are speaking to – and audited under
+ * the named clinic only (never the link).
+ * ----------------------------------------------------------------------------------------------*/
+
+export interface OwnerResetLinkInput {
+  tenantId: string;
+  ownerEmail: string;
+  /** Better Auth's requestPasswordReset for this address (its reset email is captured, never sent). */
+  requestReset: (email: string) => Promise<unknown>;
+  /** Platform administrators reset their own password by email, never through this. */
+  isPlatformAdminEmail: (email: string) => boolean;
+}
+
+export interface OwnerResetLink {
+  userId: string;
+  organizationId: string;
+  link: string;
+  expiresAt: string;
+}
+
+export async function createOwnerResetLink(db: Kysely<Database>, input: OwnerResetLinkInput): Promise<OwnerResetLink> {
+  const tenantId = String(input.tenantId ?? "").trim();
+  const org = await db.selectFrom("organization").select(["id", "metadata"]).where("slug", "=", tenantId).executeTakeFirst();
+  if (!org || offboardedAt(org.metadata)) throw new RepoInputError(`No open clinic with the id "${tenantId}".`);
+  const email = normaliseEmail(input.ownerEmail);
+  const owner = await db
+    .selectFrom("member")
+    .innerJoin("user", "user.id", "member.userId")
+    .select(["member.userId"])
+    .where("member.organizationId", "=", org.id)
+    .where("member.role", "=", "owner")
+    .where("user.email", "=", email)
+    .executeTakeFirst();
+  if (!owner || owner.userId === PLATFORM_USER_ID) throw new RepoInputError(`That address is not an owner of the clinic "${tenantId}".`);
+  if (input.isPlatformAdminEmail(email)) {
+    throw new RepoInputError("This account belongs to a ClinForms administrator: reset it with “Forgotten your password?” on the sign-in page.");
+  }
+  const { outbox } = await captureOutbox(() => input.requestReset(email), { send: false });
+  const captured = outbox.find((m) => m.message.kind === "password_reset" && m.message.to.email.trim().toLowerCase() === email);
+  if (!captured?.message.link) throw new Error("No reset link was created.");
+  const expiresAt = captured.message.linkExpiresAt ?? new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000).toISOString();
+  // Audited under THIS clinic only (security fix 24/10/2026, D9): another clinic the person belongs to must not learn
+  // of the support action, nor of their owner role here. The platform trail records it too (platform-console.ts).
+  await appendAudit({ db }, tenantId, {
+    userId: PLATFORM_USER_ID,
+    action: "auth.password_reset_link",
+    targetType: "user",
+    targetId: owner.userId,
+    detail: { delivery: "platform" },
+  });
+  return { userId: owner.userId, organizationId: org.id, link: captured.message.link, expiresAt };
 }

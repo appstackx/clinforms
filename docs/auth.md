@@ -16,7 +16,7 @@ Data layer: [`database.md`](database.md). Code: `src/server/auth/`, `src/server/
 | Sessions | 12 hours, refreshed hourly; cookie prefix `clinforms` (`__Secure-` on https); Better Auth caches session data in a signed cookie for 5 minutes, but `/app` pages, server actions and the module seam (`buildAuthContext`) always re-read the database, so a revoked session loses access at once |
 | Rate limits | Better Auth's own (HTTP API, stored in the `rateLimit` table) plus ClinForms limits in every sign-in server action (shared `rate_limits` table; IPs and addresses stored only as keyed hashes) |
 | Audit | Every membership or security change writes an `audit_log` row (ids only – never patient data, never an invitation link; invitations are recorded as `inv_<hash>`) |
-| Email | `CLINFORMS_EMAIL_PROVIDER` = `mailersend` \| `log` (development) \| `none` (default). With `none`, the administrator who invites someone or asks for a reset link is shown the link to pass on |
+| Email | `CLINFORMS_EMAIL_PROVIDER` = `mailersend` \| `log` (development) \| `none` (default); optional `CLINFORMS_EMAIL_REPLY_TO` (reply-to on every message). With `none`, the administrator who invites someone or asks for a reset link is shown the link to pass on; an invitation's link is shown after inviting in every case (§5 "Invite members") |
 
 **Why the checks run where they do.** Next 14 middleware runs on the Edge runtime, so `src/middleware.ts` only checks
 that a session cookie exists for `/app/**` (and never matches `/api`, `/reports` or `/pms-sandbox`). The real checks
@@ -41,7 +41,7 @@ SQLite and Postgres, and the D1 test runs (in-process and real local D1) keep th
 | `/login` | anyone | Email + password, then a 6-digit code or a backup code. *Fix wave 2:* signing in, signing out (`src/app/app/session-forms.tsx`) and switching clinic load the next page in full, so nothing held in memory (the Studio's clinic records) survives into another sign-in or clinic |
 | `/two-factor` | signed in | Set-up: confirm password → QR code (rendered on the server) and key → backup codes (shown once, "I have saved them" required) → code → `/app` |
 | `/accept-invite?token=…` | anyone | Create the account for the invited address (name + password) and join, or join when already signed in as that address; then `/two-factor`. The token is `<invitation id>.<MAC>` (HMAC-SHA256 under a key derived from `BETTER_AUTH_SECRET`, `src/server/auth/invite-token.ts`): an invitation id alone is not a link, and rotating the secret invalidates open links. Better Auth's `list-invitations` and `get-full-organization` endpoints are switched off (they list invitations to every member) |
-| `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link. `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
+| `/reset-password` | anyone | Email on: ask for a link. Email off: ask your clinic's owner or an administrator for a link (a clinic's only owner: ClinForms support, platform page). `?token=…`: choose a new password (signs out everywhere; two-step still needed) |
 | `/app` | member | Clinic overview (name, your role, members, open invitations), **Open the Studio** (`/app/studio`) and a link to the public demo (`/reports`, fictional data) |
 | `/app/studio/**` | member with two-step | The clinic's own Studio (tenant mode: `src/app/app/studio/`, guard `src/server/auth/studio-access.ts`): home, `new`, `forms`, `forms/[formId]`, `templates`, `batch` (explains it needs a connected clinic system), `[id]` review; `security` redirects to the public `/security` page. Header: the clinic, the member's menu (clinic settings, sign out); footer: legal links |
 | `/app/settings/clinic` | member (edit: owner/admin) | Clinic name, legal name, address, postcode, phone, email, retention 30–3650 days. Written into referrer forms in tenant mode |
@@ -77,8 +77,9 @@ built-in `member` role is not a ClinForms role and is refused.
 |---|---|
 | `BETTER_AUTH_SECRET` | 32+ random characters. Signs cookies and **encrypts the two-step secrets**: rotating it signs everyone out and makes every member set up two-step verification again |
 | `BETTER_AUTH_URL` | Production: `https://clinforms.co.uk` (required there). **Previews: unset on purpose** – the base URL then comes from the request, but only when its host is one of the deployment's own Vercel hostnames (`VERCEL_URL`, `VERCEL_BRANCH_URL`); any other host falls back to the branch URL, so a forged Host header can never end up in a link. Local: default `http://localhost:$PORT` |
-| `CLINFORMS_EMAIL_PROVIDER` | `none` (default) \| `mailersend` \| `log` (development only; treated as `none` on production) |
+| `CLINFORMS_EMAIL_PROVIDER` | `none` (default) \| `mailersend` \| `log` (development only; treated as `none` on every Vercel deployment, production and preview: it prints whole messages, links included) |
 | `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL` | For `mailersend` (same service as the owner's other apps). Sender name "ClinForms". `CLINFORMS_EMAIL_FROM` is accepted as a fallback for the from address |
+| `CLINFORMS_EMAIL_REPLY_TO` | Optional: one plain address that replies to every ClinForms email go to (MailerSend reply-to on invitations, password resets and the two-step notice). Production value: `khuram@appstackx.co.uk` (set in Vercel by Khuram). A malformed value is a configuration error: the email is then reported as not sent ("failed") and the link is shown to pass on – nothing breaks. The request-access notification keeps the requester as its reply-to |
 | `CLINFORMS_PLATFORM_ADMINS` | Comma-separated emails of ClinForms staff allowed into `/app/platform` (`isPlatformAdmin()`; the account also needs two-step verification). An account for a listed address can only be created from a **platform** invitation (§5 "Platform page") |
 
 Provisioning (values generated with node crypto, written to the secrets file first, piped to Vercel on stdin, never
@@ -95,17 +96,36 @@ also need `--yes`) or, without `--env`, the current environment (e.g. local SQLi
 npm run admin:create-clinic -- --env production --yes \
   --name "Riverside Physiotherapy" --slug riverside-physio --owner-email owner@riverside.example [--retention-days 365]
 ```
-Prints the clinic id, the owner's invitation link (**once**) and whether the email went out. With email off, send the
-link to the owner yourself (it works once and expires in 7 days). The id (slug) can never change – choose it carefully.
+Prints the clinic id and the owner's invitation link (**once**). **The script never sends email** (it runs on a laptop,
+whatever the target's email settings): send the link to the owner yourself (it works once and expires in 7 days, at the same UK clock time it was
+created – every invitation does, so an expiry never reads an hour off across a clock change). To
+have the invitation emailed, create the clinic on the platform page instead (§ "Platform page"). The id (slug) can never
+change – choose it carefully.
 For preview, add `--app-url <origin of the deployment or local server using the preview database>`.
 
 ### Invite members
-The owner (or an administrator) uses **Settings → Members → Invite someone**. With email off the link is shown to
-copy; open invitations can be copied again or cancelled. A person who already has an account (another clinic)
+The owner (or an administrator) uses **Settings → Members → Invite someone**. Afterwards the page says how it went –
+"Invitation emailed to <address>", "The invitation email to <address> could not be sent…" or "Email is not set up, so
+nothing was sent…". The link to copy (with a warning not to forward it: whoever opens it can create the account and
+join the clinic) is shown **only when the invitation was not emailed** (email off, or the send failed). Once emailed,
+the inviter never sees the link (security fix 24/10/2026, D2): sign-up needs no mailbox proof, so a copy would let the
+inviter create the invitee's account first. If the email does not arrive, invite again – the earlier link stops
+working. Invitations are limited to 20 an hour per clinic and 3 a day per address.
+Open invitations can be cancelled. Invitation links are never written to a log line, the audit trail
+(`invitationRef()` only) or analytics (the query string of `/accept-invite` and `/reset-password` is dropped). A person who already has an account (another clinic)
 signs in and accepts; everyone else creates their account from the link and sets up two-step verification.
 
 ### Forgotten password
-- Email on: `/reset-password` → link by email (2 hours).
+- Email on: `/reset-password` → link by email (2 hours). Owners included: checked end to end in the browser with the
+  `log` provider (24/10/2026, `release/blue-heart`). If nothing arrives, the page points to the clinic's owner or
+  administrators, and a clinic's **only owner** to ClinForms support (next point).
+- **Only owner, no email (or not arriving):** ClinForms support opens `/app/platform` → **Owner password reset**, picks
+  the clinic and enters the owner's address (must be an owner of that clinic; never a platform administrator's own
+  account). The page shows a one-time reset link **once** (Better Auth's own token, stored hashed, 2 hours) – it is
+  never emailed. Confirm who you are speaking to first (call the clinic on a known number). Audited
+  `platform.owner_reset_link` (naming the administrator) and `auth.password_reset_link` with `delivery: "platform"`
+  under the named clinic only (24/10/2026, D9: another clinic the person belongs to is not told) – never the link. The owner still needs their authenticator app; for a
+  lost phone as well, also run the two-step reset below.
 - Email off: an owner or administrator opens **Settings → Members → Manage → Create a password reset link** and
   passes it on (administrators cannot do this for owners). The member still needs their authenticator app.
   A password belongs to the account, not the clinic: for a member who also belongs to **another clinic** the link is
@@ -121,6 +141,7 @@ signs in and accepts; everyone else creates their account from the link and sets
 
 ### Platform page (`/app/platform`)
 1. **Bootstrap your own account from a platform invitation:** `npm run admin:create-clinic -- --env <env> … --owner-email <you>`
+   (the script prints the link and never emails it)
    (or have an existing platform administrator create a clinic for you on the page), open the link, set up two-step
    verification. Then add the address to `CLINFORMS_PLATFORM_ADMINS` (Vercel env, redeploy).
 2. Open `/app/platform` (no link in the clinic area – type it). Everyone else gets the 404 page; actions re-check on every call.
@@ -130,6 +151,162 @@ signs in and accepts; everyone else creates their account from the link and sets
    comes from a clinic (`PLATFORM_INVITATION_REQUIRED`) – `src/server/auth/create-auth.ts`, tested in
    `src/server/auth/platform-admin-identity.test.ts`. **Only list an address whose account you created this way** (an
    account that already existed under that address may have come from a clinic's invitation).
+
+### Trials and drafting limits (10/2026)
+A clinic can be given a **trial** (e.g. 3 days for Blue Heart's set-up): while it runs (or waits to start) the clinic
+works as usual and every page of `/app` and `/app/studio` shows "Trial – N days left. Use made-up notes only until
+your data processing agreement is signed." (owner direction 24/10: no real patient data in a trial; Settings → Clinic
+then says "During your trial, switch this on to try drafting with made-up notes only." beside the drafting switch, and
+the overview's checklist likewise – wording in `src/lib/account-copy.ts` `TRIAL_COPY` / `DRAFTING_COPY`); once it has ended the clinic can still open, preview and download its
+records (and finish existing drafts), but **nothing new** is created – the Report API answers 403 `TRIAL_ENDED` ("Your
+trial has ended … contact us at khuram@appstackx.co.uk") for a new report or form map, uploads (form files, notes),
+drafting, form readings and launch links (`src/modules/medreport/auth/clinic-access.ts`), and the banner says so.
+By default the trial starts when an **owner first opens the clinic area** after signing in (the moment is recorded once in
+`clinic_plan.owner_first_sign_in_at`, audited `clinic.trial_started`); if the clinic already has an owner when the trial
+is set, it starts at once (they have signed in already). ClinForms staff can also set a clinic's own **drafting limits**
+(e.g. 30 a minute, 1,500 a day; empty = the defaults `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` / `_PER_DAY`, 10 / 400).
+
+- **Platform page:** panel "Trials and drafting limits" (set up a trial: days + "when the owner first signs in" / "now";
+  extend; convert to a full account; end now; limits; back to defaults). The clinics table shows each clinic's trial and
+  limits.
+- **Scripts** (production needs `--yes` and Khuram's go):
+  ```bash
+  npm run admin:set-trial -- --env production --slug blue-heart --days 3 [--start-on-first-sign-in | --start-now] --yes
+  npm run admin:set-trial -- --env production --slug blue-heart --extend-days 3 | --convert-to-paid | --end-now | --show
+  npm run admin:set-limits -- --env production --slug blue-heart --per-minute 30 --per-day 1500 [--default] --yes
+  ```
+- **Audit:** every change writes `clinic.trial_set` / `clinic.trial_extended` / `clinic.trial_ended` /
+  `clinic.trial_converted` / `clinic.limits_set` under the clinic (by "ClinForms support", shown on its activity page) and,
+  from the platform page, `platform.*` naming the administrator.
+- Needs migration `0006_clinic_plan` on the target database (docs/database.md §3).
+
+### Packages and usage (25/10/2026)
+Every clinic can see its **package** and its **usage** on **Settings → Plan & usage** (`/app/settings/plan`): owners and
+administrators see the package (name, price a month, reports included, extra-report price, founding price and its end
+date, set-up fee status, start date), this month's reports against the allowance with a bar (plus approved and
+counted-but-not-approved), extra reports × the extra price as "would be charged" ("Charging for extra reports starts once
+billing is set up" – there is no billing yet), the last 6 months, the trial and its dates, drafting on/off and the
+drafting limits. Clinicians and staff see only "This month: X of N reports". No tokens or costs are ever shown to a
+clinic. A clinic without a package works exactly as before (usage is counted, no allowance is shown).
+
+**What counts (Khuram, 25/10/2026 – drafting costs money whether or not the report is completed):** a report counts
+towards the allowance **once** – the first time live drafting runs for it and costs money (a successful call, or a
+failed one that still used tokens: refused, cut off, unreadable), whether or not it is ever approved; or, if nothing
+was ever drafted for it (records-only / prefilled forms), when it is first approved. Re-drafting, regenerating or
+approving the same report again never counts again (the extra calls and tokens are still counted internally); an
+amended version of a report this clinic approved – **same patient, episode and form** – never counts. A failed call
+that used no tokens (time-out, unreachable) counts no report. Form readings (`POST /forms/analyse`) are set-up work:
+calls, tokens and cost on the platform page, never a report. The public demo and demo (prepared) answers never count.
+Fair use against endless re-drafting = the clinic's drafting limits above, plus the platform page's "per counted
+report" figure (amber above 40 calls a report). Period = calendar month in UK time; a package applies to the whole
+month it is saved in (a start date in a later month is refused – set it in the month it starts).
+
+**Which report (fix 25/10/2026, security review):** report ids and "amends" come from the browser. Each report event
+therefore carries the server's keyed fingerprint of what it is about (clinic, episode ids, template or form, patient
+name and date of birth – an HMAC, no patient data; `src/modules/medreport/api/usage.ts`), and `usage_report` is keyed
+by (clinic, report id, fingerprint): the same id for another patient or form counts on its own, and an "amends" is
+accepted only for an approved report with the same fingerprint. Ids that are not the Studio's own are stored as a keyed
+hash. What it cannot catch: a member who scripts the API to keep one patient's ids, name and date of birth while
+drafting another patient's notes (the drafts would then be labelled with the wrong patient) – the daily drafting limit
+and the "per counted report" figure on the platform page are the backstop.
+
+- **Platform page:** panel "Packages" (clinic, preset Starter £99/25 · Practice £199/100 · Group £349/250 · Group Plus
+  £549/500 · Custom · Trial – a preset fills in the price list; extra £1.50, Group £1.25; founding price fixed 12 months
+  unless an end date is given; set-up fee + due/paid/waived; start date; internal notes never shown to the clinic or
+  written to an audit row; "Remove package"). The clinics table has a Package column. **`/app/platform/usage`** (platform
+  administrators only): month selector, every clinic's package, price, allowance, reports counted, approved, counted but
+  not approved, extra, extra × rate, drafting calls (+ failed), form readings, tokens (in / out / cache read / cache
+  write), estimated drafting cost (list prices in `src/server/usage/pricing.ts`, £ at `CLINFORMS_USD_GBP_RATE`, default
+  0.79, or the page's rate field) and estimated margin (price + extra − cost), totals (demo clinics' made-up price and
+  extra reports left out of the money totals; their real drafting cost kept in), drafting calls per counted report
+  (amber above 40), **CSV** (`/app/platform/usage/export`, formula-injection safe, audited `platform.usage_export`; a
+  cross-site request – `Sec-Fetch-Site` – gets the ordinary 404 and writes no audit row).
+- **Script** (shows a PREVIEW and saves nothing unless `--confirm`; production also needs `--yes` and Khuram's go):
+  ```bash
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50   # preview
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package custom --price 300 --reports 500 --extra 1.50 --confirm --yes
+  npm run admin:set-package -- --slug riverside --package practice [--founding-price 149 [--founding-until 2027-10-24]] \
+      [--setup-fee 250 --setup-status due|paid|waived] [--starts 2026-10-01] [--notes "…"]
+  npm run admin:set-package -- --slug riverside --remove | --show
+  npm run admin:set-package -- --env production --slug blue-heart-clinics --package trial --price 300 --reports 500 --extra none --confirm --yes
+  ```
+  `--extra none` (or an empty "Extra report price" on the platform page) = the extra price is **not agreed yet**: extra
+  reports are still counted and shown ("Extra reports: price to be agreed"; the platform page says "not set"), nothing is
+  priced or charged. A **Trial** package may carry the deal's terms (e.g. £300 / 500): the clinic sees "Trial" and the
+  allowance, never the price; the platform page shows the price but leaves Trial packages (and demo clinics) out of the
+  money totals – nobody pays for them.
+- **Audit:** `clinic.package_set` / `clinic.package_removed` under the clinic (by "ClinForms support") and, from the
+  platform page, `platform.package_set` / `platform.package_removed` naming the administrator.
+- Needs migration `0007_plan_usage` on the target database (docs/database.md §3). Before it is applied the pages read
+  "no package, no usage" and nothing is counted (one warning in the log).
+### Demo clinics (10/2026)
+A **demo clinic** is a clinic account that holds **made-up data only** and otherwise works exactly like a customer's –
+e.g. ClinForms' own test clinic on production, where Khuram signs in, completes forms and approves them like a customer
+would. Switched on and off by **ClinForms staff only** (`clinic_plan.demo_clinic`, migration 0008); a clinic's own
+owners and administrators have no way to change it. In a demo clinic:
+- every page of `/app` and `/app/studio` shows the banner **"Demo clinic – made-up data only"** (the Studio also a
+  "Demo clinic" pill in its sticky header);
+- **every output carries a demonstration notice** ("DEMONSTRATION – made-up data from a demo clinic. Not for clinical
+  use."): the draft preview, the Word / PDF downloads (the referrer's form, its PDF copy, a portal question set's
+  summary, a built-in report) and copied answers (first and last line, and each single answer);
+- members' signing details accept the made-up **`PH-DEMO-NN`** numbers (Sarah Reid PH-DEMO-01 …) and such a member
+  approves with it like any clinician. **Any other clinic refuses them:** the members page keeps its strict HCPC check,
+  and `POST /sign` answers 403 `DEMO_NUMBER_NOT_ALLOWED` (checked after every other check) – so a clinic switched back
+  to real cannot approve with a leftover made-up number; the members page and the Studio say so.
+- **Audit:** `clinic.demo_on` / `clinic.demo_off` under the clinic (by "ClinForms support"; detail: the flag and how many
+  members hold a made-up number), `platform.demo_on` / `platform.demo_off` from the platform page; a demo clinic's
+  `report.sign` rows carry `demoClinic` (and `demoNumber` when a made-up number was used – a registration number is
+  never written), its `report.render_final` rows `demoClinic`, a member's `member.profile_update` row `demoNumber: true`.
+  The activity page shows "Demo clinic – approved with the made-up number PH-DEMO-01" etc.
+- **Platform page:** panel "Demo clinics" (choose a clinic → Make demo clinic / Switch off, with confirmation); the
+  clinics table shows a "Demo clinic" pill.
+- **Script** (production needs `--yes` and Khuram's go; migration 0008 applied there first):
+  ```bash
+  npm run admin:set-demo-clinic -- --env production --slug <clinic id> --on --yes     # --off to switch back
+  npm run admin:set-demo-clinic -- --env production --slug <clinic id> --show         # read only
+  ```
+- Code: `src/modules/medreport/core/demo-clinic.ts` (numbers, notice), `src/server/admin/clinic-plan.ts`
+  (`setDemoClinic`, `isDemoClinic`), `src/lib/hcpc.ts signingNumberFor`; tests `scripts/medreport/demo-clinic.test.ts`,
+  the clinic-plan suite (every database, D1 included), `src/server/admin/before-0008.test.ts` (deploy before the
+  migration: every read sees a real clinic), e2e `scripts/e2e/demo-clinic.cjs`.
+
+### Load a clinic's own form templates (onboarding, 10/2026)
+For a clinic that sends its referrers' templates (Blue Heart: 19 TM3 letter templates – RTF, one .docx, one .doc), load
+them into its forms library with PROPOSED maps, so its own staff check and confirm each map once:
+```bash
+npm run admin:load-forms -- --env production --slug blue-heart --dir ~/secure/blue-heart-templates \
+  --maps ~/secure/blue-heart-maps.json [--read-missing [--referrer "…" --referrer-type mlc]]     # preview: nothing stored
+npm run admin:load-forms -- … --confirm --yes                                                     # store (Khuram's go)
+```
+- Each file is checked as an upload is (type from the bytes, RTF converted with the 12 MB rule, an old .doc refused –
+  convert it to .docx or RTF first); its map comes from the maps JSON (`{"<file name>": {title, referrer, fields,
+  file?: {sha256}}}`) and is refused when it does not fit the file (SHA-256, every anchor's place and placeholder), or
+  with `--read-missing` from the layout-rules reading (no drafting service), including the clinic-system merge codes.
+- Stored encrypted for that clinic only (`form_files` + chunks, `forms`), status **proposed**, never confirmed by the
+  script; the file's mail-merge fields are recorded on the map, so approval stays blocked while one is left.
+- Audited as ClinForms: `file.upload` and `form.create` per form (`detail.via: "onboarding"`) and one `clinic.forms_loaded`.
+- Prints file names and counts only. Templates are third-party material: keep them out of the repository (the Blue
+  Heart set is in the gitignored `demo-assets/blue-heart-templates/`).
+- Logic and tests: `src/server/admin/load-forms.ts`, `src/server/admin/testing/load-forms-suite.ts` (node:sqlite, PGlite,
+  D1 stand-in and real local D1). **Not run against preview or production yet.**
+- **Corrected maps or conversions for forms loaded earlier (10/2026): `--replace-proposed`** (preview first, then
+  `--confirm --yes` on production). Per file it prints **REPLACE** (the clinic's form for this template – same stored
+  bytes, or the same original file name for the same referrer – is replaced by a fresh proposal from this file and
+  map), **LOAD** (no form for it yet), **SKIP** (already exactly this file and map: a re-run changes nothing) or
+  **REFUSED** with the reason. A form is only ever replaced while it is still a proposal ClinForms loaded and nobody
+  has touched: never confirmed (status, payload or activity log), revision 1 with no Studio activity, no stored report
+  (draft or approved) and no activity row naming it (approvals, drafting and final documents name their form and
+  outlive a deleted report), not linked to a referrer. A form of the same file name for another referrer is refused
+  (never two forms per template). Old forms out, new form in, in one atomic batch (`replaceForms`) that re-checks every
+  rule in its SQL (revision and status, reports, referrer links, the activity log since the preview, the new file
+  stored): a form the clinic – or a second run at the same time – changed, used or removed meanwhile is REFUSED
+  ("changed while it was being replaced"), never duplicated; the old file goes when no form uses it any more. Audited
+  in that same batch: `form.replace` (ids and counts) and `file.upload`; one `clinic.forms_replaced` per run. One file
+  per template: a second file with the same bytes or the same name (case and accents aside), or matching a form an
+  earlier file already matched, is REFUSED – the preview shows exactly what `--confirm` does. A file without a map
+  (`--read-missing`) never replaces a form made from a map (SKIP). At most 10 forms are replaced by one file (D1's
+  100 parameters per statement). The whole run is refused when a form in the library cannot be read with this
+  database's data keys. Touches the forms library only – never the clinic, members, invitations, trial or plan.
 
 ### List clinics
 `npm run admin:list-clinics -- --env production`
@@ -187,5 +364,15 @@ the security review, `--release-slug` is refused for a clinic with audit rows an
 - Without transactions, Better Auth's multi-step writes (e.g. sign-up = user + password rows) are not atomic. A
   half-created account would block re-using that invitation; fix by hand (delete the `user` row).
 - HCPC numbers are format-checked only (not looked up on the register).
-- Email is off until a MailerSend key is set: until then invitation and reset links travel by hand.
-- The platform page creates clinics and handles access requests; offboarding and two-step resets stay script-only.
+- Email (MailerSend) is on in production from the 24/10/2026 deploy; with email off, invitation and reset links
+  travel by hand. Vercel's own request logs record the path of a page request, so an opened `/accept-invite?token=…`
+  or `/reset-password?token=…` URL can appear there (the app itself never logs one); both tokens work once and expire.
+- The platform page creates clinics (emailing the owner's invitation only when "Email the invitation to the owner" is
+  ticked – off by default since 24/10/2026: never for a shared inbox), handles access requests and makes one-time owner
+  reset links; offboarding and two-step resets stay script-only.
+- Security fixes 24/10/2026 (`release/blue-heart`): every MailerSend message switches click, open and content tracking
+  off (`src/server/email/providers.ts` NO_TRACKING; also switch them off for the domain in MailerSend → Domains →
+  clinforms.co.uk → Advanced settings); a send that takes more than 8 s counts as failed (the link is then shown); no
+  message is sent to a reserved test address (example domains, `.test`, `.invalid`, `.localhost`); Better Auth's HTTP
+  route `POST /api/auth/request-password-reset` is disabled (the reset page's server action keeps its per-address
+  limit; the platform owner link is unaffected).

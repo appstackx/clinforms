@@ -11,6 +11,7 @@
 import { formatUkDate } from "../dates";
 import { INCIDENT_TYPE_LABELS, INSTRUCTING_PARTY_LABELS, NOTE_TYPE_LABELS } from "../labels";
 import { REGISTRATION_SOURCE_ID } from "../schemas";
+import { nextAppointmentAfterAssessment } from "../scope";
 import type { ComputedFact, EpisodeBundle, InstructingParty, Note } from "../types";
 
 const SEX_LABELS: Record<EpisodeBundle["registration"]["sex"], string> = {
@@ -84,6 +85,10 @@ export function registrationLines(
       : "Consent to disclosure: not recorded",
   );
   lines.push(`Episode status: ${bundle.episodeStatus}`);
+  // Fix round 2 (B1-21, kept by bh2 WD): the first appointment booked after the assessment (the same in its as-at view,
+  // core/scope.ts) – what an initial assessment form's next-appointment box is answered from, citing REG.
+  const next = nextAppointmentAfterAssessment(bundle);
+  if (next) lines.push(`Following appointment (first one after the assessment): ${formatUkDate(next.date)}`);
   return lines;
 }
 

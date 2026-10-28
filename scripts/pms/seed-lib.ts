@@ -20,7 +20,7 @@ import { setEntitlement } from "../../src/server/repos/pms/entitlements";
 import { bulkCreatePatients, countPatients, touchPatientLastSeen } from "../../src/server/repos/pms/patients";
 import { createPriceList, setPriceListItem } from "../../src/server/repos/pms/price-lists";
 import { createReferrer } from "../../src/server/repos/pms/referrers";
-import { getPmsSettings, setDemoClinic } from "../../src/server/repos/pms/settings";
+import { getPmsSettings, setPmsDemoFlag } from "../../src/server/repos/pms/settings";
 import { deletePmsQueries } from "../../src/server/pms/offboard";
 import type { CaseInput } from "../../src/modules/pms/core/schemas";
 import { PRACTITIONERS, PRICE_LISTS, REFERRERS, SERVICES, SITES, demoPatients } from "./demo-data";
@@ -70,7 +70,7 @@ export async function assertDemoClinic(db: Kysely<Database>, tenantId: string, o
   if (!/\(fictional\)$/.test(org.name.trim())) throw new RepoInputError(`Refused: the clinic's name "${org.name}" does not end "(fictional)".`);
   const [patients, reports, forms] = await Promise.all([count(db, "pms_patients", tenantId), count(db, "reports", tenantId), count(db, "forms", tenantId)]);
   if (patients + reports + forms > 0) throw new RepoInputError("Refused: the clinic already holds data, so it cannot be flagged as a demonstration clinic.");
-  await setDemoClinic({ db }, tenantId, true, SEED_ACTOR);
+  await setPmsDemoFlag({ db }, tenantId, true, SEED_ACTOR);
   return { name: org.name };
 }
 

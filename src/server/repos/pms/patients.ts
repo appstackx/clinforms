@@ -16,6 +16,7 @@ import { patientInputSchema, patientPatchSchema, type PatientInput, type Patient
 import { isIsoDate, phoneDigits, searchKey, ukToday } from "../../../modules/pms/core/text";
 import type { MarketingSource, Patient, PatientStatus, PatientSummary, PmsActor, PmsSaveResult, Sex } from "../../../modules/pms/core/types";
 import { runBatch } from "../../db/batch";
+import { patientSiteFilter } from "./access";
 import { classifyDbError } from "../../db/errors";
 import type { PmsPatientsTable } from "../../db/pms-schema/foundation";
 import {
@@ -451,6 +452,8 @@ export interface SearchPatientsOptions {
   /** Default 25, at most 100. */
   limit?: number;
   offset?: number;
+  /** A member's site scope (K2-SITE-004; null/undefined = every site): see patientSiteFilter in ./access.ts. */
+  siteIds?: ReadonlySet<string> | null;
 }
 
 /** Finds patients (summaries), by last name then first name. */
@@ -459,6 +462,7 @@ export async function searchPatients(ctx: RepoContext, tenantId: string, options
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 25)), 100);
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   let q = ctx.db.selectFrom(T).select(SUMMARY_COLUMNS).where("tenant_id", "=", tenantId);
+  if (options.siteIds) q = q.where(patientSiteFilter(tenantId, options.siteIds));
   const status = options.status ?? "active";
   if (status !== "any") q = q.where("status", "=", status);
   const text = (options.q ?? "").trim().slice(0, 120);
