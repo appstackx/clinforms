@@ -22,6 +22,7 @@ import {
   remittanceFor,
   removeAllocationFor,
   saveTestCardFor,
+  setPayerContributionModeFor,
   takePaymentFor,
   voidInvoiceFor,
   waiveFeeFor,
@@ -174,4 +175,14 @@ export async function remittanceAction(input: RemittanceInput): Promise<BillingA
   if (!r.ok) return { ok: false, error: r.error };
   refresh([`${BILLING}/remittances/new`]);
   return { ok: true, result: r.value };
+}
+
+/** A payer account's excess / contribution mode (the clinic's set-up: settings.setup). */
+export async function setPayerContributionModeAction(referrerId: string, mode: string): Promise<BillingActionResult> {
+  const actor = await clinicActionActor({ permission: "settings.setup" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const r = await setPayerContributionModeFor(actor, String(referrerId), String(mode));
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh([`${BILLING}/payers`, `${BILLING}/visits`]);
+  return { ok: true };
 }

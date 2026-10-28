@@ -32,6 +32,8 @@ import {
   createCreditNote,
   createDraftInvoice,
   debtInvoices,
+  caseContributionOverrides,
+  contributionModeForCase,
   excessBilledForCase,
   getBillingSettings,
   getCreditNote,
@@ -46,11 +48,14 @@ import {
   listPayments,
   markPaymentLink,
   openInvoicesFor,
+  payerContributionModes,
   recordInvoiceExports,
   recordPayment,
   removeAllocation,
   reversePayment,
   savePaymentLink,
+  setCaseContributionMode,
+  setPayerContributionMode,
   setServiceVat,
   statementEntries,
   updateBillingSettings,
@@ -100,7 +105,7 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       id.patientB = (await createPatient(ctx, B, { firstName: "Other", lastName: "Clinic" }, ACTOR_B)).id;
       id.selfCase = (await createCase(ctx, A, { patientId: id.megan, title: "Right knee", openedOn: "2026-10-01" }, ACTOR)).id;
       id.insCase = (
-        await createCase(ctx, A, { patientId: id.daniel, title: "Lower back", openedOn: "2026-09-01", payerType: "insurer", payerReferrerId: id.insurer, membershipNumber: "NW-000123", excessPence: 10000, priceListId: list.id }, ACTOR)
+        await createCase(ctx, A, { patientId: id.daniel, title: "Lower back", openedOn: "2026-09-01", payerType: "insurer", payerReferrerId: id.insurer, membershipNumber: "NW-000123", excessPence: 5000, priceListId: list.id }, ACTOR)
       ).id;
       id.mlcCase = (await createCase(ctx, A, { patientId: id.megan, title: "Neck (road traffic accident)", openedOn: "2026-03-18", payerType: "mlc", payerReferrerId: id.mlc, claimReference: "MMR/2291" }, ACTOR)).id;
       id.auth = (await createAuthorisation(ctx, A, { caseId: id.insCase, referrerId: id.insurer, code: "NW-AUTH-0001", sessionsAuthorised: 4, valueAuthorisedPence: 30000 }, ACTOR)).id;
@@ -229,11 +234,12 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       assert.deepEqual(invoice.lines.map((l) => [l.kind, l.billingCode, l.totalPence]), [
         ["service", "NW-PHY-IA", 6500],
         ["service", "NW-PHY-FU", 4800],
-        ["excess_deduction", null, -10000],
+        ["excess_deduction", null, -5000],
       ]);
-      assert.equal(invoice.totalPence, 1300, "the insurer pays the treatment less the excess");
-      assert.deepEqual([excessInvoice!.billTo, excessInvoice!.totalPence, excessInvoice!.relatedInvoiceId, excessInvoice!.lines[0].kind], ["patient", 10000, invoice.id, "excess"]);
-      assert.equal(await excessBilledForCase(ctx, A, id.insCase), 10000);
+      assert.equal(invoice.totalPence, 6300, "the insurer pays the treatment less the excess");
+      assert.equal(invoice.perVisitContributionPence, null, "excess per case (the default)");
+      assert.deepEqual([excessInvoice!.billTo, excessInvoice!.totalPence, excessInvoice!.relatedInvoiceId, excessInvoice!.lines[0].kind], ["patient", 5000, invoice.id, "excess"]);
+      assert.equal(await excessBilledForCase(ctx, A, id.insCase), 5000);
       // A second insurer invoice on the case: the excess is used up, nothing more goes to the patient.
       const second = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: id.insCase, billTo: "payer", authorisationId: id.auth, lines: [{ serviceId: id.fu, serviceOn: "2026-09-16", unitPricePence: 4800 }] }, ACTOR, { applyExcess: true });
       assert.equal(second.excessInvoice, null);
@@ -246,14 +252,14 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       const auth = await getAuthorisation(ctx, A, id.auth);
       // Both lines bill DIARY visits: their sessions were counted by the diary when completed (not here – no
       // double count, M5 review). Billing counts the value.
-      assert.deepEqual([auth?.sessionsUsed, auth?.valueUsedPence], [0, 1300]);
+      assert.deepEqual([auth?.sessionsUsed, auth?.valueUsedPence], [0, 6300]);
       // Over the value limit (30000): a big line is refused at issue, and the draft stays a draft.
       const big = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: id.insCase, billTo: "payer", authorisationId: id.auth, lines: [{ kind: "item", description: "Report", unitPricePence: 40000 }] }, ACTOR);
       const refused = await issueInvoice(ctx, A, big.invoice.id, 1, {}, ACTOR);
       assert.equal(refused.ok, false);
       assert.equal(!refused.ok && refused.reason, "authorisation");
       assert.equal((await getInvoice(ctx, A, big.invoice.id))?.status, "draft");
-      assert.deepEqual([(await getAuthorisation(ctx, A, id.auth))?.valueUsedPence], [1300], "nothing used by the refused issue");
+      assert.deepEqual([(await getAuthorisation(ctx, A, id.auth))?.valueUsedPence], [6300], "nothing used by the refused issue");
       await cancelDraftInvoice(ctx, A, big.invoice.id, 1, ACTOR);
       const ex = await issueInvoice(ctx, A, id.excessInv, (await getInvoice(ctx, A, id.excessInv))!.rev, {}, ACTOR);
       assert.ok(ex.ok);
@@ -307,8 +313,8 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       // Fully crediting the insurer invoice gives its sessions and value back and frees its appointments.
       const ins = (await getInvoice(ctx, A, id.insInv))!;
       await rejects(createCreditNote(ctx, A, { invoiceId: ins.id, lines: [{ invoiceLineId: ins.lines[2].id, totalPence: 1 }], reason: "Deduction" }, ACTOR), /excess deduction is not credited/);
-      const full = await createCreditNote(ctx, A, { invoiceId: ins.id, lines: [{ invoiceLineId: ins.lines[0].id, totalPence: 1300 }], reason: "Billed to the wrong insurer" }, ACTOR);
-      assert.equal(full.totalPence, 1300);
+      const full = await createCreditNote(ctx, A, { invoiceId: ins.id, lines: [{ invoiceLineId: ins.lines[0].id, totalPence: 6300 }], reason: "Billed to the wrong insurer" }, ACTOR);
+      assert.equal(full.totalPence, 6300);
       const after = (await getInvoice(ctx, A, ins.id))!;
       assert.equal(invoiceState(after, "2026-10-24"), "credited");
       assert.equal((await billedAppointmentIds(ctx, A, ["appt_01JABCDEF0000000000000010", "appt_01JABCDEF0000000000000011"])).size, 0, "both appointments can be billed again");
@@ -316,6 +322,72 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       assert.deepEqual([auth?.sessionsUsed, auth?.valueUsedPence], [0, 0]);
       assert.deepEqual([after.authSessions, after.authValuePence], [0, 0]);
       await rejects(createCreditNote(ctx, A, { invoiceId: id.insInv2, lines: [{ invoiceLineId: "invl_x", totalPence: 1 }], reason: "Draft" }, ACTOR), /Only an issued invoice/);
+    });
+
+    it("the patient's part: excess per case or contribution per visit (per payer account, case override); never a £0 payer invoice", async () => {
+      const kestrel = await createReferrer(ctx, A, { kind: "insurer", name: "Kestrel Healthcare (fictional)" }, ACTOR);
+      const referrerB = await createReferrer(ctx, B, { kind: "insurer", name: "Other insurer (fictional)" }, ACTOR_B);
+      assert.equal((await contributionModeForCase(ctx, A, id.insCase, id.insurer)).mode, "per_case", "no row: the default");
+      await setPayerContributionMode(ctx, A, kestrel.id, "per_visit", ACTOR);
+      await rejects(setPayerContributionMode(ctx, A, referrerB.id, "per_visit", ACTOR), /does not exist/);
+      assert.deepEqual(Array.from((await payerContributionModes(ctx, A)).entries()), [[kestrel.id, "per_visit"]]);
+      assert.equal((await payerContributionModes(ctx, B)).size, 0, "clinic B sees none of A's");
+      const caseOn = async (title: string, excessPence: number) =>
+        (await createCase(ctx, A, { patientId: id.daniel, title, openedOn: "2026-10-01", payerType: "insurer", payerReferrerId: kestrel.id, membershipNumber: "KE-1", excessPence }, ACTOR)).id;
+      const fu = (on: string, appt: string) => ({ serviceId: id.fu, practitionerId: id.prac, serviceOn: on, unitPricePence: 4800, appointmentId: appt });
+
+      // 1. Contribution per visit (from the account): £20 off every visit, never used up.
+      const k1 = await caseOn("Left shoulder", 2000);
+      assert.deepEqual(await contributionModeForCase(ctx, A, k1, kestrel.id), { mode: "per_visit", source: "payer", payerMode: "per_visit" });
+      const one = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: k1, billTo: "payer", lines: [fu("2026-10-02", "appt_01JABCDEF0000000000000020"), fu("2026-10-09", "appt_01JABCDEF0000000000000021")] }, ACTOR, { applyExcess: true });
+      assert.deepEqual(one.invoice.lines.map((l) => [l.kind, l.totalPence]), [["service", 4800], ["service", 4800], ["excess_deduction", -4000]]);
+      assert.equal(one.invoice.lines[2].description, "Less: patient contributions billed to the patient");
+      assert.deepEqual([one.invoice.billTo, one.invoice.totalPence, one.invoice.perVisitContributionPence], ["payer", 5600, 2000]);
+      assert.deepEqual(one.excessInvoice!.lines.map((l) => [l.kind, l.totalPence, l.serviceOn, l.appointmentId]), [["excess", 2000, "2026-10-02", null], ["excess", 2000, "2026-10-09", null]]);
+      assert.match(one.excessInvoice!.lines[0].description ?? "", /^Patient contribution – /);
+      assert.deepEqual([one.excessInvoice!.totalPence, one.excessInvoice!.perVisitContributionPence, one.excessInvoice!.relatedInvoiceId], [4000, 2000, one.invoice.id]);
+      assert.equal(await excessBilledForCase(ctx, A, k1), 0, "contributions never use up an excess");
+      const again = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: k1, billTo: "payer", lines: [fu("2026-10-16", "appt_01JABCDEF0000000000000022")] }, ACTOR, { applyExcess: true });
+      assert.deepEqual([again.invoice.totalPence, again.excessInvoice?.totalPence], [2800, 2000], "the next visit pays its £20 too");
+
+      // 2. The contribution covers the whole visit: the visit is billed to the patient only – no £0 insurer invoice,
+      //    nothing taken off the case's authorisation.
+      const k2 = await caseOn("Right wrist", 5000);
+      const auth2 = await createAuthorisation(ctx, A, { caseId: k2, referrerId: kestrel.id, code: "KE-AUTH-2", sessionsAuthorised: 6, valueAuthorisedPence: 30000 }, ACTOR);
+      const whole = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: k2, billTo: "payer", authorisationId: auth2.id, lines: [fu("2026-10-03", "appt_01JABCDEF0000000000000023")] }, ACTOR, { applyExcess: true });
+      assert.equal(whole.excessInvoice, null);
+      assert.deepEqual([whole.invoice.billTo, whole.invoice.payerType, whole.invoice.totalPence, whole.invoice.authorisationId, whole.invoice.relatedInvoiceId], ["patient", "self_pay", 4800, null, null]);
+      assert.deepEqual(whole.invoice.lines.map((l) => [l.kind, l.totalPence, l.appointmentId, l.visitStatus]), [["excess", 4800, "appt_01JABCDEF0000000000000023", null]]);
+      assert.match(whole.invoice.lines[0].description ?? "", /patient contribution covers the visit$/);
+      assert.deepEqual((await listInvoices(ctx, A, { caseId: k2 })).map((i) => i.billTo), ["patient"], "no payer invoice at all");
+      assert.ok((await billedAppointmentIds(ctx, A, ["appt_01JABCDEF0000000000000023"])).has("appt_01JABCDEF0000000000000023"), "the visit is billed (once)");
+      const wholeIssued = await issueInvoice(ctx, A, whole.invoice.id, whole.invoice.rev, {}, ACTOR);
+      assert.ok(wholeIssued.ok);
+      assert.deepEqual([(await getAuthorisation(ctx, A, auth2.id))?.valueUsedPence], [0], "nothing claimed against the authorisation");
+
+      // 3. A case override (excess per case on a per-visit account): the first visit covered in full goes to the
+      //    patient, the next one is split; the excess is then used up.
+      const k3 = await caseOn("Hip", 6000);
+      await setCaseContributionMode(ctx, A, k3, "per_case", ACTOR);
+      assert.deepEqual(await contributionModeForCase(ctx, A, k3, kestrel.id), { mode: "per_case", source: "case", payerMode: "per_visit" });
+      const mixed = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: k3, billTo: "payer", lines: [fu("2026-10-09", "appt_01JABCDEF0000000000000025"), fu("2026-10-02", "appt_01JABCDEF0000000000000024")] }, ACTOR, { applyExcess: true });
+      assert.deepEqual(mixed.invoice.lines.map((l) => [l.kind, l.totalPence, l.appointmentId]), [["service", 4800, "appt_01JABCDEF0000000000000025"], ["excess_deduction", -1200, null]]);
+      assert.deepEqual([mixed.invoice.totalPence, mixed.invoice.perVisitContributionPence], [3600, null]);
+      assert.deepEqual(mixed.excessInvoice!.lines.map((l) => [l.kind, l.totalPence, l.appointmentId]), [["excess", 4800, "appt_01JABCDEF0000000000000024"], ["excess", 1200, null]]);
+      assert.match(mixed.excessInvoice!.lines[0].description ?? "", /covered by the insurance excess$/);
+      assert.equal(await excessBilledForCase(ctx, A, k3), 6000);
+      // Back to "as the payer account".
+      await setCaseContributionMode(ctx, A, k3, null, ACTOR);
+      assert.equal((await contributionModeForCase(ctx, A, k3, kestrel.id)).source, "payer");
+      assert.equal((await caseContributionOverrides(ctx, A, [k3])).size, 0);
+      await rejects(setCaseContributionMode(ctx, B, k3, "per_visit", ACTOR_B), /does not exist/);
+
+      // 4. Excess per case covering every visit: no £0 insurer invoice either.
+      const n1 = (await createCase(ctx, A, { patientId: id.daniel, title: "Knee", openedOn: "2026-10-01", payerType: "insurer", payerReferrerId: id.insurer, excessPence: 25000 }, ACTOR)).id;
+      const allExcess = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: n1, billTo: "payer", lines: [fu("2026-10-04", "appt_01JABCDEF0000000000000026")] }, ACTOR, { applyExcess: true });
+      assert.deepEqual([allExcess.invoice.billTo, allExcess.invoice.totalPence, allExcess.excessInvoice], ["patient", 4800, null]);
+      assert.equal(await excessBilledForCase(ctx, A, n1), 4800, "the excess used so far");
+      for (const inv of [one.invoice, one.excessInvoice!, again.invoice, again.excessInvoice!, mixed.invoice, mixed.excessInvoice!, allExcess.invoice]) await cancelDraftInvoice(ctx, A, inv.id, (await getInvoice(ctx, A, inv.id))!.rev, ACTOR).catch(() => undefined);
     });
 
     it("payments: allocated to the patient's invoices, never over-allocated, atomic refusals, reversal", async () => {
@@ -458,6 +530,8 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
         "pms.payment_link.create",
         "pms.payment_link.status",
         "pms.invoice.export",
+        "pms.payer_terms.set",
+        "pms.case_terms.set",
       ]) {
         assert.ok(codes.has(code), code);
       }

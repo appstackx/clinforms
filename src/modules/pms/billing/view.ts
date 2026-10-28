@@ -4,6 +4,7 @@
  * on the invoice detail and the print views, which show the invoice's own lines.
  */
 import type { AgeBucket } from "./aging";
+import type { ContributionMode } from "./excess";
 import type { InvoiceState } from "./status";
 import type { BillTo, CreditNoteKind, PaymentKind, PaymentMethod, VisitStatus } from "./types";
 import type { VatCode } from "./vat";
@@ -54,8 +55,12 @@ export interface UninvoicedVisitView {
   /** Of the charge: the patient's part (self-pay: all of it; insured: the excess) and the payer's part. */
   patientPence: number;
   payerPence: number;
-  /** The insurance excess this visit carries (insured visits). */
+  /** The patient's part this visit carries (insured visits: the excess per case, or the contribution per visit). */
   excessPence: number;
+  /** Insured visits: how the case bills the patient's part. */
+  contributionMode: ContributionMode | null;
+  /** The visit's case (null: none). */
+  caseId: string | null;
   /** A did-not-attend / late-cancellation fee can be waived. */
   waivable: boolean;
 }
@@ -108,6 +113,12 @@ export interface InvoiceDetailView {
   authorisation: { code: string; sessionsUsed: number; sessionsAuthorised: number | null } | null;
   /** The other half of an insured visit's split (the patient's excess invoice, or the insurer's). */
   partner: { id: string; number: string | null; billToName: string; totalPence: number; balancePence: number; state: InvoiceState; isExcess: boolean } | null;
+  /**
+   * How the patient's part of this insured invoice was billed (null: not an insured split). `amountPence`: the
+   * case's excess (per case) or the contribution on every visit (per visit). `fullyPatient`: the patient's invoice
+   * of visits their part covered in full – nothing was claimed from `insurerName` for them.
+   */
+  contribution: { mode: ContributionMode; amountPence: number | null; insurerName: string | null; fullyPatient: boolean } | null;
   siteName: string | null;
   issuedOn: string | null;
   dueOn: string | null;
@@ -198,4 +209,13 @@ export interface PrintClinic {
   lines: string[];
   contact: string | null;
   vatNumber: string | null;
+}
+
+/** A payer account and how it bills the patient's part of an insured visit (the Payer accounts page). */
+export interface PayerAccountTermsView {
+  id: string;
+  name: string;
+  kind: string;
+  active: boolean;
+  mode: ContributionMode;
 }

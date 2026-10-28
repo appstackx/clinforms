@@ -6,6 +6,7 @@
  */
 import { Fragment } from "react";
 import type { InvoiceDetailView, PrintClinic, StatementView } from "@/modules/pms/billing/view";
+import { contributionWording } from "@/modules/pms/billing/excess";
 import { INVOICE_STATE_LABELS } from "@/modules/pms/billing/status";
 import { vatLabel } from "@/modules/pms/billing/vat";
 import { formatPence, formatUkDate } from "@/modules/pms/core/text";
@@ -92,7 +93,7 @@ export function PrintInvoiceSheet({ clinic, invoice: inv, howToPay, printedBy, p
             {insured && excessTotal > 0 ? (
               <>
                 <th scope="col" className="py-2 pr-3 text-right">Fee</th>
-                <th scope="col" className="py-2 pr-3 text-right">Excess</th>
+                <th scope="col" className="py-2 pr-3 text-right">{contributionWording(inv.contribution?.mode ?? "per_case").column}</th>
               </>
             ) : null}
             <th scope="col" className="py-2 text-right">Amount</th>
