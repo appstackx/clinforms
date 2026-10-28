@@ -89,6 +89,8 @@ export interface PmsInvoicesTable {
   site_id: string | null;
   /** 0134: when an issued invoice was voided (a full credit note of kind "void"). */
   voided_at: IsoTimestamp | null;
+  /** 0138: the patient contribution per visit the split used (NULL = the excess per case, or no split). */
+  per_visit_contribution_pence: number | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -242,6 +244,28 @@ export interface PmsSavedCardsTable {
   updated_at: IsoTimestamp;
 }
 
+/** 0137: how a payer account bills the patient's part of an insured visit ("per_case" | "per_visit"). */
+export interface PmsPayerBillingTermsTable {
+  tenant_id: string;
+  referrer_id: string;
+  rev: number;
+  contribution_mode: string;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** 0137: a case's own override of its payer account's mode (NULL = as the payer account). */
+export interface PmsCaseBillingTermsTable {
+  tenant_id: string;
+  case_id: string;
+  rev: number;
+  contribution_mode: string | null;
+  updated_by: string | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -254,6 +278,8 @@ export interface BillingTables {
   pms_payment_links: PmsPaymentLinksTable;
   pms_invoice_exports: PmsInvoiceExportsTable;
   pms_saved_cards: PmsSavedCardsTable;
+  pms_payer_billing_terms: PmsPayerBillingTermsTable;
+  pms_case_billing_terms: PmsCaseBillingTermsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -269,6 +295,8 @@ export const BILLING_TABLES = [
   "pms_payment_links",
   "pms_invoice_exports",
   "pms_saved_cards",
+  "pms_payer_billing_terms",
+  "pms_case_billing_terms",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -283,6 +311,8 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_payment_links: ["tenant_id", "id"],
   pms_invoice_exports: ["tenant_id", "id"],
   pms_saved_cards: ["tenant_id", "id"],
+  pms_payer_billing_terms: ["tenant_id", "referrer_id"],
+  pms_case_billing_terms: ["tenant_id", "case_id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */

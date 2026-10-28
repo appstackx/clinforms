@@ -135,6 +135,8 @@ export interface Invoice extends InvoiceSummary {
   issuedBy: string | null;
   authSessions: number;
   authValuePence: number;
+  /** The patient contribution per visit the split used (migration 0138); null = the excess per case, or no split. */
+  perVisitContributionPence: number | null;
   importRef: string | null;
   createdBy: string | null;
 }

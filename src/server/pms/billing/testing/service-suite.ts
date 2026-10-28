@@ -33,7 +33,7 @@ import { unscopedStatements } from "../../../repos/pms/testing/guarded-db";
 import { testActor } from "../access";
 import type { PaymentLinkProvider } from "../payments";
 import { DIARY_VISIT_SOURCE } from "../../diary/billing-visits";
-import { agedDebtFor, billingHomeFor, invoiceDetailFor, patientAccountFor, printInvoiceFor, statementFor, takePaymentViewFor, uninvoicedVisitsFor } from "../views";
+import { agedDebtFor, billingHomeFor, caseContributionFor, invoiceDetailFor, patientAccountFor, payerTermsFor, printInvoiceFor, statementFor, takePaymentViewFor, uninvoicedVisitsFor } from "../views";
 import {
   checkPaymentLinksFor,
   creditNoteFor,
@@ -42,6 +42,8 @@ import {
   refundFor,
   remittanceFor,
   saveTestCardFor,
+  setCaseContributionModeFor,
+  setPayerContributionModeFor,
   takePaymentFor,
   voidInvoiceFor,
   waiveFeeFor,
@@ -359,6 +361,66 @@ export function defineBillingServiceSuite(label: string, factory: () => Promise<
       const account = ok(await patientAccountFor(reception(), id.owen));
       assert.equal(account.patientBalancePence, 0);
       assert.match(account.savedCard?.label ?? "", /4242/);
+    });
+
+    it("the patient's part per payer account: a contribution on every visit; a visit it covers in full goes to the patient only (no £0 insurer invoice)", async () => {
+      const kestrel = (await createReferrer(ctx, A, { kind: "insurer", name: "Kestrel Healthcare (fictional)" }, SEED)).id;
+      refused(await setPayerContributionModeFor(reception(), kestrel, "per_visit"), /permission/);
+      refused(await setPayerContributionModeFor(owner(), kestrel, "sometimes"), /Choose how/);
+      ok(await setPayerContributionModeFor(owner(), kestrel, "per_visit"));
+      const terms = ok(await payerTermsFor(reception()));
+      assert.equal(terms.canEdit, false, "reception sees the accounts but does not change them");
+      assert.deepEqual(
+        terms.accounts.map((a) => [a.name, a.mode]),
+        [
+          ["Bluewell Health (fictional)", "per_case"],
+          ["Kestrel Healthcare (fictional)", "per_visit"],
+        ],
+      );
+      const other = testActor(ctx, B, "owner", { userId: "user_b", name: "B" });
+      refused(await setPayerContributionModeFor(other, kestrel, "per_case"), /no longer exists|not found|does not exist/i);
+      const nina = (await createPatient(ctx, A, { firstName: "Nina", lastName: "Ford" }, SEED)).id;
+      const ted = (await createPatient(ctx, A, { firstName: "Ted", lastName: "Lowe" }, SEED)).id;
+      const ninaCase = (await createCase(ctx, A, { patientId: nina, title: "Elbow", openedOn: "2026-10-01", payerType: "insurer", payerReferrerId: kestrel, excessPence: 2000, siteId: id.siteA }, SEED)).id;
+      const tedCase = (await createCase(ctx, A, { patientId: ted, title: "Calf", openedOn: "2026-10-01", payerType: "insurer", payerReferrerId: kestrel, excessPence: 6000, siteId: id.siteA }, SEED)).id;
+      const n1 = await visit(A, nina, "12:00", { caseId: ninaCase });
+      const t1 = await visit(A, ted, "07:00", { caseId: tedCase });
+      await status(n1, "attended", 1);
+      await status(t1, "attended", 1);
+      const rows = ok(await uninvoicedVisitsFor(reception())).visits;
+      const row = (appt: string) => rows.find((v) => v.appointmentId === appt);
+      assert.deepEqual([n1, t1].map((a) => [row(a)?.billTo, row(a)?.chargePence, row(a)?.patientPence, row(a)?.payerPence, row(a)?.contributionMode]), [
+        ["payer", 5500, 2000, 3500, "per_visit"],
+        ["payer", 5500, 5500, 0, "per_visit"],
+      ]);
+      const made = ok(await invoiceVisitsFor(reception(), { appointmentIds: [n1, t1], issue: true }));
+      assert.deepEqual(
+        made.invoices.map((i) => [i.billTo, i.totalPence]).sort(),
+        [
+          ["patient", 2000],
+          ["patient", 5500],
+          ["payer", 3500],
+        ],
+        "Nina: insurer 35.00 + her 20.00; Ted: all 55.00 to him – no £0 insurer invoice",
+      );
+      const ninaInsurer = made.invoices.find((i) => i.billTo === "payer")!.id;
+      const d = ok(await invoiceDetailFor(reception(), ninaInsurer));
+      assert.deepEqual(d.contribution, { mode: "per_visit", amountPence: 2000, insurerName: "Kestrel Healthcare (fictional)", fullyPatient: false });
+      assert.deepEqual(d.lines.map((l) => [l.totalPence, l.excessPence]), [[5500, 2000]]);
+      assert.equal(d.partner?.isExcess, true);
+      const tedInv = made.invoices.find((i) => i.totalPence === 5500)!.id;
+      const t = ok(await invoiceDetailFor(reception(), tedInv));
+      assert.deepEqual([t.billTo, t.partner, t.contribution?.fullyPatient, t.contribution?.insurerName], ["patient", null, true, "Kestrel Healthcare (fictional)"]);
+      assert.deepEqual(t.lines.map((l) => [l.kind, l.appointmentId, l.totalPence]), [["excess", t1, 5500]]);
+      assert.equal((await listInvoicesPage(ctx, A, { caseId: tedCase })).rows.filter((r) => r.billTo === "payer").length, 0);
+      // A case's own choice, saved with the case form (patients.edit); never another patient's case.
+      refused(await setCaseContributionModeFor(reception(), id.owen, tedCase, "per_case"), /no longer exists|not found|does not exist/i);
+      ok(await setCaseContributionModeFor(reception(), ted, tedCase, "per_case"));
+      assert.deepEqual(await caseContributionFor(reception(), tedCase), { payerModes: { [kestrel]: "per_visit" }, caseMode: "per_case" });
+      ok(await setCaseContributionModeFor(reception(), ted, tedCase, ""));
+      assert.equal((await caseContributionFor(reception(), tedCase)).caseMode, null);
+      assert.equal((await listAudit(ctx, A, { action: "pms.case_terms.set" })).length, 2);
+      assert.equal((await listAudit(ctx, A, { action: "pms.payer_terms.set" })).length, 1);
     });
 
     it("tenant-scope guard: every clinic-system statement named tenant_id", () => {

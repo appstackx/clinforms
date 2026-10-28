@@ -1,6 +1,7 @@
 "use client";
 /** Open or edit a case (episode of care with its payer), and add or change a treatment authorisation. */
 import { useState } from "react";
+import { CONTRIBUTION_MODES, CONTRIBUTION_MODE_LABELS, effectiveContributionMode, type ContributionMode } from "@/modules/pms/billing/excess";
 import { CASE_STATUS_LABELS, PAYER_KINDS, PAYER_TYPE_LABELS } from "@/modules/pms/records/copy";
 import type { PayerType } from "@/modules/pms/core/types";
 import { ActionForm, Fieldset, SelectField, Submit, TextAreaField, TextField, type Option, type RecordsAction } from "./form";
@@ -38,8 +39,36 @@ export interface CaseFormValues {
 const PAYER_OPTIONS: Option[] = (Object.keys(PAYER_TYPE_LABELS) as PayerType[]).map((p) => ({ value: p, label: PAYER_TYPE_LABELS[p] }));
 const STATUS_OPTIONS: Option[] = Object.entries(CASE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
-export function CaseForm({ action, patientId, values = {}, options, submitLabel }: { action: RecordsAction; patientId: string; values?: CaseFormValues; options: DirectoryOptions; submitLabel: string }) {
+/**
+ * Billing's part of the case form (when the member can see billing): how each payer account bills the patient's
+ * part of an insured visit, and this case's own choice (null = as its account). Saved by billing
+ * (src/server/pms/billing/writes.ts setCaseContributionModeFor) after the case.
+ */
+export interface CaseContributionOptions {
+  payerModes: Record<string, ContributionMode>;
+  caseMode: ContributionMode | null;
+}
+
+export function CaseForm({
+  action,
+  patientId,
+  values = {},
+  options,
+  submitLabel,
+  contribution,
+}: {
+  action: RecordsAction;
+  patientId: string;
+  values?: CaseFormValues;
+  options: DirectoryOptions;
+  submitLabel: string;
+  contribution?: CaseContributionOptions;
+}) {
   const [payerType, setPayerType] = useState<PayerType>(values.payerType ?? "self_pay");
+  const [account, setAccount] = useState<string>(values.payerReferrerId ?? "");
+  const [caseMode, setCaseMode] = useState<ContributionMode | "">(contribution?.caseMode ?? "");
+  const accountMode = effectiveContributionMode(null, contribution?.payerModes[account]);
+  const mode = effectiveContributionMode(caseMode || null, accountMode);
   const payerChoices = options.referrers.filter((r) => (PAYER_KINDS[payerType] as readonly string[]).includes(r.kind));
   const editing = Boolean(values.caseId);
   return (
@@ -84,7 +113,13 @@ export function CaseForm({ action, patientId, values = {}, options, submitLabel 
           </select>
         </div>
         {payerType !== "self_pay" ? (
-          <>
+          <div
+            className="space-y-4"
+            onChange={(e) => {
+              const t = e.target as HTMLSelectElement;
+              if (t.name === "payerReferrerId") setAccount(t.value);
+            }}
+          >
             <SelectField
               key={payerType}
               label="Account"
@@ -97,9 +132,41 @@ export function CaseForm({ action, patientId, values = {}, options, submitLabel 
             <div className="grid gap-4 sm:grid-cols-3">
               <TextField label="Membership or policy number" name="membershipNumber" defaultValue={values.membershipNumber} maxLength={40} />
               <TextField label="Claim or case reference" name="claimReference" defaultValue={values.claimReference} maxLength={60} />
-              <TextField label="Excess the patient pays (£)" name="excess" inputMode="decimal" defaultValue={values.excess} maxLength={12} hint="For example 100.00" />
+              <TextField
+                label={mode === "per_visit" ? "Patient contribution per visit (£)" : "Excess the patient pays (£)"}
+                name="excess"
+                inputMode="decimal"
+                defaultValue={values.excess}
+                maxLength={12}
+                hint={mode === "per_visit" ? "Paid by the patient on every visit, e.g. 20.00" : "For the whole case, e.g. 100.00"}
+              />
             </div>
-          </>
+            {contribution ? (
+              <div className="space-y-1.5 sm:max-w-md">
+                <label htmlFor="case-contribution-mode" className="block text-sm font-medium text-foreground">
+                  How the patient&apos;s part is billed
+                </label>
+                <select
+                  id="case-contribution-mode"
+                  name="contributionMode"
+                  value={caseMode}
+                  onChange={(e) => setCaseMode(e.target.value as ContributionMode | "")}
+                  aria-describedby="case-contribution-mode-hint"
+                  className="block h-10 w-full rounded-lg border border-input-strong bg-white px-3 text-sm text-foreground shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30"
+                >
+                  <option value="">As the payer account ({CONTRIBUTION_MODE_LABELS[accountMode].toLowerCase()})</option>
+                  {CONTRIBUTION_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {CONTRIBUTION_MODE_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+                <p id="case-contribution-mode-hint" className="text-xs text-muted-foreground">
+                  Excess per case: one amount for the whole case, used up visit by visit. Contribution per visit: the patient pays the amount on every visit. The insurer pays the rest.
+                </p>
+              </div>
+            ) : null}
+          </div>
         ) : (
           <input type="hidden" name="payerReferrerId" value="" />
         )}
