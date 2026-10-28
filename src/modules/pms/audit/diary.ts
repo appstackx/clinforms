@@ -13,6 +13,7 @@ export const DIARY_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.appointment.dna": "Appointment marked as did not attend",
   "pms.appointment.cancel": "Appointment cancelled",
   "pms.appointment.late_cancel": "Appointment cancelled late",
+  "pms.appointment.fee_waive": "Missed-appointment fee waived",
   "pms.appointment.reinstate": "Cancelled appointment reinstated",
   "pms.appointment.status_undo": "Appointment status corrected",
   "pms.appointment.cancel_series": "Rest of a recurring booking cancelled",

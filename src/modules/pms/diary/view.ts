@@ -21,6 +21,8 @@ export interface DiaryParams {
   focusId: string | null;
   /** Open the booking form for this waiting-list entry. */
   bookFromWaitingId: string | null;
+  /** Open the booking form for this patient (the patient record's "Book" button). */
+  bookForPatientId: string | null;
 }
 
 export function parseDiaryParams(searchParams: Record<string, string | string[] | undefined>, today: string): DiaryParams {
@@ -43,6 +45,7 @@ export function parseDiaryParams(searchParams: Record<string, string | string[] 
     showCancelled: one("cancelled") === "1",
     focusId: id("focus"),
     bookFromWaitingId: id("book"),
+    bookForPatientId: id("patient"),
   };
 }
 
@@ -57,6 +60,7 @@ export function diaryHref(base: string, p: Partial<DiaryParams> & { date: string
   if (p.showCancelled) q.set("cancelled", "1");
   if (p.focusId) q.set("focus", p.focusId);
   if (p.bookFromWaitingId) q.set("book", p.bookFromWaitingId);
+  if (p.bookForPatientId) q.set("patient", p.bookForPatientId);
   return `${base}?${q.toString()}`;
 }
 

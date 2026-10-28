@@ -7,6 +7,7 @@
  * search words follow the shared record's quick search (src/server/repos/pms/patients.ts searchPatients).
  */
 import { phoneDigits, searchKey } from "../../../../modules/pms/core/text";
+import { sql } from "kysely";
 import type { PatientStatus, PatientSummary, PayerType } from "../../../../modules/pms/core/types";
 import { getPatientSummaries } from "../patients";
 import { assertTenantId, num, type RepoContext } from "../context";
@@ -29,6 +30,8 @@ export interface PatientPageQuery {
   offset?: number;
   /** A member's site scope (K2-SITE-004; null/undefined = every site): patientSiteFilter in ../access.ts. */
   siteIds?: ReadonlySet<string> | null;
+  /** Only patients who owe money on issued invoices addressed to them (billing's invoices, read only). */
+  owesMoney?: boolean;
 }
 
 export interface OpenCaseSummary {
@@ -91,6 +94,19 @@ function filtered(ctx: RepoContext, tenantId: string, q: PatientPageQuery): Pati
     );
   }
   if (q.lastSeenOn) query = query.where("pms_patients.last_seen_on", "=", q.lastSeenOn);
+  if (q.owesMoney) {
+    // Billing's "Owes money" (M5): the patient's own issued invoices still owe something.
+    query = query.where("pms_patients.id", "in", (eb) =>
+      eb
+        .selectFrom("pms_invoices")
+        .select("pms_invoices.patient_id")
+        .where("pms_invoices.tenant_id", "=", tenantId)
+        .where("pms_invoices.status", "=", "issued")
+        .where("pms_invoices.bill_to", "=", "patient")
+        .groupBy("pms_invoices.patient_id")
+        .having(sql<number>`sum(pms_invoices.total_pence - pms_invoices.paid_pence - pms_invoices.credited_pence)`, ">", 0),
+    );
+  }
   return query;
 }
 

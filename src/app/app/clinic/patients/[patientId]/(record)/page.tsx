@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FileText } from "lucide-react";
+import { PatientAccountCard } from "@/components/pms/billing/patient-billing";
 import { NoteRow } from "@/components/pms/records/note-row";
 import { whenLabel } from "@/components/pms/records/format";
 import { Card, ComingSoon } from "@/components/pms/records/ui";
@@ -8,6 +9,7 @@ import { StatusPill } from "@/components/pms/ui";
 import { formatUkDate } from "@/modules/pms/core/text";
 import { PAYER_TYPE_LABELS } from "@/modules/pms/records/copy";
 import { requireClinicActor } from "@/server/pms/actor";
+import { patientAccountFor } from "@/server/pms/billing/views";
 import { getCaseDetails } from "@/server/pms/records/cases-service";
 import { loadRecordHeader } from "@/server/pms/records/record-header";
 import { patientPath } from "@/server/pms/records/record";
@@ -22,7 +24,8 @@ const linkClass = "text-sm font-medium text-primary-strong hover:underline focus
  * The record's Overview tab (design round 2): open case with its referral reason (patients.referral), authorised sessions and "Complete referrer form",
  * upcoming appointments, latest notes (clinicians, owners, administrators only), account and forms.
  *
- * TODO(billing): the Account card (patient and insurer balance, saved card) – billing module.
+ * The Account card (patient and insurer balance, saved card, Take payment) comes from the billing module
+ * (billing.view; Take payment billing.pay) – left out for a member without billing.view.
  * TODO(portal): the Forms card (intake and consent forms) – portal module.
  * TODO(integration): "Complete referrer form" opens the ClinForms flow pre-filled from the case once the native
  *   connector (feat/cs-integration) is merged; until then it goes to the case's "Referrer and insurer forms" panel.
@@ -37,6 +40,7 @@ export default async function PatientOverviewPage({ params }: { params: { patien
   const payer = open?.payerReferrerId ? await getReferrer(actor.repo(), actor.tenantId, open.payerReferrerId) : null;
   const upcoming = h.appointments ? [...h.appointments.past.filter((r) => r.startsOn === h.today && r.status !== "cancelled").reverse(), ...h.appointments.upcoming.filter((r) => r.status !== "cancelled")].slice(0, 3) : null;
   const latest = h.notes ? h.notes.slice(0, 2) : null;
+  const account = actor.can("billing.view") ? await patientAccountFor(actor, p.id) : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -116,10 +120,11 @@ export default async function PatientOverviewPage({ params }: { params: { patien
             )}
           </Card>
         ) : null}
-        <Card title="Account">
-          {/* TODO(billing): patient balance, insurer balance and saved card from the billing module. */}
-          <ComingSoon compact title="Coming with billing">The patient&apos;s and the insurer&apos;s balance will show here.</ComingSoon>
-        </Card>
+        {account ? (
+          <Card title="Account" action={<Link href={patientPath(p.id, "invoices")} className={linkClass}>Invoices</Link>}>
+            {account.ok ? <PatientAccountCard patientId={p.id} account={account.value} canPay={actor.can("billing.pay") && p.status === "active"} /> : <p className="text-sm text-[#475569]">{account.error}</p>}
+          </Card>
+        ) : null}
         <Card title="Forms">
           {/* TODO(portal): intake and consent forms from the portal module. */}
           <ComingSoon compact title="Coming with the patient portal">Intake and consent forms the patient has signed will show here.</ComingSoon>

@@ -34,6 +34,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: Rec
         hasAlerts: r.hasAlerts,
         next: r.next ? { startsAt: r.next.startsAt, practitionerName: r.next.practitionerName } : null,
         openCase: r.openCase ? { title: r.openCase.title, payerName: r.openCase.payerName } : null,
+        balancePence: r.balancePence,
       }))}
       total={view?.total ?? 0}
       page={view?.page ?? filters.page}
@@ -45,6 +46,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: Rec
       canCreate={actor.can("patients.edit")}
       canExport={actor.can("reports.export")}
       canSeeUnsigned={actor.can("clinical.view")}
+      canSeeBalance={actor.can("billing.view")}
       failed={!result.ok}
       registerAction={registerPatient}
     />
