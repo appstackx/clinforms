@@ -1070,3 +1070,30 @@ the case (picker of the clinic's ClinForms library → Studio with the case load
 Forms tab with approver and time); product switch above the Studio; import screens under Set-up → Import data; letters
 Word/PDF, `{{latest_outcomes}}`, discharge letter, one merge-field engine; insurer claims screen; `billing.md`; suite on
 4 backends + 50,000-row import test + 2,000 rows through the D1 stand-in; demo seed (sample forms, Emily Turner walk).
+
+## 19. M9b polish (28–29/10/2026) – IN PROGRESS (midpoint)
+
+**Branches (`main` untouched):** `feat/cs-polish` from `feat/clinic-system` `9b97f96`, worktree
+`/Users/khuram/Projects/Appstackx/clinforms-wt/cs-polish` (npm ci done incl. workers/data-gateway, `.env.local` from
+cs-reporting). Two helper branches merge into it before the final merge: `feat/cs-polish-portal` (worktree
+`clinforms-wt/cs-polish-portal` – items 6, 7, 8, 10) and `feat/cs-polish-rep` (worktree `clinforms-wt/cs-polish-rep` –
+item 9 apart from the closure notice, plus utilisation ≤ 100 %). E2E ports 3170–3179. Runs in parallel with M9 (§18).
+
+**Migration numbers ≥ 0180** (new `extra` ranges in `src/modules/pms/core/modules.ts`, contract §3): diary `0180`–`0181`
+and `0189`, portal `0182`–`0185`, reporting `0186`–`0187`, records `0188`.
+
+**Midpoint – done on `feat/cs-polish` `0cea140` (pushed):**
+| Commit | What |
+|---|---|
+| `0d60865` | Contract: follow-up migration ranges |
+| `715dc2a` | **Waiting-list offers hold their slot** (0180 `hold_until`, 0181 triggers on SQLite/D1 + Postgres: nobody else can book, move or block over an open unexpired offer, except the patient it is held for; expiry needs no job; decline/withdraw release it); hold length on offer (30 min – 1 day, default 2 h, never past the start; a text held for quiet hours moves the hold on); holds in the booking check, free slots / online booking, the diary grid ("Held for … until 14:20") and the waiting list (Book offered slot / Patient declined / Withdraw offer). **Closure notice** "Closed – reason" on the diary. **Diary blocks** fit every height (lines by height; alert / online icons join the Double-booked marker in the top line) |
+| `1256ea1` | Diary drawer **Send message** (COMMS-011) – comms' own send form + templates in a dialog |
+| `0cea140` | **Diary → messages sweep** (0189 `pms_diary_message_sweeps`): the message run (cron + "Send due messages now") re-syncs appointments changed since the last sweep, so a failed sync heals itself; a re-sync keeps pending notices that are still true |
+
+Found already done in M5 (`94926a8`) and checked: items 1 (seen statuses only from 60 min before the start – rule,
+server check in `setAppointmentStatus`, drawer, note screen's "Mark appointment as completed", dashboard Arrived), 3
+(record Book → booking form with the patient, `?patient=`).
+
+**Not yet done at midpoint:** merging the helper branches, e2e `scripts/e2e/pms-polish.cjs` + re-runs, full chain,
+merge into `feat/clinic-system`, requirement statuses. If you pick this up: `git -C …/cs-polish log`, then check the
+two helper branches on origin.
