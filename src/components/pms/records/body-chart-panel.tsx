@@ -47,8 +47,8 @@ function Outline() {
 function Marker({ x, y, n, selected }: { x: number; y: number; n: number; selected?: boolean }) {
   return (
     <>
-      <circle cx={x} cy={y * 2} r={5} fill={selected ? "#1842B4" : "#0B7970"} stroke="#FFFFFF" strokeWidth={1.2} />
-      <text x={x} y={y * 2 + 1.9} textAnchor="middle" fontSize={5.6} fontWeight={700} fill="#FFFFFF" style={{ pointerEvents: "none" }}>
+      <circle cx={x} cy={y * 2} r={7} fill={selected ? "#1842B4" : "#0B7970"} stroke="#FFFFFF" strokeWidth={1.2} />
+      <text x={x} y={y * 2 + 2.8} textAnchor="middle" fontSize={8} fontWeight={700} fill="#FFFFFF" style={{ pointerEvents: "none" }}>
         {n}
       </text>
     </>

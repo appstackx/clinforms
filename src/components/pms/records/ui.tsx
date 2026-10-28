@@ -79,7 +79,7 @@ export function SectionHeader({ title, description, actions, level = 2 }: { titl
 /** A table that scrolls inside its own box on a narrow screen (the page never scrolls sideways). */
 export function TableBox({ children, caption }: { children: React.ReactNode; caption: string }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-white">
+    <div className="relative overflow-x-auto rounded-2xl border border-border bg-white">
       <table className="min-w-full divide-y divide-border text-left text-sm">
         <caption className="sr-only">{caption}</caption>
         {children}
@@ -109,7 +109,13 @@ export function Card({ title, description, action, children, className, id, leve
 }
 
 /** "Coming with billing" – a tab or card whose module is not part of this build yet (never a broken page). */
-export function ComingSoon({ title, children }: { title: string; children?: React.ReactNode }) {
+export function ComingSoon({ title, children, compact }: { title: string; children?: React.ReactNode; compact?: boolean }) {
+  if (compact)
+    return (
+      <p className="text-sm text-[#475569]">
+        <strong className="font-semibold text-foreground">{title}.</strong> {children}
+      </p>
+    );
   return (
     <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-input-strong bg-white px-6 py-8 text-center text-sm">
       <strong className="text-[15px] font-semibold text-foreground">{title}</strong>

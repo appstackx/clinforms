@@ -22,3 +22,9 @@ organisations ending "(fictional)").
 See the kit's commit message (feat/cs-ui) – e.g. the shell's nav shows only the modules whose screens exist, the
 user menu has "My account and security" (there is no profile/signature page yet), and avatar colours come from a
 hash of the name, so the example people get different colours than in the mock-up.
+
+## Round 2 (per area)
+
+| Folder | What | Built on |
+|---|---|---|
+| [`round2/patients/`](round2/patients/README.md) | Patients list and new patient, patient record by role, clinical-note editor (sign, amend, unsigned notes), patients at 375 px | `feat/cs-records` |

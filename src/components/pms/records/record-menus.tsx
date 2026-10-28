@@ -27,7 +27,7 @@ export function RecordTabs({ tabs }: { tabs: RecordTabLink[] }) {
     refs.current[(i + step + tabs.length) % tabs.length]?.focus();
   };
   return (
-    <nav aria-label="Patient record sections" className="-mx-1 overflow-x-auto px-1">
+    <nav aria-label="Patient record sections" data-scroll-x className="relative w-full min-w-0 max-w-full overflow-x-auto">
       <ul className="flex min-w-max gap-1 border-b border-border">
         {tabs.map((t, i) => {
           const current = t.exact ? pathname === t.href : pathname === t.href || pathname.startsWith(`${t.href}/`);
@@ -42,7 +42,7 @@ export function RecordTabs({ tabs }: { tabs: RecordTabLink[] }) {
                 onKeyDown={(e) => onKey(i, e)}
                 className={cn(
                   "-mb-px inline-flex h-11 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary",
-                  current ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  current ? "border-primary text-foreground" : "border-transparent text-[#475569] hover:text-foreground",
                 )}
               >
                 {t.label}

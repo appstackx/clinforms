@@ -92,7 +92,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
   const action = (variant: "primary" | "secondary") => pmsButtonVariants({ variant });
 
   return (
-    <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-[1180px] flex-col gap-4">
       <nav aria-label="Breadcrumb" className="text-sm text-[#475569]">
         <Link href={PATIENTS_PATH} className="text-primary-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
           Patients
@@ -127,20 +127,20 @@ export default async function PatientRecordLayout({ children, params }: { childr
               <ul className="flex flex-wrap gap-1.5" aria-label="Alerts and consent">
                 {alertsOf(p.alerts).map((a) => (
                   <li key={`a-${a}`}>
-                    <FlagPill variant="alert" icon={<AlertTriangle />}>
+                    <FlagPill variant="alert" icon={<AlertTriangle />} className="h-auto min-h-6 whitespace-normal py-0.5">
                       Alert: {lowerFirst(a)}
                     </FlagPill>
                   </li>
                 ))}
                 {(h.flags ?? []).map((f) => (
                   <li key={f.id}>
-                    <FlagPill variant="alert" icon={<AlertTriangle />}>
+                    <FlagPill variant="alert" icon={<AlertTriangle />} className="h-auto min-h-6 whitespace-normal py-0.5">
                       Clinical: {lowerFirst(f.text ?? "")}
                     </FlagPill>
                   </li>
                 ))}
                 <li>
-                  <span className="inline-flex h-6 items-center gap-[5px] whitespace-nowrap rounded-[6px] bg-[#DCFCE7] pl-[7px] pr-[9px] text-xs font-medium text-[#166534]">
+                  <span className="inline-flex min-h-6 items-center gap-[5px] rounded-[6px] bg-[#DCFCE7] py-0.5 pl-[7px] pr-[9px] text-xs font-medium text-[#166534]">
                     <ShieldCheck className="h-3 w-3" aria-hidden />
                     <span aria-hidden>
                       Consent: reminders {reminders ? "✓" : "✗"} · treatment {p.consentTreatment ? "✓" : "✗"}

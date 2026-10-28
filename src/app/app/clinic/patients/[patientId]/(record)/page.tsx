@@ -111,11 +111,11 @@ export default async function PatientOverviewPage({ params }: { params: { patien
         ) : null}
         <Card title="Account">
           {/* TODO(billing): patient balance, insurer balance and saved card from the billing module. */}
-          <ComingSoon title="Coming with billing">The patient&apos;s and the insurer&apos;s balance will show here.</ComingSoon>
+          <ComingSoon compact title="Coming with billing">The patient&apos;s and the insurer&apos;s balance will show here.</ComingSoon>
         </Card>
         <Card title="Forms">
           {/* TODO(portal): intake and consent forms from the portal module. */}
-          <ComingSoon title="Coming with the patient portal">Intake and consent forms the patient has signed will show here.</ComingSoon>
+          <ComingSoon compact title="Coming with the patient portal">Intake and consent forms the patient has signed will show here.</ComingSoon>
         </Card>
       </div>
     </div>

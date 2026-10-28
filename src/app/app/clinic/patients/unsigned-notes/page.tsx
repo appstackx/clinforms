@@ -31,7 +31,7 @@ export default async function UnsignedNotesPage({ searchParams }: { searchParams
       aria-current={scope === value ? "page" : undefined}
       className={cn(
         "-mb-px inline-flex h-11 items-center border-b-2 px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary",
-        scope === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+        scope === value ? "border-primary text-foreground" : "border-transparent text-[#475569] hover:text-foreground",
       )}
     >
       {label}

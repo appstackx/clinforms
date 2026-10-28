@@ -69,7 +69,7 @@ export function NewPatientForm({ action, initialName, onCancel, formId = "new-pa
                         <span className="block text-xs text-muted-foreground">
                           No. {d.patientNumber}
                           {d.dateOfBirth ? ` · born ${formatUkDate(d.dateOfBirth)}` : ""}
-                          {d.status !== "active" ? ` · ${d.status}` : ""} · same {d.reasons.join(", ").toLowerCase()}
+                          {d.status !== "active" ? ` · ${d.status}` : ""} · {d.reasons.join(", ").toLowerCase()}
                         </span>
                       </li>
                     ))}
@@ -95,13 +95,13 @@ export function NewPatientForm({ action, initialName, onCancel, formId = "new-pa
             <FormField id={`${formId}-pronouns`} label={<>Pronouns <span className="font-normal text-muted-foreground">(optional)</span></>} error={errors.pronouns}>
               <TextInput name="pronouns" maxLength={40} autoComplete="off" />
             </FormField>
-            <FormField id={`${formId}-first`} label="First name" required error={errors.firstName}>
+            <FormField id={`${formId}-first`} label={<>First name <span aria-hidden className="text-destructive-strong">*</span></>} required error={errors.firstName}>
               <TextInput name="firstName" required defaultValue={first} autoComplete="off" />
             </FormField>
-            <FormField id={`${formId}-last`} label="Last name" required error={errors.lastName}>
+            <FormField id={`${formId}-last`} label={<>Last name <span aria-hidden className="text-destructive-strong">*</span></>} required error={errors.lastName}>
               <TextInput name="lastName" required defaultValue={last} autoComplete="off" />
             </FormField>
-            <FormField id={`${formId}-dob`} label="Date of birth" required error={errors.dateOfBirth} hint="DD/MM/YYYY" className="col-span-2 sm:col-span-1">
+            <FormField id={`${formId}-dob`} label={<>Date of birth <span aria-hidden className="text-destructive-strong">*</span></>} required error={errors.dateOfBirth} hint="DD/MM/YYYY" className="col-span-2 sm:col-span-1">
               <TextInput name="dateOfBirth" required placeholder="DD/MM/YYYY" inputMode="numeric" autoComplete="off" />
             </FormField>
           </div>

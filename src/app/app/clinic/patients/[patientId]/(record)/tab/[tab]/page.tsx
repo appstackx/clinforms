@@ -47,7 +47,7 @@ export default async function StandInTab({ params }: { params: { patientId: stri
         <p className="p-5 text-sm text-muted-foreground">No appointments yet.</p>
       ) : (
         <>
-          <div className="hidden overflow-x-auto md:block">
+          <div className="relative hidden overflow-x-auto md:block">
             <table className="w-full min-w-[640px] text-sm">
               <caption className="sr-only">Appointments</caption>
               <thead>

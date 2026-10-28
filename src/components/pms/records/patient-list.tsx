@@ -288,7 +288,7 @@ export function PatientList(props: PatientListProps) {
   } else {
     body = (
       <>
-        <div className="hidden overflow-x-auto md:block">
+        <div className="relative hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] border-collapse text-sm">
             <caption className="sr-only">Patients</caption>
             <thead>
@@ -327,14 +327,14 @@ export function PatientList(props: PatientListProps) {
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">
-                    {r.dateOfBirth ? formatUkDate(r.dateOfBirth) : "–"} {r.age !== null ? <span className="text-muted-foreground">({r.age})</span> : null}
+                    {r.dateOfBirth ? formatUkDate(r.dateOfBirth) : "–"} {r.age !== null ? <span className="text-[#475569]">({r.age})</span> : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{r.phoneMobile ?? "–"}</td>
                   <td className="whitespace-nowrap px-4 py-2.5">
                     {r.next ? (
                       <>
                         <span className="tabular-nums">{whenLabel(r.next.startsAt, today)}</span>
-                        {r.next.practitionerName ? <span className="text-muted-foreground"> {r.next.practitionerName}</span> : null}
+                        {r.next.practitionerName ? <span className="text-[#475569]"> {r.next.practitionerName}</span> : null}
                       </>
                     ) : (
                       "–"
