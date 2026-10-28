@@ -3,7 +3,7 @@
  * The letter editor (design round 3, "Letter editor"): breadcrumb, the template and the recipient on the left (name,
  * address, email) with the merge fields still to fill, Edit / A4 preview, the letter (subject and text), the
  * signature that will be added ("Signature from your signing details. Added when you sign."), and Save draft ·
- * Print · Download PDF (the print page – "Save as PDF") · Sign and send by email (or Sign only, for post).
+ * Print · Download PDF / Download Word (the saved letter as a file, ./file?format=pdf|docx) · Sign and send by email (or Sign only, for post).
  * A signed letter no longer changes (it can be sent, printed or withdrawn). messages.letters – never reception.
  */
 import Link from "next/link";
@@ -232,9 +232,12 @@ export function LetterEditor({ view }: { view: LetterEditorView }) {
               <Printer aria-hidden />
               Print
             </Link>
-            <Link href={`${LETTERS_PATH}/${l.id}/print`} className={pmsButtonVariants({ variant: "secondary" })}>
+            <a href={`${LETTERS_PATH}/${l.id}/file?format=pdf`} download className={pmsButtonVariants({ variant: "secondary" })} data-testid="download-letter-pdf">
               Download PDF
-            </Link>
+            </a>
+            <a href={`${LETTERS_PATH}/${l.id}/file?format=docx`} download className={pmsButtonVariants({ variant: "secondary" })} data-testid="download-letter-docx">
+              Download Word
+            </a>
             {draft ? (
               <PmsButton variant="secondary" loading={busy === "sign"} disabled={unfilled} onClick={() => void sign("post")}>
                 Sign (to post)

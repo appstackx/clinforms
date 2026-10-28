@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { NoteScreen, type AmendmentView } from "@/components/pms/records/note-screen";
 import { UnsignedAside } from "@/components/pms/records/unsigned-aside";
+import { DischargeLetterButton } from "@/components/pms/comms/letter-discharge";
 import { personName } from "@/components/pms/records/format";
 import { FlagPill } from "@/components/pms/ui";
 import { setAppointmentStatusAction } from "@/app/app/clinic/diary/actions";
@@ -124,6 +125,7 @@ export default async function NotePage({ params }: { params: { patientId: string
             {p.dateOfBirth ? ` · DOB ${formatUkDate(p.dateOfBirth)}${age !== null ? ` (${age})` : ""}` : ""}
           </li>
         </ul>
+        {note.noteType === "discharge" && note.status === "signed" && !note.enteredInError && actor.can("messages.letters") ? <DischargeLetterButton patientId={p.id} noteId={note.id} /> : null}
         <NoteScreen
           key={`${note.id}-${note.rev}-${note.status}-${note.amendmentCount}`}
           patientId={p.id}

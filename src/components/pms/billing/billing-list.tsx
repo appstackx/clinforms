@@ -122,7 +122,10 @@ export function BillingList(props: BillingListProps) {
     <div className="mx-auto flex w-full min-w-0 max-w-[1180px] flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-foreground">Billing</h1>
-        <Link href={`${BILLING_PATH}/payers`} className={cn("ml-auto text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="payer-accounts-link">
+        <Link href={`${BILLING_PATH}/claims`} className={cn("ml-auto text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="claims-link">
+          Insurer claims
+        </Link>
+        <Link href={`${BILLING_PATH}/payers`} className={cn("text-sm font-medium text-primary-strong underline underline-offset-2", focusRing)} data-testid="payer-accounts-link">
           Payer accounts
         </Link>
         {can.edit ? (

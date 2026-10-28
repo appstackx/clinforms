@@ -88,6 +88,8 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/reports/v1/render": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
       "/api/reports/v1/forms/fill-preview": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
+      // Clinic system: letters as PDF (src/app/app/clinic/letters/[letterId]/file).
+      "/app/clinic/letters/[letterId]/file": ["./node_modules/pdfkit/js/standard-fonts/**/*"],
     },
   },
   async headers() {

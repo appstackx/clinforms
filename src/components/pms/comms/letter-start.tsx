@@ -55,7 +55,10 @@ export function LetterStart({ view }: { view: LetterStartView }) {
           <label key={x.id} className={cn("flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5", templateId === x.id ? "border-[#0E958A] bg-[#F0FDFA]" : "border-border")}>
             <input type="radio" name="letter-template" value={x.id} checked={templateId === x.id} onChange={() => setTemplateId(x.id)} className="mt-1 h-4 w-4 accent-[#0B7970]" />
             <span className="flex flex-col">
-              <span className="font-medium">{x.name}</span>
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{x.name}</span>
+                {x.recipientKind === "gp" || x.recipientKind === "referrer" ? <span className="rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[11px] font-semibold text-[#864E0E]">Clinical</span> : null}
+              </span>
               <span className="text-xs text-[#475569]">{x.hint}</span>
             </span>
           </label>

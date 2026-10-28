@@ -5,6 +5,7 @@
  * for the author to write – the letter cannot be finalised until both are gone (../../repos/pms/comms/letters.ts).
  */
 import { renderTemplate } from "../../../modules/pms/comms/merge-fields";
+import { formatLatestOutcomes } from "../../../modules/pms/comms/outcomes-field";
 import { formatAppointmentDay, formatAppointmentTime, formatLongDate } from "../../../modules/pms/comms/schedule";
 import type { Letter, LetterRecipientKind } from "../../../modules/pms/comms/types";
 import { formatUkDate, ukToday } from "../../../modules/pms/core/text";
@@ -16,6 +17,7 @@ import { getCommsSettings } from "../../repos/pms/comms/settings";
 import { getPractitioner, getSite } from "../../repos/pms/directory";
 import { getPatient } from "../../repos/pms/patients";
 import { getReferrer } from "../../repos/pms/referrers";
+import { listOutcomesForPatient } from "../../repos/pms/records/outcomes";
 import { clinicContact, clinicValues } from "./render";
 
 /** The register a profession's registration number belongs to (printed before the number under a signature). */
@@ -57,6 +59,8 @@ export interface StartLetterInput {
   recipientAddress?: string[] | null;
   recipientPostcode?: string | null;
   letterOn?: string;
+  /** Applied to the merged body before the letter is saved (the discharge letter writes the note's summary into its gaps). */
+  bodyFill?: (body: string) => string;
 }
 
 const lines = (...parts: (string[] | string | null | undefined)[]) =>
@@ -93,6 +97,16 @@ async function appointmentFacts(ctx: RepoContext, tenantId: string, patientId: s
   return { attended, firstVisit: attended[0] ?? null, lastVisit: attended[attended.length - 1] ?? null, upcoming };
 }
 
+/**
+ * `{{latest_outcomes}}`: first → latest score per measure of the case (when the case has any), else of the patient.
+ * Clinical: only ever read for a letter (letters need messages.letters – never reception).
+ */
+export async function latestOutcomesText(ctx: RepoContext, tenantId: string, patientId: string, caseId: string | null): Promise<string> {
+  const all = await listOutcomesForPatient(ctx, tenantId, patientId);
+  const ofCase = caseId ? all.filter((o) => o.caseId === caseId) : [];
+  return formatLatestOutcomes(ofCase.length ? ofCase : all);
+}
+
 interface LetterFacts {
   patient: NonNullable<Awaited<ReturnType<typeof getPatient>>>;
   theCase: Awaited<ReturnType<typeof getCase>> | null;
@@ -109,6 +123,7 @@ async function letterValues(ctx: RepoContext, tenantId: string, f: LetterFacts, 
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings, fallbackClinicName);
   const visits = await appointmentFacts(ctx, tenantId, patient.id, theCase?.id ?? null);
+  const outcomes = await latestOutcomesText(ctx, tenantId, patient.id, theCase?.id ?? null);
   const fullName = [patient.title, patient.firstName, patient.lastName].filter(Boolean).join(" ");
   return {
     ...clinicValues(clinic),
@@ -132,6 +147,8 @@ async function letterValues(ctx: RepoContext, tenantId: string, f: LetterFacts, 
     "case.first_visit": visits.firstVisit,
     "case.last_visit": visits.lastVisit,
     "case.sessions": visits.attended.length ? String(visits.attended.length) : null,
+    "case.discharge_date": theCase?.closedOn ? formatUkDate(theCase.closedOn) : null,
+    latest_outcomes: outcomes || null,
     "appointments.attended": visits.attended.length ? visits.attended.join(", ") : null,
     "appointments.upcoming": visits.upcoming.length ? visits.upcoming.join("\n") : null,
     "author.name": practitioner?.displayName ?? null,
@@ -198,7 +215,8 @@ export async function startLetter(ctx: RepoContext, tenantId: string, input: Sta
   const letterOn = input.letterOn ?? ukToday(ctx.now ? ctx.now() : new Date());
   const values = await letterValues(ctx, tenantId, { patient, theCase, practitioner, site, payer, recipient, letterOn }, fallbackClinicName);
   const subject = renderTemplate(template.subject, values, { missing: "marker" }).text.replace(/\s+/g, " ").trim();
-  const body = renderTemplate(template.body, values, { missing: "marker" }).text;
+  const merged = renderTemplate(template.body, values, { missing: "marker" }).text;
+  const body = input.bodyFill ? input.bodyFill(merged) : merged;
   return createLetter(
     ctx,
     tenantId,
