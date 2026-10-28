@@ -5,7 +5,7 @@
  * did-not-attend charged in full and late cancellations at half.
  */
 import { BillingSettingsInputSchema, ServiceVatInputSchema, type BillingSettingsInput } from "../../../../modules/pms/billing/schemas";
-import type { BillingSettings } from "../../../../modules/pms/billing/types";
+import type { BankDetails, BillingSettings } from "../../../../modules/pms/billing/types";
 import type { VatCode } from "../../../../modules/pms/billing/vat";
 import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types";
 import type { DbContext } from "../context";
@@ -28,7 +28,18 @@ export const BILLING_DEFAULTS: Omit<BillingSettings, "tenantId" | "serviceVat" |
   lateCancelChargePercent: 50,
   paymentInstructions: null,
   paymentLinksEnabled: false,
+  bankDetails: null,
 };
+
+function parseBank(json: string | null | undefined): BankDetails | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as Partial<BankDetails>;
+    return typeof v.accountName === "string" && typeof v.sortCode === "string" && typeof v.accountNumber === "string" ? { accountName: v.accountName, sortCode: v.sortCode, accountNumber: v.accountNumber } : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The settings row's INSERT … ON CONFLICT DO NOTHING (put first in a batch that reads the row in SQL). */
 export function ensureSettingsQuery(ctx: DbContext, tenantId: string, at: string) {
@@ -62,6 +73,7 @@ export async function getBillingSettings(ctx: DbContext, tenantId: string): Prom
     lateCancelChargePercent: num(row.late_cancel_charge_percent),
     paymentInstructions: row.payment_instructions,
     paymentLinksEnabled: isOn(row.payment_links_enabled),
+    bankDetails: parseBank(row.bank_details_json),
     serviceVat,
     updatedAt: row.updated_at,
   };
@@ -100,6 +112,7 @@ export async function updateBillingSettings(ctx: DbContext, tenantId: string, ex
       lateCancelChargePercent: "late_cancel_charge_percent",
       paymentInstructions: "payment_instructions",
       paymentLinksEnabled: ["payment_links_enabled", (v: boolean) => b01(v)],
+      bankDetails: ["bank_details_json", (v: BankDetails | null) => (v ? JSON.stringify({ accountName: v.accountName, sortCode: v.sortCode, accountNumber: v.accountNumber }) : null)],
     },
     set,
   );

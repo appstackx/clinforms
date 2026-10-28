@@ -24,8 +24,15 @@ in the same batch as the appointment (`BookOptions.alsoWrite`).
   on the record, through comms (`portal_link` template). Same answer and similar timing whoever asks. Sessions 4 hours,
   30 minutes idle; cookie httpOnly, SameSite=Lax, limited to `/clinics/<clinic>`.
 - Distance from the patient only after "Use my location" or a postcode – worked out in the browser from the sites' map
-  positions (`pms_booking_sites`); a typed postcode is placed at a site of the same postcode district (no lookup
-  service). Nothing about the patient is sent or stored.
+  positions (`pms_booking_sites`); a typed postcode is placed at the centre of its postcode district from the bundled
+  ONS list (`src/modules/pms/portal/data/postcode-districts.json` – 2,863 Great Britain districts, the mean position of
+  each district's live postcodes in the ONS Postcode Directory, August 2026; Northern Ireland (BT) left out because its
+  data needs a separate licence for commercial use; loaded as its own small file from this site on first use – no
+  lookup service, the postcode never leaves the browser). Source and method: `postcode-districts.SOURCE.md` next to
+  it. Nothing about the patient is sent or stored.
+- **Attribution (Open Government Licence v3.0)** – shown under the sites list on the booking page:
+  "Contains OS data © Crown copyright and database right 2026. Contains Royal Mail data © Royal Mail copyright and
+  database right 2026. Source: Office for National Statistics licensed under the Open Government Licence v.3.0."
 
 ## Forms
 Templates (`pms_intake_templates`) and patients' copies (`pms_intake_responses`, a snapshot of the form). Answers and

@@ -147,11 +147,12 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       await a.waitForURL(`${BASE}/app/clinic`);
       // innerText applies CSS text-transform (the figures' labels are upper case on screen): compare in lower case.
       const text = (await a.locator("main").innerText()).toLowerCase();
-      for (const s of ["Clinic system", "Riverside Physiotherapy (fictional)", "Demonstration clinic", "Patients", "200", "Bletchley (fictional)", "Sarah Reid", "Grace Bennett"]) {
+      // M8: the start page is "Today" (the dashboard per role) – the owner's figures and cards, the demo notice.
+      for (const s of ["Today", "Demonstration clinic", "Appointments today", "Utilisation today", "Taken today", "Overdue invoices", "Today by site", "Failed messages"]) {
         assert(text.includes(s.toLowerCase()), `missing "${s}"`);
       }
       // 27/10/2026 (design v1): the clinic system's navigation moved from the header to the left-hand side.
-      assert((await a.locator("nav[aria-label='Clinic system'] a[aria-current='page']").innerText()) === "Overview", "Overview is the current page");
+      assert((await a.locator("nav[aria-label='Clinic system'] a[aria-current='page']").innerText()) === "Dashboard", "Dashboard is the current page");
       assert(!/\bTM3\b|CareConnect|\bAI\b/.test(await a.locator("body").innerText()), "no banned names on screen");
       await shot(a, "a-02-clinic-overview");
     });
@@ -162,10 +163,17 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
       // The entry's own words (a badge, e.g. Messages' replies waiting, is left out).
       const labels = (await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
-      // Main list then Set-up: the diary's screens (feat/cs-diary) add Diary and Rotas; records adds Patients, Unsigned notes;
-      // billing (M5) adds Billing; messages (M6) adds Messages (with a badge) and Message settings; the portal (M7) adds Online booking and Intake forms
-      // and Note templates; access adds Staff access and Roles and permissions.
-      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Staff access", "Roles and permissions", "Rotas", "Note templates", "Message settings", "Online booking", "Intake forms"]), `clinic nav: ${labels.join(", ")}`);
+      // M8: the main list ends with Reports and one Set-up entry; the set-up pages (every module's) are the Set-up
+      // section's list ("← Clinic navigation"), shown on a set-up page.
+      assert(JSON.stringify(labels) === JSON.stringify(["Dashboard", "Diary", "Patients", "Unsigned notes", "Billing", "Messages", "Reports", "Set-up"]), `clinic nav: ${labels.join(", ")}`);
+      await a.goto(`${BASE}/app/clinic/access`);
+      const setup = (await a.locator("nav[aria-label='Set-up'] a").allInnerTexts()).map((l) => l.split("\n")[0].trim());
+      for (const l of ["Sites and hours", "Rooms", "Services", "Price lists", "Referrers and insurers", "Practitioners", "Practitioner rotas", "Record templates", "Staff access", "Roles and permissions", "Online booking", "Intake forms", "Billing settings", "Message settings", "Import data"]) {
+        assert(setup.includes(l), `set-up nav lacks ${l}: ${setup.join(", ")}`);
+      }
+      await a.click("[data-testid=shell-back-to-main]");
+      await a.waitForSelector("nav[aria-label='Clinic system'] >> text=Diary");
+      await a.goto(`${BASE}/app/clinic`);
       assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
       await a.locator("main h1").first().click();
       await a.keyboard.press("/");

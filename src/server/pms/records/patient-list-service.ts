@@ -27,6 +27,7 @@ import { pmsAudit } from "../../repos/pms/context";
 import { listPatientPage, openCasesFor } from "../../repos/pms/records/patient-list";
 import { patientBalances } from "../../repos/pms/billing/invoices";
 import { attempt, guard, ok, type RecordsActor, type Result } from "./access";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export interface PatientListRow {
   id: string;
@@ -61,7 +62,7 @@ export interface PatientListView {
 
 function nowOf(actor: RecordsActor): Date {
   const ctx = actor.repo();
-  return ctx.now ? ctx.now() : new Date();
+  return ctx.now ? ctx.now() : pmsNow();
 }
 
 async function rowsFor(actor: RecordsActor, filters: PatientListFilters, limit: number, offset: number) {

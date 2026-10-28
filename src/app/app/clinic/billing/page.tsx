@@ -3,6 +3,7 @@ import { BillingList, type BillingTab } from "@/components/pms/billing/billing-l
 import { INVOICE_LIST_STATES, type InvoiceListState } from "@/server/repos/pms/billing/invoices";
 import { requireClinicActor } from "@/server/pms/actor";
 import { agedDebtFor, billingHomeFor, payerAccountsFor, recentRemittancesFor, statementAccountsFor, uninvoicedVisitsFor } from "@/server/pms/billing/views";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Billing" };
@@ -52,7 +53,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Reco
       aged={aged && aged.ok ? aged.value : null}
       remittances={remittances && remittances.ok ? remittances.value : null}
       statementAccounts={accounts && accounts.ok ? accounts.value : null}
-      today={h?.today ?? new Date().toISOString().slice(0, 10)}
+      today={h?.today ?? pmsNow().toISOString().slice(0, 10)}
       can={{ edit: actor.can("billing.edit"), pay: actor.can("billing.pay"), export: actor.can("reports.export") }}
       failed={failed}
     />

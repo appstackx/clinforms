@@ -29,6 +29,13 @@ export type PaymentLinkStatus = (typeof PAYMENT_LINK_STATUSES)[number];
 export type ExportChannel = (typeof EXPORT_CHANNELS)[number];
 export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number];
 
+/** The clinic's bank account for payments by bank transfer (sort code "NN-NN-NN", 8-digit account number). */
+export interface BankDetails {
+  accountName: string;
+  sortCode: string;
+  accountNumber: string;
+}
+
 export interface BillingSettings {
   tenantId: string;
   rev: number;
@@ -45,6 +52,8 @@ export interface BillingSettings {
   lateCancelChargePercent: number;
   paymentInstructions: string | null;
   paymentLinksEnabled: boolean;
+  /** Printed on invoices and statements (Set-up → Billing settings), or null. */
+  bankDetails: BankDetails | null;
   /** Per appointment type: its VAT code (default "exempt"). */
   serviceVat: Record<string, VatCode>;
   updatedAt: string | null;

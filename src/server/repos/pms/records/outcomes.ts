@@ -15,6 +15,7 @@ import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { PmsOutcomeMeasuresTable } from "../../../db/pms-schema/records";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
 import { updateWithAudit } from "./write";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 const T = "pms_outcome_measures";
 const MESSAGES = {
@@ -101,7 +102,7 @@ export async function recordOutcome(ctx: RepoContext, tenantId: string, input: O
   assertTenantId(tenantId);
   const id = pmsId(P.outcome, ctx);
   const at = nowIso(ctx);
-  const values = rowValues(ctx, tenantId, id, input, actor, ukToday(ctx.now ? ctx.now() : new Date()), at);
+  const values = rowValues(ctx, tenantId, id, input, actor, ukToday(ctx.now ? ctx.now() : pmsNow()), at);
   await writeWithAudit(
     ctx,
     [
@@ -116,7 +117,7 @@ export async function recordOutcome(ctx: RepoContext, tenantId: string, input: O
 /** Many measures at once (demo seed, imports): batches of 40, one audit row per batch. */
 export async function bulkRecordOutcomes(ctx: RepoContext, tenantId: string, inputs: (OutcomeInput & { importRef?: string | null })[], actor: PmsActor, detail: Record<string, unknown> = {}): Promise<string[]> {
   assertTenantId(tenantId);
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const at = nowIso(ctx);
   const ids: string[] = [];
   for (let i = 0; i < inputs.length; i += 40) {

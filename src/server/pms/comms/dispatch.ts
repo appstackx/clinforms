@@ -51,6 +51,7 @@ import {
   type ClinicContact,
   type Composed,
 } from "./render";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 /** The diary's answer for the run: the current status of these appointments ("booked", "cancelled", …). */
 export type AppointmentStatusReader = (ctx: RepoContext, tenantId: string, appointmentIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
@@ -216,7 +217,7 @@ export async function sendPatientMessage(ctx: RepoContext, tenantId: string, inp
       extra.push(markReplyDoneQuery(ctx, tenantId, reply.id, actor, at), replyDoneAuditQuery(ctx, tenantId, reply.id, actor, at));
     }
   }
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = ctx.now ? ctx.now() : pmsNow();
   const settings = await getCommsSettings(ctx, tenantId);
   const clinic = await clinicContact(ctx, tenantId, settings);
   const composed = composeMessage({
@@ -335,7 +336,7 @@ export async function sendAppointmentNotice(
   let channel: MessageChannel | null = !smsBlock ? "sms" : !emailBlock ? "email" : null;
   if (!channel) return { ok: false, reason: smsBlock ?? "opted_out", message: smsBlock ?? "opted_out" };
   const [settings, directory] = await Promise.all([getCommsSettings(ctx, tenantId), loadDirectory(ctx, tenantId)]);
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = ctx.now ? ctx.now() : pmsNow();
   let holdUntil: string | null = null;
   if (channel === "sms") {
     holdUntil = quietHoursEndAt(now.toISOString(), settings.quietStart, settings.quietEnd);
@@ -445,7 +446,7 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
   const rows = await claimDueMessages(ctx, tenantId, token, Math.min(options.limit ?? 90, 90));
   summary.claimed = rows.length;
   if (rows.length === 0) return summary;
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = ctx.now ? ctx.now() : pmsNow();
   const nowText = now.toISOString();
   const [settings, directory, contacts, rules, statuses] = await Promise.all([
     getCommsSettings(ctx, tenantId),
@@ -623,7 +624,7 @@ export async function releaseHeldMessages(
 /** Sends everything due for a clinic, in rounds of 90, until nothing is due or the time budget is used. */
 export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { budgetMs?: number; actor?: PmsActor } = {}): Promise<RunSummary> {
   const total = emptySummary();
-  const started = Date.now();
+  const started = pmsNowMs();
   for (let round = 0; round < 50; round++) {
     const r = await runDueMessages(ctx, tenantId, deps, { actor: options.actor });
     total.claimed += r.claimed;
@@ -633,7 +634,7 @@ export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps
     total.failed += r.failed;
     total.skipped += r.skipped;
     for (const [k, v] of Object.entries(r.reasons)) total.reasons[k as SkipReason] = (total.reasons[k as SkipReason] ?? 0) + (v ?? 0);
-    if (r.claimed < 90 || Date.now() - started > (options.budgetMs ?? 40_000)) break;
+    if (r.claimed < 90 || pmsNowMs() - started > (options.budgetMs ?? 40_000)) break;
   }
   return total;
 }

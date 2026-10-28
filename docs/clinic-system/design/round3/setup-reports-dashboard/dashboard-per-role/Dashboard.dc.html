@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@keyframes pulse{50%{opacity:.45}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px">
+<a href="Dashboard.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a>
+<a href="ReferrerForm.dc.html" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a>
+</nav>
+</div>
+<button type="button" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B7970" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>{{siteLabel}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<div role="search" style="flex: 1 1 240px; max-width: 440px; height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; display: flex; align-items: center; gap: 8px; background: #F8FAFC">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg>
+<input type="search" aria-label="Search patients" placeholder="Search patients – name, DOB, phone, email" style="border: 0; font: inherit; flex: 1; min-width: 0; background: transparent">
+</div>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: {{u.avBg}}; color: {{u.avFg}}; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">{{u.init}}</span><span style="display: flex; flex-direction: column; line-height: 16px"><strong>{{u.name}}</strong><span style="font-size: 12px; color: #64748B">{{u.role}}</span></span></span>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1; align-items: stretch">
+<nav aria-label="Clinic" style="flex: 1 1 216px; background: #FFFFFF; border-right: 1px solid #E2E8F0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+<sc-for list="{{nav}}" as="n" hint-placeholder-count="8">
+<a href="{{n.href}}" aria-current="{{n.cur}}" style="height: 36px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 10px; text-decoration: none; color: {{n.fg}}; background: {{n.bg}}; font-weight: {{n.fw}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>{{n.label}}</a>
+</sc-for>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end">
+<div style="flex: 1; min-width: 240px; display: flex; flex-direction: column"><h1 style="margin: 0; font-size: 22px; line-height: 30px; font-weight: 600">Today</h1><span style="color: #475569">{{subtitle}}</span></div>
+<span style="font-size: 12px; color: #475569">Updated 10:40 · refreshes every minute</span>
+</div>
+
+<sc-if value="{{isError}}" hint-placeholder-val="{{false}}">
+<div role="alert" style="display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px; background: #FEF2F2; border: 1px solid #FECACA; flex-wrap: wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#BA1C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg><span style="flex: 1">Some figures couldn't load. The rest of the page is up to date.</span><button type="button" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Try again</button></div>
+</sc-if>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px">
+<sc-for list="{{kpis}}" as="k" hint-placeholder-count="4">
+<a href="{{k.href}}" style="background: #FFFFFF; border: 1px solid {{k.bd}}; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: #0F172A">
+<span style="font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{k.ic}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{k.icon}}"></path></svg>{{k.label}}</span>
+<sc-if value="{{k.loading}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="height: 26px; width: 90px; margin: 2px 0; border-radius: 6px; background: #E2E8F0; animation: pulse 1.6s ease-in-out infinite"></span><span aria-hidden="true" style="height: 12px; width: 140px; border-radius: 6px; background: #EEF2F6; animation: pulse 1.6s ease-in-out infinite"></span></sc-if>
+<sc-if value="{{k.ready}}" hint-placeholder-val="{{true}}"><strong style="font-size: 24px; line-height: 32px; font-variant-numeric: tabular-nums; color: {{k.vfg}}">{{k.value}}</strong><span style="font-size: 12px; color: #475569">{{k.sub}}</span></sc-if>
+<sc-if value="{{k.failed}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; color: #BA1C1C; font-weight: 500; margin-top: 6px">Couldn't load</span></sc-if>
+</a>
+</sc-for>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start">
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
+<section aria-label="{{c.title}}" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; display: flex; flex-direction: column">
+<div style="padding: 14px 18px 10px; display: flex; align-items: center; gap: 8px"><h2 style="margin: 0; font-size: 16px; font-weight: 600; flex: 1">{{c.title}}</h2><sc-if value="{{c.hasCount}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; font-weight: 600; background: {{c.countBg}}; color: {{c.countFg}}; border-radius: 999px; padding: 0 8px; line-height: 20px">{{c.count}}</span></sc-if><a href="{{c.href}}" style="font-size: 13px; font-weight: 500">{{c.linkText}}</a></div>
+<sc-if value="{{c.loading}}" hint-placeholder-val="{{false}}"><div aria-busy="true" aria-label="Loading" style="padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 12px"><sc-for list="{{skel}}" as="s" hint-placeholder-count="4"><div style="display: flex; gap: 12px; align-items: center"><span style="width: 44px; height: 12px; border-radius: 6px; background: #E2E8F0; animation: pulse 1.6s ease-in-out infinite"></span><span style="flex: 1; height: 12px; border-radius: 6px; background: #E2E8F0; animation: pulse 1.6s ease-in-out infinite"></span><span style="width: 72px; height: 20px; border-radius: 999px; background: #EEF2F6; animation: pulse 1.6s ease-in-out infinite"></span></div></sc-for></div></sc-if>
+<sc-if value="{{c.empty}}" hint-placeholder-val="{{false}}"><div style="padding: 20px 18px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px"><span style="width: 40px; height: 40px; border-radius: 10px; background: #F0FDFA; color: #0B7970; display: inline-flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg></span><strong>{{c.emptyTitle}}</strong><span style="color: #475569; font-size: 13px; max-width: 320px">{{c.emptyBody}}</span></div></sc-if>
+<sc-if value="{{c.failed}}" hint-placeholder-val="{{false}}"><div role="alert" style="padding: 16px 18px 20px; display: flex; gap: 10px; align-items: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#BA1C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4M12 16h.01"></path></svg><span style="flex: 1; color: #334155">Couldn't load this card.</span><button type="button" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Retry</button></div></sc-if>
+<sc-if value="{{c.isList}}" hint-placeholder-val="{{true}}">
+<ul style="list-style: none; margin: 0; padding: 0 0 6px">
+<sc-for list="{{c.items}}" as="i" hint-placeholder-count="4">
+<li style="display: flex; gap: 12px; align-items: center; padding: 10px 18px; border-top: 1px solid #F1F5F9; flex-wrap: wrap">
+<sc-if value="{{i.hasLead}}" hint-placeholder-val="{{true}}"><span style="width: 52px; flex: none; font-variant-numeric: tabular-nums; font-weight: 600; color: #334155">{{i.lead}}</span></sc-if>
+<span style="flex: 1; min-width: 180px; display: flex; flex-direction: column"><span style="display: flex; align-items: center; gap: 6px; min-width: 0"><a href="{{i.href}}" title="{{i.primary}}" style="font-weight: 600; color: #0F172A; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{i.primary}}</a><sc-if value="{{i.alert}}" hint-placeholder-val="{{false}}"><svg style="flex: none" role="img" aria-label="Has alert" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#864E0E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg></sc-if></span><span style="font-size: 13px; color: #475569">{{i.secondary}}</span></span>
+<sc-if value="{{i.hasPill}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: {{i.pbg}}; color: {{i.pfg}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{i.picon}}"></path></svg>{{i.plabel}}</span></sc-if>
+<sc-if value="{{i.hasAction}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{i.run}}" style="height: 32px; padding: 0 12px; border-radius: 8px; border: {{i.abd}}; background: {{i.abg}}; color: {{i.afg}}; font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer">{{i.action}}</button></sc-if>
+</li>
+</sc-for>
+</ul>
+</sc-if>
+<sc-if value="{{c.isBars}}" hint-placeholder-val="{{false}}">
+<div style="padding: 4px 18px 16px; display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{c.items}}" as="b" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 130px minmax(0, 1fr) 56px; gap: 10px; align-items: center"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{b.label}}</span><span role="img" aria-label="{{b.aria}}" style="height: 12px; background: #F1F5F9; border-radius: 6px; overflow: hidden; position: relative"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{b.w}}; background: {{b.fill}}; border-radius: 6px"></span><span style="position: absolute; top: -2px; bottom: -2px; left: 80%; border-left: 2px dashed #475569"></span></span><span style="text-align: right; font-variant-numeric: tabular-nums; font-weight: 600">{{b.value}}</span></div>
+</sc-for>
+<span style="font-size: 12px; color: #475569">Dashed line = 80% target. Darker bars are at or above target.</span>
+</div>
+</sc-if>
+</section>
+</sc-for>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"role":{"editor":"enum","options":["owner","clinician","reception"],"default":"owner"},"state":{"editor":"enum","options":["ready","loading","empty","error"],"default":"ready"},"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { arrived: {}, offered: {}, retried: {} }; }
+  renderVals() {
+    const st = this.state;
+    const role = this.props.role ?? 'owner';
+    const mode = this.props.state ?? 'ready';
+    const I = {
+      cal: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+      ucheck: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM16 11l2 2 4-4',
+      act: 'M22 12h-4l-3 9L9 3l-3 9H2', pound: 'M18 7c0-5.333-8-5.333-8 0M10 7v14M6 21h12M6 13h10',
+      alert: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4M12 16h.01', x: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM15 9l-6 6M9 9l6 6',
+      clock: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2', shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+      chart: 'M3 3v18h18M18 17V9M13 17V5M8 17v-3', file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8',
+      msg: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', hour: 'M5 22h14M5 2h14M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2',
+      home: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 22V12h6v10', users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+      globe: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+      set: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6', send: 'M22 2L11 13M22 2l-7 20-4-9-9-4z'
+    };
+    const P = { booked: ['#E8EEFB', '#1842B4', I.cal, 'Booked'], arrived: ['#FEF3C7', '#864E0E', I.ucheck, 'Arrived'], treat: ['#D5F5F0', '#0B5F58', I.act, 'In treatment'], failed: ['#FEE2E2', '#991B1B', I.x, 'Failed'], overdue: ['#FEE2E2', '#991B1B', I.alert, 'Over 24 h'], unsigned: ['#FEF3C7', '#864E0E', I.clock, 'Unsigned'], due: ['#E8EEFB', '#1842B4', I.chart, 'Due today'], low: ['#FEF3C7', '#864E0E', I.alert, '1 left'], zero: ['#FEE2E2', '#991B1B', I.alert, '0 left'], expiry: ['#FEF3C7', '#864E0E', I.clock, 'Expires soon'], match: ['#D5F5F0', '#0B5F58', I.cal, 'Slot free'], new: ['#E8EEFB', '#1842B4', I.msg, 'New'], sent: ['#DCFCE7', '#166534', I.send, 'Offered'], ok: ['#DCFCE7', '#166534', I.ucheck, 'Arrived'] };
+    const it = (lead, primary, secondary, pill, extra) => { const p = pill ? P[pill] : null; return Object.assign({ lead: lead || '', hasLead: !!lead, primary, secondary, href: 'PatientRecord.dc.html', hasPill: !!p, pbg: p ? p[0] : '', pfg: p ? p[1] : '', picon: p ? p[2] : '', plabel: p ? p[3] : '', hasAction: false, alert: false }, extra || {}); };
+    const act = (label, run, primary) => ({ hasAction: true, action: label, run, abg: primary ? '#0B7970' : '#FFFFFF', afg: primary ? '#FFFFFF' : '#0F172A', abd: primary ? '0' : '1px solid #E2E8F0' });
+    const kpi = (label, value, sub, icon, href, warn) => ({ label, value, sub, icon, href, ic: warn ? '#BA1C1C' : '#0B7970', vfg: warn ? '#BA1C1C' : '#0F172A', bd: '#E2E8F0' });
+    let kpis = [], cards = [];
+    if (role === 'owner') {
+      kpis = [kpi('Appointments today', '386', '142 done · 9 DNA · 5 sites', I.cal, 'DiaryDay.dc.html'), kpi('Utilisation today', '82%', 'Target 80% · lowest Kingsmead 64%', I.chart, 'Reports.dc.html'), kpi('Taken today', '£6,240.00', 'Card £5,410 · cash £330 · bank £500', I.pound, 'BillingList.dc.html'), kpi('Overdue invoices', '£4,600.00', '37 invoices over 30 days', I.alert, 'BillingList.dc.html', true)];
+      const failedItems = [['Lucy Fraser', 'Reminder text · Harbour Road · number not reachable'], ['Paul Rowe', 'Reminder text · Harbour Road · landline'], ['Ewan Grant', 'Booking email · Elm Park · mailbox full']].map(([n, s], i) => it('', n, s, st.retried[i] ? 'sent' : 'failed', st.retried[i] ? {} : act('Retry', () => { const r = Object.assign({}, st.retried); r[i] = true; this.setState({ retried: r }); })));
+      cards = [
+        { title: 'Today by site', linkText: 'Diary', href: 'DiaryDay.dc.html', kind: 'bars', items: [['Harbour Road', 91], ['Kingsmead', 64], ['Elm Park', 85], ['Castle Street', 79], ['Millbrook', 88]].map(([l, v]) => ({ label: l, value: v + '%', w: v + '%', fill: v >= 80 ? '#0B5F58' : '#5EC4B9', aria: l + ' ' + v + ' percent booked' })), count: '5 of 11 sites' },
+        { title: 'Failed messages', linkText: 'Outbox', href: 'Messages.dc.html', kind: 'list', items: failedItems, count: String(failedItems.filter((x, i) => !st.retried[i]).length), warn: true, emptyTitle: 'No failed messages', emptyBody: 'Every reminder and confirmation went out.' },
+        { title: 'Authorisations ending soon', linkText: 'Report', href: 'Reports.dc.html', kind: 'list', items: [it('', 'James Okafor', 'Shieldcare Insurance (fictional) · 6 of 6 used · Harbour Road', 'zero', act('Request extension', () => {})), it('', 'Liam O’Connor', 'Bluewell Health (fictional) · 5 of 6 used', 'low'), it('', 'Sarah Quinn', 'Bluewell Health (fictional) · expires 09/11/2026', 'expiry')], count: '20', emptyTitle: 'Nothing ending soon', emptyBody: 'No authorisations with 1 session left or ending in 14 days.' },
+        { title: 'Overdue invoices', linkText: 'Aged debt', href: 'BillingList.dc.html', kind: 'list', items: [it('', 'Carter & Lowe Solicitors (fictional)', 'INV-04807 · £250.00 · 67 days', 'overdue', act('Send reminder', () => {})), it('', 'Owen Price', 'INV-04821 · £65.00 · 55 days', 'overdue', act('Payment link', () => {})), it('', 'Hannah Wright', 'INV-04790 · £55.00 · 33 days', 'overdue')], count: '37', emptyTitle: 'No overdue invoices', emptyBody: 'Everything issued has been paid within terms.' }
+      ];
+    } else if (role === 'clinician') {
+      kpis = [kpi('My appointments today', '9', '4 done · 1 in treatment', I.cal, 'DiaryDay.dc.html'), kpi('Unsigned notes', '3', 'Oldest from Mon 26/10', I.file, 'NoteEditor.dc.html', true), kpi('Outcome measures due', '4', 'At first visit, session 4 or discharge', I.chart, 'Outcome.dc.html'), kpi('Open cases', '64', 'Across 2 sites', I.users, 'PatientList.dc.html')];
+      cards = [
+        { title: 'My next patients', linkText: 'My diary', href: 'DiaryDay.dc.html', kind: 'list', items: [it('10:30', 'Chloe Bennett', 'Follow-up · Room 1', 'treat'), it('11:00', 'Emily Turner', 'Initial assessment · Room 1', 'arrived', { alert: true }), it('15:00', 'George Lewis', 'Follow-up · Room 1', 'booked'), it('16:00', 'Isla Morgan', 'Initial assessment · booked online', 'booked')], emptyTitle: 'No more patients today', emptyBody: 'Your next appointment is tomorrow at 08:30.' },
+        { title: 'Unsigned notes', linkText: 'All', href: 'NoteEditor.dc.html', kind: 'list', items: [it('', 'Margaret Ellis', 'SOAP initial · Mon 26/10 09:00', 'overdue', act('Open', () => {}, true)), it('', 'Ravi Patel', 'SOAP follow-up · today 08:00', 'unsigned', act('Open', () => {})), it('', 'Liam O’Connor', 'SOAP follow-up · today 10:00', 'unsigned', act('Open', () => {}))], count: '3', warn: true, emptyTitle: 'All notes signed', emptyBody: 'Nothing waiting for your signature.' },
+        { title: 'Outcome measures due', linkText: 'Outcomes', href: 'Outcome.dc.html', kind: 'list', items: [it('11:00', 'Emily Turner', 'QuickDASH + NPRS · first visit · patient completed in portal', 'due'), it('15:00', 'George Lewis', 'NPRS + PSFS · session 4', 'due'), it('16:00', 'Isla Morgan', 'ODI + NPRS · first visit', 'due')], count: '4', emptyTitle: 'No measures due today', emptyBody: 'Scores are asked for at the first visit, every 4th session and discharge.' }
+      ];
+    } else {
+      const arr = [['10:30', 'James Okafor', 'Follow-up · Tom Hughes'], ['11:00', 'Emily Turner', 'Initial · Priya Shah · intake form signed'], ['11:15', 'Mohammed Iqbal', 'Follow-up · Aisha Rahman'], ['11:30', 'Noah Bradley', 'Follow-up · Tom Hughes · Shieldcare (fictional)'], ['12:00', 'Lucy Fraser', 'Follow-up · Aisha Rahman']];
+      const items = arr.map(([t, n, s], i) => { const done = i < 2 || st.arrived[i]; return it(t, n, s, done ? 'ok' : 'booked', done ? {} : act('Arrived', () => { const a = Object.assign({}, st.arrived); a[i] = true; this.setState({ arrived: a }); }, true)); });
+      kpis = [kpi('Appointments today', '41', 'Harbour Road · 12 done · 1 DNA', I.cal, 'DiaryDay.dc.html'), kpi('Still to arrive', String(arr.length - 2 - Object.keys(st.arrived).length + 28), 'Next: 11:15 Mohammed Iqbal', I.ucheck, 'DiaryDay.dc.html'), kpi('Invoices to raise', '6', 'Attended visits not invoiced', I.pound, 'InvoiceVisits.dc.html'), kpi('Replies to answer', '4', 'Oldest 09:52', I.msg, 'Messages.dc.html')];
+      cards = [
+        { title: 'Arrivals at Harbour Road', linkText: 'Diary', href: 'DiaryDay.dc.html', kind: 'list', items, emptyTitle: 'Everyone has arrived', emptyBody: 'No more arrivals expected today.' },
+        { title: 'Waiting list', linkText: 'All', href: 'RotaWaiting.dc.html', kind: 'list', items: [['Joseph Allen', 'Follow-up · Priya Shah · weekdays after 13:00'], ['Megan Cole', 'Follow-up · anyone · Tue, Thu']].map(([n, s], i) => it('', n, s, st.offered[i] ? 'sent' : 'match', st.offered[i] ? {} : act('Offer 14:00 by text', () => { const o = Object.assign({}, st.offered); o[i] = true; this.setState({ offered: o }); }))), count: '3', emptyTitle: 'No one waiting', emptyBody: 'Add patients who want an earlier slot.' },
+        { title: 'Invoices to raise', linkText: 'Invoice visits', href: 'InvoiceVisits.dc.html', kind: 'list', items: [it('', 'Ravi Patel', 'Follow-up · today 08:00 · self-pay £55.00'), it('', 'Liam O’Connor', 'Follow-up · Bluewell Health (fictional) · £20.00 + £55.00'), it('', 'Owen Price', 'Did not attend · Mon 26/10 · fee £55.00')], count: '6', emptyTitle: 'All visits invoiced', emptyBody: 'Nothing attended is waiting for an invoice.' },
+        { title: 'Replies to answer', linkText: 'Messages', href: 'Messages.dc.html', kind: 'list', items: [it('10:14', 'Margaret Ellis', '"Yes, see you then. Is there parking?"', 'new'), it('09:52', 'Grace Kim', '"Can I move to later in the day?"', 'new'), it('10:09', 'George Lewis', '"C" – cancel request for today 15:00', 'new')], count: '4', emptyTitle: 'No replies waiting', emptyBody: 'All patient replies have been answered.' }
+      ];
+    }
+    const failIdx = 1;
+    const k2 = kpis.map((k, i) => Object.assign({}, k, { loading: mode === 'loading', ready: mode === 'ready' || mode === 'empty' || (mode === 'error' && i !== failIdx), failed: mode === 'error' && i === failIdx }));
+    const c2 = cards.map((c, i) => {
+      const loading = mode === 'loading', empty = mode === 'empty' && c.kind === 'list', failed = mode === 'error' && i === 1;
+      const showBody = !loading && !empty && !failed;
+      return Object.assign({}, c, { loading, empty, failed, isList: showBody && c.kind === 'list', isBars: showBody && c.kind === 'bars', hasCount: !!c.count && showBody, countBg: c.warn ? '#FEE2E2' : '#F1F5F9', countFg: c.warn ? '#991B1B' : '#334155', emptyTitle: c.emptyTitle || '', emptyBody: c.emptyBody || '' });
+    });
+    const NAV = [['home', 'Dashboard', 'Dashboard.dc.html', 'owner clinician reception'], ['cal', 'Diary', 'DiaryDay.dc.html', 'owner clinician reception'], ['users', 'Patients', 'PatientList.dc.html', 'owner clinician reception'], ['pound', 'Billing', 'BillingList.dc.html', 'owner clinician reception'], ['msg', 'Messages', 'Messages.dc.html', 'owner clinician reception'], ['globe', 'Online booking', 'Setup.dc.html', 'owner reception'], ['chart', 'Reports', 'Reports.dc.html', 'owner'], ['set', 'Set-up', 'Setup.dc.html', 'owner']];
+    const nav = NAV.filter(n => n[3].indexOf(role) >= 0).map((n, i) => ({ icon: I[n[0]], label: n[1], href: n[2], cur: i === 0 ? 'page' : 'false', fg: i === 0 ? '#0B5F58' : '#334155', bg: i === 0 ? '#E6F7F5' : 'transparent', fw: i === 0 ? 600 : 500 }));
+    const U = { owner: { name: 'Helen Ward', role: 'Owner', init: 'HW', avBg: '#EDE9FE', avFg: '#5B21B6' }, clinician: { name: 'Priya Shah', role: 'Physiotherapist', init: 'PS', avBg: '#CCFBF1', avFg: '#0B5F58' }, reception: { name: 'Jess Taylor', role: 'Reception', init: 'JT', avBg: '#FEF3C7', avFg: '#864E0E' } };
+    return {
+      product: 'Clinic system', u: U[role], nav, kpis: k2, cards: c2, isError: mode === 'error', skel: [1, 2, 3, 4],
+      siteLabel: role === 'owner' ? 'My sites (5)' : 'Harbour Road',
+      subtitle: 'Wednesday 28/10/2026 · ' + (role === 'owner' ? 'my 5 sites' : 'Harbour Road')
+    };
+  }
+}
+</script>
+</body>
+</html>

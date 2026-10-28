@@ -42,6 +42,14 @@ function base32Decode(input) {
   }
   return Buffer.from(out);
 }
+
+// The clinic system's TEST clock (src/modules/pms/core/clock.ts – never in a production build): when the runner
+// sets PMS_TEST_CLOCK=1 PMS_TEST_NOW PMS_TEST_NOW_SET_AT for the seed, the dev server and this script, all three
+// agree on "now" (e.g. 10:30 today), so the steps that need clinic hours pass at any hour. Two-step codes keep
+// the real clock.
+const CLOCK_OFFSET = process.env.PMS_TEST_CLOCK === "1" && process.env.PMS_TEST_NOW && process.env.PMS_TEST_NOW_SET_AT ? Date.parse(process.env.PMS_TEST_NOW) - Number(process.env.PMS_TEST_NOW_SET_AT) : 0;
+const clockNow = () => Date.now() + CLOCK_OFFSET;
+
 function totp(key, at = Date.now()) {
   const counter = Math.floor(at / 30000);
   const buf = Buffer.alloc(8);
@@ -177,13 +185,16 @@ async function pickPatient(page, q, name) {
       await onboard(clinician, c, "Priya Shah (fictional)");
     });
 
-    await step("navigation by role: Diary for all; Rotas (set-up, diary.rota) for the owner and reception; the clinician gets the 404 page for rotas", async () => {
-      for (const [page, rota] of [[owner, true], [reception, true], [clinician, false]]) {
+    await step("navigation by role: Diary for all; Practitioner rotas (diary.rota) under Set-up for the owner, in the main list for reception; the clinician gets the 404 page for rotas", async () => {
+      for (const [page, rota] of [[owner, false], [reception, true], [clinician, false]]) {
         await page.goto(DIARY);
-        const labels = await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
+        const labels = (await page.locator("nav[aria-label='Clinic system'] a").allInnerTexts()).map((l) => l.trim());
         assert(labels.includes("Diary"), `Diary in nav: ${labels.join(", ")}`);
-        assert(labels.includes("Rotas") === rota, `Rotas in nav = ${rota}: ${labels.join(", ")}`);
+        assert(labels.includes("Practitioner rotas") === rota, `Practitioner rotas in the main nav = ${rota}: ${labels.join(", ")}`);
       }
+      await owner.goto(`${DIARY}/rotas`);
+      const setup = (await owner.locator("nav[aria-label='Set-up'] a").allInnerTexts()).map((l) => l.trim());
+      assert(setup.includes("Practitioner rotas"), `owner set-up nav: ${setup.join(", ")}`);
       const res = await clinician.goto(`${DIARY}/rotas`);
       assert(res.status() === 404, `clinician /rotas: ${res.status()}`);
     });
@@ -481,7 +492,7 @@ async function pickPatient(page, q, name) {
 
     await step("late cancellation with the fee (an appointment less than 24 hours away)", async () => {
       const data = await viewData(reception, `date=2026-10-28&site=${site}`);
-      const soon = data.cards.find((c) => c.kind === "appointment" && c.status === "booked" && Date.parse(c.startsAt) > Date.now() && Date.parse(c.startsAt) - Date.now() < 23 * 3600e3);
+      const soon = data.cards.find((c) => c.kind === "appointment" && c.status === "booked" && Date.parse(c.startsAt) > clockNow() && Date.parse(c.startsAt) - clockNow() < 23 * 3600e3);
       assert(soon, "a booked appointment within 24 hours");
       await reception.goto(`${DIARY}?date=2026-10-28&site=${site}&focus=${soon.id}`);
       await ready(reception);
@@ -499,7 +510,7 @@ async function pickPatient(page, q, name) {
     await step("reception books Megan Hart TODAY in the next hour → Arrived → Undo (toast) → back to booked", async () => {
       const first = await viewData(reception, "");
       const date = first.params.date;
-      const now = new Date();
+      const now = new Date(clockNow());
       const nowMinute = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now)) * 60 + now.getMinutes();
       let found = null;
       for (const st of first.sites) {
@@ -529,7 +540,7 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector("text=Appointment booked");
       await reception.click("text=Back to diary");
       const data = await viewData(reception, `date=${date}&site=${found.site}`);
-      const card = data.cards.find((c) => c.patientName === "Megan Hart" && c.status === "booked" && c.practitionerId === found.practitionerId && Math.abs(Date.parse(c.startsAt) - Date.now()) < 3600e3);
+      const card = data.cards.find((c) => c.patientName === "Megan Hart" && c.status === "booked" && c.practitionerId === found.practitionerId && Math.abs(Date.parse(c.startsAt) - clockNow()) < 3600e3);
       assert(card, "today's booking for Megan Hart");
       today = { date, site: found.site, id: card.id };
       await reception.goto(`${DIARY}?date=${date}&site=${found.site}&focus=${card.id}`);

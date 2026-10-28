@@ -43,6 +43,7 @@ import type { ClinicActor } from "../actor";
 import { commsLinkOrigin } from "../comms/links";
 import { applyToRecord } from "./intake-service";
 import { sendSignInLink } from "./portal-auth";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export type StaffResult<T = undefined> = { ok: true; value: T; message?: string } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -329,7 +330,7 @@ async function emailPortalLink(actor: ClinicActor, patientId: string, next: stri
   if (!patient.email) return { ok: false, error: "The patient has no email address. Add one to their details first." };
   const account = await ensurePortalAccount(ctx, actor.tenantId, patientId, actor.actor);
   if (account.status !== "active") return { ok: false, error: "The patient's portal access is switched off." };
-  const sent = await sendSignInLink(ctx, actor.tenantId, account.id, patientId, new Date(), PORTAL_TIMINGS.staffLinkHours * 3_600_000, commsLinkOrigin(), actor.actor, next);
+  const sent = await sendSignInLink(ctx, actor.tenantId, account.id, patientId, pmsNow(), PORTAL_TIMINGS.staffLinkHours * 3_600_000, commsLinkOrigin(), actor.actor, next);
   return sent ? { ok: true, value: undefined } : { ok: false, error: "The email could not be written. Check Messages → Outbox." };
 }
 

@@ -51,6 +51,14 @@ function base32Decode(input) {
   }
   return Buffer.from(out);
 }
+
+// The clinic system's TEST clock (src/modules/pms/core/clock.ts – never in a production build): when the runner
+// sets PMS_TEST_CLOCK=1 PMS_TEST_NOW PMS_TEST_NOW_SET_AT for the seed, the dev server and this script, all three
+// agree on "now" (e.g. 10:30 today), so the steps that need clinic hours pass at any hour. Two-step codes keep
+// the real clock.
+const CLOCK_OFFSET = process.env.PMS_TEST_CLOCK === "1" && process.env.PMS_TEST_NOW && process.env.PMS_TEST_NOW_SET_AT ? Date.parse(process.env.PMS_TEST_NOW) - Number(process.env.PMS_TEST_NOW_SET_AT) : 0;
+const clockNow = () => Date.now() + CLOCK_OFFSET;
+
 function totp(key, at = Date.now()) {
   const counter = Math.floor(at / 30000);
   const buf = Buffer.alloc(8);
@@ -186,7 +194,7 @@ const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m %
       const first = await viewData(jess, "");
       s.today = first.params.date;
       const sites = first.sites.map((x) => x.id);
-      const now = new Date();
+      const now = new Date(clockNow());
       const nowMinute = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now)) * 60 + now.getMinutes();
       const seen = [];
       /** A slot with free time for 45 minutes after it (the list holds one slot per step). */

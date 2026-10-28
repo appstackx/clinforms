@@ -68,6 +68,22 @@ const prefix = z
 
 const firstNumber = z.number().int("Whole numbers only").min(1).max(MAX_DOCUMENT_SEQ);
 
+/** The clinic's bank account: name on the account, sort code (NN-NN-NN) and 8-digit account number. */
+export const BankDetailsSchema = z.object({
+  accountName: z.string().trim().min(1, "Enter the name on the account").max(80, "At most 80 characters"),
+  sortCode: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/[\s-]/g, ""))
+    .refine((v) => /^\d{6}$/.test(v), "Enter a sort code of 6 digits (NN-NN-NN)")
+    .transform((v) => `${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6)}`),
+  accountNumber: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/\s/g, ""))
+    .refine((v) => /^\d{8}$/.test(v), "Enter an account number of 8 digits"),
+});
+
 const settingsShape = {
   invoicePrefix: prefix.optional(),
   creditNotePrefix: prefix.optional(),
@@ -100,6 +116,8 @@ const settingsShape = {
   paymentInstructions: optionalText(600),
   /** Offer card payment links on invoices (only when a payment provider is set up for the deployment). */
   paymentLinksEnabled: z.boolean().optional(),
+  /** Bank details printed on invoices and statements; null = none. */
+  bankDetails: z.union([BankDetailsSchema, z.null()]).optional(),
 };
 
 export const BillingSettingsInputSchema = z.object(settingsShape).superRefine((v, ctx) => {
