@@ -12,7 +12,7 @@ import type { Database } from "../../../db/schema";
 import { auditInsertWhenExists } from "../../audit";
 import { ulid } from "../../context";
 import type { PmsAppointmentsTable } from "../../../db/pms-schema/diary";
-import { RepoInputError, assertActor, isOn, num, numOrNull, type DbContext, type PmsActor, type PmsAuditEntry } from "../context";
+import { RepoInputError, assertActor, isOn, nowIso, num, numOrNull, type DbContext, type PmsActor, type PmsAuditEntry } from "../context";
 import { pmsNowMs } from "../../../../modules/pms/core/clock";
 
 export const APPOINTMENTS = "pms_appointments";
@@ -138,7 +138,7 @@ export function isClashError(err: unknown): boolean {
   if (classifyDbError(err) !== "CONSTRAINT_CHECK") return false;
   const message = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? "");
   const constraint = (err as { constraint?: unknown })?.constraint;
-  return /pms_appointments_(practitioner|room)_clash/.test(message) || (typeof constraint === "string" && /_clash$/.test(constraint));
+  return /pms_appointments_(practitioner|room)_clash|pms_appointments_offer_hold/.test(message) || (typeof constraint === "string" && (/_clash$/.test(constraint) || constraint === "pms_appointments_offer_hold"));
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -155,13 +155,13 @@ export interface NearbyQuery {
 }
 
 /** Occupying items that overlap any of the spans and share the practitioner, the room or the patient. */
-export async function occupyingNear(ctx: DbContext, tenantId: string, q: NearbyQuery): Promise<DiaryItemLike[]> {
+export async function occupyingNear(ctx: DbContext, tenantId: string, q: NearbyQuery): Promise<(DiaryItemLike & { kind: DiaryItemKind })[]> {
   const resources: [string, string][] = [];
   if (q.practitionerId) resources.push(["practitioner_id", q.practitionerId]);
   if (q.roomId) resources.push(["room_id", q.roomId]);
   if (q.patientId) resources.push(["patient_id", q.patientId]);
   if (resources.length === 0 || q.spans.length === 0) return [];
-  const out = new Map<string, DiaryItemLike>();
+  const out = new Map<string, DiaryItemLike & { kind: DiaryItemKind }>();
   // Groups of 20 spans: 3 parameters each + the rest stays under D1's 100 bound parameters.
   for (let i = 0; i < q.spans.length; i += 20) {
     const group = q.spans.slice(i, i + 20);
@@ -194,6 +194,107 @@ export async function occupyingNear(ctx: DbContext, tenantId: string, q: NearbyQ
     }
   }
   return Array.from(out.values());
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Holds: slots offered to waiting patients, held until the offer is answered or expires (0180/0181)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** A held offer as the clash check and the diary see it. */
+export interface HeldSlot {
+  /** The offer's id. */
+  offerId: string;
+  waitingListId: string;
+  /** The patient the slot is held for (never shown to a role without patients.view – the caller decides). */
+  patientId: string;
+  siteId: string;
+  practitionerId: string;
+  roomId: string | null;
+  startsAt: string;
+  endsAt: string;
+  holdUntil: string;
+}
+
+export interface HeldQuery {
+  /** Overlapping any of these spans; or `from`/`to` for a whole range. */
+  spans?: readonly { startsAt: string; endsAt: string }[];
+  from?: string;
+  to?: string;
+  practitionerIds?: readonly string[];
+  roomIds?: readonly string[];
+  siteIds?: readonly string[];
+  /** Holds for this patient are left out (a slot held for them is theirs to book). */
+  exceptPatientId?: string | null;
+  /** Default: now. A hold counts while hold_until is later than this. */
+  at?: string;
+}
+
+/**
+ * Open offers still holding their slot (the database refuses a write over one – 0181's triggers; this read lets the
+ * screens say so first, and keeps held slots out of free slots and online booking).
+ */
+export async function heldSlots(ctx: DbContext, tenantId: string, q: HeldQuery): Promise<HeldSlot[]> {
+  const at = q.at ?? nowIso(ctx);
+  const resources = (q.practitionerIds?.length ?? 0) + (q.roomIds?.length ?? 0);
+  if (q.practitionerIds !== undefined && q.roomIds !== undefined && resources === 0) return [];
+  const spans = q.spans ?? (q.from && q.to ? [{ startsAt: q.from, endsAt: q.to }] : []);
+  if (spans.length === 0) return [];
+  const out = new Map<string, HeldSlot>();
+  for (let i = 0; i < spans.length; i += 20) {
+    const group = spans.slice(i, i + 20);
+    let query = ctx.db
+      .selectFrom("pms_waiting_list_offers as o")
+      .innerJoin("pms_waiting_list as w", (j) => j.onRef("w.tenant_id", "=", "o.tenant_id").onRef("w.id", "=", "o.waiting_list_id"))
+      .select(["o.id", "o.waiting_list_id", "w.patient_id", "o.site_id", "o.practitioner_id", "o.room_id", "o.starts_at", "o.ends_at", "o.hold_until"])
+      .where("o.tenant_id", "=", tenantId)
+      .where("o.status", "=", "open")
+      .where("o.hold_until", "is not", null)
+      .where("o.hold_until", ">", at)
+      .where((eb) => eb.or(group.map((s) => eb.and([eb("o.starts_at", "<", s.endsAt), eb("o.ends_at", ">", s.startsAt)]))));
+    const p = q.practitionerIds ?? [];
+    const r = q.roomIds ?? [];
+    if (p.length > 0 || r.length > 0) {
+      query = query.where((eb) => eb.or([...(p.length > 0 ? [eb("o.practitioner_id", "in", p as string[])] : []), ...(r.length > 0 ? [eb("o.room_id", "in", r as string[])] : [])]));
+    }
+    if (q.siteIds) {
+      if (q.siteIds.length === 0) return [];
+      query = query.where("o.site_id", "in", q.siteIds as string[]);
+    }
+    if (q.exceptPatientId) query = query.where("w.patient_id", "!=", q.exceptPatientId);
+    for (const row of await query.orderBy("o.starts_at").limit(500).execute()) {
+      out.set(row.id, {
+        offerId: row.id,
+        waitingListId: row.waiting_list_id,
+        patientId: row.patient_id,
+        siteId: row.site_id,
+        practitionerId: row.practitioner_id,
+        roomId: row.room_id,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        holdUntil: row.hold_until as string,
+      });
+    }
+  }
+  return Array.from(out.values());
+}
+
+/** Holds as clash-check items (kind "hold" – never overridable). */
+export function holdItems(holds: readonly HeldSlot[]): DiaryItemLike[] {
+  return holds.map((h) => ({ id: h.offerId, kind: "hold", status: "booked", practitionerId: h.practitionerId, roomId: h.roomId, patientId: null, startsAt: h.startsAt, endsAt: h.endsAt }));
+}
+
+/** occupyingNear plus the holds in the way (the clash check before a booking, a move, a resize or blocked time). */
+export async function inTheWayNear(ctx: DbContext, tenantId: string, q: NearbyQuery & { exceptPatientId: string | null }): Promise<DiaryItemLike[]> {
+  const [items, holds] = await Promise.all([
+    occupyingNear(ctx, tenantId, q),
+    heldSlots(ctx, tenantId, {
+      spans: q.spans,
+      practitionerIds: q.practitionerId ? [q.practitionerId] : [],
+      roomIds: q.roomId ? [q.roomId] : [],
+      exceptPatientId: q.exceptPatientId,
+    }),
+  ]);
+  return [...items, ...holdItems(holds)];
 }
 
 /* ------------------------------------------------------------------------------------------------

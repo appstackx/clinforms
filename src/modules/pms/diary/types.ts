@@ -115,7 +115,7 @@ export interface WaitingListEntry extends WaitingListSummary {
   createdBy: string | null;
 }
 
-/** A slot offered to a waiting patient (does not hold the slot). */
+/** A slot offered to a waiting patient – held for them while open, until holdUntil (0180). */
 export interface WaitingListOffer {
   tenantId: string;
   id: string;
@@ -132,6 +132,8 @@ export interface WaitingListOffer {
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** While the offer is open, nobody else can book over the slot until this instant. Null = not held. */
+  holdUntil: string | null;
 }
 
 export type DiaryWarning = "outside_hours" | "authorisation_short" | "authorisation_used_up" | "double_booked";

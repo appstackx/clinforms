@@ -20,7 +20,7 @@ export function clashMessages(clashes: readonly (DiaryClash & { date?: string })
   const out: string[] = [];
   for (const c of clashes) {
     const when = `${formatDayShort(londonDate(c.startsAt))} ${formatLondonTime(c.startsAt)}–${formatLondonTime(c.endsAt)}`;
-    const text = `${CLASH_LABELS[c.resource]}${c.withKind === "block" ? " (blocked time)" : ""}: ${when}.`;
+    const text = `${CLASH_LABELS[c.resource]}${c.withKind === "block" ? " (blocked time)" : c.withKind === "hold" ? " (held for a waiting-list offer)" : ""}: ${when}.`;
     if (!seen.has(text)) {
       seen.add(text);
       out.push(text);

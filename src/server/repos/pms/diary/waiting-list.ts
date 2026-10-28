@@ -1,6 +1,6 @@
 /**
  * `pms_waiting_list` – patients waiting for an appointment (an earlier slot, a particular practitioner, a day or
- * time that suits them). Reception offers a slot (`pms_waiting_list_offers` – the offer does not hold it), then
+ * time that suits them). Reception offers a slot (`pms_waiting_list_offers` – the offer holds the slot for the patient until answered or its hold ends), then
  * books it from the entry: bookAppointment(…, { waitingListId, offerId }) marks the entry booked and the offer
  * accepted in the same atomic write. Entries are removed (status), never deleted; offers are declined or
  * withdrawn. Notes are encrypted; lists never decrypt. Every write is audited in the same batch.
@@ -41,7 +41,9 @@ import {
   type DbContext,
   type RepoContext,
 } from "../context";
-import { auditWhenWritten, loadCaseRef, loadPatientRef, loadPractitionerRef, loadRoomRef, loadServiceRef, loadSiteRef, newWriteId, runChange } from "./shared";
+import { findClashes } from "../../../../modules/pms/diary/rules";
+import { OFFER_HOLD_DEFAULT_MINUTES } from "../../../../modules/pms/diary/schemas";
+import { auditWhenWritten, inTheWayNear, loadCaseRef, loadPatientRef, loadPractitionerRef, loadRoomRef, loadServiceRef, loadSiteRef, newWriteId, runChange } from "./shared";
 
 const T = "pms_waiting_list";
 const OFFERS = "pms_waiting_list_offers";
@@ -287,6 +289,7 @@ function toOffer(r: Selectable<PmsWaitingListOffersTable>): WaitingListOffer {
     createdBy: r.created_by,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    holdUntil: r.hold_until ?? null,
   };
 }
 
@@ -299,12 +302,45 @@ function withdrawOpenOffers(ctx: DbContext, tenantId: string, entryId: string, w
     .where("status", "=", "open");
 }
 
+/** When a hold made at `at` for `minutes` ends: never after the slot starts. */
+export function offerHoldUntil(at: string, startsAt: string, minutes: number): string {
+  const until = new Date(Date.parse(at) + minutes * 60_000).toISOString();
+  return until < startsAt ? until : startsAt;
+}
+
+/**
+ * Moves an open offer's hold on to `until` (a text held for quiet hours: the patient still gets the whole hold once
+ * it goes). Only later, only while open; audited in the same batch. False when nothing changed.
+ */
+export async function extendOfferHold(ctx: DbContext, tenantId: string, offerId: string, until: string, actor: PmsActor): Promise<boolean> {
+  assertTenantId(tenantId);
+  assertId(offerId, "offer id");
+  const offer = await ctx.db.selectFrom(OFFERS).select(["waiting_list_id", "hold_until", "starts_at"]).where("tenant_id", "=", tenantId).where("id", "=", offerId).executeTakeFirst();
+  if (!offer || !offer.hold_until || until <= offer.hold_until || until > offer.starts_at) return false;
+  const at = nowIso(ctx);
+  const writeId = newWriteId(ctx);
+  const [changed] = await runChange(ctx, [
+    ctx.db
+      .updateTable(OFFERS)
+      .set((eb) => ({ hold_until: until, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", offerId)
+      .where("status", "=", "open")
+      .where("hold_until", "<", until),
+    auditWhenWritten(ctx, tenantId, actor, { action: "pms.waiting_list.offer_hold", targetType: "pms_waiting_list", targetId: offer.waiting_list_id, detail: { offerId, holdUntil: until } }, OFFERS, writeId, offerId),
+  ]);
+  return changed > 0;
+}
+
 export type OfferResult = { ok: true; offer: WaitingListOffer; entryRev: number } | Exclude<PmsSaveResult, { ok: true }>;
 
 /**
  * Offers a slot to a waiting patient: the offer is recorded and the entry marked "offered" (one batch, with the
- * entry's revision). The slot is NOT held – booking it (bookAppointment with waitingListId + offerId) runs the
- * clash checks. No message is sent from here.
+ * entry's revision). The slot is HELD for the patient (M9b) until `holdMinutes` from now (default 2 hours), never
+ * past its start: while the offer is open nobody else can book, move or block over it (0181's triggers); accepting
+ * it books it (bookAppointment with waitingListId + offerId); declining or withdrawing releases it; expiry releases
+ * it by itself. The slot must be free (no appointment, blocked time or other hold in the way). No message is sent
+ * from here.
  */
 export async function offerWaitingListSlot(ctx: RepoContext, tenantId: string, entryId: string, input: WaitingListOfferInput, actor: PmsActor): Promise<OfferResult> {
   assertTenantId(tenantId);
@@ -322,8 +358,19 @@ export async function offerWaitingListSlot(ctx: RepoContext, tenantId: string, e
   if (serviceId && d.durationMinutes !== undefined) await loadServiceRef(ctx, tenantId, serviceId);
   const start = londonToUtc(d.date, parseHhmm(d.startTime) ?? 0);
   if (!start.ok) throw new RepoInputError(DIARY_COPY.gap);
-  const id = pmsId(P.offer, ctx);
   const at = nowIso(ctx);
+  if (start.iso <= at) throw new RepoInputError("That time has passed – choose a later slot.");
+  const endsAt = addMinutesIso(start.iso, duration);
+  const holdUntil = offerHoldUntil(at, start.iso, d.holdMinutes ?? OFFER_HOLD_DEFAULT_MINUTES);
+  const patient = await ctx.db.selectFrom(T).select("patient_id").where("tenant_id", "=", tenantId).where("id", "=", entryId).executeTakeFirstOrThrow();
+  const inTheWay = findClashes(
+    { startsAt: start.iso, endsAt, practitionerId: d.practitionerId, roomId: d.roomId ?? null },
+    await inTheWayNear(ctx, tenantId, { spans: [{ startsAt: start.iso, endsAt }], practitionerId: d.practitionerId, roomId: d.roomId ?? null, exceptPatientId: patient.patient_id }),
+  );
+  if (inTheWay.length > 0) {
+    throw new RepoInputError(inTheWay.some((c) => c.withKind === "hold") ? "That slot is already held for another waiting patient." : "That slot is no longer free – choose another.");
+  }
+  const id = pmsId(P.offer, ctx);
   const writeId = newWriteId(ctx);
   let changed: number[];
   try {
@@ -337,7 +384,7 @@ export async function offerWaitingListSlot(ctx: RepoContext, tenantId: string, e
         .where("status", "in", ["waiting", "offered"]),
       ctx.db
         .insertInto(OFFERS)
-        .columns(["tenant_id", "id", "rev", "waiting_list_id", "site_id", "practitioner_id", "room_id", "service_id", "starts_at", "ends_at", "status", "appointment_id", "write_id", "created_by", "created_at", "updated_at"])
+        .columns(["tenant_id", "id", "rev", "waiting_list_id", "site_id", "practitioner_id", "room_id", "service_id", "starts_at", "ends_at", "status", "appointment_id", "write_id", "created_by", "created_at", "updated_at", "hold_until"])
         .expression(
           ctx.db
             .selectNoFrom((eb) => [
@@ -350,17 +397,18 @@ export async function offerWaitingListSlot(ctx: RepoContext, tenantId: string, e
               eb.val(d.roomId ?? null).as("room_id"),
               eb.val(serviceId ?? null).as("service_id"),
               eb.val(start.iso).as("starts_at"),
-              eb.val(addMinutesIso(start.iso, duration)).as("ends_at"),
+              eb.val(endsAt).as("ends_at"),
               eb.val("open").as("status"),
               eb.val(null).as("appointment_id"),
               eb.val(writeId).as("write_id"),
               eb.val(actor.userId).as("created_by"),
               eb.val(at).as("created_at"),
               eb.val(at).as("updated_at"),
+              eb.val(holdUntil).as("hold_until"),
             ])
             .where((eb) => eb.exists(eb.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", entryId).where("write_id", "=", writeId))),
         ),
-      auditWhenWritten(ctx, tenantId, actor, { action: "pms.waiting_list.offer", targetType: "pms_waiting_list", targetId: entryId, detail: { offerId: id, rev: d.expectedRev + 1 } }, T, writeId, entryId),
+      auditWhenWritten(ctx, tenantId, actor, { action: "pms.waiting_list.offer", targetType: "pms_waiting_list", targetId: entryId, detail: { offerId: id, rev: d.expectedRev + 1, holdUntil } }, T, writeId, entryId),
     ]);
   } catch (err) {
     throw translateDbError(err, MESSAGES);

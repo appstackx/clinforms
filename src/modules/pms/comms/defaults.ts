@@ -174,7 +174,7 @@ export const STANDARD_MESSAGE_TEMPLATES: readonly StandardMessageTemplate[] = [
     channel: "email",
     name: "Waiting list: slot offered (email)",
     subject: "An appointment is free on {{appointment.day}}",
-    body: lines("Hi {{patient.first_name}}, an appointment has come free:", "", ...APPOINTMENT_CARD, "", "If you would like it, please call us on {{site.phone}}. It is not held until you confirm."),
+    body: lines("Hi {{patient.first_name}}, an appointment has come free:", "", ...APPOINTMENT_CARD, "", "If you would like it, please call us on {{site.phone}} – we are keeping it for you for a short while."),
   },
   {
     key: "email-payment-link",

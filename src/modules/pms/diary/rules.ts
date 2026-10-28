@@ -200,9 +200,15 @@ export interface ClashCandidate extends TimeSpan {
   patientId?: string | null;
 }
 
+/**
+ * What can be in the way of a booking: an appointment, blocked time, or a HOLD – a slot offered to a waiting
+ * patient and held for them until the offer is answered or expires (M9b). A hold is never overridable.
+ */
+export type ClashWithKind = DiaryItemKind | "hold";
+
 export interface DiaryItemLike extends ClashCandidate {
   id: string;
-  kind: DiaryItemKind;
+  kind: ClashWithKind;
   status: string;
 }
 
@@ -212,7 +218,7 @@ export interface DiaryClash {
   resource: ClashResource;
   /** The item in the way. */
   withId: string;
-  withKind: DiaryItemKind;
+  withKind: ClashWithKind;
   startsAt: string;
   endsAt: string;
 }

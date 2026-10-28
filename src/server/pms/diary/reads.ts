@@ -238,7 +238,33 @@ function preferenceLabel(e: Pick<WaitingListSummary, "preferredDays" | "preferre
   return `${days} · ${TIME_OF_DAY_LABELS[e.preferredTime]}`;
 }
 
-async function waitingRows(caller: DiaryCaller, entries: WaitingListSummary[], openOffers: Map<string, number>): Promise<WaitingListRow[]> {
+/** When a hold ends, in words: "16:00" today, else "Thu 29/10 16:00". */
+function holdLabel(caller: DiaryCaller, iso: string | null): string | null {
+  if (!iso) return null;
+  const today = ukToday(caller.ctx.now ? caller.ctx.now() : pmsNow());
+  const day = londonDate(iso);
+  return day === today ? formatLondonTime(iso) : `${formatDayShort(day)} ${formatLondonTime(iso)}`;
+}
+
+function isHeld(caller: DiaryCaller, o: WaitingListOffer): boolean {
+  return o.status === "open" && o.holdUntil !== null && o.holdUntil > nowIso(caller.ctx);
+}
+
+function openOfferOf(caller: DiaryCaller, offers: readonly WaitingListOffer[] | undefined, n: Awaited<ReturnType<typeof names>>): WaitingListRow["offer"] {
+  const o = offers?.find((x) => x.status === "open");
+  if (!o) return null;
+  const held = isHeld(caller, o);
+  return {
+    id: o.id,
+    dateLabel: formatDayShort(londonDate(o.startsAt)),
+    timeLabel: `${formatLondonTime(o.startsAt)}–${formatLondonTime(o.endsAt)}`,
+    practitionerName: n.practitioner.get(o.practitionerId) ?? null,
+    held,
+    holdUntilLabel: held ? holdLabel(caller, o.holdUntil) : null,
+  };
+}
+
+async function waitingRows(caller: DiaryCaller, entries: WaitingListSummary[], openOffers: Map<string, WaitingListOffer[]>): Promise<WaitingListRow[]> {
   const n = await names(caller);
   const showNames = caller.can("patients.view");
   const patients = showNames ? await getPatientSummaries(caller.ctx, caller.tenantId, entries.map((e) => e.patientId)) : new Map<string, never>();
@@ -268,7 +294,8 @@ async function waitingRows(caller: DiaryCaller, entries: WaitingListSummary[], o
       latestOn: e.latestOn,
       waitingDays: Math.max(0, daysBetween(londonDate(e.createdAt), today)),
       hasNotes: e.hasNotes,
-      openOffers: openOffers.get(e.id) ?? 0,
+      openOffers: (openOffers.get(e.id) ?? []).filter((o) => o.status === "open").length,
+      offer: openOfferOf(caller, openOffers.get(e.id), n),
       createdAt: e.createdAt,
     };
   });
@@ -280,17 +307,17 @@ export async function loadWaitingList(caller: DiaryCaller, q: { status?: "open" 
   for (const id of [q.siteId, q.practitionerId, q.patientId]) if (id !== undefined && !PMS_ID_PATTERN.test(id)) return notFound();
   if (q.siteId && !inScope(caller, q.siteId)) return notFound(DIARY_COPY.notAtYourSites);
   const entries = await listWaitingList(caller.ctx, caller.tenantId, { status: q.status, siteId: q.siteId, siteIds: scopeList(caller), practitionerId: q.practitionerId, patientId: q.patientId });
-  const offers = new Map<string, number>();
+  const offers = new Map<string, WaitingListOffer[]>();
   const offered = entries.filter((e) => e.status === "offered");
-  for (const e of offered.slice(0, 100)) {
-    const list = await listWaitingListOffers(caller.ctx, caller.tenantId, e.id);
-    offers.set(e.id, list.filter((o) => o.status === "open").length);
-  }
+  for (const e of offered.slice(0, 100)) offers.set(e.id, await listWaitingListOffers(caller.ctx, caller.tenantId, e.id));
   return { ok: true, data: await waitingRows(caller, entries, offers) };
 }
 
-function offerRow(o: WaitingListOffer, n: Awaited<ReturnType<typeof names>>): WaitingListOfferRow {
+function offerRow(caller: DiaryCaller, o: WaitingListOffer, n: Awaited<ReturnType<typeof names>>): WaitingListOfferRow {
+  const held = isHeld(caller, o);
   return {
+    held,
+    holdUntilLabel: held ? holdLabel(caller, o.holdUntil) : null,
     id: o.id,
     status: o.status,
     statusLabel: { open: "Offered", accepted: "Booked", declined: "Declined", withdrawn: "Withdrawn" }[o.status],
@@ -312,7 +339,7 @@ export async function loadWaitingListEntry(caller: DiaryCaller, id: string): Pro
   const entry = await getWaitingListEntry(ctx, tenantId, id);
   if (!entry || (entry.siteId !== null && !inScope(caller, entry.siteId))) return notFound("This waiting-list entry no longer exists.");
   const [offers, n] = await Promise.all([listWaitingListOffers(ctx, tenantId, id), names(caller)]);
-  const [row] = await waitingRows(caller, [entry], new Map([[id, offers.filter((o) => o.status === "open").length]]));
+  const [row] = await waitingRows(caller, [entry], new Map([[id, offers]]));
   let suggestions: WaitingListEntryView["suggestions"] = [];
   if ((entry.status === "waiting" || entry.status === "offered") && entry.serviceId && caller.can("diary.book")) {
     const today = ukToday(ctx.now ? ctx.now() : pmsNow());
@@ -330,7 +357,7 @@ export async function loadWaitingListEntry(caller: DiaryCaller, id: string): Pro
     });
     suggestions = slots.map((s) => ({ date: s.date, dateLabel: formatDayShort(s.date), time: formatHhmm(s.startMinute), practitionerId: s.practitionerId, practitionerName: n.practitioner.get(s.practitionerId) ?? null, siteId: s.siteId, roomId: s.roomId }));
   }
-  return { ok: true, data: { row, caseId: entry.caseId, notes: entry.notes, removedReason: entry.removedReason, offers: offers.map((o) => offerRow(o, n)), suggestions } };
+  return { ok: true, data: { row, caseId: entry.caseId, notes: entry.notes, removedReason: entry.removedReason, offers: offers.map((o) => offerRow(caller, o, n)), suggestions } };
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -239,7 +239,12 @@ export const WaitingListStatusSchema = z.object({
 });
 export type WaitingListStatusChange = z.input<typeof WaitingListStatusSchema>;
 
-/** A free slot offered to a waiting patient (the offer does not hold the slot). */
+/** How long an offered slot is held for the patient by default (M9b): 2 hours, never past the slot's start. */
+export const OFFER_HOLD_DEFAULT_MINUTES = 120;
+/** The hold lengths reception can choose when offering a slot. */
+export const OFFER_HOLD_CHOICES = [30, 60, 120, 240, 1440] as const;
+
+/** A free slot offered to a waiting patient – held for them until answered or the hold ends (0180/0181). */
 export const WaitingListOfferSchema = z.object({
   expectedRev: ExpectedRevSchema,
   siteId: PmsIdSchema,
@@ -251,6 +256,8 @@ export const WaitingListOfferSchema = z.object({
   startTime: TimeSchema,
   /** Default: the appointment type's length. */
   durationMinutes: z.number().int("Whole minutes").min(5, "At least 5 minutes").max(MAX_APPOINTMENT_MINUTES, `At most ${MAX_APPOINTMENT_MINUTES} minutes`).optional(),
+  /** How long the slot is held (default OFFER_HOLD_DEFAULT_MINUTES); always ends at the latest when the slot starts. */
+  holdMinutes: z.number().int("Whole minutes").min(15, "At least 15 minutes").max(2880, "At most 2 days").optional(),
 });
 export type WaitingListOfferInput = z.input<typeof WaitingListOfferSchema>;
 

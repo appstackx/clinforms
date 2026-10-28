@@ -14,7 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Hourglass, Move, Plus, Printer } from "lucide-react";
+import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Hourglass, Move, Plus, Printer } from "lucide-react";
 import { moveAppointmentAction, resizeAppointmentAction, setAppointmentStatusAction } from "@/app/app/clinic/diary/actions";
 import { formatHhmm, londonParts } from "@/modules/pms/diary/time";
 import type { AppointmentStatus } from "@/modules/pms/diary/rules";
@@ -48,6 +48,8 @@ export interface DiaryScreenProps {
     clinical: boolean;
     /** billing.pay: the drawer's "Take payment". */
     pay?: boolean;
+    /** messages.send: the drawer's "Send message". */
+    message?: boolean;
   };
   payers: { id: string; name: string; kind: string }[];
   unsignedNotes: { count: number; href: string | null } | null;
@@ -139,6 +141,8 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   const columns = data.columns;
   const grid = data.hours;
   const cardsShown = data.cards;
+  // Closure days (Set-up → Sites and hours): "Closed – Christmas" above the grid (the slots are already gone).
+  const closedNotices = data.closures.map((c) => ({ date: c.date, dayLabel: longDate(c.date), text: c.reason ? `Closed – ${c.reason}` : "Closed" }));
   const siteRooms = data.rooms.filter((r) => r.siteId === data.site?.id);
   const columnName = (i: number) => {
     const c = columns[i];
@@ -485,11 +489,28 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
         ) : columns.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-[#475569]">{p.by === "room" ? "This site has no rooms yet." : "No practitioners work at this site yet. Add them in the clinic's set-up first."}</p>
         ) : (
+          <>
+          {closedNotices.length > 0 ? (
+            <div role="status" data-testid="diary-closed" className="flex items-start gap-2 rounded-[10px] border border-[#FDBA74] bg-[#FFF7ED] px-3.5 py-2.5 text-sm text-[#9A3412]">
+              <Ban className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                {closedNotices.map((n, i) => (
+                  <span key={n.date} className="block font-semibold">
+                    {i === 0 && p.view === "day" ? "" : `${n.dayLabel}: `}
+                    {n.text}
+                  </span>
+                ))}
+                <span className="block font-normal text-[#7C2D12]">Nothing can be booked here on {closedNotices.length > 1 ? "these days" : "this day"}. Change it in Set-up → Sites and hours.</span>
+              </span>
+            </div>
+          ) : null}
           <DiaryGrid
             label={p.view === "week" ? `Appointments, week of ${heading}, ${resources.find((r) => r.id === p.resourceId)?.name ?? ""}` : `Appointments, ${heading}`}
             view={p.view}
             columns={columns}
             cards={cardsShown}
+            holds={data.holds}
+            holdHref={can.rota || can.book ? `${DIARY_PATH}/waiting-list${data.site ? `?site=${data.site.id}` : ""}` : undefined}
             grid={grid}
             today={isToday}
             nowMinute={nowMinute}
@@ -522,6 +543,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
               else blocks.current.delete(id);
             }}
           />
+          </>
         )}
         {p.view === "week" ? <p className="text-xs text-[#475569]">&quot;+&quot; marks an initial assessment. Hatched areas are outside the rota or blocked. Click an empty slot to book it.</p> : null}
         {data.truncated ? <p className="text-xs text-[#9A3412]">Only the first 500 items are shown.</p> : null}
@@ -530,7 +552,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       <AppointmentDrawer
         id={selectedId}
         version={drawerVersion}
-        can={{ book: can.book, clinical: can.clinical, pay: can.pay }}
+        can={{ book: can.book, clinical: can.clinical, pay: can.pay, message: can.message }}
         onClose={closeDrawer}
         onError={(m) => toast.error(m)}
         onChanged={(message, undo) => {

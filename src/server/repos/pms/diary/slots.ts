@@ -1,12 +1,12 @@
 /**
  * Free slots: the working windows of the rota minus everything that occupies the practitioner or the window's
- * room. Used by "next free slot" in the diary and, through the same function, by online booking (portal module).
+ * room and the slots held for waiting patients. Used by "next free slot" in the diary and, through the same function, by online booking (portal module).
  */
 import { OCCUPYING_STATUSES, freeSlots, slotSuits, spansOverlap, type BusySpan, type FreeSlot, type WaitingPreferences } from "../../../../modules/pms/diary/rules";
 import { addDays, londonRange } from "../../../../modules/pms/diary/time";
 import { RepoInputError, assertTenantId, nowIso, type DbContext } from "../context";
 import { listDiary } from "./appointments";
-import { APPOINTMENTS } from "./shared";
+import { APPOINTMENTS, heldSlots } from "./shared";
 import { availabilityWindows } from "./availability";
 import { loadServiceRef } from "./shared";
 
@@ -63,10 +63,15 @@ export async function findFreeSlots(ctx: DbContext, tenantId: string, q: FreeSlo
     if (truncated) fullDays.add(date);
     for (const i of items) busy.push({ practitionerId: i.practitionerId, roomId: i.roomId, startsAt: i.startsAt, endsAt: i.endsAt });
   }
+  // Slots held for a waiting patient (an open offer, until it is answered or its hold ends) are not free – except
+  // to the patient they are held for.
+  const range = londonRange(dates[0], dates.length);
+  for (const h of await heldSlots(ctx, tenantId, { from: range.from, to: range.to, practitionerIds, roomIds, exceptPatientId: q.patientId ?? null })) {
+    busy.push({ practitionerId: h.practitionerId, roomId: h.roomId, startsAt: h.startsAt, endsAt: h.endsAt });
+  }
   const limit = Math.min(200, q.limit ?? 20);
   let patientBusy: { startsAt: string; endsAt: string }[] = [];
   if (q.patientId) {
-    const range = londonRange(dates[0], dates.length);
     patientBusy = await ctx.db
       .selectFrom(APPOINTMENTS)
       .select(["starts_at as startsAt", "ends_at as endsAt"])

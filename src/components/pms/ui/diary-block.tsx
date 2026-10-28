@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { blockMinutes, diaryBlockStyle, isCollapsedBlock, type DiaryBlockStatus } from "./diary-block-model";
+import { blockLines, blockMinutes, diaryBlockStyle, type DiaryBlockStatus } from "./diary-block-model";
 import { StatusIconGlyph } from "./status-icon";
 
 export interface DiaryBlockProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
@@ -39,7 +39,9 @@ export const DiaryBlock = React.forwardRef<HTMLButtonElement, DiaryBlockProps>(f
 ) {
   const look = diaryBlockStyle(status);
   const minutes = blockMinutes(start, end);
-  const collapsed = minutes !== null && isCollapsedBlock(minutes);
+  // Lines that fit the block's height (15 minutes or less, or too short for two lines, collapse to one).
+  const lines = blockLines(heightPx, minutes);
+  const collapsed = lines === 1;
   const time = `${start}–${end}`;
   // The accessible name is the visible text (WCAG 2.5.3, label in name) plus a few words only screen readers get:
   // the full status where the block shows a short tag ("DNA" → "did not attend"), and on a one-line block the end
@@ -79,16 +81,20 @@ export const DiaryBlock = React.forwardRef<HTMLButtonElement, DiaryBlockProps>(f
       ) : (
         <>
           <span className="flex w-full items-center gap-1.5 text-xs leading-4">
-            <span className="min-w-0 truncate font-semibold tabular-nums">{time}</span>
+            <span className="min-w-0 shrink truncate font-semibold tabular-nums">{time}</span>
             {marker ? <span className="ml-auto inline-flex shrink-0">{marker}</span> : null}
-            <span className={cn("inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap font-semibold", !marker && "ml-auto")}>
+            {/* The status word gives way (truncates) before anything overflows a narrow block; the icon stays. */}
+            <span className={cn("inline-flex min-w-0 shrink items-center gap-[3px] whitespace-nowrap font-semibold", !marker && "ml-auto")}>
               <StatusIconGlyph icon={look.icon} className="h-3 w-3 shrink-0" />
-              {look.tag}
+              <span className="min-w-0 truncate">{look.tag}</span>
               {fullStatus}
             </span>
           </span>
-          <span className={cn("w-full truncate text-[13px] font-semibold leading-[18px]", look.strikeName && "line-through")}>{title}</span>
-          {detail ? (
+          <span className={cn("w-full truncate text-[13px] font-semibold", lines === 2 ? "leading-4" : "leading-[18px]", look.strikeName && "line-through")}>
+            {title}
+            {detail && lines !== 3 ? <span className="sr-only">, {initial ? "initial: " : ""}{detail}</span> : null}
+          </span>
+          {detail && lines === 3 ? (
             <span className="w-full truncate text-xs leading-4">
               {initial ? (
                 <>
