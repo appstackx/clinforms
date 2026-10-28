@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Print – patient statement</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}*{box-sizing:border-box}@page{size:A4;margin:0}</style>
+</helmet>
+<div style="width: 794px; height: 1123px; background: #FFFFFF; color: #0F172A; font-family: Inter, system-ui, sans-serif; font-size: 16px; line-height: 22px; padding: 68px 68px 48px; display: flex; flex-direction: column; gap: 22px">
+<header style="display: flex; justify-content: space-between; gap: 24px; align-items: flex-start">
+<div style="display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 18px">Northgate Physiotherapy Group (fictional)</strong><span style="font-size: 14px">Harbour Road · 12 Harbour Road, Northgate ZZ99 9AA</span><span style="font-size: 14px">07700 900000 · accounts@example.com</span></div>
+<div style="text-align: right; display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 26px; line-height: 32px">STATEMENT</strong><span style="font-size: 14px">01/08/2026 – 28/10/2026</span></div>
+</header>
+<div style="display: flex; justify-content: space-between; gap: 24px; font-size: 15px">
+<div style="display: flex; flex-direction: column"><span>Mr Owen Price</span><span>22 Station Road, Northgate ZZ99 9CD</span><span>Patient no. HR-10577</span></div>
+<div style="border: 2px solid #0F172A; border-radius: 6px; padding: 10px 16px; text-align: right"><span style="font-size: 14px">Balance due</span><div style="font-size: 26px; line-height: 32px; font-weight: 700">£120.00</div></div>
+</div>
+<table style="width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums">
+<thead><tr style="border-bottom: 2px solid #0F172A; text-align: left"><th scope="col" style="padding: 8px 0">Date</th><th scope="col" style="padding: 8px">Details</th><th scope="col" style="padding: 8px; text-align: right">Charges</th><th scope="col" style="padding: 8px; text-align: right">Payments</th><th scope="col" style="padding: 8px 0; text-align: right">Balance</th></tr></thead>
+<tbody>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 9px 0">01/08/2026</td><td style="padding: 9px 8px">Opening balance</td><td></td><td></td><td style="padding: 9px 0; text-align: right">£0.00</td></tr>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 9px 0">19/08/2026</td><td style="padding: 9px 8px">INV-04602 Follow-up</td><td style="padding: 9px 8px; text-align: right">£55.00</td><td></td><td style="padding: 9px 0; text-align: right">£55.00</td></tr>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 9px 0">19/08/2026</td><td style="padding: 9px 8px">Payment – card</td><td></td><td style="padding: 9px 8px; text-align: right">£55.00</td><td style="padding: 9px 0; text-align: right">£0.00</td></tr>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 9px 0">02/09/2026</td><td style="padding: 9px 8px">INV-04821 Did not attend (DNA) fee</td><td style="padding: 9px 8px; text-align: right">£65.00</td><td></td><td style="padding: 9px 0; text-align: right">£65.00</td></tr>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 9px 0">13/10/2026</td><td style="padding: 9px 8px">INV-04790 Follow-up</td><td style="padding: 9px 8px; text-align: right">£55.00</td><td></td><td style="padding: 9px 0; text-align: right">£120.00</td></tr>
+</tbody>
+</table>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1.5px solid #0F172A; border-radius: 6px; font-size: 14px; text-align: center">
+<div style="padding: 8px; border-right: 1px solid #0F172A"><div>Current</div><strong>£55.00</strong></div>
+<div style="padding: 8px; border-right: 1px solid #0F172A"><div>31–60 days</div><strong>£65.00</strong></div>
+<div style="padding: 8px; border-right: 1px solid #0F172A"><div>61–90 days</div><strong>£0.00</strong></div>
+<div style="padding: 8px"><div>Over 90 days</div><strong>£0.00</strong></div>
+</div>
+<p style="margin: 0; font-size: 15px">Please pay online at example.com/p/3Qe1, by bank transfer quoting HR-10577, or call 07700 900000. If you've already paid, thank you – please ignore this statement.</p>
+<footer style="margin-top: auto; border-top: 1px solid #94A3B8; padding-top: 8px; display: flex; justify-content: space-between; font-size: 12px; line-height: 16px; color: #334155"><span>Printed 28/10/2026 10:55 by Jess Taylor</span><span>Page 1 of 1</span></footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

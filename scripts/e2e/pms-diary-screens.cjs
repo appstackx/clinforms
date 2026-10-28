@@ -256,20 +256,17 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector(`[role=group] button:has-text("Megan Hart")`);
     });
 
-    await step("open the drawer → Arrived → Undo (toast) → back to booked", async () => {
+    await step("open the drawer: details, Take payment (billing), and no Arrived / Completed for a future appointment (they open 60 minutes before)", async () => {
       await reception.click(`[role=group] button:has-text("Megan Hart")`);
       await reception.waitForSelector("aside[aria-label='Appointment details'] >> text=Quick actions");
       const drawer = await reception.locator("aside[aria-label='Appointment details']").innerText();
       for (const w of ["When", "Service", "With", "Payer", "Mobile", "Booked by Jess Taylor"]) assert(drawer.includes(w), `drawer has ${w}`);
-      assert(/Take payment/.test(drawer), "Take payment shown (switched off: billing coming)");
-      assert(await reception.locator("aside button:has-text('Take payment')").isDisabled(), "Take payment disabled");
+      assert(await reception.locator("aside [data-testid=drawer-take-payment]").isEnabled(), "Take payment (billing, M5) is on");
+      assert((await reception.locator("aside button:has-text('Arrived')").count()) === 0, "no Arrived for next week's appointment");
+      assert((await reception.locator("aside button:has-text('Completed')").count()) === 0, "no Completed either");
+      await reception.waitForSelector("aside [data-testid=future-status-note]");
       await shot(reception, "1440-drawer-booked");
       await axe(reception, "drawer");
-      await reception.click("aside button:has-text('Arrived')");
-      await reception.waitForSelector("[role=status] >> text=marked as arrived");
-      await reception.waitForSelector(`button[data-status=arrived]:has-text("Megan Hart")`);
-      await reception.click("[role=status] button:has-text('Undo')");
-      await reception.waitForSelector(`button[data-status=booked]:has-text("Megan Hart")`);
     });
 
     await step("clash: another patient at the same time is refused (Resolve clash to book, no override for a practitioner)", async () => {
@@ -472,12 +469,14 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector("[role=status] >> text=/now 30 min/");
     });
 
-    await step("DNA from the drawer (today's demo appointment)", async () => {
+    await step("DNA is not offered before the appointment starts (tomorrow's demo appointment): no button, the drawer says when it opens", async () => {
       await reception.goto(`${DIARY}?date=2026-10-29&site=${site}`);
       await ready(reception);
       await reception.locator("button[data-status=booked]").first().click();
-      await reception.click("aside button:has-text('Did not attend')");
-      await reception.waitForSelector("[role=status] >> text=marked as DNA");
+      await reception.waitForSelector("aside >> text=Quick actions");
+      assert((await reception.locator("aside button:has-text('Did not attend')").count()) === 0, "no Did not attend before the start");
+      await reception.waitForSelector("aside [data-testid=future-status-note]");
+      await reception.keyboard.press("Escape");
     });
 
     await step("late cancellation with the fee (an appointment less than 24 hours away)", async () => {
@@ -496,21 +495,63 @@ async function pickPatient(page, q, name) {
       await reception.waitForSelector("[role=status] >> text=late cancellation recorded");
     });
 
+    let today = null;
+    await step("reception books Megan Hart TODAY in the next hour → Arrived → Undo (toast) → back to booked", async () => {
+      const first = await viewData(reception, "");
+      const date = first.params.date;
+      const now = new Date();
+      const nowMinute = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now)) * 60 + now.getMinutes();
+      let found = null;
+      for (const st of first.sites) {
+        const data = await viewData(reception, `date=${date}&site=${st.id}`);
+        for (let i = 0; i < data.columns.length && !found; i++) {
+          const c = data.columns[i];
+          if (!c.practitionerId) continue;
+          const sl = c.freeSlots.find((x) => x.startMinute >= nowMinute + 2 && x.startMinute <= nowMinute + 50);
+          if (sl) found = { site: st.id, ci: i, minute: sl.startMinute, practitionerId: c.practitionerId };
+        }
+        if (found) break;
+      }
+      assert(found, `a free slot in the next hour today (now ${nowMinute}) – this step needs the clinic's opening hours`);
+      await reception.goto(`${DIARY}?date=${date}&site=${found.site}`);
+      await ready(reception);
+      await clickSlot(reception, found.ci, found.minute);
+      await reception.waitForSelector("role=dialog >> text=New appointment");
+      await pickPatient(reception, "Megan", "Megan Hart");
+      await reception.waitForSelector("text=Slot available");
+      await reception.click("role=dialog >> button:has-text('Book appointment')");
+      await reception.waitForSelector("text=Appointment booked");
+      await reception.click("text=Back to diary");
+      const data = await viewData(reception, `date=${date}&site=${found.site}`);
+      const card = data.cards.find((c) => c.patientName === "Megan Hart" && c.status === "booked" && c.practitionerId === found.practitionerId && Math.abs(Date.parse(c.startsAt) - Date.now()) < 3600e3);
+      assert(card, "today's booking for Megan Hart");
+      today = { date, site: found.site, id: card.id };
+      await reception.goto(`${DIARY}?date=${date}&site=${found.site}&focus=${card.id}`);
+      await ready(reception);
+      await reception.waitForSelector("aside >> text=Quick actions");
+      await reception.click("aside button:has-text('Arrived')");
+      await reception.waitForSelector("[role=status] >> text=marked as arrived");
+      await reception.waitForSelector(`button[data-status=arrived]:has-text("Megan Hart")`);
+      await reception.click("[role=status] button:has-text('Undo')");
+      await reception.waitForSelector(`button[data-status=booked]:has-text("Megan Hart")`);
+    });
+
     await step("clinician: Start treatment on an arrived patient → In treatment and the linked clinical note opens", async () => {
-      await clinician.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      assert(today, "today's booking (previous step)");
+      await clinician.goto(`${DIARY}?date=${today.date}&site=${today.site}&focus=${today.id}`);
       await ready(clinician);
-      await clinician.locator(`button[data-status=booked]:has-text("Megan Hart")`).first().click();
+      await clinician.waitForSelector("aside >> text=Quick actions");
       await clinician.click("aside button:has-text('Arrived')");
       await clinician.waitForSelector("aside button:has-text('Start treatment')");
       await clinician.click("aside button:has-text('Start treatment')");
       await clinician.waitForURL(/\/patients\/[^/]+\/notes\/[^/]+$/, { timeout: 20000 });
-      await clinician.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      await clinician.goto(`${DIARY}?date=${today.date}&site=${today.site}`);
       await ready(clinician);
       await clinician.waitForSelector(`button[data-status=in_treatment]:has-text("Megan Hart")`);
     });
 
     await step("reception: In treatment → Undo start of treatment (back to arrived) → Start treatment sets the status only (no note) → Completed", async () => {
-      await reception.goto(`${DIARY}?date=${MON1}&site=${site}`);
+      await reception.goto(`${DIARY}?date=${today.date}&site=${today.site}`);
       await ready(reception);
       await reception.locator(`button[data-status=in_treatment]:has-text("Megan Hart")`).first().click();
       await reception.waitForSelector("aside >> text=Quick actions");

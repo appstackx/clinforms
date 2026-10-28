@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Print – invoice</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}*{box-sizing:border-box}@page{size:A4;margin:0}</style>
+</helmet>
+<div style="width: 794px; height: 1123px; background: #FFFFFF; color: #0F172A; font-family: Inter, system-ui, sans-serif; font-size: 16px; line-height: 22px; padding: 68px 68px 48px; display: flex; flex-direction: column; gap: 22px">
+<header style="display: flex; justify-content: space-between; gap: 24px; align-items: flex-start">
+<div style="display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 18px">Northgate Physiotherapy Group (fictional)</strong><span style="font-size: 14px">Harbour Road · 12 Harbour Road, Northgate ZZ99 9AA</span><span style="font-size: 14px">07700 900000 · accounts@example.com</span></div>
+<div style="text-align: right; display: flex; flex-direction: column; gap: 2px"><strong style="font-size: 28px; line-height: 34px; letter-spacing: .02em">INVOICE</strong><span style="font-size: 14px">INV-04839</span></div>
+</header>
+<div style="display: flex; justify-content: space-between; gap: 24px; font-size: 15px">
+<div style="display: flex; flex-direction: column"><strong>Bill to</strong><span>Mrs Margaret Ellis</span><span>3 Mill Lane, Northgate ZZ99 9AB</span><span>Patient no. HR-10233 · DOB 14/03/1961</span></div>
+<dl style="margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px 14px; text-align: right"><dt>Issued</dt><dd style="margin: 0">28/10/2026</dd><dt>Due</dt><dd style="margin: 0">11/11/2026</dd><dt>Status</dt><dd style="margin: 0; font-weight: 600">Part-paid</dd></dl>
+</div>
+<table style="width: 100%; border-collapse: collapse; font-size: 15px">
+<thead><tr style="border-bottom: 2px solid #0F172A; text-align: left"><th scope="col" style="padding: 8px 0">Date</th><th scope="col" style="padding: 8px">Item</th><th scope="col" style="padding: 8px">Practitioner</th><th scope="col" style="padding: 8px 0; text-align: right">Amount</th></tr></thead>
+<tbody>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 10px 0">27/10/2026</td><td style="padding: 10px 8px">Initial assessment, 45 min</td><td style="padding: 10px 8px">Priya Shah, PH-DEMO-01</td><td style="padding: 10px 0; text-align: right">£70.00</td></tr>
+<tr style="border-bottom: 1px solid #CBD5E1"><td style="padding: 10px 0">28/10/2026</td><td style="padding: 10px 8px">Follow-up, 30 min</td><td style="padding: 10px 8px">Priya Shah, PH-DEMO-01</td><td style="padding: 10px 0; text-align: right">£55.00</td></tr>
+</tbody>
+</table>
+<div style="align-self: flex-end; width: 300px; display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; font-size: 15px; font-variant-numeric: tabular-nums">
+<span>Total</span><span>£125.00</span>
+<span>Paid 27/10/2026 · card ending 1111</span><span>−£70.00</span>
+<strong style="border-top: 2px solid #0F172A; padding-top: 6px; font-size: 17px">Balance due</strong><strong style="border-top: 2px solid #0F172A; padding-top: 6px; font-size: 17px">£55.00</strong>
+</div>
+<section style="border: 1.5px solid #0F172A; border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; font-size: 15px">
+<strong>How to pay</strong>
+<span>Online: example.com/p/3Qe1 (card)</span>
+<span>Bank transfer: Northgate Physio (fictional) · sort code 00-00-00 · account 00000000 · reference INV-04839</span>
+<span>By phone or at reception: 07700 900000</span>
+</section>
+<p style="margin: 0; font-size: 14px">Physiotherapy is exempt from VAT. Thank you.</p>
+<footer style="margin-top: auto; border-top: 1px solid #94A3B8; padding-top: 8px; display: flex; justify-content: space-between; font-size: 12px; line-height: 16px; color: #334155"><span>Printed 28/10/2026 10:52 by Jess Taylor</span><span>Page 1 of 1</span></footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

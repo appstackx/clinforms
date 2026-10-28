@@ -136,6 +136,35 @@ export function nextStatuses(kind: DiaryItemKind, from: AppointmentStatus): read
 }
 
 /**
+ * Statuses that say the patient was SEEN (arrived, in treatment, completed) are refused for an appointment that
+ * starts more than SEEN_EARLY_MINUTES from now – early arrivals are normal, marking tomorrow's patient "arrived"
+ * the night before is a mistake (handover §13.4 item 2). "Did not attend" is refused before the start time
+ * (it would put a fee on a visit that has not happened). Undo and cancelling are never time-limited.
+ */
+export const SEEN_EARLY_MINUTES = 60;
+
+export function statusAllowedAt(to: AppointmentStatus, startsAt: string, now: Date | number | string): boolean {
+  const start = Date.parse(startsAt);
+  const at = typeof now === "number" ? now : typeof now === "string" ? Date.parse(now) : now.getTime();
+  if (to === "arrived" || to === "in_treatment" || to === "attended") return start - at <= SEEN_EARLY_MINUTES * 60_000;
+  if (to === "dna") return start <= at;
+  return true;
+}
+
+/** The plain refusal for statusAllowedAt (shown next to the action). */
+export function futureStatusMessage(to: AppointmentStatus): string {
+  return to === "dna" ? "This appointment has not started yet, so it cannot be marked as did not attend." : `This appointment starts more than ${SEEN_EARLY_MINUTES} minutes from now, so the patient cannot be marked as seen yet.`;
+}
+
+/** nextStatuses, less those the time of day does not allow yet. */
+export function nextStatusesAt(kind: DiaryItemKind, from: AppointmentStatus, startsAt: string, now: Date | number | string): readonly AppointmentStatus[] {
+  const next = nextStatuses(kind, from);
+  // Only forward moves from booked/arrived are time-limited; an undo (back to arrived/booked) never is.
+  if (kind === "block" || (from !== "booked" && from !== "arrived" && from !== "dna")) return next;
+  return next.filter((to) => (to === "booked" || to === "cancelled" || to === "late_cancelled" ? true : statusAllowedAt(to, startsAt, now)));
+}
+
+/**
  * Only items that have not happened yet move (in treatment, attended and did not attend are under way or history;
  * cancelled ones are reinstated first).
  */

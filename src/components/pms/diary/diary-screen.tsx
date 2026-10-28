@@ -46,6 +46,8 @@ export interface DiaryScreenProps {
     patientsEdit: boolean;
     /** clinical.write: Start treatment also opens the note. */
     clinical: boolean;
+    /** billing.pay: the drawer's "Take payment". */
+    pay?: boolean;
   };
   payers: { id: string; name: string; kind: string }[];
   unsignedNotes: { count: number; href: string | null } | null;
@@ -106,10 +108,15 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
     }
   }, [cookieSite, data.site, data.sites, href, router]);
 
-  // Booking from the waiting list (?book=<entry>).
+  // Booking from the waiting list (?book=<entry>) or for a patient from their record (?patient=<id>) – once per
+  // preset (a refresh after booking must not open the form again).
+  const presetUsed = React.useRef<string | null>(null);
   React.useEffect(() => {
     const preset = data.bookingPreset;
     if (!preset || !can.book) return;
+    const key = `${preset.waitingListId ?? ""}:${preset.patientId}`;
+    if (presetUsed.current === key) return;
+    presetUsed.current = key;
     setBooking({
       date: p.date < data.today ? data.today : p.date,
       time: "09:00",
@@ -521,7 +528,7 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
       <AppointmentDrawer
         id={selectedId}
         version={drawerVersion}
-        can={{ book: can.book, clinical: can.clinical }}
+        can={{ book: can.book, clinical: can.clinical, pay: can.pay }}
         onClose={closeDrawer}
         onError={(m) => toast.error(m)}
         onChanged={(message, undo) => {

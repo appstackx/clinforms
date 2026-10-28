@@ -49,7 +49,7 @@ export async function registerPatient(_prev: RecordsActionState, form: FormData)
   // The patient exists now; a refused pronouns save (too long) is left for the record's edit page.
   if (id && pronouns) await savePronounsFor(actor, id, 0, pronouns);
   revalidatePath(PATIENTS_PATH);
-  // TODO(diary): the diary's booking screen (feat/cs-diary) – until it is merged this is the diary's start address.
+  // "Save and book": the diary opens its booking form for the new patient (?patient=<id>).
   if (text(form, "intent") === "book") redirect(`${CLINIC_BASE_PATH}/diary?patient=${encodeURIComponent(id)}`);
   redirect(patientPath(id));
 }

@@ -565,6 +565,8 @@ export function defineDiaryServiceSuite(
           durationMinutes: 20,
         }),
       );
+      // Seen statuses only from 60 minutes before the start (handover §13.4 item 2): the clock is the visit's day.
+      clock = Date.parse("2026-11-09T18:00:00.000Z");
       ok(
         await setAppointmentStatusFor(staff(), {
           id,
@@ -579,6 +581,7 @@ export function defineDiaryServiceSuite(
           status: "booked",
         }),
       );
+      clock = NOW;
       ok(
         await updateAppointmentDetailsFor(staff(), {
           id,
@@ -1368,7 +1371,9 @@ export function defineDiaryServiceSuite(
       assert.ok(d1.ok && d1.data.doubleBookedWith.length === 1 && d1.data.doubleBookedWith[0].id === secondId);
       // A double-booked appointment can still go through its day (arrived, in treatment) – no new clash.
       const det = await loadAppointmentDetails(staff(), secondId);
+      clock = Date.parse(`${MON2}T09:10:00.000Z`);
       ok(await setAppointmentStatusFor(staff(), { id: secondId, expectedRev: det.ok ? det.data.rev : 0, status: "arrived" }));
+      clock = NOW;
       // ROOM stays strict: the owner cannot put a third appointment in Room 1 at the same time, override or not.
       const room = await bookAppointmentFor(owner, booking(a, { patientId: a.daniel, practitionerId: a.tom, date: MON2, startTime: "09:00", roomId: a.roomA1, override: true }));
       refused(room, /not free/);
@@ -1398,6 +1403,8 @@ export function defineDiaryServiceSuite(
       const r = await bookAppointmentFor(staff(), booking(a, { date: day, startTime: "09:00" }));
       ok(r);
       const id = r.itemId as string;
+      // The visit's day (seen statuses open 60 minutes before the start).
+      clock = Date.parse(`${day}T08:30:00.000Z`);
       ok(await setAppointmentStatusFor(staff(), { id, expectedRev: r.rev as number, status: "arrived" }));
       // Reception: Start treatment sets the status only.
       const recep = await startTreatmentFor({ ...staff(), member: { name: "Jess Taylor", email: "user_reception_01@example.com" } }, { id });
@@ -1439,6 +1446,7 @@ export function defineDiaryServiceSuite(
       ok(b2);
       refused(await startTreatmentFor(staff(), { id: b2.itemId }), /arrived first/);
       refused(await startTreatmentFor(caller(A, ["clinic.view", "diary.view"]), { id }), /permission/);
+      clock = NOW;
     });
 
     it("safe errors: an internal failure answers a plain message and leaks nothing", async () => {

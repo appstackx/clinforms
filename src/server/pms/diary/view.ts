@@ -18,6 +18,8 @@ import { availabilityWindows } from "../../repos/pms/diary/availability";
 import { countWaitingList, getWaitingListEntry } from "../../repos/pms/diary/waiting-list";
 import { listPractitioners, listRooms, listServices, listSites } from "../../repos/pms/directory";
 import { getPatientSummaries } from "../../repos/pms/patients";
+import { listCasesForPatient } from "../../repos/pms/cases";
+import { patientVisibleInScope } from "../access";
 import { inScope, scopeList, type DiaryCaller } from "./caller";
 
 export function patientDisplayName(p: { firstName: string; lastName: string; preferredName: string | null }): string {
@@ -274,6 +276,17 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       const p = (await getPatientSummaries(ctx, tenantId, [entry.patientId])).get(entry.patientId);
       if (p) {
         bookingPreset = { waitingListId: entry.id, patientId: p.id, patientName: `${patientDisplayName(p)} (No. ${p.patientNumber})`, serviceId: entry.serviceId, practitionerId: entry.practitionerId, siteId: entry.siteId, caseId: entry.caseId };
+      }
+    }
+  }
+
+  // The patient record's "Book" (?patient=<id>): the booking form opens with the patient and their open case.
+  if (!bookingPreset && params.bookForPatientId && caller.can("diary.book") && caller.can("patients.view")) {
+    if (await patientVisibleInScope(ctx, tenantId, params.bookForPatientId, caller.siteIds)) {
+      const p = (await getPatientSummaries(ctx, tenantId, [params.bookForPatientId])).get(params.bookForPatientId);
+      if (p && p.status === "active") {
+        const open = (await listCasesForPatient(ctx, tenantId, p.id)).filter((c) => c.status === "open");
+        bookingPreset = { waitingListId: null, patientId: p.id, patientName: `${patientDisplayName(p)} (No. ${p.patientNumber})`, serviceId: null, practitionerId: null, siteId: site?.id ?? null, caseId: open[0]?.id ?? null };
       }
     }
   }

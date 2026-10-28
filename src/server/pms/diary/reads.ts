@@ -9,7 +9,7 @@ import "server-only";
 import { PMS_ID_PATTERN } from "../../../modules/pms/core/ids";
 import { formatUkDate, isIsoDate, ukToday } from "../../../modules/pms/core/text";
 import { BLOCK_KIND_LABELS, CANCEL_REASON_LABELS, DIARY_COPY, PRIORITY_LABELS, STATUS_LABELS, TIME_OF_DAY_LABELS, WAITING_STATUS_LABELS } from "../../../modules/pms/diary/copy";
-import { canMove, nextStatuses, type WaitingPriority } from "../../../modules/pms/diary/rules";
+import { canMove, nextStatusesAt, type WaitingPriority } from "../../../modules/pms/diary/rules";
 import { addDays, daysBetween, formatDayShort, formatHhmm, formatLondonTime, londonDate, londonDayRange, minutesBetween, weekdayName } from "../../../modules/pms/diary/time";
 import type { DiaryItem, DiaryRead, WaitingListOffer, WaitingListSummary } from "../../../modules/pms/diary/types";
 import type { DaySheet, DaySheetGroup, PatientAppointmentRow, PatientAppointmentsView, RotaRow, WaitingListEntryView, WaitingListOfferRow, WaitingListRow } from "../../../modules/pms/diary/view";
@@ -156,7 +156,7 @@ function patientRow(i: DiaryItem, n: Awaited<ReturnType<typeof names>>): Patient
     source: i.source,
     hasNotes: i.hasNotes,
     canMove: canMove(i.status),
-    nextStatuses: Array.from(nextStatuses(i.kind, i.status)),
+    nextStatuses: Array.from(nextStatusesAt(i.kind, i.status, i.startsAt, new Date())),
   };
 }
 

@@ -245,6 +245,21 @@ export function DiaryGrid(props: DiaryGridProps) {
                             initial={card.initial}
                             selected={selectedId === card.id}
                             heightPx={Math.max(18, minutesToPx(box.height) - 2)}
+                            marker={
+                              card.doubleBookedWith.length > 0 ? (
+                                // The clash marker of a logged double-booking (Khuram's decision A) – on both blocks, in the
+                                // block's top line so it never covers the text of a short block (handover §13.4 item 3).
+                                <span
+                                  aria-hidden
+                                  data-double-booked="true"
+                                  title={`${DOUBLE_BOOKED_LABEL} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}`}
+                                  className="inline-flex h-[14px] shrink-0 items-center gap-0.5 rounded-[4px] border border-[#FDBA74] bg-[#FFF7ED] px-0.5 text-[10px] font-semibold leading-[12px] text-[#9A3412]"
+                                >
+                                  <CopyPlus className="h-2.5 w-2.5" />
+                                  {lengthMin >= 60 && !compact ? <span className="hidden xl:inline">{DOUBLE_BOOKED_LABEL}</span> : null}
+                                </span>
+                              ) : undefined
+                            }
                             aria-describedby={`dg-${card.id}`}
                             className={cn("h-full touch-none", lengthMin > 15 && lengthMin < 45 && "gap-0 py-0.5",
                               lengthMin >= 45 && lengthMin < 60 && "gap-0 py-1", selectedId === card.id && "border-2 border-[#0F172A] shadow-none")}
@@ -265,18 +280,6 @@ export function DiaryGrid(props: DiaryGridProps) {
                               .filter(Boolean)
                               .join(", ")}
                           </span>
-                          {card.doubleBookedWith.length > 0 ? (
-                            // The clash marker of a logged double-booking (Khuram's decision A) – on both blocks.
-                            <span
-                              aria-hidden
-                              data-double-booked="true"
-                              title={`${DOUBLE_BOOKED_LABEL} with ${card.doubleBookedWith.map((x) => `${x.patientName ?? "another appointment"} ${x.timeLabel}`).join(", ")}`}
-                              className="pointer-events-none absolute bottom-1 right-1.5 z-[2] inline-flex items-center gap-0.5 rounded-[4px] border border-[#FDBA74] bg-[#FFF7ED] px-1 text-[10px] font-semibold leading-[14px] text-[#9A3412]"
-                            >
-                              <CopyPlus className="h-2.5 w-2.5" />
-                              {lengthMin >= 30 && !compact ? DOUBLE_BOOKED_LABEL : null}
-                            </span>
-                          ) : null}
                           {(card.hasAlerts || card.source === "online") && lengthMin > 15 ? (
                             <span aria-hidden className="pointer-events-none absolute right-2 top-[22px] flex gap-1 text-[#864E0E]">
                               {card.hasAlerts ? <AlertTriangle className="h-3 w-3" /> : null}

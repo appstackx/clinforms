@@ -20,6 +20,12 @@ export interface DiaryBlockProps extends Omit<React.ButtonHTMLAttributes<HTMLBut
   selected?: boolean;
   /** Height in px (the diary grid sets it from the length). Default 76. */
   heightPx?: number;
+  /**
+   * A small marker shown IN the top line, before the status (e.g. the diary's "Double-booked" icon) – part of the
+   * line's flow, so it never covers the time, name or status however short the block is. Decorative: say the same
+   * thing in the block's description.
+   */
+  marker?: React.ReactNode;
 }
 
 /**
@@ -28,7 +34,7 @@ export interface DiaryBlockProps extends Omit<React.ButtonHTMLAttributes<HTMLBut
  * cancellations are hatched so the slot reads as free. A button: the diary opens the details on click / Enter.
  */
 export const DiaryBlock = React.forwardRef<HTMLButtonElement, DiaryBlockProps>(function DiaryBlock(
-  { status, start, end, title, detail, initial, selected, heightPx, className, style, ...props },
+  { status, start, end, title, detail, initial, selected, heightPx, marker, className, style, ...props },
   ref,
 ) {
   const look = diaryBlockStyle(status);
@@ -67,13 +73,15 @@ export const DiaryBlock = React.forwardRef<HTMLButtonElement, DiaryBlockProps>(f
               {detail ? `, ${initial ? "initial: " : ""}${detail}` : ""}, {look.label}
             </span>
           </span>
+          {marker}
           <StatusIconGlyph icon={look.icon} className="h-3 w-3 shrink-0" />
         </span>
       ) : (
         <>
           <span className="flex w-full items-center gap-1.5 text-xs leading-4">
-            <span className="font-semibold tabular-nums">{time}</span>
-            <span className="ml-auto inline-flex items-center gap-[3px] whitespace-nowrap font-semibold">
+            <span className="min-w-0 truncate font-semibold tabular-nums">{time}</span>
+            {marker ? <span className="ml-auto inline-flex shrink-0">{marker}</span> : null}
+            <span className={cn("inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap font-semibold", !marker && "ml-auto")}>
               <StatusIconGlyph icon={look.icon} className="h-3 w-3 shrink-0" />
               {look.tag}
               {fullStatus}

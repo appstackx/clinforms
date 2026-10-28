@@ -63,6 +63,7 @@ import { isIsoDate } from "../../../../modules/pms/core/text";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import type { PmsAuditEntry } from "../context";
 import { recordAuthorisationUsage } from "../cases";
+import { futureStatusMessage, statusAllowedAt } from "../../../../modules/pms/diary/rules";
 import { touchPatientLastSeen } from "../patients";
 import {
   RepoInputError,
@@ -634,6 +635,10 @@ export async function setAppointmentStatus(ctx: RepoContext, tenantId: string, i
     throw new RepoInputError(kind === "block" ? "Blocked time can only be removed or restored." : `An appointment marked "${STATUS_LABELS[from]}" cannot be changed to "${STATUS_LABELS[to]}".`);
   }
   const at = nowIso(ctx);
+  // Seen / did not attend only once the appointment is (nearly) due – never for tomorrow's patient (rules.ts).
+  if (kind === "appointment" && (from === "booked" || from === "arrived" || from === "dna") && !statusAllowedAt(to, row.starts_at, at)) {
+    throw new RepoInputError(futureStatusMessage(to));
+  }
   const writeId = newWriteId(ctx);
   const set: Record<string, unknown> = { status: storedStatus(to), status_at: at, status_by: actor.userId, rev: d.expectedRev + 1, write_id: writeId, updated_at: at };
   // In treatment = arrived + treatment_started_at. Completing keeps when treatment started; any other status
@@ -1040,6 +1045,29 @@ export async function listFeesDue(ctx: DbContext, tenantId: string, range: { fro
     .limit(Math.min(500, Math.max(1, range.limit ?? 200)))
     .execute();
   return rows.map(toItem);
+}
+
+/**
+ * Waives the fee of a did-not-attend or late-cancelled appointment (billing's "Waive fee"): fee_due back to 0.
+ * One batch with its audit row (written only when this call changed it). False when no fee was due.
+ */
+export async function waiveAppointmentFee(ctx: DbContext, tenantId: string, id: string, actor: PmsActor): Promise<boolean> {
+  assertTenantId(tenantId);
+  assertId(id, "appointment id");
+  const at = nowIso(ctx);
+  const writeId = newWriteId(ctx);
+  const [updated] = await runChange(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set((eb) => ({ fee_due: 0, fee_pence: null, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }))
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("kind", "=", "appointment")
+      .where("fee_due", "=", 1)
+      .where("status", "in", ["dna", "late_cancelled"]),
+    auditWhenWritten(ctx, tenantId, actor, { action: "pms.appointment.fee_waive", targetType: "pms_appointment", targetId: id, detail: {} }, T, writeId, id),
+  ]);
+  return updated > 0;
 }
 
 /** Appointments (not blocks) per status between two instants – reports and the overview. */
