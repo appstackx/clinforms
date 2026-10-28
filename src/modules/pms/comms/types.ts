@@ -143,6 +143,8 @@ export interface MessageSummary {
   documentType: DocumentType | null;
   documentId: string | null;
   attempts: number;
+  /** A text held for the quiet hours (status queued) – released by the message run at this time. */
+  holdUntil: string | null;
   createdBy: string | null;
   createdAt: string;
 }

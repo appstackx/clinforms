@@ -57,7 +57,7 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
   }
   const started = Date.now();
   const budget = deps.budgetMs ?? 45_000;
-  const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number } = { clinics: 0, failedClinics: 0, claimed: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
+  const totals: Omit<RunSummary, "reasons"> & { clinics: number; failedClinics: number } = { clinics: 0, failedClinics: 0, claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0 };
   try {
     const ctx = deps.ctx();
     for (const tenantId of await clinicsWithClinicSystem(ctx)) {
@@ -66,6 +66,7 @@ export async function handleCommsCron(req: Request, deps: CommsCronDeps): Promis
       try {
         const r = await runAllDueMessages(ctx, tenantId, dispatch, { budgetMs: Math.max(1000, budget - (Date.now() - started)) });
         totals.claimed += r.claimed;
+        totals.released += r.released;
         totals.sent += r.sent;
         totals.outbox += r.outbox;
         totals.failed += r.failed;
