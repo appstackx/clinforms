@@ -13,6 +13,7 @@ import { ulid } from "../../context";
 import { RepoInputError, assertId, assertTenantId, nowIso, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
 import { getInvoice } from "./invoices";
 import { chunks } from "./shared";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 export const MAX_EXPORT_INVOICES = 200;
 
@@ -83,7 +84,7 @@ export async function recordInvoiceExports(ctx: RepoContext, tenantId: string, i
   if (unique.length > MAX_EXPORT_INVOICES) throw new RepoInputError(`At most ${MAX_EXPORT_INVOICES} invoices in one file.`);
   unique.forEach((id) => assertId(id, "invoice id"));
   const at = nowIso(ctx);
-  const batchRef = `ebx-${ulid((ctx.now ? ctx.now() : new Date()).getTime()).slice(0, 16).toLowerCase()}`;
+  const batchRef = `ebx-${ulid((ctx.now ? ctx.now() : pmsNow()).getTime()).slice(0, 16).toLowerCase()}`;
   for (const group of chunks(unique, 40)) {
     const queries: BatchQuery[] = group.map((invoiceId) =>
       ctx.db.insertInto("pms_invoice_exports").values({ tenant_id: tenantId, id: pmsId(P.export, ctx), invoice_id: invoiceId, channel: ch, batch_ref: batchRef, created_by: actor.userId, created_at: at }),

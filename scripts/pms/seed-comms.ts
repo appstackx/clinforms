@@ -25,8 +25,8 @@ import { finaliseLetter, listLetterTemplates, updateLetter } from "../../src/ser
 import { runDueMessages, type DispatchDeps } from "../../src/server/pms/comms/dispatch";
 import { signatureLine, startLetter } from "../../src/server/pms/comms/letters";
 import { recordInboundSms } from "../../src/server/pms/comms/replies";
-import { appointmentStatuses } from "../../src/server/pms/diary/message-sync";
 import { SEED_ACTOR } from "./seed-lib";
+import { pmsNow, pmsNowMs } from "../../src/modules/pms/core/clock";
 
 export interface SeedCommsOptions {
   now?: Date;
@@ -42,7 +42,7 @@ export interface SeedCommsSummary {
 }
 
 let counter = 0;
-const id = () => `seed_${Date.now().toString(36)}_${(counter++).toString(36)}`;
+const id = () => `seed_${pmsNowMs().toString(36)}_${(counter++).toString(36)}`;
 
 /** The seed's own stand-in test service: accepts everything except the first text when `failFirst` (Retry demo). */
 function seedProviders(failFirst: boolean): DispatchDeps["providers"] {
@@ -63,7 +63,7 @@ function seedProviders(failFirst: boolean): DispatchDeps["providers"] {
 }
 
 export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenantId: string, options: SeedCommsOptions = {}): Promise<SeedCommsSummary> {
-  const realNow = options.now ?? new Date();
+  const realNow = options.now ?? pmsNow();
   let clock = realNow.getTime();
   const ctx: RepoContext = { ...base, now: () => new Date(clock) };
   const log = options.log ?? (() => undefined);
@@ -81,13 +81,15 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
   await createReminderRule(ctx, tenantId, { name: "Email two days before", channel: "email", timing: "days_before", daysBefore: 2, sendAt: "10:00" }, SEED_ACTOR);
 
   const patient = async (ref: string) => (await ctx.db.selectFrom("pms_patients").select(["id", "phone_mobile"]).where("tenant_id", "=", tenantId).where("import_ref", "=", ref).executeTakeFirst()) ?? null;
-  const booked = (from: string, until: string) =>
+  // `asOfThen`: the history's appointments as they were when the reminders went (booked) – whatever the diary seed
+  // has marked them since (attended, DNA…), so the history, and its failed text for Retry, is there at any hour.
+  const booked = (from: string, until: string, asOfThen = false) =>
     ctx.db
       .selectFrom("pms_appointments")
       .select(["id", "patient_id", "starts_at", "ends_at", "site_id", "practitioner_id", "service_id"])
       .where("tenant_id", "=", tenantId)
       .where("kind", "=", "appointment")
-      .where("status", "=", "booked")
+      .where("status", "in", asOfThen ? ["booked", "arrived", "attended", "dna"] : ["booked"])
       .where("patient_id", "is not", null)
       .where("starts_at", ">=", from)
       .where("starts_at", "<", until)
@@ -110,7 +112,8 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
 
   // History: the reminders that went yesterday at 10:00 and this morning at 10:00 (for tomorrow's and the next day's
   // appointments – planned "as of" then and sent with the stand-in test service; one text fails).
-  const deps = (failFirst: boolean): DispatchDeps => ({ providers: seedProviders(failFirst), linkSecret: null, linkOrigin: "http://clinic.localhost:3180", appointmentStatus: appointmentStatuses });
+  const asBooked = async (_c: RepoContext, _t: string, ids: readonly string[]) => new Map(ids.map((i) => [i, "booked"]));
+  const deps = (failFirst: boolean): DispatchDeps => ({ providers: seedProviders(failFirst), linkSecret: null, linkOrigin: "http://clinic.localhost:3180", appointmentStatus: asBooked });
   let history = 0;
   for (const day of [-1, 0]) {
     // Planned "as of" 07:00 that day for the next day's first appointments, then sent by the run at 18:00 (today:
@@ -118,7 +121,7 @@ export async function seedComms(base: Pick<RepoContext, "db" | "cipher">, tenant
     const planAt = Date.parse(londonToUtcIso(addDays(today, day), "07:00"));
     if (planAt > realNow.getTime()) continue;
     clock = planAt;
-    const rows = await booked(londonToUtcIso(addDays(today, day + 1), "00:00"), londonToUtcIso(addDays(today, day + 2), "00:00"));
+    const rows = await booked(londonToUtcIso(addDays(today, day + 1), "00:00"), londonToUtcIso(addDays(today, day + 2), "00:00"), true);
     await plan(rows.slice(0, 12));
     clock = Math.min(Date.parse(londonToUtcIso(addDays(today, day), "18:00")), realNow.getTime());
     const r = await runDueMessages(ctx, tenantId, deps(day === -1), { actor: SEED_ACTOR });

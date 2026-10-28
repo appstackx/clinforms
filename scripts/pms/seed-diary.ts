@@ -25,6 +25,7 @@ import { listPractitioners, listRooms, listServices, listSites } from "../../src
 import { searchPatients } from "../../src/server/repos/pms/patients";
 import { getPmsSettings } from "../../src/server/repos/pms/settings";
 import { SEED_ACTOR } from "./seed-lib";
+import { pmsNow } from "../../src/modules/pms/core/clock";
 
 export interface SeedDiaryOptions {
   /** "Now" (default: the clock) – picks the week and which appointments are in the past. */
@@ -71,7 +72,7 @@ interface Worker {
 export async function seedDiary(ctx: RepoContext, tenantId: string, options: SeedDiaryOptions = {}): Promise<SeedDiarySummary> {
   const log = options.log ?? (() => undefined);
   if (!(await getPmsSettings(ctx, tenantId)).isDemo) throw new RepoInputError(`"${tenantId}" is not flagged as a demonstration clinic: the demo diary is loaded into demonstration clinics only.`);
-  const now = options.now ?? new Date();
+  const now = options.now ?? pmsNow();
   const nowIso = now.toISOString();
   const today = ukToday(now);
   const monday = mondayOf(today);

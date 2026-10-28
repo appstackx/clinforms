@@ -5,6 +5,7 @@
 import { formatUkDateTime, historyCsv } from "@/modules/pms/core/access";
 import { accessHistoryFor, nameResolver } from "@/server/pms/access-screens";
 import { clinicRoute } from "@/server/pms/http";
+import { pmsNow } from "../../../../../../modules/pms/core/clock";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const GET = clinicRoute({ permission: "settings.members" }, async (_req, 
   return new Response(csv, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="access-change-log-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "content-disposition": `attachment; filename="access-change-log-${pmsNow().toISOString().slice(0, 10)}.csv"`,
     },
   });
 });

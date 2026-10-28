@@ -19,6 +19,7 @@ import { PLATFORM_AUDIT_TENANT } from "../admin/platform-console";
 import { appendAudit } from "../repos/audit";
 import { RepoInputError } from "../repos/context";
 import { getEntitlement, setEntitlement } from "../repos/pms/entitlements";
+import { pmsNow } from "../../modules/pms/core/clock";
 
 export interface SetEntitlementPlanInput {
   slug: string;
@@ -43,7 +44,7 @@ export interface SetEntitlementPlan {
 }
 
 /** Previews (default) or applies a package change for one clinic. Refuses unknown or closed clinics. */
-export async function setClinicEntitlement(db: Kysely<Database>, input: SetEntitlementPlanInput, now = new Date()): Promise<SetEntitlementPlan> {
+export async function setClinicEntitlement(db: Kysely<Database>, input: SetEntitlementPlanInput, now = pmsNow()): Promise<SetEntitlementPlan> {
   if (!isPackageId(input.package)) throw new RepoInputError("--package must be reports or clinic.");
   const status: EntitlementStatus = input.status ?? (input.on ? "active" : "paused");
   if (!isEntitlementStatus(status)) throw new RepoInputError("--status must be active, trial, paused or cancelled.");

@@ -148,8 +148,8 @@ export function PrintInvoiceSheet({ clinic, invoice: inv, howToPay, printedBy, p
       {howToPay.length ? (
         <section className="flex flex-col gap-1.5 rounded-[6px] border border-[#0F172A] px-4 py-3">
           <strong>How to pay</strong>
-          {howToPay.map((h) => (
-            <span key={h}>{h}</span>
+          {howToPay.map((h, i) => (
+            <span key={`${i}-${h}`}>{h}</span>
           ))}
         </section>
       ) : null}

@@ -56,6 +56,7 @@ import { attempt, fail, forbidden, notFound, ok, patientInClinic, type RecordsAc
 import { providerStatus } from "./providers";
 import { clinicContact, composeMessage } from "./render";
 import { signatureLine } from "./letters";
+import { pmsNowMs } from "../../../modules/pms/core/clock";
 
 export type CommsActor = RecordsActor;
 
@@ -546,7 +547,7 @@ export async function failedMessagesSummaryFor(actor: CommsActor): Promise<{ cou
   if (!actor.can("messages.send")) return { count: 0, rows: [] };
   const r = await outboxFor(actor, "failed");
   if (!r.ok) return { count: 0, rows: [] };
-  const rows = r.value.filter((x) => Date.parse(x.at) > Date.now() - 7 * DAY).reverse();
+  const rows = r.value.filter((x) => Date.parse(x.at) > pmsNowMs() - 7 * DAY).reverse();
   return { count: rows.length, rows: rows.slice(0, 5) };
 }
 

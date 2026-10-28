@@ -24,6 +24,7 @@ import { getPmsSettings } from "../../src/server/repos/pms/settings";
 import { addAmendment, bulkImportNotes, getNote, type ImportNoteInput } from "../../src/server/repos/pms/records/notes";
 import { bulkRecordOutcomes } from "../../src/server/repos/pms/records/outcomes";
 import { SEED_ACTOR } from "./seed-lib";
+import { pmsNow } from "../../src/modules/pms/core/clock";
 
 export interface SeedRecordsOptions {
   /** How many of the demo patients (by patient number) get notes. Default 40. */
@@ -122,7 +123,7 @@ export async function seedRecords(ctx: RepoContext, tenantId: string, options: S
   const log = options.log ?? (() => undefined);
   const settings = await getPmsSettings(ctx, tenantId);
   if (!settings.isDemo) throw new RepoInputError("This clinic is not flagged as a demonstration clinic: no demonstration records are added.");
-  const now = options.now ?? (ctx.now ? ctx.now() : new Date());
+  const now = options.now ?? (ctx.now ? ctx.now() : pmsNow());
   const today = ukToday(now);
   const run: RepoContext = { ...ctx, now: () => now };
 

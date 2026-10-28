@@ -56,7 +56,7 @@ describe("navigation, record tabs and audit labels (contract §5–7)", () => {
       assert.ok(e.href === CLINIC_BASE_PATH || e.href.startsWith(`${CLINIC_BASE_PATH}/`), e.href);
       const band = PMS_MODULE_IDS.indexOf(e.module) * 10;
       assert.ok(e.order >= band && e.order < band + 10, `${e.id}: order ${e.order} outside ${band}–${band + 9}`);
-      assert.ok((PMS_PERMISSIONS as readonly string[]).includes(e.permission), e.permission);
+      for (const perm of typeof e.permission === "string" ? [e.permission] : e.permission) assert.ok((PMS_PERMISSIONS as readonly string[]).includes(perm), perm);
     }
     assert.equal(new Set(PMS_NAV.map((e) => e.href)).size, PMS_NAV.length, "one entry per page");
   });
