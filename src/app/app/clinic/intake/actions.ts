@@ -7,6 +7,7 @@ import { STAFF_PORTAL_PATHS } from "@/modules/pms/portal/paths";
 import { IntakeTemplatePatchSchema } from "@/modules/pms/portal/schemas";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { addStarterFormFor, createIntakeFormFor, saveIntakeFormFor } from "@/server/pms/portal/staff";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 export type IntakeAnswer = { ok: true; message?: string; rev?: number } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -22,7 +23,7 @@ export async function addStarterFormAction(key: string): Promise<IntakeAnswer> {
 export async function newIntakeFormAction(): Promise<IntakeAnswer> {
   const actor = await clinicActionActor({ permission: "settings.setup" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
-  const name = `New form ${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`;
+  const name = `New form ${pmsNow().toISOString().slice(11, 19).replace(/:/g, "")}`;
   const r = await createIntakeFormFor(actor, { name, kind: "intake", status: "draft", definition: { fields: [{ id: "about_you", type: "heading", label: "About you" }, { id: "q1", type: "text", label: "Your question", required: false }] } });
   if (!r.ok) return r;
   redirect(STAFF_PORTAL_PATHS.intakeForm(r.value.id));

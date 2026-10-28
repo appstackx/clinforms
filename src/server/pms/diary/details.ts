@@ -23,6 +23,7 @@ import { getPatient } from "../../repos/pms/patients";
 import { inScope, type DiaryCaller } from "./caller";
 import { payerLabel, referrerNames } from "./payers";
 import { doubleBookingsOf, isInitialCategory, patientDisplayName } from "./view";
+import { contributionModeForCase } from "../../repos/pms/billing/contribution-terms";
 
 /** Who booked an appointment, in words: a member's name, the patient (online) or the data import. */
 async function bookedByOf(caller: DiaryCaller, source: string, createdBy: string | null): Promise<string | null> {
@@ -129,7 +130,7 @@ export async function loadAppointmentDetails(caller: DiaryCaller, id: string): P
     lateIfCancelledNow: isLateCancellation(a.startsAt, nowIso(ctx)),
     initial: isInitialCategory(service?.category),
     pricePence: price?.pricePence ?? service?.defaultPricePence ?? null,
-    payerLabel: kase ? payerLabel(kase, names, fullCase?.excessPence ?? null) : null,
+    payerLabel: kase ? payerLabel(kase, names, fullCase?.excessPence ?? null, kase.payerType === "self_pay" || !fullCase?.excessPence ? "per_case" : (await contributionModeForCase(ctx, tenantId, kase.id, kase.payerReferrerId)).mode) : null,
     alertText: patient?.alerts ?? null,
     bookedBy,
     bookedAt: a.createdAt,

@@ -13,6 +13,7 @@ import type { RepoContext } from "../../repos/context";
 import { listPractitioners, listServices, listSites } from "../../repos/pms/directory";
 import { listBookingSites } from "../../repos/pms/portal/sites";
 import { portalDiary, type PortalSlot } from "./diary-port";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export interface BookingCatalogue {
   services: Service[];
@@ -25,7 +26,7 @@ export interface BookingCatalogue {
 }
 
 /** Appointment types, sites and practitioners offered online today. */
-export async function bookingCatalogue(ctx: RepoContext, tenantId: string, now: Date = new Date()): Promise<BookingCatalogue> {
+export async function bookingCatalogue(ctx: RepoContext, tenantId: string, now: Date = pmsNow()): Promise<BookingCatalogue> {
   const [services, sites, practitioners, siteSettings, rota] = await Promise.all([
     listServices(ctx, tenantId, { onlineOnly: true }),
     listSites(ctx, tenantId),

@@ -40,6 +40,7 @@ import {
   translateDbError,
   type RepoContext,
 } from "./context";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const T = "pms_patients";
 const MESSAGES = { unique: "A patient with this import reference already exists.", foreignKey: "The patient this record merges into does not exist." };
@@ -125,7 +126,7 @@ function toPatient(ctx: RepoContext, r: Row): Patient {
 }
 
 function today(ctx: RepoContext): string {
-  return ukToday(ctx.now ? ctx.now() : new Date());
+  return ukToday(ctx.now ? ctx.now() : pmsNow());
 }
 
 type ParsedPatient = ReturnType<ReturnType<typeof patientInputSchema>["parse"]>;

@@ -23,6 +23,7 @@ import type { RepoContext } from "../repos/context";
 import { findPractitionerByUser } from "../repos/pms/directory";
 import { resolveMemberAccess } from "./access";
 import { hasPackage, requireEntitlement } from "./entitlements";
+import { pmsNow } from "../../modules/pms/core/clock";
 
 export interface ClinicActor {
   tenantId: string;
@@ -61,7 +62,7 @@ async function toActor(ctx: AppContext): Promise<ClinicActor> {
     can: access.can,
     siteIds: access.siteIds,
     actor: { userId: ctx.session.user.id, sessionId: ctx.session.session.id },
-    repo: () => ({ db: getDb(), cipher: getDataCipher() }),
+    repo: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }),
   };
 }
 

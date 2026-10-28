@@ -16,15 +16,20 @@ export interface PmsNavEntry {
   href: string;
   /** Lower first. Bands: foundation 0–9, diary 10–19, records 20–29, billing 30–39, comms 40–49, portal 50–59, reporting 60–69, integration 70–79. */
   order: number;
-  /** Shown only to roles with this permission. */
-  permission: PmsPermission;
+  /** Shown only to members with this permission (a list: with any of them). */
+  permission: PmsPermission | readonly PmsPermission[];
   /** "main" = the top bar; "manage" = the clinic set-up menu (owners and administrators mostly). */
   group: "main" | "manage";
 }
 
 export function visibleNav(entries: readonly PmsNavEntry[], can: (permission: PmsPermission) => boolean): PmsNavEntry[] {
   return entries
-    .filter((e) => can(e.permission))
+    .filter((e) => navAllowed(e, can))
     .slice()
     .sort((a, b) => (a.group === b.group ? a.order - b.order || a.label.localeCompare(b.label) : a.group === "main" ? -1 : 1));
+}
+
+/** May the member see this entry (its permission, or any of its permissions)? */
+export function navAllowed(entry: Pick<PmsNavEntry, "permission">, can: (permission: PmsPermission) => boolean): boolean {
+  return typeof entry.permission === "string" ? can(entry.permission) : entry.permission.some((p) => can(p));
 }

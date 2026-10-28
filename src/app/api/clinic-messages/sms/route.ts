@@ -11,6 +11,7 @@ import { dispatchDepsFromEnv } from "@/server/pms/comms/dispatch";
 import { providerStatus } from "@/server/pms/comms/providers";
 import { handleSmsWebhook } from "@/server/pms/comms/webhook";
 import { appointmentStatuses } from "@/server/pms/diary/message-sync";
+import { pmsNow } from "@/modules/pms/core/clock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function POST(req: Request): Promise<Response> {
   return handleSmsWebhook(req, {
     secret: process.env.CLINIC_SMS_WEBHOOK_SECRET,
     providerMode: providerStatus().sms,
-    ctx: () => ({ db: getDb(), cipher: getDataCipher() }),
+    ctx: () => ({ db: getDb(), cipher: getDataCipher(), now: pmsNow }),
     dispatch: () => dispatchDepsFromEnv(process.env, appointmentStatuses),
   });
 }
