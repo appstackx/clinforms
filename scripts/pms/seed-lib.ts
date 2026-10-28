@@ -24,6 +24,7 @@ import { getPmsSettings, setPmsDemoFlag } from "../../src/server/repos/pms/setti
 import { deletePmsQueries } from "../../src/server/pms/offboard";
 import type { CaseInput } from "../../src/modules/pms/core/schemas";
 import { PRACTITIONERS, PRICE_LISTS, REFERRERS, SERVICES, SITES, demoPatients } from "./demo-data";
+import { pmsNow } from "../../src/modules/pms/core/clock";
 
 export const SEED_ACTOR = { userId: PLATFORM_USER_ID, sessionId: null };
 
@@ -78,7 +79,7 @@ export async function seedDemoClinic(ctx: RepoContext, options: SeedOptions): Pr
   const { tenantId } = options;
   const log = options.log ?? (() => undefined);
   const db = ctx.db;
-  const now = options.now ?? new Date();
+  const now = options.now ?? pmsNow();
   const today = ukToday(now);
   await assertDemoClinic(db, tenantId, { markDemo: options.markDemo });
   if (options.fresh) {

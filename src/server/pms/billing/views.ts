@@ -50,6 +50,7 @@ import { patientVisibleInScope } from "../access";
 import { BILLING_NOT_FOUND, attempt, fail, forbidden, invoiceInScope, invoiceSiteVisible, notFound, ok, patientInClinic, type BillingActor, type Result } from "./access";
 import { paymentLinkProvider } from "./payments";
 import { billableVisitSource } from "./visit-source";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 export const INVOICE_PAGE_SIZE = 25;
 const ACCOUNT_KINDS = ["insurer", "mlc", "solicitor", "employer", "case_manager", "other"] as const;
@@ -116,7 +117,7 @@ async function rowsFor(ctx: RepoContext, tenantId: string, invoices: InvoiceSumm
 }
 
 function todayOf(ctx: RepoContext): string {
-  return ukToday(ctx.now ? ctx.now() : new Date());
+  return ukToday(ctx.now ? ctx.now() : pmsNow());
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -698,9 +699,10 @@ export async function howToPayLines(actor: BillingActor, reference: string, link
   const [settings, profile] = await Promise.all([getBillingSettings(ctx, actor.tenantId), getClinicProfile(ctx, actor.tenantId)]);
   const out: string[] = [];
   if (link) out.push(`Online: ${link} (card)`);
+  if (settings.bankDetails) out.push(`Bank transfer: ${settings.bankDetails.accountName} · sort code ${settings.bankDetails.sortCode} · account ${settings.bankDetails.accountNumber} · reference ${reference}`);
   if (settings.paymentInstructions) out.push(`${settings.paymentInstructions.replace(/\s+$/, "")} · reference ${reference}`);
   if (profile?.phone) out.push(`By phone or at reception: ${profile.phone}`);
-  return out;
+  return Array.from(new Set(out));
 }
 
 export async function printInvoiceFor(actor: BillingActor, invoiceId: string): Promise<Result<{ clinic: PrintClinic; invoice: InvoiceDetailView; howToPay: string[]; printedBy: string; printedAt: string }>> {
@@ -715,7 +717,7 @@ export async function printInvoiceFor(actor: BillingActor, invoiceId: string): P
       invoice: detail,
       howToPay: detail.balancePence > 0 ? await howToPayLines(actor, inv.number ?? "", active?.url ?? null) : [],
       printedBy: actor.name || actor.email,
-      printedAt: new Date(actor.repo().now ? (actor.repo().now as () => Date)().getTime() : Date.now()).toISOString(),
+      printedAt: new Date(actor.repo().now ? (actor.repo().now as () => Date)().getTime() : pmsNowMs()).toISOString(),
     });
   });
 }
@@ -770,7 +772,7 @@ export async function statementFor(actor: BillingActor, who: StatementFor, from:
       clinic: await printClinicOf(actor, null),
       statement: { title: "Statement", from, until, account, openingPence: st.openingPence, rows, closingPence: st.closingPence, ages, howToPay: await howToPayLines(actor, ref.replace(/^Patient no\. /, ""), null) },
       printedBy: actor.name || actor.email,
-      printedAt: new Date().toISOString(),
+      printedAt: pmsNow().toISOString(),
     });
   });
 }

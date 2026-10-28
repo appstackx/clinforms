@@ -18,9 +18,10 @@ import { commsLinkOrigin } from "../comms/links";
 import type { FlowDeps } from "./booking";
 import { PORTAL_COOKIE, readPortalSession, type PortalViewer } from "./portal-auth";
 import { loadPublicClinic, type PublicClinic } from "./public-clinic";
+import { pmsNow, pmsNowMs } from "../../../modules/pms/core/clock";
 
 export function publicCtx(): RepoContext {
-  return { db: getDb(), cipher: getDataCipher() };
+  return { db: getDb(), cipher: getDataCipher(), now: pmsNow };
 }
 
 /** The clinic of a public page, or the 404 page. */
@@ -40,7 +41,7 @@ export async function publicClinicFor(clinicId: unknown): Promise<PublicClinic |
 
 export function flowDeps(over: Partial<FlowDeps> = {}): FlowDeps {
   const ip = clientIp(headers());
-  return { ctx: publicCtx(), now: new Date(), origin: commsLinkOrigin(), clientIp: ip === "local" ? "local" : ip, ...over };
+  return { ctx: publicCtx(), now: pmsNow(), origin: commsLinkOrigin(), clientIp: ip === "local" ? "local" : ip, ...over };
 }
 
 /** The signed-in patient of this clinic, or null. */
@@ -77,9 +78,9 @@ export function safePortalNext(clinic: PublicClinic, next: unknown): string {
  * an email) and one that did not take about the same time – no existence leak by timing.
  */
 export async function evenTiming<T>(minMs: number, work: () => Promise<T>): Promise<T> {
-  const started = Date.now();
+  const started = pmsNowMs();
   const result = await work();
-  const left = minMs - (Date.now() - started);
+  const left = minMs - (pmsNowMs() - started);
   if (left > 0) await new Promise((r) => setTimeout(r, left));
   return result;
 }

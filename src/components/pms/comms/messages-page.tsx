@@ -332,6 +332,7 @@ function Replies({ rows, selected, now }: { rows: ReplyRowView[]; selected: stri
   const [answer, setAnswer] = React.useState("");
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const inflight = React.useRef<{ id: string; promise: ReturnType<typeof loadThreadAction> } | null>(null);
 
   React.useEffect(() => {
     let live = true;
@@ -340,7 +341,12 @@ function Replies({ rows, selected, now }: { rows: ReplyRowView[]; selected: stri
     setError(null);
     if (!current) return;
     setLoading(true);
-    void loadThreadAction(current).then((r) => {
+    // One request per reply opened (React runs effects twice in development; a second server action started while
+    // the first is in flight could leave the thread "Loading…").
+    const pending = inflight.current?.id === current ? inflight.current.promise : loadThreadAction(current);
+    inflight.current = { id: current, promise: pending };
+    void pending.then((r) => {
+      if (inflight.current?.promise === pending) inflight.current = null;
       if (!live) return;
       setLoading(false);
       if (r.ok) setThread(r.thread);

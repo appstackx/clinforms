@@ -40,6 +40,7 @@ import {
 import { getRecordsSettings } from "../../repos/pms/records/settings";
 import { listNoteTemplates } from "../../repos/pms/records/templates";
 import { attempt, fail, forbidden, guard, noteAuthorOf, notFound, ok, patientInClinic, registrationFailure, saveFailure, type RecordsActor, type Result } from "./access";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -307,7 +308,7 @@ export async function unsignedNotesFor(actor: RecordsActor, options: { scope?: "
   if (scope === "all" && !actor.can("settings.setup")) return forbidden();
   return attempt("unsigned_notes", async () => {
     const ctx = actor.repo();
-    const today = ukToday(ctx.now ? ctx.now() : new Date());
+    const today = ukToday(ctx.now ? ctx.now() : pmsNow());
     const { unsignedNoteDays: days } = await getRecordsSettings(ctx, actor.tenantId);
     const cutoff = overdueCutoff(today, days);
     const author = scope === "mine" ? actor.userId : undefined;

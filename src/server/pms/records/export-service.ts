@@ -13,6 +13,7 @@ import { getPmsSettings } from "../../repos/pms/settings";
 import { nowIso } from "../../repos/context";
 import { attempt, fail, guard, notFound, ok, patientInClinic, type RecordsActor, type Result } from "./access";
 import { renderSubjectAccessPdf, subjectAccessJson, subjectAccessSections, type ExportSection } from "./subject-access-export";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 export type ExportFormat = "pdf" | "json";
 
@@ -45,7 +46,7 @@ export async function subjectAccessExportFor(actor: RecordsActor, patientId: str
     ]);
     if (!data) return notFound();
     const meta = { clinicName: options.clinicName, generatedAt: nowIso(ctx), demo: settings.isDemo };
-    const day = ukToday(ctx.now ? ctx.now() : new Date());
+    const day = ukToday(ctx.now ? ctx.now() : pmsNow());
     const base = `subject-access-${patient.patientNumber}-${day}`;
     let file: ExportFile;
     if (format === "json") {

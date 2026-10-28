@@ -56,6 +56,7 @@ import {
 } from "../context";
 import { getNoteTemplate } from "./templates";
 import { updateWithAudit } from "./write";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 const N = "pms_clinical_notes";
 const AM = "pms_note_amendments";
@@ -408,7 +409,7 @@ export async function signNote(ctx: RepoContext, tenantId: string, id: string, e
   if (num(row.rev) !== expectedRev) return { ok: false, reason: "conflict", currentRev: num(row.rev) };
   const sections = decryptSections(ctx, row);
   const chart = decryptChart(ctx, row);
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const check = canSign({ status: row.status as NoteStatus, authorUserId: row.author_user_id, seenOn: row.seen_on }, who.userId, today, noteHasContent(sections, chart));
   if (!check.ok) throw new RepoInputError(check.error);
   const hash = noteFingerprint(row.template_id, row.seen_on, sections, chart);
@@ -534,7 +535,7 @@ export interface ImportNoteInput {
 export async function bulkImportNotes(ctx: RepoContext, tenantId: string, inputs: readonly ImportNoteInput[], actor: PmsActor, detail: Record<string, unknown> = {}): Promise<string[]> {
   assertTenantId(tenantId);
   const who = assertActor(actor);
-  const today = ukToday(ctx.now ? ctx.now() : new Date());
+  const today = ukToday(ctx.now ? ctx.now() : pmsNow());
   const at = nowIso(ctx);
   const templates = new Map<string, TemplateSnapshot & { rev: number }>();
   const rows: (Record<string, unknown> & { id: string })[] = [];

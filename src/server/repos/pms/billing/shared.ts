@@ -24,6 +24,7 @@ import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
 import type { PmsCreditNoteLinesTable, PmsCreditNotesTable, PmsInvoiceLinesTable, PmsInvoicesTable, PmsPaymentAllocationsTable, PmsPaymentsTable } from "../../../db/pms-schema/billing";
 import { RepoInputError, assertActor, decryptField, isOn, num, numOrNull, translateDbError, type ConstraintMessages, type DbContext, type PmsAuditEntry, type RepoContext } from "../context";
+import { pmsNow } from "../../../../modules/pms/core/clock";
 
 export const INV = "pms_invoices";
 export const LINES = "pms_invoice_lines";
@@ -34,7 +35,7 @@ export const ALLOC = "pms_payment_allocations";
 
 /** Today in the UK ("YYYY-MM-DD") on the repository's clock. */
 export function todayOf(ctx: DbContext): string {
-  return ukToday(ctx.now ? ctx.now() : new Date());
+  return ukToday(ctx.now ? ctx.now() : pmsNow());
 }
 
 export const SUMMARY_COLUMNS = [

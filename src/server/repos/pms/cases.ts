@@ -44,6 +44,7 @@ import {
   writeWithAudit,
   type RepoContext,
 } from "./context";
+import { pmsNow } from "../../../modules/pms/core/clock";
 
 const C = "pms_cases";
 const A = "pms_authorisations";
@@ -132,7 +133,7 @@ function newCaseValues(ctx: RepoContext, tenantId: string, id: string, d: Parsed
     title: d.title,
     status,
     opened_on: d.openedOn,
-    closed_on: d.closedOn ?? (status === "open" ? null : ukToday(ctx.now ? ctx.now() : new Date())),
+    closed_on: d.closedOn ?? (status === "open" ? null : ukToday(ctx.now ? ctx.now() : pmsNow())),
     practitioner_id: d.practitionerId ?? null,
     site_id: d.siteId ?? null,
     payer_type: d.payerType ?? "self_pay",
@@ -233,7 +234,7 @@ export async function updateCase(ctx: RepoContext, tenantId: string, id: string,
   // Closing a case without a date closes it today; reopening clears the date.
   const status = (set.status as CaseStatus | undefined) ?? (current.status as CaseStatus);
   if (set.status !== undefined && status === "open" && d.closedOn === undefined) set.closed_on = null;
-  if (status !== "open" && d.closedOn === undefined && !current.closed_on) set.closed_on = ukToday(ctx.now ? ctx.now() : new Date());
+  if (status !== "open" && d.closedOn === undefined && !current.closed_on) set.closed_on = ukToday(ctx.now ? ctx.now() : pmsNow());
   const opened = (set.opened_on as string | undefined) ?? current.opened_on;
   const closed = set.closed_on === undefined ? current.closed_on : (set.closed_on as string | null);
   if (closed && closed < opened) throw new RepoInputError("Case: closedOn: The case cannot close before it opens");
