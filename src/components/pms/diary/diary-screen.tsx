@@ -74,7 +74,6 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   const [nowMinute, setNowMinute] = React.useState<number | null>(null);
   const [isToday, setIsToday] = React.useState<string>(data.today);
   const blocks = React.useRef(new Map<string, HTMLButtonElement>());
-  const lastCookie = React.useRef<string | null>(null);
 
   // The current time (client only – the server's render has none, so hydration matches).
   React.useEffect(() => {
@@ -89,23 +88,26 @@ export function DiaryScreen({ data, cookieSite, can, payers, unsignedNotes }: Di
   }, []);
 
   // Site: the address wins when the page loads (the shell's switcher is set to match); a change in the switcher
-  // afterwards (its cookie changes) moves the diary to that site, keeping the date.
+  // afterwards (its cookie changes) moves the diary to that site, keeping the date. Idempotent (React runs effects
+  // twice in development): it acts only when the cookie value it is given changes, and ignores its own write.
+  const prevCookie = React.useRef<string | null | undefined>(undefined);
+  const wroteCookie = React.useRef<string | null>(null);
   React.useEffect(() => {
     const site = data.site?.id ?? null;
     if (!site) return;
-    if (lastCookie.current === null) {
-      lastCookie.current = cookieSite;
+    if (prevCookie.current === undefined) {
+      prevCookie.current = cookieSite;
       if (cookieSite !== site) {
         document.cookie = `${SITE_COOKIE}=${encodeURIComponent(site)}; path=/app/clinic; max-age=${SITE_COOKIE_MAX_AGE}; samesite=lax`;
-        lastCookie.current = site;
+        wroteCookie.current = site;
         router.refresh();
       }
       return;
     }
-    if (cookieSite !== lastCookie.current) {
-      lastCookie.current = cookieSite;
-      if (cookieSite && cookieSite !== site && data.sites.some((s) => s.id === cookieSite)) router.replace(href({ siteId: cookieSite, resourceId: null }));
-    }
+    if (cookieSite === prevCookie.current) return;
+    prevCookie.current = cookieSite;
+    if (cookieSite === wroteCookie.current) return;
+    if (cookieSite && cookieSite !== site && data.sites.some((s) => s.id === cookieSite)) router.replace(href({ siteId: cookieSite, resourceId: null }));
   }, [cookieSite, data.site, data.sites, href, router]);
 
   // Booking from the waiting list (?book=<entry>) or for a patient from their record (?patient=<id>) – once per
