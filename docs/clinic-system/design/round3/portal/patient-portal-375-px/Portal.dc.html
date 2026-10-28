@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Patient portal</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 375px; height: 812px; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, sans-serif; font-size: 15px; line-height: 22px; display: flex; flex-direction: column; overflow: hidden">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; padding: 6px 8px; display: flex; align-items: center; gap: 4px; min-height: 56px">
+<sc-if value="{{canBack}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{goHome}}" aria-label="Back" style="width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button></sc-if>
+<div style="flex: 1; display: flex; align-items: center; gap: 8px; padding-left: 8px; min-width: 0">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none">NP</span>
+<span style="font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Northgate Physiotherapy (fictional)</span>
+</div>
+<sc-if value="{{signedIn}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{signOut}}" style="height: 44px; padding: 0 10px; border: 0; background: transparent; font: inherit; font-size: 14px; color: #475569">Sign out</button></sc-if>
+</header>
+
+<main style="flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{v.signin}}" hint-placeholder-val="{{true}}">
+<h1 style="margin: 0; font-size: 24px; line-height: 30px; font-weight: 600">Your appointments and forms</h1>
+<p style="margin: 0; color: #475569">Enter the email you gave us. We'll send you a link to sign in – no password needed.</p>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="pt-e" style="font-weight: 500">Email</label><input id="pt-e" type="email" autocomplete="email" value="isla.morgan@example.com" style="height: 48px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 10px; font: inherit; font-size: 16px"></div>
+<button type="button" onClick="{{sendLink}}" style="height: 52px; border-radius: 12px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 600">Email me a sign-in link</button>
+<p style="margin: 0; font-size: 13px; color: #475569">Can't get into your email? Call Harbour Road on 07700 900000.</p>
+</sc-if>
+
+<sc-if value="{{v.sent}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding-top: 24px">
+<span style="width: 56px; height: 56px; border-radius: 999px; background: #F0FDFA; color: #0B7970; display: inline-flex; align-items: center; justify-content: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6"></path></svg></span>
+<h1 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 600">Check your email</h1>
+<p style="margin: 0; color: #475569">We've sent a sign-in link to <strong style="color: #0F172A">isla.morgan@example.com</strong>. It works for 15 minutes.</p>
+</div>
+<button type="button" onClick="{{openLink}}" style="height: 52px; border-radius: 12px; border: 1px dashed #0E958A; background: #F0FDFA; color: #0B5F58; font: inherit; font-weight: 600">Prototype: open the link</button>
+<button type="button" onClick="{{sendLink}}" style="height: 48px; border-radius: 12px; border: 0; background: transparent; color: #0B7970; font: inherit; font-weight: 500">Send it again</button>
+</sc-if>
+
+<sc-if value="{{v.home}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 600">Hello, Isla</h1>
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{false}}"><div role="status" style="padding: 10px 12px; border-radius: 10px; background: #F0FDF4; border: 1px solid #A7E8BE; font-size: 14px">{{toast}}</div></sc-if>
+<sc-if value="{{formTodo}}" hint-placeholder-val="{{true}}">
+<button type="button" onClick="{{goForm}}" style="min-height: 64px; border-radius: 12px; border: 1px solid #FBD38D; background: #FFFBEB; padding: 12px 14px; font: inherit; text-align: left; display: flex; gap: 12px; align-items: center; color: #0F172A">
+<svg style="flex: none" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#864E0E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6v4H9zM12 11h4M12 16h4M8 11h.01M8 16h.01"></path></svg>
+<span style="flex: 1; display: flex; flex-direction: column"><strong>1 form to complete</strong><span style="font-size: 13px; color: #475569">Health questionnaire – before today 16:00</span></span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg>
+</button>
+</sc-if>
+<h2 style="margin: 4px 0 0; font-size: 16px; font-weight: 600">Upcoming</h2>
+<sc-for list="{{appts}}" as="a" hint-placeholder-count="2">
+<button type="button" onClick="{{a.open}}" style="min-height: 72px; border-radius: 12px; border: 1px solid #E2E8F0; background: #FFFFFF; padding: 12px 14px; font: inherit; text-align: left; display: flex; gap: 12px; align-items: center; color: #0F172A">
+<span style="width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; border-radius: 10px; background: #F0FDFA; color: #0B5F58; padding: 6px 0; line-height: 18px"><span style="font-size: 12px; font-weight: 500">{{a.dow}}</span><strong style="font-size: 18px">{{a.d}}</strong></span>
+<span style="flex: 1; display: flex; flex-direction: column; min-width: 0"><strong style="text-decoration: {{a.deco}}">{{a.time}} · {{a.svc}}</strong><span style="font-size: 13px; color: #475569">{{a.with}}</span><span style="font-size: 13px; color: {{a.stFg}}; font-weight: 500">{{a.status}}</span></span>
+</button>
+</sc-for>
+<h2 style="margin: 4px 0 0; font-size: 16px; font-weight: 600">Shared with you</h2>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden">
+<a href="#doc1" style="min-height: 56px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; text-decoration: none; color: #0F172A; border-bottom: 1px solid #F1F5F9"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#BA1C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"></path></svg><span style="flex: 1; display: flex; flex-direction: column"><span style="font-weight: 500">Booking confirmation</span><span style="font-size: 13px; color: #475569">PDF · 26/10/2026</span></span></a>
+<a href="#doc2" style="min-height: 56px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; text-decoration: none; color: #0F172A"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#BA1C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"></path></svg><span style="flex: 1; display: flex; flex-direction: column"><span style="font-weight: 500">Clinic information and parking</span><span style="font-size: 13px; color: #475569">PDF · Harbour Road</span></span></a>
+</div>
+</sc-if>
+
+<sc-if value="{{v.appt}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 600">{{cur.title}}</h1>
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+<strong>{{cur.svc}}</strong><span style="color: #334155">{{cur.with}}</span><span style="font-size: 13px; color: #475569">Harbour Road · 12 Harbour Road, Northgate ZZ99 9AA</span>
+</div>
+<sc-if value="{{cur.late}}" hint-placeholder-val="{{false}}">
+<div role="note" style="display: flex; gap: 8px; padding: 12px; border-radius: 10px; background: #FFF7ED; border: 1px solid #FDBA74; font-size: 14px"><svg style="flex: none; margin-top: 3px" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A3412" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"></path></svg><span>This appointment is <strong>less than 24 hours away</strong>. If you cancel or move it now, it counts as a late cancellation and a fee of up to <strong>£70.00</strong> may be charged.</span></div>
+</sc-if>
+<sc-if value="{{cur.free}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; font-size: 14px; color: #334155">You can change or cancel free of charge until <strong>{{cur.until}}</strong>.</p>
+</sc-if>
+<sc-if value="{{confirmCancel}}" hint-placeholder-val="{{false}}">
+<div role="alertdialog" aria-labelledby="cc-h" style="border: 1px solid #FECACA; background: #FEF2F2; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<strong id="cc-h">Cancel this appointment?</strong>
+<span style="font-size: 14px; color: #334155">{{cur.cancelText}}</span>
+<button type="button" onClick="{{doCancel}}" style="height: 48px; border-radius: 10px; border: 0; background: #BA1C1C; color: #FFFFFF; font: inherit; font-weight: 600">{{cur.cancelCta}}</button>
+<button type="button" onClick="{{keep}}" style="height: 48px; border-radius: 10px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Keep my appointment</button>
+</div>
+</sc-if>
+<sc-if value="{{showActions}}" hint-placeholder-val="{{true}}">
+<a href="OnlineBooking.dc.html" style="height: 52px; border-radius: 12px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-weight: 600; display: flex; align-items: center; justify-content: center">Move to another time</a>
+<button type="button" onClick="{{askCancel}}" style="height: 52px; border-radius: 12px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #BA1C1C; font: inherit; font-weight: 600">Cancel appointment</button>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{v.form}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; line-height: 28px; font-weight: 600">Health questionnaire</h1>
+<p style="margin: 0; font-size: 14px; color: #475569">Your answers go only to your physiotherapist.</p>
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px"><legend style="font-weight: 500; padding: 0; margin-bottom: 6px">Do you take any regular medicines?</legend>
+<label style="display: flex; gap: 10px; align-items: center; min-height: 44px"><input type="radio" name="q1" style="width: 20px; height: 20px; margin: 0; accent-color: #0B7970">No</label>
+<label style="display: flex; gap: 10px; align-items: center; min-height: 44px"><input type="radio" name="q1" checked="checked" style="width: 20px; height: 20px; margin: 0; accent-color: #0B7970">Yes</label></fieldset>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="q1b" style="font-weight: 500">Which ones?</label><input id="q1b" type="text" value="Inhaler (salbutamol) as needed" style="height: 48px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 10px; font: inherit; font-size: 16px"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="q2" style="font-weight: 500">Any allergies?</label><input id="q2" type="text" value="None" style="height: 48px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 10px; font: inherit; font-size: 16px"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="q3" style="font-weight: 500">Pain right now (0 = none, 10 = worst)</label><input id="q3" type="range" min="0" max="10" value="5" style="accent-color: #0B7970; height: 44px"><span style="font-size: 13px; color: #475569">5 out of 10</span></div>
+<div style="border-top: 1px solid #E2E8F0; padding-top: 14px; display: flex; flex-direction: column; gap: 10px">
+<strong>Sign</strong>
+<p style="margin: 0; font-size: 14px; color: #334155">I confirm this information is correct and I consent to assessment and treatment.</p>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="sig" style="font-weight: 500">Type your full name</label><input id="sig" type="text" value="{{sig}}" onChange="{{setSig}}" autocomplete="name" style="height: 52px; padding: 0 12px; border: 1px solid #CBD5E1; border-radius: 10px; font-family: 'Segoe Script', 'Bradley Hand', cursive; font-size: 22px; color: #0F172A"></div>
+<label style="display: flex; gap: 10px; align-items: flex-start; min-height: 44px"><input type="checkbox" checked="{{agree}}" onChange="{{toggleAgree}}" style="width: 20px; height: 20px; margin: 2px 0 0; accent-color: #0B7970; flex: none">I understand that typing my name counts as my signature</label>
+<span style="font-size: 13px; color: #475569">Signed on 27/10/2026 at 09:41 · from this device</span>
+</div>
+<button type="button" onClick="{{submitForm}}" disabled="{{formBlocked}}" style="height: 52px; border-radius: 12px; border: 0; background: {{formBg}}; color: {{formFg}}; font: inherit; font-size: 16px; font-weight: 600">Sign and send</button>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { view: 'signin', which: 0, confirm: false, statuses: ['booked', 'booked'], formDone: false, sig: 'Isla Morgan', agree: true, toast: '' }; }
+  renderVals() {
+    const st = this.state;
+    const A = [
+      { dow: 'Tue', d: '27', time: '16:00', svc: 'Initial assessment', with: 'with Priya Shah', late: true, title: 'Today at 16:00', until: '' },
+      { dow: 'Tue', d: '03', time: '16:00', svc: 'Follow-up', with: 'with Priya Shah', late: false, title: 'Tue 03/11/2026 at 16:00', until: 'Mon 02/11 at 16:00' }
+    ];
+    const appts = A.map((a, i) => {
+      const s = st.statuses[i];
+      return Object.assign({}, a, { status: s === 'booked' ? 'Booked' : (s === 'late' ? 'Cancelled – late cancellation' : 'Cancelled'), stFg: s === 'booked' ? '#166534' : '#9A3412', deco: s === 'booked' ? 'none' : 'line-through',
+        open: () => this.setState({ view: 'appt', which: i, confirm: false, toast: '' }) });
+    });
+    const a = A[st.which];
+    const cur = Object.assign({}, a, { free: !a.late,
+      cancelText: a.late ? 'Because it’s less than 24 hours away, a late cancellation fee of up to £70.00 may be charged. You could move it instead.' : 'You won’t be charged. We’ll send you a confirmation.',
+      cancelCta: a.late ? 'Cancel and accept the fee' : 'Yes, cancel it' });
+    const formBlocked = !(st.sig.trim().length > 3 && st.agree);
+    return {
+      v: { signin: st.view === 'signin', sent: st.view === 'sent', home: st.view === 'home', appt: st.view === 'appt', form: st.view === 'form' },
+      signedIn: ['home', 'appt', 'form'].indexOf(st.view) >= 0, canBack: st.view === 'appt' || st.view === 'form',
+      sendLink: () => this.setState({ view: 'sent' }), openLink: () => this.setState({ view: 'home' }), signOut: () => this.setState({ view: 'signin' }),
+      goHome: () => this.setState({ view: 'home', confirm: false }), goForm: () => this.setState({ view: 'form' }),
+      formTodo: !st.formDone, appts, cur,
+      confirmCancel: st.confirm, showActions: !st.confirm && st.statuses[st.which] === 'booked',
+      askCancel: () => this.setState({ confirm: true }), keep: () => this.setState({ confirm: false }),
+      doCancel: () => { const s = st.statuses.slice(); s[st.which] = a.late ? 'late' : 'cancelled'; this.setState({ statuses: s, confirm: false, view: 'home', toast: a.late ? 'Appointment cancelled. The clinic will contact you about the late cancellation fee.' : 'Appointment cancelled. A confirmation is on its way.' }); },
+      toastOn: !!st.toast, toast: st.toast,
+      sig: st.sig, setSig: (e) => this.setState({ sig: e.target.value }), agree: st.agree, toggleAgree: () => this.setState({ agree: !st.agree }),
+      formBlocked, formBg: formBlocked ? '#E2E8F0' : '#0B7970', formFg: formBlocked ? '#64748B' : '#FFFFFF',
+      submitForm: () => { if (!formBlocked) this.setState({ formDone: true, view: 'home', toast: 'Thanks – your questionnaire has been sent to the clinic.' }); }
+    };
+  }
+}
+</script>
+</body>
+</html>
