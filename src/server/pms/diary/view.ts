@@ -284,7 +284,7 @@ export async function loadDiaryView(caller: DiaryCaller, params: DiaryParams, to
       site: site ? { id: site.id, name: site.name, code: site.code } : null,
       practitioners: practitioners.map((p) => ({ id: p.id, name: p.displayName, colour: p.colour, defaultSiteId: p.defaultSiteId })),
       rooms: rooms.filter((r) => inScope(caller, r.siteId)).map((r) => ({ id: r.id, name: r.name, siteId: r.siteId })),
-      services: services.map((s) => ({ id: s.id, name: s.name, durationMinutes: s.durationMinutes, colour: s.colour })),
+      services: services.map((s) => ({ id: s.id, name: s.name, durationMinutes: s.durationMinutes, colour: s.colour, pricePence: s.defaultPricePence })),
       columns: fullColumns,
       cards,
       hours,

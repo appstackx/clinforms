@@ -402,7 +402,7 @@ export async function searchDiaryPatients(caller: DiaryCaller, query: unknown): 
 }
 
 export interface DiaryBookingOptions {
-  cases: { id: string; title: string; payerType: string; practitionerId: string | null; siteId: string | null }[];
+  cases: { id: string; title: string; payerType: string; payerLabel: string; practitionerId: string | null; siteId: string | null }[];
   authorisations: { id: string; caseId: string; code: string; sessionsLeft: number | null; expiresOn: string | null }[];
 }
 
@@ -412,10 +412,11 @@ export async function loadBookingOptions(caller: DiaryCaller, patientId: string)
   if (!PMS_ID_PATTERN.test(patientId)) return { ok: true, data: { cases: [], authorisations: [] } };
   const { ctx, tenantId } = caller;
   const [cases, auths] = await Promise.all([listCasesForPatient(ctx, tenantId, patientId), listAuthorisations(ctx, tenantId, { patientId })]);
+  const payers = await payerLabelsForCases(ctx, tenantId, cases.map((c) => c.id));
   return {
     ok: true,
     data: {
-      cases: cases.filter((c) => c.status !== "closed").map((c) => ({ id: c.id, title: c.title, payerType: c.payerType, practitionerId: c.practitionerId, siteId: c.siteId })),
+      cases: cases.filter((c) => c.status !== "closed").map((c) => ({ id: c.id, title: c.title, payerType: c.payerType, payerLabel: payers.get(c.id) ?? "Self-pay", practitionerId: c.practitionerId, siteId: c.siteId })),
       authorisations: auths
         .filter((a) => a.status === "active")
         .map((a) => ({ id: a.id, caseId: a.caseId, code: a.code, sessionsLeft: a.sessionsAuthorised === null ? null : Math.max(0, a.sessionsAuthorised - a.sessionsUsed), expiresOn: a.expiresOn })),

@@ -82,6 +82,8 @@ export interface DiaryRoomOption extends DiaryOption {
 export interface DiaryServiceOption extends DiaryOption {
   durationMinutes: number;
   colour: string | null;
+  /** The type's own price (pence); a payer's price list may differ. */
+  pricePence: number | null;
 }
 
 export interface DiarySiteOption extends DiaryOption {

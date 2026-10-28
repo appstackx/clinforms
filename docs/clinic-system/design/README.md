@@ -22,3 +22,25 @@ organisations ending "(fictional)").
 See the kit's commit message (feat/cs-ui) – e.g. the shell's nav shows only the modules whose screens exist, the
 user menu has "My account and security" (there is no profile/signature page yet), and avatar colours come from a
 hash of the name, so the example people get different colours than in the mock-up.
+
+## Round 2 – diary (approved 28/10/2026)
+
+`round2/diary/` – six reference mock-ups exported from the design tool, each a folder with its `*.dc.html` artboard,
+`README.md`, `support.js` and `vendor/` (the runtime that renders it – not part of the design). Serve a folder over
+http (e.g. `python3 -m http.server 3185`) and open the `.dc.html`. Screenshots: `round2/diary/screenshots/`.
+Fictional data only.
+
+| Folder | Screen | Built in |
+|---|---|---|
+| `diary-day-view-site-practitioners-rooms/` | Day view: practitioner or room columns, drawer, keyboard move | `src/app/app/clinic/diary/page.tsx`, `src/components/pms/diary/{diary-screen,diary-grid,appointment-drawer}.tsx` |
+| `diary-week-view-per-practitioner/` | Week of one practitioner (or room) | same page, `view=week` |
+| `booking-dialog-find-create-patient-recurring-clash/` | New appointment: find/create patient, case and payer, clash, repeat | `src/components/pms/diary/booking-dialog.tsx` |
+| `rota-editor-waiting-list/` | Rota editor and waiting list | `src/app/app/clinic/diary/{rotas,waiting-list}/page.tsx`, `src/components/pms/diary/rota-waiting.tsx` |
+| `print-day-sheet-a4/` | Printed day sheet (A4 portrait) | `src/app/app/clinic/diary/day-sheet/page.tsx` |
+| `diary-375-px/` | Phone diary ("My diary") | `src/components/pms/diary/mobile-diary.tsx` |
+
+Differences from the mock-ups, and why, are listed in the commit message of the diary screens (feat/cs-diary): no
+"In treatment" status in the diary (Start treatment opens a clinical note), "Book anyway" only over the patient's own
+other appointment (a practitioner or room is never double-booked – K2-DIARY-006), the day sheet prints no phone
+numbers and dates of birth only when the clinic switches it on (K2-DIARY-017 and Khuram's decision of 28/10/2026),
+the clash text keeps names' capitals (the mock-up lower-cased them).
