@@ -161,7 +161,7 @@ const navLabels = (page) => page.locator("header nav[aria-label='Clinic'] a").al
       const products = await a.locator("nav[aria-label='Product areas'] a").allInnerTexts();
       assert(products[0] === "Clinic system" && /^ClinForms/.test(products[1] || ""), `products: ${products.join(", ")}`);
       const labels = await a.locator("nav[aria-label='Clinic system'] a").allInnerTexts();
-      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Patients"]), `clinic nav: ${labels.join(", ")}`);
+      assert(JSON.stringify(labels) === JSON.stringify(["Overview", "Patients", "Staff access", "Roles and permissions"]), `clinic nav: ${labels.join(", ")}`);
       assert((await a.locator("button[aria-haspopup='listbox']").first().innerText()).includes("Bletchley (fictional)"), "site switcher shows the first site");
       await a.locator("main h1").first().click();
       await a.keyboard.press("/");

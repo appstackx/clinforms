@@ -5,7 +5,7 @@ import { authorisationView, canUseAuthorisation } from "./authorisations";
 import { PACKAGE_DEFAULT_ON, packageIsOn, usagePeriod } from "./entitlements";
 import { hasPrefix } from "./ids";
 import { visibleNav } from "./nav";
-import { PMS_PERMISSIONS, pmsCan, pmsPermissionsOf } from "./permissions";
+import { ACCESS_PERMISSIONS, ACCESS_PERMISSION_DEFS, PMS_PERMISSIONS, PMS_ROLES, canWith, effectivePermissions, lockOf, mayAmendNote, pmsCan, pmsPermissionsOf, resolvePermission } from "./permissions";
 import { retentionReviewFrom } from "./retention";
 import { CaseInputSchema, PostcodeSchema, fieldErrors, patientInputSchema } from "./schemas";
 import { addYears, formatPence, formatUkDate, isIsoDate, isPlausiblePhone, normalisePostcode, phoneDigits, searchKey, ukToday, yearsBetween } from "./text";
@@ -28,10 +28,8 @@ describe("packages", () => {
 });
 
 describe("permissions", () => {
-  it("owners and administrators can do everything; reception never sees clinical notes", () => {
-    for (const p of PMS_PERMISSIONS) {
-      assert.ok(pmsCan("owner", p) && pmsCan("admin", p), p);
-    }
+  it("the owner can do everything; reception never sees clinical notes; unknown roles nothing", () => {
+    for (const p of PMS_PERMISSIONS) assert.ok(pmsCan("owner", p), p);
     assert.equal(pmsCan("staff", "clinical.view"), false);
     assert.equal(pmsCan("staff", "diary.book"), true);
     assert.equal(pmsCan("staff", "billing.edit"), true);
@@ -41,7 +39,85 @@ describe("permissions", () => {
     assert.equal(pmsCan("member", "clinic.view"), false, "Better Auth's own role is not a clinic role");
     assert.equal(pmsCan(null, "clinic.view"), false);
     assert.ok(pmsPermissionsOf("staff").every((p) => !p.startsWith("clinical.")));
-    assert.ok(PMS_PERMISSIONS.every((p) => pmsPermissionsOf("clinician").includes(p) === pmsCan("clinician", p)));
+    assert.ok(PMS_PERMISSIONS.every((p) => (pmsPermissionsOf("clinician") as string[]).includes(resolvePermission(p)) === pmsCan("clinician", p)));
+  });
+
+  // The first build's fixed matrix (22 ids). Every old id keeps its exact behaviour for the default roles except
+  // where the round-2 roles design deliberately changed a default (listed – nothing else may differ).
+  const OLD: Record<string, readonly string[]> = {
+    owner: ["clinic.view", "patients.view", "patients.edit", "patients.export", "clinical.view", "clinical.edit", "clinical.sign", "diary.view", "diary.book", "diary.manage", "billing.view", "billing.edit", "billing.manage", "messages.view", "messages.send", "messages.manage", "booking.manage", "reports.view", "reports.export", "directory.edit", "settings.manage", "import.run"],
+    clinician: ["clinic.view", "patients.view", "patients.edit", "clinical.view", "clinical.edit", "clinical.sign", "diary.view", "diary.book", "billing.view", "messages.view", "messages.send", "directory.edit"],
+    staff: ["clinic.view", "patients.view", "patients.edit", "diary.view", "diary.book", "billing.view", "billing.edit", "messages.view", "messages.send", "directory.edit"],
+  };
+  OLD.admin = OLD.owner;
+  const OLD_IDS = OLD.owner;
+  const DELIBERATE: Record<string, boolean> = {
+    "admin:patients.export": false, // → reports.export ("Export data"): owner only by default
+    "admin:reports.export": false,
+    "admin:clinical.edit": false, // → clinical.write: admins do not write or sign notes by default
+    "admin:clinical.sign": false,
+    "staff:diary.manage": true, // → diary.rota: reception edits rotas and the waiting list
+    "clinician:directory.edit": false, // → settings.setup: set-up is owner/admin only
+    "staff:directory.edit": false,
+  };
+  it("old ids are aliases: same answer as the first build's matrix, except the design's deliberate changes", () => {
+    for (const role of PMS_ROLES) {
+      for (const id of OLD_IDS) {
+        const before = OLD[role].includes(id);
+        const key = `${role}:${id}`;
+        const expected = key in DELIBERATE ? DELIBERATE[key] : before;
+        if (key in DELIBERATE) assert.notEqual(expected, before, `${key} is listed as a change but is not one`);
+        assert.equal(pmsCan(role, id as never), expected, key);
+      }
+    }
+  });
+
+  it("the grid: 26 permissions in 7 groups with the design's defaults", () => {
+    assert.equal(ACCESS_PERMISSIONS.length, 26);
+    assert.deepEqual(Array.from(new Set(ACCESS_PERMISSION_DEFS.map((d) => d.group))), ["Diary", "Patients", "Clinical", "Billing", "Messages", "Reports", "Settings"]);
+    const col = (role: (typeof PMS_ROLES)[number]) => ACCESS_PERMISSIONS.filter((p) => pmsCan(role, p));
+    assert.deepEqual(col("admin").length, 26 - 4, "admin: all but write/sign, amend, export, change the owner");
+    assert.deepEqual(ACCESS_PERMISSIONS.filter((p) => !pmsCan("admin", p)), ["clinical.write", "clinical.amend", "reports.export", "settings.owner"]);
+    assert.deepEqual(ACCESS_PERMISSIONS.filter((p) => pmsCan("clinician", p)), [
+      "diary.view", "diary.book", "patients.view", "patients.edit", "patients.referral", "clinical.view", "clinical.write", "clinical.amend",
+      "billing.view", "messages.send", "messages.letters", "reports.own",
+    ]);
+    assert.deepEqual(ACCESS_PERMISSIONS.filter((p) => pmsCan("staff", p)), [
+      "diary.view", "diary.book", "diary.rota", "patients.view", "patients.edit", "patients.referral", "billing.view", "billing.edit", "billing.pay", "messages.send",
+    ]);
+  });
+
+  it("locks win over every stored choice", () => {
+    const grantAll = Object.fromEntries(ACCESS_PERMISSIONS.map((p) => [p, true]));
+    const denyAll = Object.fromEntries(ACCESS_PERMISSIONS.map((p) => [p, false]));
+    const reception = effectivePermissions({ role: "staff", roleOverrides: grantAll, exceptions: grantAll });
+    for (const p of ["clinical.view", "clinical.write", "clinical.amend", "messages.letters", "settings.owner"] as const) assert.equal(reception.has(p), false, p);
+    assert.equal(reception.has("reports.export"), true, "other cells follow the stored choices");
+    const owner = effectivePermissions({ role: "owner", roleOverrides: denyAll, exceptions: denyAll });
+    assert.equal(owner.size, ACCESS_PERMISSIONS.length + 1, "the owner always has everything");
+    assert.equal(effectivePermissions({ role: "admin", exceptions: grantAll }).has("settings.owner"), false, "only the owner changes the owner");
+    assert.equal(effectivePermissions({ role: "clinician", active: false }).size, 0, "deactivated: nothing, not even clinic.view");
+    assert.deepEqual(lockOf("staff", "clinical.view"), { value: false, reason: "Reception can never see clinical note content" });
+    assert.equal(lockOf("clinician", "clinical.view"), null);
+  });
+
+  it("order: role default → clinic override → member exception", () => {
+    const can = (o: Record<string, boolean>, e: Record<string, boolean>) => canWith(effectivePermissions({ role: "staff", roleOverrides: o, exceptions: e }));
+    assert.equal(can({}, {})("billing.refund"), false);
+    assert.equal(can({ "billing.refund": true }, {})("billing.refund"), true);
+    assert.equal(can({ "billing.refund": true }, { "billing.refund": false })("billing.refund"), false);
+    assert.equal(can({}, { "diary.override": true })("diary.override"), true);
+    assert.equal(can({}, { "settings.setup": true })("settings.manage"), true, "an alias follows its permission");
+    assert.equal(can({ unknown: true }, {})("clinic.view"), true, "unknown ids are ignored");
+  });
+
+  it("amending signed notes: own notes only for clinicians", () => {
+    assert.equal(mayAmendNote("clinician", (p) => pmsCan("clinician", p), true), true);
+    assert.equal(mayAmendNote("clinician", (p) => pmsCan("clinician", p), false), false);
+    assert.equal(mayAmendNote("owner", (p) => pmsCan("owner", p), false), true);
+    assert.equal(mayAmendNote("admin", (p) => pmsCan("admin", p), false), false, "admins do not amend by default");
+    assert.equal(mayAmendNote("admin", () => true, false), true, "an admin given the permission may amend anyone's");
+    assert.equal(mayAmendNote("staff", (p) => pmsCan("staff", p), true), false);
   });
 });
 

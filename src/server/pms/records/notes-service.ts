@@ -4,10 +4,12 @@
  * Rules: ./access.ts. Reception (staff) holds none of the clinical permissions, so every function here refuses
  * them BEFORE reading anything.
  *
- *   clinical.view – list and read notes; the unsigned-notes list (own drafts; all authors' for settings.manage)
- *   clinical.edit – start, save and discard one's OWN drafts (the repository checks the author too)
- *   clinical.sign – sign one's own draft; add an amendment to a signed note
+ *   clinical.view  – list and read notes; the unsigned-notes list (own drafts; all authors' for settings.manage)
+ *   clinical.write – start, save, discard and sign one's OWN drafts (the repository checks the author too)
+ *   clinical.amend – add an amendment to a signed note: a clinician only to notes they wrote or signed; owners and
+ *                    admins holding it to anyone's (mayAmendNote, roles design round 2)
  */
+import { mayAmendNote } from "../../../modules/pms/core/permissions";
 import { ukToday } from "../../../modules/pms/core/text";
 import type { PatientSummary } from "../../../modules/pms/core/types";
 import { BodyChartSchema, type BodyChart } from "../../../modules/pms/records/body-chart";
@@ -59,6 +61,11 @@ export interface NoteView {
   amendable: boolean;
 }
 
+/** The member wrote or signed the note. */
+function ownNote(actor: RecordsActor, note: ClinicalNote): boolean {
+  return note.authorUserId === actor.userId || note.signedByUserId === actor.userId;
+}
+
 async function noteOfPatient(actor: RecordsActor, patientId: string, noteId: string): Promise<ClinicalNote | null> {
   const patient = await patientInClinic(actor, patientId);
   if (!patient || typeof noteId !== "string" || !noteId) return null;
@@ -79,9 +86,9 @@ export async function getNoteFor(actor: RecordsActor, patientId: string, noteId:
     return ok({
       note,
       mine,
-      editable: draft && mine && actor.can("clinical.edit"),
-      signable: draft && mine && actor.can("clinical.sign"),
-      amendable: note.status === "signed" && !note.anonymisedAt && actor.can("clinical.sign"),
+      editable: draft && mine && actor.can("clinical.write"),
+      signable: draft && mine && actor.can("clinical.write"),
+      amendable: note.status === "signed" && !note.anonymisedAt && mayAmendNote(actor.role, actor.can, ownNote(actor, note)),
     });
   });
 }
@@ -204,13 +211,14 @@ export async function discardNoteFor(actor: RecordsActor, patientId: string, not
 
 /** Adds an amendment (addendum, correction of a section, or "entered in error") to a signed note; the original stays. */
 export async function amendNoteFor(actor: RecordsActor, patientId: string, noteId: string, input: AmendmentInput): Promise<Result<Amendment>> {
-  const denied = guard(actor, "clinical.sign");
+  const denied = guard(actor, "clinical.amend");
   if (denied) return denied;
   const parsed = AmendmentInputSchema.safeParse(input);
   if (!parsed.success) return fail("invalid", "Some details need checking.", { fieldErrors: fieldErrors(parsed.error) });
   return attempt("amend_note", async () => {
     const note = await noteOfPatient(actor, patientId, noteId);
     if (!note) return notFound();
+    if (!mayAmendNote(actor.role, actor.can, ownNote(actor, note))) return forbidden();
     return ok(await addAmendment(actor.repo(), actor.tenantId, note.id, input, await noteAuthorOf(actor), actor.actor));
   });
 }

@@ -143,17 +143,21 @@ export default async function PatientDetailsPage({ params }: { params: { patient
                 <input type="hidden" name="patientId" value={patient.id} />
                 {patient.status === "active" ? (
                   <div className="flex flex-wrap gap-2">
-                    <Submit variant="secondary" name="status" value="archived" pendingText="Archiving…" confirmText="Archive this record? It is kept and can be restored.">
-                      Archive record
-                    </Submit>
+                    {actor.can("patients.merge") ? (
+                      <Submit variant="secondary" name="status" value="archived" pendingText="Archiving…" confirmText="Archive this record? It is kept and can be restored.">
+                        Archive record
+                      </Submit>
+                    ) : null}
                     <Submit variant="secondary" name="status" value="deceased" pendingText="Saving…" confirmText="Record that this patient has died?">
                       Record death
                     </Submit>
                   </div>
-                ) : (
+                ) : patient.status !== "archived" || actor.can("patients.merge") ? (
                   <Submit variant="secondary" name="status" value="active" pendingText="Restoring…">
                     Make active again
                   </Submit>
+                ) : (
+                  <p className="text-sm text-slate-600">Only someone who may archive records can restore it.</p>
                 )}
               </ActionForm>
             ) : null}

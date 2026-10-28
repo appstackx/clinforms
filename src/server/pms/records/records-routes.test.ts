@@ -105,7 +105,7 @@ describe("records module entry points", () => {
       const src = fs.readFileSync(path.join(SERVICES, file), "utf8");
       for (const [name, body] of Array.from(exportedBodies(src))) {
         if (!/\(actor: RecordsActor/.test(src.slice(src.indexOf(`function ${name}(`), src.indexOf(`function ${name}(`) + 200))) continue;
-        assert.match(firstStatement(body), /^const denied = guard\(actor, "clinical\.(view|edit|sign)"/, `${file} ${name}`);
+        assert.match(firstStatement(body), /^const denied = guard\(actor, "clinical\.(view|write|amend|edit|sign)"/, `${file} ${name}`);
       }
     }
   });
