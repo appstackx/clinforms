@@ -75,7 +75,7 @@ Treat the HTML as a reference mock-up: view it by serving the folder over http o
 | `round2/patients/` ([README](round2/patients/README.md)) | Patients list and new patient, patient record by role, clinical-note editor (sign, amend, unsigned notes), patients at 375 px | `round2/patients/screenshots/` | Yes – `/app/clinic/patients` (feat/cs-records) |
 | `round2/set-up/` (`Setup.dc.html`) | Set-up home with its sections (incl. the Staff access list) | `screenshots/Setup.png` | Later (reporting) |
 | `round2/billing-invoices-aged-debt-remittance/` (`BillingList.dc.html`) | Billing: invoices, aged debt, remittance | `screenshots/BillingList.png` | Yes – `/app/clinic/billing` (feat/cs-billing, M5; see Round 3 – billing) |
-| `round2/messages-outbox-templates-letters-replies/` (`Messages.dc.html`) | Messages: outbox, templates, letters, replies | `screenshots/Messages.png` | Later (comms) |
+| `round2/messages-outbox-templates-letters-replies/` (`Messages.dc.html`) | Messages: outbox, templates, letters, replies | `screenshots/Messages.png` | Yes – `/app/clinic/messages` (feat/cs-comms, M6; see Round 3 – messages) |
 | `round2/reports/` (`Reports.dc.html`) | Reports | `screenshots/Reports.png` | Later (reporting) |
 | `round2/import-from-previous-system/` (`Import.dc.html`) | Import from the previous system | `screenshots/Import.png` | Later (integration) |
 
@@ -105,3 +105,16 @@ billing): `round2/set-up/` and `round2/import-from-previous-system/` carry one s
 | `remittance-allocation/` (`Remittance.dc.html`) | Allocate an insurer payment, shortfalls, summary | `Remittance.png` | `/app/clinic/billing/remittances/new`, `src/components/pms/billing/remittance-form.tsx` |
 | `print-invoice-a4/` (`PrintInvoice.dc.html`) | Printed invoice (A4) | `PrintInvoice.png` | `/app/clinic/billing/invoices/[id]/print`, `src/components/pms/billing/print-sheets.tsx` |
 | `print-patient-statement-a4/` (`PrintStatement.dc.html`) | Printed patient statement (A4) | `PrintStatement.png` | `/app/clinic/billing/statements/print` |
+
+## Round 3 – messages (M6, 28/10/2026)
+
+`round3/messages/` – the letter editor and the patient-facing messages (round 3), each a folder with its `*.dc.html`,
+`README.md`, `support.js` and `vendor/`; screenshots in `round3/messages/screenshots/` (re-rendered from the corrected
+HTML). The Messages screen itself (outbox, replies, templates, letters, send a message) is round 2c:
+`round2/messages-outbox-templates-letters-replies/`. Postcodes `NG1 0AA`, `NG1 0AB`, `NG2 0ZZ` replaced with
+`ZZ99 9AA`, `ZZ99 9AB`, `ZZ99 9YY` (see Round 3 – billing). Fictional data only.
+
+| Folder | Screen | Screenshot | Built in |
+|---|---|---|---|
+| `letter-editor/` (`LetterEditor.dc.html`) | Letter editor: template, recipient, merge fields, Edit / A4 preview, signature from the signing details, Save draft · Print · Download PDF · Sign and send by email | `LetterEditor.png` | `/app/clinic/letters/new`, `/app/clinic/letters/[id]` (+ `/print`), `src/components/pms/comms/letter-{start,editor,sheet}.tsx` |
+| `patient-facing-messages/` (`PatientComms.dc.html`) | What patients receive: texts ≤ 160 characters, booking confirmation and portal sign-in emails, quiet hours and opt-out, appointment letter | `PatientComms.png` | `/app/clinic/messages/patient-view` (rendered by the code that sends), standard wording in `src/modules/pms/comms/defaults.ts` |

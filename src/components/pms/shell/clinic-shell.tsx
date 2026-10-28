@@ -257,6 +257,12 @@ function NavLink({ item, current }: { item: ShellNavItem; current: boolean }) {
     >
       <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.badge ? (
+        <span className="min-w-5 rounded-full bg-[#EFF4FF] px-1.5 text-center text-xs font-semibold tabular-nums text-[#1842B4]" data-testid={`nav-badge-${item.id}`}>
+          <span aria-hidden>{item.badge}</span>
+          <span className="sr-only">({item.badge} {item.badgeLabel ?? "waiting"})</span>
+        </span>
+      ) : null}
     </Link>
   );
 }

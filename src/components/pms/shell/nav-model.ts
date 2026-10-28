@@ -17,6 +17,10 @@ export interface ShellNavItem {
   icon: ShellNavIcon;
   /** Current only on exactly this address (a section's start page, e.g. the overview). */
   exact: boolean;
+  /** A count beside the entry (Messages: replies waiting for an answer); 0 / undefined = none. */
+  badge?: number;
+  /** What the count is, for screen readers ("replies to answer"). */
+  badgeLabel?: string;
 }
 
 export interface ShellNav {
@@ -41,12 +45,20 @@ function toItem(e: PmsNavEntry): ShellNavItem {
   return { id: e.id, href: e.href, label: e.label, icon, exact: e.module === "foundation" && e.group === "main" };
 }
 
-/** What this member sees: entries their role allows, main first, each list in its modules' order. */
-export function shellNav(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean): ShellNav {
+/**
+ * What this member sees: entries their role allows, main first, each list in its modules' order. `badges`: counts by
+ * entry id (the layout reads them, e.g. comms' replies waiting).
+ */
+export function shellNav(entries: readonly PmsNavEntry[], can: (p: PmsPermission) => boolean, badges: Readonly<Record<string, { count: number; label: string }>> = {}): ShellNav {
   const visible = visibleNav(entries, can);
+  const withBadge = (e: PmsNavEntry): ShellNavItem => {
+    const item = toItem(e);
+    const b = badges[e.id];
+    return b && b.count > 0 ? { ...item, badge: b.count, badgeLabel: b.label } : item;
+  };
   return {
-    main: visible.filter((e) => e.group === "main").map(toItem),
-    manage: visible.filter((e) => e.group === "manage").map(toItem),
+    main: visible.filter((e) => e.group === "main").map(withBadge),
+    manage: visible.filter((e) => e.group === "manage").map(withBadge),
   };
 }
 

@@ -12,6 +12,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Banknote, Building2, Copy, CreditCard, Link2, Smartphone, X } from "lucide-react";
 import { loadTakePaymentAction, takePaymentAction } from "@/app/app/clinic/billing/actions";
+import { emailReceiptAction } from "@/app/app/clinic/messages/actions";
 import type { TakePaymentMethod } from "@/modules/pms/billing/schemas";
 import type { TakePaymentView } from "@/modules/pms/billing/view";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,7 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
   const [reference, setReference] = React.useState("");
   const [editAlloc, setEditAlloc] = React.useState(false);
   const [alloc, setAlloc] = React.useState<Record<string, string>>({});
-  const [receipt, setReceipt] = React.useState<"none" | "print">("none");
+  const [receipt, setReceipt] = React.useState<"none" | "print" | "email">("none");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState<{ message: string; links: { url: string; amountPence: number }[] } | null>(null);
@@ -123,6 +124,12 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
     if (!r.ok) return setError(r.error);
     setDone({ message: r.result.message, links: r.result.links });
     toast.success(r.result.message);
+    if (receipt === "email" && r.result.paymentId) {
+      // The receipt by email through Messages (comms, M6): outbox / test service only.
+      const sent = await emailReceiptAction(r.result.paymentId);
+      if (sent.ok) toast.success(`Receipt: ${sent.sent.label}`);
+      else toast.error(`Receipt not emailed: ${sent.error}`);
+    }
     if (receipt === "print" && r.result.paymentId) {
       const first = allocations.find((a) => a.amountPence > 0);
       if (first) window.open(`/app/clinic/billing/invoices/${first.invoiceId}/print`, "_blank", "noopener");
@@ -332,9 +339,9 @@ export function TakePaymentDialog({ open, onOpenChange, patientId, context, invo
                 <fieldset className="flex flex-col gap-2">
                   <legend className="mb-2 text-sm font-semibold text-foreground">Receipt</legend>
                   <div className="flex flex-wrap gap-4">
-                    <label className="flex items-center gap-2 text-[#64748B]">
-                      <input type="radio" name="tp-receipt" disabled className="h-4 w-4" />
-                      Email{view.patient.email ? ` to ${view.patient.email}` : ""} <span className="text-xs">(with Messages)</span>
+                    <label className={cn("flex items-center gap-2", !view.patient.email && "text-[#64748B]")}>
+                      <input type="radio" name="tp-receipt" disabled={!view.patient.email} className="h-4 w-4 accent-[#0B7970]" checked={receipt === "email"} onChange={() => setReceipt("email")} data-testid="receipt-email" />
+                      Email{view.patient.email ? ` to ${view.patient.email}` : " (no email address)"}
                     </label>
                     <label className="flex items-center gap-2">
                       <input type="radio" name="tp-receipt" className="h-4 w-4 accent-[#0B7970]" checked={receipt === "print"} onChange={() => setReceipt("print")} />
