@@ -123,8 +123,8 @@ export function PatientForm({ action, values = {}, submitLabel, consentRecordedO
           <CheckboxField label="Appointment reminders by text" name="reminderSms" defaultChecked={values.reminderSms ?? true} />
           <CheckboxField label="Appointment reminders by email" name="reminderEmail" defaultChecked={values.reminderEmail ?? true} />
         </div>
-        <div className="space-y-3 rounded-lg bg-slate-50 p-3">
-          <p className="text-xs text-slate-700">Marketing needs the patient&apos;s own agreement: never tick these on their behalf.</p>
+        <div className="space-y-3 rounded-lg bg-[#F8FAFC] p-3">
+          <p className="text-xs text-[#334155]">Marketing needs the patient&apos;s own agreement: never tick these on their behalf.</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <CheckboxField label="News and offers by email" name="marketingEmail" defaultChecked={values.marketingEmail} />
             <CheckboxField label="News and offers by text" name="marketingSms" defaultChecked={values.marketingSms} />

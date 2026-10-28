@@ -47,13 +47,13 @@ export function AttachmentUpload({ uploadUrl, notes }: { uploadUrl: string; note
     <form ref={formRef} onSubmit={submit} className="space-y-4" aria-busy={busy}>
       <div aria-live="polite">
         {message ? (
-          <div role={message.ok ? "status" : "alert"} className={message.ok ? "rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900" : "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"}>
+          <div role={message.ok ? "status" : "alert"} className={message.ok ? "rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-[#0B5F58]" : "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"}>
             {message.text}
           </div>
         ) : null}
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="attachment-file" className="block text-sm font-medium text-slate-800">
+        <label htmlFor="attachment-file" className="block text-sm font-medium text-foreground">
           File
         </label>
         <input
@@ -63,24 +63,24 @@ export function AttachmentUpload({ uploadUrl, notes }: { uploadUrl: string; note
           accept={ACCEPT_ATTRIBUTE}
           required
           aria-describedby="attachment-file-hint"
-          className="block w-full text-sm text-slate-800 file:mr-3 file:h-10 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:text-sm file:font-medium file:text-slate-800 hover:file:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
+          className="block w-full text-sm text-foreground file:mr-3 file:h-10 file:rounded-lg file:border file:border-input-strong file:bg-white file:px-3 file:text-sm file:font-medium file:text-foreground hover:file:bg-[#F8FAFC] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         />
-        <p id="attachment-file-hint" className="text-xs text-slate-600">
+        <p id="attachment-file-hint" className="text-xs text-muted-foreground">
           PDF, JPEG, PNG or Word (.docx), up to {formatBytes(MAX_ATTACHMENT_BYTES)}. Stored encrypted.
         </p>
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="attachment-description" className="block text-sm font-medium text-slate-800">
+        <label htmlFor="attachment-description" className="block text-sm font-medium text-foreground">
           Description
         </label>
         <input id="attachment-description" name="description" maxLength={200} className={`${INPUT_CLASS} h-10`} aria-describedby="attachment-description-hint" />
-        <p id="attachment-description-hint" className="text-xs text-slate-600">
+        <p id="attachment-description-hint" className="text-xs text-muted-foreground">
           For example “GP referral letter” or “MRI report, cervical spine”.
         </p>
       </div>
       {notes.length > 0 ? (
         <div className="space-y-1.5">
-          <label htmlFor="attachment-note" className="block text-sm font-medium text-slate-800">
+          <label htmlFor="attachment-note" className="block text-sm font-medium text-foreground">
             Belongs to the note
           </label>
           <select id="attachment-note" name="noteId" defaultValue="" className={`${INPUT_CLASS} h-10`}>
@@ -96,7 +96,7 @@ export function AttachmentUpload({ uploadUrl, notes }: { uploadUrl: string; note
       <button
         type="submit"
         disabled={busy}
-        className="inline-flex h-10 items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-10 items-center justify-center rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? "Attaching…" : "Attach file"}
       </button>

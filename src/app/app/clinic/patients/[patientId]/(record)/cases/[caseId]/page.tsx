@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Panel } from "@/components/account/shell";
+import { Card as Panel } from "@/components/pms/records/ui";
 import { AuthorisationForm, CaseForm } from "@/components/pms/records/case-forms";
 import { ActionForm, Submit } from "@/components/pms/records/form";
 import { DetailList, Pill, SectionHeader, TextLinkTo } from "@/components/pms/records/ui";
@@ -11,6 +11,7 @@ import { isPlausibleRecordId, penceToPounds } from "@/modules/pms/records/form-v
 import { NOTE_TYPE_LABELS } from "@/modules/pms/records/templates";
 import { noteStatusLabel } from "@/modules/pms/records/notes";
 import { requireClinicActor } from "@/server/pms/actor";
+import { hasPackage } from "@/server/pms/entitlements";
 import { directoryOptions, type Choice } from "@/server/pms/records/directory-options";
 import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { getAuthorisation, getCase, listAuthorisations } from "@/server/repos/pms/cases";
@@ -41,6 +42,7 @@ export default async function CasePage({ params }: { params: { patientId: string
   ]);
   const auths = (await Promise.all(summaries.map((a) => getAuthorisation(ctx, actor.tenantId, a.id)))).filter((a): a is NonNullable<typeof a> => Boolean(a));
   const today = ukToday();
+  const reports = await hasPackage(actor.tenantId, "reports");
   const canEdit = actor.can("patients.edit");
   const names = directory.names;
   const issuers = directory.referrers.filter((r) => ["insurer", "mlc", "case_manager", "solicitor", "employer", "other"].includes(r.kind));
@@ -56,6 +58,19 @@ export default async function CasePage({ params }: { params: { patientId: string
         <TextLinkTo href={patientPath(patient.id, "cases")}>← Cases</TextLinkTo>
       </p>
       <SectionHeader title={c.title} description={`${CASE_STATUS_LABELS[c.status]} · opened ${formatUkDate(c.openedOn)}${c.closedOn ? ` · closed ${formatUkDate(c.closedOn)}` : ""}`} />
+      <Panel title="Referrer and insurer forms" id="referrer-forms">
+        {/* TODO(integration): "Complete referrer form" opens the ClinForms flow pre-filled from this case and its signed
+            notes, and files the completed form back to the case and Attachments – the native connector
+            (feat/cs-integration). Until it is merged this panel only says so and links to ClinForms. */}
+        <p className="text-sm text-[#334155]">Completing an insurer or referrer report from this case – its details and signed notes filled in, the finished form filed back here – comes with the ClinForms connection.</p>
+        {reports ? (
+          <p className="text-sm">
+            <a href="/app/studio" className="font-medium text-primary-strong underline underline-offset-2">
+              Open ClinForms
+            </a>
+          </p>
+        ) : null}
+      </Panel>
       <Panel title="Payer and referral">
         <DetailList
           items={[
@@ -73,19 +88,19 @@ export default async function CasePage({ params }: { params: { patientId: string
         />
         {c.referralReason ? (
           <div className="mt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Reason for referral</h3>
-            <p className="mt-0.5 whitespace-pre-line text-sm text-slate-900">{c.referralReason}</p>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reason for referral</h3>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-foreground">{c.referralReason}</p>
           </div>
         ) : null}
         {c.notes ? (
           <div className="mt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Case notes</h3>
-            <p className="mt-0.5 whitespace-pre-line text-sm text-slate-900">{c.notes}</p>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Case notes</h3>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-foreground">{c.notes}</p>
           </div>
         ) : null}
         {canEdit ? (
-          <details className="mt-5 rounded-xl border border-slate-200 p-3 open:bg-slate-50/50">
-            <summary className="cursor-pointer rounded text-sm font-semibold text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">Edit the case</summary>
+          <details className="mt-5 rounded-xl border border-border p-3 open:bg-[#F8FAFC]/50">
+            <summary className="cursor-pointer rounded text-sm font-semibold text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Edit the case</summary>
             <div className="mt-4">
               <CaseForm
                 key={c.rev}
@@ -101,15 +116,15 @@ export default async function CasePage({ params }: { params: { patientId: string
       </Panel>
 
       <Panel title="Treatment authorisations" description="Insurer and medico-legal authorisations: what was authorised, what is used, and when it ends.">
-        {auths.length === 0 ? <p className="text-sm text-slate-600">No authorisation recorded for this case.</p> : null}
+        {auths.length === 0 ? <p className="text-sm text-muted-foreground">No authorisation recorded for this case.</p> : null}
         <ul className="space-y-3">
           {auths.map((a) => {
             const view = authorisationView(a, today);
             const warnings = authorisationWarnings(view);
             return (
-              <li key={a.id} className="rounded-xl border border-slate-200 p-3">
+              <li key={a.id} className="rounded-xl border border-border p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm font-semibold text-slate-900">{a.code}</span>
+                  <span className="font-mono text-sm font-semibold text-foreground">{a.code}</span>
                   <Pill tone={view.state === "active" ? (warnings.length ? "amber" : "teal") : "neutral"}>{AUTHORISATION_STATE_LABELS[view.state]}</Pill>
                   {warnings.map((w) => (
                     <Pill key={w} tone="amber">
@@ -117,17 +132,17 @@ export default async function CasePage({ params }: { params: { patientId: string
                     </Pill>
                   ))}
                 </div>
-                <p className="mt-1 text-sm text-slate-800">{authorisationRemaining(view, a, formatPence).join(" · ")}</p>
-                <p className="text-sm text-slate-600">
+                <p className="mt-1 text-sm text-foreground">{authorisationRemaining(view, a, formatPence).join(" · ")}</p>
+                <p className="text-sm text-muted-foreground">
                   {[a.referrerId ? `Issued by ${names.referrers[a.referrerId] ?? "an account no longer in use"}` : null, a.validFrom ? `from ${formatUkDate(a.validFrom)}` : null, a.expiresOn ? `until ${formatUkDate(a.expiresOn)}` : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
-                {a.notes ? <p className="mt-1 whitespace-pre-line text-sm text-slate-800">{a.notes}</p> : null}
+                {a.notes ? <p className="mt-1 whitespace-pre-line text-sm text-foreground">{a.notes}</p> : null}
                 {canEdit ? (
                   <div className="mt-3 flex flex-wrap items-start gap-3">
-                    <details className="min-w-0 flex-1 rounded-lg border border-slate-200 p-3">
-                      <summary className="cursor-pointer rounded text-sm font-medium text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">Edit</summary>
+                    <details className="min-w-0 flex-1 rounded-lg border border-border p-3">
+                      <summary className="cursor-pointer rounded text-sm font-medium text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Edit</summary>
                       <div className="mt-3">
                         <AuthorisationForm
                           key={a.rev}
@@ -157,8 +172,8 @@ export default async function CasePage({ params }: { params: { patientId: string
           })}
         </ul>
         {canEdit ? (
-          <details className="mt-4 rounded-xl border border-slate-200 p-3" open={auths.length === 0 && c.payerType !== "self_pay"}>
-            <summary className="cursor-pointer rounded text-sm font-semibold text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">Add an authorisation</summary>
+          <details className="mt-4 rounded-xl border border-border p-3" open={auths.length === 0 && c.payerType !== "self_pay"}>
+            <summary className="cursor-pointer rounded text-sm font-semibold text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Add an authorisation</summary>
             <div className="mt-3">
               <AuthorisationForm
                 key={`new-${auths.length}`}
@@ -177,15 +192,15 @@ export default async function CasePage({ params }: { params: { patientId: string
       {actor.can("clinical.view") ? (
         <Panel title="Clinical notes for this case">
           {notes.length === 0 ? (
-            <p className="text-sm text-slate-600">No notes for this case yet.</p>
+            <p className="text-sm text-muted-foreground">No notes for this case yet.</p>
           ) : (
-            <ul className="divide-y divide-slate-100 text-sm">
+            <ul className="divide-y divide-border text-sm">
               {notes.map((n) => (
                 <li key={n.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <TextLinkTo href={patientPath(patient.id, `notes/${n.id}`)}>
                     {formatUkDate(n.seenOn)} – {NOTE_TYPE_LABELS[n.noteType]}
                   </TextLinkTo>
-                  <span className="text-slate-600">
+                  <span className="text-muted-foreground">
                     {n.signedByName ?? n.authorName} · {noteStatusLabel(n)}
                   </span>
                 </li>

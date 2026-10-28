@@ -11,7 +11,10 @@ import type { PatientStatus } from "@/modules/pms/core/types";
 import type { RecordsActionState } from "@/modules/pms/records/types";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { actionState } from "@/server/pms/records/action-state";
-import { checked, intField, patientInputFromForm, text } from "@/server/pms/records/forms";
+import { checked, intField, optional, patientInputFromForm, text } from "@/server/pms/records/forms";
+import { addClinicalFlagFor, endClinicalFlagFor, savePronounsFor } from "@/server/pms/records/flags-service";
+import { listNotesFor, startNoteFor } from "@/server/pms/records/notes-service";
+import { ukToday } from "@/modules/pms/core/text";
 import { anonymisePatientFor, setLegalHoldFor, setPatientStatusFor, updatePatientFor } from "@/server/pms/records/patients-service";
 import { PATIENTS_PATH, patientPath } from "@/server/pms/records/record";
 
@@ -63,4 +66,63 @@ export async function anonymiseRecord(_prev: RecordsActionState, form: FormData)
     revalidatePath(PATIENTS_PATH);
   }
   return actionState(result, () => ({ ok: true, message: "The record is anonymised." }));
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Round-2 record header: pronouns, clinical flags (K2-PAT-014), "New note"
+ * ----------------------------------------------------------------------------------------------*/
+
+export async function savePronouns(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
+  const actor = await clinicActionActor({ permission: "patients.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const patientId = text(form, "patientId");
+  const result = await savePronounsFor(actor, patientId, intField(form, "expectedRev"), text(form, "pronouns"));
+  if (result.ok) revalidatePath(patientPath(patientId), "layout");
+  return actionState(result, (v) => ({ ok: true, rev: v.rev, message: "Pronouns saved." }));
+}
+
+/** Adds a clinical flag (clinicians, owners, administrators – never reception). */
+export async function addClinicalFlag(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
+  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const patientId = text(form, "patientId");
+  const result = await addClinicalFlagFor(actor, patientId, text(form, "text"));
+  if (result.ok) revalidatePath(patientPath(patientId), "layout");
+  return actionState(result, (f) => ({ ok: true, id: f.id, message: "Clinical flag added." }));
+}
+
+export async function endClinicalFlag(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
+  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const patientId = text(form, "patientId");
+  const result = await endClinicalFlagFor(actor, patientId, text(form, "flagId"), intField(form, "expectedRev"));
+  if (result.ok) revalidatePath(patientPath(patientId), "layout");
+  return actionState(result, () => ({ ok: true, message: "The flag is ended. It stays in the record's history." }));
+}
+
+/**
+ * "New note" on the record (the member's own draft from today, if there is one, else a new one): a draft from the right template – an initial assessment when the patient has no signed
+ * note in the open case yet, else a follow-up – dated today, in the open case, linked to today's appointment when
+ * the form names one. Opens the note editor.
+ */
+export async function newNote(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
+  const actor = await clinicActionActor({ permission: "clinical.edit" });
+  if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
+  const patientId = text(form, "patientId");
+  const caseId = optional(form, "caseId");
+  const notes = await listNotesFor(actor, patientId, caseId ? { caseId } : {});
+  if (!notes.ok) return actionState(notes, () => ({ ok: true }));
+  // The member's own draft from today is reopened rather than starting a second one.
+  const mine = notes.value.find((n) => n.status === "draft" && n.authorUserId === actor.userId && n.seenOn === ukToday());
+  if (mine) redirect(patientPath(patientId, `notes/${mine.id}`));
+  const followUp = notes.value.some((n) => n.status === "signed");
+  const result = await startNoteFor(actor, patientId, {
+    templateId: followUp ? "builtin-follow-up-soap" : "builtin-initial-soap",
+    seenOn: ukToday(),
+    caseId,
+    appointmentId: optional(form, "appointmentId"),
+  });
+  if (!result.ok) return actionState(result, () => ({ ok: true }));
+  revalidatePath(patientPath(patientId), "layout");
+  redirect(patientPath(patientId, `notes/${result.value.id}`));
 }

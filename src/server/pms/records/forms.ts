@@ -56,6 +56,9 @@ const PATIENT_FLAGS = ["consentTreatment", "consentShareGp", "reminderSms", "rem
 export function patientInputFromForm(form: FormData): PatientInput {
   const out: Record<string, unknown> = {};
   for (const name of PATIENT_TEXT) out[name] = text(form, name);
+  // The design's date of birth is typed as DD/MM/YYYY; the record stores YYYY-MM-DD.
+  const dob = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(out.dateOfBirth ?? "").trim());
+  if (dob) out.dateOfBirth = `${dob[3]}-${dob[2].padStart(2, "0")}-${dob[1].padStart(2, "0")}`;
   for (const name of PATIENT_FLAGS) out[name] = checked(form, name);
   const sex = text(form, "sex");
   out.sex = sex === "" ? null : sex;

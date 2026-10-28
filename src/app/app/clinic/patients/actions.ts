@@ -12,14 +12,23 @@ import { DUPLICATE_REASON_LABELS } from "@/modules/pms/records/duplicates";
 import type { RecordsActionState } from "@/modules/pms/records/types";
 import { actorErrorMessage, clinicActionActor } from "@/server/pms/actor";
 import { actionState } from "@/server/pms/records/action-state";
-import { checked, patientInputFromForm } from "@/server/pms/records/forms";
+import { checked, patientInputFromForm, text } from "@/server/pms/records/forms";
 import { registerPatientFor } from "@/server/pms/records/patients-service";
+import { savePronounsFor } from "@/server/pms/records/flags-service";
 import { PATIENTS_PATH, patientPath } from "@/server/pms/records/record";
+import { CLINIC_BASE_PATH } from "@/modules/pms/core/modules";
 
+/**
+ * The new-patient drawer and page. Besides the shared record's fields: pronouns (records' own table, saved right
+ * after the patient is registered), "News and offers by email" recorded as marketing consent given in person
+ * ("verbal") when ticked without a source, and intent=book → the diary to book the first appointment.
+ */
 export async function registerPatient(_prev: RecordsActionState, form: FormData): Promise<RecordsActionState> {
   const actor = await clinicActionActor({ permission: "patients.edit" });
   if ("error" in actor) return { ok: false, error: actorErrorMessage(actor.error) };
-  const result = await registerPatientFor(actor, patientInputFromForm(form), { confirmNotDuplicate: checked(form, "confirmNotDuplicate") });
+  const input = patientInputFromForm(form);
+  if ((input.marketingEmail || input.marketingSms) && !input.marketingConsentSource) input.marketingConsentSource = "verbal";
+  const result = await registerPatientFor(actor, input, { confirmNotDuplicate: checked(form, "confirmNotDuplicate") });
   if (result.ok && result.value.kind === "possible_duplicates") {
     return {
       ok: false,
@@ -35,6 +44,12 @@ export async function registerPatient(_prev: RecordsActionState, form: FormData)
     };
   }
   if (!result.ok) return actionState(result, () => ({ ok: true }));
+  const id = result.value.kind === "created" ? result.value.patient.id : "";
+  const pronouns = text(form, "pronouns").trim();
+  // The patient exists now; a refused pronouns save (too long) is left for the record's edit page.
+  if (id && pronouns) await savePronounsFor(actor, id, 0, pronouns);
   revalidatePath(PATIENTS_PATH);
-  redirect(patientPath(result.value.kind === "created" ? result.value.patient.id : ""));
+  // TODO(diary): the diary's booking screen (feat/cs-diary) – until it is merged this is the diary's start address.
+  if (text(form, "intent") === "book") redirect(`${CLINIC_BASE_PATH}/diary?patient=${encodeURIComponent(id)}`);
+  redirect(patientPath(id));
 }

@@ -30,7 +30,7 @@ export default async function PatientHistoryPage({ params }: { params: { patient
         <EmptyState title="Nothing recorded yet" />
       ) : (
         <TableBox caption="History of this record">
-          <thead className="bg-slate-50">
+          <thead className="bg-[#F8FAFC]">
             <tr>
               <th scope="col" className={TH}>
                 When
@@ -46,13 +46,13 @@ export default async function PatientHistoryPage({ params }: { params: { patient
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {rows.map((r, i) => (
               <tr key={r.id}>
                 <td className={`${TD} whitespace-nowrap tabular-nums`}>{activityTime(r.at)}</td>
                 <td className={TD}>{r.who}</td>
                 <td className={TD}>{r.label}</td>
-                <td className={`${TD} text-slate-700`}>{describeRecordsDetail(r.action, entries[i].detail) ?? r.detail ?? ""}</td>
+                <td className={`${TD} text-[#334155]`}>{describeRecordsDetail(r.action, entries[i].detail) ?? r.detail ?? ""}</td>
               </tr>
             ))}
           </tbody>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Panel } from "@/components/account/shell";
+import { Card as Panel } from "@/components/pms/records/ui";
 import { ActionForm, Submit } from "@/components/pms/records/form";
 import { DetailList, LinkButton, Pill, TextLinkTo } from "@/components/pms/records/ui";
 import { formatUkDate } from "@/modules/pms/core/text";
@@ -10,10 +10,12 @@ import { patientOr404, patientPath } from "@/server/pms/records/record";
 import { listCasesForPatient } from "@/server/repos/pms/cases";
 import { getAnonymisation, patientLastTreatment } from "@/server/repos/pms/records/anonymise";
 import { getPmsSettings } from "@/server/repos/pms/settings";
-import { changeLegalHold, changePatientStatus } from "./actions";
+import { addClinicalFlag, changeLegalHold, changePatientStatus, endClinicalFlag } from "../../actions";
+import { ClinicalFlagsEditor } from "@/components/pms/records/clinical-flags-editor";
+import { clinicalFlagsFor, patientExtrasFor } from "@/server/pms/records/flags-service";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Patient record", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Patient details", robots: { index: false, follow: false } };
 
 const yesNo = (v: boolean) => (v ? "Yes" : "No");
 const SOURCE: Record<string, string> = { verbal: "verbally", written: "in writing", online: "online", import: "in the earlier system" };
@@ -23,16 +25,18 @@ function lines(address: string[] | null, postcode: string | null): React.ReactNo
   return all.length ? <span className="whitespace-pre-line">{all.join("\n")}</span> : null;
 }
 
-/** The record's first page: who the patient is, how to reach them, their GP, consents – and managing the record. */
+/** /patients/[id]/details – who the patient is, how to reach them, their GP, consents – and managing the record (archive, hold, subject-access copy, anonymise). Reached from the record header's "More actions" menu. */
 export default async function PatientDetailsPage({ params }: { params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
   const patient = await patientOr404(actor, params.patientId);
   const ctx = actor.repo();
-  const [cases, settings, anonymisation, lastTreatment] = await Promise.all([
+  const [cases, settings, anonymisation, lastTreatment, flags, extras] = await Promise.all([
     listCasesForPatient(ctx, actor.tenantId, patient.id),
     getPmsSettings(ctx, actor.tenantId),
     getAnonymisation(ctx, actor.tenantId, patient.id),
     patientLastTreatment(ctx, actor.tenantId, patient.id, patient.lastSeenOn),
+    actor.can("clinical.view") ? clinicalFlagsFor(actor, patient.id) : Promise.resolve(null),
+    patientExtrasFor(actor, patient.id),
   ]);
   const anonymised = anonymisation?.status === "done";
   const retention = retentionReviewFrom(
@@ -48,13 +52,25 @@ export default async function PatientDetailsPage({ params }: { params: { patient
     <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-6">
         {anonymised ? (
-          <div role="status" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <div role="status" className="rounded-lg border border-[#C7D4F5] bg-[#EFF4FF] px-3.5 py-2.5 text-sm text-foreground">
             This record was anonymised on {activityTime(anonymisation?.doneAt ?? "")}. The dates and scores stay for the clinic&apos;s figures; who the patient was and what was written are gone.
           </div>
+        ) : null}
+        {flags && flags.ok ? (
+          <Panel title="Clinical flags" id="clinical-flags">
+            <ClinicalFlagsEditor
+              patientId={patient.id}
+              flags={flags.value.map((f) => ({ id: f.id, rev: f.rev, text: f.text ?? "", since: formatUkDate(f.createdAt.slice(0, 10)) }))}
+              canEdit={actor.can("clinical.edit") && !anonymised}
+              addAction={addClinicalFlag}
+              endAction={endClinicalFlag}
+            />
+          </Panel>
         ) : null}
         <Panel title="Contact details">
           <DetailList
             items={[
+              { label: "Pronouns", value: extras.ok ? extras.value.pronouns : null },
               { label: "Mobile", value: patient.phoneMobile },
               { label: "Home phone", value: patient.phoneHome },
               { label: "Work phone", value: patient.phoneWork },
@@ -100,7 +116,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
         </Panel>
         {patient.notes ? (
           <Panel title="Administrative notes">
-            <p className="whitespace-pre-line text-sm text-slate-900">{patient.notes}</p>
+            <p className="whitespace-pre-line text-sm text-foreground">{patient.notes}</p>
           </Panel>
         ) : null}
       </div>
@@ -112,7 +128,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
           </div>
         ) : null}
         <Panel title="Cases">
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-[#334155]">
             {openCases.length === 0 ? "No open case." : `${openCases.length} open case${openCases.length === 1 ? "" : "s"}`}
             {cases.length > openCases.length ? `, ${cases.length - openCases.length} closed` : ""}.
           </p>
@@ -120,7 +136,7 @@ export default async function PatientDetailsPage({ params }: { params: { patient
             {openCases.slice(0, 3).map((c) => (
               <li key={c.id}>
                 <TextLinkTo href={patientPath(patient.id, `cases/${c.id}`)}>{c.title}</TextLinkTo>
-                <span className="text-slate-600"> · since {formatUkDate(c.openedOn)}</span>
+                <span className="text-muted-foreground"> · since {formatUkDate(c.openedOn)}</span>
               </li>
             ))}
           </ul>
@@ -129,14 +145,14 @@ export default async function PatientDetailsPage({ params }: { params: { patient
           </p>
         </Panel>
         <Panel title="Record-keeping">
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-[#334155]">
             {patient.legalHold
               ? "On hold: kept as it is whatever the record-keeping rules say."
               : retention.kind === "review_from"
                 ? `Kept at least until ${formatUkDate(retention.date)} (${retention.rule === "child" ? "rules for children" : retention.rule === "deceased" ? "after death" : `${settings.retentionAdultYears} years after the last treatment`}).`
                 : "No review date yet: the rules need a date of birth and a treatment date. Nothing is ever deleted automatically."}
           </p>
-          {lastTreatment ? <p className="mt-1 text-xs text-slate-600">Last treatment on record: {formatUkDate(lastTreatment)}.</p> : null}
+          {lastTreatment ? <p className="mt-1 text-xs text-muted-foreground">Last treatment on record: {formatUkDate(lastTreatment)}.</p> : null}
           <div className="mt-4 space-y-3">
             {canEdit ? (
               <ActionForm action={changePatientStatus} className="space-y-2">
@@ -172,20 +188,20 @@ export default async function PatientDetailsPage({ params }: { params: { patient
           <Panel title="Data rights">
             {actor.can("patients.export") ? (
               <>
-                <p className="text-sm text-slate-700">A copy of everything held about the patient, for a subject access request.</p>
+                <p className="text-sm text-[#334155]">A copy of everything held about the patient, for a subject access request.</p>
                 <ul className="mt-2 space-y-1 text-sm">
                   <li>
-                    <a href={patientPath(patient.id, "export?format=pdf")} className="rounded font-medium text-teal-800 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">
+                    <a href={patientPath(patient.id, "export?format=pdf")} className="rounded font-medium text-primary-strong underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                       Download a copy (PDF)
                     </a>
                   </li>
                   <li>
-                    <a href={patientPath(patient.id, "export?format=json")} className="rounded font-medium text-teal-800 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">
+                    <a href={patientPath(patient.id, "export?format=json")} className="rounded font-medium text-primary-strong underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                       Download the data (JSON)
                     </a>
                   </li>
                 </ul>
-                <p className="mt-2 text-xs text-slate-600">Each download is recorded in the patient&apos;s history.</p>
+                <p className="mt-2 text-xs text-muted-foreground">Each download is recorded in the patient&apos;s history.</p>
               </>
             ) : null}
             {canManage && !anonymised ? (

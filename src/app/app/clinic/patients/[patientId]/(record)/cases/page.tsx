@@ -32,15 +32,15 @@ export default async function PatientCasesPage({ params }: { params: { patientId
           {cases.map((c) => {
             const caseAuths = auths.filter((a) => a.caseId === c.id);
             return (
-              <li key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <li key={c.id} className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="text-base font-semibold text-slate-900">
-                      <Link href={patientPath(patient.id, `cases/${c.id}`)} className="rounded text-teal-800 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">
+                    <h3 className="text-base font-semibold text-foreground">
+                      <Link href={patientPath(patient.id, `cases/${c.id}`)} className="rounded text-primary-strong underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                         {c.title}
                       </Link>
                     </h3>
-                    <p className="mt-0.5 text-sm text-slate-700">
+                    <p className="mt-0.5 text-sm text-[#334155]">
                       {formatUkDate(c.openedOn)}
                       {c.closedOn ? ` – ${formatUkDate(c.closedOn)}` : " – now"}
                       {c.practitionerId && directory.names.practitioners[c.practitionerId] ? ` · ${directory.names.practitioners[c.practitionerId]}` : ""}
@@ -49,7 +49,7 @@ export default async function PatientCasesPage({ params }: { params: { patientId
                   </div>
                   <Pill tone={c.status === "open" ? "teal" : "neutral"}>{CASE_STATUS_LABELS[c.status]}</Pill>
                 </div>
-                <p className="mt-2 text-sm text-slate-900">
+                <p className="mt-2 text-sm text-foreground">
                   <span className="font-medium">{PAYER_TYPE_LABELS[c.payerType]}</span>
                   {c.payerReferrerId && directory.names.referrers[c.payerReferrerId] ? `: ${directory.names.referrers[c.payerReferrerId]}` : ""}
                 </p>
@@ -59,11 +59,11 @@ export default async function PatientCasesPage({ params }: { params: { patientId
                       const view = authorisationView(a, today);
                       const warnings = authorisationWarnings(view);
                       return (
-                        <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                          <span className="font-mono text-xs text-slate-800">{a.code}</span>
+                        <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[#F8FAFC] px-3 py-2 text-sm">
+                          <span className="font-mono text-xs text-foreground">{a.code}</span>
                           <Pill tone={view.state === "active" ? (warnings.length ? "amber" : "teal") : "neutral"}>{AUTHORISATION_STATE_LABELS[view.state]}</Pill>
-                          <span className="text-slate-800">{authorisationRemaining(view, a, formatPence).join(" · ")}</span>
-                          {a.expiresOn ? <span className="text-slate-600">expires {formatUkDate(a.expiresOn)}</span> : null}
+                          <span className="text-foreground">{authorisationRemaining(view, a, formatPence).join(" · ")}</span>
+                          {a.expiresOn ? <span className="text-muted-foreground">expires {formatUkDate(a.expiresOn)}</span> : null}
                           {warnings.map((w) => (
                             <Pill key={w} tone="amber">
                               {w}
@@ -74,7 +74,7 @@ export default async function PatientCasesPage({ params }: { params: { patientId
                     })}
                   </ul>
                 ) : c.payerType !== "self_pay" ? (
-                  <p className="mt-2 text-sm text-slate-600">No authorisation recorded.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">No authorisation recorded.</p>
                 ) : null}
               </li>
             );

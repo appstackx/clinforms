@@ -23,7 +23,7 @@ export function OutcomeForm({ action, patientId, cases, defaultCaseId, today }: 
       <input type="hidden" name="patientId" value={patientId} />
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-1.5">
-          <label htmlFor="outcome-measure" className="block text-sm font-medium text-slate-800">
+          <label htmlFor="outcome-measure" className="block text-sm font-medium text-foreground">
             Measure
           </label>
           <select
@@ -47,15 +47,15 @@ export function OutcomeForm({ action, patientId, cases, defaultCaseId, today }: 
         <TextField label="Date" name="takenOn" type="date" defaultValue={today} required />
         <SelectField label="Case" name="caseId" options={cases} defaultValue={defaultCaseId} emptyLabel="Not linked to a case" />
       </div>
-      <p className="text-sm text-slate-700">{def.instructions}</p>
-      <fieldset className="rounded-xl border border-slate-200 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-900">{def.short} answers</legend>
+      <p className="text-sm text-[#334155]">{def.instructions}</p>
+      <fieldset className="rounded-xl border border-border p-4">
+        <legend className="px-1 text-sm font-semibold text-foreground">{def.short} answers</legend>
         <div className={def.namedActivities ? "space-y-3" : "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"}>
           {def.items.map((item) => (
             <div key={`${measure}-${item.key}`} className={def.namedActivities ? "grid gap-2 sm:grid-cols-[1fr_9rem]" : "space-y-1.5"}>
               {def.namedActivities ? (
                 <div className="space-y-1.5">
-                  <label htmlFor={`activity-${item.key}`} className="block text-sm font-medium text-slate-800">
+                  <label htmlFor={`activity-${item.key}`} className="block text-sm font-medium text-foreground">
                     {item.label}
                   </label>
                   <input
@@ -70,7 +70,7 @@ export function OutcomeForm({ action, patientId, cases, defaultCaseId, today }: 
                 </div>
               ) : null}
               <div className="space-y-1.5">
-                <label htmlFor={`item-${item.key}`} className="block text-sm font-medium text-slate-800">
+                <label htmlFor={`item-${item.key}`} className="block text-sm font-medium text-foreground">
                   {def.namedActivities ? <span className="sr-only">{item.label}: </span> : null}
                   {def.namedActivities ? "Rating" : item.label}
                 </label>
@@ -87,7 +87,7 @@ export function OutcomeForm({ action, patientId, cases, defaultCaseId, today }: 
           ))}
         </div>
       </fieldset>
-      <div role="status" aria-live="polite" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+      <div role="status" aria-live="polite" className="rounded-lg border border-border bg-[#F8FAFC] px-3 py-2 text-sm text-foreground">
         {answered === 0
           ? "The score appears as you enter the answers."
           : preview.ok

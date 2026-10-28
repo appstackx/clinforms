@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Panel } from "@/components/account/shell";
+import { Card as Panel } from "@/components/pms/records/ui";
 import { ActionForm, Submit, TextField } from "@/components/pms/records/form";
 import { OutcomeChart } from "@/components/pms/records/outcome-chart";
 import { OutcomeForm } from "@/components/pms/records/outcome-form";
@@ -40,7 +40,7 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
           <Panel key={m} title={`${def.short} – ${def.name}`} description={def.higherIsBetter ? "Higher is better." : "Lower is better."}>
             {good.length > 0 ? <OutcomeChart measure={m} points={good.map((o) => ({ takenOn: o.takenOn, scoreTenths: o.scoreTenths }))} /> : null}
             {change ? (
-              <p className="mt-2 text-sm text-slate-800">
+              <p className="mt-2 text-sm text-foreground">
                 Since {formatUkDate(first.takenOn)}:{" "}
                 <span className="font-semibold">
                   {change.direction === "same" ? "no change" : `${change.direction === "better" ? "better" : "worse"} by ${formatScore(m, Math.abs(change.deltaTenths)).replace(/\/(10|100)$/, "")}`}
@@ -50,7 +50,7 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
             ) : null}
             <div className="mt-4">
               <TableBox caption={`${def.short} scores`}>
-                <thead className="bg-slate-50">
+                <thead className="bg-[#F8FAFC]">
                   <tr>
                     <th scope="col" className={TH}>
                       Date
@@ -71,9 +71,9 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
                     ) : null}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {rows.map((o) => (
-                    <tr key={o.id} className={o.status === "entered_in_error" ? "text-slate-600" : undefined}>
+                    <tr key={o.id} className={o.status === "entered_in_error" ? "text-muted-foreground" : undefined}>
                       <td className={`${TD} whitespace-nowrap`}>{formatUkDate(o.takenOn)}</td>
                       <td className={`${TD} whitespace-nowrap font-semibold tabular-nums ${o.status === "entered_in_error" ? "line-through" : ""}`}>{formatScore(m, o.scoreTenths)}</td>
                       <td className={TD}>{o.status === "entered_in_error" ? <Pill>Entered in error</Pill> : (o.band ?? "")}</td>
@@ -84,7 +84,7 @@ export default async function OutcomesPage({ params }: { params: { patientId: st
                         <td className={TD}>
                           {o.status === "recorded" ? (
                             <details>
-                              <summary className="cursor-pointer whitespace-nowrap rounded text-xs font-medium text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700">Mark as error</summary>
+                              <summary className="cursor-pointer whitespace-nowrap rounded text-xs font-medium text-primary-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Mark as error</summary>
                               <div className="mt-2 w-64">
                                 <ActionForm action={markMeasureInError} className="space-y-2">
                                   <input type="hidden" name="patientId" value={patient.id} />

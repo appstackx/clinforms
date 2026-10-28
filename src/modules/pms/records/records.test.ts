@@ -6,6 +6,9 @@ import { asciiFileName, checkAttachment, formatBytes, MAX_ATTACHMENT_BYTES, safe
 import { BodyChartSchema, describeMarker, MAX_MARKERS, normaliseChart, nudgeMarker, parseBodyChart } from "./body-chart";
 import { addressLines, ageOn, displayName, isPlausibleRecordId, poundsToPence, penceToPounds, wholeNumber } from "./form-values";
 import { AmendmentInputSchema, NoteContentSchema, canSign, canonicalNoteContent, noteHasContent, noteStatusLabel, sectionsForTemplate, shortFingerprint } from "./notes";
+import { pmsCan } from "../core/permissions";
+import { PMS_RECORD_TABS } from "../record-tabs";
+import { recordTabItems, standInPermission } from "./record-tab-model";
 import { ClinicalFlagInputSchema, PronounsSchema, titleLine } from "./flags";
 import { DEFAULT_PATIENT_FILTERS, csvCell, csvLine, filtersFromParams, paramsFromFilters } from "./patient-list";
 import { DEFAULT_UNSIGNED_NOTE_DAYS, overdueWindowLabel, signWithinText } from "./settings";
@@ -322,5 +325,28 @@ describe("patient list filters, CSV cells, pronouns and flags", () => {
     assert.equal(overdueWindowLabel(1), "24 h");
     assert.equal(overdueWindowLabel(3), "3 days");
     assert.equal(signWithinText(1), "Sign within 24 hours of the visit.");
+  });
+});
+
+describe("record tabs in the design's order, by role", () => {
+  it("clinician: every tab, stand-ins for modules not merged yet", () => {
+    const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("clinician", p));
+    assert.deepEqual(
+      tabs.map((t) => t.label),
+      ["Overview", "Appointments", "Cases", "Clinical notes", "Outcomes", "Attachments", "Invoices", "Messages", "Forms", "History"],
+    );
+    assert.deepEqual(tabs.filter((t) => t.standIn).map((t) => t.segment), ["tab/appointments", "tab/invoices", "tab/messages", "tab/forms"]);
+  });
+  it("reception: no clinical tab at all (absent, not disabled)", () => {
+    const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("staff", p)).map((t) => t.label);
+    assert.deepEqual(tabs, ["Overview", "Appointments", "Cases", "Invoices", "Messages", "Forms", "History"]);
+  });
+  it("a module's own tab replaces its stand-in", () => {
+    const withDiary = [...PMS_RECORD_TABS, { id: "diary.appointments", module: "diary" as const, label: "Appointments", segment: "appointments", order: 10, permission: "diary.view" as const }];
+    const tabs = recordTabItems(withDiary, (p) => pmsCan("owner", p));
+    assert.equal(tabs.find((t) => t.key === "appointments")?.segment, "appointments");
+    assert.equal(tabs[1].label, "Appointments");
+    assert.equal(standInPermission("invoices"), "billing.view");
+    assert.equal(standInPermission("notes"), null);
   });
 });
