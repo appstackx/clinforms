@@ -16,25 +16,38 @@ export interface BookingPolicy {
 
 export const DEFAULT_BOOKING_POLICY: BookingPolicy = { minNoticeHours: 24, maxDaysAhead: 42, cancelNoticeHours: 24, patientCancel: true };
 
-export type BookingStatus = "booked" | "cancelled";
-
 export type PatientChangeRefusal = "not_booked" | "started" | "too_late" | "not_allowed";
 
-/** Whether the patient may cancel or move this booking online now. */
-export function patientMayChange(
-  policy: Pick<BookingPolicy, "cancelNoticeHours" | "patientCancel">,
-  booking: { status: BookingStatus; startsAt: string },
-  nowMs: number,
-): { ok: true } | { ok: false; reason: PatientChangeRefusal } {
-  if (booking.status !== "booked") return { ok: false, reason: "not_booked" };
-  const start = Date.parse(booking.startsAt);
-  if (!(start > nowMs)) return { ok: false, reason: "started" };
-  if (!policy.patientCancel) return { ok: false, reason: "not_allowed" };
-  if (start - nowMs < policy.cancelNoticeHours * 3_600_000) return { ok: false, reason: "too_late" };
-  return { ok: true };
+/** What the patient may do with a booked appointment online now (the diary's status and start). */
+export interface PatientChangeRights {
+  /** Cancel online: always while booked and in the future (when the clinic allows changes online). */
+  cancel: { ok: true; late: boolean } | { ok: false; reason: PatientChangeRefusal };
+  /** Move online: only outside the notice period (inside it the patient calls the clinic). */
+  move: { ok: true } | { ok: false; reason: PatientChangeRefusal };
+  /** The last moment a change is free of charge (start − notice). */
+  freeUntil: string;
 }
 
-/** A cancellation inside the notice period (the clinic may charge for it – the billing module decides). */
+/**
+ * Whether the patient may cancel or move a booked appointment online now. A cancellation inside the clinic's
+ * notice period is allowed but is a LATE cancellation (the diary flags the fee); a move inside it is not offered.
+ */
+export function patientChangeRights(
+  policy: Pick<BookingPolicy, "cancelNoticeHours" | "patientCancel">,
+  appointment: { status: string; startsAt: string },
+  nowMs: number,
+): PatientChangeRights {
+  const start = Date.parse(appointment.startsAt);
+  const freeUntil = new Date(start - policy.cancelNoticeHours * 3_600_000).toISOString();
+  const refuse = (reason: PatientChangeRefusal) => ({ cancel: { ok: false as const, reason }, move: { ok: false as const, reason }, freeUntil });
+  if (appointment.status !== "booked") return refuse("not_booked");
+  if (!(start > nowMs)) return refuse("started");
+  if (!policy.patientCancel) return refuse("not_allowed");
+  const late = isLateCancellation(policy, appointment.startsAt, nowMs);
+  return { cancel: { ok: true, late }, move: late ? { ok: false, reason: "too_late" } : { ok: true }, freeUntil };
+}
+
+/** A cancellation inside the notice period (the clinic may charge for it – the diary flags the fee). */
 export function isLateCancellation(policy: Pick<BookingPolicy, "cancelNoticeHours">, startsAt: string, nowMs: number): boolean {
   const start = Date.parse(startsAt);
   return start > nowMs && start - nowMs < policy.cancelNoticeHours * 3_600_000;
@@ -45,13 +58,13 @@ export function changeRefusalMessage(reason: PatientChangeRefusal, contact: stri
   const call = contact ? ` Please call the clinic on ${contact}.` : " Please contact the clinic.";
   switch (reason) {
     case "not_booked":
-      return "This booking has already been cancelled.";
+      return "This appointment is no longer booked.";
     case "started":
       return "This appointment has already started or taken place.";
     case "not_allowed":
-      return `Bookings cannot be changed online.${call}`;
+      return `Appointments cannot be changed online.${call}`;
     default:
-      return `It is too close to the appointment to change it online.${call}`;
+      return `It is too close to the appointment to move it online.${call}`;
   }
 }
 
@@ -73,9 +86,14 @@ export function manageLinkExpiry(startsAt: string): string {
   return new Date(Date.parse(startsAt) + 86_400_000).toISOString();
 }
 
-/** One-time sign-in links last 20 minutes; portal sessions 4 hours, or 30 minutes without activity. */
+/**
+ * One-time sign-in links the patient asks for last 15 minutes (design: "It works for 15 minutes"); a link staff
+ * send with a form or questionnaire lasts 72 hours (still single use). Portal sessions: 4 hours, or 30 minutes
+ * without activity.
+ */
 export const PORTAL_TIMINGS = {
-  signInLinkMinutes: 20,
+  signInLinkMinutes: 15,
+  staffLinkHours: 72,
   sessionHours: 4,
   idleMinutes: 30,
   /** last_seen_at is written at most this often (fewer writes on every page). */

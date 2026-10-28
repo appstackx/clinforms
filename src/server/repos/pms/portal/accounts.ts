@@ -14,7 +14,8 @@ import type { PortalAccount, PortalSession } from "../../../../modules/pms/porta
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch } from "../../../db/batch";
 import type { PmsPortalAccountsTable, PmsPortalSessionsTable } from "../../../db/pms-schema/portal";
-import { RepoInputError, assertId, assertTenantId, nowIso, pmsAudit, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, nowIso, pmsAuditQuery, pmsId, translateDbError, writeWithAudit, type DbContext } from "../context";
+import { changeWithAudit, portalAuditWhen } from "./shared";
 
 const HASH = /^[0-9a-f]{64}$/;
 
@@ -79,19 +80,28 @@ export async function setPortalAccountStatus(ctx: DbContext, tenantId: string, a
   assertId(accountId, "account id");
   if (status !== "active" && status !== "disabled") throw new RepoInputError("Status must be active or disabled.");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable("pms_portal_accounts")
-    .set({ status, updated_by: actor.userId, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", accountId)
-    .where("status", "!=", status)
-    .executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
+  // The switch, the sign-out of every session (when off) and the audit row: one batch; the audit row is written
+  // only when the status really changed.
+  const queries = [
+    ctx.db
+      .updateTable("pms_portal_accounts")
+      .set({ status, updated_by: actor.userId, updated_at: at })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", accountId)
+      .where("status", "!=", status),
+    portalAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.portal_account.status", targetType: "pms_portal_account", targetId: accountId, detail: { status } },
+      ctx.db.selectFrom("pms_portal_accounts").select("id").where("tenant_id", "=", tenantId).where("id", "=", accountId).where("status", "=", status).where("updated_at", "=", at),
+    ),
+    ...(status === "disabled"
+      ? [ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("account_id", "=", accountId).where("revoked_at", "is", null)]
+      : []),
+  ];
+  const changed = await changeWithAudit(ctx, queries);
   if (!changed) return false;
-  if (status === "disabled") {
-    await ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("account_id", "=", accountId).where("revoked_at", "is", null).execute();
-  }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.portal_account.status", targetType: "pms_portal_account", targetId: accountId, detail: { status } });
   return true;
 }
 
@@ -186,12 +196,19 @@ export async function touchPortalSession(ctx: DbContext, tenantId: string, id: s
 export async function revokePortalSession(ctx: DbContext, tenantId: string, id: string): Promise<boolean> {
   assertTenantId(tenantId);
   const at = nowIso(ctx);
-  const result = await ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "is", null).executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
-  if (changed) {
-    const row = await ctx.db.selectFrom("pms_portal_sessions").select("account_id").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
-    await pmsAudit(ctx, tenantId, { userId: null, sessionId: id }, { action: "pms.portal_session.end", targetType: "pms_portal_account", targetId: row?.account_id ?? null, detail: { via: "patient" } });
-  }
+  const row = await ctx.db.selectFrom("pms_portal_sessions").select("account_id").where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
+  if (!row) return false;
+  const changed =
+    (await changeWithAudit(ctx, [
+      ctx.db.updateTable("pms_portal_sessions").set({ revoked_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "is", null),
+      portalAuditWhen(
+        ctx,
+        tenantId,
+        { userId: null, sessionId: id },
+        { action: "pms.portal_session.end", targetType: "pms_portal_account", targetId: row.account_id, detail: { via: "patient" } },
+        ctx.db.selectFrom("pms_portal_sessions").select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("revoked_at", "=", at),
+      ),
+    ])) > 0;
   return changed;
 }
 

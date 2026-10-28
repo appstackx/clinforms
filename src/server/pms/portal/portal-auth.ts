@@ -1,26 +1,24 @@
 /**
- * Patient portal sign-in (separate from staff sign-in): a patient asks for a link with their email address and
- * date of birth; if they match an active patient of THIS clinic, a one-time link is "emailed" (outbox) to the
- * address on the record. The answer is the same whether or not anything matched (never reveals who is a patient).
+ * Patient portal sign-in (separate from staff sign-in): a patient asks for a link with their email address; if it
+ * is the address of an active patient of THIS clinic, a one-time link is emailed (through comms – outbox / test
+ * providers only) to the address on the record. The answer is the same whether or not anything matched (never
+ * reveals who is a patient), and the work done is the same shape either way.
  * The link opens a page with a button (so email scanners that open links do not use it up); pressing it uses the
  * link once and opens a session – a random cookie secret, of which only the hash is stored.
  */
 import "server-only";
 import { fieldErrors } from "../../../modules/pms/core/schemas";
-import { ukToday } from "../../../modules/pms/core/text";
-import { signInLinkMessage } from "../../../modules/pms/portal/messages";
 import { clinicPublicPaths } from "../../../modules/pms/portal/paths";
 import { PORTAL_TIMINGS, sessionUsable } from "../../../modules/pms/portal/policy";
-import { portalSignInSchema } from "../../../modules/pms/portal/schemas";
+import { PortalSignInSchema } from "../../../modules/pms/portal/schemas";
 import type { PmsActor } from "../../../modules/pms/core/types";
 import type { DbContext, RepoContext } from "../../repos/context";
 import { nowIso } from "../../repos/context";
 import { getPatientSummaries, searchPatients } from "../../repos/pms/patients";
 import { countRecentSignInLinks, createSignInLink, ensurePortalAccount, getPortalSession, revokePortalSession, signInWithLink, touchPortalSession } from "../../repos/pms/portal/accounts";
-import { portalMessageQueries } from "../../repos/pms/portal/messages";
 import { patientActor, type FlowDeps } from "./booking";
 import { verifyHumanCheck } from "./human-check";
-import { portalMailer } from "./mailer";
+import { sendPortalLinkEmail } from "./portal-mail";
 import type { PublicClinic } from "./public-clinic";
 import { publicLimits, tooManyMessage, type PublicLimit } from "./rate-limit";
 import { hashSecret, isLinkToken, newSecret, sameHash } from "./tokens";
@@ -29,7 +27,7 @@ import { hashSecret, isLinkToken, newSecret, sameHash } from "./tokens";
 export const PORTAL_COOKIE = "clinic_portal";
 
 /** The same words whatever happened (matched, no match, account switched off, too many links). */
-export const SIGN_IN_SENT = "If your details match our records, we have sent a sign-in link to the email address we hold for you. It works once, for 20 minutes.";
+export const SIGN_IN_SENT = "If this email address is on our records, we have sent a sign-in link to it. It works once, for 15 minutes.";
 
 export type SignInRequestOutcome = { ok: true } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -42,7 +40,7 @@ export async function requestSignInLink(clinic: PublicClinic, raw: Record<string
   const tenantId = clinic.tenantId;
   if (!clinic.settings.portal) return { ok: false, error: "The patient portal is not open at the moment. Please contact the clinic." };
   if (typeof raw.website === "string" && raw.website.trim() !== "") return { ok: true };
-  const parsed = portalSignInSchema(ukToday(now)).safeParse(raw);
+  const parsed = PortalSignInSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Please check the answers marked below.", fieldErrors: fieldErrors(parsed.error) };
   const d = parsed.data;
   const checks: [PublicLimit, string | null][] = [];
@@ -53,29 +51,29 @@ export async function requestSignInLink(clinic: PublicClinic, raw: Record<string
   const human = await verifyHumanCheck(deps.humanToken, deps.clientIp);
   if (!human.ok) return { ok: false, error: "Please complete the check that you are not a robot, then try again." };
 
-  const candidates = (await searchPatients(ctx, tenantId, { q: d.email, status: "active", limit: 50 })).filter((p) => p.dateOfBirth === d.dateOfBirth && p.email === d.email).slice(0, MAX_MATCHES);
-  const mailer = deps.mailer ?? portalMailer();
+  const candidates = (await searchPatients(ctx, tenantId, { q: d.email, status: "active", limit: 50 })).filter((p) => (p.email ?? "").toLowerCase() === d.email).slice(0, MAX_MATCHES);
   const since = new Date(now.getTime() - 3_600_000).toISOString();
   const actor = patientActor();
   for (const patient of candidates) {
     const account = await ensurePortalAccount(ctx, tenantId, patient.id, actor);
     if (account.status !== "active") continue;
     if ((await countRecentSignInLinks(ctx, tenantId, account.id, since)) >= LINKS_PER_HOUR) continue;
-    const secret = newSecret();
-    const url = `${deps.origin}${clinicPublicPaths(tenantId).signInLink(secret)}`;
-    const text = signInLinkMessage({ clinicName: clinic.name, firstName: patient.preferredName || patient.firstName, url });
-    const expiresAt = new Date(now.getTime() + PORTAL_TIMINGS.signInLinkMinutes * 60_000).toISOString();
-    await createSignInLink(
-      ctx,
-      tenantId,
-      account.id,
-      hashSecret(secret),
-      expiresAt,
-      actor,
-      portalMessageQueries(ctx, tenantId, { patientId: patient.id, kind: text.kind, subject: text.subject, body: text.body, recipient: patient.email as string, status: mailer.status, provider: mailer.provider }, actor).queries,
-    );
+    await sendSignInLink(ctx, tenantId, account.id, patient.id, now, PORTAL_TIMINGS.signInLinkMinutes * 60_000, deps.origin, actor);
   }
   return { ok: true };
+}
+
+/**
+ * Makes a one-time sign-in link for an account and emails it (comms). `lifetimeMs`: 15 minutes when the patient
+ * asked; 72 hours when staff send a form or questionnaire. Only the link's hash is stored.
+ */
+export async function sendSignInLink(ctx: RepoContext, tenantId: string, accountId: string, patientId: string, now: Date, lifetimeMs: number, origin: string, actor: PmsActor, next?: string | null): Promise<boolean> {
+  const secret = newSecret();
+  const expiresAt = new Date(now.getTime() + lifetimeMs).toISOString();
+  await createSignInLink(ctx, tenantId, accountId, hashSecret(secret), expiresAt, actor);
+  const path = clinicPublicPaths(tenantId).signInLink(secret);
+  const url = `${origin}${path}${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+  return sendPortalLinkEmail(ctx, tenantId, patientId, url, expiresAt, now, actor);
 }
 
 export type CompleteSignIn = { ok: true; cookieValue: string; expiresAt: string } | { ok: false; error: string };

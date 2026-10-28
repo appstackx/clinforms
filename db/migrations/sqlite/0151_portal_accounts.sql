@@ -1,8 +1,8 @@
 -- ClinForms 0151 (SQLite / Cloudflare D1): clinic system, portal module part 2 - the patient portal: patients'
 -- portal accounts (separate from staff accounts - no password, no Better Auth user), one-time sign-in links and
--- signed-in sessions (only SHA-256 hashes of their secrets are stored), the portal's outbox (messages are stored,
--- never sent, in test mode - recipient and body encrypted) and documents staff explicitly share with a patient
--- (body encrypted).
+-- signed-in sessions (only SHA-256 hashes of their secrets are stored) and documents staff explicitly share with a patient
+-- (body encrypted). The portal's emails go through the
+-- clinic-system message log (comms, pms_messages) - the portal keeps no outbox of its own.
 -- Kept in step with supabase/migrations/20261024000151_portal_accounts.sql (db/parity.test.ts).
 -- Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
 
@@ -47,25 +47,6 @@ CREATE TABLE IF NOT EXISTS pms_portal_sessions (
   FOREIGN KEY (tenant_id, account_id) REFERENCES pms_portal_accounts (tenant_id, id)
 );
 CREATE INDEX IF NOT EXISTS pms_portal_sessions_account ON pms_portal_sessions (tenant_id, account_id, created_at);
-
-CREATE TABLE IF NOT EXISTS pms_portal_messages (
-  tenant_id TEXT NOT NULL,
-  id TEXT NOT NULL,
-  patient_id TEXT,
-  kind TEXT NOT NULL CHECK (kind IN ('sign_in_link', 'booking_confirmed', 'booking_cancelled', 'booking_changed', 'form_request', 'document_shared')),
-  channel TEXT NOT NULL DEFAULT 'email' CHECK (channel IN ('email')),
-  subject TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 200),
-  recipient_enc TEXT,
-  body_enc TEXT,
-  status TEXT NOT NULL CHECK (status IN ('outbox', 'sent', 'failed')),
-  provider TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, id),
-  FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id)
-);
-CREATE INDEX IF NOT EXISTS pms_portal_messages_created ON pms_portal_messages (tenant_id, created_at);
-CREATE INDEX IF NOT EXISTS pms_portal_messages_patient ON pms_portal_messages (tenant_id, patient_id, created_at);
 
 CREATE TABLE IF NOT EXISTS pms_portal_shares (
   tenant_id TEXT NOT NULL,

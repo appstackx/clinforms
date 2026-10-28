@@ -11,7 +11,8 @@ import type { PortalShare, PortalShareSummary } from "../../../../modules/pms/po
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { BatchQuery } from "../../../db/batch";
 import type { PmsPortalSharesTable } from "../../../db/pms-schema/portal";
-import { assertId, assertTenantId, decryptField, encryptField, nowIso, parseInput, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
+import { assertId, assertTenantId, decryptField, encryptField, nowIso, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
+import { changeWithAudit, portalAuditWhen } from "./shared";
 
 const T = "pms_portal_shares";
 const SUMMARY = ["tenant_id", "id", "patient_id", "title", "shared_by", "shared_at", "viewed_at", "withdrawn_at"] as const;
@@ -71,10 +72,11 @@ export async function markShareViewed(ctx: DbContext, tenantId: string, id: stri
   assertTenantId(tenantId);
   assertId(id, "share id");
   const at = nowIso(ctx);
-  const result = await ctx.db.updateTable(T).set({ viewed_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("viewed_at", "is", null).executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
-  if (changed) await pmsAudit(ctx, tenantId, actor, { action: "pms.portal_share.view", targetType: "pms_portal_share", targetId: id, detail: { via: "patient" } });
-  return changed;
+  const changed = await changeWithAudit(ctx, [
+    ctx.db.updateTable(T).set({ viewed_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("viewed_at", "is", null),
+    portalAuditWhen(ctx, tenantId, actor, { action: "pms.portal_share.view", targetType: "pms_portal_share", targetId: id, detail: { via: "patient" } }, ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("viewed_at", "=", at)),
+  ]);
+  return changed > 0;
 }
 
 /** Hides a shared document from the patient (kept for the record). */
@@ -82,14 +84,9 @@ export async function withdrawShare(ctx: DbContext, tenantId: string, id: string
   assertTenantId(tenantId);
   assertId(id, "share id");
   const at = nowIso(ctx);
-  const result = await ctx.db
-    .updateTable(T)
-    .set({ withdrawn_at: at, withdrawn_by: actor.userId, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("id", "=", id)
-    .where("withdrawn_at", "is", null)
-    .executeTakeFirst();
-  const changed = Number(result.numUpdatedRows) > 0;
-  if (changed) await pmsAudit(ctx, tenantId, actor, { action: "pms.portal_share.withdraw", targetType: "pms_portal_share", targetId: id });
-  return changed;
+  const changed = await changeWithAudit(ctx, [
+    ctx.db.updateTable(T).set({ withdrawn_at: at, withdrawn_by: actor.userId, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("withdrawn_at", "is", null),
+    portalAuditWhen(ctx, tenantId, actor, { action: "pms.portal_share.withdraw", targetType: "pms_portal_share", targetId: id }, ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("withdrawn_at", "=", at)),
+  ]);
+  return changed > 0;
 }

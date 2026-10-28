@@ -1,7 +1,8 @@
 /**
- * Tables of the portal module (migrations 0150–0152 / 20261024000150–…152): online booking (settings, online
- * hours, online bookings), the patient portal (accounts, one-time sign-in links, sessions, outbox, shared
- * documents) and intake forms (templates, patients' copies). Conventions: docs/clinic-system/contract.md §4.
+ * Tables of the portal module (migrations 0150–0152 / 20261024000150–…152): online booking (settings, sites
+ * open online with their map position, the log of appointments booked online – the appointments themselves are
+ * the diary's pms_appointments), the patient portal (accounts, one-time sign-in links, sessions, shared documents;
+ * its emails go through comms' pms_messages) and intake forms (templates, patients' copies). Conventions: docs/clinic-system/contract.md §4.
  *
  * - Instants are ISO TEXT (D1) / timestamptz (Postgres); calendar dates TEXT "YYYY-MM-DD"; booleans 0/1.
  * - Columns ending in _enc hold AES-GCM ciphertext with AAD "<tenant>:<table>.<column>:<id>".
@@ -32,16 +33,16 @@ export interface PmsBookingSettingsTable {
   updated_at: IsoTimestamp;
 }
 
-export interface PmsBookingHoursTable {
+export interface PmsBookingSitesTable {
   tenant_id: string;
-  id: string;
-  practitioner_id: string;
   site_id: string;
-  weekday: number;
-  start_minute: number;
-  end_minute: number;
-  valid_from: string | null;
-  valid_to: string | null;
+  rev: WithDefault<number>;
+  /** 0/1: the site is offered on the booking page. */
+  online: WithDefault<number>;
+  /** Latitude / longitude × 1,000,000 (whole numbers on both databases), or null. */
+  lat_e6: number | null;
+  lng_e6: number | null;
+  updated_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -52,24 +53,12 @@ export interface PmsOnlineBookingsTable {
   rev: WithDefault<number>;
   reference: string;
   patient_id: string;
-  site_id: string;
-  practitioner_id: string;
-  service_id: string;
-  starts_at: IsoTimestamp;
-  ends_at: IsoTimestamp;
-  blocks_until: IsoTimestamp;
-  /** "booked" | "cancelled" */
-  status: WithDefault<string>;
-  /** "booking_page" | "portal" | "clinic" */
+  /** The diary appointment (pms_appointments) – the booking itself. */
+  appointment_id: string;
+  /** "booking_page" | "portal" */
   channel: string;
   /** "new" | "existing" | "portal" */
   patient_match: string;
-  cancelled_by: string | null;
-  cancel_reason: string | null;
-  cancelled_at: IsoTimestamp | null;
-  late_cancellation: WithDefault<number>;
-  rebooked_from_id: string | null;
-  appointment_id: string | null;
   manage_token_hash: string | null;
   manage_expires_at: IsoTimestamp | null;
   reviewed_at: IsoTimestamp | null;
@@ -111,22 +100,6 @@ export interface PmsPortalSessionsTable {
   created_at: IsoTimestamp;
 }
 
-export interface PmsPortalMessagesTable {
-  tenant_id: string;
-  id: string;
-  patient_id: string | null;
-  kind: string;
-  channel: WithDefault<string>;
-  subject: string;
-  recipient_enc: string | null;
-  body_enc: string | null;
-  /** "outbox" | "sent" | "failed" */
-  status: string;
-  provider: string;
-  created_at: IsoTimestamp;
-  updated_at: IsoTimestamp;
-}
-
 export interface PmsPortalSharesTable {
   tenant_id: string;
   id: string;
@@ -166,12 +139,19 @@ export interface PmsIntakeResponsesTable {
   tenant_id: string;
   id: string;
   rev: WithDefault<number>;
-  template_id: string;
+  /** Null for an outcome questionnaire (kind "outcome"). */
+  template_id: string | null;
   template_version: number;
   name: string;
   kind: string;
   patient_id: string;
-  booking_id: string | null;
+  /** The diary appointment the form was sent for. */
+  appointment_id: string | null;
+  /** Outcome questionnaires: "ndi" | "odi" | "nprs" | "psfs" | "quickdash". */
+  measure: string | null;
+  case_id: string | null;
+  /** The records module's outcome row made from the answers. */
+  outcome_id: string | null;
   /** "requested" | "submitted" | "cancelled" */
   status: WithDefault<string>;
   /** JSON snapshot of the FormDefinition the patient answered. */
@@ -199,12 +179,11 @@ export interface PmsIntakeResponsesTable {
 
 export interface PortalTables {
   pms_booking_settings: PmsBookingSettingsTable;
-  pms_booking_hours: PmsBookingHoursTable;
+  pms_booking_sites: PmsBookingSitesTable;
   pms_online_bookings: PmsOnlineBookingsTable;
   pms_portal_accounts: PmsPortalAccountsTable;
   pms_portal_links: PmsPortalLinksTable;
   pms_portal_sessions: PmsPortalSessionsTable;
-  pms_portal_messages: PmsPortalMessagesTable;
   pms_portal_shares: PmsPortalSharesTable;
   pms_intake_templates: PmsIntakeTemplatesTable;
   pms_intake_responses: PmsIntakeResponsesTable;
@@ -213,12 +192,11 @@ export interface PortalTables {
 /** Foreign-key order (parents first). */
 export const PORTAL_TABLES = [
   "pms_booking_settings",
-  "pms_booking_hours",
+  "pms_booking_sites",
   "pms_online_bookings",
   "pms_portal_accounts",
   "pms_portal_links",
   "pms_portal_sessions",
-  "pms_portal_messages",
   "pms_portal_shares",
   "pms_intake_templates",
   "pms_intake_responses",
@@ -226,12 +204,11 @@ export const PORTAL_TABLES = [
 
 export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number]]: readonly (keyof PortalTables[T] & string)[] } = {
   pms_booking_settings: ["tenant_id"],
-  pms_booking_hours: ["tenant_id", "id"],
+  pms_booking_sites: ["tenant_id", "site_id"],
   pms_online_bookings: ["tenant_id", "id"],
   pms_portal_accounts: ["tenant_id", "id"],
   pms_portal_links: ["tenant_id", "id"],
   pms_portal_sessions: ["tenant_id", "id"],
-  pms_portal_messages: ["tenant_id", "id"],
   pms_portal_shares: ["tenant_id", "id"],
   pms_intake_templates: ["tenant_id", "id"],
   pms_intake_responses: ["tenant_id", "id"],
@@ -239,9 +216,6 @@ export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number
 
 /** Timestamp columns beyond created_at / updated_at (the D1 → Postgres copy compares them as ISO instants). */
 export const PORTAL_TIMESTAMP_COLUMNS: readonly string[] = [
-  "starts_at",
-  "ends_at",
-  "blocks_until",
   "cancelled_at",
   "manage_expires_at",
   "reviewed_at",

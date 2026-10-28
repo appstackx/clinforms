@@ -1,7 +1,7 @@
 /** Portal records as the repositories return them (decrypted where noted, camelCase). Pure types – browser-safe. */
 import type { Answers, FormDefinition } from "./forms";
-import type { BookingStatus } from "./policy";
-import type { CancelReason, IntakeFormKind, IntakeFormStatus, SendWhen } from "./schemas";
+import type { OutcomeMeasureId } from "../records/outcomes";
+import type { IntakeFormKind, IntakeFormStatus, IntakeResponseKind, SendWhen } from "./schemas";
 
 export interface BookingSettings {
   tenantId: string;
@@ -21,46 +21,34 @@ export interface BookingSettings {
   updatedAt: string | null;
 }
 
-export interface BookingHours {
+/** A site's online-booking settings (no row = online, no map position). */
+export interface BookingSite {
   tenantId: string;
-  id: string;
-  practitionerId: string;
   siteId: string;
-  weekday: number;
-  startMinute: number;
-  endMinute: number;
-  validFrom: string | null;
-  validTo: string | null;
-  createdAt: string;
-  updatedAt: string;
+  rev: number;
+  online: boolean;
+  /** Decimal degrees, or null when the clinic has not set the site's position. */
+  latitude: number | null;
+  longitude: number | null;
 }
 
-export type BookingChannel = "booking_page" | "portal" | "clinic";
+export type BookingChannel = "booking_page" | "portal";
 export type PatientMatch = "new" | "existing" | "portal";
 
+/**
+ * The online-booking record of a diary appointment booked online. The time, place, practitioner and status are the
+ * diary appointment's (pms_appointments) – read them from the diary, never from here.
+ */
 export interface OnlineBooking {
   tenantId: string;
   id: string;
   rev: number;
   reference: string;
   patientId: string;
-  siteId: string;
-  practitionerId: string;
-  serviceId: string;
-  startsAt: string;
-  endsAt: string;
-  blocksUntil: string;
-  status: BookingStatus;
+  appointmentId: string;
   channel: BookingChannel;
   /** How the booking found its patient record (staff only – never shown to the patient). */
   patientMatch: PatientMatch;
-  cancelledBy: "patient" | "clinic" | null;
-  cancelReason: CancelReason | null;
-  cancelledAt: string | null;
-  lateCancellation: boolean;
-  rebookedFromId: string | null;
-  /** The diary's appointment once the diary is connected (null while online bookings stand alone). */
-  appointmentId: string | null;
   manageExpiresAt: string | null;
   reviewedAt: string | null;
   reviewedBy: string | null;
@@ -89,26 +77,6 @@ export interface PortalSession {
   createdAt: string;
 }
 
-export type PortalMessageKind = "sign_in_link" | "booking_confirmed" | "booking_cancelled" | "booking_changed" | "form_request" | "document_shared";
-
-/** A message the portal would send (outbox). Recipient and body decrypted only in getPortalMessage. */
-export interface PortalMessageSummary {
-  tenantId: string;
-  id: string;
-  patientId: string | null;
-  kind: PortalMessageKind;
-  channel: "email";
-  subject: string;
-  status: "outbox" | "sent" | "failed";
-  provider: string;
-  createdAt: string;
-}
-
-export interface PortalMessage extends PortalMessageSummary {
-  recipient: string | null;
-  body: string | null;
-}
-
 export interface IntakeTemplate {
   tenantId: string;
   id: string;
@@ -133,12 +101,19 @@ export type IntakeResponseStatus = "requested" | "submitted" | "cancelled";
 export interface IntakeResponseSummary {
   tenantId: string;
   id: string;
-  templateId: string;
+  /** Null for an outcome questionnaire. */
+  templateId: string | null;
   templateVersion: number;
   name: string;
-  kind: IntakeFormKind;
+  kind: IntakeResponseKind;
   patientId: string;
-  bookingId: string | null;
+  /** The diary appointment it was sent for. */
+  appointmentId: string | null;
+  /** Outcome questionnaires: the records module's measure. */
+  measure: OutcomeMeasureId | null;
+  caseId: string | null;
+  /** The outcome row its answers made (records module). */
+  outcomeId: string | null;
   status: IntakeResponseStatus;
   requiresSignature: boolean;
   signedAt: string | null;

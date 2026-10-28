@@ -10,7 +10,7 @@ import { FIELD_ID_PATTERN, FIELD_TYPES, FORM_LIMITS, RECORD_FIELD_KEYS, SIGNATUR
 import { isIsoInstant } from "./time";
 
 /* ------------------------------------------------------------------------------------------------
- * Booking settings and online hours (staff with "booking.manage")
+ * Booking settings and sites (staff with "settings.setup")
  * ----------------------------------------------------------------------------------------------*/
 
 export const SLOT_STEPS = [5, 10, 15, 20, 30, 60] as const;
@@ -40,22 +40,16 @@ export const BookingSettingsInputSchema = z.object({
 });
 export type BookingSettingsInput = z.input<typeof BookingSettingsInputSchema>;
 
-const minuteOfDay = z.number().int().min(0).max(1440).refine((n) => n % 5 === 0, "In steps of 5 minutes");
-
-export const BookingHoursInputSchema = z
+/** A site's online-booking switch and map position (Set-up → Online booking). */
+export const BookingSiteInputSchema = z
   .object({
-    practitionerId: PmsIdSchema,
     siteId: PmsIdSchema,
-    weekday: z.number().int().min(1, "Choose a day").max(7, "Choose a day"),
-    startMinute: minuteOfDay,
-    endMinute: minuteOfDay,
-    validFrom: OptionalDateSchema,
-    validTo: OptionalDateSchema,
+    online: z.boolean(),
+    latitude: z.number().min(49, "A latitude in the UK").max(61, "A latitude in the UK").nullable().optional(),
+    longitude: z.number().min(-9, "A longitude in the UK").max(2, "A longitude in the UK").nullable().optional(),
   })
-  .refine((v) => v.endMinute > v.startMinute, { message: "The end is before the start", path: ["endMinute"] })
-  .refine((v) => v.endMinute - v.startMinute >= 15, { message: "At least 15 minutes", path: ["endMinute"] })
-  .refine((v) => !v.validFrom || !v.validTo || v.validFrom <= v.validTo, { message: "The last day is before the first", path: ["validTo"] });
-export type BookingHoursInput = z.input<typeof BookingHoursInputSchema>;
+  .refine((v) => (v.latitude == null) === (v.longitude == null), { message: "Give both latitude and longitude, or neither", path: ["longitude"] });
+export type BookingSiteInput = z.input<typeof BookingSiteInputSchema>;
 
 /* ------------------------------------------------------------------------------------------------
  * Patients: the booking request and the portal sign-in request
@@ -93,8 +87,8 @@ export function publicBookingSchema(today: string) {
     phoneMobile: PhoneSchema.refine((v) => typeof v === "string" && v.length > 0, "Enter a mobile number"),
     /** Appointment reminders by text or email (service messages – the patient may opt out). */
     reminders: z.boolean().optional(),
-    /** The patient read how the clinic uses their details and the cancellation policy. */
-    agree: z.literal(true, { error: "Tick the box to confirm" }),
+    /** "self" = paying themselves, "insured" = health insurance (they bring the authorisation). */
+    paying: z.enum(["self", "insured"]).optional(),
     /** Hidden field: people leave it empty. */
     website: z.string().max(500).optional(),
   });
@@ -110,17 +104,12 @@ export const PortalBookingSchema = z.object({
 });
 export type PortalBookingInput = z.input<typeof PortalBookingSchema>;
 
-export function portalSignInSchema(today: string) {
-  return z.object({
-    email: requiredEmail,
-    dateOfBirth: dateOfBirth(today),
-    website: z.string().max(500).optional(),
-  });
-}
-export type PortalSignInInput = z.input<ReturnType<typeof portalSignInSchema>>;
-
-export const CANCEL_REASONS = ["patient_request", "rebooked", "clinic", "other"] as const;
-export type CancelReason = (typeof CANCEL_REASONS)[number];
+/** The portal sign-in request (design: the email address only – the link goes to the address on the record). */
+export const PortalSignInSchema = z.object({
+  email: requiredEmail,
+  website: z.string().max(500).optional(),
+});
+export type PortalSignInInput = z.input<typeof PortalSignInSchema>;
 
 /* ------------------------------------------------------------------------------------------------
  * Intake and consent forms
@@ -128,6 +117,8 @@ export type CancelReason = (typeof CANCEL_REASONS)[number];
 
 export const INTAKE_FORM_KINDS = ["intake", "questionnaire", "consent"] as const;
 export type IntakeFormKind = (typeof INTAKE_FORM_KINDS)[number];
+/** A patient's copy: a form from a template, or an outcome questionnaire (no template – the records measures). */
+export type IntakeResponseKind = IntakeFormKind | "outcome";
 export const INTAKE_FORM_KIND_LABELS: Readonly<Record<IntakeFormKind, string>> = {
   intake: "Patient details",
   questionnaire: "Health questionnaire",

@@ -329,13 +329,14 @@ describe("patient list filters, CSV cells, pronouns and flags", () => {
 });
 
 describe("record tabs in the design's order, by role", () => {
-  it("clinician: every tab, stand-ins for modules not merged yet (the diary, billing and messages tabs are registered)", () => {
+  it("clinician: every tab (the diary, billing, messages and portal tabs are all registered – no stand-ins left)", () => {
     const tabs = recordTabItems(PMS_RECORD_TABS, (p) => pmsCan("clinician", p));
     assert.deepEqual(
       tabs.map((t) => t.label),
       ["Overview", "Appointments", "Cases", "Clinical notes", "Outcomes", "Attachments", "Invoices", "Messages", "Forms", "History"],
     );
-    assert.deepEqual(tabs.filter((t) => t.standIn).map((t) => t.segment), ["tab/forms"]);
+    assert.deepEqual(tabs.filter((t) => t.standIn).map((t) => t.segment), []);
+    assert.equal(tabs.find((t) => t.key === "forms")?.segment, "forms");
     assert.equal(tabs.find((t) => t.key === "messages")?.segment, "messages");
     assert.equal(tabs.find((t) => t.key === "appointments")?.segment, "appointments");
   });

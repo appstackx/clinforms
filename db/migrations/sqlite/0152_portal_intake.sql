@@ -4,6 +4,9 @@
 -- the typed name encrypted, and the SHA-256 of what was signed.
 -- A completed copy is sealed: the triggers refuse any change to its form, answers, signature or seal (only the
 -- review and record-update markers can still change). Never deleted by the app (cancelled instead).
+-- An outcome questionnaire (kind outcome, one of the records module's measures) is a patient's copy without a
+-- template: the patient answers it in the portal, and the score lands in pms_outcome_measures (outcome_id).
+-- A copy sent for an appointment points at the diary's appointment (appointment_id).
 -- Kept in step with supabase/migrations/20261024000152_portal_intake.sql (db/parity.test.ts).
 -- Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
 
@@ -13,7 +16,7 @@ CREATE TABLE IF NOT EXISTS pms_intake_templates (
   rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
   version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
-  kind TEXT NOT NULL CHECK (kind IN ('intake', 'questionnaire', 'consent')),
+  kind TEXT NOT NULL CHECK (kind IN ('intake', 'questionnaire', 'consent', 'outcome')),
   description TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'archived')),
   send_when TEXT NOT NULL DEFAULT 'manual' CHECK (send_when IN ('manual', 'new_patient', 'every_booking')),
@@ -32,12 +35,15 @@ CREATE TABLE IF NOT EXISTS pms_intake_responses (
   tenant_id TEXT NOT NULL,
   id TEXT NOT NULL,
   rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
-  template_id TEXT NOT NULL,
+  template_id TEXT,
   template_version INTEGER NOT NULL CHECK (template_version > 0),
   name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('intake', 'questionnaire', 'consent')),
+  kind TEXT NOT NULL CHECK (kind IN ('intake', 'questionnaire', 'consent', 'outcome')),
   patient_id TEXT NOT NULL,
-  booking_id TEXT,
+  appointment_id TEXT,
+  measure TEXT CHECK (measure IS NULL OR measure IN ('ndi', 'odi', 'nprs', 'psfs', 'quickdash')),
+  case_id TEXT,
+  outcome_id TEXT,
   status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'submitted', 'cancelled')),
   form_json TEXT NOT NULL,
   requires_signature INTEGER NOT NULL DEFAULT 0 CHECK (requires_signature IN (0, 1)),
@@ -61,13 +67,17 @@ CREATE TABLE IF NOT EXISTS pms_intake_responses (
   PRIMARY KEY (tenant_id, id),
   FOREIGN KEY (tenant_id, template_id) REFERENCES pms_intake_templates (tenant_id, id),
   FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id),
-  FOREIGN KEY (tenant_id, booking_id) REFERENCES pms_online_bookings (tenant_id, id),
+  FOREIGN KEY (tenant_id, appointment_id) REFERENCES pms_appointments (tenant_id, id),
+  FOREIGN KEY (tenant_id, patient_id, case_id) REFERENCES pms_cases (tenant_id, patient_id, id),
+  FOREIGN KEY (tenant_id, outcome_id) REFERENCES pms_outcome_measures (tenant_id, id),
+  CHECK ((kind = 'outcome') = (measure IS NOT NULL)),
+  CHECK (kind = 'outcome' OR template_id IS NOT NULL),
   CHECK (status <> 'submitted' OR (answers_enc IS NOT NULL AND submitted_at IS NOT NULL AND content_sha256 IS NOT NULL)),
   CHECK (requires_signature = 0 OR status <> 'submitted' OR (signature_name_enc IS NOT NULL AND signed_at IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS pms_intake_responses_patient ON pms_intake_responses (tenant_id, patient_id, requested_at);
 CREATE INDEX IF NOT EXISTS pms_intake_responses_status ON pms_intake_responses (tenant_id, status, submitted_at);
-CREATE INDEX IF NOT EXISTS pms_intake_responses_booking ON pms_intake_responses (tenant_id, booking_id);
+CREATE INDEX IF NOT EXISTS pms_intake_responses_appointment ON pms_intake_responses (tenant_id, appointment_id);
 
 CREATE TRIGGER IF NOT EXISTS pms_intake_responses_sealed BEFORE UPDATE OF form_json, answers_enc, signature_name_enc, signed_at, content_sha256, patient_id, template_id, submitted_at, status ON pms_intake_responses
 WHEN OLD.status = 'submitted'

@@ -1,7 +1,8 @@
 /**
  * `pms_booking_settings` – one row per clinic: whether the booking page and the patient portal are open, the
  * booking rules (notice, horizon, slot step, cancellation notice) and what the booking page says. No row = the
- * defaults with everything OFF (a clinic opens online booking deliberately). Revision-checked updates, audited.
+ * defaults with everything OFF (a clinic opens online booking deliberately). Revision-checked updates, audited in
+ * the same batch.
  */
 import { BookingSettingsInputSchema, type BookingSettingsInput } from "../../../../modules/pms/portal/schemas";
 import type { BookingSettings } from "../../../../modules/pms/portal/types";
@@ -10,7 +11,8 @@ import type { Selectable } from "kysely";
 import type { PmsBookingSettingsTable } from "../../../db/pms-schema/portal";
 import { classifyDbError } from "../../../db/errors";
 import { runBatch } from "../../../db/batch";
-import { assertTenantId, b01, isOn, nowIso, num, parseInput, patchColumns, pmsAudit, pmsAuditQuery, translateDbError, type DbContext } from "../context";
+import { assertTenantId, b01, isOn, nowIso, num, parseInput, patchColumns, pmsAuditQuery, translateDbError, type DbContext } from "../context";
+import { changeWithAudit, portalAuditWhen } from "./shared";
 
 const T = "pms_booking_settings";
 
@@ -105,16 +107,21 @@ export async function updateBookingSettings(ctx: DbContext, tenantId: string, ex
   }
   if (!Number.isInteger(expectedRev) || expectedRev < 1) return { ok: false, reason: "not_found" };
   if (fields.length === 0) return { ok: true, rev: expectedRev, updatedAt: at };
-  const result = await ctx.db
-    .updateTable(T)
-    .set({ ...set, rev: expectedRev + 1, updated_by: actor.userId, updated_at: at })
-    .where("tenant_id", "=", tenantId)
-    .where("rev", "=", expectedRev)
-    .executeTakeFirst();
-  if (Number(result.numUpdatedRows) === 0) {
+  const next = expectedRev + 1;
+  // The change and its audit row in ONE batch (the audit row is written only when the update happened).
+  const changed = await changeWithAudit(ctx, [
+    ctx.db.updateTable(T).set({ ...set, rev: next, updated_by: actor.userId, updated_at: at }).where("tenant_id", "=", tenantId).where("rev", "=", expectedRev),
+    portalAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.booking_settings.update", targetType: "pms_booking_settings", targetId: tenantId, detail: { ...detail, rev: next } },
+      ctx.db.selectFrom(T).select("tenant_id").where("tenant_id", "=", tenantId).where("rev", "=", next).where("updated_at", "=", at),
+    ),
+  ]);
+  if (changed === 0) {
     const now = await ctx.db.selectFrom(T).select("rev").where("tenant_id", "=", tenantId).executeTakeFirst();
     return now ? { ok: false, reason: "conflict", currentRev: num(now.rev) } : { ok: false, reason: "not_found" };
   }
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.booking_settings.update", targetType: "pms_booking_settings", targetId: tenantId, detail: { ...detail, rev: expectedRev + 1 } });
   return { ok: true, rev: expectedRev + 1, updatedAt: at };
 }

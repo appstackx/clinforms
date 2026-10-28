@@ -4,6 +4,8 @@
 -- pms_intake_responses_sealed - the same words D1 reports). Kept in step with
 -- db/migrations/sqlite/0152_portal_intake.sql (db/parity.test.ts). RLS on, no policies, Data API roles revoked.
 -- Idempotent.
+-- Outcome questionnaires (kind outcome, measure set) have no template; their score lands in
+-- pms_outcome_measures (outcome_id). A copy sent for an appointment points at pms_appointments.
 
 create table if not exists public.pms_intake_templates (
   tenant_id text not null,
@@ -11,7 +13,7 @@ create table if not exists public.pms_intake_templates (
   rev integer not null default 1 check (rev > 0),
   version integer not null default 1 check (version > 0),
   name text not null check (length(name) between 1 and 120),
-  kind text not null check (kind in ('intake', 'questionnaire', 'consent')),
+  kind text not null check (kind in ('intake', 'questionnaire', 'consent', 'outcome')),
   description text,
   status text not null default 'active' check (status in ('draft', 'active', 'archived')),
   send_when text not null default 'manual' check (send_when in ('manual', 'new_patient', 'every_booking')),
@@ -30,12 +32,15 @@ create table if not exists public.pms_intake_responses (
   tenant_id text not null,
   id text not null,
   rev integer not null default 1 check (rev > 0),
-  template_id text not null,
+  template_id text,
   template_version integer not null check (template_version > 0),
   name text not null,
-  kind text not null check (kind in ('intake', 'questionnaire', 'consent')),
+  kind text not null check (kind in ('intake', 'questionnaire', 'consent', 'outcome')),
   patient_id text not null,
-  booking_id text,
+  appointment_id text,
+  measure text check (measure is null or measure in ('ndi', 'odi', 'nprs', 'psfs', 'quickdash')),
+  case_id text,
+  outcome_id text,
   status text not null default 'requested' check (status in ('requested', 'submitted', 'cancelled')),
   form_json text not null,
   requires_signature integer not null default 0 check (requires_signature in (0, 1)),
@@ -59,13 +64,17 @@ create table if not exists public.pms_intake_responses (
   primary key (tenant_id, id),
   foreign key (tenant_id, template_id) references public.pms_intake_templates (tenant_id, id),
   foreign key (tenant_id, patient_id) references public.pms_patients (tenant_id, id),
-  foreign key (tenant_id, booking_id) references public.pms_online_bookings (tenant_id, id),
+  foreign key (tenant_id, appointment_id) references public.pms_appointments (tenant_id, id),
+  foreign key (tenant_id, patient_id, case_id) references public.pms_cases (tenant_id, patient_id, id),
+  foreign key (tenant_id, outcome_id) references public.pms_outcome_measures (tenant_id, id),
+  check ((kind = 'outcome') = (measure is not null)),
+  check (kind = 'outcome' or template_id is not null),
   check (status <> 'submitted' or (answers_enc is not null and submitted_at is not null and content_sha256 is not null)),
   check (requires_signature = 0 or status <> 'submitted' or (signature_name_enc is not null and signed_at is not null))
 );
 create index if not exists pms_intake_responses_patient on public.pms_intake_responses (tenant_id, patient_id, requested_at);
 create index if not exists pms_intake_responses_status on public.pms_intake_responses (tenant_id, status, submitted_at);
-create index if not exists pms_intake_responses_booking on public.pms_intake_responses (tenant_id, booking_id);
+create index if not exists pms_intake_responses_appointment on public.pms_intake_responses (tenant_id, appointment_id);
 
 create or replace function public.pms_intake_responses_sealed() returns trigger
   language plpgsql

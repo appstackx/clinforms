@@ -1,14 +1,13 @@
 -- ClinForms 0150 (SQLite / Cloudflare D1): clinic system, portal module part 1 - online booking: the clinic's
--- booking settings, the weekly hours each practitioner offers online at a site, and the appointments booked
--- online (booking page or patient portal).
+-- booking settings, which sites take online bookings (with the site's map position for "distance from you",
+-- worked out in the patient's browser only) and a log of the appointments booked online.
 -- Kept in step with supabase/migrations/20261024000150_portal_booking.sql (db/parity.test.ts).
--- Composite (tenant_id, id) keys and foreign keys that include tenant_id. Times are ISO-8601 UTC text, calendar
--- dates TEXT YYYY-MM-DD, booleans 0/1. Online bookings are never deleted by the app (cancelled instead).
--- No double booking: a booked row may not overlap another booked row of the same practitioner (start to the
--- end of its buffer). The triggers below refuse it with a CHECK-constraint style message so every dialect and
--- the data gateway report it the same way. A move to another time (rebooked_from_id) is accepted only when the
--- earlier booking was cancelled as "rebooked" in the same write, and a booking can be moved only once.
--- Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
+-- Composite (tenant_id, id) keys and foreign keys that include tenant_id. Times are ISO-8601 UTC text, booleans 0/1.
+-- ONE APPOINTMENT STORE: an online booking IS a diary appointment (pms_appointments, source online) written by the
+-- diary's own repository, so the diary's clash rule and triggers cover it. pms_online_bookings only adds what the
+-- diary does not hold: the reference the patient sees, how the patient record was found (staff only) and the hash
+-- of the "manage this booking" link (the secret itself is never stored). One row per appointment.
+-- Never deleted by the app. Idempotent. No BEGIN/COMMIT. Keep semicolons out of comments.
 
 CREATE TABLE IF NOT EXISTS pms_booking_settings (
   tenant_id TEXT NOT NULL PRIMARY KEY,
@@ -30,25 +29,20 @@ CREATE TABLE IF NOT EXISTS pms_booking_settings (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS pms_booking_hours (
+CREATE TABLE IF NOT EXISTS pms_booking_sites (
   tenant_id TEXT NOT NULL,
-  id TEXT NOT NULL,
-  practitioner_id TEXT NOT NULL,
   site_id TEXT NOT NULL,
-  weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
-  start_minute INTEGER NOT NULL CHECK (start_minute BETWEEN 0 AND 1435),
-  end_minute INTEGER NOT NULL CHECK (end_minute BETWEEN 5 AND 1440),
-  valid_from TEXT,
-  valid_to TEXT,
+  rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
+  online INTEGER NOT NULL DEFAULT 1 CHECK (online IN (0, 1)),
+  lat_e6 INTEGER CHECK (lat_e6 IS NULL OR lat_e6 BETWEEN -90000000 AND 90000000),
+  lng_e6 INTEGER CHECK (lng_e6 IS NULL OR lng_e6 BETWEEN -180000000 AND 180000000),
+  updated_by TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (tenant_id, id),
-  FOREIGN KEY (tenant_id, practitioner_id) REFERENCES pms_practitioners (tenant_id, id),
+  PRIMARY KEY (tenant_id, site_id),
   FOREIGN KEY (tenant_id, site_id) REFERENCES pms_sites (tenant_id, id),
-  CHECK (end_minute > start_minute)
+  CHECK ((lat_e6 IS NULL) = (lng_e6 IS NULL))
 );
-CREATE INDEX IF NOT EXISTS pms_booking_hours_practitioner ON pms_booking_hours (tenant_id, practitioner_id, weekday);
-CREATE INDEX IF NOT EXISTS pms_booking_hours_site ON pms_booking_hours (tenant_id, site_id, weekday);
 
 CREATE TABLE IF NOT EXISTS pms_online_bookings (
   tenant_id TEXT NOT NULL,
@@ -56,22 +50,10 @@ CREATE TABLE IF NOT EXISTS pms_online_bookings (
   rev INTEGER NOT NULL DEFAULT 1 CHECK (rev > 0),
   reference TEXT NOT NULL,
   patient_id TEXT NOT NULL,
-  site_id TEXT NOT NULL,
-  practitioner_id TEXT NOT NULL,
-  service_id TEXT NOT NULL,
-  starts_at TEXT NOT NULL,
-  ends_at TEXT NOT NULL,
-  blocks_until TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'booked' CHECK (status IN ('booked', 'cancelled')),
-  channel TEXT NOT NULL CHECK (channel IN ('booking_page', 'portal', 'clinic')),
+  appointment_id TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('booking_page', 'portal')),
   patient_match TEXT NOT NULL CHECK (patient_match IN ('new', 'existing', 'portal')),
-  cancelled_by TEXT CHECK (cancelled_by IS NULL OR cancelled_by IN ('patient', 'clinic')),
-  cancel_reason TEXT CHECK (cancel_reason IS NULL OR cancel_reason IN ('patient_request', 'rebooked', 'clinic', 'other')),
-  cancelled_at TEXT,
-  late_cancellation INTEGER NOT NULL DEFAULT 0 CHECK (late_cancellation IN (0, 1)),
-  rebooked_from_id TEXT,
-  appointment_id TEXT,
-  manage_token_hash TEXT,
+  manage_token_hash TEXT CHECK (manage_token_hash IS NULL OR length(manage_token_hash) = 64),
   manage_expires_at TEXT,
   reviewed_at TEXT,
   reviewed_by TEXT,
@@ -79,48 +61,10 @@ CREATE TABLE IF NOT EXISTS pms_online_bookings (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
   FOREIGN KEY (tenant_id, patient_id) REFERENCES pms_patients (tenant_id, id),
-  FOREIGN KEY (tenant_id, site_id) REFERENCES pms_sites (tenant_id, id),
-  FOREIGN KEY (tenant_id, practitioner_id) REFERENCES pms_practitioners (tenant_id, id),
-  FOREIGN KEY (tenant_id, service_id) REFERENCES pms_services (tenant_id, id),
-  FOREIGN KEY (tenant_id, rebooked_from_id) REFERENCES pms_online_bookings (tenant_id, id),
-  CHECK (ends_at > starts_at AND blocks_until >= ends_at)
+  FOREIGN KEY (tenant_id, appointment_id) REFERENCES pms_appointments (tenant_id, id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS pms_online_bookings_reference ON pms_online_bookings (tenant_id, reference);
+CREATE UNIQUE INDEX IF NOT EXISTS pms_online_bookings_appointment ON pms_online_bookings (tenant_id, appointment_id);
 CREATE UNIQUE INDEX IF NOT EXISTS pms_online_bookings_manage_token ON pms_online_bookings (tenant_id, manage_token_hash);
-CREATE INDEX IF NOT EXISTS pms_online_bookings_practitioner ON pms_online_bookings (tenant_id, practitioner_id, starts_at);
-CREATE INDEX IF NOT EXISTS pms_online_bookings_patient ON pms_online_bookings (tenant_id, patient_id, starts_at);
+CREATE INDEX IF NOT EXISTS pms_online_bookings_patient ON pms_online_bookings (tenant_id, patient_id, created_at);
 CREATE INDEX IF NOT EXISTS pms_online_bookings_created ON pms_online_bookings (tenant_id, created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS pms_online_bookings_rebooked_from ON pms_online_bookings (tenant_id, rebooked_from_id);
-
-CREATE TRIGGER IF NOT EXISTS pms_online_bookings_no_overlap_insert BEFORE INSERT ON pms_online_bookings
-WHEN NEW.status = 'booked'
-BEGIN
-  SELECT RAISE(ABORT, 'CHECK constraint failed: pms_online_bookings_overlap')
-  WHERE EXISTS (
-    SELECT 1 FROM pms_online_bookings b
-    WHERE b.tenant_id = NEW.tenant_id AND b.practitioner_id = NEW.practitioner_id AND b.status = 'booked'
-      AND b.id <> NEW.id AND b.starts_at < NEW.blocks_until AND NEW.starts_at < b.blocks_until
-  );
-END;
-
-CREATE TRIGGER IF NOT EXISTS pms_online_bookings_no_overlap_update BEFORE UPDATE OF status, starts_at, blocks_until, practitioner_id ON pms_online_bookings
-WHEN NEW.status = 'booked'
-BEGIN
-  SELECT RAISE(ABORT, 'CHECK constraint failed: pms_online_bookings_overlap')
-  WHERE EXISTS (
-    SELECT 1 FROM pms_online_bookings b
-    WHERE b.tenant_id = NEW.tenant_id AND b.practitioner_id = NEW.practitioner_id AND b.status = 'booked'
-      AND b.id <> NEW.id AND b.starts_at < NEW.blocks_until AND NEW.starts_at < b.blocks_until
-  );
-END;
-
-CREATE TRIGGER IF NOT EXISTS pms_online_bookings_rebook_insert BEFORE INSERT ON pms_online_bookings
-WHEN NEW.rebooked_from_id IS NOT NULL
-BEGIN
-  SELECT RAISE(ABORT, 'CHECK constraint failed: pms_online_bookings_rebook')
-  WHERE NOT EXISTS (
-    SELECT 1 FROM pms_online_bookings b
-    WHERE b.tenant_id = NEW.tenant_id AND b.id = NEW.rebooked_from_id AND b.status = 'cancelled' AND b.cancel_reason = 'rebooked'
-      AND b.patient_id = NEW.patient_id
-  );
-END;

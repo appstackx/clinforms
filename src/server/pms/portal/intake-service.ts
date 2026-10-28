@@ -14,7 +14,11 @@ import type { PmsActor } from "../../../modules/pms/core/types";
 import type { IntakeResponse } from "../../../modules/pms/portal/types";
 import type { RepoContext } from "../../repos/context";
 import { getPatient, updatePatient } from "../../repos/pms/patients";
-import { getIntakeResponse, markResponseApplied, submitIntakeResponse, type SubmitResult } from "../../repos/pms/portal/intake";
+import { getIntakeResponse, markResponseApplied, setResponseOutcome, submitIntakeResponse, type SubmitResult } from "../../repos/pms/portal/intake";
+import { recordOutcome } from "../../repos/pms/records/outcomes";
+import { outcomeAnswersFrom } from "../../../modules/pms/portal/outcome-forms";
+import { ukToday } from "../../../modules/pms/core/text";
+import { logAuthEvent } from "../../email/log";
 
 /** A form post → raw answers for checkAnswers (lists for "any choices", "on" for ticks). */
 export function answersFromForm(form: FormData, def: FormDefinition): Record<string, unknown> {
@@ -54,9 +58,30 @@ export function consentUpdates(response: Pick<IntakeResponse, "form" | "answers"
   return recordUpdates(response.form, response.answers).filter((u) => u.field === "consentTreatment" || u.field === "consentShareGp");
 }
 
-export type PatientSubmitOutcome = SubmitResult & { consentRecorded?: boolean };
+export type PatientSubmitOutcome = SubmitResult & { consentRecorded?: boolean; outcomeId?: string | null };
 
-/** Completes a copy; a verified, signed consent form also records the consent on the patient's record. */
+/**
+ * An outcome questionnaire the patient completed: its answers become the records module's outcome row (scored by
+ * records – the same arithmetic as a clinician's entry), linked back to the copy. Never throws.
+ */
+async function scoreOutcomeResponse(ctx: RepoContext, tenantId: string, response: IntakeResponse, actor: PmsActor): Promise<string | null> {
+  if (response.kind !== "outcome" || !response.measure || !response.answers) return null;
+  try {
+    const answers = outcomeAnswersFrom(response.measure, response.form, response.answers);
+    const takenOn = ukToday(ctx.now ? ctx.now() : new Date());
+    const outcome = await recordOutcome(ctx, tenantId, { patientId: response.patientId, caseId: response.caseId, measure: response.measure, takenOn, answers }, actor);
+    await setResponseOutcome(ctx, tenantId, response.id, outcome.id, actor);
+    return outcome.id;
+  } catch (err) {
+    logAuthEvent("pms.portal.outcome_score_failed", { error: err instanceof Error ? err.name : "error" });
+    return null;
+  }
+}
+
+/**
+ * Completes a copy; a verified, signed consent form also records the consent on the patient's record; an outcome
+ * questionnaire lands as a score in the record's Outcomes.
+ */
 export async function submitForm(
   ctx: RepoContext,
   tenantId: string,
@@ -66,7 +91,12 @@ export async function submitForm(
   actor: PmsActor,
 ): Promise<PatientSubmitOutcome> {
   const result = await submitIntakeResponse(ctx, tenantId, responseId, expectedRev, input, actor);
-  if (!result.ok || input.trust !== "verified") return result;
+  if (!result.ok) return result;
+  if (result.response.kind === "outcome") {
+    const outcomeId = await scoreOutcomeResponse(ctx, tenantId, result.response, actor);
+    return { ...result, outcomeId };
+  }
+  if (input.trust !== "verified") return result;
   const updates = consentUpdates(result.response);
   if (updates.length === 0) return result;
   const done = await patchPatient(ctx, tenantId, result.response.patientId, patchFrom(updates), actor);

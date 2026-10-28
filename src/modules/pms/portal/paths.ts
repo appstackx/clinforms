@@ -16,7 +16,8 @@ export function clinicPublicPaths(tenantId: string) {
     portal: `${root}/portal`,
     signIn: `${root}/portal/sign-in`,
     signInLink: (token: string) => `${root}/portal/link/${encodeURIComponent(token)}`,
-    portalBooking: (bookingId: string) => `${root}/portal/appointments/${encodeURIComponent(bookingId)}`,
+    portalBook: `${root}/portal/book`,
+    portalAppointment: (appointmentId: string) => `${root}/portal/appointments/${encodeURIComponent(appointmentId)}`,
     portalForm: (responseId: string) => `${root}/portal/forms/${encodeURIComponent(responseId)}`,
     portalDocument: (shareId: string) => `${root}/portal/documents/${encodeURIComponent(shareId)}`,
     manage: (token: string) => `${root}/booking/${encodeURIComponent(token)}`,
@@ -25,14 +26,11 @@ export function clinicPublicPaths(tenantId: string) {
 }
 
 export const STAFF_PORTAL_PATHS = {
+  /** Set-up → Online booking (settings, sites, what is offered) and the latest online bookings. */
   onlineBooking: `${CLINIC_BASE_PATH}/online-booking`,
-  settings: `${CLINIC_BASE_PATH}/online-booking/settings`,
-  hours: `${CLINIC_BASE_PATH}/online-booking/hours`,
-  outbox: `${CLINIC_BASE_PATH}/online-booking/messages`,
-  outboxMessage: (id: string) => `${CLINIC_BASE_PATH}/online-booking/messages/${encodeURIComponent(id)}`,
+  /** Set-up → Intake forms (list and builder). */
   intake: `${CLINIC_BASE_PATH}/intake`,
   intakeForm: (id: string) => `${CLINIC_BASE_PATH}/intake/${encodeURIComponent(id)}`,
-  intakeNew: `${CLINIC_BASE_PATH}/intake/new`,
   patientForms: (patientId: string) => `${CLINIC_BASE_PATH}/patients/${encodeURIComponent(patientId)}/forms`,
   patientResponse: (patientId: string, responseId: string) => `${CLINIC_BASE_PATH}/patients/${encodeURIComponent(patientId)}/forms/${encodeURIComponent(responseId)}`,
 } as const;

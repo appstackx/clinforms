@@ -2,10 +2,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { canonicalJson, checkAnswers, consentComplete, definitionProblems, recordUpdates, signatureMatchesPatient, signatureNameProblem, visibleAnswers, answerText, type FormDefinition } from "./forms";
-import { bookingConfirmedMessage, bookingCancelledMessage, signInLinkMessage } from "./messages";
-import { BOOKING_REFERENCE_PATTERN, bookingReference, changeRefusalMessage, isLateCancellation, manageLinkExpiry, patientMayChange, sessionUsable } from "./policy";
-import { BookingHoursInputSchema, BookingSettingsInputSchema, FormDefinitionSchema, IntakeTemplateInputSchema, publicBookingSchema, portalSignInSchema } from "./schemas";
-import { clampStartDate, computeSlots, hoursClash, pickSlot, slotsByDay, type HoursRule } from "./slots";
+import { BOOKING_REFERENCE_PATTERN, bookingReference, changeRefusalMessage, isLateCancellation, manageLinkExpiry, patientChangeRights, sessionUsable } from "./policy";
+import { BookingSettingsInputSchema, BookingSiteInputSchema, FormDefinitionSchema, IntakeTemplateInputSchema, PortalSignInSchema, publicBookingSchema } from "./schemas";
+import { outcomeAnswersFrom, outcomeFormProblem, outcomeQuestionnaire } from "./outcome-forms";
+import { MEASURES, scoreOutcome } from "../records/outcomes";
+import { formatMiles, milesBetween } from "./distance";
 import { STARTER_FORMS } from "./starters";
 import { addDays, formatDateLong, formatUkDateTime, formatUkTime, hhmmToMinutes, londonParts, londonToUtcMs, minutesToHhmm, mondayOf, weekdayOf } from "./time";
 
@@ -39,85 +40,17 @@ describe("UK time", () => {
   });
 });
 
-const MON = 1;
-const rule = (over: Partial<HoursRule> = {}): HoursRule => ({ practitionerId: "prac_a", siteId: "site_1", weekday: MON, startMinute: 9 * 60, endMinute: 11 * 60, validFrom: null, validTo: null, ...over });
-const base = {
-  siteId: "site_1",
-  practitionerIds: ["prac_a", "prac_b"],
-  durationMinutes: 30,
-  bufferMinutes: 0,
-  stepMinutes: 30,
-  fromDate: "2026-11-02",
-  days: 7,
-  nowMs: Date.parse("2026-10-26T08:00:00.000Z"),
-  minNoticeMinutes: 24 * 60,
-  maxDaysAhead: 42,
-  busy: [],
-};
-
-describe("slot engine", () => {
-  it("steps through each hours row and keeps the appointment inside it", () => {
-    const slots = computeSlots({ ...base, rules: [rule()] });
-    assert.deepEqual(slots.map((s) => s.startsAt), ["2026-11-02T09:00:00.000Z", "2026-11-02T09:30:00.000Z", "2026-11-02T10:00:00.000Z", "2026-11-02T10:30:00.000Z"]);
-    assert.equal(slots[0].endsAt, "2026-11-02T09:30:00.000Z");
-    const long = computeSlots({ ...base, rules: [rule()], durationMinutes: 45, stepMinutes: 15 });
-    assert.equal(long[long.length - 1].startsAt, "2026-11-02T10:15:00.000Z", "10:15 + 45 min ends at 11:00");
-  });
-
-  it("busy time (with its buffer) removes slots; the buffer of a new slot must not hit the next appointment", () => {
-    const busy = [{ practitionerId: "prac_a", startMs: Date.parse("2026-11-02T10:00:00.000Z"), endMs: Date.parse("2026-11-02T10:40:00.000Z") }];
-    assert.deepEqual(computeSlots({ ...base, rules: [rule()], busy }).map((s) => s.minute), [540, 570]);
-    assert.deepEqual(computeSlots({ ...base, rules: [rule()], busy, bufferMinutes: 10 }).map((s) => s.minute), [540], "09:30 + 30 + 10 runs into 10:00");
-  });
-
-  it("minimum notice, the horizon, date ranges, other sites and clock changes", () => {
-    const soon = computeSlots({ ...base, rules: [rule()], fromDate: "2026-10-26", days: 1, minNoticeMinutes: 61 });
-    assert.deepEqual(soon.map((s) => s.minute), [570, 600, 630], "09:00 is within 61 minutes' notice (now 08:00 GMT)");
-    assert.equal(computeSlots({ ...base, rules: [rule()], maxDaysAhead: 3 }).length, 0, "2 Nov is 7 days away");
-    assert.equal(computeSlots({ ...base, rules: [rule({ validFrom: "2026-11-03" })] }).length, 0);
-    assert.equal(computeSlots({ ...base, rules: [rule({ siteId: "site_2" })] }).length, 0);
-    assert.equal(computeSlots({ ...base, rules: [rule()], practitionerIds: ["prac_b"] }).length, 0, "not a candidate");
-    const forward = computeSlots({ ...base, rules: [rule({ weekday: 7, startMinute: 0, endMinute: 180 })], fromDate: "2026-03-29", days: 1, nowMs: Date.parse("2026-03-01T00:00:00Z"), stepMinutes: 30 });
-    assert.ok(!forward.some((s) => s.minute === 60 || s.minute === 90), "01:00–02:00 does not exist on 29 March");
-  });
-
-  it("any practitioner: earliest first, then the clinic's order; one time per day for display; picking a slot", () => {
-    const slots = computeSlots({ ...base, rules: [rule(), rule({ practitionerId: "prac_b" })] });
-    assert.equal(slots.length, 8);
-    assert.deepEqual(slots.slice(0, 2).map((s) => s.practitionerId), ["prac_a", "prac_b"]);
-    const days = slotsByDay(slots, { uniqueTimes: true });
-    assert.equal(days.length, 1);
-    assert.equal(days[0].slots.length, 4);
-    assert.equal(pickSlot(slots, "2026-11-02T09:00:00.000Z", "any")?.practitionerId, "prac_a");
-    assert.equal(pickSlot(slots, "2026-11-02T09:00:00.000Z", "prac_b")?.practitionerId, "prac_b");
-    assert.equal(pickSlot(slots, "2026-11-02T09:05:00.000Z", "any"), null, "not a slot");
-  });
-
-  it("the diary's working windows restrict the online hours", () => {
-    const working = [{ practitionerId: "prac_a", startMs: Date.parse("2026-11-02T09:30:00.000Z"), endMs: Date.parse("2026-11-02T10:30:00.000Z") }];
-    assert.deepEqual(computeSlots({ ...base, rules: [rule()], working }).map((s) => s.minute), [570, 600]);
-  });
-
-  it("start dates and clashing hours", () => {
-    assert.equal(clampStartDate("2026-01-01", "2026-10-26", 42), "2026-10-26");
-    assert.equal(clampStartDate("2027-06-01", "2026-10-26", 42), "2026-12-07");
-    assert.equal(clampStartDate("nonsense", "2026-10-26", 42), "2026-10-26");
-    assert.equal(hoursClash(rule(), rule({ startMinute: 600, endMinute: 720 })), true);
-    assert.equal(hoursClash(rule(), rule({ startMinute: 660, endMinute: 720 })), false, "back to back");
-    assert.equal(hoursClash(rule({ validTo: "2026-11-30" }), rule({ validFrom: "2026-12-01" })), false);
-    assert.equal(hoursClash(rule(), rule({ practitionerId: "prac_b" })), false);
-  });
-});
-
 describe("booking policy", () => {
   const policy = { cancelNoticeHours: 24, patientCancel: true };
   const now = Date.parse("2026-10-26T09:00:00.000Z");
-  it("patients may change a booking until the notice period", () => {
-    assert.deepEqual(patientMayChange(policy, { status: "booked", startsAt: "2026-10-28T09:00:00.000Z" }, now), { ok: true });
-    assert.deepEqual(patientMayChange(policy, { status: "booked", startsAt: "2026-10-27T08:00:00.000Z" }, now), { ok: false, reason: "too_late" });
-    assert.deepEqual(patientMayChange(policy, { status: "booked", startsAt: "2026-10-26T08:00:00.000Z" }, now), { ok: false, reason: "started" });
-    assert.deepEqual(patientMayChange(policy, { status: "cancelled", startsAt: "2026-10-28T09:00:00.000Z" }, now), { ok: false, reason: "not_booked" });
-    assert.deepEqual(patientMayChange({ ...policy, patientCancel: false }, { status: "booked", startsAt: "2026-10-28T09:00:00.000Z" }, now), { ok: false, reason: "not_allowed" });
+  it("cancel any time before the start (late inside the notice period); move only outside it", () => {
+    const at = (startsAt: string, status = "booked") => patientChangeRights(policy, { status, startsAt }, now);
+    assert.deepEqual(at("2026-10-28T09:00:00.000Z"), { cancel: { ok: true, late: false }, move: { ok: true }, freeUntil: "2026-10-27T09:00:00.000Z" });
+    assert.deepEqual(at("2026-10-27T08:00:00.000Z"), { cancel: { ok: true, late: true }, move: { ok: false, reason: "too_late" }, freeUntil: "2026-10-26T08:00:00.000Z" });
+    assert.equal(at("2026-10-26T08:00:00.000Z").cancel.ok, false, "started");
+    assert.deepEqual(at("2026-10-28T09:00:00.000Z", "cancelled").cancel, { ok: false, reason: "not_booked" });
+    assert.deepEqual(at("2026-10-28T09:00:00.000Z", "arrived").move, { ok: false, reason: "not_booked" });
+    assert.deepEqual(patientChangeRights({ ...policy, patientCancel: false }, { status: "booked", startsAt: "2026-10-28T09:00:00.000Z" }, now).cancel, { ok: false, reason: "not_allowed" });
     assert.match(changeRefusalMessage("too_late", "01632 960101"), /call the clinic on 01632 960101/);
     assert.equal(isLateCancellation(policy, "2026-10-27T08:00:00.000Z", now), true);
     assert.equal(isLateCancellation(policy, "2026-10-28T09:00:00.000Z", now), false);
@@ -234,41 +167,71 @@ describe("inputs", () => {
       dateOfBirth: "1990-05-04",
       email: "Ellie.Sample@Example.com",
       phoneMobile: "07700 900205",
-      agree: true,
+      paying: "insured",
     });
     assert.ok(ok.success);
     if (ok.success) {
       assert.equal(ok.data.email, "ellie.sample@example.com");
       assert.equal(ok.data.firstName, "Ellie");
     }
-    const bad = schema.safeParse({ siteId: "site_1", serviceId: "svc_1", practitionerId: "any", startsAt: "2026-11-02 09:00", firstName: "", lastName: "S", dateOfBirth: "2030-01-01", email: "nope", phoneMobile: "", agree: false });
+    const bad = schema.safeParse({ siteId: "site_1", serviceId: "svc_1", practitionerId: "any", startsAt: "2026-11-02 09:00", firstName: "", lastName: "S", dateOfBirth: "2030-01-01", email: "nope", phoneMobile: "", paying: "barter" });
     assert.equal(bad.success, false);
     if (!bad.success) {
       const paths = new Set(bad.error.issues.map((i) => i.path.join(".")));
-      for (const p of ["startsAt", "firstName", "dateOfBirth", "email", "phoneMobile", "agree"]) assert.ok(paths.has(p), p);
+      for (const p of ["startsAt", "firstName", "dateOfBirth", "email", "phoneMobile", "paying"]) assert.ok(paths.has(p), p);
     }
-    assert.equal(portalSignInSchema("2026-10-26").safeParse({ email: "megan.hart@example.com", dateOfBirth: "1991-11-22" }).success, true);
+    assert.equal(PortalSignInSchema.safeParse({ email: "megan.hart@example.com" }).success, true, "the email address only (design)");
+    assert.equal(PortalSignInSchema.safeParse({ email: "megan" }).success, false);
   });
 
-  it("settings and hours", () => {
+  it("settings and sites", () => {
     assert.equal(BookingSettingsInputSchema.safeParse({ slotStepMinutes: 7 }).success, false);
     assert.equal(BookingSettingsInputSchema.safeParse({ minNoticeHours: 2, maxDaysAhead: 60, slotStepMinutes: 15 }).success, true);
-    assert.equal(BookingHoursInputSchema.safeParse({ practitionerId: "prac_1", siteId: "site_1", weekday: 1, startMinute: 600, endMinute: 540 }).success, false);
-    assert.equal(BookingHoursInputSchema.safeParse({ practitionerId: "prac_1", siteId: "site_1", weekday: 8, startMinute: 540, endMinute: 600 }).success, false);
-    assert.equal(BookingHoursInputSchema.safeParse({ practitionerId: "prac_1", siteId: "site_1", weekday: 1, startMinute: 540, endMinute: 1020 }).success, true);
+    assert.equal(BookingSiteInputSchema.safeParse({ siteId: "site_01J", online: true, latitude: 52.04, longitude: -0.76 }).success, true);
+    assert.equal(BookingSiteInputSchema.safeParse({ siteId: "site_01J", online: true, latitude: 52.04 }).success, false, "both or neither");
+    assert.equal(BookingSiteInputSchema.safeParse({ siteId: "site_01J", online: true, latitude: 12, longitude: 0 }).success, false, "in the UK");
     assert.equal(IntakeTemplateInputSchema.safeParse({ name: "Consent", kind: "consent", setsTreatmentConsent: true, requiresSignature: false, definition: FORM }).success, false, "consent must be signed");
   });
 });
 
-describe("messages carry no clinical detail", () => {
-  it("booking messages name the time, place and practitioner only", () => {
-    const visit = { startsAt: "2026-11-02T09:00:00.000Z", siteName: "Bletchley (fictional)", practitionerName: "James Okafor", reference: "K7M3-Q9TX" };
-    const msg = bookingConfirmedMessage({ clinicName: "Riverside Physiotherapy (fictional)", firstName: "Ellie", visit, manageUrl: "https://x.example/m", cancellationPolicy: "Please give 24 hours' notice.", formsToComplete: 2 });
-    assert.match(msg.body, /Monday 2 November 2026 at 09:00 with James Okafor at Bletchley/);
-    assert.match(msg.body, /K7M3-Q9TX/);
-    assert.match(msg.body, /complete the 2 forms/);
-    assert.ok(!/assessment|massage|pain|injury/i.test(msg.body + msg.subject));
-    assert.match(bookingCancelledMessage({ clinicName: "C (fictional)", firstName: "E", visit, byClinic: true, contactPhone: null }).body, /The clinic has cancelled/);
-    assert.match(signInLinkMessage({ clinicName: "C (fictional)", firstName: "E", url: "https://x.example/l" }).body, /20 minutes/);
+describe("outcome questionnaires in the portal", () => {
+  it("forms from the records measures; answers map back to the records scores", () => {
+    for (const m of ["ndi", "odi", "nprs", "quickdash"] as const) {
+      const form = outcomeQuestionnaire(m);
+      assert.equal(form.fields.length, MEASURES[m].items.length);
+      assert.ok(form.fields.every((f) => f.type === "choice" && f.sensitive), "clinical");
+      assert.deepEqual(FormDefinitionSchema.safeParse(form).success, true, m);
+    }
+    const odi = outcomeQuestionnaire("odi");
+    assert.equal(odi.fields.find((f) => f.id === "s8")?.required, false, "the sex-life section is optional");
+    const answers = Object.fromEntries(odi.fields.filter((f) => f.required).map((f) => [f.id, f.options![2]]));
+    const mapped = outcomeAnswersFrom("odi", odi, answers);
+    assert.equal(mapped.items.s8, null);
+    const scored = scoreOutcome("odi", mapped);
+    assert.ok(scored.ok && scored.score === 40, JSON.stringify(scored));
+    const qd = outcomeQuestionnaire("quickdash");
+    const qdAnswers = Object.fromEntries(qd.fields.map((f) => [f.id, f.options![0]]));
+    const qdScore = scoreOutcome("quickdash", outcomeAnswersFrom("quickdash", qd, qdAnswers));
+    assert.ok(qdScore.ok && qdScore.score === 0, "1 = no difficulty → 0");
+    const nprs = outcomeQuestionnaire("nprs");
+    assert.equal(nprs.fields[0].options!.length, 11);
+    const n = scoreOutcome("nprs", outcomeAnswersFrom("nprs", nprs, { pain: nprs.fields[0].options![7] }));
+    assert.ok(n.ok && n.score === 7);
+    assert.match(outcomeFormProblem("psfs") ?? "", /record a PSFS in clinic first/);
+    const psfs = outcomeQuestionnaire("psfs", { psfsActivities: [{ key: "a1", name: "Walking the dog" }, { key: "a2", name: "Gardening" }, { key: "a3", name: "Swimming" }] });
+    assert.deepEqual(psfs.fields.map((f) => f.label), ["Walking the dog", "Gardening", "Swimming"]);
+    const p = scoreOutcome("psfs", outcomeAnswersFrom("psfs", psfs, { a1: psfs.fields[0].options![4], a2: psfs.fields[1].options![5], a3: psfs.fields[2].options![6] }));
+    assert.ok(p.ok && p.score === 5);
+  });
+});
+
+describe("distance from the patient (worked out in the browser only)", () => {
+  it("miles between two points, one decimal", () => {
+    // About 0.8 miles across Milton Keynes centre (fictional sites at real coordinates).
+    const d = milesBetween({ latitude: 52.0406, longitude: -0.7594 }, { latitude: 52.0406, longitude: -0.7406 });
+    assert.ok(Math.abs(d - 0.8) < 0.05, String(d));
+    assert.equal(formatMiles(0.04), "0.1 miles");
+    assert.equal(formatMiles(1), "1.0 miles");
+    assert.equal(formatMiles(12.345), "12 miles");
   });
 });
