@@ -14,6 +14,7 @@ import {
   assertText,
   nowIso,
   toInt,
+  type DbContext,
   type RepoContext,
 } from "./context";
 import { MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ROWS, type SaveResult } from "./versioned";
@@ -229,6 +230,22 @@ export async function listReports<P = unknown>(
   if (!withPayload) return (await base.select([...META_COLUMNS]).execute()).map(toMeta);
   const rows = await base.select([...META_COLUMNS, "payload_enc"]).execute();
   return rows.map((row) => ({ ...toMeta(row), payload: decryptPayload<P>(ctx, tenantId, row.id, row.payload_enc) }));
+}
+
+/**
+ * (10/2026) How many of the tenant's stored reports – draft or approved – complete this form: reports.form_id, or
+ * template_id "form:<formId>" (core/forms.ts formTemplateId). Metadata only (no decryption).
+ */
+export async function countReportsUsingForm(ctx: DbContext, tenantId: string, formId: string): Promise<number> {
+  assertTenantId(tenantId);
+  assertId(formId, "Form id");
+  const row = await ctx.db
+    .selectFrom("reports")
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .where("tenant_id", "=", tenantId)
+    .where((eb) => eb.or([eb("form_id", "=", formId), eb("template_id", "=", `form:${formId}`)]))
+    .executeTakeFirst();
+  return row ? toInt(row.n) : 0;
 }
 
 export async function deleteReport(ctx: RepoContext, tenantId: string, id: string): Promise<boolean> {

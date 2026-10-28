@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Remittance allocation</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@keyframes pulse{50%{opacity:.45}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px"><a href="Dashboard.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a><a href="ReferrerForm.dc.html" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a></nav>
+<button type="button" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; font: inherit; font-weight: 500">All my sites (5)</button>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #EDE9FE; color: #5B21B6; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">HW</span><span style="display: flex; flex-direction: column; line-height: 16px"><strong>Helen Ward</strong><span style="font-size: 12px; color: #64748B">Owner</span></span></span>
+</header>
+
+<main style="flex: 1; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 1360px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px"><a href="BillingList.dc.html">Billing</a><span aria-hidden="true">/</span><a href="BillingList.dc.html">Remittances</a><span aria-hidden="true">/</span><span>New</span></nav>
+<h1 style="margin: 0; font-size: 22px; line-height: 30px; font-weight: 600">Allocate an insurer payment</h1>
+
+<section aria-label="Payment received" style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; align-items: end">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="r-ins" style="font-weight: 500">Insurer</label><select id="r-ins" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Bluewell Health (fictional)</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="r-amt" style="font-weight: 500">Amount received</label><input id="r-amt" type="text" value="£520.00" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-variant-numeric: tabular-nums"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="r-ref" style="font-weight: 500">Reference</label><input id="r-ref" type="text" value="BW-RA-7810" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="r-date" style="font-weight: 500">Date received</label><input id="r-date" type="text" value="27/10/2026" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="r-m" style="font-weight: 500">Method</label><select id="r-m" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Bank transfer</option><option>Cheque</option></select></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section aria-labelledby="inv-h" style="flex: 999 1 640px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+<div style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap"><h2 id="inv-h" style="margin: 0; font-size: 15px; font-weight: 600; flex: 1">Open Bluewell invoices (6)</h2><button type="button" onClick="{{matchAll}}" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Match from remittance advice</button></div>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; min-width: 820px">
+<thead><tr style="background: #F8FAFC; text-align: left; font-size: 12px; color: #475569"><th scope="col" style="padding: 8px 16px; width: 44px"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Include</span></th><th scope="col" style="padding: 8px 12px">Invoice</th><th scope="col" style="padding: 8px 12px">Patient</th><th scope="col" style="padding: 8px 12px; text-align: right">Owing</th><th scope="col" style="padding: 8px 12px; text-align: right">Paid now</th><th scope="col" style="padding: 8px 16px">Shortfall</th></tr></thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+<tr style="border-top: 1px solid #E2E8F0; background: {{r.bg}}; vertical-align: middle">
+<td style="padding: 8px 16px"><input type="checkbox" checked="{{r.on}}" onChange="{{r.toggle}}" aria-label="{{r.aria}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970"></td>
+<td style="padding: 8px 12px; font-variant-numeric: tabular-nums"><a href="InvoiceDetail.dc.html" style="font-weight: 600">{{r.no}}</a><div style="font-size: 12px; color: #475569">{{r.date}}</div></td>
+<td style="padding: 8px 12px">{{r.patient}}</td>
+<td style="padding: 8px 12px; text-align: right; font-variant-numeric: tabular-nums">{{r.owing}}</td>
+<td style="padding: 8px 12px; text-align: right"><input type="text" aria-label="{{r.payLbl}}" value="{{r.paid}}" disabled="{{r.off}}" style="width: 96px; height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; text-align: right; font-variant-numeric: tabular-nums; background: {{r.inBg}}"></td>
+<td style="padding: 8px 16px">
+<sc-if value="{{r.short}}" hint-placeholder-val="{{false}}"><div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap"><span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: #FEF3C7; color: #864E0E"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg>Short {{r.shortBy}}</span><select aria-label="{{r.shortLbl}}" value="{{r.action}}" onChange="{{r.setAction}}" style="height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-size: 13px; background: #FFFFFF"><option value="leave">Leave outstanding</option><option value="write">Write off</option><option value="patient">Move to patient</option></select></div><sc-if value="{{r.isWrite}}" hint-placeholder-val="{{false}}"><select aria-label="Write-off reason" style="margin-top: 6px; height: 32px; padding: 0 8px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; font-size: 13px; background: #FFFFFF"><option>Above insurer's agreed rate</option><option>Small balance</option><option>Goodwill</option></select></sc-if></sc-if>
+<sc-if value="{{r.full}}" hint-placeholder-val="{{true}}"><span style="font-size: 13px; color: #166534; display: inline-flex; gap: 4px; align-items: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>Paid in full</span></sc-if>
+<sc-if value="{{r.notIn}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; color: #475569">Not in this payment</span></sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+<aside aria-labelledby="sum-h" style="flex: 1 1 300px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 16px">
+<h2 id="sum-h" style="margin: 0; font-size: 16px; font-weight: 600">Summary</h2>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; font-variant-numeric: tabular-nums">
+<dt style="color: #475569">Received</dt><dd style="margin: 0; text-align: right; font-weight: 600">£520.00</dd>
+<dt style="color: #475569">Allocated to {{nAlloc}} invoices</dt><dd style="margin: 0; text-align: right">£{{allocated}}</dd>
+<dt style="color: #475569">Written off</dt><dd style="margin: 0; text-align: right">£{{written}}</dd>
+<dt style="color: #475569">Moved to patients</dt><dd style="margin: 0; text-align: right">£{{moved}}</dd>
+<dt style="color: #475569; border-top: 1px solid #E2E8F0; padding-top: 8px; font-weight: 600">Unallocated</dt><dd style="margin: 0; text-align: right; border-top: 1px solid #E2E8F0; padding-top: 8px; font-weight: 700; color: {{unFg}}">£{{unalloc}}</dd>
+</dl>
+<div role="status" style="padding: 10px 12px; border-radius: 10px; background: {{noteBg}}; border: 1px solid {{noteBd}}; font-size: 13px">{{note}}</div>
+<sc-if value="{{saved}}" hint-placeholder-val="{{false}}"><div role="status" style="padding: 10px 12px; border-radius: 10px; background: #F0FDF4; border: 1px solid #A7E8BE; font-size: 13px">Saved as remittance RM-00318 at 10:47. {{nAlloc}} invoices updated.</div></sc-if>
+<button type="button" onClick="{{save}}" disabled="{{over}}" style="height: 40px; border-radius: 8px; border: 0; background: {{saveBg}}; color: {{saveFg}}; font: inherit; font-weight: 600; cursor: pointer">Save allocation</button>
+<span style="font-size: 12px; color: #475569">Write-offs need "Refunds and credit notes" permission and are listed in History.</span>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { on: { 0: true, 1: true, 2: true, 3: true, 4: true }, act: { 1: 'write', 4: 'leave' }, saved: false }; }
+  renderVals() {
+    const st = this.state;
+    const R = [['INV-04812', '12/10/2026', 'Noah Bradley', 120, 120], ['INV-04809', '09/10/2026', 'Sarah Quinn', 90, 75], ['INV-04830', '26/10/2026', 'Liam O’Connor', 55, 55], ['INV-04798', '30/09/2026', 'Joseph Allen', 110, 110], ['INV-04790', '28/09/2026', 'Megan Cole', 140, 120], ['INV-04842', '28/10/2026', 'Liam O’Connor', 55, 0]];
+    let alloc = 0, written = 0, moved = 0, n = 0;
+    const f = v => v.toFixed(2);
+    const rows = R.map((r, i) => {
+      const on = !!st.on[i]; const paid = on ? r[4] : 0; const short = on && paid < r[3] && paid > 0; const action = st.act[i] || 'leave';
+      if (on && paid) { alloc += paid; n++; }
+      if (short && action === 'write') written += r[3] - paid;
+      if (short && action === 'patient') moved += r[3] - paid;
+      return { no: r[0], date: r[1], patient: r[2], owing: '£' + f(r[3]), paid: on ? '£' + f(paid) : '', on, off: !on, notIn: !on || paid === 0, short, full: on && paid >= r[3], action, isWrite: action === 'write',
+        shortBy: '£' + f(r[3] - paid), bg: on ? '#FFFFFF' : '#F8FAFC', inBg: on ? '#FFFFFF' : '#F1F5F9', aria: 'Include ' + r[0], payLbl: 'Paid now on ' + r[0], shortLbl: 'What to do with the shortfall on ' + r[0],
+        toggle: () => { const o = Object.assign({}, st.on); o[i] = !o[i]; this.setState({ on: o, saved: false }); },
+        setAction: (e) => { const a = Object.assign({}, st.act); a[i] = e.target.value; this.setState({ act: a, saved: false }); } };
+    });
+    const un = 520 - alloc; const over = un < 0;
+    return {
+      product: 'Clinic system', rows, nAlloc: n, allocated: f(alloc), written: f(written), moved: f(moved), unalloc: f(un), over,
+      unFg: over ? '#BA1C1C' : (un > 0 ? '#864E0E' : '#166534'),
+      note: over ? 'You’ve allocated more than was received. Reduce an amount to continue.' : (un > 0 ? '£' + f(un) + ' will stay on the Bluewell account as credit, ready for the next invoices.' : 'The payment is fully allocated.'),
+      noteBg: over ? '#FEF2F2' : (un > 0 ? '#FFFBEB' : '#F0FDF4'), noteBd: over ? '#FECACA' : (un > 0 ? '#FBD38D' : '#A7E8BE'),
+      saveBg: over ? '#E2E8F0' : '#0B7970', saveFg: over ? '#64748B' : '#FFFFFF', saved: st.saved,
+      save: () => { if (!over) this.setState({ saved: true }); },
+      matchAll: () => this.setState({ on: { 0: true, 1: true, 2: true, 3: true, 4: true }, saved: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

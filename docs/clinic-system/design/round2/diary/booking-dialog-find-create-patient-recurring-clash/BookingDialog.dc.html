@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Booking dialog</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; position: relative">
+<div aria-hidden="true" style="height: 56px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0"></div>
+<div aria-hidden="true" style="display: flex; gap: 16px; padding: 16px 20px">
+<div style="width: 200px; height: 600px; background: #FFFFFF; border-radius: 12px"></div>
+<div style="flex: 1; height: 860px; background: #FFFFFF; border-radius: 16px; background-image: linear-gradient(#E2E8F0 1px, transparent 1px); background-size: 100% 80px"></div>
+</div>
+<div style="position: absolute; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px">
+<div role="dialog" aria-modal="true" aria-labelledby="bk-title" style="background: #FFFFFF; border-radius: 12px; width: 100%; max-width: 860px; box-shadow: 0 24px 64px rgba(15,23,42,.3); display: flex; flex-direction: column; max-height: calc(100vh - 80px)">
+<div style="padding: 16px 20px; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; gap: 12px">
+<h2 id="bk-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; flex: 1">New appointment</h2>
+<span style="font-size: 12px; color: #64748B">Harbour Road</span>
+<a href="DiaryDay.dc.html" aria-label="Close" style="height: 36px; width: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: #0F172A"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></a>
+</div>
+
+<sc-if value="{{booked}}" hint-placeholder-val="{{false}}">
+<div role="status" style="padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px">
+<span style="width: 48px; height: 48px; border-radius: 999px; background: #DCFCE7; color: #166534; display: inline-flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg></span>
+<strong style="font-size: 18px">{{bookedTitle}}</strong>
+<span style="color: #475569; max-width: 460px">{{bookedBody}}</span>
+<div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center">
+<a href="DiaryDay.dc.html" style="height: 40px; padding: 0 16px; border-radius: 8px; background: #0B7970; color: #FFFFFF; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center">Back to diary</a>
+<button type="button" onClick="{{reset}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Book another</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{editing}}" hint-placeholder-val="{{true}}">
+<div style="overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 24px">
+
+<section aria-labelledby="bk-p" style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+<h3 id="bk-p" style="margin: 0; font-size: 14px; font-weight: 600">1. Patient</h3>
+<div role="group" aria-label="Patient mode" style="display: flex; background: #F1F5F9; border-radius: 8px; padding: 3px; gap: 2px">
+<button type="button" aria-pressed="{{findPressed}}" onClick="{{modeFind}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: {{findBg}}; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: #0F172A">Find existing</button>
+<button type="button" aria-pressed="{{newPressed}}" onClick="{{modeNew}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: {{newBg}}; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: #0F172A">Create new</button>
+</div>
+</div>
+<sc-if value="{{isFind}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="bk-search" style="font-weight: 500">Search by name, DOB or phone</label>
+<div style="height: 36px; padding: 0 10px; border: 1px solid #0E958A; box-shadow: 0 0 0 3px rgba(14,149,138,.15); border-radius: 8px; display: flex; align-items: center; gap: 8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3"></path></svg>
+<input id="bk-search" type="search" value="ell" aria-controls="bk-results" style="border: 0; font: inherit; flex: 1; min-width: 0; background: transparent">
+</div>
+<div id="bk-results" role="listbox" aria-label="Matching patients" style="border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden">
+<sc-for list="{{results}}" as="r" hint-placeholder-count="3">
+<button type="button" role="option" aria-selected="{{r.sel}}" onClick="{{r.pick}}" style="width: 100%; border: 0; border-bottom: 1px solid #F1F5F9; background: {{r.bg}}; padding: 8px 12px; font: inherit; text-align: left; display: flex; gap: 10px; align-items: center; cursor: pointer; color: #0F172A">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: #F1F5F9; color: #334155; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none">{{r.init}}</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column"><span style="font-weight: 600">{{r.name}}</span><span style="font-size: 12px; color: #64748B">DOB {{r.dob}} · {{r.phone}}</span></span>
+<span style="font-size: 12px; color: #475569; white-space: nowrap">{{r.last}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{isNew}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="np-f" style="font-weight: 500">First name</label><input id="np-f" type="text" value="Isla" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="np-l" style="font-weight: 500">Last name</label><input id="np-l" type="text" value="Morgan" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="np-d" style="font-weight: 500">Date of birth</label><input id="np-d" type="text" value="02/07/1988" placeholder="DD/MM/YYYY" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="np-m" style="font-weight: 500">Mobile</label><input id="np-m" type="tel" value="07700 900318" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px; grid-column: 1 / -1"><label for="np-e" style="font-weight: 500">Email</label><input id="np-e" type="email" value="isla.morgan@example.com" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<label style="grid-column: 1 / -1; display: flex; gap: 8px; align-items: center"><input type="checkbox" checked="checked" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Patient agrees to appointment reminders by text and email</label>
+<div role="note" style="grid-column: 1 / -1; font-size: 12px; color: #475569; display: flex; gap: 6px; align-items: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1842B4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 16v-4M12 8h.01"></path></svg>No existing patient matches this name and DOB. Address and GP can be added later.</div>
+</div>
+</sc-if>
+
+<h3 style="margin: 8px 0 0; font-size: 14px; font-weight: 600">2. Case and payer</h3>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-case" style="font-weight: 500">Case</label><select id="bk-case" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>New case</option><option>Low back pain (open)</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-pay" style="font-weight: 500">Payer</label><select id="bk-pay" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Self-pay</option><option>Bluewell Health (fictional)</option><option>Shieldcare Insurance (fictional)</option></select></div>
+</div>
+</section>
+
+<section aria-labelledby="bk-w" style="display: flex; flex-direction: column; gap: 12px">
+<h3 id="bk-w" style="margin: 0; font-size: 14px; font-weight: 600">3. Service and time</h3>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px; grid-column: 1 / -1"><label for="bk-svc" style="font-weight: 500">Service</label><select id="bk-svc" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Initial assessment – 45 min – £70.00</option><option>Follow-up – 30 min – £55.00</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-pr" style="font-weight: 500">Practitioner</label><select id="bk-pr" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Priya Shah</option><option>Tom Hughes</option><option>Aisha Rahman</option><option>Dan Murphy</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-rm" style="font-weight: 500">Room</label><select id="bk-rm" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>Room 1</option><option>Room 2</option><option>Gym</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-dt" style="font-weight: 500">Date</label><input id="bk-dt" type="text" value="Tue 27/10/2026" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="bk-tm" style="font-weight: 500">Start time</label><select id="bk-tm" value="{{time}}" onChange="{{setTime}}" aria-describedby="bk-slot" style="height: 36px; padding: 0 10px; border: 1px solid {{timeBd}}; border-radius: 8px; font: inherit; background: #FFFFFF"><option>11:00</option><option>11:45</option><option>13:30</option><option>15:30</option><option>16:00</option></select></div>
+</div>
+<div id="bk-slot" role="{{slotRole}}" style="display: flex; gap: 8px; padding: 10px 12px; border-radius: 10px; background: {{slot.bg}}; border: 1px solid {{slot.bd}}">
+<svg style="flex: none; margin-top: 2px" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{slot.fg}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{slot.icon}}"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 2px"><strong>{{slot.title}}</strong><span style="color: #334155">{{slot.body}}</span>
+<sc-if value="{{slot.clash}}" hint-placeholder-val="{{false}}"><label style="display: flex; gap: 8px; align-items: center; margin-top: 4px"><input type="checkbox" checked="{{override}}" onChange="{{toggleOverride}}" style="width: 16px; height: 16px; margin: 0; accent-color: #BA1C1C">Book anyway (double-booking is logged)</label></sc-if>
+</div>
+</div>
+
+<h3 style="margin: 8px 0 0; font-size: 14px; font-weight: 600">4. Repeat</h3>
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; gap: 16px; flex-wrap: wrap">
+<legend style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Repeat</legend>
+<sc-for list="{{repeatOpts}}" as="o" hint-placeholder-count="3">
+<label style="display: flex; gap: 6px; align-items: center; min-height: 32px"><input type="radio" name="bk-rep" checked="{{o.checked}}" onChange="{{o.pick}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">{{o.label}}</label>
+</sc-for>
+</fieldset>
+<sc-if value="{{repeating}}" hint-placeholder-val="{{true}}">
+<div style="border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden">
+<div style="padding: 8px 12px; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; font-size: 12px; color: #475569"><span>6 occurrences · untick to skip</span><span>{{seriesCount}} will be booked</span></div>
+<sc-for list="{{series}}" as="s" hint-placeholder-count="6">
+<label style="display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid #F1F5F9; min-height: 36px">
+<input type="checkbox" checked="{{s.on}}" onChange="{{s.toggle}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">
+<span style="font-variant-numeric: tabular-nums; width: 120px; text-decoration: {{s.deco}}; color: {{s.dateFg}}">{{s.date}}</span>
+<span style="font-size: 12px; color: {{s.noteFg}}; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap"><sc-if value="{{s.warn}}" hint-placeholder-val="{{false}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"></path></svg></sc-if>{{s.note}}</span>
+</label>
+</sc-for>
+</div>
+</sc-if>
+</section>
+</div>
+
+<div style="padding: 14px 20px; border-top: 1px solid #E2E8F0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+<label style="display: flex; gap: 8px; align-items: center; color: #334155"><input type="checkbox" checked="checked" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Send confirmation text and email</label>
+<div style="margin-left: auto; display: flex; gap: 8px">
+<a href="DiaryDay.dc.html" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; color: #0F172A; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center">Cancel</a>
+<button type="button" onClick="{{book}}" disabled="{{bookDisabled}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: {{bookBg}}; color: {{bookFg}}; font: inherit; font-weight: 600; cursor: pointer">{{bookLabel}}</button>
+</div>
+</div>
+</sc-if>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = { mode: 'find', pick: 0, time: '11:00', override: false, repeat: 'weekly', skips: { 3: true, 4: true }, booked: false };
+  }
+  renderVals() {
+    const st = this.state;
+    const I = {
+      ok: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+      warn: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01'
+    };
+    const people = [
+      { name: 'Margaret Ellis', init: 'ME', dob: '14/03/1961', phone: '07700 900123', last: 'Last seen 27/10/2026' },
+      { name: 'Margaret Ellison', init: 'ME', dob: '30/11/1974', phone: '07700 900877', last: 'Last seen 03/02/2025' },
+      { name: 'Ellie Ward', init: 'EW', dob: '08/08/1999', phone: '07700 900245', last: 'Last seen 26/10/2026' }
+    ];
+    const results = people.map((p, i) => Object.assign({}, p, { sel: st.pick === i ? 'true' : 'false', bg: st.pick === i ? '#F0FDFA' : '#FFFFFF', pick: () => this.setState({ pick: i }) }));
+    const clash = st.time === '11:00';
+    const slot = clash
+      ? { clash: true, bg: '#FEF2F2', bd: '#FECACA', fg: '#BA1C1C', icon: I.warn, title: 'This time clashes', body: 'Priya Shah already has Emily Turner, 11:00–11:45, in Room 1. The next free 45-minute slot is 11:45.' }
+      : { clash: false, bg: '#F0FDF4', bd: '#A7E8BE', fg: '#166534', icon: I.ok, title: 'Slot available', body: 'Priya Shah and Room 1 are free ' + st.time + '–' + (st.time === '11:45' ? '12:30' : st.time === '13:30' ? '14:15' : st.time === '15:30' ? '16:15' : '16:45') + '.' };
+    const dates = ['Tue 27/10/2026', 'Tue 03/11/2026', 'Tue 10/11/2026', 'Tue 17/11/2026', 'Tue 24/11/2026', 'Tue 01/12/2026'];
+    const notes = ['This booking', 'Free', 'Free', 'Clashes with Grace Kim ' + st.time, 'Priya Shah – annual leave', 'Free'];
+    const warnIdx = { 3: true, 4: true };
+    const series = dates.map((date, i) => {
+      const on = !st.skips[i];
+      return { date, on, note: on ? notes[i] : 'Skipped – ' + notes[i].toLowerCase(), warn: !!warnIdx[i], deco: on ? 'none' : 'line-through',
+        dateFg: on ? '#0F172A' : '#64748B', noteFg: warnIdx[i] ? '#864E0E' : '#475569',
+        toggle: () => { if (i === 0) return; const s = Object.assign({}, st.skips); s[i] = !s[i]; this.setState({ skips: s }); } };
+    });
+    const repeating = st.repeat !== 'none';
+    const count = repeating ? series.filter(s => s.on).length : 1;
+    const blocked = clash && !st.override;
+    const who = st.mode === 'new' ? 'Isla Morgan' : people[st.pick].name;
+    return {
+      booked: st.booked, editing: !st.booked,
+      bookedTitle: count > 1 ? count + ' appointments booked' : 'Appointment booked',
+      bookedBody: who + ' with Priya Shah, from Tue 27/10/2026 at ' + st.time + '. A confirmation has been sent.' + (st.mode === 'new' ? ' A new patient record has been created.' : ''),
+      reset: () => this.setState({ booked: false }),
+      isFind: st.mode === 'find', isNew: st.mode === 'new',
+      findPressed: st.mode === 'find' ? 'true' : 'false', newPressed: st.mode === 'new' ? 'true' : 'false',
+      findBg: st.mode === 'find' ? '#FFFFFF' : 'transparent', newBg: st.mode === 'new' ? '#FFFFFF' : 'transparent',
+      modeFind: () => this.setState({ mode: 'find' }), modeNew: () => this.setState({ mode: 'new' }),
+      results, time: st.time, setTime: (e) => this.setState({ time: e.target.value, override: false }),
+      timeBd: clash ? '#BA1C1C' : '#CBD5E1', slot, slotRole: clash ? 'alert' : 'status',
+      override: st.override, toggleOverride: () => this.setState({ override: !st.override }),
+      repeatOpts: [['none', 'Does not repeat'], ['weekly', 'Weekly'], ['fortnightly', 'Fortnightly']].map(([v, label]) => ({ label, checked: st.repeat === v, pick: () => this.setState({ repeat: v }) })),
+      repeating, series, seriesCount: count,
+      bookLabel: blocked ? 'Resolve clash to book' : (count > 1 ? 'Book ' + count + ' appointments' : 'Book appointment'),
+      bookDisabled: blocked, bookBg: blocked ? '#E2E8F0' : '#0B7970', bookFg: blocked ? '#64748B' : '#FFFFFF',
+      book: () => { if (!blocked) this.setState({ booked: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

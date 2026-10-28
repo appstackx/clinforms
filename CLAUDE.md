@@ -184,13 +184,18 @@ npm run medreport:eslint-boundary          # regenerate .eslintrc.json (never ha
 ```
 
 ## Env vars (names only – values in Vercel / `.env.local` / the secrets file, never in git)
-- **Vercel production (exactly 19):** `ANTHROPIC_API_KEY`, `MEDREPORT_AI_MODE`, `MEDREPORT_LIVE_PASSCODE` (16+ chars,
+- **Vercel production (19 until 24/10/2026 – see the end of this list):** `ANTHROPIC_API_KEY`, `MEDREPORT_AI_MODE`, `MEDREPORT_LIVE_PASSCODE` (16+ chars,
   enforced), `MEDREPORT_LAUNCH_SECRET`, `MEDREPORT_SIGNING_SECRET`, `MEDREPORT_PARTNER_KEY`, `TM3_SIM_TOKEN`,
   `NEXT_PUBLIC_POSTHOG_KEY`, `CLINFORMS_DB` (`d1`), `CLINFORMS_D1_GATEWAY_URL`, `CLINFORMS_D1_GATEWAY_SECRET`,
   `CLINFORMS_DATA_KEYS`, `CLINFORMS_DATA_KEY_ID` (`k2`), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
-  `CLINFORMS_EMAIL_PROVIDER` (`none`), `CLINFORMS_PLATFORM_ADMINS`, `CLINFORMS_PUBLIC_DEMO` (`1`), `CRON_SECRET`.
+  `CLINFORMS_EMAIL_PROVIDER` (`none` until 24/10; **`mailersend`** since then), `CLINFORMS_PLATFORM_ADMINS`,
+  `CLINFORMS_PUBLIC_DEMO` (`1`), `CRON_SECRET`. **24/10/2026:** + `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`
+  (`hello@clinforms.co.uk`) = 21; + `CLINFORMS_EMAIL_REPLY_TO` (`khuram@appstackx.co.uk`) = 22 once Khuram adds it
+  (runbook). The ops review found the three email variables on **Preview** too – scope them to Production only (or
+  set `CLINFORMS_EMAIL_PROVIDER=none` on Preview).
   Gateway Worker secret: `GATEWAY_SECRET` (= `CLINFORMS_D1_GATEWAY_SECRET`).
-- **Optional / later:** `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`, `CLINFORMS_ACCESS_REQUEST_TO`,
+- **Optional / later:** `MAILERSEND_API_KEY`, `MAILERSEND_FROM_EMAIL`, `CLINFORMS_EMAIL_REPLY_TO` (reply-to on every
+  ClinForms email; production value `khuram@appstackx.co.uk`, set by Khuram), `CLINFORMS_ACCESS_REQUEST_TO`,
   `NEXT_PUBLIC_POSTHOG_HOST` (default `/ingest`), `NEXT_PUBLIC_POSTHOG_DEBUG`, `APP_ORIGIN`, `DATABASE_URL`
   (+ `DATABASE_SSL`, `DATABASE_CA_CERT`, `DATABASE_POOL_MAX` – Supabase later), `CLINFORMS_SQLITE_PATH` (local),
   `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` / `_PER_DAY`, `MEDREPORT_MODEL`, `MEDREPORT_SOFFICE_PATH`, `TM3_SIM_BASE_URL`.

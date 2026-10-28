@@ -16,6 +16,7 @@ import "server-only";
  * Owner: integration agent.
  */
 import { assertActorConnector, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { MAX_IMPORT_CHARS } from "../../connectors/file-import/format";
 import { ImportError } from "../../connectors/file-import/parser";
 import { bundleFromReview } from "../../connectors/file-import/review-bundle";
@@ -29,6 +30,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 export const handleFileImportConfirm: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "notes"); // 10/2026: nothing new once a clinic's trial has ended
   const connector = requireConnector(deps, "file-import", { tenantId: actor.tenantId });
   assertActorConnector(actor, connector.id);
   await takeFileImportSlot(req, deps, actor);

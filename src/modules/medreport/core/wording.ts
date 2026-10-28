@@ -119,6 +119,12 @@ export interface Wording {
   origin: {
     /** Pill for a drafted paragraph (ParagraphOrigin "ai"). */
     drafted: string;
+    /** The same pill once the report is approved: where the text came from, not that it is still a draft. */
+    draftedApproved: string;
+    /** Under a tick box, choice or yes/no answer drafted from the notes, while it is reviewed. */
+    answerDrafted: string;
+    /** The same pill once the report is approved (nothing left to check). */
+    answerDraftedApproved: string;
     revertToDraft: string;
   };
 
@@ -162,6 +168,9 @@ export interface Wording {
 
   /* Insurer portal question sets (forms library, mapping, review) -------------------------------- */
   questionSet: QuestionSetWording;
+
+  /* Demo clinics (clinic_plan.demo_clinic, set by ClinForms staff only – core/demo-clinic.ts) ------- */
+  demoClinic: DemoClinicWording;
 
   /* "See exactly what the drafting service receives" panel -------------------------------------- */
   payload: {
@@ -287,6 +296,8 @@ export interface AccessWording {
   /** Fix wave 2: answers drafted in another clinician's voice ("I recorded…"). */
   otherVoiceTitle: string;
   otherVoiceDetail(author: string, signer: string, keys: string[]): string;
+  /** Fix round 1 (B0-1): a report with no author whose drafted answers say "I" about notes the signer did not write. */
+  notesVoiceDetail(clinicians: string[], keys: string[]): string;
   /** Fix wave 2: too many changes to the clinic's records in a short time. */
   storeLimitTitle: string;
   storeLimitDetail(seconds: number): string;
@@ -297,6 +308,12 @@ export interface AccessWording {
   /** POST /passcode/check from a clinic's Studio: the passcode belongs to the public demo only. */
   passcodeDemoOnlyTitle: string;
   passcodeDemoOnlyDetail: string;
+  /** 10/2026: the clinic's trial has ended – nothing new can be created; existing records stay available. */
+  trialEndedTitle: string;
+  trialEnded(what: string, contactEmail?: string): string;
+  /** 25/10/2026: "Complete another form for this patient" – the earlier report (or its record) is not there any more. */
+  reuseGoneTitle: string;
+  reuseGoneDetail: string;
 }
 
 /** The access wording is the same under every disclosure setting: it never names a technology. */
@@ -346,6 +363,9 @@ const ACCESS: AccessWording = {
   otherVoiceDetail: (author, signer, keys) =>
     `${keys.length === 1 ? "One answer speaks" : `${keys.length} answers speak`} as ${author} ("I …"): ${keys.join(", ")}. ` +
     `You are approving as ${signer}. Edit ${keys.length === 1 ? "it" : "them"} so ${keys.length === 1 ? "it does" : "they do"} not speak as ${author}, or ask ${author} to approve.`,
+  notesVoiceDetail: (clinicians, keys) =>
+    `${keys.length === 1 ? "One answer says" : `${keys.length} answers say`} “I” or “my” about notes written by ${clinicians.join(" and ")}: ${keys.join(", ")}. ` +
+    `On your signed form ${keys.length === 1 ? "it" : "they"} would read as your own. Name the clinician who wrote the note instead, or rewrite ${keys.length === 1 ? "it" : "them"} in your own words.`,
   storeLimitTitle: "Too many changes at once",
   storeLimitDetail: (seconds) => `Too many changes were saved to your clinic's records in a short time. The Studio will try again in ${seconds} s.`,
   storeDailyLimitDetail:
@@ -354,6 +374,12 @@ const ACCESS: AccessWording = {
   importLimitDetail: (seconds) => `Too many notes were uploaded or checked in a short time. Try again in ${seconds} s.`,
   passcodeDemoOnlyTitle: "No passcode needed",
   passcodeDemoOnlyDetail: "The passcode belongs to the public demo. In your clinic's Studio, drafting follows your clinic's settings.",
+  trialEndedTitle: "Your trial has ended",
+  trialEnded: (what, contactEmail) =>
+    `Your clinic's trial has ended, so ${what} is not available. Existing reports and forms can still be opened and downloaded. To carry on, contact us${contactEmail ? ` at ${contactEmail}` : ""}.`,
+  reuseGoneTitle: "The patient's notes are no longer here",
+  reuseGoneDetail:
+    "This report is not in your clinic's records – it may have been deleted, or removed at the end of your clinic's retention period – so its notes cannot be used again. Upload the patient's notes to complete another form.",
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -366,6 +392,8 @@ export interface AnswersCopyWording {
   toComplete: string;
   /** Shown, once approved, for an (optional) question the clinician left blank. */
   leftBlank: string;
+  /** bh2 WA1: shown for a question that does not apply (its condition rules it out, or a person decided so). */
+  notApplicable: string;
   /** Shown for a sign-off answer before approval. */
   onApproval: string;
   panelTitle: string;
@@ -412,6 +440,7 @@ const ANSWERS_COPY: AnswersCopyWording = {
   draftMarker: "Draft – not yet approved",
   toComplete: "[to complete]",
   leftBlank: "[left blank]",
+  notApplicable: "[not applicable]",
   onApproval: "[completed on approval]",
   panelTitle: "Copy answers",
   panelTitlePortal: "Answers for the portal",
@@ -453,6 +482,56 @@ const QUESTION_SET: QuestionSetWording = {
   previewNote: "Portal questions have no form file: this summary is what is kept for the record.",
   approvedTitle: "Approved – the answers are final",
   summaryPdf: "Summary (PDF)",
+};
+
+/**
+ * A DEMO clinic (the host's clinic_plan.demo_clinic = 1, set by ClinForms platform staff only – core/demo-clinic.ts):
+ * a clinic account with made-up data only that otherwise works like any customer's. Its clinic pages and Studio carry
+ * a banner, every output a notice, and its members may hold the made-up PH-DEMO-NN numbers and approve with them. A
+ * real clinic never sees any of this – and refuses those numbers.
+ */
+export interface DemoClinicWording {
+  /** The persistent banner of the Studio and the clinic pages (/app). */
+  banner: string;
+  /** Short label (the Studio header pill, the platform page). */
+  label: string;
+  /** Every output (draft preview, Word / PDF files, copied answers) when the form carries no notice of its own. */
+  outputNotice: string;
+  /** Members page, signing details of a demo clinic. */
+  hcpcHint: string;
+  /** Members page of a REAL clinic: a member still holds a made-up number (the clinic was a demo clinic before). */
+  memberHasDemoNumber: string;
+  /** POST /sign outside a demo clinic with a made-up number (403 DEMO_NUMBER_NOT_ALLOWED); the Studio says it first. */
+  numberNotAllowedTitle: string;
+  numberNotAllowedDetail: string;
+  /** Activity log: an approval in a demo clinic, with the made-up number used or with a registration number. */
+  approvedWithDemoNumber(hcpc: string): string;
+  approvedInDemoClinic: string;
+  /** Activity log: a final document produced in a demo clinic. */
+  finalWithNotice: string;
+  /** Activity log: ClinForms switched the clinic to a demo clinic / back to a real clinic. */
+  switchedOn: string;
+  switchedOff(membersWithDemoNumbers: number): string;
+}
+
+/* The same text under every disclosure setting: it never names a technology. */
+const DEMO_CLINIC: DemoClinicWording = {
+  banner: "Demo clinic – made-up data only",
+  label: "Demo clinic",
+  outputNotice: "DEMONSTRATION – made-up data from a demo clinic. Not for clinical use.",
+  hcpcHint: "Demo clinic: a made-up number such as PH-DEMO-01 is accepted here. A real clinic accepts HCPC registration numbers only.",
+  memberHasDemoNumber: "Made-up number: it cannot approve in this clinic. Enter the HCPC registration number.",
+  numberNotAllowedTitle: "Made-up number – approval refused",
+  numberNotAllowedDetail:
+    "PH-DEMO numbers are made up and work in a demo clinic only. Ask an owner or administrator to enter your HCPC registration number (Settings → Members), then approve again.",
+  approvedWithDemoNumber: (hcpc) => `Demo clinic – approved with the made-up number ${hcpc}`,
+  approvedInDemoClinic: "Demo clinic – approved",
+  finalWithNotice: "Demo clinic – marked as a demonstration",
+  switchedOn: "Demo clinic: made-up data only, made-up PH-DEMO numbers accepted",
+  switchedOff: (n) =>
+    n > 0
+      ? `A real clinic again: ${n} ${n === 1 ? "member still holds" : "members still hold"} a made-up number and cannot approve until it is replaced`
+      : "A real clinic again",
 };
 
 /** Problem codes in plain words (the codes themselves stay in the API). */
@@ -538,6 +617,9 @@ const NEUTRAL: Wording = {
   },
   origin: {
     drafted: "Draft",
+    draftedApproved: "Drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer drafted from the notes",
     revertToDraft: "Revert to the draft",
   },
   labels: {
@@ -576,6 +658,7 @@ const NEUTRAL: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what the drafting service receives",
     subtitle: "The minimised record for this patient, exactly as a drafting request would send it – nothing is sent to show it.",
@@ -743,6 +826,9 @@ const AI_ASSISTED: Wording = {
   },
   origin: {
     drafted: "AI draft",
+    draftedApproved: "AI-drafted from notes",
+    answerDrafted: "Answer proposed from the notes – check it",
+    answerDraftedApproved: "Answer AI-drafted from the notes",
     revertToDraft: "Revert to AI draft",
   },
   labels: {
@@ -780,6 +866,7 @@ const AI_ASSISTED: Wording = {
   },
   answersCopy: ANSWERS_COPY,
   questionSet: QUESTION_SET,
+  demoClinic: DEMO_CLINIC,
   payload: {
     toggle: "See exactly what is sent to the AI",
     subtitle: "The minimised record for this patient, as a drafting call would send it – no AI call is made to show it.",

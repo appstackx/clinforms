@@ -45,7 +45,7 @@ async function generate(app, formName) {
 async function answerBlockers(app, text) {
   for (let round = 0; round < 4; round++) {
     const flags = await F.flagsText(app);
-    const keys = Array.from(new Set((flags.match(/(?:Missing field|Placeholder) \| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
+    const keys = Array.from(new Set((flags.match(/(?:Missing field|Placeholder|Required – no answer yet|Required – needs your opinion|Optional, but must be filled in) \| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
     if (keys.length === 0) return;
     for (const k of keys) {
       const card = app.locator(`#q-${k}`);

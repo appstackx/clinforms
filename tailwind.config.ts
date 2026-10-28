@@ -50,6 +50,11 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Clinic system design v1 – additive steps (src/app/globals.css); the keys above are unchanged.
+        "primary-strong": "hsl(var(--primary-strong))",
+        "accent-text": "hsl(var(--accent-text))",
+        "destructive-strong": "hsl(var(--destructive-strong))",
+        "input-strong": "hsl(var(--input-strong))",
         // Studio colour: teal-600 = #0D9488 (BRAND_COLOR in src/modules/medreport/config.public.ts).
         teal: {
           50: "#f0fdfa",

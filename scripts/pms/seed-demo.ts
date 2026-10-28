@@ -1,7 +1,8 @@
 /**
  * Demonstration data for the clinic system: "Riverside Physiotherapy (fictional)" – 3 sites, 6 rooms,
  * 8 practitioners, appointment types and price lists, referrers and payers, 200 fictional patients with cases,
- * payers and treatment authorisations (scripts/pms/demo-data.ts). Switches the clinic's "clinic" package on.
+ * payers and treatment authorisations (scripts/pms/demo-data.ts), then the diary week (seed-diary.ts) and clinical
+ * records (seed-records.ts). Switches the clinic's "clinic" package on.
  *
  * LOCAL (default: the current environment, e.g. node --env-file=.env.local → local SQLite):
  *   npm run pms:seed-demo                        # creates the clinic if missing (owner invitation link printed once)
@@ -16,7 +17,12 @@
  * Without --confirm on a server database it only checks and says what it would do.
  */
 import { DEMO_CLINIC } from "./demo-data";
+import { seedDiary } from "./seed-diary";
 import { assertDemoClinic, seedDemoClinic } from "./seed-lib";
+import { seedBilling } from "./seed-billing";
+import { seedComms } from "./seed-comms";
+import { seedPortal } from "./seed-portal";
+import { seedRecords } from "./seed-records";
 import { createClinic } from "../../src/server/auth/platform";
 import { getDataCipher } from "../../src/server/crypto";
 import { getDb, getDbKind } from "../../src/server/db";
@@ -70,5 +76,12 @@ void runCli(async () => {
     { db, cipher: getDataCipher() },
     { tenantId: slug, markDemo: markDemo || local, fresh, patients, seed, log: (line) => console.log(`  ${line}`) },
   );
+  // Module demonstration data (contract §9): the diary first, then clinical records for the seeded cases, then
+  // billing (invoices for part of the diary week, payments, a remittance).
+  await seedDiary({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedRecords({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedBilling({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedComms({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
+  await seedPortal({ db, cipher: getDataCipher() }, slug, { log: (line) => console.log(`  ${line}`) });
   console.log(`Done: ${summary.patients} patients, ${summary.cases} cases, ${summary.authorisations} authorisations in ${slug} (fictional data). The clinic system is on for this clinic.`);
 });

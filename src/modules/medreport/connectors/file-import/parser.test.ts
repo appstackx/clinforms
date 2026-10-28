@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseImport, parseCsvRecords, toIsoDate, extractScores } from "./parser";
+import { parseImport, parseCsvRecords, textAddress, toIsoDate, extractScores } from "./parser";
+import { TEXT_HEADER_KEYS } from "./format";
 import { PRIYA_NAIR_IMPORT, SAMPLE_IMPORT_FILES, buildSampleCsv } from "./samples";
 import { computeFacts } from "../../core/computed-facts";
 import { runDataChecks } from "../../core/validation/data-checks";
@@ -174,4 +175,38 @@ test("helpers: dates, CSV records, score extraction", () => {
     { instrument: "QuickDASH", value: 52 },
     { instrument: "ODI", value: 30 },
   ]);
+});
+
+test("P5 (10/2026): Address and Postcode lines at the top of pasted / printed notes reach the record", () => {
+  const head = (lines: string[]) =>
+    [...lines, "Date of birth: 02/01/1990", "Instructing party: Example Solicitors (fictional)", "18/03/2026 – Initial assessment – Sarah Reid (PH-DEMO-01)", "S: Neck pain."].join("\n");
+  const one = parseOk({ format: "text", content: head(["Patient: Alex Example", "Address: 1 Example Street (fictional), Exampletown", "Postcode: zz1 1zz"]) });
+  assert.equal(one.bundle.registration.addressSummary, "1 Example Street (fictional), Exampletown, ZZ1 1ZZ");
+  const synonyms = parseOk({ format: "text", content: head(["Home address: 2 Sample Road (fictional), Testville, ZZ2 2ZZ", "Post code: ZZ2 2ZZ"]) });
+  assert.equal(synonyms.bundle.registration.addressSummary, "2 Sample Road (fictional), Testville, ZZ2 2ZZ", "a postcode already at the end is not repeated");
+  const postcodeOnly = parseOk({ format: "text", content: head(["Postcode: ZZ3 3ZZ"]) });
+  assert.equal(postcodeOnly.bundle.registration.addressSummary, "ZZ3 3ZZ");
+  const none = parseOk({ format: "text", content: head([]) });
+  assert.equal(none.bundle.registration.addressSummary, "", "no address given: none recorded");
+  assert.ok(TEXT_HEADER_KEYS.some((k) => k.key === "Address") && TEXT_HEADER_KEYS.some((k) => k.key === "Postcode"), "documented in the format guide");
+  assert.equal(textAddress(" 3 Lane (fictional) , Town ,", "zz9 9zz"), "3 Lane (fictional) , Town, ZZ9 9ZZ");
+  assert.equal(textAddress(null, null), null);
+});
+
+test("security fix 24/10/2026: a long Address or Clinician header line is read in linear time", () => {
+  const n = 400_000;
+  let t = Date.now();
+  assert.equal(textAddress(`${",".repeat(n)}x`, null), `${",".repeat(n)}x`);
+  assert.equal(textAddress(`12 Lane (fictional)${", ".repeat(n)}`, "zz9 9zz"), "12 Lane (fictional), ZZ9 9ZZ");
+  assert.ok(Date.now() - t < 1500, `textAddress took ${Date.now() - t} ms`);
+  const notes = (address: string, clinician: string) =>
+    [`Address: ${address}`, `Clinician: ${clinician}`, "Date of birth: 02/01/1990", "Instructing party: Example Solicitors (fictional)", "18/03/2026 – Initial assessment", "S: Neck pain."].join("\n");
+  t = Date.now();
+  const r = parseImport({ format: "text", content: notes(`${",".repeat(n)}x`, `a${" ".repeat(n)}b`) }, { tenantId: "demo" });
+  assert.ok(Date.now() - t < 3000, `the whole parse took ${Date.now() - t} ms`);
+  assert.ok(r, "parsed (or refused) without hanging");
+  // Unchanged results for ordinary input.
+  const ok = parseOk({ format: "text", content: notes("1 Example Street (fictional), Exampletown,  ", "Tom   Ellis  (PH-DEMO-02)") });
+  assert.equal(ok.bundle.registration.addressSummary, "1 Example Street (fictional), Exampletown");
+  assert.equal(ok.bundle.notes[0].author.name, "Tom Ellis");
 });

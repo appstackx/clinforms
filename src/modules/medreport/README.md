@@ -36,7 +36,13 @@ src/modules/medreport/
     dates.ts ids.ts labels.ts                 shared helpers (DD/MM/YYYY, N-001, UI labels)
     fingerprint.ts        canonical JSON + SHA-256 (WebCrypto)
     report-factory.ts     createReport, createFormReport, planDraftGroups, applyDraftResult, appendActivity
-    forms.ts              referrer forms: formToTemplate, answers, registration values, block IDs (pure)
+    forms.ts              referrer forms: formToTemplate, identity, scope, block IDs (pure); re-exports forms/*
+    forms/                bh2 split (W0.4, pure moves): answers.ts, headings.ts, guidance.ts, record-paths.ts
+                          (registration values), answer-shape.ts, fields.ts (shared leaf) – owners in docs/bh2-ownership.json
+    actor.ts issue-types.ts fix-types.ts   bh2 shared types (W0.6): Actor, BoxState / IssueState, AckPolicy / FixProposal
+    text/sentences.ts     bh2 shared sentence tokenizer (W0.5): splitSentences(text, "prose" | "notes"), safe-edit checks
+    activity-actions.ts   bh2 report activity codes the release adds (W0 follow-up, bh2-base2; labelled in activity-panel.tsx)
+    session-dates.ts      session dates filled by code (WE; createFormReport already calls it – a stub until WE fills it in)
     form-record-rules.ts  fixed answers, insurer-identifier and same-kind referral-reference rules (pure)
     form-tables.ts        table answers ("rows"): the appointments table filled by code, row helpers (pure)
     question-set.ts       portal question sets (FormKind "questions"): parse pasted questions, classify, placeholder file
@@ -48,7 +54,10 @@ src/modules/medreport/
                           deterministic), codepages.ts, notes.ts (staff notes, converted-form helpers), sniff.ts, index.ts
     merge-fields.ts       mail-merge fields («Name», <<Name>>, MERGEFIELD): detector + unresolvedMergeFields (10/2026)
     scope.ts              template scope: strip fields before drafting
-    validation/           citations, figures, opinion-language, scope-terms, data-checks, index (canSign)
+    validation/           citations, figures, opinion-language, scope-terms, data-checks; index.ts re-exports run.ts
+                          (runValidators, validateReport, canSign), acknowledge.ts, registry.ts (validators in order, and
+                          the corpus ledger's test seam hooks.ts); draft-fit.ts runs draft-fit/*; __corpus__/ = the bh2
+                          safety corpus (README there)
   connectors/             server-only
     types.ts registry.ts  ClinicSystemConnector, ConnectorContext, TraceEntry, ConnectorError
     tm3-sim/              wire.ts (sim wire schemas), client.ts, mapper.ts, connector.ts
@@ -61,7 +70,7 @@ src/modules/medreport/
                           attestations (form-map confirmations, filed-document tokens)
   ai/                     server-only
     claude.ts live-gate.ts            Anthropic client + SDK error mapping; live/demo gate (passcode, rate cap)
-    prompts.ts form-prompts.ts        frozen system prompts: built-in templates ("2") and referrer forms ("forms-7")
+    prompts.ts form-prompts.ts        frozen system prompts: built-in templates ("2") and referrer forms ("forms-8")
     form-redact.ts bundle-fingerprint.ts   patient details masked before form analysis; record fingerprint for demo drafts
     generate.ts draft-live.ts draft-demo.ts assemble.ts   drafting entry, live call, demo/recorded lookup, assembly
     demo-format.ts demo-drafts/*.json  recorded drafts: {patientId}__{templateId}.json, {patientId}__form-{sampleId}.json
@@ -80,7 +89,8 @@ src/modules/medreport/
     merge-scan.ts         mail-merge fields in a form file (analysis record) and in a completed file (final-render refusal)
     docx-dom.ts           one shared walk of the Word XML, so a block ID means the same place to outline and fill
     docx-outline.ts       buildDocxOutline(buf) → {blocks: OutlineBlock[], warnings}
-    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers)
+    docx-fill.ts          fillDocx(buf, form, answers, opts) → Buffer (Word in → Word out; DRAFT banner, review markers;
+                          the form author's instructions left off – core/template-instructions.ts)
     pdf-outline.ts        readPdfForm(buf) → PdfFormOutline + classification (acroform | flat) + warnings
     pdf-sections.ts       section heading + completedBy party for every PDF field and text item (hooked into readPdfForm)
     pdf-widgets.ts        printed label beside each radio / tick-box widget; runs of one-character boxes
@@ -89,6 +99,8 @@ src/modules/medreport/
     pdf-acro-fill.ts      AcroForm answers: ticks per widget, radio labels, option fields, character limits, inherited /DA
     pdf-table.ts pdf-overlay-marks.ts   tables of fields / flat tables; X marks in flat tick boxes, date slots
     render-form.ts        shared rendering steps, review markers, the warnings header and file names
+    choice-marks.ts       choiceAnswerMatches(field, answer) – does an answer select a printed option (WA2; pure, WA1's
+                          choice validator reads it; bh2-base2 seam)
     demo-notice.ts        demonstration footer (FormDefinition.demoNotice) on every page: PDF bottom margin, Word footer
     pdfjs.ts              loadPdfjs() – pdfjs-dist legacy build for Node (fake worker)
     convert.ts            docxToPdf(buf) via LibreOffice where installed (hardened, max 2 at a time), else null
@@ -102,6 +114,8 @@ src/modules/medreport/
   api/                    contract.ts (browser-safe), http.ts, deps.ts, resolve-template.ts, handlers/*.ts (server-only)
                           store-contract.ts (browser-safe), store-port.ts (TenantStore), store-memory.ts (tests)
   ui/                     primitives.ts, store.ts, api-client.ts, host-hooks.tsx, preview-libs.ts, components/*, screens/*
+                          (components/review/review-model.ts re-exports the bh2 split: status, labels, reducer,
+                          provenance, gaps, fixes; review-header.tsx re-exports approved-banner.tsx – bh2-base2)
                           store/* (browser backend, server cache + write queue + transport)
                           routes.ts (useStudioPaths: every Studio link from HostHooks.basePath), studio-copy.ts (tenant-only
                           production copy), studio-events.ts (non-identifying analytics properties for HostHooks.track)
@@ -176,7 +190,7 @@ options rather than merging them, so the script writes one full pattern list per
   tooltips, aria-labels, toasts, problem titles/details shown in the UI, the activity log, the Security
   & GDPR page, generated documents, the case export and the demo video – describes what the product
   does, never the technology or the vendor ("drafted from the notes", "reads the form and identifies
-  each question and answer space", origin pill "Draft", "Live drafting" / "Demo mode"). All of it comes
+  each question and answer space", origin pill "Draft" – "Drafted from notes" once approved, a drafted tick or choice "Answer proposed from the notes – check it" – "Answer drafted from the notes" once approved, "Live drafting" / "Demo mode"). All of it comes
   from `core/wording.ts` (`WORDING`, re-exported by `ui/wording.ts`); switch `DISCLOSURE` there
   (`"neutral"` default, `"ai-assisted"` kept for later). API responses the Studio stores or renders
   name the engine `publicEngineName()` (`"drafting-service"` while neutral); the real model id stays in
@@ -350,7 +364,7 @@ The full table, with handler files, is `REPORT_API_ENDPOINTS` in `api/contract.t
 | POST | `/templates/validate` | actor | templates-validate.ts | `{fileName, docxBase64}` → `{ok, tags, errors, unusedTags, unknownTags}` |
 | POST | `/drafts` | actor (+ passcode for live in the demo) | drafts.ts | `{templateId, bundle, instructingParty, sectionKeys, prefer?, effort?, form?}` → `{sections, gaps, flags, generation}`; 1–2 keys, or 1–4 field IDs with `form`; `maxDuration = 60` |
 | POST | `/validate` | actor | validate.ts | `{report, form?}` → `{flags, canSign, blocking}` (`form` required for a form report) |
-| POST | `/sign` | actor (signer = the member) | sign.ts | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
+| POST | `/sign` | actor (signer = the member) | sign/index.ts (checks in sign/checks/*, receipt in sign/receipt.ts) | `{report, signer, typedSignature, statementAccepted, attestations, form?}` → `{receipt, flags}`; the session must cover the report's patient and episode (403 `SESSION_MISMATCH`), a launch session's clinician must be the signer (403 `SIGNER_MISMATCH`), a form must carry a valid server attestation; the receipt records `formMapSha256` and `approvedVia`; 409 `SIGNOFF_BLOCKED` |
 | POST | `/render?format=docx\|pdf\|original` | actor | render.ts | `{report, receipt?, templateDocxBase64?, reviewCopy?, requireFinal?, form?, fileBase64?}` → file; `x-medreport-render: final\|draft`; form reports: `original\|pdf`, 503 `PDF_CONVERSION_UNAVAILABLE`, 409 `FORM_MISMATCH`; `maxDuration = 60` |
 | POST | `/connectors/{id}/documents` | actor | documents.ts | Signed file + receipt + `fileToken` → `{attachReceipt, trace}`. The receipt MAC is verified and `fileToken` (from the final `/render`'s `x-medreport-file-token`) must match this exact file, receipt, tenant, patient and episode |
 | POST | `/forms/analyse` | actor (+ passcode for live in the demo) | forms-analyse.ts | `{fileBase64, fileName, referrer?, title?, prefer?, effort?}` → `{form (proposed), outlineSummary, trace?}`; `maxDuration = 60` |
@@ -435,6 +449,38 @@ role, name?, clinician?, scope?, session?}` on every endpoint that touches patie
   passcode while `clinic_profile.drafting_enabled` (fix wave 2: no profile, or a profile that cannot be read = OFF –
   fail closed; the host's `loadClinicProfile` passes read errors on): prefer "live" with it off → 403
   `DRAFTING_DISABLED`; per-clinic limits `CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE` (10) and `_PER_DAY` (400).
+  *10/2026:* a clinic's own limits set by ClinForms staff (`ClinicProfile.draftingLimits`, the host's `clinic_plan`,
+  e.g. 30 a minute / 1,500 a day) replace those defaults for that clinic only (`ai/live-gate.ts effectiveTenantLimits`;
+  out-of-range values ignored; a profile that cannot be read → the defaults). **Trials (10/2026):**
+  `ClinicProfile.trial` (`pending` | `running` | `ended`); once ended, `auth/clinic-access.ts assertClinicMayCreate`
+  answers 403 `TRIAL_ENDED` ("Your trial has ended … Existing reports and forms can still be opened and downloaded …
+  contact us at …") on POST /drafts, /forms/analyse, the three file-import endpoints, POST /store/files and its
+  chunks, a store PUT that CREATES a report or form map, and POST /launch – updates, approvals, renders and reads
+  are unchanged. The public demo is never affected. Tests: `scripts/medreport/clinic-trial.test.ts`.
+  **Demo clinics (10/2026, `core/demo-clinic.ts`):** `ClinicProfile.demoClinic` (the host's `clinic_plan.demo_clinic`,
+  set by ClinForms staff only) – POST /render and /forms/fill-preview put the demonstration notice on every page of
+  every output (`demoOutputNotice`: the form's own notice, else the demo clinic notice; `render_final` audit rows carry
+  `demoClinic`), the Studio's preview bar and copied answers carry it (`HostHooks.clinic.demoClinic`), and POST /sign lets a
+  member's made-up PH-DEMO-NN number approve there only – any other clinic gets 403 `DEMO_NUMBER_NOT_ALLOWED` (after
+  every other check; a profile that cannot be read = not a demo clinic). Real clinics and the public demo are unchanged.
+  Tests: `scripts/medreport/demo-clinic.test.ts`.
+- **Usage (25/10/2026, `MedreportDeps.usage`, `api/usage.ts recordUsage`):** clinic members only – never the public
+  demo – and never failing or holding up the action (errors logged by kind and error name; the wait is capped at
+  `USAGE_WAIT_MS`). Events (`api/deps.ts UsageEvent`, ids/counts/tokens only): `drafting_call` from POST /drafts for
+  every LIVE call – successful with tokens and the serving model, or failed (refused, cut off, unreadable, timed out, or
+  replaced by the recorded answers) with its tokens when the service answered (`DraftGenerationError.usage`/`.model`,
+  set by `ai/claude.ts`); `report_approved` from POST /sign; `form_read` from POST /forms/analyse (live calls, a failed
+  live reading via `AnalyseFormFileResult.liveFailure`); `report_started` from a store create; `question_set_created`
+  from a question set's first store. POST /drafts takes an optional `amendsReportId` (the Studio sends
+  `report.amends.reportId`) so drafting an amended version never counts as a new report. How a report counts is the
+  host's rule (src/server/repos/usage.ts). **Fix 25/10/2026:** the report ids and "amends" are the browser's, so every
+  report event also carries `episodeFp` – `api/usage.ts usageEpisodeFp`, worked out on the server from what is actually
+  drafted / approved / stored (clinic, connector + patient + episode ids, template or form, the patient's name and date
+  of birth; HMAC with `signingKey("usage-episode")`, 22 characters, identifies nobody). The host keys a report by
+  (id, fingerprint) and takes "amends" only for an approved report with the same fingerprint, so another patient or form
+  under a counted id, or an "amends" of an unrelated report, counts. Ids that are not the Studio's (`rpt_…`) are stored
+  as `h_` + an HMAC (`usageReportKey`). Tests: `scripts/medreport/usage-recording.test.ts` (a fake drafting client via
+  `ai/claude.ts overrideClaudeClientForTests`, tests only).
 - **CSRF:** `bindHandler` refuses state-changing requests whose `Origin` is not an app origin (or that a browser
   marks cross-site) – 403 `ORIGIN_NOT_ALLOWED`; `parseBody` requires a JSON content type – 415
   `UNSUPPORTED_MEDIA_TYPE`.
@@ -497,6 +543,7 @@ same `auth/actor.ts` `requireActor` as every other endpoint (`store-actor.ts` `r
 |---|---|---|
 | GET | `/store/snapshot` | `{tenantId, reports, forms, settings, limits}` – summaries only |
 | GET / PUT / DELETE | `/store/reports/{id}` | `{rev, updatedAt, report}`, `ETag: "<rev>"`; PUT without If-Match creates, with `If-Match: "<rev>"` updates; 409 `REV_CONFLICT` `{current}`; `signed` only with a receipt that verifies for this clinic and content (422 `RECEIPT_INVALID`); an approved report cannot become a draft (409 `REPORT_LOCKED`) |
+| POST | `/store/reports/{id}/reuse` | (25/10/2026) "Complete another form for this patient": `{data: BundleResponse, source}` – the record the clinic's stored report was completed from, for a NEW report on another form (no upload); 404 `NOT_FOUND` for a missing, deleted or another clinic's report; audit `notes.reused`. See "Another form for the same patient" below |
 | GET / PUT / DELETE | `/store/forms/{id}` | as reports; an unattested (or another clinic's) confirmation is stored as `proposed` (`downgraded: true`); delete removes the file with its last map |
 | POST | `/store/files` | `{sha256, size, name, mime}` → `{complete, chunkCount, present}` (start / resume) |
 | PUT | `/store/files/{sha256}/chunks/{idx}` | one 512 KiB chunk (raw with `?size=`, or JSON `{size, dataBase64}`) |
@@ -713,8 +760,9 @@ additive optional `HostHooks` members (`ui/host-hooks.tsx`):
   `TenantHome`): no hero, badges or tiles; the clinic's forms with In progress (first) / Approved / All, a search over
   patient, referrer, form and approver, "Amended – vN", the next step and who approved; a new clinic sees a two-step
   first run (a confirmed referrer form, then the notes). **Word → PDF:** `/health` carries `pdfFromWord` (LibreOffice
-  present – false on every hosted deployment), and the approved banner says up front "A PDF copy of a Word form is not
-  available yet – download the completed Word file" instead of failing on the click; `NOTICES.pdfConversionUnavailable`
+  present – false on every hosted deployment); in both Studios a Word form's approved banner offers its PDF copy only
+  when `pdfFromWord` is true, and otherwise shows the Word download alone with `NOTICES.wordFormPdfHint` ("Need a PDF?
+  …save it as a PDF") – no greyed-out button (test run 24/10/2026); `NOTICES.pdfConversionUnavailable`
   is truthful in both Studios (no "production converter"). **Plain wording:** no fingerprint, request timings or
   "server-signed receipt" in a clinic's upload dialog, approve dialog, approved banner, list or activity entry
   (`markApproved(…, {plain})`, "Approval check code"); the approve dialog's name and HCPC are always read-only in a
@@ -737,7 +785,8 @@ engine parses it (`buildDocxOutline` / `readPdfForm`) and Claude proposes a **fo
 (`FormDefinition`, status `proposed`): every question as a `FormField` with its label, the form's own
 section heading, plain-English guidance, `answerType`, options, an **anchor** (where the answer goes in
 the original file: `DocxAnchor` table_cell / after_paragraph / replace_placeholder / content_control /
-checkbox_glyph / legacy_form_field by block ID; `PdfFieldAnchor` by AcroForm field name;
+checkbox_glyph / legacy_form_field / mark_cell / delete_options by block ID (the last two 10/2026, see "Choice
+layouts of clinic templates"); `PdfFieldAnchor` by AcroForm field name;
 `PdfOverlayAnchor` by page box) and a **fill source** (`registration` path → code; `computed_fact` →
 code; `notes_narrative` → Claude from the notes, cited; `clinician_opinion` → only an opinion a
 clinician recorded, attributed, else blank + gap; `signoff` → the approval receipt; `leave_blank`).
@@ -785,6 +834,14 @@ same calls per patient.
   (`MISSING_PLACEHOLDER`, blocking); an optional one gives a warning that it will be left blank on the form.
 - **Data scope:** employer AND case-manager forms withhold past medical and social history from the AI
   and flag it if it appears in an answer (`formScope()`), as the built-in employer template does.
+  *Fix 10/2026 (P3, scope by question):* `formScope(type, form)` – history a form explicitly ASKS for ("Past medical
+  history", "Relevant medical history", "Social history" – a drafted question's printed label or section) is no
+  longer withheld for case-manager referrers (an EMPLOYER's own form keeps the full minimisation whatever it asks –
+  verify fix 10/2026: the report goes to the employer): its note field and terms are sent for drafting, and
+  `TemplateScope.confineTerms` keeps those terms to the asking questions (SCOPE_TERM, blocking, in any other answer;
+  the form block tells the drafting call "Only in the answer to F-07 …"). Return-to-work / fitness-for-work forms
+  (title or a question) and forms that do not ask keep the full minimisation (Kingsway unchanged). Tests:
+  `scripts/medreport/scope-by-question.test.ts`.
 - **References from another organisation:** when the form's referrer is not the organisation on the
   referral (`referrerNamesMatch()`, the same conservative rule as the form picker) and the question asks
   for the referrer's OWN reference (`asksForReferralPartyReference()`), the referral's reference is NOT
@@ -1394,6 +1451,14 @@ and a Word progress letter, all fictional). Tests: `scripts/medreport/notes-impo
   admin hint, other details, and the clinic's own clinicians (`HostHooks.clinic.clinicians`, from
   `src/server/auth/studio-access.ts`: members other than staff, name + HCPC) in every clinician list; a member named in
   the notes without a number gets the member's number (`withMemberNumbers`).
+  10/2026 (Blue Heart trial, finding 5): each person is listed once (`notes-review-model.ts` `matchPeople`). Two
+  clinicians are one person when their full names match (case, accents, full stops, apostrophes and hyphens ignored)
+  and they do not carry two different valid HCPC numbers; no number, "Not recorded" or another format (PH-DEMO-01)
+  counts as no number, so "Sarah Reid (PH-DEMO-01)" in the notes is the member "Sarah Reid (ZZ0001)". Different names
+  are never merged, nor two different valid numbers; a clinician without a valid number whose name several numbered
+  people share stays separate. Entries take the person's details (member's name, first valid number), so the record,
+  the treating clinician on the form and the drafting block see one person; a number in the notes shown as another
+  gets a line under "Also check" (`clinicianMatchNotices`). Tests: `scripts/medreport/notes-review-clinicians.test.ts`.
 - `review-bundle.ts`: a missed or cancelled appointment is an appointment with its reason (the entry's reason, else
   its text without the "Status" line or the e-signature), not a clinical note (unless the text is too long for a
   reason); bare section headings ("Subjective", "Objective", "Plan", "Clinical Impression"…) fill their fields, other
@@ -1461,8 +1526,17 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   (`/store/files`) and every other caller refuse RTF exactly as before (the Studio stores the converted .docx).
 - **UI:** pickers accept `.rtf`; hint "Word (.docx), PDF or RTF"; the mapping screen shows **"Converted from RTF"**
   with the notes, and "Download Word version" saves "Report.docx"; completed forms download as `.docx`.
-- **Limits:** input ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores pictures as hex text, so a template with a large
-  logo can exceed it although the converted file would be small; East Asian double-byte text only where the
+- **Limits:** *(10/2026)* input ≤ `MAX_RTF_FILE_BYTES` (12 MB) as long as everything except picture / object / binary
+  data stays ≤ `MAX_FORM_FILE_BYTES` (2.5 MB) – RTF stores logos as hex text (Dell's largest template is 6.2 MB with
+  0.09 MB of text). `core/rtf/prescan.ts` measures that in ONE linear pass that mirrors exactly what the reader skips
+  (`\pict`, `\shppict`, `\nonshppict`, `\object`, `\objdata`, `\themedata`, `\colorschememapping`, `\datastore`,
+  `\fontemb`, `\fontfile`, `\blipuid` groups and `\binN` runs; an invalid `\'` is read as the reader reads it, so a
+  picture cannot "end early" past the check); `assertRtfWithinLimits()` runs inside `convertRtfToDocx`, so the browser,
+  the server and the admin scripts apply the same rule. Control words inside skipped groups take a fast path in the
+  reader (and its per-word helpers are module-level), so 12 MB of picture data converts in well under a second;
+  every earlier limit (depth, blocks, inlines, cell definitions, output size) still applies to the text part. Through
+  the partner API the request limit (`MAX_FORM_REQUEST_BYTES`, 4.4 MB of base64) still caps the RTF at ~3.2 MB; the
+  Studio converts in the browser, so the 12 MB rule applies there. Earlier: input ≤ 2.5 MB; East Asian double-byte text only where the
   platform's TextDecoder knows the code page; frames/absolute positions become ordinary paragraphs; rules-mode
   reading may put an answer box in the lower half of a vertically merged cell (same as for a Word form).
 - **Tests:** `core/rtf/rtf.test.ts` (constructs, code pages, tables, fields, tick boxes, headers, breaks, malformed
@@ -1501,3 +1575,418 @@ storage, the form map, analysis, fill, preview, approval and downloads are the u
   in the public demo) and `scripts/e2e/compare-form-outputs.ts` (two runs' downloads compared part by part / page
   text).
 
+
+## Choice layouts of clinic templates (10/2026, branch `feat/blue-heart-forms`, product gaps P17 / P18)
+
+Report templates kept in a practice system (Blue Heart's TM3 templates) answer choices in three ways the Word engine
+now completes – each on the ORIGINAL layout, and never in the wrong place:
+
+- **Typed tick boxes** – "[ ]", "[]", "[x]", "[X]", "[✓]" typed as text: `forms/docx-dom.ts` `glyphSlots()` counts
+  them as tick boxes (also when Word split one over runs), so they are `checkbox_glyph` options like ☐/☒; they are no
+  longer "[…]" fill-in placeholders (`findPlaceholders`). The fill writes the form's own style: "[ ]" → "[x]", a
+  ticked default "[x]" → "[ ]" when another option is chosen ("[]" stays "[]"). A form without typed boxes gives
+  exactly the slots and bytes it always gave (all tick-box text changes are applied per text element from the end,
+  on offsets read on the untouched document). **Verify fix (24/10):** a ticked "[x]"/"[X]" inside running text ("attended
+  [X] sessions", "Dear [X],", "Prognosis: [x] months" – a word or "label:" before it, a lower-case word or , ; . )
+  straight after) is still the template's fill-in PLACEHOLDER, as before 10/2026, unless the same line also prints an
+  unticked typed box (a checklist "[x] yes [ ] no") – `bracketBoxMatches()`. Reading boxes and placeholders is linear
+  in the paragraph (one paragraph of 160,000 boxes or "[a]" placeholders: ~1.5 s; the per-match scans took 25–30 s).
+  A Yes / No answer also picks a printed "Y" / "N" (`core/forms.ts` `yesNoOption()`), and one that no printed option
+  stands for blocks approval (`choice-marks`, tick boxes included) instead of printing blank. A blank printed INSIDE
+  a "delete as necessary" item ("Max lift … kg", its "…" a separate question): the lists are processed first, an
+  answer whose blank was deleted with its item is not printed anywhere else (warning), and a KEPT item's unanswered
+  blank blocks approval. A table row of exact height (RTF templates) becomes "at least" that height once an answer is
+  written in it, so Word never clips it (Pages still clips some long cells on screen – a Pages limit).
+- **"Mark the column" tables** – `mark_cell` (`DocxAnchor.optionCells` [{option, blockId}], optional `mark`, default
+  "X"): one question per row (Yes | No, None | Mild | Severe, a scale, a grade column); the chosen option's cell
+  gets the mark in bold (an empty cell: the mark; a cell that holds only a printed default mark – x X ✓ ✔ √ ✗ ✘ ☒ ☑ × ✕
+  ✖: that mark again; a
+  cell that prints the option itself, e.g. "40%": the mark after it), and a mark-only cell of every other option is
+  CLEARED – a printed default never stays in the wrong column. A "tick all that apply" row (body areas) is a
+  `short_text` question whose answer names the options ("Neck, Back", or "None"): `core/forms.ts` `namedOptions()`
+  matches whole printed options; anything else marks nothing.
+- **"Delete as necessary" lists** – `delete_options`: only the chosen option is KEPT, the others are REMOVED (not
+  struck through – chosen 24/10: removal reads cleanly on a printed or emailed form). An inline list
+  ("Daily/Weekly/Monthly", "…any medication? Yes/No") is `placeholderText` and is replaced by the chosen option as
+  printed (its formatting kept); one option per line is `optionTexts` [{option, blockId, text}] – the others' text is
+  removed and a line left empty is removed (a cell keeps its last paragraph). A single item (a list to "delete any
+  that do not apply") is a `checkbox` question: kept when ticked, removed when not.
+- **Printed details that must never go out / labels without an answer space** (replace_placeholder options):
+  `clearPlaceholder` – the printed text is REMOVED while the question has no answer yet, a DRAFT copy included (e.g. one
+  named physiotherapist's HCPC/CSP numbers typed into a clinic's template, replaced by the approver's own at approval);
+  `writeAfter` – the answer is written AFTER the printed text, which stays ("Job Role:", "Initial Assessment Date:", a
+  numbered slot "01."); a merge code is never cleared by a `writeAfter` question.
+- **Never a guess:** an unanswered question, an "unknown" answer ("Not recorded") or one that matches no printed
+  option leaves every box, mark and option as printed (fill warning). Approval is blocked
+  (`core/validation/choice-marks.ts`, MISSING_PLACEHOLDER) when a marked-cell / kept-option answer is not one of the
+  printed options; `checkFormDefinition` checks the places, options and answer type; `admin:load-forms` checks every
+  cell and option line against the file.
+- **Readings:** the rules reading (`ai/form-choice-rules.ts`) proposes typed boxes across cells (and down a column),
+  mark-the-column rows (a heading row of options over rows with empty cells; a "…? | Yes | No" row) and
+  delete-as-necessary lists (inline, answer cells holding only a list, lines under "Delete as necessary"); the live
+  reading's prompt `form-analysis-5` (output schema: anchor targets `mark_cell`, `delete_options`) says how to map
+  each, and that a printed default answer is REPLACED, never answered beside. Post-validation checks every cell and
+  option line and keeps the form's own mark ("x").
+- Tests: `forms/docx-choices.test.ts` (fictional fixtures for every pattern). The bundled forms and the RTF fixtures
+  are byte-identical (forms-regression.cjs 5/5 IDENTICAL, rtf-forms.cjs 2/2 IDENTICAL, practice-codes.cjs all parts
+  identical vs `fix/blue-heart-verify`), and the rules reading of the bundled forms is unchanged (reading baseline).
+- **The form author's instructions** (25/10, Blue Heart test-run finding 14: a provider template's red "Delete unused
+  cells" reached the completed Word file) – `core/template-instructions.ts` says what counts, deliberately narrowly:
+  "[Please] delete/remove" + what ("unused cells/rows", "as necessary/appropriate", "other choices", "those which are
+  not required", "if not applicable", "this text before sending"…) where it stands apart from the referrer's wording – in
+  brackets, after ":" ";" "–" or a tab, where the colour changes, or at the start of a line printed in a colour (a line
+  in the default colour stays, as `docx-choices.test.ts` expects); "Copy and paste from …" as the whole line; "Please
+  give … in this box" as a coloured line below a label in the same cell. Question wording ("(please circle/tick)",
+  "if applicable", "Please specify:") never matches. `forms/docx-fill.ts` runs last, on DRAFT and FINAL alike: each
+  instruction leaves its line (with its brackets, the spaces before it and a dash or ";" that introduces it; a label's
+  colon stays), a line it emptied goes (a cell keeps its last line), and for "Delete unused cells/rows/lines" its own row
+  goes and so do the repeat rows the report left exactly as printed – at least two plain rows directly above, alike once
+  instructions are left out (no merged cells, controls, fields or merge codes, and no row an answered question writes in
+  or ticks); the first stays when none was used. A note beside a list of options ("Delete as necessary", "(Please delete
+  other choices)", "Delete those which are not required") is only left off once an answer has chosen from every list
+  next to it – its line, else its cell, else its row, else the blocks right after it – so a list nobody chose from (an
+  optional question left unanswered, or a list the map does not handle) never reads as chosen. Never an answer: runs
+  the fill wrote are tracked (`WRITTEN`, also through run splits). One fill note lists what was left off ("Notes from
+  filling the form" on the review screen's Preview tab); the mapping screen's preview strikes the instructions in the
+  page body through (`ui/components/shared/docx-instructions.ts`) under the notice "Left off the completed form" (rows
+  only promised where they can go). Works for forms already loaded (no map change, no re-load); a form without such
+  notes is written byte for byte as before; page headers and footers are not read (none of Blue Heart's 17 templates
+  prints one there); PDF forms are unchanged. Hostile sizes (security review 25/10: removing 40,000 emptied lines one
+  by one was quadratic, 7.5 s against 0.4 s, reachable through the public demo's `/forms/fill-preview`): a line with
+  more than 20 instructions, or a form with more than 200 (`MAX_INSTRUCTIONS_PER_FORM`; Blue Heart's have at most 6),
+  is left as printed, read before anything changes; at most 500 rows are left off per form; a line or row is only
+  removed where its parent holds at most 2,000 children; the whole-line rules read the line without its trailing
+  spaces and dots (a plain loop, no backtracking). Inside a line (integration review 25/10: one run of 40,000 text
+  pieces beside "(delete as appropriate)" took 39 s through `/forms/fill-preview`, against 0.2 s on main): a run's
+  colour is read once, not once per text piece; a line of more than 2,000 runs or text pieces is left as printed; an
+  instruction's words are at most 10 spaces apart, so one instruction never spans thousands of runs. An emptied line
+  that keeps a table apart from the next table, or from the end of its cell or of the document, stays (Word would join
+  the tables or call the file damaged; this also covers main's option lists). Only the form's printed text counts as
+  a box's label, never an answer written above it. Tests:
+  `core/template-instructions.test.ts`, `scripts/medreport/template-instructions.test.ts` (fixture
+  `fixtures/rtf/repeat-rows-report.rtf`, "Fernhurst Medical Reporting (fictional)"; hostile files timed against the
+  same file in neutral words).
+
+## A clinic system's letter merge codes (10/2026, branch `feat/blue-heart-onboarding`)
+
+Blue Heart keeps each provider's report form as a TM3 letter template: upper-case codes in double angle brackets –
+`<<P_TITLE>> <<P_FIRSTNAM>> <<P_SURNAME>>`, `<<P_DOB>>`, `<<P_ADDRESS1>>…<<P_ADDRESS5>>`, `<<P_POSTCODE>>`,
+`<<P_GROUPREF>>`, `<<P_ALTERNATE_REF1>>`, `<<P_CONSNAME>>`, `<<DATE>>`, `<<P_LOCATION_NAME>>`,
+`<<P_LOCATION_ADDRESS1>>…`, `<<P_LOCATION_POSTCODE>>`, `<<P_EMPLOYER>>`, `<<P_HOMETEL>>`, `<<P_HOSP_NUM>>`… The
+dictionary is `core/practice-merge-codes.ts` (every code in the 19 templates Dell sent is in it – names only; the
+templates themselves are gitignored and never committed).
+
+- **Kept, not blanked:** the RTF converter keeps such codes in the body as printed (`RTF_CONVERTER_VERSION`
+  `rtf-docx-2`; only files with these codes convert to different bytes – the four earlier fixtures are byte-identical
+  to `rtf-docx-1`, pinned in `scripts/medreport/practice-codes.test.ts`). Codes in a page header/footer, «Name»,
+  mixed-case `<<Referral_Date>>` and MERGEFIELD fields are answer spaces exactly as before. A Word form (.docx) with
+  typed codes reads the same way.
+- **Bound at reading** (`ai/practice-merge-binding.ts`, after post-validation, live and rules readings, Word forms
+  only): one question per code that REPLACES exactly that code (`replace_placeholder`), answered from the record –
+  `registration` paths for name parts, DOB, telephone, employer, the referrer's reference (`<<P_GROUPREF>>`), the
+  treating clinician (`<<P_CONSNAME>>`), the report date (`<<DATE>>`), the clinic's name; `<<P_ALTERNATE_REF1>>` by
+  the form's label (e.g. "Date of Accident" → `incident.date`). *Verify fix 10/2026:* the clinic system prints the
+  LETTER's date for `<<DATE>>` wherever the template puts it – beside the accident's label ("Accident date: <<DATE>>")
+  it is bound to `incident.date` (medium, noted); beside any other date's label (the label part nearest the code:
+  e.g. a first visit, an assessment, a discharge or a request) it stays
+  `report.date` but is LOW confidence with a note, so staff choose the source in the mapping review. A section's
+  `blankFromRecords` counts (approval checks, merge-code check, forms engine) only for an address line 2+
+  (`isBlankByDesign`). **Addresses:** codes on lines of their own are spread
+  over those lines (`part: {index, of}` on the registration fill source – the record's lines in order, the last printed
+  line takes any left over, a line the address does not have is left empty: `ReportSection.blankFromRecords`, and the
+  fill removes the code); codes on one line (`<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>`) are ONE answer (the full
+  address). `<<P_LOCATION_…>>` use the clinic's address from its settings (new paths `clinic.addressLines`,
+  `clinic.postcode`). The reading's own question for the same place is replaced; another question on such a line is
+  kept and flagged.
+- **For staff:** a code the record does not hold (`<<P_HOSP_NUM>>`, `<<P_WORKTEL>>`, `<<P_INJURY>>`…) or the dictionary
+  does not know is a question with the path `staff.entry` (never filled by code: a gap staff answer on each report),
+  low confidence, its note naming the code. The new paths are not offered to the live analysis (its output schema is
+  unchanged: `ANALYSIS_REGISTRATION_PATHS`).
+- **Safety block unchanged:** approval stays blocked while any code is left on the form (core/merge-fields.ts); a
+  FINAL render with one is refused.
+- Tests: `scripts/medreport/practice-codes.test.ts` (fictional template `fixtures/rtf/practice-codes-report.rtf`,
+  "Larkfield Rehabilitation Network (fictional)", Megan Hart `sim-pat-001`); e2e `scripts/e2e/practice-codes.cjs`.
+- Known limits: codes inside drawn text boxes are left out with the box (as before – e.g. one of Dell's templates keeps
+  its whole layout in text boxes); a multi-site clinic's site name/address is the clinic profile's (staff correct it
+  per report when another site treated the patient).
+
+## Work and activity status is not a recovery opinion (10/2026, branch `fix/bh-opinion-guard`)
+
+- **Bug (Blue Heart test run, 10Bridge Initial Assessment, F-37 on time off work):** the drafted "…took 3 days off
+  work, then returned to normal duties with breaks from the desk" (note: "Took 3 days off work, then back on normal
+  duties…") was blocked as OPINION_LANGUAGE "(recovery) 'returned to normal'" in every live take. On drafted text
+  that flag cannot be acknowledged, so the physio had to rewrite a faithful answer. Cause: the recovery pattern
+  `(back|returned) to (his|her|their)? normal` matched the first three words of a work status, and that exact
+  phrase is not in the note.
+- **Fix** (`core/validation/opinion-language.ts`, code only – maps already loaded on a clinic need no change):
+  - "Back / returned to (all) (his) normal or pre-injury <work or activity>" ("normal duties", "his normal working
+    hours", "normal daily activities", "normal driving") is its own pattern, "return to normal work or activity". Only
+    a few plain describing words may stand between "normal" and the noun (daily, working, work, gym, training,
+    exercise, sporting, social, leisure, household, "12-hour"); any other word ("returned to normal during work",
+    "normal pain-free activities") keeps the phrase on the recovery pattern.
+  - It passes only when a cited note records the same **return** as a fact: "back on / to / at / in", "returned to",
+    "resumed" or "now on", then a full level (normal, full, usual, regular, all, pre-injury), then the same thing –
+    any word for the job counts (duties, work, role), otherwise the same noun; a specific describing word must be in
+    the note too ("12-hour shifts"). "<doing> normally" counts for that activity only ("driving normally" → "normal
+    driving", never "pre-accident activities").
+  - It still blocks when the note says the opposite or something else: no return verb ("off normal duties", "pain
+    with all activities", "difficulty with normal daily activities", "fit for full duties", "usual training with the
+    team"); a lower level ("light duties"); a hedge, negation, modal or plan in the same sentence, before ("not yet",
+    "nearly", "previously", "pre-injury:", "keen to get back to") or after ("- not yet", "would be premature", "is the
+    goal", "?"); straight after it a date, limit or time span ("from 01/10/2026", "in 2 weeks", "for 2 hours a day",
+    "but avoiding lifting"); or only the note's history fields.
+  - A drafted "has not yet returned to her normal 12-hour shifts" passes when the note records the same negation
+    ("not yet back on 12-hour shifts").
+  - The drafted side must state a return that happened (integration review): only "returned" or "back" can, and not
+    after a modal, an ability word, advice or a plan, so "he can / can't / should be able to return to his normal
+    duties", "I recommend a graded return", "he should be back to normal duties by…" and "he never returned" block
+    whatever the note says; a symptom or body part as the subject ("his knee function returned to normal sporting
+    activities") stays recovery. A note's "working full time with no restrictions" records a return to normal duties
+    (full time alone: normal working hours). The note side also rejects goals ("LTG:", "Objectives:"), an earlier
+    episode ("a similar injury in 2019"), a qualifier after a comma (", but avoiding lifting"), "other than",
+    "unrealistic" and a weekday straight after. Its result is remembered per note, so a long paragraph repeating a
+    phrase stays fast.
+  - "Without restrictions" ≡ a note's "no restrictions" ("further" must match; not after a drafted modal, and only
+    where the note records it as a fact); "worked on balance" / "focused on strengthening and on balance" is exercise
+    when a cited note records balance work ("single-leg balance") and nothing but a list or an exercise word follows
+    ("his progress on balance suggests…" and "worked on the evidence and on balance" stay the standard of proof);
+    "drills caused mild discomfort" reports a note's "drills cause mild discomfort" (the same content word before and
+    after – "which / that / it caused" is causation). "Should / would / could / may be able (fit, ready, back)" is a
+    prediction.
+  - `OpinionPattern.allow(hit, source)` holds these rules; every other pattern, and the exact-quote rule, is
+    unchanged. Recovery wording ("returned to normal", "resolved", "full recovery") still needs the note's own words.
+  - Not covered, as before: "returned to full duties" / "can return to full activities" match no pattern (only
+    "normal" and "pre-injury" do), so the drafting brief (rule 5) and the signer's review are the guard there.
+- **Unchanged on purpose:** OPINION_LANGUAGE on drafted text still cannot be acknowledged (`docs/plan.md` §7, D6:
+  opinions only if a clinician recorded them) – the clinician edits the wording, and edited text can then be
+  acknowledged with a reason (stored on the paragraph, in the activity log, on the approved report). The drafting
+  prompt stays `forms-7`.
+- Tests: `core/validation/validation.test.ts` (the F-37 sentence and note; "symptoms returned to normal during work"
+  citing the same note stays a blocking recovery flag; faithful work, activity, restriction, balance and provocation
+  paraphrases; notes that say the opposite or name another activity; a table of unrecorded opinions that still block;
+  the new flag cannot be acknowledged on drafted text).
+
+## Review: one item per question, "Leave optional boxes blank" (10/2026, Blue Heart test run findings 2 and 3)
+
+On Blue Heart's 10Bridge Initial Assessment Report the drafted review listed 28 checks before approval: most were
+gaps on optional boxes, each also listed as "Missing field (warning)", and the Case Reference card stacked three
+warnings for one box (the gap, "Missing field" and the raw code `<<P_GROUPREF>>`). The approval gate is unchanged
+(`core/validation` `canSign` decides, at `/sign` too); the screen now groups and words it
+(`ui/components/review/box-items.ts`, pure; tests `box-items.test.ts`):
+- **One item per question.** A question's open gaps and the checks its own answer clears ("required and has no
+  answer", "optional and has no answer", a mail-merge field only that question's answer removes – found by answering
+  it in a copy) are ONE item (`BoxIssue`) with one instruction – "Type 10Bridge's reference from their letter",
+  "Choose the answer yourself – the notes do not settle it", "Only you can answer this: write your own opinion",
+  "Check your answer, then click Mark resolved". Every other check stays an item of its own. The Flags tab, its badge,
+  the header and the approve button's tooltip count items (the 10Bridge IA: 20 instead of 28; 0 exactly when canSign
+  allows approval) and list "Required" and "Optional" apart.
+- **"Leave optional boxes blank"** (Flags tab): optional questions that are simply blank – drafted, no answer and no
+  text, nothing on them but open gaps and the "optional and has no answer" warning – are acknowledged in one step with
+  one reason (default "Optional on the form – left blank.", at least 15 characters), each ticked and listed with its
+  gap. `leaveOptionalBoxesBlank` re-runs the validators and re-checks every box, then calls `resolveGap` /
+  `acknowledgeFlag` per gap and warning – the same records, activity entries and signed content as single
+  acknowledgements. Never included: required questions, questions that ask for the clinician's opinion
+  (`clinician_opinion` – clinical decisions stay one by one), a box whose drafted answer was held back (`-fit` /
+  `-choice` gaps) and any box with another check (a mail-merge field, opinion wording, a figure…). Acknowledging an
+  optional blank box's gap on its own also acknowledges its "no answer" warning with the same reason. Such a box shows
+  "Left blank on the form" and no longer counts as needing input.
+- **Clinic-system codes in plain words:** validation messages and the preview's notes name a TM3 code by what the
+  code dictionary says it holds (`practiceCodeInWords`: "your clinic system's placeholder for the referrer's reference
+  for this case"); the flag's evidence (and so its ID) keeps the code. «Name» fields read as before. The words are the
+  staff screens' own (`core/practice-merge-codes.ts` `practiceCodeWords`, branch `fix/bh-merge-code-display`), and a
+  code the dictionary does not know keeps its name in quotes (“P_CONTACT_PREF”). The review screen also shows flag
+  messages, gaps, the question's label and guidance and the "Leave optional boxes blank" list through
+  `humaniseMergeCodes` (integration 25/10/2026).
+
+## Blue Heart fix round 1 (10/2026, branch `release/bh-trial-fixes`)
+
+An end-to-end test run on a local copy of Dell's trial clinic (all nine providers, three fictional patients) found
+35 issues; every code-level one is fixed here, each with a regression test. The rules that carry the most weight:
+
+- **Whose "I" it is** (`core/validation/voice.ts`, `OTHER_CLINICIAN_VOICE`, blocking): a drafted paragraph that says
+  "I", "me" or "my" while citing a note another clinician wrote is never approved as the signer's own. One click,
+  "Name Tom Ellis instead" (`core/voice.ts nameClinicianInstead`), or a rewrite – only a rewrite when the paragraph names
+  the clinician already ("Tom Ellis covered my leave": the "my" is the signer's). Assembly gives plain clinical wording to
+  the signer's own notes only. A report with no author is checked against the signer at `/sign`.
+- **Prompt `forms-8`**: the final instruction lists the author's own notes; compact places ("Where it goes: a cell of a
+  table", "it fills “…” inside a sentence") take the value alone; conditional questions and numbered rows; gaps never say
+  "my note" (and `core/voice.ts notesNamedByAuthor` names the note's author when one does); an initial assessment form is
+  drafted from the record as at that assessment (`core/scope.ts
+  initialAssessmentView`).
+- **Left blank prints nothing that reads as an answer** (`core/forms.ts buildFormAnswers` → `leftBlank`;
+  `forms/docx-fill.ts`): a printed tick or mark is cleared, a "delete as necessary" list and a printed default ("30
+  minutes") are removed – when a person left the box blank, and on every approved report. Forms without printed
+  defaults are byte-identical.
+- **Conditional questions** (`core/conditions.ts`): "IF YES, PLEASE DETAIL" after a "No" prints nothing, blocks nothing,
+  and its gaps are settled as not applicable (audited, reopened if the answer changes) – right after drafting
+  (`ui/components/new/generate.ts`) and after each answer in the review. Safety amendment (R-safety-8): a mail-merge code
+  or placeholder it owns still blocks (MISSING_PLACEHOLDER is never dropped, except the box's own "no answer yet"), since
+  the code stays printed and the final copy would refuse to issue the form.
+- **Drafted wording that does not fit its place** (`core/validation/draft-fit.ts`, `DRAFT_FIT`, warnings only).
+- **Review burden**: an answer settles its own box's gaps (`settleGapsByAnswer`) – safety amendment (NEW-1 stop-gap):
+  never a clinician gap (`isClinicianGap`: an opinion box, or the physiotherapist's "-physio" choice) when the person
+  acting is staff (`useReviewState`'s `actorIsStaff`), so it stays open for the clinician – and (C-REV-2 stop-gap) a
+  paragraph staff add outside a records box is origin "edited", checked like edited text, never the clinician's own
+  words (`addClinicianParagraph`'s `byStaff`); held-back choices in one click
+  (`Gap.suggestedAnswer`) – safety amendment (C-2): never on a clinician_opinion box or the physiotherapist's choice
+  (`recordSourceOf` "physio_choice"); opinion boxes in "Leave optional boxes blank" only when ticked one by one.
+- **Typography on converted RTF forms** (`completeTypography`), no negative right indents in cells, no empty record lines;
+  **RTF pictures** (PNG / JPEG logos, picture frames, text boxes) carried over (`rtf-docx-3`).
+- **Record values**: appointment times (`episode.firstSeenTime`, `episode.attendedDate` / `episode.attendedTime` with
+  `part.index`); staff entries, physiotherapists' choices and Clinic details said as such; a Clinic-details value can be
+  changed for one report.
+- **Roles**: staff never see a refused save or removal as done; Confirm, Edit and Remove are not offered to staff on a
+  confirmed form.
+
+Not fixed in code (production data, for Khuram): Dell's stored map notes written for whoever prepared them ("Ask Dell…",
+B0-12); his RTF forms re-loaded to gain their logos (B0-14); switching Medcare / Ascenti time questions to the new record
+values (B0-15); the duplicate "Blue Heart Clinics" before the site code on two forms (B0-4) and whether WAD grade stays
+required (B0-3) are Dell's call.
+
+## Another form for the same patient (25/10/2026, a clinic's Studio)
+
+Khuram (25/10): a patient's notes are uploaded once per report and there is no patient list, so a second referrer form
+for the same patient meant uploading the notes again. Now a clinic report (draft or approved, any version) offers
+**"Complete another form for this patient"** – in the report's header and as "Another form" on its row in the Reports
+list (tenant mode only; the public demo keeps its browser-only flow). It opens "Complete a form" at
+`/app/studio/new?from=<reportId>` (`routes.ts newReportFrom`):
+
+1. The Studio calls `POST /store/reports/{id}/reuse` (`api/handlers/store-report-reuse.ts`, `api-client.ts
+   reuseReportRecord`, with the page's clinic/member headers). The server reads the report from the clinic's OWN store
+   – nothing from the browser but the id – and answers like a notes upload: the record re-stamped with the clinic's
+   current details (`bundleResponseFor`), the figures and data checks of today, plus `source` (form, title, status,
+   version, `consentReset`). Rules as for a fresh upload: sign-in + two-step + same origin (a write), any role, 403
+   `TRIAL_ENDED` once a trial has ended, 403 `CONNECTOR_NOT_AVAILABLE` for a record of the demo's simulated system,
+   403 `SESSION_MISMATCH` for a launch session narrowed to another episode; another clinic's, a deleted and a missing
+   report are the same 404 in plain words (`WORDING.server.access.reuseGone*`: deleted or removed by retention –
+   upload the notes). Audit `notes.reused` (target: the earlier report; counts, source status/version, consentReset –
+   never names or notes), written on every read (a reload reads again), so the activity page calls it "Patient notes
+   opened from an earlier report" and links it to that report – a new report shows as its own "Report started".
+2. Step 1 is skipped: the banner "Using the notes already checked for <patient> in the report on “<form>” (approved):
+   N notes · N appointments · N scores. Nothing was uploaded again.", the usual data check (step 2, back = "Upload
+   other notes instead"), then the referrer form (step 3): the earlier report's form is marked "Already completed for
+   this patient" and never preselected (`FormStep completedFormId`). When the library holds no other confirmed form,
+   the step says so and points to Referrer forms or a built-in report. The screen is keyed by `from`
+   (`src/app/app/studio/new/page.tsx`): Next keeps a page mounted when only its search parameters change, so "Complete
+   a form" in the top bar starts afresh instead of keeping the earlier report's notes.
+3. The new report is made exactly as after an upload (`createTargetReport`): a NEW id, version 1, no `amends` – so it
+   counts as a report of its own when drafted or approved (src/server/repos/usage.ts; even on the same form again, as a
+   fresh upload would) and is never taken for an amendment. Its activity has `notes_reused` ("Started from the
+   patient's notes as already checked for the report on “…” (approved) – the notes were not uploaded again.").
+   Its own trail starts with `report.create` (and usage `report_started`) when the Studio stores it.
+
+**Consent** (`core/reuse.ts recordForAnotherForm`, review fix 25/10/2026): for a record from UPLOADED notes the
+patient's consent to share the earlier report is NEVER carried over, however it was recorded – shown by the notes,
+entered by staff at the notes check ("Consent to share the report: Recorded" + date), or recorded on the report (Flags →
+"Record consent", activity `consent_recorded`). The stored record cannot tell the first two apart, and the other form
+may go to another organisation. The new report shows CONSENT_NOT_RECORDED (blocking) and needs consent recorded on it
+("Record consent") before approval; the banner and the new report's activity say so. A record from a clinic system
+keeps the consent the clinic system holds (fetching it afresh gives the same; it is recorded there, not in ClinForms).
+Opinion attribution, the merge-code block and every approval check are unchanged (the new report is an ordinary
+report).
+
+**Release `release/bh-trial-2`** (merged 26/10/2026, Khuram's decision): reuse ships with the Blue Heart trial release.
+A reused report is made by the same factory as a new one (`createTargetReport` → `createFormReport` / `createReport`),
+so whatever a new report gets in this release – the approver, conditions frozen at creation, the issue state, model 2 –
+it gets too; there is no reuse-only creation path. `docs/bh2-ownership.json` lists the reuse paths as cross-cutting.
+
+**Retention:** the new report holds its own copy of the record with its own retention clock; reusing reads the
+earlier report and does not change it (no save, no new revision). Once the earlier report is deleted or removed by
+retention, its notes cannot be reused – upload them again.
+
+Tests: `scripts/medreport/report-reuse.test.ts` (handler rules, audit, consent – incl. consent entered at the notes
+check through a real read → check → confirm –, the new report, usage on the host's real counters with a fake drafting
+client), `ui/tenant-mode.test.ts` (row action, header action draft/approved, the wizard with `?from=`, the page key,
+the form step incl. a library with one form), `ui/routes.test.ts`, `src/server/admin/admin.test.ts` (label and group of
+`notes.reused`). Browser check: `scripts/e2e/reuse-notes.cjs` (local SQLite clinic, demo mode).
+
+## Rollback shim: reading what a later release stored (10/2026, branch `fix/schema-forward-compat`)
+
+Review finding R-regression-9: release/bh-trial-2 writes new optional keys and enum members into stored reports,
+receipts and form maps (plan W0.3). Rolled back to a build that reads them with the strict schemas, those records were
+unreadable (`GET /store/reports/{id}` 500, the public demo's list dropped them) – and where they parsed, the unknown
+keys were dropped, so fingerprints, receipt MACs and map attestations no longer matched.
+- **Reads** of stored records use `core/stored-schemas.ts`: `StoredReportSchema`, `StoredSignReceiptSchema`,
+  `StoredFormDefinitionSchema` – the write schemas with every object loose (unknown keys kept as written) and three
+  open enums (`FORWARD_OPEN_ENUMS`: flag codes, paragraph origins, record paths; any other enum, literal, fill kind or
+  anchor kind stays closed, as do all bounds – except a registration `part`, up to 30 session lines). Used by the
+  store GETs and 409 copies, the Studio's store client, the browser store, `verifyReceipt`/`verifyReceiptMac`, and the
+  request bodies that carry stored records for reading (`/validate`, `/render`, `/forms/fill-preview`, the write-back
+  receipt, and the form map of `/drafts`, `/sign` and `/ai/payload-preview`).
+- **Writes stay strict** (`core/schemas.ts`): PUT bodies, `/sign`'s report, `/forms/confirm`. The Studio approves the
+  report as `/sign` signs it (`ReportSchema`, keys it does not know left out), so the stored approval is that shape.
+- **Unknown members:** generic labels (`core/labels.ts` `UNKNOWN_MEMBER_LABELS`, `flagCodeLabel`,
+  `registrationPathLabel`, review `originLabel`); an unknown record path resolves to nothing (a gap for staff). The
+  validators recompute flags with this build's codes only.
+- **Nothing that verified before changes:** `verifyReceipt` checks the MAC and the content hash as stored and, failing
+  that, as this build knows the records (exactly the pre-shim check). The form map's hash works the same way
+  (`auth/attestations.ts` `formMapMatches`: `verifyFormConfirmation`, the `report.form.mapSha256` check in
+  `api/resolve-template.ts`), so an API client's copy of a map with a key of its own in a field is accepted as before;
+  `/sign` records the map's **attested** hash in the receipt and a FINAL compares the receipt with it – the value e132057
+  recorded for every map it accepted.
+- **Values no ClinForms build writes** (JSON `1e400` → Infinity, nesting deep enough to exhaust the stack) can only sit
+  under a key this build does not know – the read schemas keep them, `canonicalize()` throws on them. Every hash or
+  MAC over a record as read is computed inside a try (`sign-receipt.ts` `macMatches` / `readReportFingerprint`,
+  `attestations.ts` `formMapMatches`): no match as read, then the check as this build knows the record – never a 500.
+- **`x-medreport-content-sha256`:** on a FINAL, the hash the verified receipt records (also when it verified over the
+  report as this build knows it); on a draft, the report's fingerprint as read (else as known; 422 for a report e132057
+  refused outright and that holds such a value).
+- Tests: `scripts/medreport/schema-forward-compat.test.ts` with the fixture `forward-compat-fixture.ts`
+  (`RELEASE_KEYS` / `RELEASE_MEMBERS` – add every key or member the release writes there) and the guard snapshot
+  `fixtures/forward-compat/closed-vocabulary-e132057.json` (the members production keeps closed: adding one needs a new
+  shim on `main`, deployed, first).
+
+## What is issued, and the release rule (bh2 WA1 – issue state and receipt)
+
+- **One answer per box** – `core/issue-state.ts` `issueState(content, form, approval)`: answer, blank (left blank,
+  no answer, nothing in the record), not applicable (a frozen condition, a session not attended, a person's decision),
+  sign-off or referrer use, worked out from the report's hashed content only (flags, activity, status, updatedAt and
+  the receipt are stripped at run time). The forms fill (`buildFormAnswers`), Copy answers, the question summary, the
+  review's statuses and counts, the approved "On the form" line and the validators all read it.
+- **Conditions are read once**, when the report is created (`core/conditions.ts` `compileCondition`, frozen on
+  `section.condition`); a report this release made never reads the printed words again. Unresolved means applicable.
+  The server decides them, not the report: with the attested map at hand the issue state reads the map's own
+  conditions (`mapConditions`, at the reader version the report names – a reader change is a new version in `READERS`,
+  the old ones kept), so a member's store write never rules a box out; `/sign` refuses (409 `ISSUE_REFUSED`) a report
+  from before the release whose earlier reading rules out a box the map's reading keeps.
+- **`/sign`** approves only the clinic's stored revision (409 `STALE_REPORT`), runs a dry-run FINAL fill of the
+  referrer's file with the receipt's own signer and time (409 `ISSUE_REFUSED`; the public demo sends `fileBase64` for
+  a Word or PDF form) and binds `issuedContentSha256` and `acknowledgementsSha256` into the receipt. **`/render`
+  FINAL** issues exactly that document or refuses with an audited 409 `ISSUED_COPY_CHANGED`.
+- **Release rule:** no change to the forms engine (or anything a FINAL fill reads: the issue state, the conditions'
+  evaluation, buildFormAnswers, forms/) is deployed while approved trial reports exist without first running, for
+  every clinic, `npm run -s admin:check-issued -- --slug <clinic>` (read-only; `--env production` only with Khuram's go).
+  Any `CHANGED` or `ERROR` stops the deploy: those receipts would no longer issue a FINAL copy. `UNBOUND` (a receipt
+  from before the release), `MAP_CHANGED` (the clinic's map is no longer the approved one) and `NO_FILE` are listed,
+  not blocking. Storing the issued bytes (so a later engine never matters) is phase 2.
+
+## Blue Heart release integration (bh2-rc1, release/bh-trial-2)
+
+The seven workstreams (WA1 issue state, WA2 forms engine, WB opinion and attribution, WC review roles and provenance,
+WD drafting and text edits, WE data and maps, WF copy) merged in that order. Release notes, Khuram's decisions, the
+release rule, the deploy runbook and rollback: **`docs/bh2-release.md`**. What the integration itself settled (each
+pinned in `scripts/medreport/bh2-integration.test.ts`, one `describe` per seam):
+
+- **One-click corrections on screen** – `ui/components/review/one-click-offers.tsx`: `reviewOneClicks` works out, once
+  per report change, the engine's text fixes (`fixes.ts offeredFixes`, WD's own and WB's generators, each planned
+  against the engine's rules) and WB's actions that are not text fixes (`fixes.ts offeredActions`: "Accept as my note's
+  words (“…”)" through WC's reducer `acceptNoteWords`, "Remove the note link" through the reducer action
+  `removeNoteLink`); the checks panel shows them on each flag (`FlagItem.extra`). The corpus harness reads both lists.
+  A generator gets the form map (`FixInput.form`); "Name X instead" is the review's own fix, never offered twice.
+- **Who wrote it:** WB's `authorshipOf(p, report, section)` reads a paragraph in a box the approver adopted
+  (`adoptionCurrent`, no drafted residue) as the approver's; on a report with no approver chosen a member who is not
+  staff writes their own words (WC's `actsAsApprover`), staff text is checked.
+- **Who may acknowledge:** WC's `ackPolicyOf` keeps the voice check's first-person licence (ii) on drafted text for
+  the approver, and locates a voice flag's first-person words (not its evidence, which names the colleague) against
+  drafted residue.
+- **Issue state everywhere:** WC's decisions record WA1's `controllerSnapshotOf` (a text controller's text); gap
+  settling reads only frozen conditions on a release report; `parseFormAnswerValue` reads an uncertain or two-way
+  choice answer as blank, with the forms engine's vocabulary (`core/forms/answers.ts choiceTextNotKnown`,
+  `isTwoWayAnswer`).
+- **Figures:** a drafted number no cited source holds blocks (DoC I4); a person's own number warns.
+- **Audit:** a FINAL copy refused because the issued content changed is `report.issue_refused` (never "Final document
+  produced").
+- **Release checklist** adds the guide-terms check on the welcome pack (`scripts/medreport/guide-terms-check.mjs
+  --pack`) and the shim test on a throwaway `origin/main` worktree (`docs/bh2-release.md` §3). WF changed the summary PDF's
+  wording; as for any change to what is issued, `admin:check-issued` runs before a deploy whenever approved trial
+  reports exist (WA1's release rule above).

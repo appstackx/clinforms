@@ -2,7 +2,8 @@
 import { useFormState } from "react-dom";
 import { Field, Notice, TextLink } from "@/components/account/shell";
 import { SubmitButton } from "@/components/account/form-controls";
-import { PASSWORD_MIN_LENGTH } from "@/lib/account-copy";
+import { OWNER_RESET_COPY, PASSWORD_MIN_LENGTH } from "@/lib/account-copy";
+import { COMPANY } from "@/lib/site";
 import { requestResetLink, setNewPassword, type ResetState } from "./actions";
 
 const IDLE: ResetState = { status: "idle" };
@@ -11,9 +12,12 @@ export function RequestResetForm() {
   const [state, action] = useFormState(requestResetLink, IDLE);
   if (state.status === "sent") {
     return (
-      <Notice tone="success">
-        If an account exists for that address, we have sent it a link to choose a new password. The link expires in 2 hours.
-      </Notice>
+      <div className="space-y-3">
+        <Notice tone="success">
+          If an account exists for that address, we have sent it a link to choose a new password. The link expires in 2 hours.
+        </Notice>
+        <p className="text-sm text-slate-600">{OWNER_RESET_COPY.notArrived(COMPANY.contactEmail)}</p>
+      </div>
     );
   }
   return (

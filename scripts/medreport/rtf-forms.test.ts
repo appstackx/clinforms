@@ -206,7 +206,9 @@ test("POST /forms/analyse on each RTF fixture: a Word map that keeps the .rtf na
     assert.ok(form.fields.length > 0, name);
   }
   const a = await analyseRtf(FIXTURES.initial);
-  assert.ok(a.form.analysis.warnings.some((w) => isRtfConversionNote(w) && /1 picture \(such as a logo\)/.test(w)));
+  // Fix round 1 (B0-14): its header's PNG logo is carried over (no "left out" note any more), as a picture of its own.
+  assert.ok(!a.form.analysis.warnings.some((w) => isRtfConversionNote(w) && /picture \(such as a logo\)/.test(w)));
+  assert.ok(new PizZip(docxOf(FIXTURES.initial)).file("word/media/image1.png"), "the logo is in the converted Word file");
   const anchorOf = (f: FormDefinition, label: string) => {
     const field = f.fields.find((x) => x.label === label);
     assert.ok(field, `field “${label}” in ${f.fields.map((x) => x.label).join(" | ")}`);
@@ -376,7 +378,8 @@ test("partner API: fill-preview and the FINAL render take the RTF itself; answer
   assert.equal(preview.headers.get("x-medreport-render"), "draft");
   assert.match(preview.headers.get("content-disposition") ?? "", /\.docx"?$/);
 
-  const signRes = await post(handleSign, "/sign", { report, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form });
+  // bh2 WA1 (design 6): the referrer's file goes with the approval too – /sign fills it as a dry run (the RTF itself).
+  const signRes = await post(handleSign, "/sign", { report, signer: SARAH, typedSignature: SARAH.name, statementAccepted: true, attestations: [...FORM_ATTESTATIONS], form, fileBase64: rtfBase64 });
   assert.equal(signRes.status, 200, await signRes.clone().text());
   const { receipt } = SignResponseSchema.parse(await signRes.json());
   const signed: Report = { ...report, status: "signed", receipt: receipt as SignReceipt };

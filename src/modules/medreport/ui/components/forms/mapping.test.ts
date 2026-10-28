@@ -7,6 +7,7 @@ import {
   describeAnchor,
   describeBlock,
   fillSourceOfKind,
+  firstQuestionToCheck,
   formatOptionFields,
   newField,
   nextFieldId,
@@ -87,4 +88,63 @@ test("fillable-PDF answer spaces of several fields: descriptions, editing and pi
   assert.equal(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 6", fieldType: "text" }), chars);
   assert.equal(anchorFromPick(yesNo, { kind: "pdf_field", fieldName: "Check Box6", fieldType: "checkbox" }), yesNo);
   assert.deepEqual(anchorFromPick(chars, { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" }), { kind: "pdf_field", fieldName: "Text Field 40", fieldType: "text" });
+});
+
+test("the mapping review opens on the question that most needs a decision: “Needs review” first, then “Check”", () => {
+  const q = (id: string, confidence: FormField["confidence"]) => ({ id, confidence });
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "low"), q("F-04", "low")]), "F-03");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "medium"), q("F-03", "medium")]), "F-02", "the first to check, in the form's order");
+  assert.equal(firstQuestionToCheck([q("F-01", "high"), q("F-02", "high")]), "F-01", "nothing to check: the first question");
+  assert.equal(firstQuestionToCheck([]), null);
+});
+
+test("places that are clinic-system merge codes are described in plain words; the location by hand keeps the code", () => {
+  const at = (placeholderText: string, extra: Partial<Extract<FormField["anchor"], { kind: "docx" }>> = {}): FormField["anchor"] => ({ kind: "docx", target: "replace_placeholder", blockId: "p4", placeholderText, ...extra });
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_FIRSTNAM>>"), label: "Patient's first name" }), "In place of the merge code for the patient's first name");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_ADDRESS1>>, <<P_ADDRESS3>>, <<P_POSTCODE>>"), label: "Address" }), "In place of the merge codes for the patient's address and postcode");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_CONTACT_PREF>>"), label: "Merge code <<P_CONTACT_PREF>>" }), "In place of the merge code “P_CONTACT_PREF”");
+  assert.equal(plainAnchorDescription({ anchor: at("<<P_DOB>>", { writeAfter: true }), label: "Date of birth" }), "After the printed merge code for the patient's date of birth");
+  assert.equal(plainAnchorDescription({ anchor: at("____"), label: "Name" }), "On the blank line for “Name”", "unchanged for ordinary blanks");
+  assert.equal(describeAnchor(at("<<P_FIRSTNAM>>")), "Replaces “<<P_FIRSTNAM>>” – Paragraph 5", "the code as printed, under “Edit the location by hand”");
+});
+
+test("fix round 1 (B0-9, B0-25): staff never get Confirm, Edit or Remove on a confirmed mapping; other roles and the demo do", async () => {
+  const { mayConfirmForms } = await import("./mapping");
+  assert.equal(mayConfirmForms({ role: "staff" }), false);
+  for (const role of ["owner", "admin", "clinician"] as const) assert.equal(mayConfirmForms({ role }), true, role);
+  assert.equal(mayConfirmForms(undefined), true, "the public demo acts as a clinician");
+});
+
+test("fix round 1 (B0-29): a code's place is described by what really goes there; table dates by number; the review opens on a required clinical question", async () => {
+  const { listedInOrder } = await import("./mapping");
+  const anchor = { kind: "docx" as const, target: "replace_placeholder" as const, blockId: "p3", placeholderText: "<<DATE>>" };
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Initial Assessment Date", fillSource: { kind: "registration", path: "episode.firstSeen" } }),
+    "The first appointment's date, in place of the code that usually prints the date of the report",
+  );
+  assert.equal(plainAnchorDescription({ anchor, label: "Date of report", fillSource: { kind: "registration", path: "report.date" } }), "In place of the merge code for the date of the report");
+  const dates = [1, 7, 2, 8, 3, 9].map((n) => ({ id: `F-${10 + n}`, label: `Treatment date ${n}` }));
+  assert.deepEqual(listedInOrder([{ id: "F-01", label: "Name" }, ...dates]).map((f) => f.label), ["Name", ...[1, 2, 3, 7, 8, 9].map((n) => `Treatment date ${n}`)]);
+  const staff = { kind: "registration" as const, path: "staff.entry" as const };
+  assert.equal(
+    firstQuestionToCheck([
+      { id: "F-07", confidence: "medium", required: false, fillSource: staff },
+      { id: "F-31", confidence: "medium", required: true, fillSource: { kind: "clinician_opinion" } },
+    ]),
+    "F-31",
+    "Medcare EOTS opens on its clinical YES/NO, not an optional session time",
+  );
+});
+
+test("fix round 1 (B0-29): JJ Physio's “Shoulder No” on the alternative-reference code is not described as an accident date", () => {
+  const anchor = { kind: "docx" as const, target: "replace_placeholder" as const, blockId: "p2", placeholderText: "<<P_ALTERNATE_REF1>>" };
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Shoulder No", fillSource: { kind: "registration", path: "staff.entry" } }),
+    "What staff type in on each report, in place of the code that usually prints the clinic system's alternative reference",
+  );
+  assert.equal(
+    plainAnchorDescription({ anchor, label: "Date of Accident", fillSource: { kind: "registration", path: "incident.date" } }),
+    "In place of the merge code for alternative reference 1 (where some clinics keep the date of the accident)",
+    "as before where it is the accident's date",
+  );
 });
