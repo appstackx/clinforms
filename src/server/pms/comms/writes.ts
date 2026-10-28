@@ -24,6 +24,7 @@ import { copyStandardTemplate, createMessageTemplate, getMessageTemplate, update
 import { patientVisibleInScope } from "../access";
 import { diaryDispatchDeps } from "../diary/message-sync";
 import { attempt, fail, forbidden, notFound, ok, patientInClinic, saveFailure, type Result } from "../records/access";
+import { reconcileDiaryMessages } from "../diary/message-sync";
 import { runAllDueMessages, retryMessage, sendDocumentMessage, sendPatientMessage, type DispatchDeps, type RunSummary, type SendResult } from "./dispatch";
 import { CommsConfigError } from "./providers";
 
@@ -153,6 +154,7 @@ export async function runDueNowFor(actor: CommsActor, deps?: DispatchDeps): Prom
   return attempt("comms.run_now", async () => {
     const d = depsOrFail(deps);
     if (!d) return fail("error", NOT_CONFIGURED);
+    await reconcileDiaryMessages(actor.repo(), actor.tenantId, actor.actor);
     return ok(await runAllDueMessages(actor.repo(), actor.tenantId, d, { actor: actor.actor, budgetMs: 20_000 }));
   });
 }
