@@ -12,17 +12,18 @@
  * - on Postgres the first statement of a batch updates the row everything else depends on (a row lock), so a
  *   concurrent batch on the same invoice or payment waits and then sees the committed result.
  */
-import type { Selectable } from "kysely";
+import type { Expression, Selectable } from "kysely";
+import { auditInsertWhenExists } from "../../audit";
 import { formatDocumentNumber } from "../../../../modules/pms/billing/numbers";
 import { balanceOf } from "../../../../modules/pms/billing/status";
-import type { BillTo, Allocation, CreditNote, InvoiceLine, InvoiceStatus, InvoiceSummary, LineKind, Payment, PaymentKind, PaymentMethod, PaymentStatus, PayerKind, VisitStatus } from "../../../../modules/pms/billing/types";
+import type { BillTo, Allocation, CreditNote, CreditNoteKind, InvoiceLine, InvoiceStatus, InvoiceSummary, LineKind, Payment, PaymentKind, PaymentMethod, PaymentStatus, PayerKind, VisitStatus } from "../../../../modules/pms/billing/types";
 import type { VatCode } from "../../../../modules/pms/billing/vat";
 import { ukToday } from "../../../../modules/pms/core/text";
-import type { PayerType } from "../../../../modules/pms/core/types";
+import type { PayerType, PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
 import type { PmsCreditNoteLinesTable, PmsCreditNotesTable, PmsInvoiceLinesTable, PmsInvoicesTable, PmsPaymentAllocationsTable, PmsPaymentsTable } from "../../../db/pms-schema/billing";
-import { RepoInputError, decryptField, isOn, num, numOrNull, translateDbError, type ConstraintMessages, type DbContext, type RepoContext } from "../context";
+import { RepoInputError, assertActor, decryptField, isOn, num, numOrNull, translateDbError, type ConstraintMessages, type DbContext, type PmsAuditEntry, type RepoContext } from "../context";
 
 export const INV = "pms_invoices";
 export const LINES = "pms_invoice_lines";
@@ -60,6 +61,8 @@ export const SUMMARY_COLUMNS = [
   "paid_pence",
   "credited_pence",
   "exported_at",
+  "site_id",
+  "voided_at",
   "created_at",
   "updated_at",
 ] as const;
@@ -91,6 +94,8 @@ export function toInvoiceSummary(r: SummaryRow): InvoiceSummary {
     ...amounts,
     balancePence: balanceOf(amounts),
     exportedAt: r.exported_at,
+    siteId: r.site_id ?? null,
+    voidedAt: r.voided_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -124,6 +129,7 @@ export function toCreditNote(ctx: RepoContext, r: Selectable<PmsCreditNotesTable
   return {
     tenantId: r.tenant_id,
     id: r.id,
+    kind: (r.kind ?? "credit") as CreditNoteKind,
     number: formatDocumentNumber(r.number_prefix, num(r.number_seq)) as string,
     numberSeq: num(r.number_seq),
     invoiceId: r.invoice_id,
@@ -156,6 +162,7 @@ export function toPayment(ctx: RepoContext, r: Selectable<PmsPaymentsTable>, wit
     provider: r.provider,
     providerRef: r.provider_ref,
     reversedAt: r.reversed_at,
+    siteId: r.site_id ?? null,
     createdBy: r.created_by,
     createdAt: r.created_at,
   };
@@ -166,6 +173,16 @@ export function toAllocation(r: Selectable<PmsPaymentAllocationsTable>): Allocat
 }
 
 export { isOn };
+
+/**
+ * The audit INSERT of a change, in the SAME batch, written only while `whenExists` finds a row when it runs (the
+ * row the change just marked, e.g. its edit token or reversal instant): the audit row exists exactly when the
+ * change does, on D1 too.
+ */
+export function billingAuditWhen(ctx: DbContext, tenantId: string, actor: PmsActor, entry: PmsAuditEntry, whenExists: Expression<unknown>): BatchQuery {
+  const who = assertActor(actor);
+  return auditInsertWhenExists(ctx, tenantId, { ...entry, userId: who.userId, sessionId: who.sessionId }, whenExists).query;
+}
 
 /** Runs a batch, translating constraint refusals into a plain RepoInputError. */
 export async function billingBatch(ctx: DbContext, queries: BatchQuery[], messages: ConstraintMessages & { notNull?: string } = {}) {

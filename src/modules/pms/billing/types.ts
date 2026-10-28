@@ -4,6 +4,7 @@
 import type { PayerType } from "../core/types";
 import type {
   BILL_TO,
+  CREDIT_NOTE_KINDS,
   EXPORT_CHANNELS,
   INVOICE_STATUSES,
   LINE_KINDS,
@@ -26,6 +27,7 @@ export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 export type PayerKind = (typeof PAYER_KINDS)[number];
 export type PaymentLinkStatus = (typeof PAYMENT_LINK_STATUSES)[number];
 export type ExportChannel = (typeof EXPORT_CHANNELS)[number];
+export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number];
 
 export interface BillingSettings {
   tenantId: string;
@@ -77,6 +79,10 @@ export interface InvoiceSummary {
   /** total − paid − credited (negative: money is owed back). */
   balancePence: number;
   exportedAt: string | null;
+  /** The site of the visits it bills (site scope); null = no site. */
+  siteId: string | null;
+  /** When an issued invoice was voided (a full credit note of kind "void"). */
+  voidedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -136,6 +142,8 @@ export interface Invoice extends InvoiceSummary {
 export interface CreditNote {
   tenantId: string;
   id: string;
+  /** "credit" | "write_off" | "void" | "transfer" (migration 0132). */
+  kind: CreditNoteKind;
   number: string;
   numberSeq: number;
   invoiceId: string;
@@ -169,7 +177,22 @@ export interface Payment {
   provider: string;
   providerRef: string | null;
   reversedAt: string | null;
+  /** The site it was taken at; null = none. */
+  siteId: string | null;
   createdBy: string | null;
+  createdAt: string;
+}
+
+/** A patient's saved card (test mode only): receipt details and the provider's references, never a card number. */
+export interface SavedCard {
+  id: string;
+  patientId: string;
+  provider: string;
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  status: "active" | "removed";
   createdAt: string;
 }
 

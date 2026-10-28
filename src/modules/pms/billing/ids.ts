@@ -11,6 +11,7 @@ export const BILLING_ID_PREFIXES = {
   allocation: "pyal",
   paymentLink: "plnk",
   export: "ebex",
+  savedCard: "scard",
 } as const;
 
 export type BillingIdKind = keyof typeof BILLING_ID_PREFIXES;

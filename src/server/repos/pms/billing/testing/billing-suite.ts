@@ -244,14 +244,16 @@ export function defineBillingRepoSuite(label: string, factory: () => Promise<Bil
       assert.deepEqual(issued.ok && issued.invoice.billToSnapshot?.references.map((r) => r.label), ["Patient", "Date of birth", "Membership number", "Authorisation code"]);
       assert.equal(issued.ok && issued.invoice.billToSnapshot?.name, "Northwell Health Insurance (fictional)");
       const auth = await getAuthorisation(ctx, A, id.auth);
-      assert.deepEqual([auth?.sessionsUsed, auth?.valueUsedPence], [2, 1300]);
+      // Both lines bill DIARY visits: their sessions were counted by the diary when completed (not here – no
+      // double count, M5 review). Billing counts the value.
+      assert.deepEqual([auth?.sessionsUsed, auth?.valueUsedPence], [0, 1300]);
       // Over the value limit (30000): a big line is refused at issue, and the draft stays a draft.
       const big = await createDraftInvoice(ctx, A, { patientId: id.daniel, caseId: id.insCase, billTo: "payer", authorisationId: id.auth, lines: [{ kind: "item", description: "Report", unitPricePence: 40000 }] }, ACTOR);
       const refused = await issueInvoice(ctx, A, big.invoice.id, 1, {}, ACTOR);
       assert.equal(refused.ok, false);
       assert.equal(!refused.ok && refused.reason, "authorisation");
       assert.equal((await getInvoice(ctx, A, big.invoice.id))?.status, "draft");
-      assert.deepEqual([(await getAuthorisation(ctx, A, id.auth))?.sessionsUsed], [2], "nothing used by the refused issue");
+      assert.deepEqual([(await getAuthorisation(ctx, A, id.auth))?.valueUsedPence], [1300], "nothing used by the refused issue");
       await cancelDraftInvoice(ctx, A, big.invoice.id, 1, ACTOR);
       const ex = await issueInvoice(ctx, A, id.excessInv, (await getInvoice(ctx, A, id.excessInv))!.rev, {}, ACTOR);
       assert.ok(ex.ok);

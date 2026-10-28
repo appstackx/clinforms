@@ -12,8 +12,8 @@
  */
 import { sql } from "kysely";
 import { BILLING_ID_PREFIXES as P } from "../../../../modules/pms/billing/ids";
-import { CreditNoteInputSchema, type CreditNoteInput } from "../../../../modules/pms/billing/schemas";
-import type { CreditNote } from "../../../../modules/pms/billing/types";
+import { CreditNoteInputSchema, VoidInvoiceInputSchema, WriteOffInputSchema, type CreditNoteInput, type VoidInvoiceInput, type WriteOffInput } from "../../../../modules/pms/billing/schemas";
+import type { CreditNote, CreditNoteKind, Invoice } from "../../../../modules/pms/billing/types";
 import { creditShare, sumTotals } from "../../../../modules/pms/billing/vat";
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
@@ -51,14 +51,39 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
   const d = parseInput(CreditNoteInputSchema, input, "Credit note");
   const inv = await getInvoice(ctx, tenantId, d.invoiceId);
   if (!inv) throw new RepoInputError("That invoice does not exist in this clinic.");
+  return issueCreditNote(ctx, tenantId, inv, d.lines, { kind: "credit", reason: d.reason, issuedOn: d.issuedOn ?? undefined }, actor);
+}
+
+interface CreditOptions {
+  kind: CreditNoteKind;
+  /** Plain words (encrypted). */
+  reason: string;
+  issuedOn?: string;
+  /** Audit detail extras (ids, codes – never text). */
+  detail?: Record<string, unknown>;
+}
+
+/**
+ * The one way a credit note is written (every kind). Credit and void give the appointments back to billing (a
+ * line credited in full can be billed again) and, when the invoice is credited in full, the value and sessions it
+ * used back to its authorisation. A write-off or a transfer to the patient does neither: the visit happened and
+ * stays billed – only the amount is no longer collected from this payer.
+ */
+async function issueCreditNote(ctx: RepoContext, tenantId: string, inv: Invoice, requested: readonly { invoiceLineId: string; totalPence: number }[], options: CreditOptions, actor: PmsActor): Promise<CreditNote> {
   if (inv.status !== "issued") throw new RepoInputError("Only an issued invoice can be credited (cancel a draft instead).");
+  if (inv.voidedAt) throw new RepoInputError("This invoice is void.");
   const today = todayOf(ctx);
-  const issuedOn = d.issuedOn ?? today;
+  const issuedOn = options.issuedOn ?? today;
   if (issuedOn > today) throw new RepoInputError("Credit note: issuedOn: The date cannot be in the future.");
   if (inv.issuedOn && issuedOn < inv.issuedOn) throw new RepoInputError("Credit note: issuedOn: The credit note cannot be dated before the invoice.");
+  const releases = options.kind === "credit" || options.kind === "void";
   const byId = new Map(inv.lines.map((l) => [l.id, l]));
-  const credited = await creditedByLine(ctx, tenantId, d.lines.map((l) => l.invoiceLineId));
-  const parts = d.lines.map((req, i) => {
+  const credited = await creditedByLine(
+    ctx,
+    tenantId,
+    requested.map((l) => l.invoiceLineId),
+  );
+  const parts = requested.map((req, i) => {
     const line = byId.get(req.invoiceLineId);
     if (!line) throw new RepoInputError(`Credit note: line ${i + 1} is not on this invoice.`);
     if (line.kind === "excess_deduction") throw new RepoInputError("An excess deduction is not credited: credit the patient's excess invoice instead.");
@@ -71,18 +96,27 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
   const totals = sumTotals(parts.map((p) => p.share));
   if (totals.totalPence > inv.totalPence - inv.creditedPence) throw new RepoInputError("The credit is more than is left to credit on the invoice.");
   const fullyCredited = inv.creditedPence + totals.totalPence >= inv.totalPence;
+  const givesBack = releases && fullyCredited && Boolean(inv.authorisationId) && (inv.authSessions > 0 || inv.authValuePence > 0);
 
   const id = pmsId(P.creditNote, ctx);
   const at = nowIso(ctx);
   const nextSeq = sql<number>`(select case when m.n + 1 > s.first_credit_note_number then m.n + 1 else s.first_credit_note_number end from pms_billing_settings s, (select coalesce(max(number_seq), 0) as n from pms_credit_notes where tenant_id = ${tenantId}) m where s.tenant_id = ${tenantId})`;
-  const issuedInvoice = sql<string>`(select id from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and status = 'issued')`;
+  // A void needs the invoice unpaid at the moment it runs: statement 1 marks it void only then, and the credit
+  // note's invoice id is NULL (refused, whole batch rolled back) unless it was marked by THIS call.
+  const issuedInvoice =
+    options.kind === "void"
+      ? sql<string>`(select id from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and status = 'issued' and voided_at = ${at})`
+      : sql<string>`(select id from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and status = 'issued' and voided_at is null)`;
   const queries: BatchQuery[] = [
     // Postgres: lock the invoice first (a concurrent credit note or payment on it waits for this one).
-    ctx.db.updateTable(INV).set({ updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", inv.id),
+    options.kind === "void"
+      ? ctx.db.updateTable(INV).set({ voided_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", inv.id).where("status", "=", "issued").where("voided_at", "is", null).where("paid_pence", "=", 0)
+      : ctx.db.updateTable(INV).set({ updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", inv.id),
     ensureSettingsQuery(ctx, tenantId, at),
     ctx.db.insertInto(CRN).values({
       tenant_id: tenantId,
       id,
+      kind: options.kind,
       invoice_id: issuedInvoice,
       number_prefix: sql<string>`(select credit_note_prefix from pms_billing_settings where tenant_id = ${tenantId})`,
       number_seq: nextSeq,
@@ -90,7 +124,7 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
       net_pence: totals.netPence,
       vat_pence: totals.vatPence,
       total_pence: totals.totalPence,
-      reason_enc: encryptField(ctx, tenantId, CRN, "reason_enc", id, d.reason),
+      reason_enc: encryptField(ctx, tenantId, CRN, "reason_enc", id, options.reason),
       created_by: actor.userId,
       created_at: at,
       updated_at: at,
@@ -115,7 +149,7 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
         .updateTable(LINES)
         .set((eb) => ({
           credited_pence: eb("credited_pence", "+", share.totalPence),
-          billing_lock: sql<number>`case when credited_pence + ${share.totalPence} >= total_pence then 0 else billing_lock end`,
+          ...(releases ? { billing_lock: sql<number>`case when credited_pence + ${share.totalPence} >= total_pence then 0 else billing_lock end` } : {}),
           updated_at: at,
         }))
         .where("tenant_id", "=", tenantId)
@@ -129,14 +163,36 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
       .set((eb) => ({ credited_pence: eb("credited_pence", "+", totals.totalPence), rev: eb("rev", "+", 1), updated_at: at }))
       .where("tenant_id", "=", tenantId)
       .where("id", "=", inv.id),
-    // Credited in full: every appointment on it can be billed again.
-    ctx.db
-      .updateTable(LINES)
-      .set({ billing_lock: 0, updated_at: at })
-      .where("tenant_id", "=", tenantId)
-      .where("invoice_id", "=", inv.id)
-      .where(sql<boolean>`exists (select 1 from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and credited_pence >= total_pence)`),
-    pmsAuditQuery(ctx, tenantId, actor, { action: "pms.credit_note.create", targetType: "pms_credit_note", targetId: id, detail: { invoiceId: inv.id, lines: parts.length, totalPence: totals.totalPence, full: fullyCredited } }),
+  );
+  if (releases) {
+    queries.push(
+      // Credited in full: every appointment on it can be billed again.
+      ctx.db
+        .updateTable(LINES)
+        .set({ billing_lock: 0, updated_at: at })
+        .where("tenant_id", "=", tenantId)
+        .where("invoice_id", "=", inv.id)
+        .where(sql<boolean>`exists (select 1 from pms_invoices where tenant_id = ${tenantId} and id = ${inv.id} and credited_pence >= total_pence)`),
+    );
+  }
+  if (givesBack) {
+    // The invoice no longer holds the authorisation's usage (given back just after this batch, audited there).
+    queries.push(
+      ctx.db
+        .updateTable(INV)
+        .set({ auth_sessions: 0, auth_value_pence: 0 })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", inv.id)
+        .where(sql<boolean>`credited_pence >= total_pence`),
+    );
+  }
+  queries.push(
+    pmsAuditQuery(ctx, tenantId, actor, {
+      action: options.kind === "void" ? "pms.invoice.void" : options.kind === "write_off" ? "pms.invoice.write_off" : options.kind === "transfer" ? "pms.invoice.transfer" : "pms.credit_note.create",
+      targetType: "pms_credit_note",
+      targetId: id,
+      detail: { invoiceId: inv.id, kind: options.kind, lines: parts.length, totalPence: totals.totalPence, full: fullyCredited, ...(options.detail ?? {}) },
+    }),
   );
   for (let attempt = 0; ; attempt++) {
     try {
@@ -144,15 +200,80 @@ export async function createCreditNote(ctx: RepoContext, tenantId: string, input
       break;
     } catch (err) {
       if (isUniqueRefusal(err) && attempt < 3) continue; // two credit notes numbered at the same moment (Postgres)
-      if (classifyDbError(err) === "CONSTRAINT_NOT_NULL") throw new RepoInputError("That invoice can no longer be credited (it changed). Reload the page.");
+      if (classifyDbError(err) === "CONSTRAINT_NOT_NULL") {
+        throw new RepoInputError(options.kind === "void" ? "That invoice cannot be voided: it has payments on it, or it changed. Take the payments off or refund them first." : "That invoice can no longer be credited (it changed). Reload the page.");
+      }
       throw translateDbError(err, MESSAGES);
     }
   }
-  if (fullyCredited && inv.authorisationId && (inv.authSessions > 0 || inv.authValuePence > 0)) {
+  if (givesBack && inv.authorisationId) {
     await recordAuthorisationUsage(ctx, tenantId, inv.authorisationId, { sessions: -inv.authSessions, valuePence: -inv.authValuePence }, actor, id);
-    await ctx.db.updateTable(INV).set({ auth_sessions: 0, auth_value_pence: 0 }).where("tenant_id", "=", tenantId).where("id", "=", inv.id).execute();
   }
   return (await getCreditNote(ctx, tenantId, id)) as CreditNote;
+}
+
+/** Spreads an amount over an invoice's lines from the last line back (never an excess deduction, never past a line). */
+export function spreadOverLines(inv: Pick<Invoice, "lines">, amountPence: number): { invoiceLineId: string; totalPence: number }[] {
+  let left = amountPence;
+  const out: { invoiceLineId: string; totalPence: number }[] = [];
+  for (const line of inv.lines.slice().reverse()) {
+    if (left <= 0) break;
+    if (line.kind === "excess_deduction") continue;
+    const room = line.totalPence - line.creditedPence;
+    if (room <= 0) continue;
+    const take = Math.min(room, left);
+    out.push({ invoiceLineId: line.id, totalPence: take });
+    left -= take;
+  }
+  if (left > 0) throw new RepoInputError("The amount is more than is left on the invoice.");
+  return out;
+}
+
+/**
+ * Voids an issued invoice (owners and administrators): a credit note of kind "void" for everything left on it,
+ * the invoice marked void, its appointments released and its authorisation usage given back. Refused while
+ * payments are on it (take them off or refund them first). A draft is cancelled instead (cancelDraftInvoice).
+ */
+export async function voidInvoice(ctx: RepoContext, tenantId: string, invoiceId: string, input: VoidInvoiceInput, actor: PmsActor): Promise<CreditNote> {
+  assertTenantId(tenantId);
+  assertId(invoiceId, "invoice id");
+  const d = parseInput(VoidInvoiceInputSchema, input, "Void");
+  const inv = await getInvoice(ctx, tenantId, invoiceId);
+  if (!inv) throw new RepoInputError("That invoice does not exist in this clinic.");
+  if (inv.status !== "issued") throw new RepoInputError("Only an issued invoice is voided (cancel a draft instead).");
+  if (inv.voidedAt) throw new RepoInputError("This invoice is already void.");
+  if (inv.paidPence !== 0) throw new RepoInputError("That invoice cannot be voided: it has payments on it. Take the payments off or refund them first.");
+  const lines = inv.lines.filter((l) => l.kind !== "excess_deduction" && l.totalPence - l.creditedPence > 0).map((l) => ({ invoiceLineId: l.id, totalPence: l.totalPence - l.creditedPence }));
+  if (lines.length === 0) throw new RepoInputError("Nothing is left on this invoice to void.");
+  return issueCreditNote(ctx, tenantId, inv, lines, { kind: "void", reason: d.reason }, actor);
+}
+
+/**
+ * Writes off part of what an invoice still owes (an insurer's short payment above its agreed rate, a small
+ * balance…): a credit note of kind "write_off" spread over the lines from the last one back. Never more than the
+ * balance. The visits stay billed.
+ */
+export async function writeOffInvoice(ctx: RepoContext, tenantId: string, input: WriteOffInput, actor: PmsActor, detail: Record<string, unknown> = {}): Promise<CreditNote> {
+  assertTenantId(tenantId);
+  const d = parseInput(WriteOffInputSchema, input, "Write-off");
+  const inv = await getInvoice(ctx, tenantId, d.invoiceId);
+  if (!inv) throw new RepoInputError("That invoice does not exist in this clinic.");
+  if (d.amountPence > inv.balancePence) throw new RepoInputError("Write-off: the amount is more than the invoice still owes.");
+  const reason = d.note ? `${d.reason}: ${d.note}` : d.reason;
+  return issueCreditNote(ctx, tenantId, inv, spreadOverLines(inv, d.amountPence), { kind: "write_off", reason, issuedOn: d.issuedOn ?? undefined, detail: { reason: d.reason, ...detail } }, actor);
+}
+
+/** The credit side of moving an insurer's unpaid part to the patient (src/server/pms/billing/remittance.ts makes the patient's invoice). */
+export async function transferInvoiceBalance(ctx: RepoContext, tenantId: string, invoiceId: string, amountPence: number, patientInvoiceId: string, actor: PmsActor): Promise<CreditNote> {
+  assertTenantId(tenantId);
+  assertId(invoiceId, "invoice id");
+  assertId(patientInvoiceId, "invoice id");
+  if (!Number.isInteger(amountPence) || amountPence <= 0) throw new RepoInputError("Enter an amount to move.");
+  const inv = await getInvoice(ctx, tenantId, invoiceId);
+  if (!inv) throw new RepoInputError("That invoice does not exist in this clinic.");
+  if (inv.billTo !== "payer") throw new RepoInputError("Only an insurer's or other payer's invoice is moved to the patient.");
+  if (amountPence > inv.balancePence) throw new RepoInputError("The amount is more than the invoice still owes.");
+  return issueCreditNote(ctx, tenantId, inv, spreadOverLines(inv, amountPence), { kind: "transfer", reason: `Moved to the patient's invoice`, detail: { patientInvoiceId } }, actor);
 }
 
 /** One credit note, reason decrypted. */
@@ -192,9 +313,10 @@ export async function listCreditNotesForInvoice(ctx: RepoContext, tenantId: stri
 }
 
 /** Credit notes in a date range (statements, reports), reasons not decrypted. */
-export async function listCreditNotes(ctx: RepoContext, tenantId: string, options: { from?: string; until?: string; invoiceIds?: string[]; limit?: number } = {}): Promise<CreditNote[]> {
+export async function listCreditNotes(ctx: RepoContext, tenantId: string, options: { from?: string; until?: string; invoiceIds?: string[]; kind?: CreditNoteKind; limit?: number } = {}): Promise<CreditNote[]> {
   assertTenantId(tenantId);
   let q = ctx.db.selectFrom(CRN).selectAll().where("tenant_id", "=", tenantId);
+  if (options.kind) q = q.where("kind", "=", options.kind);
   if (options.from) q = q.where("issued_on", ">=", options.from);
   if (options.until) q = q.where("issued_on", "<=", options.until);
   if (options.invoiceIds) {

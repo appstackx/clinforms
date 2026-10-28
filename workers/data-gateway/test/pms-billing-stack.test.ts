@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { Kysely } from "kysely";
 import { D1HttpDialect } from "../../../src/server/db/dialects/d1-http";
 import type { Database } from "../../../src/server/db/schema";
+import { defineBillingServiceSuite } from "../../../src/server/pms/billing/testing/service-suite";
 import { defineBillingRepoSuite } from "../../../src/server/repos/pms/billing/testing/billing-suite";
 import { handleRequest } from "../src/index";
 import { FakeD1 } from "./fake-d1";
@@ -15,7 +16,7 @@ import { available, gatewayDb, startLocalD1 } from "./local-d1";
 
 const SECRET = "billing-stack-secret-".padEnd(48, "z");
 
-defineBillingRepoSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)", async () => {
+async function standIn() {
   const d1 = new FakeD1();
   const db = new Kysely<Database>({
     dialect: new D1HttpDialect({
@@ -31,19 +32,25 @@ defineBillingRepoSuite("D1 via the gateway (in-process Worker, node:sqlite D1 st
       d1.close();
     },
   };
-});
+}
+
+defineBillingRepoSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)", standIn);
+defineBillingServiceSuite("D1 via the gateway (in-process Worker, node:sqlite D1 stand-in)", standIn);
+
+async function localD1() {
+  const { proxy, dir } = await startLocalD1();
+  const db = gatewayDb(proxy.env.DB);
+  return {
+    db,
+    close: async () => {
+      await db.destroy();
+      await proxy.dispose();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
 
 if (available) {
-  defineBillingRepoSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", async () => {
-    const { proxy, dir } = await startLocalD1();
-    const db = gatewayDb(proxy.env.DB);
-    return {
-      db,
-      close: async () => {
-        await db.destroy();
-        await proxy.dispose();
-        fs.rmSync(dir, { recursive: true, force: true });
-      },
-    };
-  });
+  defineBillingRepoSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", localD1);
+  defineBillingServiceSuite("D1 via the gateway (local workerd D1, wrangler-applied migrations)", localD1);
 }

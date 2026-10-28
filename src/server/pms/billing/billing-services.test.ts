@@ -128,7 +128,8 @@ describe("billing services on SQLite", () => {
   });
 
   it("invoicing from a visit source: prices from the case's list, billed appointments left out, missed-appointment charges", async () => {
-    assert.deepEqual(await suggestVisitLines(ctx, T, { patientId: id.pat, caseId: id.case }, id.list), { connected: false, lines: [] });
+    // The diary is connected (M5): this patient has no chargeable appointments in the diary yet.
+    assert.deepEqual(await suggestVisitLines(ctx, T, { patientId: id.pat, caseId: id.case }, id.list), { connected: true, lines: [] });
     setBillableVisitSourceForTests({
       id: "test",
       connected: true,
@@ -137,6 +138,8 @@ describe("billing services on SQLite", () => {
         { appointmentId: "appt_01JTEST0000000000000000002", patientId: id.pat, caseId: id.case, serviceId: id.fu, practitionerId: id.prac, siteId: null, date: "2026-10-08", startTime: "09:00", status: "did_not_attend" },
         { appointmentId: "appt_01JTEST0000000000000000003", patientId: "pat_someone_else", caseId: null, serviceId: id.fu, practitionerId: null, siteId: null, date: "2026-10-08", startTime: "10:00", status: "attended" },
       ],
+      listClinicVisits: async () => [],
+      waiveFee: async () => false,
     });
     const first = await suggestVisitLines(ctx, T, { patientId: id.pat, caseId: id.case }, id.list);
     assert.equal(first.connected, true);

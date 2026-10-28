@@ -19,7 +19,7 @@ import type { PmsActor } from "../../../../modules/pms/core/types";
 import { runBatch, type BatchQuery } from "../../../db/batch";
 import { classifyDbError } from "../../../db/errors";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, parseInput, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
-import { ALLOC, INV, PAY, SUMMARY_COLUMNS, affected, chunks, todayOf, toAllocation, toInvoiceSummary, toPayment } from "./shared";
+import { ALLOC, INV, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, chunks, todayOf, toAllocation, toInvoiceSummary, toPayment } from "./shared";
 
 /** Allocations per batch: 2 statements each + the payment's own + the audit row stay under D1's 100. */
 export const ALLOCATIONS_PER_BATCH = 40;
@@ -129,6 +129,7 @@ export async function recordPayment(ctx: RepoContext, tenantId: string, input: P
       notes_enc: encryptField(ctx, tenantId, PAY, "notes_enc", id, d.notes),
       provider,
       provider_ref: options.providerRef ?? null,
+      site_id: d.siteId ?? null,
       import_ref: d.importRef ?? null,
       created_by: actor.userId,
       created_at: at,
@@ -194,10 +195,16 @@ export async function removeAllocation(ctx: RepoContext, tenantId: string, alloc
       .where("id", "=", a.payment_id)
       .where(live),
     ctx.db.updateTable(ALLOC).set({ reversed: 1, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", allocationId).where("reversed", "=", 0),
+    // Audited in the same batch, only when this call took it off (reversed now, at this instant).
+    billingAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.payment.unallocate", targetType: "pms_payment", targetId: a.payment_id, detail: { invoiceId: a.invoice_id, allocationId } },
+      ctx.db.selectFrom(ALLOC).select("id").where("tenant_id", "=", tenantId).where("id", "=", allocationId).where("reversed", "=", 1).where("updated_at", "=", at),
+    ),
   ]);
-  const removed = affected(results[3]) > 0;
-  if (removed) await pmsAudit(ctx, tenantId, actor, { action: "pms.payment.unallocate", targetType: "pms_payment", targetId: a.payment_id, detail: { invoiceId: a.invoice_id, allocationId } });
-  return removed;
+  return affected(results[3]) > 0;
 }
 
 /**
@@ -229,10 +236,15 @@ export async function reversePayment(ctx: RepoContext, tenantId: string, payment
       .where("tenant_id", "=", tenantId)
       .where("id", "=", paymentId)
       .where("status", "=", "recorded"),
+    billingAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.payment.reverse", targetType: "pms_payment", targetId: paymentId, detail: {} },
+      ctx.db.selectFrom(PAY).select("id").where("tenant_id", "=", tenantId).where("id", "=", paymentId).where("status", "=", "reversed").where("reversed_at", "=", at),
+    ),
   ]);
-  const reversed = affected(results[3]) > 0;
-  if (reversed) await pmsAudit(ctx, tenantId, actor, { action: "pms.payment.reverse", targetType: "pms_payment", targetId: paymentId, detail: { invoices: affected(results[1]) } });
-  return reversed;
+  return affected(results[3]) > 0;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -266,6 +278,10 @@ export interface ListPaymentsOptions {
   status?: PaymentStatus;
   /** Only payments with money not allocated yet. */
   unallocatedOnly?: boolean;
+  /** The member's site scope: payments taken at those sites, plus payer accounts' payments (no site). */
+  siteIds?: ReadonlySet<string> | null;
+  /** Only payments with a reference (insurer remittances). */
+  withReference?: boolean;
   from?: string;
   until?: string;
   limit?: number;
@@ -285,6 +301,11 @@ export async function listPayments(ctx: RepoContext, tenantId: string, options: 
   if (options.unallocatedOnly) q = q.where("status", "=", "recorded").where(sql<boolean>`allocated_pence < amount_pence`);
   if (options.from) q = q.where("received_on", ">=", options.from);
   if (options.until) q = q.where("received_on", "<=", options.until);
+  if (options.withReference) q = q.where("reference", "is not", null);
+  if (options.siteIds) {
+    const ids = Array.from(options.siteIds).slice(0, 90);
+    q = q.where((eb) => eb.or([eb("payer_kind", "=", "account"), ...(ids.length ? [eb("site_id", "in", ids)] : [])]));
+  }
   const rows = await q
     .orderBy("received_on", "desc")
     .orderBy("id", "desc")

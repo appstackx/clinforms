@@ -161,6 +161,8 @@ export type ParsedInvoiceLine = z.output<typeof InvoiceLineInputSchema>;
 
 const draftShape = {
   patientId: PmsIdSchema,
+  /** The site the invoice belongs to (site-limited members see only their sites' invoices). */
+  siteId: z.union([PmsIdSchema, z.null()]).optional(),
   /** The case (episode of care) – required when the payer account is billed. */
   caseId: z.union([PmsIdSchema, z.null()]).optional(),
   billTo: BillToSchema.optional(),
@@ -220,6 +222,27 @@ export const CreditNoteInputSchema = z
   .refine((v) => new Set(v.lines.map((l) => l.invoiceLineId)).size === v.lines.length, { message: "A line is listed twice", path: ["lines"] });
 export type CreditNoteInput = z.input<typeof CreditNoteInputSchema>;
 
+/** What a credit note is for (migration 0132). Every kind is a numbered credit note. */
+export const CREDIT_NOTE_KINDS = ["credit", "write_off", "void", "transfer"] as const;
+export const CreditNoteKindSchema = z.enum(CREDIT_NOTE_KINDS);
+
+/** Why an amount is written off (the remittance screen's choices). Stored, encrypted, as the credit note's reason. */
+export const WRITE_OFF_REASONS = ["above_agreed_rate", "not_covered", "small_balance", "bad_debt", "goodwill", "other"] as const;
+export const WriteOffReasonSchema = z.enum(WRITE_OFF_REASONS);
+
+export const WriteOffInputSchema = z.object({
+  invoiceId: PmsIdSchema,
+  amountPence: z.number().int("Whole pence only").min(1, "Enter an amount").max(100_000_000),
+  reason: WriteOffReasonSchema,
+  /** A few words more (encrypted with the reason). */
+  note: optionalText(300),
+  issuedOn: OptionalDateSchema,
+});
+export type WriteOffInput = z.input<typeof WriteOffInputSchema>;
+
+export const VoidInvoiceInputSchema = z.object({ reason: z.string().trim().min(3, "Say why the invoice is void").max(300) });
+export type VoidInvoiceInput = z.input<typeof VoidInvoiceInputSchema>;
+
 /* ------------------------------------------------------------------------------------------------
  * Payments and allocations
  * ----------------------------------------------------------------------------------------------*/
@@ -247,6 +270,8 @@ export const PaymentInputSchema = z
     notes: optionalText(1000),
     /** Spread over invoices now (the rest stays on account). */
     allocations: z.array(AllocationInputSchema).max(100).optional(),
+    /** The site it was taken at (null: not at a site, e.g. a remittance by bank transfer). */
+    siteId: z.union([PmsIdSchema, z.null()]).optional(),
     importRef: optionalText(80),
   })
   .superRefine((v, ctx) => {
@@ -261,3 +286,81 @@ export const PaymentInputSchema = z
 export type PaymentInput = z.input<typeof PaymentInputSchema>;
 
 export const ReversePaymentInputSchema = z.object({ reason: z.string().trim().min(3, "Say why").max(300) });
+
+/* ------------------------------------------------------------------------------------------------
+ * Take payment (the dialog) and insurer remittances
+ * ----------------------------------------------------------------------------------------------*/
+
+/** The take-payment dialog's methods (design round 3). Card on file and payment links go through the provider (TEST MODE ONLY). */
+export const TAKE_PAYMENT_METHODS = ["card_on_file", "card_now", "cash", "bank_transfer", "payment_link"] as const;
+export const TakePaymentMethodSchema = z.enum(TAKE_PAYMENT_METHODS);
+export type TakePaymentMethod = (typeof TAKE_PAYMENT_METHODS)[number];
+
+export const TakePaymentInputSchema = z
+  .object({
+    patientId: PmsIdSchema,
+    method: TakePaymentMethodSchema,
+    amountPence: z.number().int("Whole pence only").min(1, "Enter an amount").max(100_000_000),
+    /** Oldest first unless changed; the rest stays on the patient's account. */
+    allocations: z.array(AllocationInputSchema).max(40).optional(),
+    /** Card on file: which saved card. */
+    savedCardId: z.union([PmsIdSchema, z.null()]).optional(),
+    /** Cash: what the patient handed over (for the change). */
+    tenderedPence: z.number().int().min(0).max(100_000_000).optional(),
+    /** Bank transfer / card terminal reference. Not clinical. */
+    reference: optionalText(80),
+    siteId: z.union([PmsIdSchema, z.null()]).optional(),
+  })
+  .superRefine((v, ctx) => {
+    const sum = (v.allocations ?? []).reduce((a, x) => a + x.amountPence, 0);
+    if (sum > v.amountPence) ctx.addIssue({ code: "custom", path: ["allocations"], message: "More is allocated than is being taken" });
+    const ids = (v.allocations ?? []).map((a) => a.invoiceId);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["allocations"], message: "An invoice is listed twice" });
+    if (v.method === "card_on_file" && !v.savedCardId) ctx.addIssue({ code: "custom", path: ["savedCardId"], message: "Choose the saved card" });
+    if (v.method === "cash" && v.tenderedPence !== undefined && v.tenderedPence < v.amountPence) ctx.addIssue({ code: "custom", path: ["tenderedPence"], message: "Less cash was handed over than is being taken" });
+  });
+export type TakePaymentInput = z.input<typeof TakePaymentInputSchema>;
+
+/** What happens to the part of an invoice an insurer did not pay. */
+export const SHORTFALL_ACTIONS = ["leave", "write_off", "patient"] as const;
+export const ShortfallActionSchema = z.enum(SHORTFALL_ACTIONS);
+export type ShortfallAction = (typeof SHORTFALL_ACTIONS)[number];
+
+export const RemittanceInputSchema = z
+  .object({
+    payerReferrerId: PmsIdSchema,
+    amountPence: z.number().int("Whole pence only").min(1, "Enter the amount received").max(100_000_000),
+    reference: z.string().trim().min(1, "Enter the remittance reference").max(80),
+    receivedOn: IsoDateSchema,
+    method: PaymentMethodSchema,
+    rows: z
+      .array(
+        z.object({
+          invoiceId: PmsIdSchema,
+          /** Paid now against this invoice (0 = only a shortfall action). */
+          paidPence: z.number().int().min(0).max(100_000_000),
+          shortfall: ShortfallActionSchema,
+          writeOffReason: WriteOffReasonSchema.optional(),
+        }),
+      )
+      .min(1, "Choose at least one invoice")
+      .max(40, "At most 40 invoices in one allocation – save and continue"),
+  })
+  .superRefine((v, ctx) => {
+    const sum = v.rows.reduce((a, r) => a + r.paidPence, 0);
+    if (sum > v.amountPence) ctx.addIssue({ code: "custom", path: ["rows"], message: "More is allocated than was received" });
+    const ids = v.rows.map((r) => r.invoiceId);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["rows"], message: "An invoice is listed twice" });
+    v.rows.forEach((r, i) => {
+      if (r.shortfall === "write_off" && !r.writeOffReason) ctx.addIssue({ code: "custom", path: ["rows", i, "writeOffReason"], message: "Choose why it is written off" });
+    });
+  });
+export type RemittanceInput = z.input<typeof RemittanceInputSchema>;
+
+/** Invoice the chosen chargeable visits (design round 3 "Invoice visits"). */
+export const InvoiceVisitsInputSchema = z.object({
+  appointmentIds: z.array(PmsIdSchema).min(1, "Choose at least one visit").max(200),
+  /** Issue the drafts straight away (step 3), or keep them as drafts. */
+  issue: z.boolean().optional(),
+});
+export type InvoiceVisitsInput = z.input<typeof InvoiceVisitsInputSchema>;

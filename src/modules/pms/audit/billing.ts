@@ -20,6 +20,12 @@ export const BILLING_AUDIT_LABELS: Readonly<Record<string, string>> = {
   "pms.payment.reverse": "Payment reversed",
   "pms.payment_link.create": "Card payment link created",
   "pms.payment_link.status": "Card payment link updated",
+  "pms.invoice.void": "Invoice voided",
+  "pms.invoice.write_off": "Amount written off an invoice",
+  "pms.invoice.transfer": "Unpaid part of an invoice moved to the patient",
+  "pms.remittance.record": "Insurer payment allocated",
+  "pms.saved_card.add": "Card saved (test mode)",
+  "pms.saved_card.remove": "Saved card removed",
 };
 
 /** Names of the record types its audit rows point at (target_type → label). */
@@ -28,4 +34,5 @@ export const BILLING_AUDIT_TARGETS: Readonly<Record<string, string>> = {
   pms_credit_note: "Credit note",
   pms_payment: "Payment",
   pms_billing_settings: "Billing settings",
+  pms_patient: "Patient",
 };

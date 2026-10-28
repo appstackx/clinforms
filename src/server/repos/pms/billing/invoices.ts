@@ -38,7 +38,7 @@ import type { PmsInvoicesTable } from "../../../db/pms-schema/billing";
 import { recordAuthorisationUsage } from "../cases";
 import { RepoInputError, assertId, assertTenantId, decryptField, encryptField, nowIso, num, numOrNull, parseInput, parseLines, pmsAudit, pmsAuditQuery, pmsId, translateDbError, type RepoContext } from "../context";
 import { ensureSettingsQuery, getBillingSettings } from "./settings";
-import { INV, LINES, SUMMARY_COLUMNS, affected, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
+import { INV, LINES, PAY, SUMMARY_COLUMNS, affected, billingAuditWhen, billingBatch, chunks, editToken, isUniqueRefusal, todayOf, toInvoiceLine, toInvoiceSummary } from "./shared";
 
 const MESSAGES = {
   unique: "An appointment on this invoice is already on another invoice (or the import reference is taken).",
@@ -257,6 +257,7 @@ function invoiceValues(
   v: {
     patientId: string;
     caseId: string | null;
+    siteId: string | null;
     billTo: BillTo;
     payerType: PayerType;
     payerReferrerId: string | null;
@@ -281,6 +282,7 @@ function invoiceValues(
     status: "draft",
     patient_id: v.patientId,
     case_id: v.caseId,
+    site_id: v.siteId,
     bill_to: v.billTo,
     payer_type: v.payerType,
     payer_referrer_id: v.payerReferrerId,
@@ -320,6 +322,10 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
   if (d.caseId && (!theCase || theCase.patientId !== d.patientId)) throw new RepoInputError("That case is not one of this patient's cases.");
   if (billTo === "payer" && (!theCase?.payerReferrerId || theCase.payerType === "self_pay")) throw new RepoInputError("This case has no payer account to bill. Bill the patient, or add the payer to the case.");
   await checkAuthorisation(ctx, tenantId, d.authorisationId, d.caseId ?? null);
+  if (d.siteId) {
+    const site = await ctx.db.selectFrom("pms_sites").select("id").where("tenant_id", "=", tenantId).where("id", "=", d.siteId).executeTakeFirst();
+    if (!site) throw new RepoInputError("That site does not exist in this clinic.");
+  }
   const appts = d.lines.map((l) => l.appointmentId).filter((a): a is string => typeof a === "string");
   if (appts.length && (await billedAppointmentIds(ctx, tenantId, appts)).size > 0) throw new RepoInputError("An appointment on this invoice is already on another invoice.");
 
@@ -383,7 +389,7 @@ export async function createDraftInvoice(ctx: RepoContext, tenantId: string, inp
   for (const l of lines) l.id = pmsId(P.invoiceLine, ctx);
   if (excess) excess.line.id = pmsId(P.invoiceLine, ctx);
 
-  const common = { patientId: d.patientId, caseId: d.caseId ?? null, pricesIncludeVat: settings.pricesIncludeVat };
+  const common = { patientId: d.patientId, caseId: d.caseId ?? null, siteId: d.siteId ?? null, pricesIncludeVat: settings.pricesIncludeVat };
   const queries: BatchQuery[] = [];
   if (excess) {
     queries.push(
@@ -598,9 +604,14 @@ async function billToSnapshot(ctx: RepoContext, tenantId: string, inv: Invoice):
   return { name: patientName, attention: null, address: parseLines(p.address_json), postcode: p.postcode, email: p.email, references };
 }
 
-/** Sessions an invoice uses on its authorisation: attended treatments (did-not-attend and late cancellation fees use none). */
+/**
+ * Sessions an invoice uses on its authorisation: treatments added BY HAND only. A visit from the diary already
+ * used its session when it was completed (the diary records it on the appointment's authorisation and gives it
+ * back if the status is undone) – counting it again here would use two sessions for one visit. Did-not-attend
+ * and late cancellation fees use none. The VALUE is always counted here (the diary counts no money).
+ */
 export function sessionsUsedBy(inv: Pick<Invoice, "lines">): number {
-  return inv.lines.filter((l) => l.kind === "service" && (l.visitStatus === null || l.visitStatus === "attended")).reduce((a, l) => a + l.quantity, 0);
+  return inv.lines.filter((l) => l.kind === "service" && l.appointmentId === null && (l.visitStatus === null || l.visitStatus === "attended")).reduce((a, l) => a + l.quantity, 0);
 }
 
 /**
@@ -647,6 +658,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
   let issued = false;
   try {
     for (let attempt = 0; attempt < 4 && !issued; attempt++) {
+      const token = editToken();
       const queries = [
         ensureSettingsQuery(ctx, tenantId, at),
         ctx.db
@@ -662,6 +674,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
             auth_value_pence: usageTaken ? value : 0,
             issued_by: actor.userId,
             issued_at: at,
+            edit_token: token,
             rev: expectedRev + 1,
             updated_at: at,
           })
@@ -669,6 +682,14 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
           .where("id", "=", id)
           .where("rev", "=", expectedRev)
           .where("status", "=", "draft"),
+        // The audit row, written only when the issue above applied (its token is on the row).
+        billingAuditWhen(
+          ctx,
+          tenantId,
+          actor,
+          { action: "pms.invoice.issue", targetType: "pms_invoice", targetId: id, detail: { rev: expectedRev + 1, ...(usageTaken ? { authorisationId: inv.authorisationId, sessions, valuePence: value } : {}) } },
+          ctx.db.selectFrom(INV).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("edit_token", "=", token).where("status", "=", "issued"),
+        ),
       ];
       try {
         const results = await runBatch(ctx.db, queries);
@@ -686,9 +707,7 @@ export async function issueInvoice(ctx: RepoContext, tenantId: string, id: strin
     }
   }
   if (!issued) return ((await draftState(ctx, tenantId, id)) as IssueResult | null) ?? { ok: false, reason: "not_found" };
-  const out = (await getInvoice(ctx, tenantId, id)) as Invoice;
-  await pmsAudit(ctx, tenantId, actor, { action: "pms.invoice.issue", targetType: "pms_invoice", targetId: id, detail: { number: out.number, rev: out.rev, ...(usageTaken ? { authorisationId: inv.authorisationId, sessions } : {}) } });
-  return { ok: true, invoice: out };
+  return { ok: true, invoice: (await getInvoice(ctx, tenantId, id)) as Invoice };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -730,7 +749,11 @@ export async function getInvoice(ctx: RepoContext, tenantId: string, id: string)
   return toInvoice(ctx, row, lines.map((l) => toInvoiceLine(ctx, l)));
 }
 
-export const INVOICE_LIST_STATES = ["all", "draft", "outstanding", "overdue", "paid", "credited", "refund_due", "cancelled"] as const;
+/**
+ * The list's status chips (design round 2c): all, draft, issued (nothing paid, not overdue), part-paid, paid,
+ * overdue, void – plus "outstanding" (anything owed), credited, refund due and cancelled drafts.
+ */
+export const INVOICE_LIST_STATES = ["all", "draft", "issued", "part_paid", "paid", "overdue", "void", "outstanding", "credited", "refund_due", "cancelled"] as const;
 export type InvoiceListState = (typeof INVOICE_LIST_STATES)[number];
 
 export interface ListInvoicesOptions {
@@ -740,8 +763,14 @@ export interface ListInvoicesOptions {
   caseId?: string;
   billTo?: BillTo;
   payerType?: PayerType;
-  /** An invoice number ("RIV00042", "42"). */
+  /** An invoice number ("RIV00042", "42"), or words of the patient's or the payer's name. */
+  q?: string;
+  /** An invoice number only ("RIV00042", "42"). */
   number?: string;
+  /** The member's site scope (null/undefined = every site); invoices without a site are then left out. */
+  siteIds?: ReadonlySet<string> | null;
+  /** One site (the site switcher). */
+  siteId?: string;
   /** Invoice date range (issued invoices). */
   from?: string;
   until?: string;
@@ -752,12 +781,28 @@ export interface ListInvoicesOptions {
 
 const BALANCE = sql<number>`total_pence - paid_pence - credited_pence`;
 
-/** Invoices (summaries, nothing decrypted), newest first. */
+/** Words of a search, lower case, for LIKE (wildcards escaped). */
+function likeWords(q: string): string[] {
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[%_\\]/g, ""))
+    .filter((w) => w.length > 0)
+    .slice(0, 4)
+    .map((w) => `%${w}%`);
+}
+
+/** Invoices (summaries, nothing decrypted), newest first; and how many match. */
 export async function listInvoices(ctx: RepoContext, tenantId: string, options: ListInvoicesOptions = {}): Promise<InvoiceSummary[]> {
+  return (await listInvoicesPage(ctx, tenantId, options)).rows;
+}
+
+export async function listInvoicesPage(ctx: RepoContext, tenantId: string, options: ListInvoicesOptions = {}): Promise<{ rows: InvoiceSummary[]; total: number }> {
   assertTenantId(tenantId);
   const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 50)), 200);
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
-  let q = ctx.db.selectFrom(INV).select(SUMMARY_COLUMNS).where("tenant_id", "=", tenantId);
+  if (options.siteIds && options.siteIds.size === 0) return { rows: [], total: 0 };
+  let q = ctx.db.selectFrom(INV).where("tenant_id", "=", tenantId);
   const today = todayOf(ctx);
   switch (options.state ?? "all") {
     case "draft":
@@ -766,6 +811,12 @@ export async function listInvoices(ctx: RepoContext, tenantId: string, options: 
     case "cancelled":
       q = q.where("status", "=", "cancelled");
       break;
+    case "issued":
+      q = q.where("status", "=", "issued").where("voided_at", "is", null).where("paid_pence", "=", 0).where("credited_pence", "=", 0).where(BALANCE, ">", 0).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
+      break;
+    case "part_paid":
+      q = q.where("status", "=", "issued").where(BALANCE, ">", 0).where(sql<boolean>`(paid_pence > 0 or credited_pence > 0)`).where((eb) => eb.or([eb("due_on", "is", null), eb("due_on", ">=", today)]));
+      break;
     case "outstanding":
       q = q.where("status", "=", "issued").where(BALANCE, ">", 0);
       break;
@@ -773,10 +824,13 @@ export async function listInvoices(ctx: RepoContext, tenantId: string, options: 
       q = q.where("status", "=", "issued").where(BALANCE, ">", 0).where("due_on", "<", today);
       break;
     case "paid":
-      q = q.where("status", "=", "issued").where(BALANCE, "=", 0).where(sql<boolean>`(credited_pence < total_pence or total_pence = 0)`);
+      q = q.where("status", "=", "issued").where("voided_at", "is", null).where(BALANCE, "=", 0).where(sql<boolean>`(credited_pence < total_pence or total_pence = 0)`);
       break;
     case "credited":
-      q = q.where("status", "=", "issued").where(sql<boolean>`credited_pence = total_pence and total_pence > 0`);
+      q = q.where("status", "=", "issued").where("voided_at", "is", null).where(sql<boolean>`credited_pence = total_pence and total_pence > 0`);
+      break;
+    case "void":
+      q = q.where("status", "=", "issued").where("voided_at", "is not", null);
       break;
     case "refund_due":
       q = q.where("status", "=", "issued").where(BALANCE, "<", 0);
@@ -784,6 +838,8 @@ export async function listInvoices(ctx: RepoContext, tenantId: string, options: 
     default:
       break;
   }
+  if (options.siteIds) q = q.where("site_id", "in", Array.from(options.siteIds).slice(0, 90));
+  if (options.siteId) q = q.where("site_id", "=", options.siteId);
   if (options.patientId) q = q.where("patient_id", "=", options.patientId);
   if (options.payerReferrerId) q = q.where("payer_referrer_id", "=", options.payerReferrerId);
   if (options.caseId) q = q.where("case_id", "=", options.caseId);
@@ -793,49 +849,139 @@ export async function listInvoices(ctx: RepoContext, tenantId: string, options: 
   if (options.until) q = q.where("issued_on", "<=", options.until);
   if (options.number) {
     const n = parseDocumentNumber(options.number);
-    if (!n) return [];
+    if (!n) return { rows: [], total: 0 };
     q = q.where("number_seq", "=", n.seq);
     if (n.prefix) q = q.where("number_prefix", "=", n.prefix);
   }
-  const rows = await q.orderBy("created_at", "desc").orderBy("id", "desc").limit(limit).offset(offset).execute();
-  return rows.map(toInvoiceSummary);
+  const text = options.q?.trim();
+  if (text) {
+    const n = parseDocumentNumber(text);
+    const words = likeWords(text);
+    q = q.where((eb) => {
+      const ors = [];
+      if (n) ors.push(n.prefix ? eb.and([eb("number_seq", "=", n.seq), eb("number_prefix", "=", n.prefix)]) : eb("number_seq", "=", n.seq));
+      if (words.length) {
+        const patient = eb
+          .selectFrom("pms_patients as pp")
+          .select("pp.id")
+          .whereRef("pp.tenant_id", "=", "pms_invoices.tenant_id")
+          .whereRef("pp.id", "=", "pms_invoices.patient_id")
+          .where("pp.tenant_id", "=", tenantId)
+          .where((e2) => e2.and(words.map((w) => e2(sql<string>`lower(pp.first_name || ' ' || pp.last_name || ' ' || coalesce(pp.preferred_name, ''))`, "like", w))));
+        const payer = eb
+          .selectFrom("pms_referrers as pr")
+          .select("pr.id")
+          .whereRef("pr.tenant_id", "=", "pms_invoices.tenant_id")
+          .whereRef("pr.id", "=", "pms_invoices.payer_referrer_id")
+          .where("pr.tenant_id", "=", tenantId)
+          .where((e2) => e2.and(words.map((w) => e2(sql<string>`lower(pr.name)`, "like", w))));
+        ors.push(eb.exists(patient), eb.exists(payer));
+      }
+      return ors.length ? eb.or(ors) : eb.val(false);
+    });
+  }
+  const [rows, count] = await Promise.all([
+    q.select(SUMMARY_COLUMNS).orderBy("created_at", "desc").orderBy("id", "desc").limit(limit).offset(offset).execute(),
+    q.select((eb) => eb.fn.countAll<number>().as("n")).executeTakeFirst(),
+  ]);
+  return { rows: rows.map(toInvoiceSummary), total: num(count?.n ?? 0) };
 }
 
 export interface BillingFigures {
   drafts: number;
   outstandingPence: number;
   outstandingCount: number;
+  /** Of the outstanding: owed by patients / by payer accounts (insurers, solicitors…). */
+  outstandingPatientsPence: number;
+  outstandingAccountsPence: number;
   overduePence: number;
   overdueCount: number;
   refundsDuePence: number;
   invoicedThisMonthPence: number;
+  /** Payments taken today (refunds and reversed payments left out), by method. */
+  takenTodayPence: number;
+  takenTodayByMethod: Record<string, number>;
 }
 
-/** Figures for the billing start page. */
-export async function billingFigures(ctx: RepoContext, tenantId: string): Promise<BillingFigures> {
+/** Figures for the billing start page (in the member's site scope). */
+export async function billingFigures(ctx: RepoContext, tenantId: string, scope: { siteIds?: ReadonlySet<string> | null; siteId?: string } = {}): Promise<BillingFigures> {
   assertTenantId(tenantId);
   const today = todayOf(ctx);
   const monthStart = `${today.slice(0, 7)}-01`;
-  const row = await ctx.db
+  const sites = scope.siteIds ? Array.from(scope.siteIds).slice(0, 90) : null;
+  let q = ctx.db
     .selectFrom(INV)
     .select([
       sql<number>`coalesce(sum(case when status = 'draft' then 1 else 0 end), 0)`.as("drafts"),
       sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding"),
+      sql<number>`coalesce(sum(case when status = 'issued' and bill_to = 'patient' and total_pence - paid_pence - credited_pence > 0 then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("outstanding_p"),
       sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 then 1 else 0 end), 0)`.as("outstanding_n"),
       sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then total_pence - paid_pence - credited_pence else 0 end), 0)`.as("overdue"),
       sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence > 0 and due_on < ${today} then 1 else 0 end), 0)`.as("overdue_n"),
       sql<number>`coalesce(sum(case when status = 'issued' and total_pence - paid_pence - credited_pence < 0 then paid_pence + credited_pence - total_pence else 0 end), 0)`.as("refunds"),
-      sql<number>`coalesce(sum(case when status = 'issued' and issued_on >= ${monthStart} then total_pence else 0 end), 0)`.as("month"),
+      sql<number>`coalesce(sum(case when status = 'issued' and voided_at is null and issued_on >= ${monthStart} then total_pence else 0 end), 0)`.as("month"),
     ])
+    .where("tenant_id", "=", tenantId);
+  if (sites) q = sites.length ? q.where("site_id", "in", sites) : q.where(sql<boolean>`1 = 0`);
+  if (scope.siteId) q = q.where("site_id", "=", scope.siteId);
+  let pq = ctx.db
+    .selectFrom(PAY)
+    .select(["method", (eb) => eb.fn.sum<number>("amount_pence").as("n")])
     .where("tenant_id", "=", tenantId)
-    .executeTakeFirst();
+    .where("kind", "=", "payment")
+    .where("status", "=", "recorded")
+    .where("received_on", "=", today);
+  if (sites) pq = sites.length ? pq.where("site_id", "in", sites) : pq.where(sql<boolean>`1 = 0`);
+  if (scope.siteId) pq = pq.where("site_id", "=", scope.siteId);
+  const [row, taken] = await Promise.all([q.executeTakeFirst(), pq.groupBy("method").execute()]);
+  const byMethod: Record<string, number> = {};
+  for (const t of taken) byMethod[t.method] = num(t.n);
+  const outstanding = num(row?.outstanding ?? 0);
+  const outstandingPatients = num(row?.outstanding_p ?? 0);
   return {
     drafts: num(row?.drafts ?? 0),
-    outstandingPence: num(row?.outstanding ?? 0),
+    outstandingPence: outstanding,
     outstandingCount: num(row?.outstanding_n ?? 0),
+    outstandingPatientsPence: outstandingPatients,
+    outstandingAccountsPence: outstanding - outstandingPatients,
     overduePence: num(row?.overdue ?? 0),
     overdueCount: num(row?.overdue_n ?? 0),
     refundsDuePence: num(row?.refunds ?? 0),
     invoicedThisMonthPence: num(row?.month ?? 0),
+    takenTodayPence: Object.values(byMethod).reduce((a, n) => a + n, 0),
+    takenTodayByMethod: byMethod,
   };
+}
+
+/** What each patient owes on issued invoices addressed to them (the patient list's Balance column), for these patients. */
+export async function patientBalances(ctx: RepoContext, tenantId: string, patientIds: readonly string[]): Promise<Map<string, number>> {
+  assertTenantId(tenantId);
+  const out = new Map<string, number>();
+  for (const group of chunks(Array.from(new Set(patientIds)))) {
+    if (group.length === 0) continue;
+    const rows = await ctx.db
+      .selectFrom(INV)
+      .select(["patient_id", (eb) => eb.fn.sum<number>(BALANCE).as("n")])
+      .where("tenant_id", "=", tenantId)
+      .where("status", "=", "issued")
+      .where("bill_to", "=", "patient")
+      .where("patient_id", "in", group)
+      .groupBy("patient_id")
+      .execute();
+    for (const r of rows) out.set(r.patient_id, num(r.n));
+  }
+  return out;
+}
+
+/** The patient ids (at most `limit`) that owe money on issued invoices addressed to them – the "Owes money" filter. */
+export function owesMoneyPatientIds(ctx: RepoContext, tenantId: string) {
+  assertTenantId(tenantId);
+  return ctx.db
+    .selectFrom(INV)
+    .select("patient_id")
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "issued")
+    .where("bill_to", "=", "patient")
+    .groupBy("patient_id")
+    .having((eb) => eb(eb.fn.sum<number>(BALANCE), ">", 0));
 }

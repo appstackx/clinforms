@@ -292,3 +292,26 @@ describe("input schemas", () => {
     assert.equal(PaymentInputSchema.safeParse({ ...pay, amountPence: 0 }).success, false);
   });
 });
+
+describe("M5: excess per visit, void state", () => {
+  it("the excess not billed yet is taken from the first visits in order", async () => {
+    const { excessPerVisit } = await import("./visits");
+    const m = excessPerVisit(
+      [
+        { key: "a", totalPence: 7500 },
+        { key: "b", totalPence: 7500 },
+        { key: "c", totalPence: 7500 },
+      ],
+      10000,
+    );
+    assert.deepEqual([m.get("a"), m.get("b"), m.get("c")], [7500, 2500, 0]);
+    assert.deepEqual(Array.from(excessPerVisit([{ key: "a", totalPence: 5000 }], 0).values()), [0]);
+  });
+  it("a voided invoice reads Void; unpaid issued reads Issued; part paid reads Part-paid", async () => {
+    const { invoiceState, INVOICE_STATE_LABELS } = await import("./status");
+    const base = { status: "issued" as const, totalPence: 5500, paidPence: 0, creditedPence: 0, dueOn: "2026-11-30" };
+    assert.equal(INVOICE_STATE_LABELS[invoiceState(base, "2026-10-28")], "Issued");
+    assert.equal(INVOICE_STATE_LABELS[invoiceState({ ...base, paidPence: 1000 }, "2026-10-28")], "Part-paid");
+    assert.equal(invoiceState({ ...base, creditedPence: 5500, voidedAt: "2026-10-28T10:00:00.000Z" }, "2026-10-28"), "void");
+  });
+});

@@ -9,7 +9,8 @@ import type { PaymentLink, PaymentLinkStatus } from "../../../../modules/pms/bil
 import type { PmsActor } from "../../../../modules/pms/core/types";
 import type { Selectable } from "kysely";
 import type { PmsPaymentLinksTable } from "../../../db/pms-schema/billing";
-import { RepoInputError, assertId, assertTenantId, nowIso, num, pmsAudit, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
+import { RepoInputError, assertId, assertTenantId, nowIso, num, pmsAuditQuery, pmsId, writeWithAudit, type RepoContext } from "../context";
+import { billingAuditWhen } from "./shared";
 
 const T = "pms_payment_links";
 
@@ -94,8 +95,19 @@ export async function markPaymentLink(ctx: RepoContext, tenantId: string, id: st
   const at = nowIso(ctx);
   const before = await ctx.db.selectFrom(T).select(["status", "invoice_id"]).where("tenant_id", "=", tenantId).where("id", "=", id).executeTakeFirst();
   if (!before) throw new RepoInputError("That payment link does not exist in this clinic.");
-  await ctx.db.updateTable(T).set({ status, last_checked_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).execute();
-  if (before.status !== status) {
-    await pmsAudit(ctx, tenantId, actor, { action: "pms.payment_link.status", targetType: "pms_invoice", targetId: before.invoice_id, detail: { linkId: id, from: before.status, to: status } });
+  if (before.status === status) {
+    // Only the check time changes (no audit: nothing about the link changed).
+    await ctx.db.updateTable(T).set({ last_checked_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).execute();
+    return;
   }
+  await writeWithAudit(ctx, [
+    ctx.db.updateTable(T).set({ status, last_checked_at: at, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", before.status),
+    billingAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.payment_link.status", targetType: "pms_invoice", targetId: before.invoice_id, detail: { linkId: id, from: before.status, to: status } },
+      ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", status).where("updated_at", "=", at),
+    ),
+  ]);
 }

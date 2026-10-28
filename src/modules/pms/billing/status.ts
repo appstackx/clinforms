@@ -3,7 +3,7 @@
  */
 import type { InvoiceStatus } from "./types";
 
-export type InvoiceState = "draft" | "cancelled" | "unpaid" | "part_paid" | "overdue" | "paid" | "credited" | "refund_due";
+export type InvoiceState = "draft" | "cancelled" | "unpaid" | "part_paid" | "overdue" | "paid" | "credited" | "void" | "refund_due";
 
 export interface InvoiceAmounts {
   status: InvoiceStatus;
@@ -11,6 +11,8 @@ export interface InvoiceAmounts {
   paidPence: number;
   creditedPence: number;
   dueOn: string | null;
+  /** Set when an issued invoice was voided. */
+  voidedAt?: string | null;
 }
 
 /** total − paid − credited. Negative: more was paid or credited than charged (money is owed back). */
@@ -23,6 +25,7 @@ export function invoiceState(a: InvoiceAmounts, today: string): InvoiceState {
   if (a.status === "draft") return "draft";
   if (a.status === "cancelled") return "cancelled";
   const balance = balanceOf(a);
+  if (a.voidedAt && balance >= 0) return "void";
   if (balance < 0) return "refund_due";
   if (balance === 0) return a.creditedPence >= a.totalPence && a.totalPence > 0 ? "credited" : "paid";
   if (a.dueOn && a.dueOn < today) return "overdue";
@@ -32,11 +35,12 @@ export function invoiceState(a: InvoiceAmounts, today: string): InvoiceState {
 export const INVOICE_STATE_LABELS: Readonly<Record<InvoiceState, string>> = {
   draft: "Draft",
   cancelled: "Cancelled",
-  unpaid: "Unpaid",
-  part_paid: "Part paid",
+  unpaid: "Issued",
+  part_paid: "Part-paid",
   overdue: "Overdue",
   paid: "Paid",
   credited: "Credited",
+  void: "Void",
   refund_due: "Refund due",
 };
 
@@ -49,6 +53,7 @@ export const INVOICE_STATE_TONES: Readonly<Record<InvoiceState, "neutral" | "inf
   overdue: "danger",
   paid: "success",
   credited: "neutral",
+  void: "neutral",
   refund_due: "warning",
 };
 

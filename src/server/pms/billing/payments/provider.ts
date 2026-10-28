@@ -33,6 +33,21 @@ export interface PaidSession {
   paidOn: string;
 }
 
+export interface SavedCardRef {
+  customerRef: string;
+  methodRef: string;
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+}
+
+export interface CardCharge {
+  /** The provider's reference for the charge (recorded once as the payment's provider reference). */
+  chargeRef: string;
+  amountPence: number;
+}
+
 export interface PaymentLinkProvider {
   /** "manual" | "stripe" – stored on payments and links. */
   readonly id: string;
@@ -44,6 +59,12 @@ export interface PaymentLinkProvider {
   createLink(input: CreateLinkInput): Promise<CreatedLink>;
   listPaidSessions(providerLinkId: string): Promise<PaidSession[]>;
   deactivate(providerLinkId: string): Promise<void>;
+  /** Saves the provider's TEST card for a patient (test mode only – no real card is ever entered here). */
+  saveTestCard(input: { tenantId: string; patientId: string; idempotencyKey: string }): Promise<SavedCardRef>;
+  /** Charges a saved card (test mode). */
+  chargeSavedCard(input: { customerRef: string; methodRef: string; amountPence: number; description: string; idempotencyKey: string }): Promise<CardCharge>;
+  /** Refunds (part of) a card payment made through the provider (test mode). */
+  refund(input: { chargeRef: string; amountPence: number; idempotencyKey: string }): Promise<{ refundRef: string }>;
 }
 
 export class PaymentProviderError extends Error {
@@ -64,4 +85,13 @@ export const MANUAL_PROVIDER: PaymentLinkProvider = {
   },
   listPaidSessions: async () => [],
   deactivate: async () => undefined,
+  saveTestCard: async () => {
+    throw new PaymentProviderError("Saved cards are not set up for this system.");
+  },
+  chargeSavedCard: async () => {
+    throw new PaymentProviderError("Saved cards are not set up for this system. Take the card on the card reader instead.");
+  },
+  refund: async () => {
+    throw new PaymentProviderError("Card refunds through the provider are not set up. Refund on the card reader and record it here.");
+  },
 };

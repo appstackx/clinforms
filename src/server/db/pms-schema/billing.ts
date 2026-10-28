@@ -85,6 +85,10 @@ export interface PmsInvoicesTable {
   issued_by: string | null;
   issued_at: IsoTimestamp | null;
   cancelled_at: IsoTimestamp | null;
+  /** 0133: the site of the visits it bills (site scope); null = no site. */
+  site_id: string | null;
+  /** 0134: when an issued invoice was voided (a full credit note of kind "void"). */
+  voided_at: IsoTimestamp | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -132,6 +136,8 @@ export interface PmsCreditNotesTable {
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
+  /** 0132: "credit" | "write_off" | "void" | "transfer". */
+  kind: WithDefault<string>;
 }
 
 export interface PmsCreditNoteLinesTable {
@@ -170,6 +176,8 @@ export interface PmsPaymentsTable {
   created_by: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
+  /** 0135: the site the payment was taken at; null = none (e.g. a remittance). */
+  site_id: string | null;
 }
 
 export interface PmsPaymentAllocationsTable {
@@ -213,6 +221,27 @@ export interface PmsInvoiceExportsTable {
   created_at: IsoTimestamp;
 }
 
+/** 0136: a patient's saved card – TEST MODE ONLY; provider references and receipt details, never a card number. */
+export interface PmsSavedCardsTable {
+  tenant_id: string;
+  id: string;
+  patient_id: string;
+  provider: string;
+  mode: string;
+  customer_ref: string;
+  method_ref: string;
+  brand: string;
+  last4: string;
+  exp_month: number;
+  exp_year: number;
+  /** "active" | "removed" */
+  status: WithDefault<string>;
+  created_by: string | null;
+  removed_at: IsoTimestamp | null;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
 export interface BillingTables {
   pms_billing_settings: PmsBillingSettingsTable;
   pms_service_vat: PmsServiceVatTable;
@@ -224,6 +253,7 @@ export interface BillingTables {
   pms_payment_allocations: PmsPaymentAllocationsTable;
   pms_payment_links: PmsPaymentLinksTable;
   pms_invoice_exports: PmsInvoiceExportsTable;
+  pms_saved_cards: PmsSavedCardsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -238,6 +268,7 @@ export const BILLING_TABLES = [
   "pms_payment_allocations",
   "pms_payment_links",
   "pms_invoice_exports",
+  "pms_saved_cards",
 ] as const satisfies readonly (keyof BillingTables)[];
 
 export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[number]]: readonly (keyof BillingTables[T] & string)[] } = {
@@ -251,10 +282,11 @@ export const BILLING_PRIMARY_KEYS: { readonly [T in (typeof BILLING_TABLES)[numb
   pms_payment_allocations: ["tenant_id", "id"],
   pms_payment_links: ["tenant_id", "id"],
   pms_invoice_exports: ["tenant_id", "id"],
+  pms_saved_cards: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at/updated_at (TEXT in SQLite, timestamptz in Postgres) – the D1 → Postgres copy. */
-export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at"];
+export const BILLING_TIMESTAMP_COLUMNS: readonly string[] = ["issued_at", "cancelled_at", "exported_at", "reversed_at", "last_checked_at", "voided_at", "removed_at"];
 
 /** Every billing table holds one clinic's data (offboarding exports them decrypted, then deletes them). */
 export const BILLING_TENANT_TABLES: readonly (typeof BILLING_TABLES)[number][] = BILLING_TABLES;

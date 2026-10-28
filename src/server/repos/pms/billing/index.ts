@@ -9,4 +9,5 @@ export * from "./invoices";
 export * from "./payment-links";
 export * from "./payments";
 export * from "./reports";
+export * from "./saved-cards";
 export * from "./settings";
