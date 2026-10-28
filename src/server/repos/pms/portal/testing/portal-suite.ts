@@ -27,8 +27,14 @@ import { writeWithAudit } from "../../context";
 import { getBookingSettings, updateBookingSettings } from "../settings";
 import { listBookingSites, saveBookingSite } from "../sites";
 import { findByManageToken, getOnlineBookingForAppointment, listRecentOnlineBookings, markOnlineBookingReviewed } from "../bookings";
-import { ensurePortalAccount, setPortalAccountStatus } from "../accounts";
-import { getPortalShare, listSharesForPatient, markShareViewed, sharePortalDocument, withdrawShare } from "../shares";
+import { ensurePortalAccount, revokePortalSession, setPortalAccountStatus } from "../accounts";
+import { getPortalShare, listSharesForPatient, markShareViewed, recordShareDownload, shareAttachment, shareFilesForPatient, sharePortalDocument, withdrawShare } from "../shares";
+import { endHandoff, findHandoffByToken, getHandoff, handoffForResponse, startHandoff, verifyHandoff } from "../handoffs";
+import { putAttachment, withdrawAttachment } from "../../records/attachments";
+import { deviceState, submitOnDevice } from "../../../../pms/portal/device-flow";
+import { patientShare, portalHome } from "../../../../pms/portal/portal-views";
+import { recordVerifiedConsent } from "../../../../pms/portal/intake-service";
+import { newSecret } from "../../../../pms/portal/tokens";
 import {
   cancelIntakeResponse,
   countResponsesByTemplate,
@@ -472,6 +478,151 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
       assert.equal(await withdrawShare(ctx, A, share.id, STAFF), false);
       assert.equal((await listSharesForPatient(ctx, A, ids.megan)).length, 0);
       assert.equal((await listSharesForPatient(ctx, A, ids.megan, { includeWithdrawn: true })).length, 1);
+      ids.textShare = share.id;
+    });
+
+    it("write ids: two identical writes in the SAME millisecond audit once (shares, sessions, form copies)", async () => {
+      // A frozen clock: both writes carry the same time – only the write id tells them apart.
+      const frozen: RepoContext = { ...ctx, now: () => new Date(Date.parse("2026-11-02T07:59:30.000Z")) };
+      ids.sam = (await createPatient(ctx, A, { firstName: "Sam", lastName: "Fixture", dateOfBirth: "1985-03-04", email: "sam.fixture@example.com" }, STAFF)).id;
+      const share = await sharePortalDocument(ctx, A, { patientId: ids.sam, title: "Stretches", body: "Hamstring stretch, hold 30 seconds." }, STAFF);
+      const viewer = { userId: null, sessionId: "psn_frozen" };
+      assert.deepEqual([await markShareViewed(frozen, A, share.id, viewer), await markShareViewed(frozen, A, share.id, viewer)], [true, false]);
+      assert.deepEqual([await withdrawShare(frozen, A, share.id, STAFF), await withdrawShare(frozen, A, share.id, STAFF)], [true, false]);
+      const account = await ensurePortalAccount(ctx, A, ids.sam, STAFF);
+      const at = frozen.now!().toISOString();
+      const sessionId = "psn_01JBFROZENSESSION000000000";
+      await ctx.db.insertInto("pms_portal_sessions").values({ tenant_id: A, id: sessionId, account_id: account.id, token_hash: hashSecret("frozen-session"), expires_at: "2026-11-02T12:00:00.000Z", last_seen_at: at, revoked_at: null, created_at: at }).execute();
+      assert.deepEqual([await revokePortalSession(frozen, A, sessionId), await revokePortalSession(frozen, A, sessionId)], [true, false]);
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.sam }, STAFF)).response;
+      assert.deepEqual([await cancelIntakeResponse(frozen, A, copy.id, STAFF), await cancelIntakeResponse(frozen, A, copy.id, STAFF)], [true, false]);
+      const done = (await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.sam }, STAFF)).response;
+      const sent = await submitForm(frozen, A, done.id, 1, { answers: { km: "20" }, trust: "verified" }, viewer);
+      assert.ok(sent.ok);
+      assert.deepEqual(await submitForm(frozen, A, done.id, 1, { answers: { km: "20" }, trust: "verified" }, viewer), { ok: false, reason: "closed" });
+      // The same two writes racing (both read "requested" before either wrote): the loser's UPDATE matches nothing.
+      const raced = (await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.sam }, STAFF)).response;
+      const both = await Promise.all([
+        submitIntakeResponseTwice(frozen, raced.id, viewer),
+        submitIntakeResponseTwice(frozen, raced.id, viewer),
+      ]);
+      assert.equal(both.filter((r) => r.ok).length, 1, "exactly one of two racing submits sealed the copy");
+      assert.deepEqual([await markResponseReviewed(frozen, A, done.id, STAFF), await markResponseReviewed(frozen, A, done.id, STAFF)], [true, false]);
+      const audit = await listAudit(ctx, A, { limit: 1000 });
+      const count = (action: string, target: string) => audit.filter((e) => e.action === action && e.targetId === target).length;
+      assert.equal(count("pms.portal_share.view", share.id), 1);
+      assert.equal(count("pms.portal_share.withdraw", share.id), 1);
+      assert.equal(count("pms.portal_session.end", account.id), 1);
+      assert.equal(count("pms.intake_response.cancel", copy.id), 1);
+      assert.equal(count("pms.intake_response.submit", done.id), 1);
+      assert.equal(count("pms.intake_response.submit", raced.id), 1, "racing submits in the same millisecond: one audit row");
+      assert.equal(count("pms.intake_response.review", done.id), 1);
+    });
+
+    /** submitIntakeResponse with the revision read up front (as two requests arriving together would). */
+    async function submitIntakeResponseTwice(c: RepoContext, id: string, who: { userId: null; sessionId: string }) {
+      return submitForm(c, A, id, 1, { answers: { km: "12" }, trust: "verified" }, who);
+    }
+
+    it("files shared with the patient (PORTAL-004): the record's file, who and when, withdraw, never another clinic's", async () => {
+      const pdf = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.from("fictional exercise sheet ".repeat(40))]);
+      const file = await putAttachment(ctx, A, { patientId: ids.sam, bytes: pdf, fileName: "Sam exercise sheet.pdf", description: "Home exercises (fictional)" }, STAFF);
+      const fileB = await putAttachment(ctx, B, { patientId: ids.patientB, bytes: pdf, fileName: "b.pdf" }, STAFF_B);
+      const share = await shareAttachment(ctx, A, { patientId: ids.sam, attachmentId: file.id, title: "Your exercise sheet", message: "Three times a day." }, STAFF);
+      assert.equal(share.sharedBy, STAFF.userId);
+      assert.ok(share.sharedAt);
+      assert.equal((await shareFilesForPatient(ctx, A, ids.sam)).get(share.id), file.id);
+      const full = await getPortalShare(ctx, A, share.id);
+      assert.deepEqual([full?.attachmentId, full?.body], [file.id, "Three times a day."]);
+      // Another clinic's file, or a file of another clinic's patient, is refused by the foreign keys.
+      await rejects(shareAttachment(ctx, A, { patientId: ids.sam, attachmentId: fileB.id, title: "Cross", message: null }, STAFF), /does not exist in this clinic/);
+      await rejects(shareAttachment(ctx, B, { patientId: ids.patientB, attachmentId: file.id, title: "Cross", message: null }, STAFF_B), /does not exist in this clinic/);
+      assert.equal(await getPortalShare(ctx, B, share.id), null);
+      // The patient's portal lists it with the file's kind and size, and hands the file out.
+      const home = await portalHome(ctx, clinicA, ids.sam, now());
+      assert.ok(home.documents.some((d) => d.id === share.id && /PDF document/.test(d.detail)), JSON.stringify(home.documents));
+      const mine = await patientShare(ctx, A, ids.sam, share.id);
+      assert.equal(mine?.file?.id, file.id);
+      assert.equal(await patientShare(ctx, A, ids.megan, share.id), null, "never another patient's");
+      await recordShareDownload(ctx, A, share.id, file.id, { userId: null, sessionId: "psn_test" });
+      // A file withdrawn from the record is no longer handed out, whatever the share says.
+      const second = await shareAttachment(ctx, A, { patientId: ids.sam, attachmentId: file.id, title: "Again", message: null }, STAFF);
+      assert.equal(await withdrawShare(ctx, A, second.id, STAFF), true);
+      assert.equal(await patientShare(ctx, A, ids.sam, second.id), null, "a withdrawn share");
+      assert.equal(await withdrawAttachment(ctx, A, file.id, "Replaced by a newer sheet", STAFF), true);
+      assert.equal(await patientShare(ctx, A, ids.sam, share.id), null, "the file was withdrawn from the record");
+      assert.ok(!(await portalHome(ctx, clinicA, ids.sam, now())).documents.some((d) => d.id === share.id));
+      const audit = await listAudit(ctx, A, { limit: 1000 });
+      const created = audit.find((e) => e.action === "pms.portal_share.create" && e.targetId === share.id);
+      assert.deepEqual(created?.detail, { patientId: ids.sam, attachmentId: file.id });
+      assert.ok(audit.some((e) => e.action === "pms.portal_share.download" && e.targetId === share.id));
+      assert.ok(!JSON.stringify(audit.filter((e) => e.targetId === share.id)).includes("exercise sheet"), "no titles or names in the audit");
+    });
+
+    it("forms completed in the clinic on a clinic device: only that form, sealed as usual, verified by staff", async () => {
+      const copy = (await requestIntakeForm(ctx, A, { templateId: ids.form_consent, patientId: ids.sam }, STAFF)).response;
+      const secret = newSecret();
+      const later = new Date(Date.parse("2026-11-02T09:00:00.000Z")).toISOString();
+      await rejects(startHandoff(ctx, A, { responseId: copy.id, patientId: ids.sam, tokenHash: hashSecret(secret), expiresAt: later }, { userId: null, sessionId: "psn_x" }), /member of staff/);
+      await rejects(startHandoff(ctx, A, { responseId: copy.id, patientId: ids.megan, tokenHash: hashSecret(secret), expiresAt: later }, STAFF), /can no longer be completed/);
+      const first = await startHandoff(ctx, A, { responseId: copy.id, patientId: ids.sam, tokenHash: hashSecret(newSecret()), expiresAt: later }, STAFF);
+      const h = await startHandoff(ctx, A, { responseId: copy.id, patientId: ids.sam, tokenHash: hashSecret(secret), expiresAt: later }, STAFF);
+      assert.equal((await getHandoff(ctx, A, first.id))?.status, "ended", "a new hand-off of the same form ends the earlier one");
+      assert.equal(await findHandoffByToken(ctx, B, hashSecret(secret)), null, "never another clinic's");
+      const raw = await ctx.db.selectFrom("pms_intake_handoffs").select("token_hash").where("tenant_id", "=", A).where("id", "=", h.id).executeTakeFirstOrThrow();
+      assert.ok(raw.token_hash !== secret && raw.token_hash === hashSecret(secret), "only the hash of the device's secret is stored");
+      const state = await deviceState(ctx, A, secret);
+      assert.equal(state.state, "open");
+      assert.equal((await deviceState(ctx, A, newSecret())).state, "none");
+      const form = new FormData();
+      for (const k of ["consent_treatment", "consent_records", "cancellations"]) form.set(`q_${k}`, "on");
+      form.set("q_share_gp", "yes");
+      const bad = new FormData();
+      bad.set("signature", "Sam Fixture");
+      const refused = await submitOnDevice(ctx, A, secret, 1, bad);
+      assert.ok(!refused.ok && refused.fieldErrors && Object.keys(refused.fieldErrors).length > 0);
+      form.set("signature", "Sam Fixture");
+      assert.deepEqual(await submitOnDevice(ctx, A, secret, 1, form), { ok: true });
+      const sealed = (await getIntakeResponse(ctx, A, copy.id))!;
+      assert.equal(sealed.status, "submitted");
+      assert.equal(sealed.trust, "unverified", "unverified until staff confirm it");
+      assert.equal(responseSealIntact(sealed), true);
+      assert.equal((await getPatient(ctx, A, ids.sam))?.consentTreatment, false, "no consent on the record before staff verify");
+      const s2 = await deviceState(ctx, A, secret);
+      assert.equal(s2.state, "completed", "the device is locked on 'hand back to staff'");
+      assert.equal((await submitOnDevice(ctx, A, secret, 2, form)).ok, false, "cannot be sent twice from the device");
+      assert.equal(await verifyHandoff(ctx, A, h.id, { userId: null, sessionId: "psn_x" }).catch(() => "refused"), "refused");
+      assert.equal(await verifyHandoff(ctx, A, h.id, STAFF), true);
+      assert.equal(await verifyHandoff(ctx, A, h.id, STAFF), false);
+      assert.equal(await recordVerifiedConsent(ctx, A, sealed, STAFF), true);
+      assert.equal((await getPatient(ctx, A, ids.sam))?.consentTreatment, true, "consent recorded under the verifying member");
+      const done = (await handoffForResponse(ctx, A, copy.id))!;
+      assert.deepEqual([done.status, done.verifiedBy, Boolean(done.completedAt && done.verifiedAt)], ["verified", STAFF.userId, true]);
+      assert.equal((await deviceState(ctx, A, secret)).state, "finished");
+      // An expired hand-off shows nothing and accepts nothing; ending one is audited once.
+      const other = (await requestIntakeForm(ctx, A, { templateId: ids.form_running, patientId: ids.sam }, STAFF)).response;
+      const oldSecret = newSecret();
+      const expired = await startHandoff(ctx, A, { responseId: other.id, patientId: ids.sam, tokenHash: hashSecret(oldSecret), expiresAt: "2026-11-02T07:00:00.000Z" }, STAFF);
+      assert.equal((await deviceState(ctx, A, oldSecret)).state, "finished");
+      const kmForm = new FormData();
+      kmForm.set("q_km", "5");
+      assert.equal((await submitOnDevice(ctx, A, oldSecret, 1, kmForm)).ok, false);
+      assert.equal((await getIntakeResponse(ctx, A, other.id))?.status, "requested");
+      assert.deepEqual([await endHandoff(ctx, A, expired.id, STAFF), await endHandoff(ctx, A, expired.id, STAFF)], [true, false]);
+      // A questionnaire (outcome) is never handed to a device.
+      const outcome = outcomeRequestQueries(ctx, A, { patientId: ids.sam, caseId: null, measure: "nprs", name: "Pain score", form: outcomeQuestionnaire("nprs") }, STAFF);
+      await writeWithAudit(ctx, outcome.queries);
+      await rejects(startHandoff(ctx, A, { responseId: outcome.id, patientId: ids.sam, tokenHash: hashSecret(newSecret()), expiresAt: later }, STAFF), /can no longer be completed/);
+      const audit = await listAudit(ctx, A, { limit: 1000 });
+      const sign = audit.find((e) => e.action === "pms.intake_response.sign" && e.targetId === copy.id);
+      assert.deepEqual(sign?.detail && { via: sign.detail.via, handoff: sign.detail.handoff, trust: sign.detail.trust }, { via: "clinic_device", handoff: h.id, trust: "unverified" });
+      const verify = audit.filter((e) => e.action === "pms.intake_response.verify" && e.targetId === copy.id);
+      assert.equal(verify.length, 1);
+      assert.deepEqual([verify[0].userId, verify[0].detail], [STAFF.userId, { handoff: h.id, via: "clinic_device" }]);
+      assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.start" && e.targetId === copy.id).length, 2);
+      assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === copy.id).length, 1, "the replaced hand-off");
+      assert.equal(audit.filter((e) => e.action === "pms.intake_handoff.end" && e.targetId === other.id).length, 1);
+      assert.ok(!JSON.stringify(audit.filter((e) => e.action.startsWith("pms.intake_")).map((e) => e.detail)).includes("Sam"));
     });
 
     it("every write was audited under its own clinic – ids and counts only", async () => {
@@ -501,11 +652,15 @@ export function definePortalSuite(label: string, factory: () => Promise<PortalSu
         "pms.intake_response.review",
         "pms.intake_response.apply",
         "pms.intake_response.score",
+        "pms.intake_response.verify",
+        "pms.intake_handoff.start",
+        "pms.intake_handoff.end",
+        "pms.portal_share.download",
         "pms.outcome.record",
       ]) {
         assert.ok(codes.has(code), code);
       }
-      assert.equal(a.filter((e) => e.action === "pms.portal_share.withdraw").length, 1, "a refused second withdrawal wrote no audit row");
+      assert.equal(a.filter((e) => e.action === "pms.portal_share.withdraw" && e.targetId === ids.textShare).length, 1, "a refused second withdrawal wrote no audit row");
       assert.equal(a.filter((e) => e.action === "pms.portal_account.status").length, 2, "a status that did not change wrote no audit row");
       const text = JSON.stringify(a.filter((e) => e.action.startsWith("pms.")));
       for (const secret of ["Ellie", "Sample", "megan.hart", "Sore knee", "Chin tucks", "07700", ids.ellieManage]) assert.ok(!text.includes(secret), secret);

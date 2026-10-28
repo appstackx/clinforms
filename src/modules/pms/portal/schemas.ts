@@ -193,3 +193,13 @@ export const PortalShareInputSchema = z.object({
   body: requiredText(20_000),
 });
 export type PortalShareInput = z.input<typeof PortalShareInputSchema>;
+
+/** A file attached to the record, shared with the patient (PORTAL-004): a plain title and an optional message. */
+export const PortalFileShareInputSchema = z.object({
+  patientId: PmsIdSchema,
+  attachmentId: PmsIdSchema,
+  title: requiredText(120),
+  /** Shown with the file in the portal. Encrypted at rest. */
+  message: z.string().trim().max(2_000, "At most 2,000 characters").optional().nullable(),
+});
+export type PortalFileShareInput = z.input<typeof PortalFileShareInputSchema>;

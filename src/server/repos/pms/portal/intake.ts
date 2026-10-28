@@ -22,7 +22,7 @@ import type { PmsActor, PmsSaveResult } from "../../../../modules/pms/core/types
 import type { BatchQuery } from "../../../db/batch";
 import type { PmsIntakeResponsesTable, PmsIntakeTemplatesTable } from "../../../db/pms-schema/portal";
 import { RepoInputError, assertId, assertTenantId, b01, decryptField, encryptField, isOn, nowIso, num, parseInput, pmsAuditQuery, pmsId, writeWithAudit, type DbContext, type RepoContext } from "../context";
-import { changeWithAudit, portalAuditWhen } from "./shared";
+import { changeWithAudit, newPortalWriteId, portalAuditWhen, portalAuditWhenWritten } from "./shared";
 import { pmsNow } from "../../../../modules/pms/core/clock";
 
 const TT = "pms_intake_templates";
@@ -451,6 +451,16 @@ export type SubmitResult =
   | { ok: false; reason: "invalid"; errors: Record<string, string> }
   | { ok: false; reason: "conflict" | "not_found" | "closed" };
 
+export interface SubmitOptions {
+  /**
+   * Further statements of the SAME batch, given this write's id (e.g. the clinic device's hand-off marked finished) –
+   * make them conditional on `writtenRow(…, "pms_intake_responses", id, writeId)` so they run only with the seal.
+   */
+  alsoWrite?: (writeId: string) => BatchQuery[];
+  /** Extra ids for the audit row (never patient data). */
+  auditDetail?: Record<string, string | number | boolean | null>;
+}
+
 /**
  * Completes a copy: checks the answers against its snapshot, records the typed signature (when the form needs
  * one), seals it and marks it submitted – one conditional UPDATE (still "requested", same revision) with its
@@ -463,6 +473,7 @@ export async function submitIntakeResponse(
   expectedRev: number,
   input: { answers: Record<string, unknown>; signatureName?: string | null; trust: "verified" | "unverified" },
   actor: PmsActor,
+  options: SubmitOptions = {},
 ): Promise<SubmitResult> {
   assertTenantId(tenantId);
   assertId(id, "form copy id");
@@ -485,6 +496,7 @@ export async function submitIntakeResponse(
   const signedAt = current.requiresSignature ? at : null;
   const seal = sha256Hex(signedContent({ responseId: id, patientId: current.patientId, form: current.form, answers, signatureName, signedAt }));
   const next = expectedRev + 1;
+  const writeId = newPortalWriteId(ctx);
   // The seal and its audit row in ONE batch (the audit row only when this write completed the copy).
   const changed = await changeWithAudit(ctx, [
     ctx.db
@@ -498,13 +510,14 @@ export async function submitIntakeResponse(
         content_sha256: seal,
         submitted_at: at,
         rev: next,
+        write_id: writeId,
         updated_at: at,
       })
       .where("tenant_id", "=", tenantId)
       .where("id", "=", id)
       .where("rev", "=", expectedRev)
       .where("status", "=", "requested"),
-    portalAuditWhen(
+    portalAuditWhenWritten(
       ctx,
       tenantId,
       actor,
@@ -512,10 +525,13 @@ export async function submitIntakeResponse(
         action: current.requiresSignature ? "pms.intake_response.sign" : "pms.intake_response.submit",
         targetType: "pms_intake_response",
         targetId: id,
-        detail: { patientId: current.patientId, trust: input.trust, answered: Object.keys(answers).length, ...(current.measure ? { measure: current.measure } : {}) },
+        detail: { patientId: current.patientId, trust: input.trust, answered: Object.keys(answers).length, ...(current.measure ? { measure: current.measure } : {}), ...(options.auditDetail ?? {}) },
       },
-      ctx.db.selectFrom(TR).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("rev", "=", next).where("content_sha256", "=", seal),
+      TR,
+      id,
+      writeId,
     ),
+    ...(options.alsoWrite ? options.alsoWrite(writeId) : []),
   ]);
   if (changed === 0) return { ok: false, reason: "conflict" };
   return { ok: true, response: (await getIntakeResponse(ctx, tenantId, id)) as IntakeResponse };
@@ -526,15 +542,16 @@ export async function cancelIntakeResponse(ctx: DbContext, tenantId: string, id:
   assertTenantId(tenantId);
   assertId(id, "form copy id");
   const at = nowIso(ctx);
+  const writeId = newPortalWriteId(ctx);
   const changed =
     (await changeWithAudit(ctx, [
       ctx.db
         .updateTable(TR)
-        .set((eb) => ({ status: "cancelled", cancelled_at: at, rev: eb("rev", "+", 1), updated_at: at }))
+        .set((eb) => ({ status: "cancelled", cancelled_at: at, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }))
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .where("status", "=", "requested"),
-      portalAuditWhen(ctx, tenantId, actor, { action: "pms.intake_response.cancel", targetType: "pms_intake_response", targetId: id }, ctx.db.selectFrom(TR).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("cancelled_at", "=", at)),
+      portalAuditWhenWritten(ctx, tenantId, actor, { action: "pms.intake_response.cancel", targetType: "pms_intake_response", targetId: id }, TR, id, writeId),
     ])) > 0;
   return changed;
 }
@@ -544,16 +561,17 @@ export async function markResponseReviewed(ctx: DbContext, tenantId: string, id:
   assertTenantId(tenantId);
   assertId(id, "form copy id");
   const at = nowIso(ctx);
+  const writeId = newPortalWriteId(ctx);
   const changed =
     (await changeWithAudit(ctx, [
       ctx.db
         .updateTable(TR)
-        .set((eb) => ({ reviewed_at: at, reviewed_by: actor.userId, rev: eb("rev", "+", 1), updated_at: at }))
+        .set((eb) => ({ reviewed_at: at, reviewed_by: actor.userId, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }))
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .where("status", "=", "submitted")
         .where("reviewed_at", "is", null),
-      portalAuditWhen(ctx, tenantId, actor, { action: "pms.intake_response.review", targetType: "pms_intake_response", targetId: id }, ctx.db.selectFrom(TR).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("reviewed_at", "=", at)),
+      portalAuditWhenWritten(ctx, tenantId, actor, { action: "pms.intake_response.review", targetType: "pms_intake_response", targetId: id }, TR, id, writeId),
     ])) > 0;
   return changed;
 }
@@ -567,19 +585,20 @@ export async function markResponseApplied(ctx: DbContext, tenantId: string, id: 
   assertId(id, "form copy id");
   const at = nowIso(ctx);
   const staff = actor.userId;
+  const writeId = newPortalWriteId(ctx);
   const changed =
     (await changeWithAudit(ctx, [
       ctx.db
         .updateTable(TR)
         .set((eb) =>
           staff
-            ? { applied_at: at, applied_by: staff, reviewed_at: eb.fn.coalesce("reviewed_at", eb.val(at)), reviewed_by: eb.fn.coalesce("reviewed_by", eb.val(staff)), rev: eb("rev", "+", 1), updated_at: at }
-            : { applied_at: at, applied_by: null, rev: eb("rev", "+", 1), updated_at: at },
+            ? { applied_at: at, applied_by: staff, reviewed_at: eb.fn.coalesce("reviewed_at", eb.val(at)), reviewed_by: eb.fn.coalesce("reviewed_by", eb.val(staff)), rev: eb("rev", "+", 1), write_id: writeId, updated_at: at }
+            : { applied_at: at, applied_by: null, rev: eb("rev", "+", 1), write_id: writeId, updated_at: at },
         )
         .where("tenant_id", "=", tenantId)
         .where("id", "=", id)
         .where("status", "=", "submitted"),
-      portalAuditWhen(ctx, tenantId, actor, { action: "pms.intake_response.apply", targetType: "pms_intake_response", targetId: id, detail: { fields } }, ctx.db.selectFrom(TR).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("applied_at", "=", at)),
+      portalAuditWhenWritten(ctx, tenantId, actor, { action: "pms.intake_response.apply", targetType: "pms_intake_response", targetId: id, detail: { fields } }, TR, id, writeId),
     ])) > 0;
   return changed;
 }
@@ -590,11 +609,12 @@ export async function setResponseOutcome(ctx: DbContext, tenantId: string, id: s
   assertId(id, "form copy id");
   assertId(outcomeId, "outcome id");
   const at = nowIso(ctx);
+  const writeId = newPortalWriteId(ctx);
   const changed = await changeWithAudit(
     ctx,
     [
-      ctx.db.updateTable(TR).set({ outcome_id: outcomeId, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "submitted").where("kind", "=", "outcome").where("outcome_id", "is", null),
-      portalAuditWhen(ctx, tenantId, actor, { action: "pms.intake_response.score", targetType: "pms_intake_response", targetId: id, detail: { outcomeId } }, ctx.db.selectFrom(TR).select("id").where("tenant_id", "=", tenantId).where("id", "=", id).where("outcome_id", "=", outcomeId)),
+      ctx.db.updateTable(TR).set({ outcome_id: outcomeId, write_id: writeId, updated_at: at }).where("tenant_id", "=", tenantId).where("id", "=", id).where("status", "=", "submitted").where("kind", "=", "outcome").where("outcome_id", "is", null),
+      portalAuditWhenWritten(ctx, tenantId, actor, { action: "pms.intake_response.score", targetType: "pms_intake_response", targetId: id, detail: { outcomeId } }, TR, id, writeId),
     ],
     0,
     { foreignKey: "That outcome does not exist in this clinic." },

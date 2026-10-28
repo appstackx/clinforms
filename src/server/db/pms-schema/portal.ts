@@ -1,5 +1,5 @@
 /**
- * Tables of the portal module (migrations 0150–0152 / 20261024000150–…152): online booking (settings, sites
+ * Tables of the portal module (migrations 0150–0152 and 0182–0185 / 20261024000150–…152, …182–…185): online booking (settings, sites
  * open online with their map position, the log of appointments booked online – the appointments themselves are
  * the diary's pms_appointments), the patient portal (accounts, one-time sign-in links, sessions, shared documents;
  * its emails go through comms' pms_messages) and intake forms (templates, patients' copies). Conventions: docs/clinic-system/contract.md §4.
@@ -97,6 +97,8 @@ export interface PmsPortalSessionsTable {
   expires_at: IsoTimestamp;
   last_seen_at: IsoTimestamp;
   revoked_at: IsoTimestamp | null;
+  /** Fresh on every change (0185): the conditional audit row keys on it. */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: IsoTimestamp;
 }
 
@@ -111,8 +113,19 @@ export interface PmsPortalSharesTable {
   viewed_at: IsoTimestamp | null;
   withdrawn_at: IsoTimestamp | null;
   withdrawn_by: string | null;
+  /** Fresh on every change (0184): the conditional audit row keys on it. */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
+}
+
+/** A shared document that is a file attached to the record (0182). */
+export interface PmsPortalShareFilesTable {
+  tenant_id: string;
+  share_id: string;
+  /** The records module's pms_attachments row. */
+  attachment_id: string;
+  created_at: IsoTimestamp;
 }
 
 export interface PmsIntakeTemplatesTable {
@@ -173,6 +186,30 @@ export interface PmsIntakeResponsesTable {
   applied_at: IsoTimestamp | null;
   applied_by: string | null;
   cancelled_at: IsoTimestamp | null;
+  /** Fresh on every change (0183): the conditional audit row keys on it. */
+  write_id: ColumnType<string | null, string | null | undefined, string | null>;
+  created_at: IsoTimestamp;
+  updated_at: IsoTimestamp;
+}
+
+/** A form completed in the clinic on a clinic device ("hand to patient"), verified by staff (0182). */
+export interface PmsIntakeHandoffsTable {
+  tenant_id: string;
+  id: string;
+  response_id: string;
+  patient_id: string;
+  /** SHA-256 hex of the device's one-time secret (an httpOnly cookie) – never the secret. */
+  token_hash: string;
+  /** "open" | "completed" | "verified" | "ended" */
+  status: WithDefault<string>;
+  started_by: string;
+  expires_at: IsoTimestamp;
+  completed_at: IsoTimestamp | null;
+  verified_at: IsoTimestamp | null;
+  verified_by: string | null;
+  ended_at: IsoTimestamp | null;
+  ended_by: string | null;
+  write_id: string | null;
   created_at: IsoTimestamp;
   updated_at: IsoTimestamp;
 }
@@ -185,8 +222,10 @@ export interface PortalTables {
   pms_portal_links: PmsPortalLinksTable;
   pms_portal_sessions: PmsPortalSessionsTable;
   pms_portal_shares: PmsPortalSharesTable;
+  pms_portal_share_files: PmsPortalShareFilesTable;
   pms_intake_templates: PmsIntakeTemplatesTable;
   pms_intake_responses: PmsIntakeResponsesTable;
+  pms_intake_handoffs: PmsIntakeHandoffsTable;
 }
 
 /** Foreign-key order (parents first). */
@@ -198,8 +237,10 @@ export const PORTAL_TABLES = [
   "pms_portal_links",
   "pms_portal_sessions",
   "pms_portal_shares",
+  "pms_portal_share_files",
   "pms_intake_templates",
   "pms_intake_responses",
+  "pms_intake_handoffs",
 ] as const satisfies readonly (keyof PortalTables)[];
 
 export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number]]: readonly (keyof PortalTables[T] & string)[] } = {
@@ -210,8 +251,10 @@ export const PORTAL_PRIMARY_KEYS: { readonly [T in (typeof PORTAL_TABLES)[number
   pms_portal_links: ["tenant_id", "id"],
   pms_portal_sessions: ["tenant_id", "id"],
   pms_portal_shares: ["tenant_id", "id"],
+  pms_portal_share_files: ["tenant_id", "share_id"],
   pms_intake_templates: ["tenant_id", "id"],
   pms_intake_responses: ["tenant_id", "id"],
+  pms_intake_handoffs: ["tenant_id", "id"],
 };
 
 /** Timestamp columns beyond created_at / updated_at (the D1 → Postgres copy compares them as ISO instants). */
@@ -231,6 +274,9 @@ export const PORTAL_TIMESTAMP_COLUMNS: readonly string[] = [
   "requested_at",
   "submitted_at",
   "applied_at",
+  "completed_at",
+  "verified_at",
+  "ended_at",
 ];
 
 /** Every portal table holds one clinic's data (offboarding exports and deletes them all). */
