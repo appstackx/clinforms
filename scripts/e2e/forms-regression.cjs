@@ -46,7 +46,7 @@ async function approveAs(app, shotName) {
 async function answerBlockers(app, text) {
   for (let round = 0; round < 3; round++) {
     const flags = await F.flagsText(app);
-    const keys = Array.from(new Set((flags.match(/Missing field \| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
+    const keys = Array.from(new Set((flags.match(/(?:Missing field|Required – no answer yet|Required – needs your opinion|Optional, but must be filled in) \| \(blocks approval\) \| (F-\d+)/g) ?? []).map((m) => m.match(/F-\d+/)[0])));
     if (keys.length === 0) return;
     for (const k of keys) {
       const card = app.locator(`#q-${k}`);
@@ -71,6 +71,31 @@ async function confirmMapping(page) {
   await page.locator("[role=dialog]").getByRole("button", { name: /Confirm mapping/ }).click();
   await page.getByText(new RegExp(`Mapping confirmed by ${SIGNER.name}`)).waitFor({ timeout: 10000 });
   await page.waitForTimeout(1000); // let the "Use for a patient" link's prefetch finish before leaving the page
+}
+
+/**
+ * bh2-rc1 (WE, map lint L5): a judgement question whose answer comes from the record holds up the confirm until the
+ * clinician answers it themselves or someone allowed to accepts it with a reason. The bundled Meridian sample has
+ * two (F-08 daily activities, F-11 reason for discharge – both facts the record holds): accepted here with that
+ * reason, as a demo visitor would. Returns the ids accepted.
+ */
+async function acceptJudgementChecks(page, ids, reason) {
+  const done = [];
+  for (const id of ids) {
+    const row = page.locator("li").filter({ has: page.locator("span.font-mono", { hasText: new RegExp(`^${id}$`) }) }).first();
+    if (!(await row.count())) continue;
+    const toggle = row.locator("button[aria-expanded]").first();
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    const group = page.locator(`[role=group][aria-label="Checks for ${id}"]`);
+    if (!(await group.count())) continue;
+    const input = group.getByLabel("Or accept it as it is, because");
+    if (!(await input.count())) continue;
+    await input.fill(reason);
+    await group.getByRole("button", { name: /^Accept$/ }).click();
+    await group.getByText(/^Accepted – /).first().waitFor({ timeout: 10000 });
+    done.push(id);
+  }
+  return done;
 }
 
 async function analyseSample(page, title) {
@@ -100,6 +125,8 @@ async function analyseSample(page, title) {
     const r = await analyseSample(page, "Physiotherapy Discharge Report");
     console.log("   analysed in", r.ms, "ms:", r.dialog.slice(0, 300));
     await page.locator(".mr-preview section.docx").first().waitFor({ timeout: 30000 });
+    const accepted = await acceptJudgementChecks(page, ["F-08", "F-11"], "Facts the record holds: the patient's own account and the discharge entry.");
+    console.log("   judgement checks accepted (L5):", accepted.join(", ") || "none");
     await confirmMapping(page);
   });
 

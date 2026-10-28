@@ -13,7 +13,13 @@
  * Tenant mode (a clinic's own Studio): the signed-in member is the actor and the default signer, and
  * no demo wording or prepared demo drafts are offered.
  *
- * Owner: studio-b agent.
+ * bh2 WC: the report's approving clinician (Report.approver) decides on its clinician boxes – the screen offers their
+ * decisions to them alone (adopt a proposal, own words, acknowledgements, attribution fixes, leaving opinion boxes
+ * blank), says who decides to everyone else, and offers a member who may approve "Take over as approver". An amended
+ * version reads "Version 2 – amends the form approved on …"; the version it amends reads superseded once version 2 is
+ * approved (the server writes that – never this screen).
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -22,15 +28,18 @@ import { BookOpenText, FileQuestion, Flag, History, Loader2, NotebookPen, PanelR
 import { NOTICES } from "../../../config.public";
 import { formatUkDateTime } from "../../../core/dates";
 import { computeFacts } from "../../../core/computed-facts";
+import { isDemoHcpc } from "../../../core/demo-clinic";
 import { formToTemplate, primaryTreatingClinician } from "../../../core/forms";
 import { referralValueForPath } from "../../../core/form-record-rules";
 import { prefillSigners, prefillSignersText } from "../../../core/parties";
-import type { Clinician, FormDefinition, Report, ReportFlag, ReportTemplate } from "../../../core/types";
-import { canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
-import { otherClinicianVoice } from "../../../core/voice";
+import type { Clinician, FormDefinition, Gap, Report, ReportFlag, ReportTemplate } from "../../../core/types";
+import { acknowledgeRefusal, canAcknowledge as coreCanAcknowledge, canSign, reportFactsDate } from "../../../core/validation";
+import { actsAsApprover, isClinicianGap, mayApprove, pendingProposal } from "../../../core/provenance";
+import { otherClinicianVoice, unsignableFirstPerson } from "../../../core/voice";
+import { issueDetails, notApplicableReasons } from "../../../core/issue-state";
 import { getTemplate } from "../../../templates/registry";
 import { toBase64 } from "../../api-client";
-import { useHostHooks, useStudioMode } from "../../host-hooks";
+import { useDemoClinic, useHostHooks, useStudioMode } from "../../host-hooks";
 import { useStudioPaths } from "../../routes";
 import { TENANT_COPY } from "../../studio-copy";
 import {
@@ -50,22 +59,23 @@ import {
 import { getSession, loadFormFile, saveReportDurable, useForm, useReport } from "../../store";
 import { WORDING } from "../../wording";
 import { createId } from "../../../core/ids";
+import { demoActor, memberActor, type Actor } from "../../../core/actor";
 import { useAiMode } from "../../components/shared/ai-mode";
 import { ActivityPanel } from "../../components/review/activity-panel";
 import { ApproveDialog } from "../../components/review/approve-dialog";
 import { CopyAnswersPanel, useAnswersCopy } from "../../components/review/copy-answers";
 import { FlagsPanel } from "../../components/review/flags-panel";
+import { NO_ONE_CLICKS, reviewOneClicks } from "../../components/review/one-click-offers";
 import { PreviewPanel, type FormFileState } from "../../components/review/preview-panel";
-import { QuestionCard } from "../../components/review/question-card";
+import { QuestionCard, oneClicksForBox } from "../../components/review/question-card";
 import { SourcesPanel } from "../../components/review/sources-panel";
 import { ProgressSummary, QuestionJump, QuestionNav } from "../../components/review/question-nav";
 import { ApprovedBanner, ReviewHeader } from "../../components/review/review-header";
 import {
-  answerChangedByClinician,
   answeredByPerson,
+  approverOnlyLine,
   createAmendedVersion,
   ownVoiceCandidates,
-  blockingLines as toBlockingLines,
   buildQuestionGroups,
   citationsBySource,
   countStatuses,
@@ -74,9 +84,12 @@ import {
   generationSummary,
   groupBySection,
   questionStatus,
+  staffApprovalNote,
+  wordFormPdfNote,
   type QuestionStatus,
 } from "../../components/review/review-model";
 import { InlineAlert, ToastProvider, useMediaQuery, useToast } from "../../components/review/review-ui";
+import { emptyOptionalSummary, optionalBlankCandidates, optionalOpinionBlankCandidates, reviewItemLines, reviewItems } from "../../components/review/box-items";
 import { useReviewActions } from "../../components/review/use-review-actions";
 import { useReviewState } from "../../components/review/use-review-state";
 
@@ -261,9 +274,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const session = getSession();
   const sessionCoversReport =
     session?.claims.kind === "launch" && session.claims.patientId === initial.episodeRef.patientId && session.claims.episodeId === initial.episodeRef.episodeId;
-  const actor = tenant
+  const actorName = tenant
     ? member?.name ?? TENANT_COPY.review.actorFallback
     : (sessionCoversReport ? session?.claims.clinician?.name : undefined) ?? initial.author?.name ?? session?.claims.clinician?.name ?? "Clinic staff (demo session)";
+  // W0.6: the person behind every action (ReviewAction.actor). Safety amendment (NEW-1 stop-gap): a staff member's
+  // answer in an opinion box never settles its clinician gap – the reducer reads their role from here. Kept stable so
+  // the memoised question cards do not re-render.
+  const actor: Actor = useMemo(() => (tenant ? memberActor(member, actorName) : demoActor(actorName)), [tenant, member, actorName]);
   const defaultSigner: Clinician | null = useMemo(() => {
     // A clinic's signer is the signed-in member (their clinic profile), never someone from the notes.
     if (tenant) return member ? { name: member.name, hcpc: member.hcpc ?? "", ...(member.jobTitle ? { role: member.jobTitle } : {}) } : null;
@@ -285,20 +302,86 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const personAnswered = useMemo(() => new Set(questions.filter((q) => answeredByPerson(report, q.key)).map((q) => q.key)), [questions, report]);
   const statuses = useMemo(() => {
     const map = new Map<string, QuestionStatus>();
-    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key)));
+    // bh2 WA1: the whole report – what each box issues depends on its approver's decisions too (core/issue-state.ts).
+    for (const q of questions) map.set(q.key, questionStatus(q, flagsBySection.get(q.key) ?? EMPTY, report.gaps, personAnswered.has(q.key), signed, report));
     return map;
-  }, [questions, flagsBySection, report.gaps, personAnswered]);
+  }, [questions, flagsBySection, report, personAnswered, signed]);
   const counts = useMemo(() => countStatuses(Array.from(statuses.values())), [statuses]);
+  // bh2 WA1: why each box that is not asked is not asked – worked out once per report, not once per card.
+  const notAskedBecause = useMemo(() => notApplicableReasons(report, form), [report, form]);
+  // R1T-WC-12: which rule or decision rules each box out, for the approver's "This applies" / "It applies after all".
+  const notAskedKinds = useMemo(() => {
+    const out = new Map<string, "condition" | "session_not_attended" | "person">();
+    for (const b of issueDetails(report, form)) if (b.state.kind === "not_applicable") out.set(b.key, b.state.reason);
+    return out;
+  }, [report, form]);
+  // The gate (core/validation canSign) decides; the screen counts and lists it one item per question (box-items.ts).
   const blocking = useMemo(() => canSign(report.flags, report.gaps).blocking, [report.flags, report.gaps]);
+  // bh2 fix round 1 (R1T-WA1-L1; ownership exception – WC's file): the items are worded for the person viewing.
+  const items = useMemo(() => reviewItems(report, { template, form, actor }), [report, template, form, actor]);
+  // Fix round 1 (B0-8): opinion questions are offered too, unticked – the clinician ticks each one.
+  // WC design 4: only the boxes this person may leave blank (opinion boxes: the approving clinician's).
+  const blankCandidates = useMemo(
+    () => (signed ? [] : [...optionalBlankCandidates(report, { template, form, actor }), ...optionalOpinionBlankCandidates(report, { template, form, actor })]),
+    [report, template, form, signed, actor],
+  );
+  const blankSummary = useMemo(() => emptyOptionalSummary(report, { template, form }, blankCandidates), [report, template, form, blankCandidates]);
+  // bh2-rc1 (plan WI): the one-click corrections on the report's flags – the engine's text fixes and WB's actions – once
+  // per report change (one-click-offers.tsx).
+  const oneClicks = useMemo(() => (signed ? NO_ONE_CLICKS : reviewOneClicks(report, { actor, template, form })), [report, actor, template, form, signed]);
   const generation = useMemo(() => generationSummary(report.generation), [report.generation]);
   const citedBy = useMemo(() => citationsBySource(report), [report]);
   const pendingKeys = useMemo(() => report.sections.filter((s) => s.status === "pending").map((s) => s.key), [report.sections]);
-  const editedAnswers = useMemo(() => new Set(questions.filter((q) => answerChangedByClinician(report, q.key)).map((q) => q.key)), [questions, report]);
+  // B2-20 / WC design 7: "changed" only where a person set a structured answer (its stamp), never read from the log.
+  const editedAnswers = useMemo(() => new Set(questions.filter((q) => Boolean(q.section?.answerBy)).map((q) => q.key)), [questions]);
   const labelOf = useCallback((key: string) => questions.find((q) => q.key === key)?.label ?? key, [questions]);
 
   const reportRef = useRef(report);
   reportRef.current = report;
-  const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current), []);
+  // WC design 4: what this person may acknowledge (the flag's policy: never / the approver / any member).
+  const canAck = useCallback((flag: ReportFlag) => coreCanAcknowledge(flag, reportRef.current, actor), [actor]);
+  const mayDecide = actsAsApprover(actor, report);
+  const approverName = report.approver?.name ?? null;
+  const onlyWhoFor = useCallback(
+    (flag: ReportFlag) => {
+      const r = reportRef.current;
+      if (flag.code === "APPROVER_DECISION") return actsAsApprover(actor, r) ? null : approverOnlyLine(r, "adopt it");
+      return acknowledgeRefusal(flag, r, actor) === "approver" ? approverOnlyLine(r, "acknowledge this") : null;
+    },
+    [actor],
+  );
+  const approverOnlyFor = useCallback(
+    (gap: Gap) => {
+      const r = reportRef.current;
+      return isClinicianGap(r, gap, { fields: form?.fields ?? null }) && !actsAsApprover(actor, r) ? approverOnlyLine(r, "settle this") : null;
+    },
+    [actor, form],
+  );
+  const proposals = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const s of report.sections) {
+      const p = pendingProposal(report, s, { fields: form?.fields ?? null, boxes: template?.sections ?? null });
+      if (p) out.set(s.key, `${p.summary} – the approving physio must adopt it`);
+    }
+    return out;
+  }, [report, form, template]);
+  // R1T-WC-L2: the one-click corrections per box, for the cards (the Flags tab gets the whole set).
+  const oneClicksByBox = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof oneClicksForBox>>();
+    for (const key of [...oneClicks.fixes.map((p) => p.sectionKey), ...oneClicks.actions.map((a) => a.key)]) if (!out.has(key)) out.set(key, oneClicksForBox(oneClicks, key));
+    return out;
+  }, [oneClicks]);
+  // WC design 1: a member who may approve, and is not the approver, may take over.
+  const mayTakeOver = !signed && Boolean(report.approver) && !mayDecide && mayApprove(actor);
+  const leaveBlank = useCallback(
+    (keys: string[], reason: string, opinionKeys: string[] = []) => {
+      const n = keys.length + opinionKeys.length;
+      if (!template || n === 0) return;
+      dispatch({ type: "leaveOptionalBlank", keys, opinionKeys, reason, actor, template, form });
+      toast({ tone: "success", title: `${n} optional box${n === 1 ? "" : "es"} left blank`, detail: "Each is recorded with your reason in the Activity tab." });
+    },
+    [template, form, actor, dispatch, toast],
+  );
 
   const actions = useReviewActions({ report, form, template, file, actor, hooks, dispatch, commit, validateNow, toast });
   const answersCopy = useAnswersCopy({ report, form, actor, dispatch, toast });
@@ -312,32 +395,51 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   // Studio the signer is the signed-in member (fix wave 2): never rewrite answers into someone else's voice.
   const voiceAuthor = tenant
     ? (member?.name ?? null)
-    : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actor) ? actor : null));
+    : (report.author?.name ?? (bundle.notes.some((n) => n.author.name === actorName) ? actorName : null));
   // Fix wave 2: who may approve in a clinic's Studio, and drafted answers that speak as another clinician.
+  // 10/2026: a made-up PH-DEMO number approves in a demo clinic only (the server refuses it elsewhere, too).
+  const demoClinic = useDemoClinic();
   const tenantSignProblem = useMemo((): string | null => {
     if (!tenant || signed || !member) return null;
-    if (member.role === "staff") return TENANT_COPY.review.staffCannotApprove;
+    // Fix round 1 (B0-26): "Ready for a signing clinician" only once nothing blocks approval (an open proposal blocks
+    // too – it is the approver's decision); else what is left first.
+    if (member.role === "staff") return staffApprovalNote(items.count);
     if (member.canSign === false || !member.hcpc) return TENANT_COPY.review.noSigningDetails;
+    // WC design 1: the report's approving clinician approves it – another member takes over first.
+    if (report.approver && !actsAsApprover(actor, report)) return `${report.approver.name} is this report's approving clinician. To approve it yourself, take over as approver first.`;
+    if (!demoClinic && isDemoHcpc(member.hcpc)) return WORDING.demoClinic.numberNotAllowedDetail;
     const voice = otherClinicianVoice(report, { name: member.name, hcpc: member.hcpc });
-    if (!voice) return null;
+    if (!voice) {
+      // Fix round 1 (B0-1): a report with no author, approved by this member – "I" about notes they did not write.
+      const notesVoice = unsignableFirstPerson(report, { name: member.name, hcpc: member.hcpc });
+      return notesVoice ? WORDING.server.access.notesVoiceDetail(notesVoice.names, notesVoice.keys) : null;
+    }
     const labels = voice.keys.map((k) => questions.find((q) => q.key === k)?.label ?? k);
     return `${TENANT_COPY.review.otherVoicePrefix} ${voice.keys.length} answer${voice.keys.length === 1 ? " speaks" : "s speak"} as ${voice.author} (“I …”) – ${labels.join("; ")}. ${TENANT_COPY.review.otherVoiceSuffix}`;
-  }, [tenant, signed, member, report, questions]);
-  const ownVoice = useMemo(() => (voiceAuthor && !signed ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed]);
+  }, [tenant, signed, member, report, questions, demoClinic, items.count, actor]);
+  // Own voice is the approving clinician's (WC design 4).
+  const ownVoice = useMemo(() => (voiceAuthor && !signed && mayDecide ? ownVoiceCandidates(report, voiceAuthor) : []), [report, voiceAuthor, signed, mayDecide]);
+  // WC design 8: the server's "superseded" entry on this version (ActivityEntry.reportId names the version that replaced it).
+  const supersededBy = useMemo(() => {
+    const entry = [...report.activity].reverse().find((a) => a.action === "superseded" && typeof a.reportId === "string");
+    return entry?.reportId ? { reportId: entry.reportId, title: entry.detail.replace(/\.$/, "") || "Superseded by an amended version" } : null;
+  }, [report.activity]);
 
   const startAmendment = useCallback(async () => {
     const id = createId("rpt");
-    const amended = createAmendedVersion(report, actor, id);
+    const amended = createAmendedVersion(report, actor.name, id);
     // Must be stored before opening it (a clinic's Studio saves to the server; wait for it).
     if (!(await saveReportDurable(amended))) {
       toast({ tone: "error", title: "The amended version could not be saved. Please try again." });
       return;
     }
+    // B2-25: no "superseded" yet, and no raw id – version 1 reads superseded only once version 2 is approved (the server
+    // writes that entry, WC design 8).
     dispatch({
       type: "activity",
-      action: "superseded",
+      action: "amendment_started",
       actor,
-      detail: `Amended version ${amended.version} started (${id}). This approval is superseded once the amended version is approved.`,
+      detail: `Amended version ${amended.version} started – this approval stands until version ${amended.version} is approved.`,
     });
     router.push(paths.report(id));
   }, [report, actor, toast, dispatch, router, paths]);
@@ -372,6 +474,10 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
   const activeSourceId = sourceRequest?.id ?? null;
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
+  // B2-25: an amended version is started after a confirm step, never by one stray click.
+  const [amendOpen, setAmendOpen] = useState(false);
+  // WC design 1 (check-WC minor 12): taking over as approver voids the approver's decisions – a confirm step too.
+  const [takeOverOpen, setTakeOverOpen] = useState(false);
   const approvedRef = useRef<HTMLDivElement>(null);
   const centreRef = useRef<HTMLDivElement>(null);
 
@@ -451,9 +557,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         </TabsTrigger>
         <TabsTrigger value="flags" className="h-8 px-1 text-xs sm:text-[13px]">
           Flags
-          {blocking.length > 0 && !signed && (
-            <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white" aria-label={`${blocking.length} blocking`}>
-              {blocking.length}
+          {items.count > 0 && !signed && (
+            <span className="ml-1 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white" aria-label={`${items.count} blocking`}>
+              {items.count}
             </span>
           )}
         </TabsTrigger>
@@ -479,9 +585,15 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         </TabsContent>
         <TabsContent value="flags" className="mt-0">
           <FlagsPanel
+            oneClicks={oneClicks}
+            template={template ?? undefined}
+            form={form}
             report={report}
             bundle={bundle}
-            blockingCount={blocking.length}
+            items={items}
+            blankCandidates={blankCandidates}
+            blankSummary={blankSummary}
+            onLeaveBlank={leaveBlank}
             readOnly={signed}
             validating={validating}
             actor={actor}
@@ -511,8 +623,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         generation={generation}
         saveState={saveState}
         savedAt={savedAt}
-        blockingLines={toBlockingLines(blocking, report)}
-        blockingCount={blocking.length}
+        blockingLines={reviewItemLines(items, report)}
+        blockingCount={items.count}
         canApprove={canApprove}
         approveUnavailable={approveUnavailable}
         onApprove={() => setApproveOpen(true)}
@@ -548,14 +660,50 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </Link>
           }
         >
-          A staff member checks and confirms each referrer form&apos;s mapping once before completed forms can be approved.
+          An owner, administrator or clinician confirms each referrer form&apos;s mapping once before completed forms can be approved.
         </InlineAlert>
       )}
 
       {report.amends && (
-        <InlineAlert tone="info" title={`Amended version ${report.version ?? 2}`}>
-          This version amends the form approved on {formatUkDateTime(report.amends.approvedAt)}. Make the corrections, then approve it again – the
-          earlier approval is superseded, and the files are marked “Amended – v{report.version ?? 2}”.
+        // B3-3: no "Make the corrections" – the notice says what this version is, before and after its approval.
+        <InlineAlert tone="info" title={`Version ${report.version ?? 2} – amends the form approved on ${formatUkDateTime(report.amends.approvedAt)}`}>
+          {signed
+            ? `Approved: it supersedes the earlier approval. Its file names are marked “Amended – v${report.version ?? 2}”.`
+            : `Approving it supersedes the earlier approval. Its file names are marked “Amended – v${report.version ?? 2}”.`}
+        </InlineAlert>
+      )}
+
+      {supersededBy && (
+        // WC design 8: written by the server when the amended version was approved – every tab reads it.
+        <InlineAlert
+          tone="warning"
+          title={supersededBy.title}
+          action={
+            <Link className="font-medium underline" href={paths.report(supersededBy.reportId)}>
+              Open the amended version
+            </Link>
+          }
+        >
+          This approval has been superseded: send the amended version instead of this one.
+        </InlineAlert>
+      )}
+
+      {!signed && report.approver && (mayTakeOver || !mayDecide) && (
+        // WC design 1: who approves, and – for a member who may approve – taking over.
+        <InlineAlert
+          tone="info"
+          title={`Approving clinician: ${report.approver.name}`}
+          action={
+            mayTakeOver ? (
+              <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => setTakeOverOpen(true)}>
+                Take over as approver
+              </Button>
+            ) : undefined
+          }
+        >
+          {mayTakeOver
+            ? `Their decisions on the clinician-only questions are theirs. If you take over, you approve it instead – their adoptions, acceptances and acknowledgements on it then need your own, and what they wrote waits for you to adopt it.`
+            : `What you enter in a clinician-only question is a proposal: ${report.approver.name} adopts it, or changes it, before approving.`}
         </InlineAlert>
       )}
 
@@ -628,14 +776,14 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
         <ApprovedBanner
           ref={approvedRef}
           report={report}
+          form={form}
           isWordForm={report.form?.kind === "docx"}
           isPdfForm={report.form?.kind === "pdf_acroform" || report.form?.kind === "pdf_flat" || questionSet}
           questionSet={questionSet}
           downloading={actions.downloading}
           pdfUnavailable={
-            actions.pdfUnavailable ??
-            // Fix wave 2: a clinic's Studio says before anyone clicks that a Word form has no PDF copy here yet.
-            (tenant && report.form?.kind === "docx" && !questionSet && aiMode.health?.pdfFromWord === false ? TENANT_COPY.files.pdfUnavailable : null)
+            // A Word form's PDF copy only where this deployment makes one: never a greyed-out button (test run 24/10/2026).
+            wordFormPdfNote({ formKind: report.form?.kind, pdfFromWord: aiMode.health?.pdfFromWord, failed: actions.pdfUnavailable })
           }
           filing={actions.filing}
           filed={filedEntries(report)}
@@ -644,7 +792,7 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           fileMissing={isForm && !questionSet && file.status === "missing"}
           onDownload={(k) => void actions.download(k)}
           onSave={() => void actions.saveToRecord()}
-          onAmend={startAmendment}
+          onAmend={supersededBy ? undefined : () => setAmendOpen(true)}
           prefillFor={prefillFor}
         />
       )}
@@ -666,10 +814,13 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
             </div>
           )}
           {groups.map((g) => (
-            <section key={g.id} aria-labelledby={`${g.id}-title`} className="space-y-3">
-              <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {g.title}
-              </h2>
+            <section key={g.id} aria-labelledby={g.title ? `${g.id}-title` : undefined} aria-label={g.title ? undefined : "Questions on the form"} className="space-y-3">
+              {/* bh2 WE design 4: a form that prints no headings is one group with no title (core/forms/headings.ts formOutline). */}
+              {g.title ? (
+                <h2 id={`${g.id}-title`} className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {g.title}
+                </h2>
+              ) : null}
               {g.questions.map((q) => (
                 <QuestionCard
                   key={q.key}
@@ -677,6 +828,8 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   status={statuses.get(q.key) ?? "pending"}
                   flags={flagsBySection.get(q.key) ?? EMPTY}
                   gaps={gapsBySection.get(q.key) ?? EMPTY}
+                  box={signed ? undefined : items.boxes.get(q.key)}
+                  hiddenFlagIds={items.coveredIds}
                   bundle={bundle}
                   connectorId={report.episodeRef.connectorId}
                   referrerName={report.form?.referrer.name ?? null}
@@ -696,6 +849,15 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                   canAcknowledge={canAck}
                   onCopy={isForm ? answersCopy.copyOne : undefined}
                   copyable={answersCopy.copyable.has(q.key)}
+                  notApplicableBecause={notAskedBecause.get(q.key) ?? null}
+                  notAskedKind={notAskedKinds.get(q.key) ?? null}
+                  approver={report.approver ?? null}
+                  {...(oneClicksByBox.get(q.key) && !signed ? { oneClicks: oneClicksByBox.get(q.key), report, template: template ?? undefined, form } : {})}
+                  mayDecide={mayDecide}
+                  proposal={proposals.get(q.key) ?? null}
+                  approverOnlyFor={approverOnlyFor}
+                  onlyWhoFor={onlyWhoFor}
+                  approverName={approverName}
                   onDraft={
                     draftingUnavailable
                       ? undefined
@@ -741,9 +903,9 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
                 >
                   <b.Icon className="h-5 w-5" aria-hidden />
                   {b.label}
-                  {b.tab === "flags" && blocking.length > 0 && !signed && (
+                  {b.tab === "flags" && items.count > 0 && !signed && (
                     <span className="absolute right-[22%] top-0.5 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white">
-                      {blocking.length}
+                      {items.count}
                       <span className="sr-only"> blocking</span>
                     </span>
                   )}
@@ -773,6 +935,57 @@ function ReviewWorkspace({ initial, stored }: { initial: Report; stored: Report 
           </Dialog>
         </>
       )}
+
+      {report.approver && (
+        <Dialog open={takeOverOpen} onOpenChange={setTakeOverOpen}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>Take over as the approving clinician?</DialogTitle>
+            <DialogDescription>
+              You approve this report instead of {report.approver.name}. Their adoptions, acceptances and acknowledgements on it are cancelled and need
+              your own, the clinician-only questions they settled open again, and what they wrote waits for you to adopt it. The takeover is recorded in
+              the activity log and on the approval.
+            </DialogDescription>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setTakeOverOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setTakeOverOpen(false);
+                  dispatch({ type: "takeOverApprover", actor });
+                }}
+              >
+                Take over
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <Dialog open={amendOpen} onOpenChange={setAmendOpen}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Start an amended version?</DialogTitle>
+          <DialogDescription>
+            Version {(report.version ?? 1) + 1} starts from this approved form for a correction or a referrer&apos;s query. This approval stands until
+            version {(report.version ?? 1) + 1} is approved; then it reads as superseded.
+          </DialogDescription>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setAmendOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setAmendOpen(false);
+                void startAmendment();
+              }}
+            >
+              Start version {(report.version ?? 1) + 1}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {template && (
         <ApproveDialog

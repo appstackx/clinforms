@@ -25,9 +25,9 @@ import type { FormAnalysisStep, FormOutlineSummary } from "../api/contract";
 import { DEMO_TENANT_ID } from "../config.public";
 import { createId } from "../core/ids";
 import { REFERRER_TO_BE_CONFIRMED } from "../core/labels";
-import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId } from "../core/types";
+import type { AiEffort, FormAnalysis, FormDefinition, FormField, ReferrerInfo, ReferrerType, TenantId, TokenUsage } from "../core/types";
 import { publicEngineName, WORDING } from "../core/wording";
-import { buildDocxOutline } from "../forms/docx-outline";
+import { assertReadableOutline, buildDocxOutline } from "../forms/docx-outline";
 import type { DecodedFormFile } from "../forms/file";
 import { readPdfForm } from "../forms/pdf-outline";
 import { findSampleBySha256, listSampleForms } from "../forms/samples/registry";
@@ -37,6 +37,7 @@ import type { AnalysisOutput } from "./form-analysis-schema";
 import { asksForBlockCapitals } from "./form-boxes";
 import { chunkParsedForm, summariseParsedForm, type ParsedForm } from "./form-outline";
 import { postValidateFields } from "./form-postvalidate";
+import { bindPracticeMergeCodes } from "./practice-merge-binding";
 import { guessTitle, proposeFieldsByRules } from "./form-rules";
 import { prefilledWarning, redactParsedForm } from "./form-redact";
 import { demoAssetNotice, getRecordedFormAnalysis } from "./recorded-forms";
@@ -82,6 +83,11 @@ export interface AnalyseFormFileResult {
   /** Post-validation counts. */
   dropped: number;
   repaired: number;
+  /**
+   * 25/10/2026 (usage): a live reading that failed after it was sent (a stored map or rules took over) – its tokens
+   * when the drafting service answered, so the clinic's usage records the call.
+   */
+  liveFailure?: { code: string; usage?: TokenUsage; model?: string };
 }
 
 /** Deterministic parsing by the forms engine. */
@@ -94,6 +100,7 @@ export async function parseFormFile(file: DecodedFormFile): Promise<ParsedForm> 
     return { kind, pdf: outline, warnings: [...warnings, ...extra] };
   }
   const outline = buildDocxOutline(file.bytes);
+  assertReadableOutline(outline); // security fix 24/10/2026: at most MAX_READ_BLOCKS paragraphs and cells to read
   return { kind: "docx", blocks: outline.blocks, warnings: outline.warnings };
 }
 
@@ -252,6 +259,9 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
   // Live Claude, or rules.
   let live: AnalyseFormLiveResult | undefined;
   let liveError: DraftGenerationError | null = null;
+  let liveSent = false;
+  const failureOf = (err: DraftGenerationError): AnalyseFormFileResult["liveFailure"] =>
+    liveSent ? { code: err.code, ...(err.usage ? { usage: err.usage } : {}), ...(err.model ? { model: err.model } : {}) } : undefined;
   if (input.mode === "live") {
     t = Date.now();
     try {
@@ -259,6 +269,7 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       if (calls > 1 && input.reserveExtraLiveCalls && !(await input.reserveExtraLiveCalls(calls - 1))) {
         throw new DraftGenerationError("AI_ERROR", WORDING.server.analysis.tooManyCalls(calls));
       }
+      liveSent = true;
       live = await analyseFormLive({
         parsed: redaction.parsed,
         fileBytes: blanked.bytes,
@@ -283,7 +294,8 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
       if (!(err instanceof DraftGenerationError) || err.code === "LIVE_AI_UNAVAILABLE") throw err;
       liveError = err;
       const stored = input.rulesOnly ? null : await storedMap(err);
-      if (stored) return stored;
+      const failure = failureOf(err);
+      if (stored) return failure ? { ...stored, liveFailure: failure } : stored;
       trace.push({ label: "Proposed the form map", status: "warning", ms: Date.now() - t, detail: WORDING.server.analysis.liveFailedRules(err.code) });
     }
   }
@@ -297,6 +309,21 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
     ms: Date.now() - t,
     detail: `${checked.fields.length} questions kept${checked.repaired ? `, ${checked.repaired} corrected` : ""}${checked.dropped ? `, ${checked.dropped} left out` : ""}`,
   });
+  // 10/2026: a clinic system's letter merge codes (<<P_SURNAME>>, <<DATE>>…) – one question each, from the record
+  // where it holds the detail, otherwise for staff (ai/practice-merge-binding.ts). Word forms only; nothing changes
+  // for a form without such codes.
+  t = Date.now();
+  const merge = bindPracticeMergeCodes(parsed, checked.fields);
+  if (merge.fromRecords + merge.forStaff > 0) {
+    checked.fields = merge.fields;
+    checked.warnings.push(...merge.warnings);
+    trace.push({
+      label: "Matched the clinic system's merge codes to the record",
+      status: merge.forStaff ? "warning" : "ok",
+      ms: Date.now() - t,
+      detail: `${merge.fromRecords} from the record${merge.forStaff ? `, ${merge.forStaff} for staff to enter` : ""}`,
+    });
+  }
   if (!live && !liveError) {
     trace.splice(1, 0, { label: "Proposed the form map", status: "ok", ms: 0, detail: clinic ? WORDING.server.analysis.clinicRulesOnlyTrace : WORDING.server.analysis.rulesOnlyTrace });
   }
@@ -329,5 +356,6 @@ export async function analyseFormFile(input: AnalyseFormFileInput): Promise<Anal
   // A local demonstration form read live or by rules is labelled as such too (ai/demo-assets.ts).
   const notice = demoAssetNotice(input.file.sha256, input.referrer?.name ?? live?.output.referrerName.trim());
   if (notice) form.demoNotice = notice;
-  return { form, outlineSummary, trace, live, dropped: checked.dropped, repaired: checked.repaired };
+  const liveFailure = liveError ? failureOf(liveError) : undefined;
+  return { form, outlineSummary, trace, live, dropped: checked.dropped, repaired: checked.repaired, ...(liveFailure ? { liveFailure } : {}) };
 }

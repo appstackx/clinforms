@@ -12,17 +12,24 @@
  * - sign-off answers from the approval receipt (blank before approval: "[completed on approval]");
  * - questions nobody has answered: "[to complete]" ("[left blank]" once approved: only an optional
  *   question can be approved blank); questions left for the referrer's use are skipped.
+ * - bh2 WA1 design 4: what each question copies is what the form issues (core/issue-state.ts) – a question that does
+ *   not apply copies "[not applicable]" whatever its box holds (B1-1: never an answer the issued form leaves out), and a
+ *   record line that is empty by design copies "[left blank]" (B0-22: counted as the approved summary counts it).
  * - before approval every copy is marked "Draft – not yet approved"; after approval the approved text
  *   is copied, with who approved it and when.
+ * - a demo clinic (`demoNotice`, core/demo-clinic.ts demoOutputNotice): every copy also carries the
+ *   demonstration notice – first and last line of "Copy all" / the .txt, and in brackets before a single answer.
+ *   Without it the text is exactly as before.
  *
  * Pure: no React, no Node built-ins, no env. Safe in the browser and on the server.
  */
 import { formatUkDate, isValidIsoDate, todayIso } from "./dates";
 import { answerToText, isSectionAnswered, parseFormAnswerValue, signoffValuesFromReceipt } from "./forms";
+import { issueDetails, type BoxIssue, type IssueContent } from "./issue-state";
 import { WORDING } from "./wording";
 import type { FormDefinition, FormField, Report, ReportSection, SignReceipt } from "./types";
 
-export type CopyEntryStatus = "answered" | "to_complete" | "on_approval";
+export type CopyEntryStatus = "answered" | "to_complete" | "on_approval" | "not_applicable" | "left_blank";
 
 export interface CopyEntry {
   /** Section key / form field ID ("F-07"). */
@@ -104,16 +111,23 @@ export function copyAnswerValue(
   return text || null;
 }
 
-/** "Is the patient fit for work?" / "Date of birth:" – a question as it starts its copied block. */
+/**
+ * "Is the patient fit for work?" / "Date of birth:" – a question as it starts its copied block. B2-33: a question
+ * printed with a closing full stop ("…give the details.") takes the colon in its place, never ".:".
+ */
 export function questionLead(question: string): string {
   const q = question.replace(/\s+/g, " ").trim();
-  return /[?:]$/.test(q) ? q : `${q}:`;
+  if (/[?:]$/.test(q)) return q;
+  return `${q.replace(/[.;,…]+$/, "").trimEnd()}:`;
 }
 
 /** The text shown for a question without an answer. */
 export function missingAnswerText(status: CopyEntryStatus, approved: boolean): string {
   const w = WORDING.answersCopy;
-  return status === "on_approval" ? w.onApproval : approved ? w.leftBlank : w.toComplete;
+  if (status === "on_approval") return w.onApproval;
+  if (status === "not_applicable") return w.notApplicable;
+  if (status === "left_blank") return w.leftBlank;
+  return approved ? w.leftBlank : w.toComplete;
 }
 
 /** One numbered block: "3. Date of birth: 22/11/1991", or the question then the answer on its own lines. */
@@ -123,34 +137,55 @@ export function formatCopyBlock(entry: Pick<CopyEntry, "number" | "question" | "
   return value.includes("\n") ? `${lead}\n${value}` : `${lead} ${value}`;
 }
 
-/** The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft). */
-export function copyTextForAnswer(answer: string, approved: boolean): string {
-  return approved ? answer : `[${WORDING.answersCopy.draftMarker}] ${answer}`;
+/**
+ * The text one per-question "Copy" puts on the clipboard (marked while the answers are a draft; in a demo clinic
+ * always marked with the demonstration notice).
+ */
+export function copyTextForAnswer(answer: string, approved: boolean, demoNotice?: string): string {
+  const marked = approved ? answer : `[${WORDING.answersCopy.draftMarker}] ${answer}`;
+  return demoNotice ? `[${demoNotice}] ${marked}` : marked;
 }
 
-/** The copy entries of a report: its form's questions in order (sign-off included, referrer's-use boxes skipped). */
+/** The status of a question's copy, from what its box issues (core/issue-state.ts). */
+function copyStatusOf(box: BoxIssue | undefined, answer: string | null, signoff: boolean): CopyEntryStatus {
+  if (answer !== null) return "answered";
+  if (signoff) return "on_approval";
+  if (box?.state.kind === "not_applicable") return "not_applicable";
+  if (box?.state.kind === "blank" && (box.state.reason === "record_empty" || box.state.reason === "left_blank")) return "left_blank";
+  return "to_complete";
+}
+
+/**
+ * The copy entries of a report: its form's questions in order (sign-off included, referrer's-use boxes skipped), each
+ * copying exactly what the form issues (bh2 WA1 design 4). `report` is the whole report (its approver decides whether an
+ * "applies anyway" counts; flags, activity and the like never change what is copied).
+ */
 export function copyEntries(
-  report: Pick<Report, "sections" | "receipt" | "status">,
+  report: IssueContent & Partial<Pick<Report, "receipt" | "status">>,
   form: { fields: readonly CopyField[] } | null,
 ): CopyEntry[] {
   const receipt = report.status === "signed" ? report.receipt ?? null : null;
   const sections = new Map(report.sections.map((s) => [s.key, s]));
+  const boxes = new Map(issueDetails(report, form ? { fields: form.fields as FormField[] } : null).map((b) => [b.key, b]));
+  const issues = (box: BoxIssue | undefined) => !box || box.state.kind === "answer" || box.state.kind === "signoff";
   const out: CopyEntry[] = [];
   if (form) {
     for (const field of form.fields) {
       if (field.fillSource.kind === "leave_blank") continue;
       const section = sections.get(field.id) ?? null;
       if (!section && field.fillSource.kind !== "signoff") continue;
-      const answer = copyAnswerValue(field, section, receipt);
+      const box = boxes.get(field.id);
+      const answer = issues(box) ? copyAnswerValue(field, section, receipt) : null;
       const fieldNumber = /^F-(\d+)$/.exec(field.id);
+      const signoff = field.fillSource.kind === "signoff";
       out.push({
         key: field.id,
         number: fieldNumber ? Number(fieldNumber[1]) : out.length + 1,
         question: field.label.trim(),
         ...(field.section?.trim() ? { section: field.section.trim() } : {}),
         answer,
-        status: answer !== null ? "answered" : field.fillSource.kind === "signoff" ? "on_approval" : "to_complete",
-        ...(field.fillSource.kind === "signoff" ? { signoff: true } : {}),
+        status: copyStatusOf(box, answer, signoff),
+        ...(signoff ? { signoff: true } : {}),
       });
     }
     return out;
@@ -158,13 +193,14 @@ export function copyEntries(
   // No form map in this browser: the report's own sections (title = the question as printed).
   for (const section of report.sections) {
     const signoff = section.kind === "declaration" && Boolean(section.fieldId);
-    const answer = signoff && !isSectionAnswered(section) ? null : copyAnswerValue(null, section, receipt);
+    const box = boxes.get(section.key);
+    const answer = (signoff && !isSectionAnswered(section)) || !issues(box) ? null : copyAnswerValue(null, section, receipt);
     out.push({
       key: section.key,
       number: out.length + 1,
       question: section.title.trim(),
       answer,
-      status: answer !== null ? "answered" : signoff ? "on_approval" : "to_complete",
+      status: copyStatusOf(box, answer, signoff),
       ...(signoff ? { signoff: true } : {}),
     });
   }
@@ -173,10 +209,12 @@ export function copyEntries(
 
 /** Everything "Copy all answers" copies, with its header (title, patient, approval or draft marker). */
 export function buildAnswersCopy(input: {
-  report: Pick<Report, "sections" | "receipt" | "status" | "patientLabel" | "form" | "instructingParty">;
+  report: IssueContent & Pick<Report, "sections" | "patientLabel" | "instructingParty"> & Partial<Pick<Report, "receipt" | "status" | "form">>;
   form: { fields: readonly CopyField[]; title?: string; referrer?: { name: string } } | null;
   /** Title when there is no form ref (built-in report): its template name. */
   title?: string;
+  /** A demo clinic: the demonstration notice every copy carries (core/demo-clinic.ts demoOutputNotice). */
+  demoNotice?: string;
 }): AnswersCopy {
   const { report, form } = input;
   const w = WORDING.answersCopy;
@@ -190,9 +228,10 @@ export function buildAnswersCopy(input: {
     title.toLowerCase().includes(referrer.toLowerCase()) ? title : `${title} – ${referrer}`,
     `Patient: ${report.patientLabel}`,
     approved && receipt ? w.approvedHeader(receipt.signer.name, receipt.signer.hcpc, formatUkDate(todayIso(new Date(receipt.signedAt)))) : w.draftMarker,
+    ...(input.demoNotice ? [input.demoNotice] : []),
   ];
   const blocks = entries.map((e) => formatCopyBlock(e, approved));
-  const footer = approved ? [] : ["", w.draftMarker];
+  const footer = [...(approved ? [] : ["", w.draftMarker]), ...(input.demoNotice ? ["", input.demoNotice] : [])];
   const text = [...header, "", blocks.join("\n\n"), ...footer].join("\n");
   return { approved, entries, toComplete, header, text };
 }

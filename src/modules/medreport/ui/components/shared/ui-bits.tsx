@@ -9,11 +9,12 @@
 import type { ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { forwardRef } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, type LucideIcon } from "lucide-react";
-import { FILL_SOURCE_LABELS, FORM_ANALYSIS_MODE_LABELS, FORM_KIND_LABELS } from "../../../core/labels";
+import { FILL_SOURCE_LABELS, FORM_ANALYSIS_MODE_LABELS, FORM_KIND_LABELS, RECORD_SOURCE_LABELS } from "../../../core/labels";
+import { recordSourceOf } from "../../../core/forms";
 import { useStudioMode } from "../../host-hooks";
 import { TENANT_COPY } from "../../studio-copy";
 import { blankForCounts, blankForSummary } from "../../../core/parties";
-import type { FillSource, FormDefinition, FormKind, FormStatus, Report } from "../../../core/types";
+import type { FillSource, FormDefinition, FormField, FormKind, FormStatus, Report } from "../../../core/types";
 import { cn } from "../../primitives";
 
 export { errorMessage, formatBytes, formatMs, plural } from "./format";
@@ -71,8 +72,10 @@ export function useAnalysisModeLabels(): Record<keyof typeof FORM_ANALYSIS_MODE_
   };
 }
 
-export function FillSourceChip({ kind, className }: { kind: FillSourceKind; className?: string }) {
+export function FillSourceChip({ kind, field, className }: { kind: FillSourceKind; field?: Pick<FormField, "fillSource" | "guidance">; className?: string }) {
   const labels = useFillSourceLabels();
+  // Fix round 1 (B0-19): a staff entry, a physiotherapist's choice or the clinic's details – not "the patient record".
+  const source = field ? recordSourceOf(field) : null;
   return (
     <span
       className={cn(
@@ -81,7 +84,7 @@ export function FillSourceChip({ kind, className }: { kind: FillSourceKind; clas
         className,
       )}
     >
-      {labels.short[kind]}
+      {source ? RECORD_SOURCE_LABELS[source].short : labels.short[kind]}
     </span>
   );
 }

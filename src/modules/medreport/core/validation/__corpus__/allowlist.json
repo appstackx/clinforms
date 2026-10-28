@@ -1,0 +1,53 @@
+{
+  "_about": "Differential gate (scripts/medreport/corpus-diff.ts): inputs that BLOCK on the production validators (e132057) but not on the candidate. Each entry needs Khuram's approval recorded: approvedBy \"Khuram\", approvedOn (YYYY-MM-DD), decision, why. Only the integrator edits this file; corpus-guard.mjs refuses an entry without an approval.",
+  "entries": {
+    "ISSUE-na-noprint-01": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "decision": "Allowed (Khuram's decisions of 26/10/2026, allowlist entry DIFF:ISSUE-na-noprint-01): a box its condition rules out, which prints nothing on the issued form, is not checked – the content is never issued.",
+      "why": "Production (e132057) still checks a box that its condition rules out; the release drops that box's checks only when the box issues nothing (WA1 design 5: content checks are dropped only when the box's issue state is not 'answer'). The case itself pins that nothing of the box prints (fill: notContains). With applies_anyway every check runs again (ISSUE-na-opinion-02 is its negative twin).",
+      "owner": "WA1",
+      "pending": "DIFF:ISSUE-na-noprint-01 stays in pending.json (owner WA1) until WA1's issue state lands and holds the case; the integrator removes it at that merge."
+    },
+    "OPN-ok-f1": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "decision": "Allowed (Khuram's decisions of 26/10/2026, allowlist entry DIFF:OPN-ok-f1): the faithful narrated return the approver's own note records (F1) is approvable – the intended F1 fix.",
+      "why": "Production (e132057) blocks 'took 3 days off work, then returned to normal duties' although the approver's own note records exactly that; the F1 fix (fa14c72's statusRecorded tables, kept by WB design 1) lets it pass. Its anti-deny-list mutations and OPN-twin-f1 (a need inserted into the same return) must still block.",
+      "owner": "WB",
+      "pending": "DIFF:OPN-ok-f1 stays in pending.json (owner WB) until WB's opinion guard lands and holds the case; the integrator removes it at that merge."
+    },
+    "ISSUE-merge-na-01": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "approvedVia": "Khuram himself, 26/10/2026 ~21:55 (bh2-handover STATUS.md, 26/10 22:18: he approved all four). Proposed by the release orchestrator under his delegation (decisions of 26/10/2026 21:20); recorded by the integrator at merge:r1.",
+      "decision": "Allowed: a merge code in a box that its frozen condition rules out is cleared from the issued form – nothing of the box is issued, so it is no longer reported as an unfilled merge code.",
+      "why": "Production (e132057) blocks the box with MISSING_PLACEHOLDER ('mail-merge field <<P_TREATMENT>>'). The release reads the frozen condition (F-02 = No rules F-03 out), clears the code (WA1 design 5; the plan's sign-dry-run test) and the case pins that nothing of it is printed (fill: notContains '<<P_'). Its negative twin ISSUE-merge-blank-01 (the code in a box that does apply) still blocks.",
+      "owner": "WA1"
+    },
+    "ISSUE-na-person-02": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "approvedVia": "Khuram himself, 26/10/2026 ~21:55 (bh2-handover STATUS.md, 26/10 22:18: he approved all four). Proposed by the release orchestrator under his delegation (decisions of 26/10/2026 21:20); recorded by the integrator at merge:r1.",
+      "decision": "Allowed: the approving physio marks a clinician's box not applicable – their decision, stored and audited – so nothing of the box is printed and its checks are dropped (same rationale as the approved ISSUE-na-noprint-01: the content is never issued).",
+      "why": "Production (e132057) has no dispositions, so the drafted prognosis in the box still blocks (OPINION_LANGUAGE, FIGURE_NOT_IN_SOURCE). On the release the approver's not_applicable decision (hashed into the approval) drops the box: the case pins that its text is not printed (fill: notContains). Its negative twin ISSUE-na-person-01 still blocks; with applies_anyway every check runs again.",
+      "owner": "WA1"
+    },
+    "ROLE-mark-na~actor-approver": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "approvedVia": "Khuram himself, 26/10/2026 ~21:55 (bh2-handover STATUS.md, 26/10 22:18: he approved all four). Proposed by the release orchestrator under his delegation (decisions of 26/10/2026 21:20); recorded by the integrator at merge:r1.",
+      "decision": "Allowed: the approving physio marks a required box not applicable – their decision, audited – so it prints nothing and is not reported as an empty required box (same rationale as ISSUE-na-noprint-01 and ISSUE-na-person-02).",
+      "why": "Production (e132057) reports MISSING_PLACEHOLDER 'empty section' (no dispositions there). On the release only the approver may make this decision (WC design 4): the same step by staff, by another clinician and by an administrator without may-sign still blocks (ROLE-mark-na, ~actor-other, ~actor-admin).",
+      "owner": "WC"
+    },
+    "ROLE-ownanswer-settles": {
+      "approvedBy": "Khuram",
+      "approvedOn": "2026-10-26",
+      "approvedVia": "Khuram himself, 26/10/2026 ~21:55 (bh2-handover STATUS.md, 26/10 22:18: he approved all four). Proposed by the release orchestrator under his delegation (decisions of 26/10/2026 21:20); recorded by the integrator at merge:r1.",
+      "decision": "Allowed (Khuram's opinion rule of 26/10: every opinion must quote a physio's note or be written by the approver): an opinion the approving physio wrote in their own words over a drafted answer is theirs, so it is not checked as an unrecorded opinion.",
+      "why": "Production (e132057) blocks 'In my opinion his back should settle with exercise.' (OPINION_LANGUAGE 'should settle', acknowledgeable) on edited text. On the release the approver's rewrite leaves no drafted residue and is stamped as the approver's (WC design 6), so the box passes (B1-10). Its negative twin ROLE-type-opinion (the same opinion typed by someone else) still blocks.",
+      "owner": "WC"
+    }
+  }
+}

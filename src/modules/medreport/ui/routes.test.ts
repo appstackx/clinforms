@@ -26,6 +26,7 @@ describe("studioPaths", () => {
     assert.equal(p.forms, "/app/studio/forms");
     assert.equal(p.form("f"), "/app/studio/forms/f");
     assert.equal(p.report("r"), "/app/studio/r");
+    assert.equal(p.newReportFrom("rpt_1"), "/app/studio/new?from=rpt_1", "another form for the same patient (25/10/2026)");
     assert.equal(p.security, PUBLIC_SECURITY_PATH);
     assert.equal(PUBLIC_SECURITY_PATH, "/security");
   });
@@ -35,6 +36,7 @@ describe("studioPaths", () => {
     assert.equal(p.report("a b/c?d"), "/app/studio/a%20b%2Fc%3Fd");
     assert.equal(p.form("x&y"), "/app/studio/forms/x%26y");
     assert.equal(p.newReportWithForm("x&y=z"), "/app/studio/new?form=x%26y%3Dz");
+    assert.equal(p.newReportFrom("a&b=c"), "/app/studio/new?from=a%26b%3Dc");
   });
 
   it("normalises the base path and refuses anything that is not a same-origin absolute path", () => {

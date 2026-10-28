@@ -30,29 +30,36 @@
  */
 import { formatUkDate } from "./dates";
 import type { Clinician, EpisodeBundle, Paragraph, Report } from "./types";
+import { defineHook, hookEnabled } from "./validation/hooks";
+import { firstPersonOverColleagues } from "./validation/attribution-voice";
+
+/** Ledger hooks (validation/__corpus__/ledger.json) owned here: "Write in my own voice" and "Name X instead". */
+export const OWN_VOICE = defineHook("own-voice");
+export const NAME_INSTEAD = defineHook("name-instead");
+/** Licence (i): the first person over notes that are all the voice owner's own. */
+export const FIRST_PERSON_LICENCE = defineHook("first-person-licence");
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Verbs a clinician does (never the patient), for "She recorded" → "I recorded". */
-const CLINICIAN_VERBS = "recorded|assessed|advised|observed|explained|reassured|recommended|discharged|documented|examined|measured|tested|taught|issued|noted|planned|referred";
-
 /** ", Senior Physiotherapist" / ", physiotherapist, MCSP" after a name (without the closing comma). */
 const ROLE = "(?:,\\s*(?:[Ss]enior\\s+|[Ee]xtended [Ss]cope\\s+|[Cc]linical [Ss]pecialist\\s+)?[Pp]hysiotherapists?(?:,?\\s*MCSP)?)?";
-
-/** Apply `fn` to each sentence (keeps the punctuation and spacing between sentences). */
-function eachSentence(text: string, fn: (sentence: string) => string): string {
-  return text.replace(/[^.!?]+(?:[.!?]+|$)\s*/g, (sentence) => fn(sentence));
-}
 
 /**
  * Rewrite the signer's own attributions into the first person. `authorName` exactly as it appears in
  * the text (e.g. "Sarah Reid"). Returns the text unchanged when it does not name the author.
+ *
+ * bh2 (plan WB design 11, C-1): only the owner's own NAME changes – "Sarah Reid recorded" → "I recorded", "Sarah
+ * Reid's" → "my", "told Sarah Reid" → "told me", and the possessive that belongs to that same subject ("Sarah Reid
+ * recorded her assessment" → "I recorded my assessment", "recorded that, in her opinion" → "in my opinion"). A pronoun
+ * is never taken as the owner ("she advised" may be a GP's or a colleague's act), so the actor of every clinical verb
+ * stays who it was. "I recorded that …" is kept as it is (B3-4). Idempotent. Applies only while the ledger hook
+ * "own-voice" is enabled.
  */
 export function rewriteInFirstPerson(text: string, authorName: string): string {
   const name = authorName.trim();
-  if (!name || text.indexOf(name) < 0) return text;
+  if (!name || text.indexOf(name) < 0 || !hookEnabled(OWN_VOICE)) return text;
   const N = escapeRe(name);
   let s = text;
 
@@ -64,21 +71,14 @@ export function rewriteInFirstPerson(text: string, authorName: string): string {
   s = s.replace(new RegExp(`\\b(told|to|by|with)\\s+${N}(${ROLE})(,?)(?=\\s|$)`, "g"), (_m, prep: string, role: string, comma: string) =>
     `${prep} me${role && prep !== "by" ? "" : comma}`,
   );
-  // "Tom Ellis, physiotherapist, recorded" → "I recorded" (the name is the subject of a verb)
-  s = s.replace(new RegExp(`\\b${N}${ROLE},?\\s+(?=[a-z])`, "g"), "I ");
-  // "She recorded" / "he advised" in the same paragraph → "I recorded" (clinician verbs only).
-  s = s.replace(new RegExp(`\\b(?:She|He|she|he)\\s+((?:also|then|later|again)\\s+)?(${CLINICIAN_VERBS})\\b`, "g"), "I $1$2");
-  // "She found no tenderness" (an examination finding), not "she found driving difficult".
-  s = s.replace(/\b(?:She|He|she|he)\s+((?:also\s+)?found)\s+(?=no\b|that\b|full\b|reduced\b|normal\b|increased\b|tenderness\b|mild\b)/g, "I $1 ");
-
-  // Possessives in sentences where "I" is the subject: "in his opinion" → "in my opinion".
-  s = eachSentence(s, (sentence) =>
-    /\bI\s+[a-z]/.test(sentence)
-      ? sentence
-          .replace(/\bI recorded that,? in (?:his|her) opinion,?\s*/g, "I recorded that, in my opinion, ")
-          .replace(/\b(?:his|her) (opinion|assessment|view|advice|recommendation|return-to-work recommendation|discharge note|clinical impression)\b/g, "my $1")
-      : sentence,
-  );
+  // "Tom Ellis, physiotherapist, recorded" → "I recorded" (the name is the subject of a verb), and the subject's own
+  // possessive straight after its verb: "recorded her assessment" → "recorded my assessment", "recorded that, in his
+  // opinion," → "recorded that, in my opinion,".
+  s = s.replace(new RegExp(`\\b${N}${ROLE},?\\s+(?=[a-z])((?:also |then |later |again )?[a-z]+)((?: that,?)? in (?:his|her|their) (?:clinical |professional )?(?:opinion|view),?| (?:his|her|their) (?:opinion|assessment|view|advice|recommendation|return-to-work recommendation|discharge note|clinical impression)\\b)?`, "g"), (_m, verb: string, own: string | undefined) => {
+    if (!own) return `I ${verb}`;
+    const frame = /in (?:his|her|their) /.test(own) ? own.replace(/^(?: that,?)? in (?:his|her|their) ((?:clinical |professional )?(?:opinion|view)),?$/, " that, in my $1,") : own.replace(/\b(?:his|her|their)\b/, "my");
+    return `I ${verb}${frame}`;
+  });
 
   // "At the final review on 07/07/2026, I recorded" → "At my final review on 07/07/2026, I recorded"
   return s.replace(/\bAt the (initial assessment|final review|discharge review|follow-up review|review|discharge)( on \d{2}\/\d{2}\/\d{4})?(,?) I\b/g, "At my $1$2$3 I");
@@ -93,8 +93,6 @@ const UK_DATE = "\\d{2}\\/\\d{2}\\/\\d{4}";
 const LEAD = `(?:(On (${UK_DATE})|At (?:my|the) (?:initial assessment|initial appointment|first appointment|assessment|latest review|final review|follow-up review|follow-up|discharge review|review|appointment|session) on (${UK_DATE})),?\\s+)?`;
 /** The rest of a sentence: up to its full stop (a decimal point "52.3" does not end it). */
 const REST = "((?:[^.!?]|\\.(?=\\d))*)";
-/** Pronoun-only voice: verbs a patient never does ("she recorded" is always the clinician). */
-const RECORD_VERBS = "recorded|documented|measured|examined";
 
 /** "the further sessions" → were; "the shoulder" → was. */
 function beFor(nounPhrase: string): string {
@@ -102,37 +100,74 @@ function beFor(nounPhrase: string): string {
   return /[^su]s$/i.test(last) && !/^(?:this|its|his|was|is)$/i.test(last) ? "were" : "was";
 }
 
-/** The body after "I recorded …" written as a clinical statement. `date` is the lead's date, if any. */
-function plainRecordedBody(body: string, lead: string, date: string): string {
+/** Simple past verbs that do not end in "-ed" (a narrated event: "he took", "she saw", "he fell"). */
+const IRREGULAR_PAST =
+  "saw|gave|took|told|found|made|felt|thought|taught|sent|kept|met|wrote|did|had|began|ran|put|got|left|brought|heard|held|knew|led|lost|meant|paid|read|said|showed|spent|stood|understood|went|withdrew|became|chose|drew|drove|fell|forgot|hurt|let|sat|spoke|struck|swam|threw|woke|won|came|rode|broke|tore|caught|bent|slipped|tripped|twisted";
+
+/**
+ * Whether a recorded clause narrates an event the patient reported – something that happened, not a state at the
+ * note's date: the patient (or a third party) as the subject of a simple past verb ("Mr Ellery took 3 days off work",
+ * "he saw his GP", "she was injured"), or "after / since / before the accident". A state ("1 session remained", "she
+ * was working", "he had no pain") and the recorder's own act in the session ("she provided education") are not.
+ */
+function narratesEarlierEvent(clause: string): boolean {
+  const c = clause.trim();
+  if (/\b(?:after|since|before|following) (?:the|his|her|their|this|that) (?:accident|incident|injury|collision|fall|lift)\b/i.test(c)) return true;
+  const subject = /^(?:(?:Mr|Mrs|Ms|Miss|Mx|Dr)\.? [A-Z][\w'’-]+|\[CLAIMANT\]|he|she|they|his \w+|her \w+|the patient|the claimant)\s+(?:had\s+)?(?:also\s+|then\s+|first\s+)?(\w+)/i.exec(c);
+  if (!subject) return false;
+  const verb = subject[1].toLowerCase();
+  if (new RegExp(`^(?:${OWN_ACTION_VERBS})$`).test(verb) && /^(?:she|he)\b/i.test(c)) return false;
+  if (/^(?:was|were)$/.test(verb)) return /^(?:\S+\s+){1,3}?(?:was|were)\s+(?:injured|hurt|involved|struck|hit|seen|admitted|referred|signed off|told|advised|given|x-rayed|scanned)\b/i.test(c);
+  if (/^(?:remained|continued|remains|continues|is|are|has|have|had|felt|feels|reports|reported|described|rated|managed)$/.test(verb)) return false;
+  return /ed$/.test(verb) || new RegExp(`^(?:${IRREGULAR_PAST})$`).test(verb);
+}
+
+/** The body after "I recorded …" written as a clinical statement (null: keep the sentence as written). `date` is the lead's date, if any. */
+function plainRecordedBody(body: string, lead: string, date: string): string | null {
   const leadComma = lead ? `${lead}, ` : "";
   const on = date ? ` on ${date}` : "";
-  const b = body.trim();
+  let b = body.trim();
   let m: RegExpExecArray | null;
-  if ((m = /^that,? in my opinion,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1]}`;
+  // Fix round 1 (R1T-WB-L2): "I recorded on 16/09/2026 that …" – the date after the verb is the lead.
+  if (!lead && (m = /^on (\d{2}\/\d{2}\/\d{4}),? (that,?\s+[\s\S]*)$/.exec(b))) return plainRecordedBody(m[2], `On ${m[1]}`, m[1]);
+  // Fix round 1 (B0-23): "…, and that no further treatment is needed" loses its "that" with the frame.
+  if ((m = /^(?:that,? in my opinion,?|my opinion that,?)\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my opinion, ${m[1].replace(/ and that,? /, " and ")}`;
   if ((m = /^the clinical reason(?: for (?:the )?further treatment)? (?:as follows|as):\s*([\s\S]*)$/.exec(b))) return m[1];
   if ((m = /^as the clinical reason that,?\s+([\s\S]*)$/.exec(b))) return m[1];
   if ((m = /^(?:the |my )?goals? ((?:for|of) [^:]+?)(?: as)?:\s*([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
   if ((m = /^(?:the |my )?goals? ((?:for|of) .+?) as ([\s\S]*)$/.exec(b))) return `Goals ${m[1]}: ${m[2]}`;
   if ((m = /^(?:that )?the guideline (?:followed )?(?:as|was) ([\s\S]*)$/.exec(b))) return `Guideline followed: ${m[1]}`;
   if ((m = /^(?:my|the|an) assessment that,?\s+([\s\S]*)$/.exec(b))) return `${leadComma}in my assessment, ${m[1]}`;
-  if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1]}`;
+  // R1T-WB-L2: "…, and that the symptoms …" after the assessment is its own statement ("…; the symptoms …").
+  if ((m = /^(?:an|my|the) assessment (?:of the condition(?: being treated)? )?(?:of|as) ([\s\S]*)$/.exec(b))) return `Assessment${on}: ${m[1].replace(/,? and that,? /g, "; ")}`;
   if ((m = /^a (?:further )?treatment request(?: to (?:the insurer|[A-Z][\w&'’.-]*(?: [A-Z][\w&'’.-]*)*))?(?: for| of)? ([\s\S]*)$/.exec(b))) return `Further treatment requested${on}: ${m[1]}`;
   if ((m = /^(?:in the |the |a )?past medical history(?: of| as)?,?\s+([\s\S]*)$/.exec(b))) return `Past medical history: ${m[1]}`;
   if ((m = /^advice (to|on|about) ([\s\S]*)$/.exec(b))) return `${leadComma}advice was given ${m[1]} ${m[2]}`;
   if ((m = /^progression of (the [^,;]+?)((?:[,;][\s\S]*)?)$/.exec(b))) return `${leadComma}${m[1]} was progressed${m[2]}`;
   // "the shoulder as improving: …" / "Mrs Lane's medication as …" / "right shoulder active range of movement as …"
-  if ((m = /^((?:the|my|an?)\s+[a-z][a-z' -]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
+  // R1T-WB-L2: the noun phrase may hold a grade or a numeral ("the whiplash associated disorder grade II as now largely
+  // resolved" → "… grade II was now largely resolved").
+  if ((m = /^((?:the|my|an?)\s+[a-z][A-Za-z0-9' –-]{1,60}?|(?:\[CLAIMANT\]|[A-Z][a-z]+(?: [A-Z][a-z'-]+)?)['’]s [a-z][a-z' -]{1,40}?|(?:right|left)\s+[a-z][a-z' -]{1,60}?) as (?!follows)([\s\S]+)$/.exec(b))) {
     return `${leadComma}${m[1]} ${beFor(m[1])} ${m[2]}`;
   }
   // "right shoulder active range of movement: flexion 120°…" → "Right shoulder active range of movement on 01/09/2026: …"
   if ((m = /^([a-z][a-z' -]{2,60}?):\s+([\s\S]+)$/.exec(b)) && !/\b(?:that|was|were|is|are)\b/.test(m[1])) return `${m[1]}${on}: ${m[2]}`;
   if ((m = /^that,?\s+([\s\S]*)$/.exec(b))) {
+    // bh2 (B3-4): "I recorded that Mr Ellery took 3 days off work after the accident" keeps its frame – an event the
+    // patient narrated happened before the note's date, and "On 15/07/2026, Mr Ellery took 3 days off work" would date
+    // it to the note. Only a state at that date ("1 session remained", "she was working") or the recorder's own act in
+    // that session ("she provided education" → "I provided education") loses the frame.
+    if (narratesEarlierEvent(m[1])) return null;
     // "I recorded that she provided education…" – the recorder is the one who provided it.
     const clause = m[1].replace(new RegExp(`^(?:she|he) (${OWN_ACTION_VERBS})\\b`), "I $1").replace(/ and that,? /, " and ");
     return `${leadComma}${clause}`;
   }
-  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems."
-  return `${lead ? `${lead}: ` : ""}${b.replace(/, and that,? /, ", and ")}`;
+  // A finding rather than a clause: "On 01/10/2026: a painful arc 120–150°…", "No previous shoulder problems." – unless
+  // a first-person clause or another "that" clause follows it ("a Neck Disability Index score of 44% …, and I planned
+  // to repeat …"): no grammatical sentence comes of it, so the sentence is kept as written (R1T-WB-L2).
+  if (/,? (?:and|but) (?:I|we) \w+/.test(b) || /^that\b/.test(b)) return null;
+  b = b.replace(/, and that,? /, ", and ");
+  return `${lead ? `${lead}: ` : ""}${b}`;
 }
 
 /** What a clinician does in a session ("she recorded that she provided education…" is the clinician). */
@@ -156,8 +191,9 @@ export function plainClinicalWording(text: string): string {
   s = s.replace(/(\b(?:and|but|where|when|which|while),? )I (?:also )?recorded that,? /g, "$1");
   // Sentence starts.
   const re = new RegExp(`(^|[.!?]\\s+|\\n\\s*)${LEAD}I (?:also |then |later )?(?:recorded|documented)\\s+${REST}`, "g");
-  s = s.replace(re, (_m, pre: string, lead: string | undefined, d1: string | undefined, d2: string | undefined, body: string) => {
+  s = s.replace(re, (whole: string, pre: string, lead: string | undefined, d1: string | undefined, d2: string | undefined, body: string) => {
     const out = plainRecordedBody(body, lead ?? "", d1 ?? d2 ?? "");
+    if (out === null) return whole;
     return `${pre}${out.startsWith("[CLAIMANT]") ? out : capitalise(out)}`;
   });
   return s;
@@ -165,16 +201,12 @@ export function plainClinicalWording(text: string): string {
 
 /**
  * "Write in my own voice": the author's third-person attributions in the first person, then the
- * record-keeping frames as plain clinical wording. With `pronouns`, a paragraph that does not name the
- * author (it cites only the author's notes) has its "She recorded" taken as the author too.
+ * record-keeping frames as plain clinical wording. bh2 (C-1): `pronouns` no longer takes "She recorded" as the
+ * author – only the author's own name changes (the option is kept for callers; it changes nothing).
  */
-export function inOwnClinicalWording(text: string, authorName: string, opts: { pronouns?: boolean } = {}): string {
-  const name = authorName.trim();
-  let s = rewriteInFirstPerson(text, name);
-  if (opts.pronouns && name && text.indexOf(name) < 0) {
-    s = s.replace(new RegExp(`\\b(?:She|He|she|he)\\s+((?:also|then|later|again)\\s+)?(${RECORD_VERBS})\\b`, "g"), "I $1$2");
-  }
-  return plainClinicalWording(s);
+export function inOwnClinicalWording(text: string, authorName: string, _opts: { pronouns?: boolean } = {}): string {
+  // bh2 (C-1): no pronoun is ever taken as the owner – "she recorded" stays as written (it may be a colleague or a GP).
+  return plainClinicalWording(rewriteInFirstPerson(text, authorName.trim()));
 }
 
 /** N-* note IDs a paragraph cites. */
@@ -185,8 +217,9 @@ function citedNoteIds(p: Pick<Paragraph, "sourceIds">): string[] {
 /**
  * Whether a drafted paragraph only reports the author's OWN notes and names the author: then it can be
  * written in the author's voice. (A paragraph that also cites another clinician's note keeps names.)
- * With `pronouns`, a paragraph that does not name the author qualifies too when it says "she recorded"
- * or already says "I recorded" (a first-person draft) – the rewrite then gives it plain clinical wording.
+ * With `pronouns`, a paragraph that does not name the author qualifies too when it already says "I recorded" (a
+ * first-person draft) – the rewrite then gives it plain clinical wording. bh2 (C-1): "she recorded" no longer qualifies
+ * (the pronoun may be a colleague or a GP).
  */
 export function isOwnVoiceCandidate(
   p: Pick<Paragraph, "text" | "sourceIds" | "origin">,
@@ -197,7 +230,9 @@ export function isOwnVoiceCandidate(
   const author = authorName.trim();
   if (p.origin !== "ai" || !author) return false;
   const named = p.text.indexOf(author) >= 0;
-  if (!named && !(opts.pronouns && new RegExp(`\\b(?:[Ss]he|[Hh]e|I)\\s+(?:(?:also|then|later|again)\\s+)?(?:${RECORD_VERBS})\\b`).test(p.text))) return false;
+  // Pronoun-only voice: verbs a patient never does ("I recorded" is the clinician). A regex literal (fix round 1,
+  // R1T-WB-12): the template-literal form was mis-escaped by the production server build ("\\b" became a backspace).
+  if (!named && !(opts.pronouns && /\bI\s+(?:(?:also|then|later|again)\s+)?(?:recorded|documented|measured|examined)\b/.test(p.text))) return false;
   const ids = citedNoteIds(p);
   if (ids.length === 0) return false;
   if (!ids.every((id) => bundle.notes.find((n) => n.id === id)?.author.name === author)) return false;
@@ -456,22 +491,47 @@ export function describeSourceIds(text: string, names: SourceIdNames): string {
 /** Words before a capital "I" that make it a numeral ("WAD I", "Grade I", "Type I"), not the first person. */
 const NUMERAL_BEFORE_I = /(?:WAD|grade|type|stage|class|phase|level|part|section|schedule|category|tier|zone)\s*$/i;
 
+/** Text outside quotations ("…" / "…"), quoted words blanked out (a patient's own words may say "my neck"). */
+function unquoted(text: string): string {
+  return text.replace(/\u201C[^\u201D]*\u201D/g, (q) => " ".repeat(q.length)).replace(/"[^"]*"/g, (q) => " ".repeat(q.length));
+}
+
+/** One use of the first person in drafted text. */
+export interface FirstPersonUse {
+  word: string;
+  index: number;
+  /** subject: "I recorded", "we found"; possessive: "my annual leave", "our clinic"; object: "told me", "with us". */
+  kind: "subject" | "possessive" | "object";
+}
+
 /**
- * Whether drafted text speaks in the first person ("I recorded…", "in my opinion", "told me") outside
- * quotations from the notes ("…" / "…", where a patient's own words may say "my neck").
+ * Every first-person word outside quotations – I, me, my, myself and (bh2, C-ATTR-7) we, us, our, ours, ourselves –
+ * with how it is used. A capital "I" after WAD / grade / type … is a numeral, not the first person.
  */
-export function speaksInFirstPerson(text: string): boolean {
-  const plain = text.replace(/\u201C[^\u201D]*\u201D/g, " ").replace(/"[^"]*"/g, " ");
-  const re = /\b(I|me|my|My|myself|Myself)\b/g;
+export function firstPersonUses(text: string): FirstPersonUse[] {
+  const plain = unquoted(text);
+  const out: FirstPersonUse[] = [];
+  const re = /\b(I|me|my|My|myself|Myself|mine|we|We|us|our|Our|ours|ourselves|Ourselves)\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(plain))) {
-    if (m[1] === "I") {
+    const w = m[1];
+    if (w === "I") {
       if (NUMERAL_BEFORE_I.test(plain.slice(Math.max(0, m.index - 16), m.index))) continue;
       if (/^[-\u2013/.]\w/.test(plain.slice(m.index + 1, m.index + 3))) continue; // "I-II", "I/II"
     }
-    return true;
+    const lower = w.toLowerCase();
+    const kind = lower === "i" || lower === "we" ? "subject" : lower === "my" || lower === "our" || lower === "mine" || lower === "ours" ? "possessive" : "object";
+    out.push({ word: w, index: m.index, kind });
   }
-  return false;
+  return out;
+}
+
+/**
+ * Whether drafted text speaks in the first person ("I recorded…", "in my opinion", "told me", "we found", "our
+ * opinion") outside quotations from the notes ("…" / "…", where a patient's own words may say "my neck").
+ */
+export function speaksInFirstPerson(text: string): boolean {
+  return firstPersonUses(text).length > 0;
 }
 
 const normName = (s: string) => s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
@@ -497,4 +557,184 @@ export function otherClinicianVoice(
   if (sameClinician(author, signer)) return null;
   const keys = report.sections.filter((s) => s.paragraphs.some((p) => p.origin === "ai" && speaksInFirstPerson(p.text))).map((s) => s.key);
   return keys.length > 0 ? { author: author.name, keys } : null;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Another clinician's note in the author's first person (Blue Heart fix round 1, B0-1)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Whether `text` names `name` (case, spaces and a trailing possessive ignored). */
+export function namesPerson(text: string, name: string): boolean {
+  const n = name.trim();
+  return n !== "" && new RegExp(`\\b${escapeRe(n).replace(/ /g, "\\s+")}\\b`, "i").test(text);
+}
+
+/**
+ * A paragraph that speaks in the first person (outside quotations) while it cites a note another clinician wrote: the
+ * clinicians whose notes it cites, or null. The first person is the voice owner's (the report's approving clinician),
+ * so it fits only the owner's own notes – licence (i), plan WB design 7 (C-ATTR-3: no exception when another
+ * clinician is named beside the owner's "I"):
+ * - every cited note is the owner's → null;
+ * - otherwise → every other clinician cited (named in the text or not);
+ * - no owner (strict mode – no approving clinician chosen yet): every cited note counts as another clinician's.
+ * Only N-* notes count: a paragraph citing no note (the registration record, a computed fact) is left to the other checks.
+ * Ledger hook "first-person-licence": while it is disabled the owner's own notes do not licence the first person either.
+ *
+ * Fix round 1 (R1T-WB-09, Khuram's E7/E8 decision): when the paragraph cites the owner's own notes as well as a
+ * colleague's, the first person is judged clause by clause (validation/attribution-voice.ts firstPersonOverColleagues):
+ * "On 15/07/2026 I recorded … On 05/08/2026 Tom Ellis, physiotherapist, recorded …" is the owner's "I" over the owner's
+ * notes beside a named colleague – licensed; an "I" over the colleague's note (by its date or content) still is not.
+ */
+export function otherCliniciansInFirstPerson(
+  p: Pick<Paragraph, "text" | "sourceIds">,
+  bundle: Pick<EpisodeBundle, "notes">,
+  author: (Pick<Clinician, "name"> & { hcpc?: string | null }) | null | undefined,
+): string[] | null {
+  if (!speaksInFirstPerson(p.text)) return null;
+  const cited = citedNoteIds(p)
+    .map((id) => bundle.notes.find((n) => n.id === id))
+    .filter((n): n is EpisodeBundle["notes"][number] => Boolean(n));
+  if (cited.length === 0) return null;
+  const licensed = hookEnabled(FIRST_PERSON_LICENCE);
+  const own = (a: Pick<Clinician, "name"> & { hcpc?: string | null }) => licensed && Boolean(author?.name.trim()) && sameClinician(a, author as Pick<Clinician, "name">);
+  const others = Array.from(new Set(cited.filter((n) => !own(n.author)).map((n) => n.author.name.trim()))).filter(Boolean);
+  if (others.length === 0) return null;
+  if (author && cited.some((n) => own(n.author))) {
+    const clauses = firstPersonOverColleagues(p, bundle, author);
+    if (!clauses) return null;
+    const names = Array.from(new Set(clauses.flatMap((c) => c.colleagues))).filter((n) => others.includes(n));
+    return names.length > 0 ? names : others;
+  }
+  return others;
+}
+
+/**
+ * The first person forming or giving an opinion (B2-1): "in my opinion / view", "my assessment that", "I expect / think /
+ * believe / feel / recommend / anticipate / consider…" (present tense – a past "I recommended" reports what was recorded),
+ * and the same with "we" / "our".
+ */
+export const OWN_OPINION =
+  /\b(?:in (?:my|our) (?:clinical |professional )?(?:opinion|view)|(?:my|our) (?:clinical |professional )?(?:opinion|view|assessment|impression|expectation) (?:is |was )?that|(?:I|we|We) (?:also |would |do |still )?(?:expect|think|believe|feel|recommend|anticipate|consider|suspect|predict|estimate|foresee)(?![\w-]))/i;
+
+/** Past-tense verbs that do not end in "-ed" (for "I saw" → "Tom Ellis saw"). */
+const IRREGULAR_PAST_I =
+  "saw|gave|took|told|found|made|felt|thought|taught|sent|kept|met|wrote|did|had|was|began|ran|put|set|got|left|brought|heard|held|knew|led|lost|meant|paid|read|said|showed|spent|stood|understood|went|withdrew|became|chose|drew|drove|fell|forgot|hurt|let|sat|spoke|struck|swam|threw|woke|won";
+
+/** Every "I" outside quotations is followed by a past-tense verb (an adverb may come between), so naming someone in its place stays grammatical. */
+function firstPersonVerbsInPast(text: string): boolean {
+  const plain = unquoted(text);
+  const re = /\bI\b(?![-–/.]\w)\s*(\S*)\s*(\S*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain))) {
+    if (NUMERAL_BEFORE_I.test(plain.slice(Math.max(0, m.index - 16), m.index))) continue;
+    const adverb = /^(?:also|then|later|again|further|initially|subsequently|previously|first|last|next|once|briefly|only|personally)$/i.test(m[1]);
+    const verb = (adverb ? m[2] : m[1]).replace(/[^A-Za-z]/g, "");
+    if (!new RegExp(`^(?:[a-z]+ed|${IRREGULAR_PAST_I})$`, "i").test(verb)) return false;
+  }
+  return true;
+}
+
+/**
+ * "Name X instead" (plan WB design 10): the one clinician X to name in place of the first person, or null. Offered only
+ * on drafted text, when every cited note is X's (X is not the voice owner), the paragraph speaks in the first person,
+ * no first-person opinion wording is present (B2-1 – whose opinion it is, and whether they recorded it, is the
+ * approver's to settle) and the rewrite settles every first-person word (nameClinicianInstead). Never a subject swap
+ * between two clinicians. Text a person wrote or edited ("At that appointment I recorded …") may be their own account:
+ * they rewrite it, or the approver acknowledges it – a click never turns their "I" into someone else (B2-1's fix 1,
+ * ATT-staff-02). Ledger hook "name-instead".
+ */
+export function nameInsteadClinician(
+  p: Pick<Paragraph, "text" | "sourceIds"> & Partial<Pick<Paragraph, "origin">>,
+  bundle: Pick<EpisodeBundle, "notes">,
+  owner: (Pick<Clinician, "name"> & { hcpc?: string | null }) | null | undefined,
+): { name: string; text: string } | null {
+  if (!hookEnabled(NAME_INSTEAD) || !speaksInFirstPerson(p.text)) return null;
+  if (p.origin !== undefined && p.origin !== "ai") return null;
+  const cited = citedNoteIds(p)
+    .map((id) => bundle.notes.find((n) => n.id === id))
+    .filter((n): n is EpisodeBundle["notes"][number] => Boolean(n));
+  if (cited.length === 0) return null;
+  const authors = Array.from(new Set(cited.map((n) => n.author.name.trim())));
+  if (authors.length !== 1) return null;
+  const x = cited[0].author;
+  if (owner?.name.trim() && sameClinician(x, owner)) return null;
+  const text = nameClinicianInstead(p.text, x.name);
+  return text ? { name: x.name.trim(), text } : null;
+}
+
+/** Text outside quotations ("…", “…”) through `fn`; quoted note wording stays as written. */
+function outsideQuotes(text: string, fn: (s: string) => string): string {
+  return text
+    .split(/(“[^”]*”|"[^"]*")/)
+    .map((part, i) => (i % 2 === 1 ? part : fn(part)))
+    .join("");
+}
+
+/**
+ * "Name Tom Ellis instead": the inverse of rewriteInFirstPerson() for a paragraph that reports one other clinician's
+ * notes in the first person (offered through nameInsteadClinician, plan WB design 10) – "told me" → "told Tom Ellis", "My assessment" → "Tom Ellis's assessment", "in my
+ * opinion" → "in Tom Ellis's opinion", "I also advised" → "Tom Ellis also advised". Quotations, dates and figures are
+ * untouched. Returns null when anything first-person is left, or when the text names the clinician already – then
+ * the "I" or "my" may be the signer's own ("Tom Ellis covered my leave") – and the clinician rewrites it instead.
+ */
+export function nameClinicianInstead(text: string, clinicianName: string): string | null {
+  const name = clinicianName.trim();
+  if (!name || /\bI['\u2019](?:m|ve|d|ll)\b/.test(text) || namesPerson(text, name)) return null;
+  // B2-1: an opinion or prognosis in the first person ("In my opinion…", "I expect these to ease") is never moved onto
+  // another clinician by a click – whose opinion it is, and whether they recorded it, is the approving clinician's to
+  // settle. Nor is a present-tense "I expect" turned into "Tom Ellis expect".
+  if (OWN_OPINION.test(unquoted(text)) || !firstPersonVerbsInPast(text)) return null;
+  const possessive = `${name}'s`;
+  const out = outsideQuotes(text, (s) =>
+    s
+      .replace(/\bmy\b/g, possessive)
+      .replace(/\bMy\b/g, possessive)
+      .replace(/\b(?:me|myself|Myself)\b/g, name)
+      .replace(/\bI\b(?![-–/.]\w)/g, (m, offset: number, whole: string) => (NUMERAL_BEFORE_I.test(whole.slice(Math.max(0, offset - 16), offset)) ? m : name)),
+  );
+  return out !== text && !speaksInFirstPerson(out) ? out : null;
+}
+
+/**
+ * A report with no author (drafted in the third person: a draft staff prepared, a built-in report) approved by
+ * `signer`: the drafted answers that still say "I", "me" or "my" about notes the signer did not write – the
+ * questions to edit, or null. The validators check reports that have an author (validation/voice.ts).
+ */
+export function unsignableFirstPerson(
+  report: Pick<Report, "author" | "sections" | "bundleSnapshot">,
+  signer: Pick<Clinician, "name"> & { hcpc?: string | null },
+): { names: string[]; keys: string[] } | null {
+  if (report.author?.name.trim() || !signer.name.trim()) return null;
+  const names = new Set<string>();
+  const keys: string[] = [];
+  for (const s of report.sections) {
+    for (const p of s.paragraphs) {
+      if (p.origin !== "ai") continue;
+      const others = otherCliniciansInFirstPerson(p, report.bundleSnapshot, signer);
+      if (!others) continue;
+      others.forEach((n) => names.add(n));
+      if (keys.indexOf(s.key) < 0) keys.push(s.key);
+    }
+  }
+  return keys.length > 0 ? { names: Array.from(names), keys } : null;
+}
+
+/**
+ * Fix round 1 (B0-23): gap wording ("issue", "suggestedQuestion") read by everyone who opens the review – staff too – so
+ * "your discharge note of 16/09/2026" or "my note of 05/08/2026" names whose note it is: the clinician who wrote the
+ * note of that date ("Sarah Reid's discharge note of 16/09/2026"), else "the" ("The notes do not record a dose").
+ * Quotations are untouched. Pure; browser and server.
+ */
+export function notesNamedByAuthor(text: string, notes: ReadonlyArray<{ date: string; author: Pick<Clinician, "name"> }>): string {
+  // "your discharge note", "my initial assessment note" – not "your clinic has no notes".
+  const own = /\b(my|your)((?:\s+(?!(?:has|have|had|is|are|was|were|do|does|did|no|not|and|or|of|in|on|for|to)\b)[A-Za-z-]+){0,3}?\s+notes?)\b(\s+(?:of|on|dated)\s+(\d{2})\/(\d{2})\/(\d{4}))?/gi;
+  return outsideQuotes(text, (s) =>
+    s.replace(own, (_m, _who: string, rest: string, tail: string | undefined, dd?: string, mm?: string, yyyy?: string, offset?: number, whole?: string) => {
+      const iso = dd && mm && yyyy ? `${yyyy}-${mm}-${dd}` : null;
+      const authors = iso ? Array.from(new Set(notes.filter((n) => n.date === iso).map((n) => n.author.name.trim()).filter(Boolean))) : [];
+      if (authors.length === 1) return `${authors[0]}'s${rest}${tail ?? ""}`;
+      const start = (offset ?? 0) === 0 || /[.!?]\s+$/.test((whole ?? "").slice(0, offset));
+      return `${start ? "The" : "the"}${rest}${tail ?? ""}`;
+    }),
+  );
 }

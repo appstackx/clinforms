@@ -16,10 +16,22 @@ import {
   OutcomeInstrumentSchema,
   PartySchema,
   ReferrerTypeSchema,
+  MAPPING_ONLY_PATHS,
+  MERGE_CODE_ONLY_PATHS,
   RegistrationPathSchema,
   SignoffPartSchema,
 } from "../core/schemas";
-import type { Party } from "../core/types";
+import type { Party, RegistrationPath } from "../core/types";
+
+/**
+ * The registration paths the form reading may propose: every path except those only a clinic system's merge codes
+ * use (10/2026, MERGE_CODE_ONLY_PATHS – bound by code in ai/practice-merge-binding.ts), so the live analysis's
+ * output schema is unchanged.
+ */
+export const ANALYSIS_REGISTRATION_PATHS = RegistrationPathSchema.options.filter(
+  (p) => !(MERGE_CODE_ONLY_PATHS as readonly string[]).includes(p) && !(MAPPING_ONLY_PATHS as readonly string[]).includes(p),
+  // The type stays every path (the outputs flow into code that takes any RegistrationPath); only the values differ.
+) as unknown as readonly [RegistrationPath, ...RegistrationPath[]];
 
 export const ANCHOR_TARGETS = [
   "table_cell",
@@ -28,6 +40,9 @@ export const ANCHOR_TARGETS = [
   "content_control",
   "checkbox_glyph",
   "legacy_form_field",
+  // form-analysis-5 (10/2026): a "mark the column" table cell, a "delete as necessary" list.
+  "mark_cell",
+  "delete_options",
   "pdf_field",
   "pdf_overlay",
 ] as const;
@@ -56,8 +71,10 @@ export const AnalysisAnswerTypeSchema = AnswerTypeSchema.exclude(["table"]);
 
 export const AnalysisOptionAnchorSchema = z.object({
   option: z.string().describe("The option exactly as printed."),
-  ref: z.string().describe("Word: the block ID holding this option's ☐. Fillable PDF: the check box field name for this option."),
-  glyphIndex: z.number().int().describe("Word: 0-based index of this option's ☐ among the ☐/☒ glyphs in that block. PDF: 0."),
+  ref: z
+    .string()
+    .describe("Word checkbox_glyph: the block ID holding this option's tick box. mark_cell: the cell ID to mark for this option. delete_options (one option per line): the block ID printing this option. Fillable PDF: the check box field name for this option."),
+  glyphIndex: z.number().int().describe("Word checkbox_glyph: 0-based index of this option's tick box among the tick boxes in that block. Otherwise 0."),
 });
 
 const AnalysisFieldOutputBaseSchema = z.object({
@@ -70,13 +87,17 @@ const AnalysisFieldOutputBaseSchema = z.object({
   anchorRef: z
     .string()
     .describe('Word: the block ID of the answer space (see the rules). Fillable PDF: the field name exactly as listed. Flat PDF: "".'),
-  placeholderText: z.string().describe('replace_placeholder: the placeholder exactly as it appears in that block. "" otherwise.'),
-  optionAnchors: z.array(AnalysisOptionAnchorSchema).describe("checkbox_glyph (and PDF tick boxes per option): one entry per option, same order as options. [] otherwise."),
+  placeholderText: z
+    .string()
+    .describe('replace_placeholder: the placeholder exactly as it appears in that block. delete_options on one line: the whole list exactly as printed. "" otherwise.'),
+  optionAnchors: z
+    .array(AnalysisOptionAnchorSchema)
+    .describe("checkbox_glyph, mark_cell, delete_options with one option per line (and PDF tick boxes per option): one entry per option, same order as options. [] otherwise."),
   overlay: z
     .object({ page: z.number().int(), x: z.number(), y: z.number(), width: z.number(), height: z.number() })
     .describe("pdf_overlay only: the answer box in PDF points, origin bottom-left, page 1-based. All zeros otherwise."),
   fillSource: z.enum(FILL_KINDS),
-  registrationPath: z.enum([...RegistrationPathSchema.options, "none"]),
+  registrationPath: z.enum([...ANALYSIS_REGISTRATION_PATHS, "none"]),
   computedFact: z.enum([...FACT_ID_OPTIONS, "none"]),
   computedFormat: z.enum([...ComputedFactFormatSchema.options, "none"]),
   signoffPart: z.enum([...SignoffPartSchema.options, "none"]),
@@ -128,7 +149,7 @@ export const LenientAnalysisOutputSchema: z.ZodType<AnalysisOutput> = z.object({
       optionAnchors: z.array(AnalysisOptionAnchorSchema).catch([]),
       overlay: z.object({ page: z.number(), x: z.number(), y: z.number(), width: z.number(), height: z.number() }).catch({ page: 0, x: 0, y: 0, width: 0, height: 0 }),
       fillSource: z.enum(FILL_KINDS).catch("notes_narrative"),
-      registrationPath: z.enum([...RegistrationPathSchema.options, "none"]).catch("none"),
+      registrationPath: z.enum([...ANALYSIS_REGISTRATION_PATHS, "none"]).catch("none"),
       computedFact: z.enum([...FACT_ID_OPTIONS, "none"]).catch("none"),
       computedFormat: z.enum([...ComputedFactFormatSchema.options, "none"]).catch("none"),
       signoffPart: z.enum([...SignoffPartSchema.options, "none"]).catch("none"),

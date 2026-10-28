@@ -25,6 +25,8 @@ export interface StudioPaths {
   newReport: string;
   /** The wizard with a referrer form preselected. */
   newReportWithForm(formId: string): string;
+  /** The wizard started from an earlier report's checked notes: another form for the same patient (clinic Studio). */
+  newReportFrom(reportId: string): string;
   /** Referrer forms library. */
   forms: string;
   /** One form map. */
@@ -53,6 +55,7 @@ export function studioPaths(basePath?: string | null, mode: StudioMode = "demo")
     home: base,
     newReport: `${base}/new`,
     newReportWithForm: (formId) => `${base}/new?form=${id(formId)}`,
+    newReportFrom: (reportId) => `${base}/new?from=${id(reportId)}`,
     forms: `${base}/forms`,
     form: (formId) => `${base}/forms/${id(formId)}`,
     batch: `${base}/batch`,

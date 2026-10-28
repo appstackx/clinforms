@@ -69,7 +69,16 @@ export const TENANT_COPY = {
     activityNote: "Every draft, edit, resolution and approval is recorded with the report, with who did it and when.",
     saved: "Saved",
     saveFailed: "Could not save – check your connection",
+    /**
+     * bh2 fix round 1 (R1T-WF-L1): the clinic's records answered 429 (too many changes in a short time – the write
+     * allowance). The change is kept and sent again by itself at the server's Retry-After; it is not a lost connection.
+     */
+    savePaused: "Saving paused for a moment – it will try again automatically",
+    savePausedHint:
+      "Many changes were saved to your clinic's records in a short time, so saving waits a few seconds. Your changes are kept and sent by themselves – keep this page open until it says Saved.",
     staffCannotApprove: "Ready for a signing clinician: staff prepare forms, and a clinician with signing details approves them.",
+    /** Fix round 1 (B0-26): a staff member's draft with items still open ("5 items to resolve – then …"). */
+    staffThenApproves: "then a clinician with signing details approves.",
     noSigningDetails:
       "You cannot approve yet: your clinic profile has no HCPC number or permission to sign. Ask an administrator (Settings → Members), or a signing clinician to approve.",
     otherVoicePrefix: "Drafted in another clinician's voice:",
@@ -94,6 +103,9 @@ export const TENANT_COPY = {
     analysisRecorded: "Stored reading of this form",
     analysisPrewritten: "Pre-written map",
     analysisRules: "Found from the layout – check every question",
+    /** Fix round 1 (B0-9, B0-25): who confirms a mapping and changes a confirmed one (auth/actor.ts CONFIRM_ROLES). */
+    confirmedLocked: "Only an owner, administrator or clinician can change or remove a confirmed form.",
+    confirmRole: "An owner, administrator or clinician confirms forms.",
   },
   /** Fix wave 2: where answers come from, in a clinic's Studio (its notes upload – never a practice-system link). */
   sources: {
@@ -109,6 +121,29 @@ export const TENANT_COPY = {
     unavailableTitle: "Batch needs a connected clinic system",
     unavailableBody:
       "Batch completes several patients' forms at once from a connected clinic system. Your clinic adds patients by uploading their notes, so complete each form from “Complete a form”.",
+  },
+  /** 25/10/2026: another referrer form for a patient whose notes a report already holds – no new upload. */
+  reuse: {
+    action: "Complete another form for this patient",
+    actionHint: "Uses the notes already checked for this report – nothing to upload again.",
+    rowAction: "Another form",
+    loading: "Getting the patient's notes from the earlier report…",
+    failedTitle: "Could not use the notes from that report",
+    failedNext: "Upload the patient's notes below instead.",
+    bannerLead: "Using the notes already checked for",
+    bannerNoUpload: "Nothing was uploaded again.",
+    consentReset:
+      "The patient's consent to share the earlier report is not carried over to another form: once the patient has agreed, record their consent on the new report before it is approved.",
+    backToUpload: "Upload other notes instead",
+    completedPill: "Already completed for this patient",
+    chooseOther: "Choose the other form to complete for this patient.",
+    /** The library holds no confirmed form but the one the earlier report completed. */
+    noOtherHint: "The only form ready to use is already completed for this patient.",
+    noOtherTitle: "No other referrer form is ready to use",
+    noOtherBody: "The only confirmed form in your library is already completed for this patient. To complete another referrer's form, add it in",
+    noOtherLink: "Referrer forms",
+    noOtherAfter: "and confirm it – or use a built-in report below.",
+    uploadHint: "Already uploaded this patient's notes for another form? Open that report and choose “Complete another form for this patient”.",
   },
 } as const;
 

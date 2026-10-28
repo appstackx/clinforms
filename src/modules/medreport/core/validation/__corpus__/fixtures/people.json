@@ -1,0 +1,12 @@
+{
+  "_about": "Fictional clinic members for the safety corpus. Sarah Reid is the usual approver (owner, clinician, may sign). Tom Ellis may sign too. Priya Shah writes notes but may not sign. Pat Morgan is staff. Chris Dale is an administrator without may-sign. The PH-DEMO-NN numbers are made-up demo numbers; the corpus clinic is a demo clinic.",
+  "tenantId": "clinic-corpus",
+  "clinicName": "Corpus Physio (fictional)",
+  "people": {
+    "sarah": { "memberId": "mem_sarah", "userId": "usr_sarah", "name": "Sarah Reid", "hcpc": "PH-DEMO-01", "jobTitle": "Senior Physiotherapist, MCSP", "role": "owner", "canSign": true },
+    "tom": { "memberId": "mem_tom", "userId": "usr_tom", "name": "Tom Ellis", "hcpc": "PH-DEMO-02", "jobTitle": "Physiotherapist, MCSP", "role": "clinician", "canSign": true },
+    "priya": { "memberId": "mem_priya", "userId": "usr_priya", "name": "Priya Shah", "hcpc": "PH-DEMO-03", "jobTitle": "Physiotherapist, MCSP", "role": "clinician", "canSign": false },
+    "pat": { "memberId": "mem_pat", "userId": "usr_pat", "name": "Pat Morgan", "role": "staff", "canSign": false },
+    "chris": { "memberId": "mem_chris", "userId": "usr_chris", "name": "Chris Dale", "role": "admin", "canSign": false }
+  }
+}

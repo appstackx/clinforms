@@ -16,7 +16,8 @@ import "server-only";
  * signed-in member needs no passcode: live when this deployment can draft (tenantLiveAiAvailable) and the
  * clinic's profile allows it (clinic_profile.drafting_enabled; off without a profile or when it cannot be read), within the
  * clinic's own per-minute and per-day limits (CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE / _PER_DAY, shared;
- * 429 + retry-after). prefer "live" with drafting switched off → 403 DRAFTING_DISABLED.
+ * 429 + retry-after; 10/2026: a clinic's own limits set by ClinForms staff – ClinicProfile.draftingLimits – replace
+ * the defaults for that clinic). prefer "live" with drafting switched off → 403 DRAFTING_DISABLED.
  *
  * checkDemoPasscode(): the demo's passcode check on its own (the gate above uses it too) – POST
  * /passcode/check asks it before the Studio stores a passcode, with the same wrong-guess accounting and no
@@ -25,7 +26,7 @@ import "server-only";
  * Owner: ai agent (wave 2 actor gate: API slice).
  */
 import { HEADERS } from "../api/contract";
-import type { MedreportDeps } from "../api/deps";
+import type { ClinicProfile, MedreportDeps } from "../api/deps";
 import { logEvent, problem } from "../api/http";
 import type { Actor } from "../auth/actor";
 import { checkLivePasscode, checkLivePasscodeShared, takeDemoLiveCalls, takeLiveCall } from "../auth/passcode";
@@ -107,22 +108,52 @@ export function chooseAiMode(req: Request, prefer: "auto" | "live" | "demo" | un
  * Wave 2: the gate per caller (public demo vs a clinic's member)
  * ----------------------------------------------------------------------------------------------*/
 
+/** A clinic's own drafting limits (ClinicProfile.draftingLimits, set by ClinForms staff); absent = the defaults. */
+export type ClinicDraftingLimits = NonNullable<ClinicProfile["draftingLimits"]>;
+
+/**
+ * The live limits that apply to a clinic: its own (10/2026, the host's clinic_plan – e.g. 30 a minute and 1,500 a
+ * day for a large group) where set, else the deployment's defaults (CLINFORMS_TENANT_LIVE_CALLS_PER_MINUTE /
+ * _PER_DAY, 10 and 400). An override outside 1–600 a minute or 1–1,000,000 a day is ignored.
+ */
+export function effectiveTenantLimits(own: ClinicDraftingLimits | undefined): { perMinute: number; perDay: number } {
+  const defaults = tenantDraftingLimits();
+  const ok = (v: number | undefined, max: number) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= max;
+  return {
+    perMinute: ok(own?.perMinute, 600) ? (own?.perMinute as number) : defaults.perMinute,
+    perDay: ok(own?.perDay, 1_000_000) ? (own?.perDay as number) : defaults.perDay,
+  };
+}
+
 /** The clinic's live limits as counter keys (per minute, per UTC day). */
-function tenantLimitKeys(tenantId: string) {
-  const limits = tenantDraftingLimits();
+function tenantLimitKeys(tenantId: string, own?: ClinicDraftingLimits) {
+  const limits = effectiveTenantLimits(own);
   return [
     { key: `tenant:${tenantId}:live:minute`, limit: limits.perMinute, windowMs: 60_000 },
     { key: `tenant:${tenantId}:live:day`, limit: limits.perDay, windowMs: 86_400_000 },
   ];
 }
 
-/** Take `n` live calls for this caller: the demo's shared cap, or the clinic's own limits. */
-export async function takeLiveCallsFor(actor: Actor, deps: MedreportDeps, n = 1): Promise<SlotResult & { daily?: boolean }> {
+/** The clinic's own limits from its profile; the defaults when there is none or it cannot be read. */
+async function clinicOwnLimits(actor: Actor, deps: MedreportDeps): Promise<ClinicDraftingLimits | undefined> {
+  if (!deps.clinicProfile) return undefined;
+  try {
+    return (await deps.clinicProfile(actor.tenantId))?.draftingLimits;
+  } catch {
+    return undefined; // the defaults (never higher than what the deployment allows anyway)
+  }
+}
+
+/**
+ * Take `n` live calls for this caller: the demo's shared cap, or the clinic's limits (its own where ClinForms
+ * staff set them – `own`, read from the profile when not given – else the defaults).
+ */
+export async function takeLiveCallsFor(actor: Actor, deps: MedreportDeps, n = 1, own?: ClinicDraftingLimits | null): Promise<SlotResult & { daily?: boolean }> {
   if (actor.via === "demo") {
     const r = await takeDemoLiveCalls(deps, n);
     return r.ok ? { ok: true, count: 0, remaining: r.remaining } : r;
   }
-  const keys = tenantLimitKeys(actor.tenantId);
+  const keys = tenantLimitKeys(actor.tenantId, own === undefined ? await clinicOwnLimits(actor, deps) : (own ?? undefined));
   const r = await takeSlotsFromAll(deps, keys, n);
   return r.ok ? r : { ...r, daily: r.blockedBy === keys[1].key };
 }
@@ -150,13 +181,18 @@ function limitResponse(actor: Actor, slot: { retryAfterSeconds: number; daily?: 
  * (a host that has no clinic profiles).
  */
 async function clinicDraftingEnabled(actor: Actor, deps: MedreportDeps): Promise<boolean> {
-  if (!deps.clinicProfile) return true;
+  return (await clinicDraftingState(actor, deps)).enabled;
+}
+
+/** The drafting switch and the clinic's own limits, from ONE profile read (the handlers' gate). */
+async function clinicDraftingState(actor: Actor, deps: MedreportDeps): Promise<{ enabled: boolean; own: ClinicDraftingLimits | null }> {
+  if (!deps.clinicProfile) return { enabled: true, own: null };
   try {
     const profile = await deps.clinicProfile(actor.tenantId);
-    return profile ? profile.draftingEnabled : false;
+    return { enabled: profile ? profile.draftingEnabled : false, own: profile?.draftingLimits ?? null };
   } catch (err) {
     logEvent("clinic_profile_unavailable", { error: err instanceof Error ? err.name : "error" });
-    return false; // fail closed: never spend a clinic's drafting allowance we cannot check
+    return { enabled: false, own: null }; // fail closed: never spend a clinic's drafting allowance we cannot check
   }
 }
 
@@ -242,7 +278,8 @@ export async function chooseAiModeForActor(
   // A clinic's signed-in member: no passcode.
   if (p === "demo") return { ok: true, mode: "demo" };
   const live = tenantLiveAiAvailable();
-  const enabled = live ? await clinicDraftingEnabled(actor, deps) : false;
+  const state = live ? await clinicDraftingState(actor, deps) : { enabled: false, own: null };
+  const enabled = state.enabled;
   if (p === "auto" && (!live || !enabled)) return { ok: true, mode: "demo" };
   if (!live) {
     return {
@@ -253,7 +290,7 @@ export async function chooseAiModeForActor(
   if (!enabled) {
     return { ok: false, response: problem(403, WORDING.server.access.draftingOffTitle, { code: "DRAFTING_DISABLED", detail: WORDING.server.access.draftingOffDetail }) };
   }
-  const slot = await takeLiveCallsFor(actor, deps, 1);
+  const slot = await takeLiveCallsFor(actor, deps, 1, state.own);
   if (!slot.ok) return { ok: false, response: limitResponse(actor, slot, wording) };
   return { ok: true, mode: "live" };
 }

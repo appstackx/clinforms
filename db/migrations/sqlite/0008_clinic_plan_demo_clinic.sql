@@ -1,0 +1,11 @@
+-- ClinForms 0008 (SQLite / Cloudflare D1): clinic_plan.demo_clinic - a DEMO clinic (made-up data only).
+-- 1 = its clinic pages and Studio show the banner "Demo clinic - made-up data only", every output carries a
+-- demonstration notice, and members may hold the made-up PH-DEMO-NN numbers and approve with them.
+-- 0 (the default, every existing row) = a real clinic, unchanged: PH-DEMO numbers are refused there.
+-- Set by ClinForms platform staff only (npm run admin:set-demo-clinic or the platform page /app/platform), never
+-- by a clinic's own owner or administrators. A clinic without a clinic_plan row is not a demo clinic.
+-- Kept in step with supabase/migrations/20261025000008_clinic_plan_demo_clinic.sql.
+-- SQLite has no ADD COLUMN IF NOT EXISTS, so this file holds this ONE statement only: the migration runners
+-- apply it once (wrangler d1_migrations, the local _migrations table), and db/parity.test.ts accepts exactly
+-- "duplicate column name" when it applies a lone ADD COLUMN file a second time.
+ALTER TABLE clinic_plan ADD COLUMN demo_clinic INTEGER NOT NULL DEFAULT 0 CHECK (demo_clinic IN (0, 1));

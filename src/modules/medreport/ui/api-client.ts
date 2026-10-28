@@ -73,9 +73,11 @@ import {
   type ValidateRequest,
   type ValidateResponse,
 } from "../api/contract";
+import { STORE_MEMBER_HEADER, STORE_TENANT_HEADER, StoreReportReuseResponseSchema, storeApiPaths, type StoreReportReuseResponse } from "../api/store-contract";
 import { DEMO_TENANT_ID, MAX_FORM_REQUEST_BYTES } from "../config.public";
+import type { FillOutcome } from "../core/issue-types";
 import { createPasscodeVerifier } from "./passcode-check";
-import { getPasscode, getSession, getStoreMode, setPasscode, setSession } from "./store";
+import { getPasscode, getSession, getStoreMode, getStoreScope, setPasscode, setSession } from "./store";
 
 /** A failed API call. `problem` is the server's problem+json (or a synthesised one). */
 export class ApiError extends Error {
@@ -153,8 +155,28 @@ export interface FileDownload {
   contentType: string;
   /** From x-medreport-fill-warnings (form fills): plain-English warnings, [] if none. */
   warnings: string[];
+  /**
+   * bh2 W0 follow-up: from x-medreport-fill-outcomes (form fills, core/issue-types.ts FillOutcome) – what the fill did
+   * at each field, for the review card's "On the form" line; [] when the response has none (until WA2's engine writes it).
+   */
+  outcomes: FillOutcome[];
   /** From x-medreport-file-token (FINAL renders only): required to file this exact file to the record. */
   fileToken: string | null;
+}
+
+/** HEADERS.fillOutcomes: URI-encoded JSON; anything that is not a list of outcomes reads as none. */
+function parseOutcomes(header: string | null): FillOutcome[] {
+  if (!header) return [];
+  try {
+    const parsed: unknown = JSON.parse(decodeURIComponent(header));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (o): o is FillOutcome =>
+        Boolean(o) && typeof o === "object" && typeof (o as FillOutcome).fieldId === "string" && typeof (o as FillOutcome).outcome === "string" && typeof (o as FillOutcome).fatal === "boolean",
+    );
+  } catch {
+    return [];
+  }
 }
 
 function parseWarnings(header: string | null): string[] {
@@ -329,6 +351,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
       contentSha256: res.headers.get(HEADERS.contentSha256),
       contentType,
       warnings: parseWarnings(res.headers.get(HEADERS.fillWarnings)),
+      outcomes: parseOutcomes(res.headers.get(HEADERS.fillOutcomes)),
       fileToken: res.headers.get(HEADERS.fileToken),
     };
   }
@@ -391,6 +414,21 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** POST /connectors/file-import/confirm (wave 3): the checked notes → the bundle */
     fileImportConfirm: (body: FileImportConfirmRequest, opts?: CallOptions): Promise<BundleResponse> =>
       postJson(reportApiPaths.fileImportConfirm(), body, BundleResponseSchema, opts),
+
+    /**
+     * POST /store/reports/{id}/reuse (a clinic's Studio, 25/10/2026): the record a stored report was completed from,
+     * read by the server from the clinic's own copy – for a NEW report on another form without uploading the notes
+     * again. Sends the page's clinic and member like every store request (a changed sign-in is refused).
+     */
+    reuseReportRecord: (reportId: string, opts?: CallOptions): Promise<StoreReportReuseResponse> => {
+      const scope = getStoreScope();
+      const headers: Record<string, string> = {};
+      if (scope) {
+        headers[STORE_TENANT_HEADER] = scope.tenantId;
+        if (scope.userId) headers[STORE_MEMBER_HEADER] = scope.userId;
+      }
+      return postJson(storeApiPaths.reportReuse(reportId), {}, StoreReportReuseResponseSchema, opts, headers);
+    },
 
     /** GET /templates */
     templates: (opts?: CallOptions): Promise<TemplatesListResponse> =>

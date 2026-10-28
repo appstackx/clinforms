@@ -18,6 +18,7 @@ import type {
   GenerationMeta,
   InstructingParty,
   ReportTemplate,
+  TokenUsage,
 } from "../core/types";
 
 /** A drafted section as the model returns it; form drafts add the structured `answer` string. */
@@ -67,6 +68,13 @@ export type DraftErrorCode =
 export class DraftGenerationError extends Error {
   readonly code: DraftErrorCode;
   readonly retryable: boolean;
+  /**
+   * 25/10/2026 (usage): the tokens of a live call that the drafting service answered but that still failed (refused,
+   * cut off, unreadable) – it cost money, so the clinic's usage records it. Absent when nothing came back.
+   */
+  usage?: TokenUsage;
+  /** The model that served that failed call. */
+  model?: string;
 
   constructor(code: DraftErrorCode, message: string, retryable = false) {
     super(message);

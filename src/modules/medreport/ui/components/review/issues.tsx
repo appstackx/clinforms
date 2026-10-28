@@ -4,17 +4,24 @@
  * Flags and gaps as the clinician works through them: a flag explains a failed check (and can be
  * acknowledged with a reason where the rules allow); a gap is something the record does not say (it is
  * resolved or acknowledged with the clinician's own words). Used inline on each question and in the
- * Flags & gaps tab.
+ * Flags & gaps tab. A question's open gaps and the checks its own answer clears are one item (BoxIssue, fix 10/2026 –
+ * see box-items.ts).
  *
- * Owner: studio-b agent.
+ * bh2 WC design 4: what the acting person may not do is not offered – the item says who decides instead ("Only Sarah
+ * Reid, the approving clinician, can …"); a proposal in a clinician box (APPROVER_DECISION) offers the approver one
+ * "Adopt" click; acknowledgements and resolutions say who made them.
+ *
+ * Owner: WC (review roles and provenance) – docs/bh2-ownership.json (formerly studio-b agent).
  */
-import { useId, useState } from "react";
-import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
+import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, CircleHelp, RotateCcw, UserRoundCheck } from "lucide-react";
 import { formatUkDateTime } from "../../../core/dates";
-import { DATA_CHECK_LABELS, FLAG_CODE_LABELS } from "../../../core/labels";
+import { DATA_CHECK_LABELS, flagCodeLabel, flagEvidenceShown } from "../../../core/labels";
+import { humaniseMergeCodes } from "../../../core/practice-merge-codes";
 import type { DataCheckCode, EpisodeBundle, Gap, ReportFlag } from "../../../core/types";
 import { Button, cn } from "../../primitives";
-import type { GapResolutionOptions } from "./review-model";
+import type { BoxItem } from "./box-items";
+import { requiredAnswerFirst, type GapResolutionOptions } from "./review-model";
 import { CitationChip } from "./review-ui";
 
 const MIN_REASON = 3;
@@ -86,6 +93,14 @@ function ReasonForm({
 
 /* Flags ----------------------------------------------------------------------------------------- */
 
+/** A check's title; "Missing field" says which kind it is (fix 10/2026). */
+function flagTitle(flag: ReportFlag): string {
+  if (flag.code === "MISSING_PLACEHOLDER" && flag.evidence === "optional field blank") return "Optional – no answer";
+  if (flag.code === "MISSING_PLACEHOLDER" && flag.evidence?.startsWith("mail-merge field ")) return "Mail-merge field left on the form";
+  // A flag code this build does not know (a stored report from a later release, core/stored-schemas.ts): the generic label.
+  return flagCodeLabel(flag.code);
+}
+
 export function FlagItem({
   flag,
   canAck,
@@ -94,6 +109,10 @@ export function FlagItem({
   onJump,
   jumpLabel,
   compact,
+  fix,
+  onAdopt,
+  onlyWho,
+  extra,
 }: {
   flag: ReportFlag;
   canAck: boolean;
@@ -102,13 +121,23 @@ export function FlagItem({
   onJump?: () => void;
   jumpLabel?: string;
   compact?: boolean;
+  /** A one-click correction the check offers ("Name Tom Ellis instead"). */
+  fix?: { label: string; onFix(): void };
+  /** WC design 5: a proposal the approver adopts with one click (APPROVER_DECISION) – only offered to the approver. */
+  onAdopt?: () => void;
+  /** WC design 4: who may clear this, when the person here may not ("Only Sarah Reid, the approving clinician, can …"). */
+  onlyWho?: string | null;
+  /** bh2-rc1: the one-click corrections offered on this flag (one-click-offers.tsx), shown while it is open. */
+  extra?: ReactNode;
 }) {
   const [acking, setAcking] = useState(false);
   const acked = Boolean(flag.acknowledged);
   const blocking = flag.severity === "blocking" && !acked;
   const Icon = acked ? CheckCircle2 : blocking ? AlertOctagon : AlertTriangle;
   const dataCheck = flag.code === "DATA_CHECK" && flag.evidence && flag.evidence in DATA_CHECK_LABELS ? DATA_CHECK_LABELS[flag.evidence as DataCheckCode] : null;
-  const showEvidence = flag.evidence && !dataCheck && !/^(empty section|optional field blank|validator .*)$/.test(flag.evidence);
+  // A mail-merge field's evidence is the code as found (<<P_GROUPREF>>): the message already says it in plain words.
+  // bh2 WD (B2-15): no internal evidence code ("shorten", "repeat F-28", ISO dates) – core/labels.ts flagEvidenceShown.
+  const showEvidence = !dataCheck && flagEvidenceShown(flag) !== null;
   return (
     <div
       className={cn(
@@ -119,11 +148,11 @@ export function FlagItem({
       <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", acked ? "text-slate-500" : blocking ? "text-red-600" : "text-amber-600")} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-medium">
-          {dataCheck ? `Record check: ${dataCheck}` : FLAG_CODE_LABELS[flag.code]}
+          {dataCheck ? `Record check: ${dataCheck}` : flagTitle(flag)}
           <span className="sr-only">{acked ? " (acknowledged)" : blocking ? " (blocks approval)" : " (warning)"}</span>
           {!compact && flag.sectionKey && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{flag.sectionKey}</span>}
         </p>
-        <p className="mt-0.5 leading-relaxed">{flag.message}</p>
+        <p className="mt-0.5 leading-relaxed">{humaniseMergeCodes(flag.message)}</p>
         {showEvidence && (
           <p className="mt-1 text-xs opacity-80">
             Found: <q className="font-medium">{flag.evidence}</q>
@@ -131,9 +160,10 @@ export function FlagItem({
         )}
         {flag.acknowledged && (
           <p className="mt-1 text-xs">
-            Acknowledged: “{flag.acknowledged.reason}” · {formatUkDateTime(flag.acknowledged.at)}
+            Acknowledged{flag.acknowledged.by ? ` by ${flag.acknowledged.by.name}` : ""}: “{flag.acknowledged.reason}” · {formatUkDateTime(flag.acknowledged.at)}
           </p>
         )}
+        {!acked && !readOnly && onlyWho && <p className="mt-1 text-[11px] font-medium opacity-80">{onlyWho}</p>}
         {acking ? (
           <ReasonForm
             label="Why is this acceptable? (kept in the audit trail)"
@@ -146,9 +176,27 @@ export function FlagItem({
             }}
           />
         ) : (
-          (onJump || (canAck && !acked && !readOnly)) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-              {canAck && !acked && !readOnly && (
+          (onJump || (canAck && !acked && !readOnly) || (fix && !acked && !readOnly) || (onAdopt && !readOnly)) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {onAdopt && !acked && !readOnly && (
+                <button
+                  type="button"
+                  onClick={onAdopt}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  <UserRoundCheck className="h-3.5 w-3.5" aria-hidden /> Adopt as my answer
+                </button>
+              )}
+              {fix && !acked && !readOnly && (
+                <button
+                  type="button"
+                  onClick={fix.onFix}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-red-700 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  {fix.label}
+                </button>
+              )}
+              {canAck && !acked && !readOnly && flag.code !== "APPROVER_DECISION" && (
                 <button type="button" onClick={() => setAcking(true)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
                   Acknowledge with a reason
                 </button>
@@ -161,6 +209,7 @@ export function FlagItem({
             </div>
           )
         )}
+        {!acked && !readOnly && !acking && extra}
       </div>
     </div>
   );
@@ -168,34 +217,191 @@ export function FlagItem({
 
 /* Gaps ------------------------------------------------------------------------------------------ */
 
-export function GapItem({
-  gap,
-  bundle,
-  readOnly,
-  resolution,
-  onResolve,
-  onReopen,
-  onOpenSource,
-  onJump,
-  jumpLabel,
-  compact,
-  hideQuestion,
-}: {
-  gap: Gap;
+interface GapActionProps {
   bundle: Pick<EpisodeBundle, "notes">;
   readOnly: boolean;
-  /** What "Resolve" may claim for this gap (review-model.ts gapResolutionOptions). */
-  resolution: GapResolutionOptions;
+  /** Fix round 1 (B0-8): tick a held-back drafted choice ("Tick “No Impact”") – the person's own decision. */
+  onTickSuggested?: (gap: Gap) => void;
+  /**
+   * R1T-WC-11: whether the suggestion can be stored in the box as one of its own options (gaps.ts storedSuggestion) –
+   * the "Tick" offer is shown only then. Absent: as before (any suggestion).
+   */
+  tickable?: (gap: Gap) => boolean;
+  /** R1T-WC-L3: the gap's box is an opinion box – its held-back answer is explained as an opinion, not by the notes' words. */
+  opinionBox?: boolean;
   onResolve(gapId: string, kind: "resolved" | "acknowledged", text: string): void;
   onReopen(gapId: string): void;
   onOpenSource?: (id: string) => void;
   onJump?: () => void;
   jumpLabel?: string;
+}
+
+/** A gap's text, related notes and actions (inside a GapItem or a BoxIssue). */
+function GapBody({
+  gap,
+  bundle,
+  readOnly,
+  resolution,
+  onTickSuggested,
+  tickable,
+  opinionBox = false,
+  onResolve,
+  onReopen,
+  onOpenSource,
+  onJump,
+  jumpLabel,
+  hideQuestion,
+  hideIssue,
+  hideHint,
+  issueLabel,
+}: GapActionProps & {
+  gap: Gap;
+  resolution: GapResolutionOptions;
+  hideQuestion?: boolean;
+  /** The question's card already explains it (the referrer's own reference). */
+  hideIssue?: boolean;
+  /** The item's instruction already says what resolving means. */
+  hideHint?: boolean;
+  /** "Gap" before the issue (inside a BoxIssue). */
+  issueLabel?: string;
+}) {
+  const [mode, setMode] = useState<null | "resolved" | "acknowledged">(null);
+  const done = gap.resolution;
+  return (
+    <>
+      {!hideIssue && (
+        <p className={cn("leading-relaxed", issueLabel ? "mt-1.5" : "mt-0.5")}>
+          {issueLabel && <span className="font-medium">{issueLabel}: </span>}
+          {humaniseMergeCodes(gap.issue)}
+        </p>
+      )}
+      {!done && !hideQuestion && !hideIssue && gap.suggestedQuestion && (
+        <p className="mt-1 text-xs">
+          <span className="font-medium">Ask:</span> {humaniseMergeCodes(gap.suggestedQuestion)}
+        </p>
+      )}
+      {gap.relatedNoteIds.length > 0 && !hideIssue && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <span className="text-xs opacity-80">Related:</span>
+          {gap.relatedNoteIds.map((id) => (
+            <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} />
+          ))}
+        </div>
+      )}
+      <p className="mt-1 text-[11px] opacity-70">{gapProvenance(gap, { opinion: opinionBox })}</p>
+      {done && (
+        <p className="mt-1 text-xs">
+          {done.kind === "resolved" ? "Resolution" : "Reason"}
+          {done.by ? ` (${done.by.name})` : ""}: “{done.text}” · {formatUkDateTime(done.at)}
+        </p>
+      )}
+      {!done && !readOnly && !mode && (!hideHint || resolution.approverOnly) && resolution.hint && <p className="mt-1 text-[11px] font-medium opacity-80">{resolution.hint}</p>}
+      {mode ? (
+        <ReasonForm
+          label={mode === "resolved" ? "How was this resolved?" : "Why can this stay open? (kept in the audit trail)"}
+          placeholder={
+            mode === "resolved"
+              ? "e.g. Confirmed with the patient on 08/10/2026 and added to the notes."
+              : "e.g. No opinion was formed at discharge; the form is returned without one."
+          }
+          initial={mode === "resolved" ? resolution.prefill : ""}
+          minLength={mode === "resolved" ? resolution.minLength : 15}
+          submitLabel={mode === "resolved" ? "Mark resolved" : "Acknowledge"}
+          onCancel={() => setMode(null)}
+          onSubmit={(text) => {
+            onResolve(gap.id, mode, text);
+            setMode(null);
+          }}
+        />
+      ) : (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {!readOnly && !done && (
+            <>
+              {gap.suggestedAnswer && onTickSuggested && !resolution.approverOnly && (!tickable || tickable(gap)) && (
+                <button
+                  type="button"
+                  onClick={() => onTickSuggested(gap)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Tick “{gap.suggestedAnswer}”
+                </button>
+              )}
+              {resolution.canResolve &&
+                (resolution.prefill ? (
+                  // The answer is the person's own: one click records exactly that.
+                  <button
+                    type="button"
+                    onClick={() => onResolve(gap.id, "resolved", resolution.prefill)}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Mark resolved
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setMode("resolved")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+                    Resolve
+                  </button>
+                ))}
+              {resolution.canAcknowledge !== false && (
+                <button type="button" onClick={() => setMode("acknowledged")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+                  Acknowledge with a reason
+                </button>
+              )}
+            </>
+          )}
+          {!readOnly && done && (
+            <button type="button" onClick={() => onReopen(gap.id)} className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline">
+              <RotateCcw className="h-3 w-3" aria-hidden /> Reopen
+            </button>
+          )}
+          {onJump && <JumpButton onJump={onJump} jumpLabel={jumpLabel} />}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Why a gap was raised, by its kind (fix round 1, B0-17): a held-back drafted choice is not "the clinic record does not
+ * hold this value". System gaps from drafting end "-choice", "-fit", "-cite" or "-sys" (ai/assemble.ts); a staff entry, a
+ * physiotherapist's choice or the clinic's details "-staff", "-physio" or "-clinic" (core/report-factory.ts).
+ */
+export function gapProvenance(gap: Pick<Gap, "id" | "raisedBy">, opts: { opinion?: boolean } = {}): string {
+  // R1T-WC-L3: an opinion box's held-back answer (a number, a yes/no, a choice) is held back because it is an opinion.
+  if (opts.opinion && (gap.id.endsWith("-choice") || gap.id.endsWith("-fit"))) return "Raised by the system: the answer is the clinician's opinion, which only the approving clinician gives.";
+  if (gap.raisedBy !== "system") return "Raised while drafting: the notes do not say this, so nothing was guessed.";
+  if (gap.id.endsWith("-referrer")) return "Raised by the system: the value comes from another organisation's referral, so a person confirms it.";
+  if (gap.id.endsWith("-choice")) return "Raised by the system: the notes do not use the option's own words, so a person ticks it.";
+  if (gap.id.endsWith("-fit")) return "Raised by the system: the drafted answer does not fit the printed options, so a person chooses.";
+  if (gap.id.endsWith("-cite")) return "Raised by the system: the drafted answer cites no source, so a person confirms it.";
+  if (gap.id.endsWith("-sys")) return "Raised by the system: the notes did not answer this question.";
+  if (gap.id.endsWith("-staff")) return "Raised by the system: this is entered by staff on each report.";
+  if (gap.id.endsWith("-physio")) return "Raised by the system: the physiotherapist chooses this on each report.";
+  if (gap.id.endsWith("-clinic")) return "Raised by the system: your Clinic details do not hold this yet.";
+  return "Raised by the system: the clinic record does not hold this value.";
+}
+
+function JumpButton({ onJump, jumpLabel }: { onJump(): void; jumpLabel?: string }) {
+  return (
+    <button type="button" onClick={onJump} className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline">
+      {jumpLabel ?? "Go to question"} <ArrowRight className="h-3 w-3" aria-hidden />
+    </button>
+  );
+}
+
+export function GapItem({
+  gap,
+  resolution,
+  compact,
+  hideQuestion,
+  ...actions
+}: GapActionProps & {
+  gap: Gap;
+  /** What "Resolve" may claim for this gap (review-model.ts gapResolutionOptions). */
+  resolution: GapResolutionOptions;
   compact?: boolean;
   /** The suggested question is already shown next to the answer box. */
   hideQuestion?: boolean;
 }) {
-  const [mode, setMode] = useState<null | "resolved" | "acknowledged">(null);
   const done = gap.resolution;
   return (
     <div
@@ -215,84 +421,76 @@ export function GapItem({
           <span className="sr-only">{done ? "" : " (blocks approval until resolved or acknowledged)"}</span>
           {!compact && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{gap.sectionKey}</span>}
         </p>
-        <p className="mt-0.5 leading-relaxed">{gap.issue}</p>
-        {!done && !hideQuestion && gap.suggestedQuestion && (
-          <p className="mt-1 text-xs">
-            <span className="font-medium">Ask:</span> {gap.suggestedQuestion}
-          </p>
-        )}
-        {gap.relatedNoteIds.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className="text-xs opacity-80">Related:</span>
-            {gap.relatedNoteIds.map((id) => (
-              <CitationChip key={id} id={id} bundle={bundle} onOpen={onOpenSource} />
-            ))}
-          </div>
-        )}
-        <p className="mt-1 text-[11px] opacity-70">
-          {gap.raisedBy === "system"
-            ? gap.id.endsWith("-referrer")
-              ? "Raised by the system: the value comes from another organisation's referral, so a person confirms it."
-              : "Raised by the system: the clinic record does not hold this value."
-            : "Raised while drafting: the notes do not say this, so nothing was guessed."}
+        <GapBody gap={gap} resolution={resolution} hideQuestion={hideQuestion} {...actions} />
+      </div>
+    </div>
+  );
+}
+
+/* One item per question ------------------------------------------------------------------------- */
+
+/**
+ * A question's open gaps and the checks its answer clears, as ONE item (box-items.ts): the heading says required or
+ * optional and what is missing, then one instruction, then each gap with its actions. It blocks approval until the
+ * question is answered and its gaps are closed.
+ */
+export function BoxIssue({
+  box,
+  resolutionFor,
+  compact,
+  hideQuestion,
+  hideInstruction,
+  hideGapIssue,
+  onJump,
+  jumpLabel,
+  ...actions
+}: Omit<GapActionProps, "onJump" | "jumpLabel"> & {
+  box: BoxItem;
+  /** What "Resolve" may claim for each gap (review-model.ts gapResolutionOptions). */
+  resolutionFor(gap: Gap): GapResolutionOptions;
+  compact?: boolean;
+  hideQuestion?: boolean;
+  /** The question's card already says what to do (the referrer notice, "Needs clinician input"). */
+  hideInstruction?: boolean;
+  /** The question's card already explains the gap (the referrer's own reference). */
+  hideGapIssue?: boolean;
+  onJump?: () => void;
+  jumpLabel?: string;
+}) {
+  const strong = box.required && !box.answered;
+  return (
+    <div
+      data-box-item={box.key}
+      className={cn(
+        "flex gap-2.5 rounded-lg border px-3 py-2.5 text-[13px]",
+        strong ? "border-red-200 bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950",
+      )}
+    >
+      {strong ? <AlertOctagon className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden /> : <CircleHelp className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />}
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">
+          {box.heading}
+          <span className="sr-only"> (blocks approval)</span>
+          {!compact && <span className="ml-1.5 font-mono text-[11px] font-normal opacity-70">{box.key}</span>}
         </p>
-        {done && (
-          <p className="mt-1 text-xs">
-            {done.kind === "resolved" ? "Resolution" : "Reason"}: “{done.text}” · {formatUkDateTime(done.at)}
-          </p>
-        )}
-        {!done && !readOnly && !mode && resolution.hint && <p className="mt-1 text-[11px] font-medium opacity-80">{resolution.hint}</p>}
-        {mode ? (
-          <ReasonForm
-            label={mode === "resolved" ? "How was this resolved?" : "Why can this stay open? (kept in the audit trail)"}
-            placeholder={
-              mode === "resolved"
-                ? "e.g. Confirmed with the patient on 08/10/2026 and added to the notes."
-                : "e.g. No opinion was formed at discharge; the form is returned without one."
-            }
-            initial={mode === "resolved" ? resolution.prefill : ""}
-            minLength={mode === "resolved" ? resolution.minLength : 15}
-            submitLabel={mode === "resolved" ? "Mark resolved" : "Acknowledge"}
-            onCancel={() => setMode(null)}
-            onSubmit={(text) => {
-              onResolve(gap.id, mode, text);
-              setMode(null);
-            }}
+        {!hideInstruction && <p className="mt-0.5 leading-relaxed">{box.instruction}</p>}
+        {box.gaps.map((g, i) => (
+          <GapBody
+            key={g.id}
+            gap={g}
+            // Fix round 1 (B0-3): a required question with no answer is answered first, never acknowledged blank.
+            resolution={box.required && !box.answered ? requiredAnswerFirst(resolutionFor(g)) : resolutionFor(g)}
+            issueLabel="Gap"
+            hideIssue={hideGapIssue}
+            hideQuestion={hideQuestion || box.answered}
+            hideHint
+            {...actions}
+            {...(i === box.gaps.length - 1 && onJump ? { onJump, jumpLabel } : {})}
           />
-        ) : (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {!readOnly && !done && (
-              <>
-                {resolution.canResolve &&
-                  (resolution.prefill ? (
-                    // The answer is the person's own: one click records exactly that.
-                    <button
-                      type="button"
-                      onClick={() => onResolve(gap.id, "resolved", resolution.prefill)}
-                      className="inline-flex h-7 items-center gap-1 rounded-md bg-amber-600 px-2.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-1"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Mark resolved
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => setMode("resolved")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
-                      Resolve
-                    </button>
-                  ))}
-                <button type="button" onClick={() => setMode("acknowledged")} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
-                  Acknowledge with a reason
-                </button>
-              </>
-            )}
-            {!readOnly && done && (
-              <button type="button" onClick={() => onReopen(gap.id)} className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline">
-                <RotateCcw className="h-3 w-3" aria-hidden /> Reopen
-              </button>
-            )}
-            {onJump && (
-              <button type="button" onClick={onJump} className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline">
-                {jumpLabel ?? "Go to question"} <ArrowRight className="h-3 w-3" aria-hidden />
-              </button>
-            )}
+        ))}
+        {box.gaps.length === 0 && onJump && (
+          <div className="mt-1.5">
+            <JumpButton onJump={onJump} jumpLabel={jumpLabel} />
           </div>
         )}
       </div>

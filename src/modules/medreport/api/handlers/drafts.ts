@@ -32,13 +32,26 @@ import "server-only";
  *
  * Logs IDs, timings and token counts only.
  *
- * Owner: ai agent.
+ * Usage (25/10/2026): every LIVE drafting call of a clinic is counted (api/usage.ts recordUsage → the host's
+ * counters): a successful one with its tokens – the report it drafts counts towards the clinic's allowance at its
+ * first live drafting (never again for the same report) – and a failed one (refused, cut off, timed out, or replaced
+ * by the recorded answers) as a failed call, with its tokens when the service answered; a failed call that used
+ * tokens counts its report too (Khuram, 25/10/2026: drafting costs money whether or not the report is completed).
+ * Which report: the body's reportId / amendsReportId bound to the server's fingerprint of the bundle and form drafted
+ * (api/usage.ts usageEpisodeFp). Demo answers never count.
+ *
+ * bh2 WD design 2: `approver` (the report's approving physio) is the drafting voice owner – the prompt's first person and
+ * assembly's voice check. With no approver the draft is in the third person: `author` is never the voice owner (the
+ * client defaults it to the clinician who wrote most notes – the guess design 2 removes).
+ *
+ * Owner: WD (drafting and text edits) – docs/bh2-ownership.json.
  */
 import { assembleDraft } from "../../ai/assemble";
 import { hasDemoDraft } from "../../ai/draft-demo";
 import { DraftGenerationError, generateDraftGroup, type DraftErrorCode } from "../../ai/generate";
 import { chooseAiModeForActor } from "../../ai/live-gate";
 import { AUDIT_ACTIONS, assertActorTenant, auditActor, requireActor } from "../../auth/actor";
+import { assertClinicMayCreate } from "../../auth/clinic-access";
 import { MAX_SECTIONS_PER_DRAFT } from "../../config.public";
 import { computeFacts } from "../../core/computed-facts";
 import { formIdFromTemplateId } from "../../core/forms";
@@ -49,6 +62,7 @@ import { DraftsRequestSchema, type ProblemIssue } from "../contract";
 import { publicEngineName, WORDING } from "../../core/wording";
 import { json, logEvent, parseBody, problem, type MedreportHandler } from "../http";
 import { requireAttestedForm, resolveTemplate } from "../resolve-template";
+import { recordUsage, usageEpisodeFp, usageEpisodeOfBundle, usageOfError } from "../usage";
 
 /** /drafts bodies carry a whole bundle; allow up to the platform limit. */
 const MAX_DRAFT_BODY_BYTES = 4_000_000;
@@ -73,6 +87,7 @@ const ERROR_TITLE: Record<DraftErrorCode, string> = {
 
 export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
   const actor = await requireActor(req, deps);
+  await assertClinicMayCreate(actor, deps, "draft"); // 10/2026: nothing new once a clinic's trial has ended
   const parsed = await parseBody(req, DraftsRequestSchema, { maxBytes: MAX_DRAFT_BODY_BYTES });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
@@ -121,6 +136,23 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
 
   const computedFacts = computeFacts(body.bundle);
   const started = Date.now();
+  // The report a live call counts for (usage): the Studio always names it. The ids are the browser's, so the event also
+  // carries the server's fingerprint of what is drafted (patient, episode, form – api/usage.ts): another patient or
+  // form under a report id that already counted, or an "amends" naming an unrelated report, counts as a new report.
+  const usageReport = {
+    ...(body.reportId ? { reportId: body.reportId } : {}),
+    ...(body.amendsReportId ? { amendsReportId: body.amendsReportId } : {}),
+    episodeFp: usageEpisodeFp(actor.tenantId, usageEpisodeOfBundle(body.bundle, body.templateId)),
+  };
+  let failedCallCounted = false;
+  const countFailedCall = async (err: unknown) => {
+    if (failedCallCounted) return;
+    failedCallCounted = true;
+    await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: false, ...usageOfError(err) });
+  };
+  // bh2 WD design 2: the drafting voice owner is the report's approving physio (the request's `approver`); with none,
+  // nobody's – the draft is in the third person. Never the request's author, never guessed from the notes.
+  const voiceOwner = form && body.approver ? { name: body.approver.name, hcpc: body.approver.hcpc } : null;
   const run = (m: typeof mode) =>
     generateDraftGroup({
       template,
@@ -132,7 +164,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       effort: body.effort,
       signal: req.signal,
       form,
-      ...(form && body.author ? { author: body.author } : {}),
+      ...(voiceOwner ? { author: voiceOwner } : {}),
     });
   try {
     let result;
@@ -148,6 +180,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
         hasDemoDraft(body.bundle, template.id, form);
       if (!fallback) throw err;
       logEvent("draft_live_fallback", { template: template.id, sections: body.sectionKeys.join("+"), code: err.code, ms: Date.now() - started });
+      await countFailedCall(err);
       result = await run("demo");
     }
     const response = assembleDraft({
@@ -159,6 +192,8 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       output: result.output,
       meta: result.meta,
       form,
+      ...(form && body.author ? { author: body.author } : {}),
+      ...(form && body.approver ? { approver: body.approver } : {}),
     });
     const usage = result.meta.usage;
     logEvent("draft_ok", {
@@ -181,6 +216,7 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
       blocking: response.flags.filter((f) => f.severity === "blocking").length,
     });
     if (result.meta.mode === "live") {
+      await recordUsage(deps, actor, { kind: "drafting_call", ...usageReport, succeeded: true, model: result.meta.model, ...(usage ? { usage } : {}) });
       await auditActor(deps, actor, {
         action: AUDIT_ACTIONS.draftLive,
         targetType: body.reportId ? "report" : form ? "form" : "template",
@@ -200,6 +236,8 @@ export const handleDrafts: MedreportHandler = async (req, _ctx, deps) => {
     return json({ ...response, generation: { ...response.generation, model: publicEngineName(response.generation.model) } });
   } catch (err) {
     if (err instanceof DraftGenerationError) {
+      // A live call that failed still went to the drafting service (counted once, also after a fallback).
+      if (mode === "live" && err.code !== "NO_DEMO_DRAFT" && err.code !== "LIVE_AI_UNAVAILABLE") await countFailedCall(err);
       logEvent("draft_failed", {
         template: template.id,
         sections: body.sectionKeys.join("+"),

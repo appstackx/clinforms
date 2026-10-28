@@ -102,9 +102,13 @@ const CALLS: Record<string, unknown[][]> = {
   "server.analysis.clinicRecordedDetail": [["09/10/2026"]],
   "server.analysis.clinicLiveDetail": [[1], [23]],
   "server.access.otherVoiceDetail": [["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07"]], ["Sarah Reid (fictional)", "Sam Ward (fictional)", ["F-07", "F-08"]]],
+  "server.access.notesVoiceDetail": [[["Tom Ellis (fictional)"], ["F-07"]], [["Tom Ellis (fictional)", "Priya Shah (fictional)"], ["F-07", "F-08"]]],
   "server.access.storeLimitDetail": [[30]],
   "server.access.importLimitDetail": [[30]],
+  "server.access.trialEnded": [["starting a new report", "khuram@appstackx.co.uk"], ["uploading files"]],
   "server.access.demoConnectorDetail": [["Simulated TM3 sandbox"]],
+  "demoClinic.approvedWithDemoNumber": [["PH-DEMO-01"]],
+  "demoClinic.switchedOff": [[0], [1], [3]],
 };
 
 /** Every string a wording object can produce: plain strings, and each function called with CALLS. */
@@ -154,6 +158,17 @@ test("the guide's wording is used where the owner set it", () => {
     "F-07, F-08 · drafted 06/10/2026 21:04 · 6 s",
   );
   assert.equal(WORDING.payload.toggle, "See exactly what the drafting service receives");
+});
+
+test("demo clinics: Khuram's banner word for word, the output notice and the refusal, under both disclosures", () => {
+  for (const w of [WORDING, wordingFor("ai-assisted")]) {
+    assert.equal(w.demoClinic.banner, "Demo clinic – made-up data only");
+    assert.equal(w.demoClinic.outputNotice, "DEMONSTRATION – made-up data from a demo clinic. Not for clinical use.");
+    assert.match(w.demoClinic.numberNotAllowedDetail, /PH-DEMO numbers are made up and work in a demo clinic only/);
+    assert.equal(w.demoClinic.approvedWithDemoNumber("PH-DEMO-01"), "Demo clinic – approved with the made-up number PH-DEMO-01");
+    assert.equal(w.demoClinic.switchedOff(1), "A real clinic again: 1 member still holds a made-up number and cannot approve until it is replaced");
+    assert.equal(w.demoClinic.switchedOff(0), "A real clinic again");
+  }
 });
 
 test("the ai-assisted variant is kept with the same shape, for later", () => {

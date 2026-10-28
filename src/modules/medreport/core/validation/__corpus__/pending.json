@@ -1,0 +1,4 @@
+{
+ "_about": "Cases (and generated mutations, one-click variants, ledger items and DIFF:<id> differential items) still allowed to fail, each with the workstream that owns the fix. Only the integrator edits this file; it must be empty at release. Seeded by W0.2 from a run on bh2-r1 plus the reuse-notes merge (bd929a3). bh2-base (integrator): the 16 W0 items that hold after the W0 merges were removed; one new one-click variant was added (owner WB). bh2-rc1 (integrator): each workstream merge removes the items that hold after it and the DIFF items that block again or are allowlisted once their owner lands; new one-click variants and DIFF items a merge creates are added with their owner. W0 decisions (26/10/2026, ws/bh2-w0-decisions): the 4 DIFF items are allowlisted (allowlist.json) and the 9 locked rows that cannot hold as written are retired with superseding cases (retired.json) – pending is empty.",
+ "cases": {}
+}

@@ -275,8 +275,8 @@ test("Case C drafted wording: the insurer on record is not named on another insu
 
   assert.deepEqual(draft(formFrom({ name: "AXA Global Healthcare (fictional test)", type: "insurer" })), [
     "On 01/10/2026 I made a further treatment request to the insurer for 4 further sessions, fortnightly over 8 weeks.",
-    // A first-person draft reads as the signer writes a form, not as record-keeping (core/voice.ts plainClinicalWording).
-    "On 01/10/2026, the request was discussed with Mrs Lane and agreed.",
+    // bh2 WD design 1: assembly no longer rewrites a first-person draft (core/voice.ts plainClinicalWording is not run).
+    "On 01/10/2026 I recorded that the request was discussed with Mrs Lane and agreed.",
     "Dr A Forsyth, GP, Kents Hill Medical Practice (fictional), referred Mrs Lane by letter dated 26/08/2026.",
   ]);
   // The insurer on record's own form, and a form that is not an insurer's, keep the name.

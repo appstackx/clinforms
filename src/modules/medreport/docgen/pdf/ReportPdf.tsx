@@ -10,7 +10,11 @@ import "server-only";
  * @react-pdf/renderer is ESM-only, so docgen/pdf.ts loads it with a dynamic import() and passes it to
  * createReportPdf(); this file only imports its types. Call ensurePdfFonts() before rendering.
  *
- * Owner: forms-engine agent (formerly docgen).
+ * bh2 WF (B3-21): the opening line names who completed and approved the report and whose clinical notes it draws on
+ * (reportIntroText) – never "the treating physiotherapist" whoever signed; on a form from another organisation than the
+ * referral the details say "Referral from" / "Referral reference", not "Your reference".
+ *
+ * Owner: WF (copy, preview and guide) – docs/bh2-ownership.json.
  */
 import React from "react";
 import type * as ReactPdf from "@react-pdf/renderer";
@@ -41,6 +45,66 @@ function scaleMax(row: OutcomeRow): number {
 }
 
 export type ReportPdfComponent = (props: { vm: ReportViewModel }) => React.ReactElement;
+
+/** "A", "A and B", "A, B and C". */
+export function listOfNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** "Sarah Reid, Physiotherapist (HCPC PH-DEMO-01)". */
+function approverLine(a: { name: string; role: string; hcpc: string }): string {
+  return `${a.name}${a.role.trim() ? `, ${a.role.trim()}` : ""} (HCPC ${a.hcpc})`;
+}
+
+/**
+ * Who completed the report, from what (bh2 WF, B3-21): the approving clinician – the receipt's signer once approved,
+ * the approver chosen for it before – and the authors of the clinical notes it relies on. `subject` starts the sentence.
+ */
+export function completionSentence(vm: Pick<ReportViewModel, "signed" | "completion">, subject: string): string {
+  const { approver, noteAuthors } = vm.completion;
+  const from = noteAuthors.length
+    ? `from the clinic's records of the episode of care, including the clinical notes of ${listOfNames(noteAuthors)}`
+    : "from the clinic's records of the episode of care";
+  if (vm.signed && approver) return `${subject} was completed and approved by ${approverLine(approver)}, ${from}.`;
+  if (approver) return `${subject} is a draft, prepared ${from}, for approval by ${approverLine(approver)}.`;
+  return `${subject} is a draft, prepared ${from}.`;
+}
+
+/** The PDF's opening paragraph, under the details table. */
+export function reportIntroText(vm: Pick<ReportViewModel, "signed" | "completion" | "instructingParty">): string {
+  if (vm.instructingParty.type === "employer") {
+    return [
+      "This report covers fitness for work only.",
+      completionSentence(vm, "It"),
+      "In line with the employee's consent, it does not disclose unrelated health information. Statements are attributed to the employee (as reported) or to the clinician who recorded them.",
+    ].join(" ");
+  }
+  return `${completionSentence(vm, "This factual report")} Statements are attributed to the patient (as reported) or to the clinician who recorded them.`;
+}
+
+/** The details table's rows (label, value) – "Your reference" only where the instructing party is the form's own referrer. */
+export function detailRows(vm: ReportViewModel): [string, string][] {
+  const employer = vm.instructingParty.type === "employer";
+  const own = vm.instructingParty.isFormReferrer;
+  return [
+    [employer ? "Employee" : "Claimant", vm.patient.fullName],
+    ["Date of birth", vm.patient.age ? `${vm.patient.dob} (aged ${vm.patient.age})` : vm.patient.dob],
+    [employer ? "Job role" : "Occupation", vm.patient.occupation],
+    [employer ? "Employer" : own ? "Instructing party" : "Referral from", vm.instructingParty.name],
+    [employer ? "Employer reference" : own ? "Your reference" : "Referral reference", vm.instructingParty.reference || "Not provided"],
+    [employer ? "Date of injury" : "Date of incident", vm.incident.present ? vm.incident.date : "Not recorded"],
+    ["Treatment period", `${vm.episode.firstAppointment} to ${vm.episode.lastAppointment} (${vm.episode.statusLabel})`],
+    ["Treating clinicians", vm.episode.clinicianNames],
+    ["Date of report", vm.report.date],
+  ];
+}
+
+/** The unsigned copy's notice where the signature goes – who must sign it, never "the treating physiotherapist". */
+export function unsignedNotice(vm: Pick<ReportViewModel, "completion">): string {
+  const who = vm.completion.approver?.name ?? "the approving clinician";
+  return `This report has not been reviewed and signed by ${who}. It must not be disclosed or relied on. The signature, HCPC number and document fingerprint appear here once it is signed.`;
+}
 
 /** Build the <ReportPdf vm/> component from the dynamically imported @react-pdf/renderer module. */
 export function createReportPdf(rp: typeof ReactPdf): ReportPdfComponent {
@@ -169,18 +233,7 @@ export function createReportPdf(rp: typeof ReactPdf): ReportPdfComponent {
   }
 
   function DetailsTable({ vm }: { vm: ReportViewModel }) {
-    const employer = vm.instructingParty.type === "employer";
-    const rows: [string, string][] = [
-      [employer ? "Employee" : "Claimant", vm.patient.fullName],
-      ["Date of birth", vm.patient.age ? `${vm.patient.dob} (aged ${vm.patient.age})` : vm.patient.dob],
-      [employer ? "Job role" : "Occupation", vm.patient.occupation],
-      [employer ? "Employer" : "Instructing party", vm.instructingParty.name],
-      [employer ? "Employer reference" : "Your reference", vm.instructingParty.reference || "Not provided"],
-      [employer ? "Date of injury" : "Date of incident", vm.incident.present ? vm.incident.date : "Not recorded"],
-      ["Treatment period", `${vm.episode.firstAppointment} to ${vm.episode.lastAppointment} (${vm.episode.statusLabel})`],
-      ["Treating clinicians", vm.episode.clinicianNames],
-      ["Date of report", vm.report.date],
-    ];
+    const rows = detailRows(vm);
     return (
       <View style={s.table}>
         {rows.map(([label, value]) => (
@@ -302,10 +355,7 @@ export function createReportPdf(rp: typeof ReactPdf): ReportPdfComponent {
       return (
         <View style={s.draftBox} wrap={false}>
           <Text style={s.draftTitle}>{vm.draftLabel}</Text>
-          <Text style={s.small}>
-            This report has not been reviewed and signed by the treating physiotherapist. It must not be disclosed or relied on. The
-            signature, HCPC number and document fingerprint appear here once it is signed.
-          </Text>
+          <Text style={s.small}>{unsignedNotice(vm)}</Text>
         </View>
       );
     }
@@ -383,11 +433,7 @@ export function createReportPdf(rp: typeof ReactPdf): ReportPdfComponent {
             </View>
           ) : null}
           <DetailsTable vm={vm} />
-          <Text style={s.intro}>
-            {employer
-              ? "This report covers fitness for work only. In line with the employee's consent, it does not disclose unrelated health information. Statements are attributed to the employee (as reported) or to the clinician who recorded them."
-              : "This is a factual report by the treating physiotherapist, prepared from the clinic's records of the episode of care. Statements are attributed to the patient (as reported) or to the clinician who recorded them."}
-          </Text>
+          <Text style={s.intro}>{reportIntroText(vm)}</Text>
 
           {vm.sections.map((section) => (
             <Section key={section.key} vm={vm} section={section} />

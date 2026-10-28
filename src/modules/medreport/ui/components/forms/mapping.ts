@@ -2,10 +2,18 @@
  * Pure helpers for the mapping editor: plain-English anchor descriptions, new fields, applying a
  * location picked in the preview, and the option lists for the selects.
  *
- * Owner: studio-a agent.
+ * bh2 WE (designs 2 and 4): the mapping page's groups come from the same outline as the review (core/forms/headings.ts
+ * formOutline); the map lint's findings are its hints (mappingLint); L5 also blocks confirming, as on the server.
+ *
+ * Owner: WE (data, maps and mapping page) – docs/bh2-ownership.json.
  */
 import { formAnchorPdfFieldNames, parseBlockId } from "../../../core/forms";
+import { UNTITLED_HEADING, formOutline } from "../../../core/forms/headings";
+import { acceptsJudgement, lintFormMap, type LintIssue } from "../../../core/form-map-lint";
+import { memberActor } from "../../../core/actor";
 import { appointmentColumnsFor, tableColumnsOf } from "../../../core/form-tables";
+import { findPracticeCodes, humaniseMergeCodes, practiceCode, practiceCodeWords, practiceCodesInWords } from "../../../core/practice-merge-codes";
+import { REGISTRATION_PATH_LABELS } from "../../../core/labels";
 import { nextQuestionAnchor, questionAnchor } from "../../../core/question-set";
 import { FORM_FIELD_ID_PATTERN } from "../../../core/schemas";
 import type {
@@ -22,6 +30,7 @@ import type {
   RegistrationPath,
   SignoffPart,
 } from "../../../core/types";
+import type { StudioMember } from "../../host-hooks";
 import type { PreviewPick } from "../shared/original-form-preview";
 
 export const DOCX_TARGET_LABELS: Record<DocxAnchorTarget, string> = {
@@ -31,6 +40,8 @@ export const DOCX_TARGET_LABELS: Record<DocxAnchorTarget, string> = {
   content_control: "Into a Word content control",
   checkbox_glyph: "Ticking a ☐ box",
   legacy_form_field: "Into a legacy Word form field",
+  mark_cell: "Marking a cell of a table",
+  delete_options: "Keeping one printed option, deleting the others",
 };
 
 export const FACT_OPTIONS: ReadonlyArray<{ id: FactId; label: string }> = [
@@ -64,7 +75,9 @@ export function describeAnchor(anchor: FormAnchor): string {
         case "after_paragraph":
           return `New line after ${where.toLowerCase()}`;
         case "replace_placeholder":
-          return `Replaces “${anchor.placeholderText ?? "…"}” – ${where}`;
+          return anchor.writeAfter
+            ? `After the printed “${anchor.placeholderText ?? "…"}” – ${where}`
+            : `Replaces “${anchor.placeholderText ?? "…"}”${anchor.clearPlaceholder ? " (never printed, even before it is answered)" : ""} – ${where}`;
         case "content_control":
           return `Content control – ${where}`;
         case "checkbox_glyph": {
@@ -73,6 +86,14 @@ export function describeAnchor(anchor: FormAnchor): string {
         }
         case "legacy_form_field":
           return `Word form field – ${where}`;
+        case "mark_cell": {
+          const cells = anchor.optionCells ?? [];
+          return `Marks “${anchor.mark ?? "X"}” in one cell (${cells.map((c) => `${c.option}: ${describeBlock(c.blockId).toLowerCase()}`).join(" / ")})`;
+        }
+        case "delete_options":
+          return anchor.placeholderText
+            ? `Keeps one of “${anchor.placeholderText}”, deletes the others – ${where}`
+            : `Keeps one printed option, deletes the others (${(anchor.optionTexts ?? []).map((o) => o.option).join(" / ")}) – ${where}`;
       }
       return where;
     }
@@ -110,13 +131,69 @@ function quoteLabel(label: string): string {
   return `“${t.length > 48 ? `${t.slice(0, 46)}…` : t}”`;
 }
 
+/** Printed text quoted in a place's description: clinic-system codes in plain words, at most 40 characters. */
+function quotePrinted(text: string): string {
+  const t = humaniseMergeCodes(text);
+  return `“${t.length > 40 ? `${t.slice(0, 38)}…` : t}”`;
+}
+
 /**
  * Where the answer goes, in words a practice manager uses ("In the box next to “Date of birth”"). The
- * technical location (block, table, row, cell) is shown only under "Edit the location by hand".
+ * technical location (block, table, row, cell) is shown only under "Edit the location by hand" – the only
+ * place a clinic-system code is shown as printed (“In place of the merge code for the patient's first name”).
  */
-export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label">): string {
+/** What a question is filled with, in words (fix round 1, B0-29: said when it is not what the code usually prints). */
+const FILLED_WITH: Partial<Record<RegistrationPath, string>> = {
+  "episode.firstSeen": "the first appointment's date",
+  "episode.lastSeen": "the last appointment's date",
+  "episode.dischargeDate": "the discharge date",
+  "incident.date": "the date of the accident",
+  "report.date": "the date of the report",
+  "staff.entry": "what staff type in on each report",
+};
+
+function filledWith(source: FillSource): string {
+  switch (source.kind) {
+    case "registration":
+      return FILLED_WITH[source.path] ?? `the record's “${REGISTRATION_PATH_LABELS[source.path]}”`;
+    case "computed_fact":
+      return "a figure worked out from the record";
+    case "notes_narrative":
+      return "an answer from the notes";
+    case "clinician_opinion":
+      return "the clinician's own answer";
+    case "signoff":
+      return "the approval";
+    default:
+      return "its answer";
+  }
+}
+
+/**
+ * Whether a clinic-system code is filled with what it usually prints: its own record field, or a line of the address /
+ * postcode it stands for. Else the place is described by what the question is really filled with.
+ */
+function fillsCodeAsUsual(code: string, source: FillSource | undefined): boolean {
+  const binding = practiceCode(code.slice(2, -2))?.binding;
+  if (!binding || !source) return true;
+  if (binding.kind === "record") return source.kind === "registration" && source.path === binding.path;
+  if (binding.kind === "address_line") return source.kind === "registration" && source.path === `${binding.family}.addressLines`;
+  if (binding.kind === "postcode") return source.kind === "registration" && source.path === `${binding.family}.postcode`;
+  if (binding.kind === "not_held") return source.kind === "registration" && source.path === "staff.entry";
+  // Decided by the form's label ("Date of Accident" → the accident's date): as usual when it is one of those.
+  return source.kind === "registration" && binding.choices.some((c) => c.path === source.path);
+}
+
+/** What a clinic-system code usually prints, in words – a code that depends on the clinic's set-up by its name only. */
+function usuallyPrints(code: string): string {
+  const entry = practiceCode(code);
+  if (entry?.binding.kind === "by_label") return `the clinic system's ${entry.label.toLowerCase()}`;
+  return practiceCodeWords(code) ?? "something else";
+}
+
+export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"> & Partial<Pick<FormField, "fillSource">>): string {
   const a = field.anchor;
-  const q = quoteLabel(field.label);
+  const q = quoteLabel(humaniseMergeCodes(field.label));
   switch (a.kind) {
     case "docx":
       switch (a.target) {
@@ -126,7 +203,15 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
           return `On the lines under ${q}`;
         case "replace_placeholder": {
           const ph = (a.placeholderText ?? "").trim();
-          return /^[_.…\s-]+$/.test(ph) || !ph ? `On the blank line for ${q}` : `In place of “${ph.length > 40 ? `${ph.slice(0, 38)}…` : ph}”`;
+          const codes = practiceCodesInWords(ph);
+          if (a.writeAfter) return `After the printed ${codes ?? quotePrinted(ph)}`;
+          if (/^[_.…\s-]+$/.test(ph) || !ph) return `On the blank line for ${q}`;
+          // Fix round 1 (B0-29): "the merge code for the date of the report" only when that is what goes there.
+          const found = findPracticeCodes(ph);
+          if (codes && found.length === 1 && field.fillSource && !fillsCodeAsUsual(found[0].text, field.fillSource)) {
+            return `${capitalise(filledWith(field.fillSource))}, in place of the code that usually prints ${usuallyPrints(found[0].code)}`;
+          }
+          return codes ? `In place of the ${codes}` : `In place of ${quotePrinted(ph)}`;
         }
         case "content_control":
           return `In the grey field for ${q}`;
@@ -136,6 +221,15 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
         }
         case "legacy_form_field":
           return `In the form field for ${q}`;
+        case "mark_cell": {
+          const opts = a.optionCells?.map((c) => `“${c.option}”`) ?? [];
+          return opts.length > 1 ? `Marks the cell of one of ${opts.join(" / ")}` : `Marks the cell for ${opts[0] ?? q}`;
+        }
+        case "delete_options": {
+          const opts = (a.optionTexts?.length ? a.optionTexts.map((o) => o.option) : []).map((o) => `“${o}”`);
+          if (a.placeholderText) return `Keeps one of ${quotePrinted(a.placeholderText)} and deletes the others`;
+          return opts.length > 1 ? `Keeps one of ${opts.join(" / ")} and deletes the others` : `Keeps ${opts[0] ?? q} when it applies, deletes it when not`;
+        }
       }
       return `For ${q}`;
     case "pdf_field":
@@ -165,6 +259,53 @@ export function plainAnchorDescription(field: Pick<FormField, "anchor" | "label"
     case "pdf_overlay_ticks":
       return `Marks an X in one of the printed boxes ${a.options.map((o) => `“${o.option}”`).join(" / ")}`;
   }
+}
+
+/**
+ * The question the mapping review opens on: the first that needs a decision – “Needs review” before “Check”,
+ * each in the form's order – or the first question when none does.
+ */
+/**
+ * The question the mapping review opens on: one to check ("Needs review" before "Check") – and (fix round 1, B0-29) of
+ * those, a required one before an optional one, and a clinical question before a detail staff type in; else the first.
+ */
+export function firstQuestionToCheck(fields: ReadonlyArray<Pick<FormField, "id" | "confidence"> & Partial<Pick<FormField, "required" | "fillSource">>>): string | null {
+  const staffEntry = (f: (typeof fields)[number]) => f.fillSource?.kind === "registration" && f.fillSource.path === "staff.entry";
+  // Fix B1-17(c), B2-30: "Needs review" before "Check" first (as the comment above says), then a required question before
+  // an optional one, then a clinical question before a detail staff type in or the sign-off.
+  const minor = (f: (typeof fields)[number]) => staffEntry(f) || f.fillSource?.kind === "signoff";
+  const rank = (f: (typeof fields)[number]) => [f.confidence === "high" ? 1 : 0, f.confidence === "low" ? 0 : 1, f.required === false ? 1 : 0, minor(f) ? 1 : 0];
+  const before = (a: number[], b: number[]) => {
+    const i = a.findIndex((v, k) => v !== b[k]);
+    return i >= 0 && a[i] < b[i];
+  };
+  let best: { id: string; r: number[] } | null = null;
+  for (const f of fields) {
+    const r = rank(f);
+    if (!best || before(r, best.r)) best = { id: f.id, r };
+  }
+  return best?.id ?? null;
+}
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * The mapping page's list order (fix round 1, B0-29): numbered questions printed in a table's columns ("Treatment
+ * date 1", "Treatment date 7", "Treatment date 2"…) are listed by their number; everything else in the form's order.
+ */
+export function listedInOrder<T extends Pick<FormField, "id" | "label">>(fields: readonly T[]): T[] {
+  const stem = (f: T) => /^(.*?)(\d+)(\D*)$/.exec(f.label.trim());
+  const out: T[] = [];
+  let i = 0;
+  while (i < fields.length) {
+    const m = stem(fields[i]);
+    let j = i + 1;
+    if (m) while (j < fields.length && stem(fields[j])?.[1] === m[1] && stem(fields[j])?.[3] === m[3]) j += 1;
+    const run = fields.slice(i, j);
+    out.push(...(run.length > 2 ? run.slice().sort((x, y) => Number(stem(x)![2]) - Number(stem(y)![2])) : run));
+    i = j;
+  }
+  return out;
 }
 
 /** Next free field ID ("F-23"). */
@@ -326,4 +467,137 @@ export function withOptionLabel(anchor: Extract<FormAnchor, { kind: "pdf_field" 
   const { optionLabels: _old, ...rest } = anchor;
   void _old;
   return labels.some((l) => l.trim()) ? { ...rest, optionLabels: labels } : rest;
+}
+
+/**
+ * Fix round 1 (B0-9, B0-25): whether this member may confirm a form mapping, or change or remove a confirmed one – an
+ * owner, administrator or clinician (the server's CONFIRM_ROLES; staff prepare reports and check proposed maps). The
+ * public demo (no member) acts as a clinician. The server decides in the end; this only stops offering what it refuses.
+ */
+export function mayConfirmForms(member: Pick<StudioMember, "role"> | undefined): boolean {
+  return member?.role !== "staff";
+}
+
+
+/* ------------------------------------------------------------------------------------------------
+ * bh2 WE: one outline for both screens, and the map lint as hints
+ * ----------------------------------------------------------------------------------------------*/
+
+/** One group of the mapping page: the review's group (same outline), with the questions of it that are shown. */
+export interface MappingGroup<T> {
+  /** The outline group's index (two groups of the same title stay apart, as on the review). */
+  key: string;
+  /** The form's heading; UNTITLED_HEADING for a run without one; "" when the form prints no headings at all. */
+  title: string;
+  fields: T[];
+}
+
+/**
+ * The mapping page's groups: the questions shown (`visible`, in the page's list order), grouped by the outline the review
+ * uses (core/forms/headings.ts formOutline over the whole map), consecutive questions of one group together.
+ */
+export function mappingGroups<T extends Pick<FormField, "id">>(fields: ReadonlyArray<Pick<FormField, "id" | "section" | "label">>, visible: readonly T[]): MappingGroup<T>[] {
+  const outline = formOutline(fields);
+  const groupOf = new Map<string, number>();
+  outline.forEach((g, gi) => g.entries.forEach((e) => groupOf.set(fields[e.index].id, gi)));
+  const out: MappingGroup<T>[] = [];
+  for (const f of visible) {
+    const gi = groupOf.get(f.id) ?? -1;
+    const key = String(gi);
+    const last = out[out.length - 1];
+    if (last && last.key === key) last.fields.push(f);
+    else out.push({ key, title: gi >= 0 ? outline[gi].title : UNTITLED_HEADING, fields: [f] });
+  }
+  return out;
+}
+
+/** The lint rules shown on the mapping page: the clinic can act on these (L9 and L11 are ClinForms' own loading checks). */
+const PAGE_RULES = new Set<LintIssue["rule"]>(["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L10", "L12"]);
+
+export interface MappingLint {
+  /** Each question's findings (errors and accepted ones). */
+  byField: Map<string, LintIssue[]>;
+  /** The map's own findings (its notes). */
+  mapLevel: LintIssue[];
+  /** What blocks confirming, as /forms/confirm refuses it: L5 not accepted. */
+  blocking: string[];
+  /**
+   * The questions whose clinical judgement the map accepts as worded (L5 accepted): /forms/confirm lets only a
+   * clinician – or a member who may sign – confirm such a map (check-WE minor 9: the page says so before the click).
+   */
+  acceptedJudgements: string[];
+}
+
+/** The map lint as the mapping page shows it (core/form-map-lint.ts). */
+export function mappingLint(form: Pick<FormDefinition, "fields" | "analysis" | "file">): MappingLint {
+  const issues = lintFormMap(form).filter((i) => PAGE_RULES.has(i.rule));
+  const byField = new Map<string, LintIssue[]>();
+  const mapLevel: LintIssue[] = [];
+  for (const i of issues) {
+    if (!i.fieldId) {
+      if (i.severity === "error") mapLevel.push(i);
+      continue;
+    }
+    byField.set(i.fieldId, [...(byField.get(i.fieldId) ?? []), i]);
+  }
+  const blocking = issues.filter((i) => i.rule === "L5" && i.severity === "error").map((i) => `${i.fieldId}: ${i.message}`);
+  const acceptedJudgements = issues.filter((i) => i.rule === "L5" && i.severity === "accepted" && i.fieldId).map((i) => i.fieldId as string);
+  return { byField, mapLevel, blocking, acceptedJudgements };
+}
+
+/**
+ * Whether this member may accept a clinical judgement as the map words it (L5): a clinician – the role, or a member
+ * who may sign with a registration number – the same rule /forms/confirm applies to the Actor it stamps
+ * (core/form-map-lint.ts acceptsJudgement on core/actor.ts memberActor).
+ */
+export function mayAcceptJudgement(member: Pick<StudioMember, "role" | "canSign" | "hcpc"> | undefined): boolean {
+  if (!member) return true; // the public demo acts as a clinician
+  return acceptsJudgement(memberActor({ name: "", role: member.role, canSign: member.canSign, hcpc: member.hcpc }, ""));
+}
+
+/**
+ * What the mapping page lists before confirming when this member may not accept the map's clinical judgements (the
+ * server would refuse the confirmation with 403): who confirms it instead. Null when nothing stands in the way.
+ */
+export function judgementConfirmProblem(lint: Pick<MappingLint, "acceptedJudgements">, mayAccept: boolean): string | null {
+  if (mayAccept || lint.acceptedJudgements.length === 0) return null;
+  const ids = lint.acceptedJudgements;
+  return `This mapping accepts a clinical judgement as worded on ${ids.length === 1 ? "question" : "questions"} ${ids.slice(0, 6).join(", ")}${ids.length > 6 ? ` and ${ids.length - 6} more` : ""}: a clinician (or a member who may sign) confirms it.`;
+}
+
+/** What the mapping page's footer says before confirming (mappingConfirmStatus). */
+export interface MappingConfirmStatus {
+  /** The status line. */
+  status: string;
+  /** Who confirms the mapping, under the status line – null when the status line already says it, or nobody else is needed. */
+  roleNote: string | null;
+}
+
+/**
+ * Fix round 1 (R1T-WE-L1, TPN-L4): the mapping page's footer. Problems the member can fix on the page (the form checks,
+ * the referrer, an unaccepted clinical judgement) are counted. Who may confirm is never counted as a problem to fix: a
+ * member whose role does not confirm forms (staff), or a map that accepts a clinical judgement as worded and a member who
+ * may not accept one (judgementConfirmProblem), is told only who confirms it – staff saw "1 problem to fix before
+ * confirming" when the only obstacle was their role.
+ */
+export function mappingConfirmStatus(input: {
+  /** Problems the member can fix on this page (not who confirms). */
+  fixable: readonly string[];
+  /** judgementConfirmProblem: who confirms a map that accepts a clinical judgement as worded, when this member may not. */
+  judgementObstacle: string | null;
+  mayConfirm: boolean;
+  dirty: boolean;
+  confirmed: boolean;
+  /** Who confirms forms (the Studio copy), shown to a member who may not. */
+  confirmRole: string;
+}): MappingConfirmStatus {
+  const n = input.fixable.length;
+  const who = input.judgementObstacle ?? (input.mayConfirm ? null : input.confirmRole);
+  if (n) return { status: `${n} ${n === 1 ? "problem" : "problems"} to fix before confirming`, roleNote: who };
+  if (input.dirty) return { status: "Unsaved changes", roleNote: who };
+  if (input.confirmed) return { status: "No changes", roleNote: who };
+  // Only who confirms stands in the way: say so, with no count.
+  if (input.judgementObstacle) return { status: input.judgementObstacle, roleNote: null };
+  if (!input.mayConfirm) return { status: "Ready for an owner, administrator or clinician to confirm", roleNote: input.confirmRole };
+  return { status: "Ready to confirm", roleNote: null };
 }

@@ -131,7 +131,7 @@ test("live analysis of a fillable PDF: printed radio labels, one-of-several tick
   assert.ok(live && !live.lenient, "the strict structured output parsed");
   assert.equal(form.analysis.mode, "live");
   assert.equal(form.analysis.promptVersion, FORM_ANALYSIS_PROMPT_VERSION);
-  assert.equal(FORM_ANALYSIS_PROMPT_VERSION, "form-analysis-4");
+  assert.equal(FORM_ANALYSIS_PROMPT_VERSION, "form-analysis-5");
 
   // The request: the output schema carries completedBy and the PMI record paths.
   for (const body of calls) {
