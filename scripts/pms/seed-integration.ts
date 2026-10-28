@@ -6,7 +6,8 @@
  *   - the referrer-form walk of design round 3: Emily Turner (fictional, sim-int-001), case "Right shoulder – rotator
  *     cuff" referred by Bletchley Medical Centre (fictional), insured by Northfield Assurance (fictional) with
  *     authorisation NA-55021 (6 sessions), Priya Shah's signed initial assessment and an NPRS score;
- *   - the clinic marked as a ClinForms demo clinic (made-up data: a member's PH-DEMO number may approve).
+ *   (Approving with a made-up PH-DEMO number needs the ClinForms demo-clinic flag, which only ClinForms staff set:
+ *   `npm run admin:set-demo-clinic -- --slug riverside-demo --on` – the e2e runner does it on its scratch database.)
  *
  * Refuses a clinic not flagged as a demonstration clinic (seed-lib). Idempotent: whatever is already there is left.
  *
@@ -16,7 +17,6 @@
 import { withAttestedConfirmation } from "../../src/modules/medreport/auth/attestations";
 import { getSampleForm } from "../../src/modules/medreport/forms/samples/registry";
 import { sha256Hex } from "../../src/modules/medreport/forms/file";
-import { setDemoClinic } from "../../src/server/admin/clinic-plan";
 import type { RepoContext } from "../../src/server/repos/context";
 import { beginFormFileUpload, putFormFileChunk } from "../../src/server/repos/form-file-uploads";
 import { FILE_CHUNK_BYTES } from "../../src/server/repos/form-files";
@@ -48,8 +48,6 @@ export async function seedIntegration(ctx: RepoContext, tenantId: string, option
   await assertDemoClinic(ctx.db, tenantId);
   const c: RepoContext = { ...ctx, now: ctx.now ?? pmsNow };
 
-  // ClinForms demo clinic (made-up data only): PH-DEMO registration numbers may approve.
-  await setDemoClinic(ctx.db, { kind: "script" }, tenantId, true);
 
   // The library: confirmed sample forms with their files.
   const have = new Set((await listFormMeta(c, tenantId)).map((f) => f.id));
@@ -68,7 +66,7 @@ export async function seedIntegration(ctx: RepoContext, tenantId: string, option
       }
     }
     if (have.has(map.id)) continue;
-    const form = withAttestedConfirmation({ ...map, tenantId, status: "confirmed", sampleId: sample.id }, "Practice manager (demo)", c.now!().toISOString());
+    const form = withAttestedConfirmation({ ...map, tenantId, status: "confirmed", sampleId: sample.id }, "Clinic manager (demo)", c.now!().toISOString());
     await store.createForm(tenantId, { id: form.id, status: form.status, title: form.title, referrer: form.referrer.name, kind: form.kind, fileSha256: form.file.sha256, sampleId: sample.id, payload: { ...form, tenantId } });
     forms++;
   }
