@@ -39,7 +39,7 @@ export default async function DiaryPage({ searchParams }: { searchParams: Record
     <DiaryScreen
       data={view.data}
       cookieSite={cookieSite}
-      can={{ book: actor.can("diary.book"), rota: actor.can("diary.rota"), override: actor.can("diary.override"), patientsEdit: actor.can("patients.edit"), clinical: actor.can("clinical.write") }}
+      can={{ book: actor.can("diary.book"), rota: actor.can("diary.rota"), override: actor.can("diary.override"), patientsEdit: actor.can("patients.edit"), clinical: actor.can("clinical.write"), pay: actor.can("billing.pay") }}
       payers={payers.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name, kind: p.kind }))}
       unsignedNotes={unsigned && unsigned.ok ? { count: unsigned.value.notes.length, href: null } : null}
     />

@@ -37,9 +37,9 @@ const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : 
  * By role: reception (staff) gets no clinical tab, no clinical flag and no "New note" – left out, not disabled. Each
  * tab's page checks its own permission again.
  *
- * Differences from the design: "Take payment" needs billing.edit (reception, owner, administrator – not the
- * clinician as drawn) and opens the Invoices tab until billing is merged; "Send message" opens the Messages tab until
- * comms is merged; "Book" opens the diary (TODO(diary): the booking dialog from feat/cs-diary).
+ * Differences from the design: "Take payment" needs billing.pay (reception, owner, administrator – not the
+ * clinician as drawn) and opens the take-payment dialog on the Invoices tab; "Send message" opens the Messages tab until
+ * comms is merged; "Book" opens the diary's booking form for this patient.
  */
 export default async function PatientRecordLayout({ children, params }: { children: React.ReactNode; params: { patientId: string } }) {
   const actor = await requireClinicActor({ permission: "patients.view" });
@@ -67,7 +67,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
   const canNote = actor.can("clinical.write") && !h.anonymised && p.status === "active";
   const canBook = actor.can("diary.book") && p.status === "active" && !h.anonymised;
   const canMessage = actor.can("messages.send");
-  const canPay = actor.can("billing.edit");
+  const canPay = actor.can("billing.pay") && p.status === "active";
   const reminders = p.reminderSms || p.reminderEmail;
   const marketing = p.marketingEmail || p.marketingSms;
   const bookHref = `${CLINIC_BASE_PATH}/diary?patient=${encodeURIComponent(p.id)}`;
@@ -80,7 +80,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
     ...(actor.can("patients.edit") && !h.anonymised ? [{ label: "Edit details", href: patientPath(p.id, "edit") }] : []),
     ...(actor.can("clinical.write") && !h.anonymised ? [{ label: "Clinical flags", href: patientPath(p.id, "details#clinical-flags") }] : []),
     ...(canMessage ? [{ label: "Send message", href: patientPath(p.id, "tab/messages"), phoneOnly: true }] : []),
-    ...(canPay ? [{ label: "Take payment", href: patientPath(p.id, "tab/invoices"), phoneOnly: true }] : []),
+    ...(canPay ? [{ label: "Take payment", href: patientPath(p.id, "invoices?pay=1"), phoneOnly: true }] : []),
     ...(actor.can("reports.export")
       ? [
           { label: "Subject access copy (PDF)", href: patientPath(p.id, "export?format=pdf"), download: true },
@@ -186,7 +186,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
             </a>
           ) : null}
           {canBook ? (
-            // TODO(diary): open feat/cs-diary's booking dialog for this patient once the diary screens are merged.
+            // The diary opens its booking form for this patient (and their open case): ?patient=<id>.
             <Link href={bookHref} className={cn(action("primary"), "h-11 flex-1 md:h-9 md:flex-none")}>
               <CalendarPlus aria-hidden />
               Book
@@ -206,7 +206,7 @@ export default async function PatientRecordLayout({ children, params }: { childr
             </Link>
           ) : null}
           {canPay ? (
-            <Link href={patientPath(p.id, "tab/invoices")} className={cn(action("secondary"), "hidden md:inline-flex")}>
+            <Link href={patientPath(p.id, "invoices?pay=1")} className={cn(action("secondary"), "hidden md:inline-flex")}>
               <CreditCard aria-hidden />
               Take payment
             </Link>
