@@ -11,7 +11,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { addressFor, messageBlock } from "../../../modules/pms/comms/consent";
-import { stillWorthSending } from "../../../modules/pms/comms/schedule";
+import { quietHoursEndAt, stillWorthSending } from "../../../modules/pms/comms/schedule";
 import { ManualMessageInputSchema, type ManualMessageInput } from "../../../modules/pms/comms/schemas";
 import { smsAddressKey, smsInfo, toE164 } from "../../../modules/pms/comms/sms";
 import { STOP_CONFIRMATION } from "../../../modules/pms/comms/defaults";
@@ -21,7 +21,9 @@ import type { BatchQuery } from "../../db/batch";
 import { RepoInputError, nowIso, parseInput, pmsAuditQuery, writeWithAudit, type RepoContext } from "../../repos/pms/context";
 import { getMessagingContact, getMessagingContacts } from "../../repos/pms/comms/contacts";
 import {
+  claimHeldMessage,
   getMessage,
+  listHeldDue,
   markReplyDoneQuery,
   outboundInsertQuery,
   recordSendOutcomes,
@@ -92,6 +94,8 @@ interface DraftArgs {
   inReplyToId?: string | null;
   documentType?: DocumentType | null;
   documentId?: string | null;
+  /** Held for the quiet hours until then (UTC ISO): written queued, the provider is not called now. */
+  holdUntil?: string | null;
 }
 
 function draftFor(a: DraftArgs): OutboundDraft {
@@ -107,11 +111,12 @@ function draftFor(a: DraftArgs): OutboundDraft {
     subject: a.composed.subject,
     body: a.composed.text,
     segments: a.composed.segments,
-    status: a.outbox ? "outbox" : "queued",
+    status: a.outbox && !a.holdUntil ? "outbox" : "queued",
     provider: a.providerId,
     inReplyToId: a.inReplyToId ?? null,
     documentType: a.documentType ?? null,
     documentId: a.documentId ?? null,
+    holdUntil: a.holdUntil ?? null,
   };
 }
 
@@ -128,7 +133,11 @@ async function callProvider(deps: DispatchDeps, channel: MessageChannel, id: str
   }
 }
 
-export type SendResult = { ok: true; messageId: string; status: MessageStatus } | { ok: false; reason: SkipReason | "not_found" | "bad_template" | "bad_reply"; message: string };
+/**
+ * `heldUntil`: a text held for the clinic's quiet hours (status "queued") – the message run releases it then (UTC
+ * ISO; show it in UK time, e.g. "Held until 08:00 (quiet hours)").
+ */
+export type SendResult = { ok: true; messageId: string; status: MessageStatus; heldUntil?: string } | { ok: false; reason: SkipReason | "not_found" | "bad_template" | "bad_reply"; message: string };
 
 /**
  * Writes one message (with its audit row, and `extra` queries in the same batch – e.g. marking the reply it answers
@@ -164,12 +173,14 @@ async function deliver(
           provider: draft.provider,
           patientId: draft.patientId,
           ...(draft.documentType ? { documentType: draft.documentType, documentId: draft.documentId ?? null } : {}),
+          ...(draft.holdUntil ? { held: true } : {}),
         },
       }),
       ...extra,
     ],
     { foreignKey: "The patient or template does not exist in this clinic." },
   );
+  if (draft.holdUntil) return { ok: true, messageId: id, status: "queued", heldUntil: draft.holdUntil };
   if (outbox) return { ok: true, messageId: id, status: "outbox" };
   const outcome = await callProvider(deps, args.channel, id, args.address, args.composed, clinic, sender);
   await recordSendOutcomes(ctx, tenantId, [{ id, outcome }], actor);
@@ -233,7 +244,7 @@ export async function sendPatientMessage(ctx: RepoContext, tenantId: string, inp
 }
 
 export interface DocumentMessageInput {
-  kind: Extract<TemplateKind, "letter" | "invoice" | "receipt" | "statement" | "payment_link">;
+  kind: Extract<TemplateKind, "letter" | "invoice" | "receipt" | "statement" | "payment_link" | "portal_link">;
   channel: MessageChannel;
   /** The patient it is to or about (a letter to a GP: the patient the letter is about; a payer's statement: null). */
   patientId: string | null;
@@ -305,7 +316,10 @@ export async function sendDocumentMessage(ctx: RepoContext, tenantId: string, in
 
 /**
  * A one-off appointment notice that is not planned (a waiting-list offer of a free slot): by text if the patient
- * can get texts, else by email. Sent at once (a person sends it by hand – the quiet hours are for automatic texts).
+ * can get texts, else by email. A TEXT written in the clinic's quiet hours (UK time) is held until they end
+ * (Khuram, 28/10/2026): written "queued" with hold_until, released by the message run (releaseHeldMessages). If the
+ * quiet hours end too late for the offered slot, the offer goes by email instead when the patient has one, else it
+ * is not sent ("too_late"). Emails are never held.
  */
 export async function sendAppointmentNotice(
   ctx: RepoContext,
@@ -318,13 +332,23 @@ export async function sendAppointmentNotice(
   if (!contact) return { ok: false, reason: "not_found", message: "The patient does not exist in this clinic." };
   const smsBlock = messageBlock(contact, "sms", "service", { automatic: false, kind: input.kind });
   const emailBlock = messageBlock(contact, "email", "service", { automatic: false, kind: input.kind });
-  const channel: MessageChannel | null = !smsBlock ? "sms" : !emailBlock ? "email" : null;
+  let channel: MessageChannel | null = !smsBlock ? "sms" : !emailBlock ? "email" : null;
   if (!channel) return { ok: false, reason: smsBlock ?? "opted_out", message: smsBlock ?? "opted_out" };
   const [settings, directory] = await Promise.all([getCommsSettings(ctx, tenantId), loadDirectory(ctx, tenantId)]);
+  const now = ctx.now ? ctx.now() : new Date();
+  let holdUntil: string | null = null;
+  if (channel === "sms") {
+    holdUntil = quietHoursEndAt(now.toISOString(), settings.quietStart, settings.quietEnd);
+    if (holdUntil && Date.parse(holdUntil) >= Date.parse(input.appointment.startsAt)) {
+      // The quiet hours end after the offered slot starts: by email now if possible, else not at all.
+      if (emailBlock) return { ok: false, reason: "too_late", message: "The quiet hours end after the offered time – the text was not sent." };
+      channel = "email";
+      holdUntil = null;
+    }
+  }
   const clinic = await clinicContact(ctx, tenantId, settings);
   const template = await resolveTemplate(ctx, tenantId, input.kind, channel, null);
   if (!template) return { ok: false, reason: "bad_template", message: "There is no template for this message." };
-  const now = ctx.now ? ctx.now() : new Date();
   const composed = composeMessage({
     kind: input.kind,
     channel,
@@ -339,7 +363,7 @@ export async function sendAppointmentNotice(
   return deliver(
     ctx,
     tenantId,
-    { patientId: contact.id, channel, purpose: "service", kind: input.kind, address: addressFor(contact, channel) as string, composed, templateId: template.standard ? null : template.id, appointmentId: input.appointmentRef },
+    { patientId: contact.id, channel, purpose: "service", kind: input.kind, address: addressFor(contact, channel) as string, composed, templateId: template.standard ? null : template.id, appointmentId: input.appointmentRef, holdUntil },
     clinic,
     settings.smsSender,
     actor,
@@ -390,6 +414,8 @@ export async function retryMessage(ctx: RepoContext, tenantId: string, id: strin
 
 export interface RunSummary {
   claimed: number;
+  /** Texts held for the quiet hours released by this run (waiting-list offers). */
+  released: number;
   sent: number;
   outbox: number;
   failed: number;
@@ -397,7 +423,7 @@ export interface RunSummary {
   reasons: Partial<Record<SkipReason, number>>;
 }
 
-const emptySummary = (): RunSummary => ({ claimed: 0, sent: 0, outbox: 0, failed: 0, skipped: 0, reasons: {} });
+const emptySummary = (): RunSummary => ({ claimed: 0, released: 0, sent: 0, outbox: 0, failed: 0, skipped: 0, reasons: {} });
 
 /** Kinds that need the appointment still booked when they go (the cancellation notices and the DNA follow-up do not). */
 const NEEDS_BOOKED: ReadonlySet<string> = new Set(["confirmation", "reminder", "moved"]);
@@ -410,6 +436,11 @@ const NEEDS_BOOKED: ReadonlySet<string> = new Set(["confirmation", "reminder", "
 export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { limit?: number; actor?: PmsActor } = {}): Promise<RunSummary> {
   const actor = options.actor ?? SYSTEM_ACTOR;
   const summary = emptySummary();
+  const held = await releaseHeldMessages(ctx, tenantId, deps, { actor });
+  summary.released = held.released;
+  summary.sent += held.sent;
+  summary.outbox += held.outbox;
+  summary.failed += held.failed;
   const token = `run_${randomBytes(12).toString("base64url")}`;
   const rows = await claimDueMessages(ctx, tenantId, token, Math.min(options.limit ?? 90, 90));
   summary.claimed = rows.length;
@@ -545,6 +576,50 @@ export async function runDueMessages(ctx: RepoContext, tenantId: string, deps: D
   return summary;
 }
 
+/**
+ * Releases the texts held for the quiet hours whose time has come (waiting-list offers – sendAppointmentNotice):
+ * each is claimed conditionally (claimHeldMessage – two runs never both send it), then filed in the outbox or handed
+ * to the provider as written, and the answer recorded. Part of every message run.
+ */
+export async function releaseHeldMessages(
+  ctx: RepoContext,
+  tenantId: string,
+  deps: DispatchDeps,
+  options: { actor?: PmsActor; limit?: number } = {},
+): Promise<{ released: number; sent: number; outbox: number; failed: number }> {
+  const actor = options.actor ?? SYSTEM_ACTOR;
+  const out = { released: 0, sent: 0, outbox: 0, failed: 0 };
+  const now = nowIso(ctx);
+  const ids = await listHeldDue(ctx, tenantId, now, options.limit ?? 90);
+  if (ids.length === 0) return out;
+  const settings = await getCommsSettings(ctx, tenantId);
+  const clinic = await clinicContact(ctx, tenantId, settings);
+  const outcomes: { id: string; outcome: SendOutcome }[] = [];
+  let segments = 0;
+  for (const id of ids) {
+    const m = await getMessage(ctx, tenantId, id);
+    if (!m || m.direction !== "outbound" || !m.toAddress) continue;
+    const provider = m.channel === "sms" ? deps.providers.sms : deps.providers.email;
+    const outbox = provider.mode === "outbox";
+    if (!(await claimHeldMessage(ctx, tenantId, id, now, outbox, actor))) continue;
+    out.released++;
+    if (outbox) {
+      out.outbox++;
+      continue;
+    }
+    const composed: Composed = { subject: m.subject, text: m.body, html: m.channel === "email" ? htmlFromStoredText(clinic.name, m.body) : null, segments: m.segments, headers: {} };
+    const outcome = await callProvider(deps, m.channel, id, m.toAddress, composed, clinic, settings.smsSender);
+    outcomes.push({ id, outcome });
+    if (outcome.status === "sent") {
+      out.sent++;
+      if (m.channel === "sms" && m.segments) segments += m.segments;
+    } else if (outcome.status === "failed") out.failed++;
+  }
+  await recordSendOutcomes(ctx, tenantId, outcomes, actor);
+  if (segments > 0) await incrementUsage(ctx, tenantId, "sms_segments", segments);
+  return out;
+}
+
 /** Sends everything due for a clinic, in rounds of 90, until nothing is due or the time budget is used. */
 export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps: DispatchDeps, options: { budgetMs?: number; actor?: PmsActor } = {}): Promise<RunSummary> {
   const total = emptySummary();
@@ -552,6 +627,7 @@ export async function runAllDueMessages(ctx: RepoContext, tenantId: string, deps
   for (let round = 0; round < 50; round++) {
     const r = await runDueMessages(ctx, tenantId, deps, { actor: options.actor });
     total.claimed += r.claimed;
+    total.released += r.released;
     total.sent += r.sent;
     total.outbox += r.outbox;
     total.failed += r.failed;

@@ -57,6 +57,7 @@ const SUMMARY_COLUMNS = [
   "document_type",
   "document_id",
   "attempts",
+  "hold_until",
   "created_by",
   "created_at",
 ] as const;
@@ -88,6 +89,7 @@ function toSummary(r: Pick<Row, (typeof SUMMARY_COLUMNS)[number]>): MessageSumma
     documentType: (r.document_type as DocumentType | null) ?? null,
     documentId: r.document_id ?? null,
     attempts: Math.max(1, num(r.attempts ?? 1)),
+    holdUntil: r.hold_until ?? null,
     createdBy: r.created_by,
     createdAt: r.created_at,
   };
@@ -133,12 +135,18 @@ export interface OutboundDraft {
   /** The document it carries (a letter, an invoice…). */
   documentType?: DocumentType | null;
   documentId?: string | null;
+  /**
+   * A text held for the quiet hours (a waiting-list offer): written "queued" with this release time (UTC ISO) and
+   * NOT handed to the provider – the message run releases it (releaseHeldMessages, src/server/pms/comms/dispatch.ts).
+   */
+  holdUntil?: string | null;
 }
 
 /** The INSERT of an outbound message (for a batch). The body is encrypted here. */
 export function outboundInsertQuery(ctx: RepoContext, tenantId: string, draft: OutboundDraft, actor: PmsActor): { id: string; query: BatchQuery } {
   assertTenantId(tenantId);
   if (!draft.body) throw new RepoInputError("A message needs some text.");
+  if (draft.holdUntil && draft.status !== "queued") throw new RepoInputError("Only a queued message can be held.");
   const id = pmsId(P.message, ctx);
   const at = nowIso(ctx);
   const query = ctx.db.insertInto(T).values({
@@ -172,6 +180,7 @@ export function outboundInsertQuery(ctx: RepoContext, tenantId: string, draft: O
     document_type: draft.documentType ?? null,
     document_id: draft.documentId ?? null,
     attempts: 1,
+    hold_until: draft.holdUntil ?? null,
     created_by: actor.userId,
     created_at: at,
     updated_at: at,
@@ -258,6 +267,64 @@ export async function recordDeliveryReceipt(
       actor,
       { action: "pms.message.status", targetType: "pms_message", targetId: row.id, detail: { status: receipt.status, source: "receipt" } },
       ctx.db.selectFrom(T).select("id").where("tenant_id", "=", tenantId).where("id", "=", row.id).where("status", "=", receipt.status).where("updated_at", "=", at),
+    ),
+  ]);
+  return changed > 0;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Texts held for the quiet hours (waiting-list offers – migration 0142)
+ * ----------------------------------------------------------------------------------------------*/
+
+/** Held messages whose release time has come (oldest first, at most `limit`). Ids only – nothing decrypted. */
+export async function listHeldDue(ctx: DbContext, tenantId: string, now: string, limit = 90): Promise<string[]> {
+  assertTenantId(tenantId);
+  const rows = await ctx.db
+    .selectFrom(T)
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "queued")
+    .where("hold_until", "is not", null)
+    .where("hold_until", "<=", now)
+    .orderBy("hold_until")
+    .orderBy("id")
+    .limit(Math.min(Math.max(1, limit), 90))
+    .execute();
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Claims one held message whose time has come: clears its hold (and, when the outbox provider keeps it, files it in
+ * the outbox) – conditionally, so two runs never both release it – with its audit row ("pms.message.release") in
+ * the same batch, written only when this call made the change. True = this call owns the release.
+ */
+export async function claimHeldMessage(ctx: DbContext, tenantId: string, id: string, now: string, outbox: boolean, actor: PmsActor): Promise<boolean> {
+  assertTenantId(tenantId);
+  assertId(id, "message id");
+  const at = nowIso(ctx);
+  const set = outbox ? { status: "outbox", sent_at: at, hold_until: null, updated_at: at } : { hold_until: null, updated_at: at };
+  const changed = await changeWithAudit(ctx, [
+    ctx.db
+      .updateTable(T)
+      .set(set)
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .where("status", "=", "queued")
+      .where("hold_until", "is not", null)
+      .where("hold_until", "<=", now),
+    commsAuditWhen(
+      ctx,
+      tenantId,
+      actor,
+      { action: "pms.message.release", targetType: "pms_message", targetId: id, detail: { outbox } },
+      ctx.db
+        .selectFrom(T)
+        .select("id")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", id)
+        .where("hold_until", "is", null)
+        .where("status", "=", outbox ? "outbox" : "queued")
+        .where("updated_at", "=", at),
     ),
   ]);
   return changed > 0;
@@ -488,7 +555,7 @@ export async function messageCounts(
   ctx: DbContext,
   tenantId: string,
   options: { since?: string; siteIds?: ReadonlySet<string> | null } = {},
-): Promise<{ toAction: number; outbox: number; failed: number; queued: number; sent: number }> {
+): Promise<{ toAction: number; outbox: number; failed: number; queued: number; sent: number; held: number }> {
   assertTenantId(tenantId);
   let q = ctx.db
     .selectFrom(T)
@@ -497,7 +564,7 @@ export async function messageCounts(
   if (options.since) q = q.where("created_at", ">=", options.since);
   if (options.siteIds) q = q.where(inPatientScope(ctx, tenantId, options.siteIds));
   const rows = await q.groupBy(["status", "action_status"]).execute();
-  const out = { toAction: 0, outbox: 0, failed: 0, queued: 0, sent: 0 };
+  const out = { toAction: 0, outbox: 0, failed: 0, queued: 0, sent: 0, held: 0 };
   for (const r of rows) {
     const n = Number(r.n);
     if (r.action_status === "to_action") out.toAction += n;
@@ -505,6 +572,18 @@ export async function messageCounts(
     if (r.status === "failed") out.failed += n;
     if (r.status === "queued") out.queued += n;
     if (r.status === "sent" || r.status === "delivered") out.sent += n;
+  }
+  if (out.queued > 0) {
+    // Texts held for the quiet hours (queued with a release time) – shown as "held", not "sending".
+    let h = ctx.db
+      .selectFrom(T)
+      .select((eb) => eb.fn.countAll<number>().as("n"))
+      .where("tenant_id", "=", tenantId)
+      .where("status", "=", "queued")
+      .where("hold_until", "is not", null);
+    if (options.since) h = h.where("created_at", ">=", options.since);
+    if (options.siteIds) h = h.where(inPatientScope(ctx, tenantId, options.siteIds));
+    out.held = Number((await h.executeTakeFirst())?.n ?? 0);
   }
   return out;
 }
