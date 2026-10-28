@@ -51,12 +51,13 @@ const FILL_SOURCE_CLASSES: Record<FillSourceKind, string> = {
  * Fill-source labels for this Studio (fix wave 2): a clinic's Studio fills "registration" answers from the
  * uploaded notes' patient record – it has no practice-system link, so its labels never name one.
  */
-export function useFillSourceLabels(): { short: Record<FillSourceKind, string>; long: Record<FillSourceKind, string> } {
+export function useFillSourceLabels(connectorId?: string): { short: Record<FillSourceKind, string>; long: Record<FillSourceKind, string> } {
   const tenant = useStudioMode() === "tenant";
   if (!tenant) return { short: FILL_SOURCE_SHORT, long: FILL_SOURCE_LABELS };
   return {
     short: { ...FILL_SOURCE_SHORT, registration: TENANT_COPY.sources.registrationShort },
-    long: { ...FILL_SOURCE_LABELS, registration: TENANT_COPY.sources.registrationLong },
+    // 10/2026: a form opened from the clinic system's own record ("native") is not filled from uploaded notes.
+    long: { ...FILL_SOURCE_LABELS, registration: connectorId === "native" ? TENANT_COPY.sources.registrationLongNative : TENANT_COPY.sources.registrationLong },
   };
 }
 

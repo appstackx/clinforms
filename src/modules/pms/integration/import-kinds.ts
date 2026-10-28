@@ -92,7 +92,7 @@ const PAYER_NAME: ImportField = {
 };
 
 const PATIENT_FIELDS: readonly ImportField[] = [
-  { key: "ref", label: "Patient reference", type: "text", required: true, synonyms: ["patient id", "patient no", "patient number", "patient ref", "patient reference", "client id", "client no", "id", "ref", "reference", "account number", "account no"], hint: "The patient's number or id in the earlier system. Kept on the record and used to link cases, appointments and invoices.", max: 80 },
+  { key: "ref", label: "Patient reference", type: "text", required: true, synonyms: ["patient id", "patient no", "patient number", "patient ref", "patient reference", "client id", "client no", "id", "ref", "reference", "account number", "account no", "legacy id", "previous system id", "old id", "external id"], hint: "The patient's number or id in the earlier system. Kept on the record and used to link cases, appointments and invoices.", max: 80 },
   { key: "title", label: "Title", type: "text", synonyms: ["title", "salutation"], max: 20 },
   { key: "firstName", label: "First name", type: "text", requiredGroup: "name", synonyms: ["first name", "forename", "forenames", "given name", "given names", "first"], max: 80 },
   { key: "lastName", label: "Last name", type: "text", requiredGroup: "name", synonyms: ["last name", "surname", "family name", "last"], max: 80 },
@@ -100,8 +100,8 @@ const PATIENT_FIELDS: readonly ImportField[] = [
   { key: "preferredName", label: "Preferred name", type: "text", synonyms: ["preferred name", "known as", "nickname"], max: 80 },
   { key: "dateOfBirth", label: "Date of birth", type: "date", synonyms: ["date of birth", "dob", "birth date", "birthdate", "d o b"] },
   { key: "sex", label: "Sex", type: "sex", synonyms: ["sex", "gender"] },
-  { key: "email", label: "Email", type: "email", synonyms: ["email", "e mail", "email address", "e mail address"] },
-  { key: "phoneMobile", label: "Mobile phone", type: "phone", synonyms: ["mobile", "mobile phone", "mobile number", "mobile no", "mobile tel", "cell", "cell phone"] },
+  { key: "email", label: "Email", type: "email", synonyms: ["email", "e mail", "email address", "e mail address", "email addr"] },
+  { key: "phoneMobile", label: "Mobile phone", type: "phone", synonyms: ["mobile", "mobile phone", "mobile number", "mobile no", "mobile tel", "mobile telephone", "cell", "cell phone"] },
   { key: "phoneHome", label: "Home phone", type: "phone", synonyms: ["home phone", "home tel", "home telephone", "telephone", "phone", "tel", "landline"] },
   { key: "phoneWork", label: "Work phone", type: "phone", synonyms: ["work phone", "work tel", "work telephone", "daytime phone", "business phone"] },
   { key: "address1", label: "Address line 1", type: "text", synonyms: ["address 1", "address line 1", "address1", "address", "street", "house"], max: 120 },
@@ -109,7 +109,7 @@ const PATIENT_FIELDS: readonly ImportField[] = [
   { key: "address3", label: "Address line 3", type: "text", synonyms: ["address 3", "address line 3", "address3", "locality", "district"], max: 120 },
   { key: "town", label: "Town", type: "text", synonyms: ["town", "city", "post town", "town city"], max: 120 },
   { key: "county", label: "County", type: "text", synonyms: ["county", "region"], max: 120 },
-  { key: "postcode", label: "Postcode", type: "postcode", synonyms: ["postcode", "post code", "postal code", "zip", "zip code"] },
+  { key: "postcode", label: "Postcode", type: "postcode", synonyms: ["postcode", "post code", "postal code", "zip", "zip code", "p code"] },
   { key: "occupation", label: "Occupation", type: "text", synonyms: ["occupation", "job", "job title", "profession"], max: 120 },
   { key: "employer", label: "Employer", type: "text", synonyms: ["employer", "company", "employer name"], max: 160 },
   { key: "gpName", label: "GP", type: "text", synonyms: ["gp", "gp name", "doctor", "family doctor", "gp doctor"], max: 120 },

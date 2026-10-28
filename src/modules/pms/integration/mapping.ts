@@ -21,8 +21,16 @@ function keysFor(field: ImportField): string[] {
 }
 
 /** Header variants tried in order: as it is, then without a leading "patient"/"client" (e.g. "Patient Surname"). */
+/** Short forms common in exports' column names, written out ("Addr1" → "address 1", "PCode" → "postcode"). */
+const ABBREVIATIONS: Readonly<Record<string, string>> = { addr: "address", add: "address", pcode: "postcode", pc: "postcode", tel: "telephone", mob: "mobile", fname: "first name", sname: "surname", lname: "last name", ref: "ref", no: "no" };
+
 function headerVariants(header: string): string[] {
-  const k = matchKey(header);
+  // CamelCase and letter–digit boundaries become spaces ("PatientFirstName" → "Patient First Name", "Addr1" → "Addr 1").
+  const spaced = header.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([A-Za-z])(\d)/g, "$1 $2");
+  const k = matchKey(spaced)
+    .split(" ")
+    .map((w) => ABBREVIATIONS[w] ?? w)
+    .join(" ");
   const out = [k];
   const stripped = k.replace(/^(patient|client|pt|patients)\s+/, "");
   if (stripped !== k && stripped) out.push(stripped);
