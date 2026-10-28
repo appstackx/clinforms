@@ -111,7 +111,7 @@ export async function runDueNowAction(): Promise<CommsActionResult<{ message: st
   if (!r.ok) return { ok: false, error: r.error };
   refresh();
   const v = r.value;
-  return { ok: true, message: v.claimed === 0 ? "Nothing was due." : `${v.sent} sent, ${v.outbox} kept in the outbox, ${v.failed} failed, ${v.skipped} not sent.` };
+  return { ok: true, message: v.claimed === 0 && v.released === 0 ? "Nothing was due." : `${v.sent} sent, ${v.outbox} kept in the outbox, ${v.failed} failed, ${v.skipped} not sent.` };
 }
 
 export async function saveTemplateAction(input: { id: string; rev: number; name?: string; subject?: string | null; body: string }): Promise<CommsActionResult<{ id: string; rev: number }>> {

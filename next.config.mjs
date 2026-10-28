@@ -94,6 +94,16 @@ const nextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       ...NOINDEX_SOURCES.map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
+      // A clinic's public booking pages and patient portal (clinic system, contract §6): never indexed, and the
+      // patient's OWN browser may use its location for "distance from you" (worked out on the device, never sent).
+      // Later entries win for the same header, so only these paths differ from the site-wide policy above.
+      {
+        source: "/clinics/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()" },
+        ],
+      },
     ];
   },
   async rewrites() {

@@ -118,3 +118,20 @@ HTML). The Messages screen itself (outbox, replies, templates, letters, send a m
 |---|---|---|---|
 | `letter-editor/` (`LetterEditor.dc.html`) | Letter editor: template, recipient, merge fields, Edit / A4 preview, signature from the signing details, Save draft · Print · Download PDF · Sign and send by email | `LetterEditor.png` | `/app/clinic/letters/new`, `/app/clinic/letters/[id]` (+ `/print`), `src/components/pms/comms/letter-{start,editor,sheet}.tsx` |
 | `patient-facing-messages/` (`PatientComms.dc.html`) | What patients receive: texts ≤ 160 characters, booking confirmation and portal sign-in emails, quiet hours and opt-out, appointment letter | `PatientComms.png` | `/app/clinic/messages/patient-view` (rendered by the code that sends), standard wording in `src/modules/pms/comms/defaults.ts` |
+
+## Round 3 – online booking, patient portal, intake forms, outcome questionnaires (M7, 28/10/2026)
+
+`round3/portal/` – the reference mock-ups of M7, each a folder with its `*.dc.html`, `README.md`, `support.js` and
+`vendor/`; screenshots in `round3/portal/screenshots/`. Serve a folder over http (port 3180–3199) and open the
+`.dc.html`. Postcodes `NG1 0AA` and `NG3 0AA` replaced with `ZZ99 9AA` and `ZZ99 9AC` (see Round 3 – billing); the
+intake screenshots were re-rendered from the corrected HTML (the others show no postcode). Fictional data only.
+
+| Folder | Screen | Screenshot | Built in |
+|---|---|---|---|
+| `online-booking-public-375-px/` (`OnlineBooking.dc.html`, round 2g) | Public booking, 6 steps: where → what → who → when → your details → check and confirm → booked → manage | `OnlineBooking.png` | `/clinics/[clinic]/book`, `/clinics/[clinic]/booking/[link]` (+ `/move`, `/forms/[id]`), `src/components/pms/portal/booking-flow.tsx` |
+| `patient-portal-375-px/` (`Portal.dc.html`, round 2g) | Portal: sign in by email link, home (forms to complete, upcoming, shared with you), appointment (late warning, cancel, move), form | `Portal.png` | `/clinics/[clinic]/portal/**`, `src/components/pms/portal/{sign-in-form,appointment-panel,form-filler}.tsx` |
+| `prototype-b-online-booking-lands-in-diary/` (`FlowOnline.dc.html`, round 2h) | Prototype B: phone books 14:30 → reception's diary "Booked online" with the activity line | `FlowOnline.png` | the diary (unchanged – the booking IS a diary appointment), `scripts/e2e/pms-prototype-b.cjs` |
+| `intake-forms-builder-signed-copy/` (`IntakeForms.dc.html`) | Form builder (Mark clinical, sending, who sees the answers) and the signed copy on the record (sealed, signature panel, fingerprint; reception without health answers) | `IntakeForms.png` | `/app/clinic/intake`, `/app/clinic/intake/[form]`, `/app/clinic/patients/[id]/forms/[response]` |
+| `intake-form-patient-375-px/` (`IntakePatient.dc.html`) | The patient fills in and signs a form at 375 px (parts, health note, consent ticks, typed signature) | `IntakePatient.png` | `src/components/pms/portal/form-filler.tsx` |
+| `outcome-questionnaire-patient-375-px/` (`OutcomePatient.dc.html`) | Outcome questionnaire on the phone, one question at a time, "Prefer not to answer", score | `OutcomePatient.png` | `/clinics/[clinic]/portal/forms/[id]`, `src/components/pms/portal/outcome-filler.tsx` |
+| `outcome-questionnaire-clinician/` (`Outcome.dc.html`) | Clinician's questionnaire screen: measure tabs, score panel, chart, "Send to patient's portal instead" | `Outcome.png` | partly: records' Outcomes page (chart, table, record a measure) + "Send a questionnaire to the patient's portal" on the Forms tab; the tabbed screen itself is not built (see handover §16) |
