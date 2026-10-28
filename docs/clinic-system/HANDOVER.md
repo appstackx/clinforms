@@ -1053,3 +1053,20 @@ utilisation can show >100 % when appointments sit outside the (changed) hours; b
 ### 17.11 Next
 **M9 integration** (native connector, "Complete referrer form", import) – running in parallel on `feat/cs-integration`;
 it merges second, so it merges `feat/clinic-system` `9b97f96` in first and re-runs the chain (§18).
+
+## 18. M9 integration (28–29/10/2026) – IN PROGRESS (midpoint)
+
+Branch `feat/cs-integration` (worktree `clinforms-wt/cs-integration`, npm ci done incl. workers/data-gateway;
+`.env.local` copied from cs-reporting – the October one did not source cleanly in a shell). Pushed heads so far:
+`bf32e29` letters/billing, `…` back end + native connector, `064862e` import screens, `d1b8870` tests + seed;
+`feat/clinic-system` `9b97f96` (M8) merged in with no conflicts. If you pick this up: `git -C …/cs-integration log`,
+then continue with the e2e `scripts/e2e/pms-integration.cjs` (runner: scratchpad `run-e2e-m9.sh <script> <port> <out> [dev]`,
+ports 3190–3199), the full chain, the merge into `feat/clinic-system`, and §18 final.
+
+Done so far (details in the commits): review fixes on the October draft (import batch audits now in the same batch as
+the change; appointment import through the diary; 7-day undo; clinical prefill only with clinical.view); native
+connector (`src/server/pms/native-connector.ts`, glue `get("native")` only, never listed); "Complete referrer form" on
+the case (picker of the clinic's ClinForms library → Studio with the case loaded → approve → filed to the case and the
+Forms tab with approver and time); product switch above the Studio; import screens under Set-up → Import data; letters
+Word/PDF, `{{latest_outcomes}}`, discharge letter, one merge-field engine; insurer claims screen; `billing.md`; suite on
+4 backends + 50,000-row import test + 2,000 rows through the D1 stand-in; demo seed (sample forms, Emily Turner walk).
