@@ -86,7 +86,7 @@ range or a missing twin.
 | diary | routes `src/app/app/clinic/diary/**`; record tab folder `src/app/app/clinic/patients/[patientId]/appointments/**` |
 | records | routes `src/app/app/clinic/patients/**` (the list, the record's layout and its first page, cases, authorisations, notes) – except other modules' tab folders |
 | billing | routes `src/app/app/clinic/billing/**`; tab folder `…/patients/[patientId]/invoices/**` |
-| comms | routes `src/app/app/clinic/messages/**`, `src/app/app/clinic/letters/**`; tab folder `…/patients/[patientId]/messages/**` |
+| comms | routes `src/app/app/clinic/messages/**`, `src/app/app/clinic/letters/**`; tab folder `…/patients/[patientId]/messages/**` (in the record's `(record)` group); its sessionless endpoints `src/app/api/clinic-messages/**` (the message run for the cron, the SMS provider's webhook, the stop-emails link – thin wrappers over `src/server/pms/comms/*`, M6) |
 | portal | routes `src/app/app/clinic/online-booking/**`, `src/app/app/clinic/intake/**`; public routes `src/app/(public-clinic)/**` (booking, portal, intake – create the route group); tab folder `…/patients/[patientId]/forms/**` |
 | reporting | routes `src/app/app/clinic/reports/**`, `src/app/app/clinic/setup/**` (UI over the foundation's directory repositories) |
 | integration | routes `src/app/app/clinic/import/**`; `src/server/pms/native-connector.ts`; with the orchestrator's go only: the additive `"native"` in medreport's `ConnectorIdSchema` and one registration line in `src/app/api/_medreport-glue.ts` |

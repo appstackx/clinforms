@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Letter editor</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+*{box-sizing:border-box}
+a{color:#0B7970}a:hover{color:#095E57}
+:focus-visible{outline:2px solid #0E958A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #F8FAFC; color: #0F172A; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #FFFFFF; border-bottom: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; min-height: 56px">
+<span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 8px; background: #0B7970; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span>
+<nav aria-label="Product areas" style="display: flex; background: #F1F5F9; border-radius: 10px; padding: 3px; gap: 2px"><a href="Dashboard.dc.html" aria-current="page" style="height: 30px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15,23,42,.08); font-weight: 600; color: #0F172A; text-decoration: none; display: inline-flex; align-items: center">{{product}}</a><a href="ReferrerForm.dc.html" style="height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: #475569; text-decoration: none; display: inline-flex; align-items: center">ClinForms</a></nav>
+<span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 999px; background: {{u.avBg}}; color: {{u.avFg}}; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">{{u.init}}</span><span style="display: flex; flex-direction: column; line-height: 16px"><strong>{{u.name}}</strong><span style="font-size: 12px; color: #64748B">{{u.role}}</span></span></span>
+</header>
+
+<main style="flex: 1; padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 14px; max-width: 1400px; width: 100%; margin: 0 auto">
+<nav aria-label="Breadcrumb" style="font-size: 13px; color: #64748B; display: flex; gap: 6px"><a href="PatientRecord.dc.html">Margaret Ellis</a><span aria-hidden="true">/</span><a href="Messages.dc.html">Letters</a><span aria-hidden="true">/</span><span>New letter</span></nav>
+<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap"><h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; flex: 1">{{tpl.name}}</h1><span role="status" style="font-size: 12px; color: #475569">{{statusText}}</span></div>
+<sc-if value="{{sent}}" hint-placeholder-val="{{false}}"><div role="status" style="display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px; background: #F0FDF4; border: 1px solid #A7E8BE"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg><span>Sent securely to {{recipientEmail}} at 11:20 and filed as a PDF in Margaret Ellis's Attachments.</span></div></sc-if>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<aside aria-label="Letter settings" style="flex: 1 1 280px; min-width: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="font-weight: 600; padding: 0; margin-bottom: 6px">Template</legend>
+<sc-for list="{{templates}}" as="t" hint-placeholder-count="5">
+<label style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border: 1px solid {{t.bd}}; background: {{t.bg}}; cursor: {{t.cursor}}; color: {{t.fg}}"><input type="radio" name="tpl" checked="{{t.on}}" disabled="{{t.locked}}" onChange="{{t.pick}}" style="width: 16px; height: 16px; margin: 2px 0 0; accent-color: #0B7970; flex: none"><span style="display: flex; flex-direction: column"><span style="font-weight: 500; display: flex; gap: 6px; align-items: center">{{t.name}}<sc-if value="{{t.clinical}}" hint-placeholder-val="{{false}}"><span style="font-size: 10px; font-weight: 600; color: #864E0E; background: #FEF3C7; border-radius: 4px; padding: 0 4px; line-height: 15px">Clinical</span></sc-if></span><span style="font-size: 12px; color: #475569">{{t.meta}}</span></span></label>
+</sc-for>
+<sc-if value="{{isReception}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; color: #475569; display: flex; gap: 6px; align-items: flex-start"><svg style="flex: none; margin-top: 2px" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>Clinical letters can only be written by clinicians, admins and the owner.</span></sc-if>
+</fieldset>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="le-to" style="font-weight: 500">Recipient</label><select id="le-to" style="height: 36px; padding: 0 10px; border: 1px solid #CBD5E1; border-radius: 8px; font: inherit; background: #FFFFFF"><option>{{tpl.to}}</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">Merge fields</span><div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{merge}}" as="m" hint-placeholder-count="6"><button type="button" style="height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid #C7D4F5; background: #F5F8FF; color: #1842B4; font: inherit; font-size: 12px; font-weight: 500">{{m}}</button></sc-for></div><span style="font-size: 12px; color: #475569">Click to insert at the cursor.</span></div>
+</aside>
+
+<section aria-label="Letter" style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+<div role="group" aria-label="View" style="display: flex; background: #F1F5F9; border-radius: 8px; padding: 3px; gap: 2px"><sc-for list="{{views}}" as="v" hint-placeholder-count="2"><button type="button" aria-pressed="{{v.sel}}" onClick="{{v.pick}}" style="height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: {{v.bg}}; font: inherit; font-weight: 500; color: #0F172A; cursor: pointer">{{v.label}}</button></sc-for></div>
+<label style="display: flex; gap: 8px; align-items: center; font-size: 13px"><input type="checkbox" checked="{{showValues}}" onChange="{{toggleValues}}" style="width: 16px; height: 16px; margin: 0; accent-color: #0B7970">Show merged values</label>
+</div>
+
+<sc-if value="{{isEdit}}" hint-placeholder-val="{{true}}">
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden">
+<div role="toolbar" aria-label="Formatting" style="display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid #E2E8F0; flex-wrap: wrap; align-items: center">
+<select aria-label="Text style" style="height: 32px; padding: 0 8px; border: 1px solid #E2E8F0; border-radius: 6px; font: inherit; font-size: 13px; background: #FFFFFF"><option>Paragraph</option><option>Heading</option></select>
+<sc-for list="{{tools}}" as="t" hint-placeholder-count="6"><button type="button" aria-label="{{t.label}}" aria-pressed="{{t.pressed}}" style="height: 32px; width: 32px; border: 0; border-radius: 6px; background: {{t.bg}}; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #0F172A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.icon}}"></path></svg></button></sc-for>
+</div>
+<div role="textbox" aria-multiline="true" aria-label="Letter body" contenteditable="true" style="padding: 20px 24px; min-height: 420px; line-height: 24px; outline-offset: -2px">
+<p style="margin: 0 0 12px">Dear <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.gp}}</span>,</p>
+<p style="margin: 0 0 12px"><strong>Re: <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.patient}}</span>, DOB <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.dob}}</span></strong></p>
+<sc-if value="{{plainBody}}" hint-placeholder-val="{{false}}"><p style="margin: 0 0 12px">This is to confirm that Margaret Ellis attended physiotherapy at Harbour Road on 03/05, 10/05, 17/05, 24/05, 31/05 and 14/06/2024.</p><p style="margin: 0 0 12px">Please contact us on 07700 900000 if you need anything further.</p></sc-if>
+<sc-if value="{{clinBody}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0 0 12px">Thank you for referring <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.first}}</span>, who I assessed on <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.first_visit}}</span> and discharged on <span style="background: {{chipBg}}; color: {{chipFg}}; border-radius: 4px; padding: 0 3px">{{f.discharge}}</span> after 6 sessions.</p>
+<p style="margin: 0 0 6px"><strong>Summary</strong></p>
+<ul style="margin: 0 0 12px; padding-left: 20px"><li>Low back pain with right-sided referral, no red flags.</li><li>Pain improved from 7/10 to 2/10 (NPRS); ODI from 46% to 12%.</li><li>Back to full work and walking 5 km.</li></ul>
+<p style="margin: 0 0 12px">She has a home programme to continue. Please re-refer if symptoms return.</p>
+</sc-if>
+<p style="margin: 0">Yours sincerely,</p>
+</div>
+<div style="padding: 14px 24px; border-top: 1px dashed #CBD5E1; display: flex; gap: 12px; align-items: center; background: #F8FAFC; flex-wrap: wrap">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+<span style="flex: 1; min-width: 220px; display: flex; flex-direction: column"><span style="font-family: 'Segoe Script', 'Bradley Hand', cursive; font-size: 20px; line-height: 26px">Priya Shah</span><span style="font-size: 13px">Priya Shah, Physiotherapist · HCPC PH-DEMO-01</span></span>
+<span style="font-size: 12px; color: #475569">Signature from Priya's signing details. Added when she sends.</span>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isPreview}}" hint-placeholder-val="{{false}}">
+<div style="background: #E2E8F0; border-radius: 12px; padding: 20px; display: flex; justify-content: center">
+<div style="background: #FFFFFF; width: 100%; max-width: 560px; aspect-ratio: 210 / 297; box-shadow: 0 4px 16px rgba(15,23,42,.12); padding: 40px 38px; font-size: 11px; line-height: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between"><div style="display: flex; flex-direction: column"><strong style="font-size: 13px">Northgate Physiotherapy Group (fictional)</strong><span>Harbour Road · 12 Harbour Road, Northgate ZZ99 9AA</span><span>07700 900000 · harbour@example.com</span></div><span>28/10/2026</span></div>
+<div style="display: flex; flex-direction: column; margin-top: 10px"><span>Dr A. Fenwick</span><span>Westgate Surgery (fictional)</span><span>1 Westgate, Northgate ZZ99 9YY</span></div>
+<span>Dear Dr Fenwick,</span>
+<strong>Re: Margaret Ellis, DOB 14/03/1961</strong>
+<sc-if value="{{clinBody}}" hint-placeholder-val="{{true}}"><span>Thank you for referring Margaret, who I assessed on 03/05/2024 and discharged on 14/06/2024 after 6 sessions.</span>
+<strong>Summary</strong>
+<span>• Low back pain with right-sided referral, no red flags.<br>• Pain improved from 7/10 to 2/10 (NPRS); ODI from 46% to 12%.<br>• Back to full work and walking 5 km.</span>
+<span>She has a home programme to continue. Please re-refer if symptoms return.</span></sc-if>
+<sc-if value="{{plainBody}}" hint-placeholder-val="{{false}}"><span>This is to confirm that Margaret Ellis attended physiotherapy at Harbour Road on 03/05, 10/05, 17/05, 24/05, 31/05 and 14/06/2024.</span></sc-if>
+<span>Yours sincerely,</span>
+<span style="font-family: 'Segoe Script', 'Bradley Hand', cursive; font-size: 18px; line-height: 22px">Priya Shah</span>
+<span>Priya Shah, Physiotherapist · HCPC PH-DEMO-01</span>
+<span style="margin-top: auto; border-top: 1px solid #CBD5E1; padding-top: 6px; font-size: 9px; color: #475569">Confidential. Page 1 of 1.</span>
+</div>
+</div>
+</sc-if>
+
+<div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap">
+<button type="button" onClick="{{saveDraft}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; cursor: pointer">Save draft</button>
+<button type="button" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"></path></svg>Print</button>
+<button type="button" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid #E2E8F0; background: #FFFFFF; font: inherit; font-weight: 500">Download PDF</button>
+<button type="button" onClick="{{send}}" style="height: 40px; padding: 0 16px; border-radius: 8px; border: 0; background: #0B7970; color: #FFFFFF; font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"></path></svg>Sign and send by email</button>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"role":{"editor":"enum","options":["clinician","reception"],"default":"clinician"},"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { tpl: 0, view: 'edit', values: false, sent: false, saved: false }; }
+  renderVals() {
+    const st = this.state; const role = this.props.role ?? 'clinician'; const rec = role === 'reception';
+    const T = [['Discharge letter to GP', 'To referrer · clinical summary', true, 'Dr A. Fenwick – Westgate Surgery (fictional)', 'dr.fenwick@example.com'], ['Progress report to insurer', 'Bluewell Health (fictional) · clinical', true, 'Bluewell Health (fictional) – claims', 'claims@example.com'], ['Medico-legal summary for solicitor', 'Carter & Lowe Solicitors (fictional) · clinical', true, 'Carter & Lowe Solicitors (fictional)', 'cases@example.com'], ['Attendance confirmation', 'Dates attended · not clinical', false, 'Margaret Ellis', 'margaret.ellis@example.com'], ['Appointment letter', 'Next appointments · not clinical', false, 'Margaret Ellis', 'margaret.ellis@example.com']];
+    const cur = rec && T[st.tpl][2] ? 3 : st.tpl;
+    const templates = T.map((t, i) => { const locked = rec && t[2]; const on = cur === i; return { name: t[0], meta: t[1], clinical: t[2], locked, on, bg: on ? '#F0FDFA' : (locked ? '#F8FAFC' : '#FFFFFF'), bd: on ? '#0E958A' : '#E2E8F0', cursor: locked ? 'not-allowed' : 'pointer', fg: locked ? '#64748B' : '#0F172A', pick: () => this.setState({ tpl: i }) }; });
+    const vals = { gp: 'Dr Fenwick', patient: 'Margaret Ellis', dob: '14/03/1961', first: 'Margaret', first_visit: '03/05/2024', discharge: '14/06/2024' };
+    const tags = { gp: '{gp_name}', patient: '{patient_name}', dob: '{patient_dob}', first: '{first_name}', first_visit: '{first_visit}', discharge: '{discharge_date}' };
+    const tool = (label, icon, pressed) => ({ label, icon, pressed: pressed ? 'true' : 'false', bg: pressed ? '#E2E8F0' : 'transparent' });
+    return {
+      product: 'Clinic system',
+      u: rec ? { name: 'Jess Taylor', role: 'Reception', init: 'JT', avBg: '#FEF3C7', avFg: '#864E0E' } : { name: 'Priya Shah', role: 'Physiotherapist', init: 'PS', avBg: '#CCFBF1', avFg: '#0B5F58' },
+      isReception: rec, templates, clinBody: T[cur][2], plainBody: !T[cur][2], tpl: { name: T[cur][0], to: T[cur][3] }, recipientEmail: T[cur][4],
+      merge: ['{patient_name}', '{patient_dob}', '{first_name}', '{gp_name}', '{first_visit}', '{discharge_date}', '{latest_outcomes}', '{practitioner}'],
+      views: [['edit', 'Edit'], ['preview', 'A4 preview']].map(([k, label]) => ({ label, sel: st.view === k ? 'true' : 'false', bg: st.view === k ? '#FFFFFF' : 'transparent', pick: () => this.setState({ view: k }) })),
+      isEdit: st.view === 'edit', isPreview: st.view === 'preview',
+      showValues: st.values, toggleValues: () => this.setState({ values: !st.values }),
+      f: st.values ? vals : tags, chipBg: st.values ? '#F0FDFA' : '#E8EEFB', chipFg: st.values ? '#0B5F58' : '#1842B4',
+      tools: [tool('Bold', 'M6 4h8a4 4 0 0 1 0 8H6zM6 12h9a4 4 0 0 1 0 8H6z'), tool('Italic', 'M19 4h-9M14 20H5M15 4L9 20'), tool('Underline', 'M6 3v7a6 6 0 0 0 12 0V3M4 21h16'), tool('Bulleted list', 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01', true), tool('Numbered list', 'M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1'), tool('Insert merge field', 'M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1')],
+      sent: st.sent, statusText: st.sent ? 'Sent' : (st.saved ? 'Draft saved 11:18' : 'Not saved yet'),
+      saveDraft: () => this.setState({ saved: true }), send: () => this.setState({ sent: true, view: 'preview' })
+    };
+  }
+}
+</script>
+</body>
+</html>
